@@ -104,6 +104,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   );
 }
 
+/* Electron positions the macOS traffic lights at x=16; reserve the full native
+   control group whenever shared workspace titlebars move into a collapsed sidebar. */
+.electron-macos [data-slot="sidebar-wrapper"] {
+  --workspace-titlebar-content-left: 90px;
+}
+
 .wco {
   --workspace-topbar-height: env(titlebar-area-height, 52px);
   --workspace-controls-top: env(titlebar-area-y, 0px);
