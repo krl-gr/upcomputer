@@ -58,6 +58,7 @@ import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import * as ActivationFunnel from "../../telemetry/ActivationFunnel.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
@@ -78,6 +79,31 @@ type ProviderServiceMethod<Name extends keyof ProviderService.ProviderService["S
   ProviderService.ProviderService["Service"][Name];
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId): string => `${threadId}:${turnId}`;
+
+interface TrackedAnalyticsTurn {
+  readonly threadId: ThreadId;
+  readonly provider: ProviderDriverKind;
+  readonly interactionMode: ProviderSendTurnInput["interactionMode"] | undefined;
+  readonly submittedAtMs: number;
+  /** A submission made while this canonical provider turn was already active is a steer. */
+  readonly canonicalTurnKeyAtSubmission?: string;
+}
+
+interface TurnAnalyticsRegistry {
+  readonly tracked: ReadonlyMap<string, TrackedAnalyticsTurn>;
+  readonly terminalKeys: ReadonlySet<string>;
+}
+
+const addCappedTerminalAnalyticsKey = (current: ReadonlySet<string>, key: string) => {
+  const next = new Set(current);
+  next.add(key);
+  while (next.size > 2_000) {
+    const oldest = next.values().next().value;
+    if (oldest === undefined) break;
+    next.delete(oldest);
+  }
+  return next;
+};
 
 function appendCappedText(previous: string | undefined, delta: string): string {
   const next = `${previous ?? ""}${delta}`;
@@ -235,7 +261,155 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const interactionModeByTurn = yield* Ref.make(new Map<string, ResolvedInteractionMode>());
   const assistantTextByTurn = yield* Ref.make(new Map<string, string>());
   const completedInteractionModeOutputKeys = yield* Ref.make(new Set<string>());
+  const turnAnalyticsRegistry = yield* Ref.make<TurnAnalyticsRegistry>({
+    tracked: new Map(),
+    terminalKeys: new Set(),
+  });
+  const pendingAnalyticsTurns = yield* Ref.make<ReadonlyArray<TrackedAnalyticsTurn>>([]);
+  const analyticsTurnKeyBySubmission = yield* Ref.make(new Map<TrackedAnalyticsTurn, string>());
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+  const removePendingAnalyticsTurn = (submission: TrackedAnalyticsTurn) =>
+    Ref.update(pendingAnalyticsTurns, (current) => current.filter((entry) => entry !== submission));
+
+  const bindPendingAnalyticsTurn = Effect.fn("ProviderService.bindPendingAnalyticsTurn")(function* (
+    event: Extract<ProviderRuntimeEvent, { type: "turn.started" }>,
+  ) {
+    const submission = yield* Ref.modify(pendingAnalyticsTurns, (current) => {
+      const index = current.findIndex(
+        (entry) => entry.threadId === event.threadId && entry.provider === event.provider,
+      );
+      if (index < 0) return [undefined, current] as const;
+      return [current[index], [...current.slice(0, index), ...current.slice(index + 1)]] as const;
+    });
+    if (submission === undefined || event.turnId === undefined) return;
+
+    const key = providerTurnKey(event.threadId, TurnId.make(String(event.turnId)));
+    yield* Ref.update(analyticsTurnKeyBySubmission, (current) => {
+      const next = new Map(current);
+      next.set(submission, key);
+      return next;
+    });
+    yield* Ref.update(turnAnalyticsRegistry, (current) => {
+      if (current.terminalKeys.has(key) || current.tracked.has(key)) return current;
+      const tracked = new Map(current.tracked);
+      tracked.set(key, submission);
+      return { ...current, tracked };
+    });
+  });
+
+  const finishFailedAnalyticsSubmission = Effect.fn(
+    "ProviderService.finishFailedAnalyticsSubmission",
+  )(function* (submission: TrackedAnalyticsTurn) {
+    yield* removePendingAnalyticsTurn(submission);
+    const key = (yield* Ref.get(analyticsTurnKeyBySubmission)).get(submission);
+    yield* Ref.update(analyticsTurnKeyBySubmission, (current) => {
+      const next = new Map(current);
+      next.delete(submission);
+      return next;
+    });
+    // A steer is another submission attempt for the same still-running
+    // canonical turn. Its adapter failure must not terminalize that turn.
+    if (submission.canonicalTurnKeyAtSubmission !== undefined) return false;
+    if (key === undefined) return true;
+    return yield* Ref.modify(turnAnalyticsRegistry, (current) => {
+      if (current.terminalKeys.has(key)) return [false, current] as const;
+      const tracked = new Map(current.tracked);
+      if (tracked.get(key) === submission) tracked.delete(key);
+      return [
+        true,
+        {
+          tracked,
+          terminalKeys: addCappedTerminalAnalyticsKey(current.terminalKeys, key),
+        },
+      ] as const;
+    });
+  });
+
+  const finishSuccessfulAnalyticsSubmission = Effect.fn(
+    "ProviderService.finishSuccessfulAnalyticsSubmission",
+  )(function* (submission: TrackedAnalyticsTurn, key: string) {
+    yield* removePendingAnalyticsTurn(submission);
+    yield* Ref.update(analyticsTurnKeyBySubmission, (current) => {
+      const next = new Map(current);
+      next.delete(submission);
+      return next;
+    });
+    if (submission.canonicalTurnKeyAtSubmission === key) return;
+    yield* Ref.update(turnAnalyticsRegistry, (current) => {
+      if (current.terminalKeys.has(key) || current.tracked.has(key)) return current;
+      const tracked = new Map(current.tracked);
+      tracked.set(key, submission);
+      return { ...current, tracked };
+    });
+  });
+
+  const recordTerminalTurn = Effect.fn("ProviderService.recordTerminalTurn")(function* (input: {
+    readonly key: string;
+    readonly outcome: "completed" | ActivationFunnel.TurnTerminalOutcome;
+    readonly errorCategory?: ActivationFunnel.TelemetryErrorCategory;
+  }) {
+    const tracked = yield* Ref.modify(turnAnalyticsRegistry, (current) => {
+      if (current.terminalKeys.has(input.key)) return [undefined, current] as const;
+      const value = current.tracked.get(input.key);
+      if (value === undefined) return [undefined, current] as const;
+      const nextTracked = new Map(current.tracked);
+      nextTracked.delete(input.key);
+      return [
+        value,
+        {
+          tracked: nextTracked,
+          terminalKeys: addCappedTerminalAnalyticsKey(current.terminalKeys, input.key),
+        },
+      ] as const;
+    });
+    if (tracked === undefined) return;
+
+    const durationMs = Math.max(
+      0,
+      DateTime.toEpochMillis(yield* DateTime.now) - tracked.submittedAtMs,
+    );
+    const dimensions = ActivationFunnel.terminalDimensions({
+      provider: tracked.provider,
+      interactionMode: tracked.interactionMode,
+      durationMs,
+    });
+    if (input.outcome === "completed") {
+      yield* analytics.record(ActivationFunnel.ActivationEvent.turnCompleted, dimensions);
+      return;
+    }
+    yield* analytics.record(ActivationFunnel.ActivationEvent.turnTerminated, {
+      ...dimensions,
+      outcome: input.outcome,
+      errorCategory: input.errorCategory ?? "unknown",
+    });
+  });
+
+  const terminateTrackedTurnsForThread = Effect.fn(
+    "ProviderService.terminateTrackedTurnsForThread",
+  )(function* (input: {
+    readonly threadId: ThreadId;
+    readonly provider: ProviderDriverKind;
+    readonly outcome: ActivationFunnel.TurnTerminalOutcome;
+    readonly errorCategory: ActivationFunnel.TelemetryErrorCategory;
+    readonly turnId?: TurnId | undefined;
+  }) {
+    const tracked = (yield* Ref.get(turnAnalyticsRegistry)).tracked;
+    const keys = Array.from(tracked.entries())
+      .filter(
+        ([key, value]) =>
+          value.threadId === input.threadId &&
+          value.provider === input.provider &&
+          (input.turnId === undefined || key === providerTurnKey(input.threadId, input.turnId)),
+      )
+      .map(([key]) => key);
+    yield* Effect.forEach(
+      keys,
+      (key) =>
+        recordTerminalTurn({ key, outcome: input.outcome, errorCategory: input.errorCategory }),
+      { discard: true },
+    );
+  });
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     McpSessionRegistry.issueActiveMcpCredential({ threadId, providerInstanceId }).pipe(
       Effect.tap((credential) =>
@@ -521,6 +695,61 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
     });
 
+  const processTurnAnalytics = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (event.type === "session.exited") {
+        const providerCrashed = event.payload.exitKind === "error";
+        const gracefulExit = event.payload.exitKind === "graceful";
+        yield* terminateTrackedTurnsForThread({
+          threadId: event.threadId,
+          provider: event.provider,
+          outcome: providerCrashed ? "provider-crash" : gracefulExit ? "cancelled" : "failed",
+          errorCategory: providerCrashed
+            ? "provider-crash"
+            : gracefulExit
+              ? "cancelled"
+              : "unknown",
+        });
+        return;
+      }
+      if (event.type === "turn.started") {
+        yield* bindPendingAnalyticsTurn(event);
+        return;
+      }
+      if (event.turnId === undefined) return;
+      const key = providerTurnKey(event.threadId, TurnId.make(String(event.turnId)));
+      if (event.type === "turn.completed") {
+        switch (event.payload.state) {
+          case "completed":
+            yield* recordTerminalTurn({ key, outcome: "completed" });
+            return;
+          case "interrupted":
+            yield* recordTerminalTurn({
+              key,
+              outcome: "interrupted",
+              errorCategory: "interrupted",
+            });
+            return;
+          case "cancelled":
+            yield* recordTerminalTurn({ key, outcome: "cancelled", errorCategory: "cancelled" });
+            return;
+          case "failed":
+            yield* recordTerminalTurn({ key, outcome: "failed", errorCategory: "unknown" });
+            return;
+        }
+      }
+      if (event.type === "turn.aborted") {
+        const normalizedReason = event.payload.reason.toLowerCase();
+        const cancelled = normalizedReason.includes("cancel");
+        const interrupted = normalizedReason.includes("interrupt");
+        yield* recordTerminalTurn({
+          key,
+          outcome: cancelled ? "cancelled" : interrupted ? "interrupted" : "failed",
+          errorCategory: cancelled ? "cancelled" : interrupted ? "interrupted" : "unknown",
+        });
+      }
+    });
+
   const processRuntimeEvent = (
     source: {
       readonly instanceId: ProviderInstanceId;
@@ -532,6 +761,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.flatMap((canonicalEvent) =>
         publishCanonicalRuntimeEvent(canonicalEvent).pipe(
           Effect.andThen(processInteractionModeOutput(canonicalEvent)),
+          Effect.andThen(processTurnAnalytics(canonicalEvent)),
         ),
       ),
     );
@@ -647,7 +877,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
-        .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
+        .pipe(
+          Effect.tapError((cause) =>
+            analytics.record(ActivationFunnel.ActivationEvent.providerReadinessFailed, {
+              ...ActivationFunnel.providerDimensions({ provider: input.binding.provider }),
+              errorCategory: ActivationFunnel.classifyTelemetryError(cause),
+              readinessBoundary: "session-recovery",
+            }),
+          ),
+          Effect.onError(() => clearMcpSession(input.binding.threadId)),
+        );
       if (resumed.provider !== adapter.provider) {
         yield* clearMcpSession(input.binding.threadId);
         return yield* toValidationError(
@@ -664,6 +903,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         provider: resumed.provider,
         strategy: "resume-thread",
         hasResumeCursor: resumed.resumeCursor !== undefined,
+      });
+      yield* analytics.record(ActivationFunnel.ActivationEvent.providerReadinessSucceeded, {
+        ...ActivationFunnel.providerDimensions({ provider: resumed.provider }),
+        readinessBoundary: "session-recovery",
       });
       return { adapter, session: resumed } as const;
     }).pipe(
@@ -741,8 +984,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
               yield* adapter.stopSession(input.threadId).pipe(
                 Effect.tap(() =>
-                  analytics.record("provider.session.stopped", {
-                    provider: adapter.provider,
+                  Effect.gen(function* () {
+                    yield* terminateTrackedTurnsForThread({
+                      threadId: input.threadId,
+                      provider: adapter.provider,
+                      outcome: "cancelled",
+                      errorCategory: "cancelled",
+                    });
+                    yield* analytics.record("provider.session.stopped", {
+                      provider: adapter.provider,
+                    });
                   }),
                 ),
                 Effect.catchCause((cause) =>
@@ -837,7 +1088,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
           })
-          .pipe(Effect.onError(() => clearMcpSession(threadId)));
+          .pipe(
+            Effect.tapError((cause) =>
+              analytics.record(ActivationFunnel.ActivationEvent.providerReadinessFailed, {
+                ...ActivationFunnel.providerDimensions({ provider: resolvedProvider }),
+                errorCategory: ActivationFunnel.classifyTelemetryError(cause),
+                readinessBoundary: "session-start",
+              }),
+            ),
+            Effect.onError(() => clearMcpSession(threadId)),
+          );
 
         if (session.provider !== adapter.provider) {
           yield* clearMcpSession(threadId);
@@ -866,6 +1126,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           hasModel:
             typeof input.modelSelection?.model === "string" &&
             input.modelSelection.model.trim().length > 0,
+        });
+        yield* analytics.record(ActivationFunnel.ActivationEvent.providerReadinessSucceeded, {
+          ...ActivationFunnel.providerDimensions({ provider: sessionWithInstance.provider }),
+          readinessBoundary: "session-ready",
         });
 
         return sessionWithInstance;
@@ -930,10 +1194,59 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.interaction_mode.output_kind": resolvedInteractionMode.outputKind,
         });
       }
-      const turn = yield* routed.adapter.sendTurn({
-        ...input,
-        ...(resolvedInteractionMode !== undefined ? { resolvedInteractionMode } : {}),
+      const submittedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
+      const canonicalTurnKeyAtSubmission = Array.from(
+        (yield* Ref.get(turnAnalyticsRegistry)).tracked.entries(),
+      ).find(
+        ([, tracked]) =>
+          tracked.threadId === input.threadId && tracked.provider === routed.adapter.provider,
+      )?.[0];
+      const analyticsSubmission: TrackedAnalyticsTurn = {
+        threadId: input.threadId,
+        provider: routed.adapter.provider,
+        interactionMode: input.interactionMode,
+        submittedAtMs,
+        ...(canonicalTurnKeyAtSubmission !== undefined ? { canonicalTurnKeyAtSubmission } : {}),
+      };
+      if (canonicalTurnKeyAtSubmission === undefined) {
+        yield* Ref.update(pendingAnalyticsTurns, (current) => [...current, analyticsSubmission]);
+      }
+      yield* analytics.record(ActivationFunnel.ActivationEvent.turnSubmitted, {
+        ...ActivationFunnel.providerDimensions({
+          provider: routed.adapter.provider,
+          interactionMode: input.interactionMode,
+        }),
       });
+      const turn = yield* routed.adapter
+        .sendTurn({
+          ...input,
+          ...(resolvedInteractionMode !== undefined ? { resolvedInteractionMode } : {}),
+        })
+        .pipe(
+          Effect.tapError((cause) =>
+            Effect.gen(function* () {
+              const shouldRecord = yield* finishFailedAnalyticsSubmission(analyticsSubmission);
+              if (!shouldRecord) return;
+              const durationMs = Math.max(
+                0,
+                DateTime.toEpochMillis(yield* DateTime.now) - submittedAtMs,
+              );
+              yield* analytics.record(ActivationFunnel.ActivationEvent.turnTerminated, {
+                ...ActivationFunnel.terminalDimensions({
+                  provider: routed.adapter.provider,
+                  interactionMode: input.interactionMode,
+                  durationMs,
+                }),
+                outcome: "failed",
+                errorCategory: ActivationFunnel.classifyTelemetryError(cause),
+              });
+            }),
+          ),
+        );
+      yield* finishSuccessfulAnalyticsSubmission(
+        analyticsSubmission,
+        providerTurnKey(input.threadId, turn.turnId),
+      );
       if (resolvedInteractionMode !== undefined) {
         yield* rememberTurnInteractionMode(input.threadId, turn.turnId, resolvedInteractionMode);
       }
@@ -996,6 +1309,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.turn_id": input.turnId,
         });
         yield* routed.adapter.interruptTurn(routed.threadId, input.turnId);
+        yield* terminateTrackedTurnsForThread({
+          threadId: routed.threadId,
+          provider: routed.adapter.provider,
+          outcome: "interrupted",
+          errorCategory: "interrupted",
+          ...(input.turnId !== undefined ? { turnId: input.turnId } : {}),
+        });
         yield* analytics.record("provider.turn.interrupted", {
           provider: routed.adapter.provider,
         });
@@ -1106,6 +1426,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         if (routed.isActive) {
           yield* routed.adapter.stopSession(routed.threadId);
         }
+        yield* terminateTrackedTurnsForThread({
+          threadId: routed.threadId,
+          provider: routed.adapter.provider,
+          outcome: "cancelled",
+          errorCategory: "cancelled",
+        });
         yield* clearMcpSession(input.threadId);
         yield* directory.upsert({
           threadId: input.threadId,
@@ -1278,15 +1604,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         ),
       ),
     ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
-    yield* Effect.forEach(activeSessions, (session) =>
-      Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
-        upsertSessionBinding(session, session.threadId, {
-          lastRuntimeEvent: "provider.stopAll",
-          lastRuntimeEventAt,
+    yield* Effect.forEach(
+      currentAdapters,
+      ([instanceId, adapter]) =>
+        Effect.gen(function* () {
+          yield* adapter.stopAll();
+          const stoppedSessions = activeSessions.filter(
+            (session) => session.providerInstanceId === instanceId,
+          );
+          yield* Effect.forEach(
+            stoppedSessions,
+            (session) =>
+              Effect.gen(function* () {
+                yield* terminateTrackedTurnsForThread({
+                  threadId: session.threadId,
+                  provider: session.provider,
+                  outcome: "cancelled",
+                  errorCategory: "cancelled",
+                });
+                yield* Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
+                  upsertSessionBinding(session, session.threadId, {
+                    lastRuntimeEvent: "provider.stopAll",
+                    lastRuntimeEventAt,
+                  }),
+                );
+              }),
+            { discard: true },
+          );
         }),
-      ),
-    ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
+      { discard: true },
+    );
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
     const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));

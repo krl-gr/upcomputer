@@ -30,6 +30,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ActivationFunnel from "./telemetry/ActivationFunnel.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -132,7 +133,21 @@ export const makeCommandGate = Effect.gen(function* () {
 
 export const recordStartupHeartbeat = Effect.gen(function* () {
   const analytics = yield* AnalyticsService.AnalyticsService;
+  const serverConfig = yield* ServerConfig.ServerConfig;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+
+  const startupContext: ActivationFunnel.StartupContext =
+    serverConfig.startupContext ??
+    (serverConfig.mode === "desktop"
+      ? "desktop-unknown"
+      : serverConfig.startupPresentation === "headless"
+        ? "cli-headless"
+        : "cli-browser");
+  yield* analytics.record(ActivationFunnel.ActivationEvent.serverStarted, {
+    schemaVersion: ActivationFunnel.ACTIVATION_EVENT_SCHEMA_VERSION,
+    startupContext,
+  });
+  yield* analytics.recordProductLaunch;
 
   const { threadCount, projectCount } = yield* projectionSnapshotQuery.getCounts().pipe(
     Effect.catch((cause) =>

@@ -107,27 +107,28 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
-  const startSession = vi.fn((input: ProviderSessionStartInput) =>
-    Effect.sync(() => {
-      const now = "2026-01-01T00:00:00.000Z";
-      const session: ProviderSession = {
-        provider,
-        ...(input.providerInstanceId !== undefined
-          ? { providerInstanceId: input.providerInstanceId }
-          : {}),
-        status: "ready",
-        runtimeMode: input.runtimeMode,
-        threadId: input.threadId,
-        resumeCursor: input.resumeCursor ?? {
-          opaque: `resume-${String(input.threadId)}`,
-        },
-        cwd: input.cwd ?? process.cwd(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      sessions.set(session.threadId, session);
-      return session;
-    }),
+  const startSession = vi.fn(
+    (input: ProviderSessionStartInput): Effect.Effect<ProviderSession, ProviderAdapterError> =>
+      Effect.sync(() => {
+        const now = "2026-01-01T00:00:00.000Z";
+        const session: ProviderSession = {
+          provider,
+          ...(input.providerInstanceId !== undefined
+            ? { providerInstanceId: input.providerInstanceId }
+            : {}),
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          threadId: input.threadId,
+          resumeCursor: input.resumeCursor ?? {
+            opaque: `resume-${String(input.threadId)}`,
+          },
+          cwd: input.cwd ?? process.cwd(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        sessions.set(session.threadId, session);
+        return session;
+      }),
   );
 
   const sendTurn = vi.fn(
@@ -289,6 +290,10 @@ const hasMetricSnapshot = (
 function makeProviderServiceLayer(options?: {
   readonly interactionModeRegistry?: ExperimentalInteractionModeRegistry;
 }) {
+  const analyticsEvents: Array<{
+    readonly event: string;
+    readonly properties?: Readonly<Record<string, unknown>>;
+  }> = [];
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
   const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
@@ -318,7 +323,20 @@ function makeProviderServiceLayer(options?: {
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
-        Layer.provideMerge(AnalyticsService.layerTest),
+        Layer.provideMerge(
+          Layer.succeed(
+            AnalyticsService.AnalyticsService,
+            AnalyticsService.AnalyticsService.of({
+              record: (event, properties) =>
+                Effect.sync(() => {
+                  analyticsEvents.push({ event, ...(properties ? { properties } : {}) });
+                }),
+              recordProductLaunch: Effect.void,
+              enabled: true,
+              flush: Effect.void,
+            }),
+          ),
+        ),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -338,9 +356,475 @@ function makeProviderServiceLayer(options?: {
     claude,
     cursor,
     grok,
+    analyticsEvents,
     layer,
   };
 }
+
+const telemetry = makeProviderServiceLayer();
+telemetry.layer("ProviderServiceLive activation telemetry", (it) => {
+  it.effect("records readiness and exactly one safe terminal outcome for every tracked turn", () =>
+    Effect.gen(function* () {
+      telemetry.analyticsEvents.length = 0;
+      const provider = yield* ProviderService.ProviderService;
+
+      const start = (threadId: ThreadId) =>
+        provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+      const send = (threadId: ThreadId) =>
+        provider.sendTurn({
+          threadId,
+          input: "private prompt",
+          attachments: [],
+          interactionMode: "ask",
+        });
+
+      const completedThread = asThreadId("thread-telemetry-completed");
+      yield* start(completedThread);
+      const completedTurn = yield* send(completedThread);
+      yield* Effect.yieldNow;
+      const completedEvent: LegacyProviderRuntimeEvent = {
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-completed"),
+        provider: CODEX_DRIVER,
+        threadId: completedThread,
+        turnId: completedTurn.turnId,
+        createdAt: "2026-01-01T00:00:01.250Z",
+        payload: { state: "completed" },
+      };
+      telemetry.codex.emit(completedEvent);
+      telemetry.codex.emit({ ...completedEvent, eventId: asEventId("evt-telemetry-duplicate") });
+      yield* Effect.yieldNow;
+
+      const cancelledThread = asThreadId("thread-telemetry-cancelled");
+      yield* start(cancelledThread);
+      const cancelledTurn = yield* send(cancelledThread);
+      telemetry.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-cancelled"),
+        provider: CODEX_DRIVER,
+        threadId: cancelledThread,
+        turnId: cancelledTurn.turnId,
+        createdAt: "2026-01-01T00:00:02.000Z",
+        payload: { state: "cancelled" },
+      });
+      yield* Effect.yieldNow;
+
+      const interruptedThread = asThreadId("thread-telemetry-interrupted");
+      yield* start(interruptedThread);
+      const interruptedTurn = yield* send(interruptedThread);
+      yield* provider.interruptTurn({
+        threadId: interruptedThread,
+        turnId: interruptedTurn.turnId,
+      });
+      telemetry.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-late-success"),
+        provider: CODEX_DRIVER,
+        threadId: interruptedThread,
+        turnId: interruptedTurn.turnId,
+        createdAt: "2026-01-01T00:00:03.000Z",
+        payload: { state: "completed" },
+      });
+      yield* Effect.yieldNow;
+
+      const gracefulExitThread = asThreadId("thread-telemetry-graceful-exit");
+      yield* start(gracefulExitThread);
+      yield* send(gracefulExitThread);
+      telemetry.codex.emit({
+        type: "session.exited",
+        eventId: asEventId("evt-telemetry-graceful-exit"),
+        provider: CODEX_DRIVER,
+        threadId: gracefulExitThread,
+        createdAt: "2026-01-01T00:00:04.000Z",
+        payload: { exitKind: "graceful" },
+      });
+      yield* Effect.yieldNow;
+
+      const stoppedThread = asThreadId("thread-telemetry-stopped");
+      yield* start(stoppedThread);
+      const stoppedTurn = yield* send(stoppedThread);
+      yield* provider.stopSession({ threadId: stoppedThread });
+      telemetry.codex.emit({
+        type: "session.exited",
+        eventId: asEventId("evt-telemetry-stopped-gracefully"),
+        provider: CODEX_DRIVER,
+        threadId: stoppedThread,
+        createdAt: "2026-01-01T00:00:04.500Z",
+        payload: { exitKind: "graceful" },
+      });
+      telemetry.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-stopped-late-success"),
+        provider: CODEX_DRIVER,
+        threadId: stoppedThread,
+        turnId: stoppedTurn.turnId,
+        createdAt: "2026-01-01T00:00:04.600Z",
+        payload: { state: "completed" },
+      });
+      yield* Effect.yieldNow;
+
+      const crashedThread = asThreadId("thread-telemetry-crashed");
+      yield* start(crashedThread);
+      yield* send(crashedThread);
+      telemetry.codex.emit({
+        type: "session.exited",
+        eventId: asEventId("evt-telemetry-crashed"),
+        provider: CODEX_DRIVER,
+        threadId: crashedThread,
+        createdAt: "2026-01-01T00:00:05.000Z",
+        payload: { exitKind: "error" },
+      });
+      yield* Effect.yieldNow;
+
+      const failedThread = asThreadId("thread-telemetry-provider-failure");
+      yield* start(failedThread);
+      telemetry.codex.sendTurn.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "sendTurn",
+            detail: "private provider failure",
+          }),
+        ),
+      );
+      yield* Effect.exit(send(failedThread));
+
+      const completed = telemetry.analyticsEvents.filter(
+        ({ event }) => event === "provider.turn.completed",
+      );
+      const terminated = telemetry.analyticsEvents.filter(
+        ({ event }) => event === "provider.turn.terminated",
+      );
+      assert.equal(completed.length, 1);
+      assert.equal(terminated.length, 6);
+      assert.deepEqual(terminated.map(({ properties }) => properties?.outcome).toSorted(), [
+        "cancelled",
+        "cancelled",
+        "cancelled",
+        "failed",
+        "interrupted",
+        "provider-crash",
+      ]);
+      assert.equal(
+        [...completed, ...terminated].every(
+          ({ properties }) =>
+            typeof properties?.durationMs === "number" &&
+            typeof properties?.durationBucket === "string" &&
+            !("threadId" in (properties ?? {})) &&
+            !("turnId" in (properties ?? {})) &&
+            !("input" in (properties ?? {})),
+        ),
+        true,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.readiness.succeeded")
+          .length,
+        7,
+      );
+    }),
+  );
+
+  it.effect("records completion emitted before sendTurn returns without later cancellation", () =>
+    Effect.gen(function* () {
+      telemetry.analyticsEvents.length = 0;
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-telemetry-early-completion");
+      const turnId = asTurnId("turn-telemetry-early-completion");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* advanceTestClock(50);
+      telemetry.codex.sendTurn.mockImplementationOnce((input) =>
+        Effect.gen(function* () {
+          telemetry.codex.emit({
+            type: "turn.started",
+            eventId: asEventId("evt-telemetry-early-started"),
+            provider: CODEX_DRIVER,
+            threadId: input.threadId,
+            turnId,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            payload: {},
+          });
+          yield* advanceTestClock(1_250);
+          telemetry.codex.emit({
+            type: "turn.completed",
+            eventId: asEventId("evt-telemetry-early-completed"),
+            provider: CODEX_DRIVER,
+            threadId: input.threadId,
+            turnId,
+            createdAt: "2026-01-01T00:00:01.250Z",
+            payload: { state: "completed" },
+          });
+          yield* advanceTestClock(50);
+          return { threadId: input.threadId, turnId };
+        }),
+      );
+
+      yield* provider.sendTurn({
+        threadId,
+        input: "private prompt",
+        attachments: [],
+        interactionMode: "ask",
+      });
+      yield* Effect.yieldNow;
+
+      const completed = telemetry.analyticsEvents.filter(
+        ({ event }) => event === "provider.turn.completed",
+      );
+      assert.equal(completed.length, 1);
+      assert.equal(completed[0]?.properties?.durationMs, 1_250);
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+
+      yield* provider.stopSession({ threadId });
+      yield* Effect.yieldNow;
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+        1,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+    }),
+  );
+
+  it.effect("keeps one canonical terminal outcome after successful or failed steering", () =>
+    Effect.gen(function* () {
+      telemetry.analyticsEvents.length = 0;
+      const provider = yield* ProviderService.ProviderService;
+      const start = (threadId: ThreadId) =>
+        provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+      const send = (threadId: ThreadId, input: string) =>
+        provider.sendTurn({ threadId, input, attachments: [] });
+      const emitCompletion = (threadId: ThreadId, turnId: TurnId, eventId: EventId) =>
+        telemetry.codex.emit({
+          type: "turn.completed",
+          eventId,
+          provider: CODEX_DRIVER,
+          threadId,
+          turnId,
+          createdAt: "2026-01-01T00:00:02.000Z",
+          payload: { state: "completed" },
+        });
+
+      const successfulThread = asThreadId("thread-telemetry-successful-steer");
+      yield* start(successfulThread);
+      yield* Effect.yieldNow;
+      const successfulOriginal = yield* send(successfulThread, "private original prompt");
+      const successfulSteer = yield* send(successfulThread, "private steering prompt");
+      assert.equal(successfulSteer.turnId, successfulOriginal.turnId);
+      emitCompletion(
+        successfulThread,
+        successfulOriginal.turnId,
+        asEventId("evt-telemetry-successful-steer-completed"),
+      );
+      yield* Effect.yieldNow;
+
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.submitted").length,
+        2,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+        1,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+
+      telemetry.analyticsEvents.length = 0;
+      const failedThread = asThreadId("thread-telemetry-failed-steer");
+      yield* start(failedThread);
+      yield* Effect.yieldNow;
+      const failedOriginal = yield* send(failedThread, "private original prompt");
+      telemetry.codex.sendTurn.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "sendTurn",
+            detail: "private steering failure",
+          }),
+        ),
+      );
+      const steerExit = yield* Effect.exit(send(failedThread, "private steering prompt"));
+      assert.equal(Exit.isFailure(steerExit), true);
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+
+      emitCompletion(
+        failedThread,
+        failedOriginal.turnId,
+        asEventId("evt-telemetry-failed-steer-completed"),
+      );
+      yield* Effect.yieldNow;
+
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.submitted").length,
+        2,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+        1,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+    }),
+  );
+
+  it.effect("keeps a turn tracked when stopSession fails and accepts one late completion", () =>
+    Effect.gen(function* () {
+      telemetry.analyticsEvents.length = 0;
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-telemetry-failed-stop");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* provider.sendTurn({
+        threadId,
+        input: "private prompt",
+        attachments: [],
+      });
+      telemetry.codex.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "stopSession",
+            detail: "private stop failure",
+          }),
+        ),
+      );
+
+      const stopExit = yield* Effect.exit(provider.stopSession({ threadId }));
+      assert.equal(Exit.isFailure(stopExit), true);
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+
+      const completedEvent: LegacyProviderRuntimeEvent = {
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-after-failed-stop"),
+        provider: CODEX_DRIVER,
+        threadId,
+        turnId: turn.turnId,
+        createdAt: "2026-01-01T00:00:06.000Z",
+        payload: { state: "completed" },
+      };
+      telemetry.codex.emit(completedEvent);
+      telemetry.codex.emit({
+        ...completedEvent,
+        eventId: asEventId("evt-telemetry-after-failed-stop-2"),
+      });
+      yield* Effect.yieldNow;
+
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+        1,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+    }),
+  );
+
+  it.effect("keeps a stale-provider turn tracked when replacement shutdown fails", () =>
+    Effect.gen(function* () {
+      telemetry.analyticsEvents.length = 0;
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-telemetry-failed-stale-stop");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* provider.sendTurn({
+        threadId,
+        input: "private prompt",
+        attachments: [],
+      });
+      telemetry.codex.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "stopSession",
+            detail: "private stale stop failure",
+          }),
+        ),
+      );
+
+      yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+
+      const completedEvent: LegacyProviderRuntimeEvent = {
+        type: "turn.completed",
+        eventId: asEventId("evt-telemetry-after-failed-stale-stop"),
+        provider: CODEX_DRIVER,
+        threadId,
+        turnId: turn.turnId,
+        createdAt: "2026-01-01T00:00:07.000Z",
+        payload: { state: "completed" },
+      };
+      telemetry.codex.emit(completedEvent);
+      telemetry.codex.emit({
+        ...completedEvent,
+        eventId: asEventId("evt-telemetry-after-failed-stale-stop-2"),
+      });
+      yield* Effect.yieldNow;
+
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+        1,
+      );
+      assert.equal(
+        telemetry.analyticsEvents.filter(({ event }) => event === "provider.turn.terminated")
+          .length,
+        0,
+      );
+    }),
+  );
+});
 
 const STRUCTURED_TEST_INTERACTION_MODE_DESCRIPTOR = {
   id: "orchestrator",
@@ -380,18 +864,13 @@ const structuredTestInteractionModeRegistry = createExperimentalInteractionModeR
   },
 ]);
 
-it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
+it.effect("ProviderServiceLive retains active turns when stopAll fails", () =>
   Effect.gen(function* () {
+    const analyticsEvents: Array<{
+      readonly event: string;
+      readonly properties?: Readonly<Record<string, unknown>>;
+    }> = [];
     const codex = makeFakeCodexAdapter();
-    codex.stopAll.mockImplementation(() =>
-      Effect.fail(
-        new ProviderAdapterRequestError({
-          provider: String(CODEX_DRIVER),
-          method: "stopAll",
-          detail: "simulated stopAll failure",
-        }),
-      ),
-    );
     const registry = makeAdapterRegistryMock({
       [CODEX_DRIVER]: codex.adapter,
     });
@@ -403,12 +882,24 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
       Layer.provide(SqlitePersistenceMemory),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+    const analyticsLayer = Layer.succeed(
+      AnalyticsService.AnalyticsService,
+      AnalyticsService.AnalyticsService.of({
+        record: (event, properties) =>
+          Effect.sync(() => {
+            analyticsEvents.push({ event, ...(properties ? { properties } : {}) });
+          }),
+        recordProductLaunch: Effect.void,
+        enabled: true,
+        flush: Effect.void,
+      }),
+    );
     const providerLayer = Layer.mergeAll(
       makeProviderServiceTestLive().pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
-        Layer.provideMerge(AnalyticsService.layerTest),
+        Layer.provideMerge(analyticsLayer),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -422,12 +913,118 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     );
     const scope = yield* Scope.make();
     const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+    const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+    const threadId = asThreadId("thread-telemetry-failed-stop-all");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    const turn = yield* provider.sendTurn({
+      threadId,
+      input: "private prompt",
+      attachments: [],
+    });
+    assert.equal(typeof turn.turnId, "string");
+    codex.stopAll.mockImplementation(() =>
+      Effect.fail(
+        new ProviderAdapterRequestError({
+          provider: String(CODEX_DRIVER),
+          method: "stopAll",
+          detail: "simulated stopAll failure",
+        }),
+      ),
+    );
 
-    yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
     const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
 
     assert.equal(Exit.isSuccess(closeExit), true);
     assert.equal(codex.stopAll.mock.calls.length, 1);
+    assert.equal(
+      analyticsEvents.filter(({ event }) => event === "provider.turn.completed").length,
+      0,
+    );
+    assert.equal(
+      analyticsEvents.filter(({ event }) => event === "provider.turn.terminated").length,
+      0,
+    );
+  }),
+);
+
+it.effect("ProviderServiceLive cancels active turns after successful stopAll shutdown", () =>
+  Effect.gen(function* () {
+    const analyticsEvents: Array<{
+      readonly event: string;
+      readonly properties?: Readonly<Record<string, unknown>>;
+    }> = [];
+    const codex = makeFakeCodexAdapter();
+    const registry = makeAdapterRegistryMock({
+      [CODEX_DRIVER]: codex.adapter,
+    });
+    const providerAdapterLayer = Layer.succeed(
+      ProviderAdapterRegistry.ProviderAdapterRegistry,
+      registry,
+    );
+    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      Layer.provide(SqlitePersistenceMemory),
+    );
+    const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+    const analyticsLayer = Layer.succeed(
+      AnalyticsService.AnalyticsService,
+      AnalyticsService.AnalyticsService.of({
+        record: (event, properties) =>
+          Effect.sync(() => {
+            analyticsEvents.push({ event, ...(properties ? { properties } : {}) });
+          }),
+        recordProductLaunch: Effect.void,
+        enabled: true,
+        flush: Effect.void,
+      }),
+    );
+    const providerLayer = Layer.mergeAll(
+      makeProviderServiceTestLive().pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provideMerge(analyticsLayer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+      directoryLayer,
+      runtimeRepositoryLayer,
+      NodeServices.layer,
+    );
+    const scope = yield* Scope.make();
+    const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+    const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+    const threadId = asThreadId("thread-telemetry-stop-all");
+
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    yield* provider.sendTurn({
+      threadId,
+      input: "private prompt",
+      attachments: [],
+      interactionMode: "ask",
+    });
+    yield* Scope.close(scope, Exit.void);
+
+    const terminalEvents = analyticsEvents.filter(
+      ({ event }) => event === "provider.turn.terminated",
+    );
+    assert.equal(codex.stopAll.mock.calls.length, 1);
+    assert.equal(terminalEvents.length, 1);
+    assert.equal(terminalEvents[0]?.properties?.outcome, "cancelled");
+    assert.equal(terminalEvents[0]?.properties?.errorCategory, "cancelled");
   }),
 );
 
@@ -1199,6 +1796,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       yield* routing.codex.stopAll();
       routing.codex.startSession.mockClear();
       routing.codex.sendTurn.mockClear();
+      routing.analyticsEvents.length = 0;
 
       yield* provider.sendTurn({
         threadId: initial.threadId,
@@ -1222,6 +1820,62 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, initial.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      assert.equal(
+        routing.analyticsEvents.filter(
+          ({ event, properties }) =>
+            event === "provider.readiness.succeeded" &&
+            properties?.readinessBoundary === "session-recovery",
+        ).length,
+        1,
+      );
+    }),
+  );
+
+  it.effect("records readiness failure when a stale session cannot be recovered", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-recovery-readiness-failure");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-recovery-readiness-failure",
+        runtimeMode: "full-access",
+      });
+      yield* routing.codex.stopAll();
+      routing.analyticsEvents.length = 0;
+      routing.codex.startSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "startSession",
+            detail: "private recovery failure",
+          }),
+        ),
+      );
+
+      const sendExit = yield* Effect.exit(
+        provider.sendTurn({
+          threadId,
+          input: "resume",
+          attachments: [],
+        }),
+      );
+
+      assert.equal(Exit.isFailure(sendExit), true);
+      assert.equal(
+        routing.analyticsEvents.filter(
+          ({ event, properties }) =>
+            event === "provider.readiness.failed" &&
+            properties?.readinessBoundary === "session-recovery",
+        ).length,
+        1,
+      );
+      assert.equal(
+        routing.analyticsEvents.filter(({ event }) => event === "provider.readiness.succeeded")
+          .length,
+        0,
+      );
     }),
   );
 

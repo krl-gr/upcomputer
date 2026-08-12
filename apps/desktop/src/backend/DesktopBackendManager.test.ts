@@ -150,6 +150,30 @@ function makeTestInstance(input: MakeInstanceInput) {
 }
 
 describe("DesktopBackendManager", () => {
+  it("distinguishes primary launch, primary restart, and secondary backend startup", () => {
+    assert.equal(
+      DesktopBackendManager.startupContextForBackendRun(
+        DesktopBackendManager.PRIMARY_INSTANCE_ID,
+        1,
+      ),
+      "desktop-launch",
+    );
+    assert.equal(
+      DesktopBackendManager.startupContextForBackendRun(
+        DesktopBackendManager.PRIMARY_INSTANCE_ID,
+        2,
+      ),
+      "desktop-restart",
+    );
+    assert.equal(
+      DesktopBackendManager.startupContextForBackendRun(
+        DesktopBackendManager.BackendInstanceId("wsl:ubuntu"),
+        1,
+      ),
+      "desktop-secondary",
+    );
+  });
+
   it.effect("spawns the backend with fd3 bootstrap JSON and reports HTTP readiness", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -215,7 +239,10 @@ describe("DesktopBackendManager", () => {
           2_000,
         );
 
-        assert.deepEqual(yield* decodeBootstrap(bootstrapJson), configWithObservability);
+        assert.deepEqual(yield* decodeBootstrap(bootstrapJson), {
+          ...configWithObservability,
+          startupContext: "desktop-launch",
+        });
       }),
     ),
   );

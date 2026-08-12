@@ -76,6 +76,9 @@ export class ServerConfig extends Context.Service<
     readonly noBrowser: boolean;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
+    readonly startupContext?: "desktop-launch" | "desktop-restart" | "desktop-secondary";
+    readonly desktopVersion?: string;
+    readonly releaseChannel?: "latest" | "nightly" | "development";
     readonly autoBootstrapProjectFromCwd: boolean;
     readonly logWebSocketEvents: boolean;
     readonly tailscaleServeEnabled: boolean;

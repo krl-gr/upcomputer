@@ -386,6 +386,15 @@ export const resolveServerConfig = (
       noBrowser,
       startupPresentation,
       desktopBootstrapToken,
+      ...(bootstrap?.startupContext !== undefined
+        ? { startupContext: bootstrap.startupContext }
+        : {}),
+      ...(bootstrap?.desktopVersion !== undefined
+        ? { desktopVersion: bootstrap.desktopVersion }
+        : {}),
+      ...(bootstrap?.releaseChannel !== undefined
+        ? { releaseChannel: bootstrap.releaseChannel }
+        : {}),
       autoBootstrapProjectFromCwd,
       logWebSocketEvents,
       tailscaleServeEnabled,

@@ -14,6 +14,14 @@ export const DesktopBackendBootstrap = Schema.Struct({
   desktopBootstrapToken: Schema.String,
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: PortSchema,
+  // Added by the desktop backend manager for each concrete process run. This
+  // separates a human desktop launch from automatic backend restarts and
+  // optional secondary backends.
+  startupContext: Schema.optional(
+    Schema.Literals(["desktop-launch", "desktop-restart", "desktop-secondary"]),
+  ),
+  desktopVersion: Schema.optional(Schema.String),
+  releaseChannel: Schema.optional(Schema.Literals(["latest", "nightly", "development"])),
   otlpTracesUrl: Schema.optional(Schema.String),
   otlpMetricsUrl: Schema.optional(Schema.String),
 });

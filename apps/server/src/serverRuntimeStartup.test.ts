@@ -100,8 +100,13 @@ it.effect("launchStartupHeartbeat does not block the caller while counts are loa
         }),
         Effect.provideService(AnalyticsService.AnalyticsService, {
           record: () => Effect.void,
+          recordProductLaunch: Effect.void,
+          enabled: true,
           flush: Effect.void,
         }),
+        Effect.provideService(ServerConfig.ServerConfig, {
+          startupPresentation: "browser",
+        } as never),
       );
     }),
   ),

@@ -169,6 +169,8 @@ const readPersistedBackendObservabilitySettings = Effect.gen(function* () {
 interface SharedBootstrapInput {
   readonly bootstrapToken: string;
   readonly observabilitySettings: BackendObservabilitySettings;
+  readonly desktopVersion: string;
+  readonly releaseChannel: "latest" | "nightly" | "development";
 }
 
 interface WslPreflightSuccess {
@@ -343,6 +345,8 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       t3Home: environment.baseDir,
       host: backendExposure.bindHost,
       desktopBootstrapToken: input.bootstrapToken,
+      desktopVersion: input.desktopVersion,
+      releaseChannel: input.releaseChannel,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
       ...buildObservabilityFragment(input.observabilitySettings),
@@ -405,6 +409,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     // the SQLite file with the primary).
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
+    desktopVersion: input.desktopVersion,
+    releaseChannel: input.releaseChannel,
     // PortSchema rejects 0, so when tailscale serve is disabled we still
     // need a valid number in this slot. The backend reads tailscaleServePort
     // only when tailscaleServeEnabled is true, so the actual value here is
@@ -594,7 +600,14 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
-    return { bootstrapToken, observabilitySettings } satisfies SharedBootstrapInput;
+    return {
+      bootstrapToken,
+      observabilitySettings,
+      desktopVersion: environment.appVersion,
+      releaseChannel: environment.isDevelopment
+        ? "development"
+        : (yield* settings.get).updateChannel,
+    } satisfies SharedBootstrapInput;
   });
 
   const buildWslPrimaryConfig = Effect.gen(function* () {

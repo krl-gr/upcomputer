@@ -177,6 +177,14 @@ export const PRIMARY_INSTANCE_ID: BackendInstanceId = BackendInstanceId(
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 );
 
+export function startupContextForBackendRun(
+  instanceId: BackendInstanceId,
+  runId: number,
+): "desktop-launch" | "desktop-restart" | "desktop-secondary" {
+  if (instanceId !== PRIMARY_INSTANCE_ID) return "desktop-secondary";
+  return runId === 1 ? "desktop-launch" : "desktop-restart";
+}
+
 // One pooled backend instance. Same lifecycle surface as the legacy
 // `DesktopBackendManagerShape`; the id and label give the pool registry
 // + UI something to route on.
@@ -630,6 +638,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
         const program = runBackendProcess({
           ...config.value,
+          bootstrap: {
+            ...config.value.bootstrap,
+            startupContext: startupContextForBackendRun(spec.id, runId),
+          },
           onStarted: Effect.fn("desktop.backendInstance.onStarted")(function* (pid) {
             yield* updateActiveRun(runId, (run) => ({
               ...run,

@@ -11,8 +11,10 @@ import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -20,6 +22,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import { FIRST_LAUNCH_MARKER_FILE, recordDesktopLaunch } from "./FirstLaunch.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -54,6 +57,12 @@ export class AnalyticsService extends Context.Service<
       properties?: Readonly<Record<string, unknown>>,
     ) => Effect.Effect<void>;
 
+    /** Record one human desktop launch and claim first launch when eligible. */
+    readonly recordProductLaunch: Effect.Effect<void>;
+
+    /** Whether anonymous telemetry is enabled and has a usable identifier. */
+    readonly enabled: boolean;
+
     /** Flush all currently queued telemetry events. */
     readonly flush: Effect.Effect<void>;
   }
@@ -63,6 +72,8 @@ export class AnalyticsService extends Context.Service<
     AnalyticsService,
     AnalyticsService.of({
       record: () => Effect.void,
+      recordProductLaunch: Effect.void,
+      enabled: false,
       flush: Effect.void,
     }),
   );
@@ -72,6 +83,8 @@ export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const identifier = yield* getTelemetryIdentifier;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
@@ -122,6 +135,9 @@ export const make = Effect.gen(function* () {
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
           t3CodeVersion: packageJson.version,
+          serverVersion: packageJson.version,
+          desktopVersion: serverConfig.desktopVersion,
+          releaseChannel: serverConfig.releaseChannel,
           clientType,
         },
         timestamp: event.capturedAt,
@@ -174,13 +190,26 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const enabled = telemetryConfig.enabled && identifier !== null;
+  const recordProductLaunch = Effect.gen(function* () {
+    if (!enabled || serverConfig.startupContext !== "desktop-launch") return;
+
+    const markerPath = path.join(serverConfig.stateDir, FIRST_LAUNCH_MARKER_FILE);
+    yield* recordDesktopLaunch({ markerPath, enabled, record }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.catch((cause) =>
+        Effect.logWarning("failed to persist first-launch telemetry marker", { cause }),
+      ),
+    );
+  });
+
   yield* Effect.forever(Effect.sleep(1000).pipe(Effect.flatMap(() => flush)), {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() => flush);
 
-  return AnalyticsService.of({ record, flush });
+  return AnalyticsService.of({ record, recordProductLaunch, enabled, flush });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
