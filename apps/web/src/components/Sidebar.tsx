@@ -967,7 +967,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
             data-thread-selection-safe
             size="sm"
             className={cn(
-              "h-8 w-full translate-x-0 justify-start px-2 text-left hover:bg-accent hover:text-foreground",
+              "h-8 w-full translate-x-0 justify-start px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               SIDEBAR_MUTED_TEXT_CLASS,
               SIDEBAR_LABEL_TEXT_CLASS,
             )}
@@ -986,7 +986,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
             data-thread-selection-safe
             size="sm"
             className={cn(
-              "h-8 w-full translate-x-0 justify-start px-2 text-left hover:bg-accent hover:text-foreground",
+              "h-8 w-full translate-x-0 justify-start px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               SIDEBAR_MUTED_TEXT_CLASS,
               SIDEBAR_LABEL_TEXT_CLASS,
             )}
@@ -2232,7 +2232,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
             size="sm"
             className={cn(
-              "h-8 gap-2 px-2 pr-8 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-foreground max-sm:pr-14 dark:hover:text-white/86 dark:group-hover/project-header:text-white/86",
+              "h-8 gap-2 px-2 pr-8 text-left hover:bg-sidebar-row-hover group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:text-sidebar-foreground max-sm:pr-14 dark:hover:text-white/86 dark:group-hover/project-header:text-white/86",
               SIDEBAR_MUTED_TEXT_CLASS,
               isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
             )}
@@ -2636,7 +2636,7 @@ function SidebarViewModeButton({
     <SidebarMenuButton
       size="sm"
       className={cn(
-        "h-8 w-full justify-start gap-2 px-2 hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
+        "h-8 w-full justify-start gap-2 px-2 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
         SIDEBAR_MUTED_TEXT_CLASS,
       )}
       onClick={() => onViewModeChange(nextViewMode)}
@@ -2705,7 +2705,7 @@ function FocusedProjectCard({
       <SidebarMenuButton
         size="sm"
         isActive={selected}
-        className="h-8 gap-2 px-2 text-left hover:bg-accent data-[active=true]:bg-accent data-[active=true]:text-foreground dark:hover:text-white/86 dark:data-[active=true]:bg-white/[0.06] dark:data-[active=true]:text-white/82"
+        className="h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
         onClick={() => onSelect(project.projectKey)}
       >
         <ProjectFavicon
@@ -2806,7 +2806,7 @@ const FocusedSidebarProjectView = memo(function FocusedSidebarProjectView(
                   <button
                     type="button"
                     className={cn(
-                      "mt-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-foreground/72 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:text-white/82 dark:hover:text-white/86",
+                      "mt-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-foreground/72 transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:text-white/82 dark:hover:text-white/86",
                       SIDEBAR_LABEL_TEXT_CLASS,
                     )}
                   />
@@ -3046,7 +3046,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 <SidebarMenuButton
                   size="sm"
                   className={cn(
-                    "h-8 w-full justify-start gap-2 px-2 hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
+                    "h-8 w-full justify-start gap-2 px-2 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
                     SIDEBAR_MUTED_TEXT_CLASS,
                   )}
                   data-testid="command-palette-trigger"
@@ -3069,7 +3069,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             <SidebarMenuButton
               size="sm"
               className={cn(
-                "h-8 w-full justify-start gap-2 px-2 hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
+                "h-8 w-full justify-start gap-2 px-2 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
                 SIDEBAR_MUTED_TEXT_CLASS,
               )}
               data-testid="sidebar-add-project-trigger"

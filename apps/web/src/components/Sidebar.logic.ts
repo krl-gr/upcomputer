@@ -467,11 +467,14 @@ export function resolveThreadRowClassName(input: {
   if (input.isActive) {
     return cn(
       baseClassName,
-      "bg-accent/85 text-foreground hover:bg-accent dark:bg-white/[0.06] dark:text-white/92 dark:hover:bg-white/[0.06]",
+      "bg-sidebar-row-active text-sidebar-foreground hover:bg-sidebar-row-hover dark:text-white/92",
     );
   }
 
-  return cn(baseClassName, "hover:bg-accent hover:text-foreground dark:hover:text-white/92");
+  return cn(
+    baseClassName,
+    "hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/92",
+  );
 }
 
 // ── Sidebar v2 status model ─────────────────────────────────────────

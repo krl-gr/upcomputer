@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  Sidebar,
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuSubButton,
@@ -39,6 +40,20 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain('data-sidebar-state="collapsed"');
   });
+
+  it.each(["v1", "v2"] as const)(
+    "renders the UpComputer %s theme scope on the sidebar surface",
+    (version) => {
+      const html = renderToStaticMarkup(
+        <SidebarProvider>
+          <Sidebar data-upcomputer-sidebar-version={version}>Navigation</Sidebar>
+        </SidebarProvider>,
+      );
+
+      expect(html).toContain(`data-upcomputer-sidebar-version="${version}"`);
+      expect(html).toContain('data-slot="sidebar-container"');
+    },
+  );
 
   it("keeps the sidebar trigger interactive inside Electron drag regions", () => {
     const html = renderToStaticMarkup(
@@ -83,6 +98,21 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain('data-slot="sidebar-menu-sub-button"');
     expect(html).toContain("cursor-pointer");
+  });
+
+  it("uses shared row tokens for menu and submenu interaction states", () => {
+    const menuHtml = renderSidebarButton();
+    const submenuHtml = renderToStaticMarkup(
+      <SidebarMenuSubButton render={<button type="button" />} isActive>
+        Active thread
+      </SidebarMenuSubButton>,
+    );
+
+    for (const html of [menuHtml, submenuHtml]) {
+      expect(html).toContain("hover:bg-sidebar-row-hover");
+      expect(html).toContain("active:bg-sidebar-row-active");
+      expect(html).toContain("data-[active=true]:bg-sidebar-row-selected");
+    }
   });
 
   it("keeps the resize rail visually neutral on hover", () => {

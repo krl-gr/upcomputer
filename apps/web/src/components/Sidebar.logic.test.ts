@@ -991,10 +991,17 @@ describe("resolveThreadRowClassName", () => {
     expect(className).toContain("hover:bg-primary/19");
   });
 
-  it("uses the accent surface for active-only threads", () => {
+  it("uses shared sidebar row tokens for active-only threads", () => {
     const className = resolveThreadRowClassName({ isActive: true, isSelected: false });
-    expect(className).toContain("bg-accent/85");
-    expect(className).toContain("hover:bg-accent");
+    expect(className).toContain("bg-sidebar-row-active");
+    expect(className).toContain("hover:bg-sidebar-row-hover");
+    expect(className).not.toContain("bg-white");
+  });
+
+  it("uses the shared hover token for resting threads", () => {
+    const className = resolveThreadRowClassName({ isActive: false, isSelected: false });
+    expect(className).toContain("hover:bg-sidebar-row-hover");
+    expect(className).not.toContain("hover:bg-accent");
   });
 });
 

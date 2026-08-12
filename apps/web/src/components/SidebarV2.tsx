@@ -2321,7 +2321,7 @@ export default function SidebarV2() {
                             type="button"
                             aria-label={`Project actions for ${project.displayName}`}
                             title={`Project actions for ${project.displayName}`}
-                            className="ml-auto inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/55 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                            className="ml-auto inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/55 outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:bg-sidebar-row-hover focus-visible:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               void handleProjectActions(event, project);

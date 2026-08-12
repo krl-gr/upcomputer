@@ -96,6 +96,18 @@
   }
 }
 
+/* Scope the interaction tokens on the element that actually renders each
+ * implementation. This fork-owned hook intentionally avoids upstream's
+ * `data-sidebar-version`, which would also apply its opaque sidebar palette. */
+[data-upcomputer-sidebar-version="v1"],
+[data-upcomputer-sidebar-version="v2"] {
+  --sidebar-row-hover: var(--sidebar-accent);
+  --sidebar-row-active: var(--sidebar-accent);
+  --sidebar-row-selected: var(--sidebar-accent);
+  --sidebar-control-surface: var(--sidebar-accent);
+  --sidebar-muted-foreground: var(--sidebar-accent-foreground);
+}
+
 @layer components {
   /* Our composer sits on an opaque fade to the content background rather than
    * upstream's translucent glass card. */

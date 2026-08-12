@@ -81,8 +81,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     isActive={isActive}
                     className={
                       isActive
-                        ? "h-8 gap-2 px-2 text-left hover:bg-accent data-[active=true]:bg-accent data-[active=true]:text-foreground dark:hover:text-white/86 dark:data-[active=true]:bg-white/[0.06] dark:data-[active=true]:text-white/82"
-                        : `h-8 gap-2 px-2 text-left hover:bg-accent hover:text-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
+                        ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
+                        : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
                     }
                     onClick={() => handleSectionClick(item.to)}
                   >
@@ -109,8 +109,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     isActive={isActive}
                     className={
                       isActive
-                        ? "h-8 gap-2 px-2 text-left hover:bg-accent data-[active=true]:bg-accent data-[active=true]:text-foreground dark:hover:text-white/86 dark:data-[active=true]:bg-white/[0.06] dark:data-[active=true]:text-white/82"
-                        : `h-8 gap-2 px-2 text-left hover:bg-accent hover:text-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
+                        ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
+                        : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
                     }
                     onClick={() => handleSectionClick(item.to)}
                   >

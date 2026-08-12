@@ -59,10 +59,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <Sidebar
         side="left"
         collapsible="offcanvas"
-        // Our own hook for view-scoped styling. Deliberately not upstream's
-        // `data-sidebar-version`: that attribute carries their whole sidebar
-        // palette and an opaque background, which would override our tokens
-        // and hide the glass.
+        // Deliberately use a fork-owned version hook: upstream's similarly named
+        // attribute carries its whole opaque sidebar palette and hides our glass.
+        // Settings always render the v1 implementation, even when v2 is selected.
+        data-upcomputer-sidebar-version={showSidebarV2 ? "v2" : "v1"}
         data-sidebar-mode={sidebarViewMode}
         className="border-r border-black/[0.04] bg-transparent text-foreground dark:border-white/[0.03]"
         resizable={{
