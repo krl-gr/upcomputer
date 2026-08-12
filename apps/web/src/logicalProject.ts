@@ -5,6 +5,7 @@ export {
   derivePhysicalProjectKey,
   derivePhysicalProjectKeyFromPath,
   deriveProjectGroupLabel,
+  deriveProjectGroupVisualIdentityKey,
   deriveProjectGroupingOverrideKey,
   getProjectOrderKey,
   resolveProjectGroupingMode,

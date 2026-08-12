@@ -2293,8 +2293,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             <ProjectFavicon
               environmentId={project.environmentId}
               cwd={project.workspaceRoot}
-              label={project.displayName}
-              projectKey={project.projectKey}
+              repositoryIdentity={project.repositoryIdentity}
+              visualIdentityKey={project.visualIdentityKey}
               className="size-4 dark:text-white/[0.175]"
             />
             <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -2711,8 +2711,8 @@ function FocusedProjectCard({
         <ProjectFavicon
           environmentId={project.environmentId}
           cwd={project.workspaceRoot}
-          label={project.displayName}
-          projectKey={project.projectKey}
+          repositoryIdentity={project.repositoryIdentity}
+          visualIdentityKey={project.visualIdentityKey}
           className="size-4 dark:text-white/[0.175]"
         />
         <span className={cn("min-w-0 flex-1 truncate", SIDEBAR_LABEL_TEXT_CLASS)}>
@@ -2826,8 +2826,8 @@ const FocusedSidebarProjectView = memo(function FocusedSidebarProjectView(
                       <ProjectFavicon
                         environmentId={project.environmentId}
                         cwd={project.workspaceRoot}
-                        label={project.displayName}
-                        projectKey={project.projectKey}
+                        repositoryIdentity={project.repositoryIdentity}
+                        visualIdentityKey={project.visualIdentityKey}
                         className="size-4"
                       />
                       <span className="truncate">{project.displayName}</span>

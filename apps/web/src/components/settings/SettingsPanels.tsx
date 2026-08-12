@@ -1583,6 +1583,7 @@ export function ArchivedThreadsPanel() {
                 environmentId,
                 name: project.title,
                 cwd: project.workspaceRoot,
+                repositoryIdentity: project.repositoryIdentity,
               },
             ] as const,
         ),
@@ -1700,7 +1701,13 @@ export function ArchivedThreadsPanel() {
           <SettingsSection
             key={project.id}
             title={project.name}
-            icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
+            icon={
+              <ProjectFavicon
+                environmentId={project.environmentId}
+                cwd={project.cwd}
+                repositoryIdentity={project.repositoryIdentity}
+              />
+            }
           >
             {projectThreads.map((thread) => (
               <SettingsRow

@@ -1,9 +1,11 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import type { ProjectVisualIdentityKey } from "@t3tools/shared/projectFavicon";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   deriveProjectGroupLabel,
+  deriveProjectGroupVisualIdentityKey,
   type ProjectGroupingSettings,
 } from "./logicalProject";
 import type { Project } from "./types";
@@ -17,6 +19,7 @@ export interface SidebarProjectGroupMember extends Project {
 
 export interface SidebarProjectSnapshot extends Project {
   projectKey: string;
+  visualIdentityKey: ProjectVisualIdentityKey;
   displayName: string;
   groupedProjectCount: number;
   environmentPresence: EnvironmentPresence;
@@ -199,6 +202,7 @@ export function buildSidebarProjectSnapshots(input: {
     result.push({
       ...representative,
       projectKey: logicalKey,
+      visualIdentityKey: deriveProjectGroupVisualIdentityKey(representative, input.settings),
       displayName:
         members.length > 1
           ? deriveProjectGroupLabel({

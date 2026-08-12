@@ -1,5 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { isProjectFaviconFallbackUrl } from "@t3tools/shared/projectFavicon";
+import {
+  isProjectFaviconFallbackUrl,
+  resolveProjectVisualIdentityKey,
+  type ProjectVisualIdentityKey,
+  type ProjectVisualIdentityInput,
+  type ProjectVisualIdentityOverride,
+} from "@t3tools/shared/projectFavicon";
 import type { ComponentType, CSSProperties } from "react";
 import { useState } from "react";
 import { useAssetUrl } from "../assets/assetUrls";
@@ -19,10 +25,13 @@ function hashProjectAvatarSeed(seed: string): number {
   return hash >>> 0;
 }
 
-export function resolveProjectAvatarColorKey(seed: string): ProjectAvatarColorKey {
+export function resolveProjectAvatarColorKey(
+  identityKey: ProjectVisualIdentityKey,
+): ProjectAvatarColorKey {
   return (
-    PROJECT_AVATAR_COLOR_KEYS[hashProjectAvatarSeed(seed) % PROJECT_AVATAR_COLOR_KEYS.length] ??
-    "lime"
+    PROJECT_AVATAR_COLOR_KEYS[
+      hashProjectAvatarSeed(identityKey) % PROJECT_AVATAR_COLOR_KEYS.length
+    ] ?? "lime"
   );
 }
 
@@ -41,6 +50,20 @@ export function resolveProjectAvatarLetter(label: string): string {
   return (projectName?.match(/[\p{L}\p{N}]/u)?.[0] ?? "P").toLocaleUpperCase();
 }
 
+export function resolveProjectAvatarFallback(
+  input: ProjectVisualIdentityInput & ProjectVisualIdentityOverride,
+) {
+  const identityKey = resolveProjectVisualIdentityKey(input);
+  const colorKey = resolveProjectAvatarColorKey(identityKey);
+  return {
+    identityKey,
+    colorKey,
+    letter: resolveProjectAvatarLetter(identityKey),
+    background: `var(--project-avatar-background-${colorKey})`,
+    text: `var(--project-avatar-text-${colorKey})`,
+  } as const;
+}
+
 /**
  * Kept as a named export for call sites and tests; the actual shape is owned by
  * `@t3tools/shared/projectFavicon`, which the asset route emits.
@@ -49,25 +72,22 @@ export function isServerProjectFaviconFallbackUrl(src: string): boolean {
   return isProjectFaviconFallbackUrl(src);
 }
 
-type ProjectFaviconInput = {
-  environmentId: EnvironmentId;
-  cwd: string;
-  label?: string | undefined;
-  projectKey?: string | undefined;
-  className?: string | undefined;
-  /**
-   * Accepted for upstream call sites (SidebarV2) and ignored: this fork always
-   * falls back to the coloured project avatar, never a generic icon.
-   */
-  fallbackIcon?: ComponentType<{ className?: string }> | undefined;
-};
+type ProjectFaviconInput = ProjectVisualIdentityInput &
+  ProjectVisualIdentityOverride & {
+    environmentId: EnvironmentId;
+    className?: string | undefined;
+    /**
+     * Accepted for upstream call sites (SidebarV2) and ignored: this fork always
+     * falls back to the coloured project avatar, never a generic icon.
+     */
+    fallbackIcon?: ComponentType<{ className?: string }> | undefined;
+  };
 
 function ProjectAvatarFallback(input: Omit<ProjectFaviconInput, "environmentId">) {
-  const label = input.label ?? input.cwd;
-  const colorKey = resolveProjectAvatarColorKey(input.projectKey ?? input.cwd ?? label);
+  const fallback = resolveProjectAvatarFallback(input);
   const style = {
-    "--project-avatar-background": `var(--project-avatar-background-${colorKey})`,
-    "--project-avatar-text": `var(--project-avatar-text-${colorKey})`,
+    "--project-avatar-background": fallback.background,
+    "--project-avatar-text": fallback.text,
   } as CSSProperties;
 
   return (
@@ -94,7 +114,7 @@ function ProjectAvatarFallback(input: Omit<ProjectFaviconInput, "environmentId">
         fontWeight="600"
         fill="var(--project-avatar-text)"
       >
-        {resolveProjectAvatarLetter(label)}
+        {fallback.letter}
       </text>
     </svg>
   );

@@ -1,6 +1,11 @@
 import { scopedProjectKey, scopeProjectRef } from "../environment/scoped.ts";
 import type { ScopedProjectRef, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
+import {
+  deriveProjectVisualIdentityKey,
+  deriveRepositoryGroupVisualIdentityKey,
+  type ProjectVisualIdentityKey,
+} from "@t3tools/shared/projectFavicon";
 
 import type { EnvironmentProject } from "./models.ts";
 import { normalizeProjectPathForComparison } from "./projects.ts";
@@ -145,6 +150,26 @@ export function deriveLogicalProjectKeyFromSettings(
 ): string {
   return deriveLogicalProjectKey(project, {
     groupingMode: resolveProjectGroupingMode(project, settings),
+  });
+}
+
+/**
+ * Visual identity for a sidebar row. Repository-group rows intentionally use the
+ * repository identity; all other rows retain the canonical identity of the project.
+ * This must stay separate from logical/selection keys.
+ */
+export function deriveProjectGroupVisualIdentityKey(
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "repositoryIdentity">,
+  settings: ProjectGroupingSettings,
+): ProjectVisualIdentityKey {
+  const repositoryCanonicalKey = project.repositoryIdentity?.canonicalKey;
+  if (resolveProjectGroupingMode(project, settings) === "repository" && repositoryCanonicalKey) {
+    return deriveRepositoryGroupVisualIdentityKey(repositoryCanonicalKey);
+  }
+
+  return deriveProjectVisualIdentityKey({
+    cwd: project.workspaceRoot,
+    repositoryIdentity: project.repositoryIdentity,
   });
 }
 

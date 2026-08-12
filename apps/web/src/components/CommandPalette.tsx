@@ -797,6 +797,11 @@ function OpenCommandPaletteDialog(props: {
           <ProjectFavicon
             environmentId={project.environmentId}
             cwd={project.workspaceRoot}
+            repositoryIdentity={project.repositoryIdentity}
+            visualIdentityKey={
+              projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
+                ?.visualIdentityKey
+            }
             className={ITEM_ICON_CLASS}
           />
         ),
@@ -821,6 +826,11 @@ function OpenCommandPaletteDialog(props: {
             <ProjectFavicon
               environmentId={project.environmentId}
               cwd={project.workspaceRoot}
+              repositoryIdentity={project.repositoryIdentity}
+              visualIdentityKey={
+                projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
+                  ?.visualIdentityKey
+              }
               className={ITEM_ICON_CLASS}
             />
           ),

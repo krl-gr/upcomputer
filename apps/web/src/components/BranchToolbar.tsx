@@ -12,21 +12,7 @@ import {
 import { memo, useCallback, useMemo, type ReactNode } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
-import { useClientSettings } from "../hooks/useSettings";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  getProjectOrderKey,
-  selectProjectGroupingSettings,
-} from "../logicalProject";
-import {
-  useProject,
-  useProjects,
-  useThread,
-  useThreadShellsForProjectRefs,
-} from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
-import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { useProject, useThread, useThreadShellsForProjectRefs } from "../state/entities";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import {
   type EnvMode,
@@ -47,7 +33,6 @@ import {
   CONTEXT_BAR_SEPARATOR_CLASS,
 } from "./BranchToolbar.styles";
 import { Button } from "./ui/button";
-import { orderItemsByPreferredIds } from "./Sidebar.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "./sidebar/sidebarTextStyles";
 import {
@@ -286,47 +271,6 @@ export const BranchToolbar = memo(function BranchToolbar({
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const activeProject = useProject(activeProjectRef);
-  const projects = useProjects();
-  const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const orderedProjects = useMemo(
-    () =>
-      orderItemsByPreferredIds({
-        items: projects,
-        preferredIds: projectOrder,
-        getId: getProjectOrderKey,
-        getPreferenceIds: (project) => [
-          getProjectOrderKey(project),
-          legacyProjectCwdPreferenceKey(project.workspaceRoot),
-        ],
-      }),
-    [projectOrder, projects],
-  );
-  const sidebarProjects = useMemo(
-    () =>
-      buildSidebarProjectSnapshots({
-        projects: orderedProjects,
-        settings: projectGroupingSettings,
-        primaryEnvironmentId,
-        resolveEnvironmentLabel: () => null,
-      }),
-    [orderedProjects, primaryEnvironmentId, projectGroupingSettings],
-  );
-  const activeSidebarProject = useMemo(() => {
-    if (!activeProject) return null;
-    const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
-    return sidebarProjects.find((project) => project.projectKey === logicalKey) ?? null;
-  }, [activeProject, projectGroupingSettings, sidebarProjects]);
-  const activeProjectFavicon = useMemo(
-    () => ({
-      environmentId: activeSidebarProject?.environmentId ?? activeProject?.environmentId,
-      cwd: activeSidebarProject?.workspaceRoot ?? activeProject?.workspaceRoot,
-      label: activeSidebarProject?.displayName ?? activeProject?.title,
-      projectKey: activeSidebarProject?.projectKey ?? activeProject?.id,
-    }),
-    [activeProject, activeSidebarProject],
-  );
   const hasActiveThread = serverThread !== null || draftThread !== null;
   const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveEnvMode =
@@ -398,10 +342,9 @@ export const BranchToolbar = memo(function BranchToolbar({
             title={activeProject.workspaceRoot}
           >
             <ProjectFavicon
-              environmentId={activeProjectFavicon.environmentId ?? activeProject.environmentId}
-              cwd={activeProjectFavicon.cwd ?? activeProject.workspaceRoot}
-              label={activeProjectFavicon.label ?? activeProject.title}
-              projectKey={activeProjectFavicon.projectKey ?? activeProject.id}
+              environmentId={activeProject.environmentId}
+              cwd={activeProject.workspaceRoot}
+              repositoryIdentity={activeProject.repositoryIdentity}
               className="size-4 dark:text-white/[0.175]"
             />
             <span
@@ -449,10 +392,9 @@ export const BranchToolbar = memo(function BranchToolbar({
             <div className="flex min-w-0 shrink-0 items-center gap-0">
               <span className={CONTEXT_BAR_ICON_TRIGGER_CLASS} aria-hidden="true">
                 <ProjectFavicon
-                  environmentId={activeProjectFavicon.environmentId ?? activeProject.environmentId}
-                  cwd={activeProjectFavicon.cwd ?? activeProject.workspaceRoot}
-                  label={activeProjectFavicon.label ?? activeProject.title}
-                  projectKey={activeProjectFavicon.projectKey ?? activeProject.id}
+                  environmentId={activeProject.environmentId}
+                  cwd={activeProject.workspaceRoot}
+                  repositoryIdentity={activeProject.repositoryIdentity}
                   className="size-4"
                 />
               </span>

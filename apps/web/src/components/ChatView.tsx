@@ -6032,6 +6032,7 @@ function ChatViewContent(props: ChatViewProps) {
               activeThreadEnvironmentId={activeThread.environmentId}
               activeThreadId={activeThread.id}
               activeProjectCwd={activeProjectCwd}
+              activeProjectRepositoryIdentity={activeProject?.repositoryIdentity}
               {...(routeKind === "draft" && draftId ? { draftId } : {})}
               activeThreadTitle={activeThread.title}
               activeProjectName={activeProject?.title}

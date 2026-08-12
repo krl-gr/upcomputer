@@ -2,6 +2,7 @@ import {
   type EnvironmentId,
   type EditorId,
   type ProjectScript,
+  type RepositoryIdentity,
   type ResolvedKeybindingsConfig,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -27,6 +28,7 @@ interface ChatHeaderProps {
   activeThreadTitle: string;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
+  activeProjectRepositoryIdentity?: RepositoryIdentity | null | undefined;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -62,6 +64,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   activeProjectName,
   activeProjectCwd,
+  activeProjectRepositoryIdentity,
   openInCwd,
   activeProjectScripts,
   preferredScriptId,
@@ -96,6 +99,7 @@ export const ChatHeader = memo(function ChatHeader({
               <ProjectFavicon
                 environmentId={activeThreadEnvironmentId}
                 cwd={activeProjectCwd ?? ""}
+                repositoryIdentity={activeProjectRepositoryIdentity}
                 className="size-3.5"
               />
               <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
