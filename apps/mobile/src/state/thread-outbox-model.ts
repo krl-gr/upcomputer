@@ -1,5 +1,8 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentShellStatus,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import {
   CommandId,
   EnvironmentId,
@@ -14,11 +17,16 @@ import {
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
+  type ServerConfig,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import {
+  hasExistingThreadStarted,
+  resolveExistingThreadModelSelection,
+} from "../lib/effectiveThreadModelSelection";
 import { scopedThreadKey } from "../lib/scopedEntities";
 
 const THREAD_OUTBOX_SCHEMA_VERSION = 3;
@@ -80,21 +88,45 @@ export interface QueuedThreadMessage {
   readonly createdAt: string;
 }
 
-export interface ThreadSettingsSnapshot {
-  readonly modelSelection: ModelSelectionType;
-  readonly runtimeMode: RuntimeModeType;
-  readonly interactionMode: ProviderInteractionModeType;
-}
+export interface ThreadSettingsSnapshot extends Pick<
+  EnvironmentThreadShell,
+  "interactionMode" | "latestTurn" | "modelSelection" | "runtimeMode" | "session"
+> {}
 
 export function resolveQueuedThreadSettings(
   message: QueuedThreadMessage,
   thread: ThreadSettingsSnapshot,
-): ThreadSettingsSnapshot {
+  serverConfig: ServerConfig | null | undefined,
+): ThreadSettingsSnapshot | null {
+  const modelSelection = resolveExistingThreadModelSelection({
+    thread,
+    selectedModelSelection: message.modelSelection ?? thread.modelSelection,
+    serverConfig,
+  });
+  if (modelSelection === null) {
+    return null;
+  }
   return {
-    modelSelection: message.modelSelection ?? thread.modelSelection,
+    modelSelection,
     runtimeMode: message.runtimeMode ?? thread.runtimeMode,
     interactionMode: message.interactionMode ?? thread.interactionMode,
+    latestTurn: thread.latestTurn,
+    session: thread.session,
   };
+}
+
+export function shouldSynchronizeQueuedModelSelection(
+  settings: ThreadSettingsSnapshot,
+  thread: ThreadSettingsSnapshot,
+): boolean {
+  if (modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
+    return false;
+  }
+  if (!hasExistingThreadStarted(thread)) {
+    return true;
+  }
+  const boundInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  return settings.modelSelection.instanceId === boundInstanceId;
 }
 
 export function modelSelectionsEqual(left: ModelSelectionType, right: ModelSelectionType): boolean {

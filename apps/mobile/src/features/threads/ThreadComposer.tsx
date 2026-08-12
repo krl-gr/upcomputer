@@ -53,6 +53,7 @@ import {
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import { hasExistingThreadStarted } from "../../lib/effectiveThreadModelSelection";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
@@ -377,7 +378,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           type: "slash-command" as const,
           command: "model",
           label: "/model",
-          description: "Switch model",
+          description: "Change model",
         },
         {
           id: "cmd:plan",
@@ -580,9 +581,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   // ── Model menu ───────────────────────────────────────────
+  const startedThreadProviderInstanceId = hasExistingThreadStarted(props.selectedThread)
+    ? (props.selectedThread.session?.providerInstanceId ??
+      props.selectedThread.modelSelection.instanceId)
+    : null;
   const modelOptions = useMemo(
-    () => buildModelOptions(props.serverConfig, currentModelSelection),
-    [props.serverConfig, currentModelSelection],
+    () =>
+      buildModelOptions(props.serverConfig, currentModelSelection).filter(
+        (option) =>
+          startedThreadProviderInstanceId === null ||
+          option.selection.instanceId === startedThreadProviderInstanceId,
+      ),
+    [props.serverConfig, currentModelSelection, startedThreadProviderInstanceId],
   );
   const providerGroups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
   const currentModelOption =
@@ -867,6 +877,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 />
                 <ControlPillMenu
                   actions={modelMenuActions}
+                  title={
+                    startedThreadProviderInstanceId === null
+                      ? undefined
+                      : "Start a new or forked thread to switch providers."
+                  }
                   onPressAction={({ nativeEvent }) => handleModelMenuAction(nativeEvent.event)}
                 >
                   <ComposerToolbarTrigger

@@ -19,6 +19,7 @@ import {
   resolveThreadOutboxFailureAction,
   resolveQueuedThreadSettings,
   shouldRetryThreadOutboxDelivery,
+  shouldSynchronizeQueuedModelSelection,
   threadOutboxRetryDelayMs,
   type QueuedThreadMessage,
 } from "./thread-outbox-model";
@@ -98,16 +99,110 @@ describe("thread outbox", () => {
       selectedMessage,
     );
     expect(
-      resolveQueuedThreadSettings(legacyMessage, {
-        modelSelection: selectedMessage.modelSelection,
-        runtimeMode: selectedMessage.runtimeMode,
-        interactionMode: selectedMessage.interactionMode,
-      }),
+      resolveQueuedThreadSettings(
+        legacyMessage,
+        {
+          modelSelection: selectedMessage.modelSelection,
+          runtimeMode: selectedMessage.runtimeMode,
+          interactionMode: selectedMessage.interactionMode,
+          latestTurn: null,
+          session: null,
+        },
+        null,
+      ),
     ).toEqual({
       modelSelection: selectedMessage.modelSelection,
       runtimeMode: selectedMessage.runtimeMode,
       interactionMode: selectedMessage.interactionMode,
+      latestTurn: null,
+      session: null,
     });
+  });
+
+  it("normalizes a pre-session queued selection again at drain time before safe metadata sync", () => {
+    const queued = {
+      ...queuedMessage({
+        messageId: "message-bound",
+        createdAt: "2026-06-08T10:00:01.000Z",
+      }),
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex_personal"),
+        model: "personal-model",
+      },
+    } satisfies QueuedThreadMessage;
+    const thread = {
+      modelSelection: queued.modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      latestTurn: {} as never,
+      session: {
+        providerInstanceId: ProviderInstanceId.make("codex_work"),
+      } as never,
+    } as const;
+    const settings = resolveQueuedThreadSettings(queued, thread, {
+      providers: [
+        {
+          instanceId: "codex_work",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "work-default",
+              name: "Work Default",
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+        },
+      ],
+    } as never);
+
+    expect(settings?.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("codex_work"),
+      model: "work-default",
+    });
+    expect(settings && shouldSynchronizeQueuedModelSelection(settings, thread)).toBe(true);
+    expect(settings?.modelSelection.instanceId).toBe(ProviderInstanceId.make("codex_work"));
+    expect(
+      shouldSynchronizeQueuedModelSelection(
+        {
+          ...thread,
+          modelSelection: { ...queued.modelSelection, model: "other-personal-model" },
+        },
+        thread,
+      ),
+    ).toBe(false);
+  });
+
+  it("retains a historical mismatch before startTurn when catalog normalization is unavailable", () => {
+    const queued = {
+      ...queuedMessage({
+        messageId: "message-waiting",
+        createdAt: "2026-06-08T10:00:01.000Z",
+      }),
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex_personal"),
+        model: "personal-model",
+      },
+    } satisfies QueuedThreadMessage;
+
+    expect(
+      resolveQueuedThreadSettings(
+        queued,
+        {
+          modelSelection: queued.modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          latestTurn: {} as never,
+          session: {
+            providerInstanceId: ProviderInstanceId.make("codex_work"),
+          } as never,
+        },
+        null,
+      ),
+    ).toBeNull();
   });
 
   it("compares model options as part of the queued settings change", () => {

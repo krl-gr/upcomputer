@@ -5,7 +5,6 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import {
-  CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   type MessageId,
@@ -16,23 +15,22 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn";
 import { toUploadChatImageAttachments } from "../lib/composerImages";
+import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn";
 import { randomHex } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";
-import { useProjects, useThreadShells } from "./entities";
+import { useProjects, useServerConfigs, useThreadShells } from "./entities";
 import { ensureThreadOutboxLoaded, removeThreadOutboxMessage } from "./thread-outbox";
 import {
   isQueuedThreadCreationSendable,
-  modelSelectionsEqual,
   resolveThreadOutboxDeliveryAction,
   resolveThreadOutboxFailureAction,
-  resolveQueuedThreadSettings,
   threadOutboxRetryDelayMs,
   type QueuedThreadCreation,
   type QueuedThreadMessage,
   type ThreadOutboxCommandStage,
 } from "./thread-outbox-model";
+import { deliverQueuedThreadMessage } from "./thread-outbox-delivery";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
 import {
@@ -77,10 +75,6 @@ function findCreationProject(
   );
 }
 
-function settingsCommandId(message: QueuedThreadMessage, setting: string): CommandId {
-  return CommandId.make(`${message.commandId}:${setting}`);
-}
-
 export function useThreadOutboxDrain(): void {
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -98,6 +92,7 @@ export function useThreadOutboxDrain(): void {
   const shellStatuses = useThreadOutboxShellStatuses();
   const threads = useThreadShells();
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const [retryTick, setRetryTick] = useState(0);
   const retryAttemptRef = useRef(new Map<MessageId, number>());
@@ -163,77 +158,27 @@ export function useThreadOutboxDrain(): void {
 
   const sendQueuedMessage = useCallback(
     async (queuedMessage: QueuedThreadMessage, thread: EnvironmentThreadShell) => {
-      const settings = resolveQueuedThreadSettings(queuedMessage, thread);
       const { reportFailure, completeDelivery } = makeDeliveryHelpers(queuedMessage);
-
-      if (!modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
-        const updateResult = await updateThreadMetadata({
-          environmentId: queuedMessage.environmentId,
-          input: {
-            commandId: settingsCommandId(queuedMessage, "model-selection"),
-            threadId: queuedMessage.threadId,
-            modelSelection: settings.modelSelection,
-          },
-        });
-        if (AsyncResult.isFailure(updateResult)) {
-          reportFailure(updateResult, "settings-sync");
-          return false;
-        }
-      }
-
-      if (settings.runtimeMode !== thread.runtimeMode) {
-        const runtimeResult = await setThreadRuntimeMode({
-          environmentId: queuedMessage.environmentId,
-          input: {
-            commandId: settingsCommandId(queuedMessage, "runtime-mode"),
-            threadId: queuedMessage.threadId,
-            runtimeMode: settings.runtimeMode,
-            createdAt: queuedMessage.createdAt,
-          },
-        });
-        if (AsyncResult.isFailure(runtimeResult)) {
-          reportFailure(runtimeResult, "settings-sync");
-          return false;
-        }
-      }
-
-      if (settings.interactionMode !== thread.interactionMode) {
-        const interactionResult = await setThreadInteractionMode({
-          environmentId: queuedMessage.environmentId,
-          input: {
-            commandId: settingsCommandId(queuedMessage, "interaction-mode"),
-            threadId: queuedMessage.threadId,
-            interactionMode: settings.interactionMode,
-            createdAt: queuedMessage.createdAt,
-          },
-        });
-        if (AsyncResult.isFailure(interactionResult)) {
-          reportFailure(interactionResult, "settings-sync");
-          return false;
-        }
-      }
-
-      const deliveryResult = await startTurn({
-        environmentId: queuedMessage.environmentId,
-        input: {
-          commandId: queuedMessage.commandId,
-          threadId: queuedMessage.threadId,
-          message: {
-            messageId: queuedMessage.messageId,
-            role: "user",
-            text: queuedMessage.text,
-            attachments: toUploadChatImageAttachments(queuedMessage.attachments),
-          },
-          modelSelection: settings.modelSelection,
-          runtimeMode: settings.runtimeMode,
-          interactionMode: settings.interactionMode,
-          createdAt: queuedMessage.createdAt,
+      return deliverQueuedThreadMessage({
+        queuedMessage,
+        thread,
+        // Re-resolve at drain time because the session binding may have arrived
+        // after this message was queued while offline.
+        serverConfig: serverConfigs.get(queuedMessage.environmentId),
+        commands: {
+          startTurn,
+          updateThreadMetadata,
+          setThreadRuntimeMode,
+          setThreadInteractionMode,
         },
+        toUploadAttachments: toUploadChatImageAttachments,
+        reportFailure,
+        completeDelivery,
       });
-      return completeDelivery(deliveryResult);
     },
     [
       makeDeliveryHelpers,
+      serverConfigs,
       setThreadInteractionMode,
       setThreadRuntimeMode,
       startTurn,

@@ -20,6 +20,7 @@ import {
   pickComposerImages,
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import { resolveExistingThreadModelSelection } from "../lib/effectiveThreadModelSelection";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { buildThreadFeed } from "../lib/threadActivity";
 import { appAtomRegistry } from "../state/atom-registry";
@@ -38,6 +39,7 @@ import {
 import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
+import { useEnvironmentServerConfig } from "./entities";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
@@ -77,6 +79,7 @@ export function useThreadComposerState() {
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const serverConfig = useEnvironmentServerConfig(selectedThreadShell?.environmentId ?? null);
 
   useEffect(() => {
     ensureComposerDraftsLoaded();
@@ -99,7 +102,18 @@ export function useThreadComposerState() {
   const draftAttachments = selectedDraft?.attachments ?? [];
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
-  const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
+  const selectedModelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection;
+  const modelSelection = useMemo(
+    () =>
+      selectedThread && selectedModelSelection
+        ? resolveExistingThreadModelSelection({
+            thread: selectedThread,
+            selectedModelSelection,
+            serverConfig,
+          })
+        : null,
+    [selectedModelSelection, selectedThread, serverConfig],
+  );
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   const interactionMode = selectedDraft?.interactionMode ?? selectedThread?.interactionMode ?? null;
 
@@ -146,6 +160,18 @@ export function useThreadComposerState() {
       return null;
     }
 
+    const effectiveModelSelection = resolveExistingThreadModelSelection({
+      thread,
+      selectedModelSelection: draft.modelSelection ?? thread.modelSelection,
+      serverConfig,
+    });
+    if (effectiveModelSelection === null) {
+      setPendingConnectionError(
+        "Provider details are still syncing. Your message remains in the composer.",
+      );
+      return null;
+    }
+
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
     try {
@@ -156,7 +182,7 @@ export function useThreadComposerState() {
         commandId: CommandId.make(metadata.commandId),
         text,
         attachments,
-        modelSelection: draft.modelSelection ?? thread.modelSelection,
+        modelSelection: effectiveModelSelection,
         runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
         interactionMode: draft.interactionMode ?? thread.interactionMode,
         createdAt: metadata.createdAt,
@@ -169,7 +195,7 @@ export function useThreadComposerState() {
       );
       return null;
     }
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedThreadDetail, selectedThreadShell, serverConfig]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
@@ -261,12 +287,27 @@ export function useThreadComposerState() {
 
   const onUpdateModelSelection = useCallback(
     (value: ModelSelection) => {
-      if (!selectedThreadKey) {
+      if (!selectedThreadKey || !selectedThread) {
         return;
       }
-      updateComposerDraftSettings(selectedThreadKey, { modelSelection: value });
+      const effectiveSelection = resolveExistingThreadModelSelection({
+        thread: selectedThread,
+        selectedModelSelection: value,
+        serverConfig,
+      });
+      if (effectiveSelection === null) {
+        setPendingConnectionError("Provider details are still syncing. Try again shortly.");
+        return;
+      }
+      if (effectiveSelection.instanceId !== value.instanceId) {
+        setPendingConnectionError(
+          "Start a new or forked thread to switch provider instances after work has started.",
+        );
+        return;
+      }
+      updateComposerDraftSettings(selectedThreadKey, { modelSelection: effectiveSelection });
     },
-    [selectedThreadKey],
+    [selectedThread, selectedThreadKey, serverConfig],
   );
 
   const onUpdateRuntimeMode = useCallback(
