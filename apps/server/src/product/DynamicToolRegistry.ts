@@ -19,6 +19,8 @@ export interface ExperimentalDynamicToolSpec {
   readonly name: string;
   readonly namespace?: string;
   readonly description: string;
+  /** Missing classification fails closed and is treated as a write. */
+  readonly mutation?: "read" | "write";
   readonly inputSchema: Record<string, unknown>;
 }
 
@@ -234,6 +236,12 @@ function executeRegisteredTool<R, E>(
         toolName,
       ),
     );
+  }
+  if (context.mutationPolicy !== "allow" && tool.registration.spec.mutation !== "read") {
+    return Effect.succeed({
+      isError: true,
+      text: `Mutation denied for dynamic tool '${toolName}' by the active interaction mode.`,
+    });
   }
   return tool.registration.execute(input, context);
 }

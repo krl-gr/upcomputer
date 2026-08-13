@@ -4,6 +4,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
@@ -35,6 +37,11 @@ import * as TestClock from "effect/testing/TestClock";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { BUILT_IN_INTERACTION_MODE_REGISTRY } from "../../product/BuiltInInteractionModes.ts";
+import {
+  createExperimentalDynamicToolRegistry,
+  type ExperimentalDynamicToolRegistry,
+  type ExperimentalDynamicToolInvocationContext,
+} from "../../product/DynamicToolRegistry.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ASK_MODE_PROMPT_PREFIX, DEFAULT_MODE_PROMPT_PREFIX } from "../AskModeInstructions.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
@@ -158,6 +165,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly dynamicToolRegistry?: ExperimentalDynamicToolRegistry<never, never>;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -169,6 +177,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.dynamicToolRegistry ? { dynamicToolRegistry: config.dynamicToolRegistry } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -357,6 +366,96 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect(
+    "exposes leased dynamic tools through app-owned MCP with canonical turn context",
+    () => {
+      const calls: Array<ExperimentalDynamicToolInvocationContext> = [];
+      const dynamicToolRegistry = createExperimentalDynamicToolRegistry([
+        {
+          ownerId: "test.claude-tasks",
+          version: 1,
+          tools: [
+            {
+              spec: {
+                type: "function",
+                namespace: "upcomputer_tasks",
+                name: "task_update",
+                description: "Update a task.",
+                mutation: "write",
+                inputSchema: {
+                  type: "object",
+                  properties: { id: { type: "string" } },
+                  required: ["id"],
+                },
+              },
+              execute: (_args, context) => {
+                calls.push(context);
+                return Effect.succeed({ isError: false, text: "updated" });
+              },
+            },
+          ],
+        },
+      ]);
+      const harness = makeHarness({ dynamicToolRegistry });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const createInput = harness.getLastCreateQueryInput();
+        const server = createInput?.options.mcpServers?.upcomputer_tasks;
+        assert.equal(server?.type, "sdk");
+        if (!server || server.type !== "sdk" || !("instance" in server)) return;
+
+        const turn = yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "Update it",
+          interactionMode: "default",
+          resolvedInteractionMode: BUILT_IN_INTERACTION_MODE_REGISTRY.resolveOrThrow(
+            "default",
+            "claudeAgent",
+          ),
+          attachments: [],
+        });
+
+        const result = yield* Effect.tryPromise(async () => {
+          const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+          const client = new Client({ name: "test", version: "1" });
+          await Promise.all([
+            server.instance.connect(serverTransport),
+            client.connect(clientTransport),
+          ]);
+          const listed = await client.listTools();
+          assert.deepEqual(listed.tools[0]?.inputSchema, {
+            type: "object",
+            properties: { id: { type: "string" } },
+            required: ["id"],
+          });
+          const called = await client.callTool({
+            name: "task_update",
+            arguments: { id: "task-1" },
+          });
+          await client.close();
+          return called;
+        });
+
+        assert.equal(result.isError, false);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0]?.source, "provider");
+        assert.equal(calls[0]?.mutationPolicy, "allow");
+        assert.equal(calls[0]?.threadId, THREAD_ID);
+        assert.equal(calls[0]?.turnId, turn.turnId);
+        assert.equal(calls[0]?.runtimeMode, "full-access");
+        assert.equal(calls[0]?.interactionMode, "default");
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("derives auto permission mode from auto runtime policy without skip flag", () => {
     const harness = makeHarness();

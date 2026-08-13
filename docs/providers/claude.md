@@ -222,3 +222,25 @@ If the preset needs different Claude files, give it a different `Claude HOME pat
 different API keys, base URLs, or router settings, use Environment variables.
 
 Do not put environment variable assignments in `Launch arguments`.
+
+## App-Owned Dynamic Tools
+
+UpComputer extensions can register provider dynamic tools, including task-orchestration tools. For
+Claude Agent sessions these are transported as in-process SDK MCP servers because Claude Agent SDK
+0.3.170 (Claude Code 2.1.170) supports app-defined tools through `createSdkMcpServer`, while its
+`tool()` helper requires Zod schemas rather than the registry's canonical JSON Schemas. UpComputer
+uses low-level handlers on the app-owned SDK MCP server so tool names, namespaces, descriptions, and
+JSON Schemas are transported without translation or duplicated definitions.
+
+The bridge exposes only the immutable registry lease admitted when the provider session starts. It
+does not read repository MCP configuration or proxy arbitrary MCP servers. Calls are mapped back to
+the leased registry entry and receive the active UpComputer thread, turn, provider instance, model,
+runtime mode, interaction mode, and mutation policy. Mutation policy is enforced again by the
+canonical tool service; Claude permission mode and Computer Use approval remain separate controls.
+Unknown, stale, malformed, colliding, or out-of-turn calls fail closed, and unexpected handler
+failures return a bounded generic error to Claude.
+
+Registry changes do not mutate a running Claude session. Stop and start the provider session to
+refresh tools. Resuming creates a new SDK query and therefore receives a fresh lease. This behavior
+is supported for the bundled SDK/Claude Code versions above; upgrades should retain the focused MCP
+bridge compatibility tests.

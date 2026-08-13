@@ -70,6 +70,10 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import type {
+  ExperimentalDynamicToolRegistry,
+  ExperimentalDynamicToolInvocationContext,
+} from "../../product/DynamicToolRegistry.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -90,6 +94,7 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ProviderAdapterSendTurnInput } from "../Services/ProviderAdapter.ts";
+import { makeClaudeDynamicToolMcpServers } from "./ClaudeDynamicToolMcp.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.UnknownFromJsonString);
@@ -126,6 +131,7 @@ interface ClaudeResumeState {
 interface ClaudeTurnState {
   readonly turnId: TurnId;
   readonly startedAt: string;
+  readonly dynamicToolContext: ExperimentalDynamicToolInvocationContext;
   /**
    * True for turns auto-started by assistant output arriving without an
    * active turn (background agent/subagent responses between user prompts).
@@ -221,6 +227,7 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
+  readonly dynamicToolRegistry?: ExperimentalDynamicToolRegistry<never, never>;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
@@ -2519,6 +2526,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.turnState = {
         turnId,
         startedAt,
+        dynamicToolContext: {
+          source: "provider",
+          mutationPolicy: "deny",
+          threadId: context.session.threadId,
+          turnId,
+          providerInstanceId: boundInstanceId,
+          runtimeMode: context.session.runtimeMode,
+        },
         synthetic: true,
         items: [],
         assistantTextBlocks: new Map(),
@@ -3240,6 +3255,36 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const claudeTasks = new Map<string, ClaudeTaskState>();
 
       const contextRef = yield* Ref.make<ClaudeSessionContext | undefined>(undefined);
+      // A lease is immutable for the provider-session lifetime. Registry changes
+      // are admitted only after startSession is called again (including resume).
+      const dynamicToolLease = options?.dynamicToolRegistry?.lease();
+      const dynamicToolMcpServers = dynamicToolLease
+        ? yield* Effect.try({
+            try: () =>
+              makeClaudeDynamicToolMcpServers({
+                lease: dynamicToolLease,
+                invocationContext: () => {
+                  const context = Ref.getUnsafe(contextRef);
+                  return context?.turnState?.dynamicToolContext;
+                },
+                onExecutionFailure: ({ namespace, toolName, cause }) => {
+                  runFork(
+                    Effect.logError("Claude dynamic tool execution failed", {
+                      ownerNamespace: namespace ?? null,
+                      toolName,
+                      cause,
+                    }),
+                  );
+                },
+              }),
+            catch: (cause) =>
+              new ProviderAdapterValidationError({
+                provider: PROVIDER,
+                operation: "startSession",
+                issue: `Failed to admit Claude dynamic tools: ${toMessage(cause, "invalid tool configuration")}`,
+              }),
+          })
+        : {};
 
       /**
        * Handle AskUserQuestion tool calls by emitting a `user-input.requested`
@@ -3567,6 +3612,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(ultracode ? { ultracode: true } : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      if (mcpSession && Object.hasOwn(dynamicToolMcpServers, "t3-code")) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Dynamic-tool namespace 't3-code' conflicts with the app MCP session.",
+        });
+      }
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -3592,16 +3644,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         env: claudeEnvironment,
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
+        ...(Object.keys(dynamicToolMcpServers).length > 0 || mcpSession
           ? {
               mcpServers: {
-                "t3-code": {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
-                  },
-                },
+                ...dynamicToolMcpServers,
+                ...(mcpSession
+                  ? {
+                      "t3-code": {
+                        type: "http" as const,
+                        url: mcpSession.endpoint,
+                        headers: {
+                          Authorization: mcpSession.authorizationHeader,
+                        },
+                      },
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -3814,6 +3871,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,
+        dynamicToolContext: {
+          source: "provider",
+          mutationPolicy: input.resolvedInteractionMode?.safety.mutations ?? "deny",
+          threadId: context.session.threadId,
+          turnId,
+          providerInstanceId: boundInstanceId,
+          runtimeMode: context.session.runtimeMode,
+          ...(modelSelection ? { modelSelection } : {}),
+          ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
+        },
         items: [],
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
