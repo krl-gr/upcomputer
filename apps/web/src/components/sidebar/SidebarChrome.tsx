@@ -93,7 +93,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
           <SidebarMenuButton
             size="sm"
             className={cn(
-              "h-8 w-full justify-start gap-2 px-2 hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
+              "h-8 w-full justify-start gap-2 px-2 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset dark:hover:text-white/86",
               SIDEBAR_MUTED_TEXT_CLASS,
             )}
             onClick={handleSettingsClick}
