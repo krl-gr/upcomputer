@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ProviderOptionDescriptor } from "@t3tools/contracts";
-import { buildTraitsTriggerDisplay } from "./TraitsPicker";
+import type { ProviderDriverKind, ProviderOptionDescriptor } from "@t3tools/contracts";
+import { buildTraitsTriggerDisplay, getTraitsTriggerPresentation } from "./TraitsPicker";
 
 function selectDescriptor(
   id: string,
@@ -41,6 +41,37 @@ function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>, fastModeE
     fastModeEnabled,
   });
 }
+
+describe("traits trigger presentation", () => {
+  it("keeps the composer affordance and responsive width cap", () => {
+    const presentation = getTraitsTriggerPresentation({
+      provider: "codex" as ProviderDriverKind,
+      presentation: "composer",
+    });
+
+    expect(presentation.showChevron).toBe(true);
+    expect(presentation.triggerClassName).toContain("max-w-40");
+    expect(presentation.triggerClassName).toContain("sm:max-w-48");
+    expect(presentation.triggerClassName).toContain("text-muted-foreground/70");
+  });
+
+  it("uses the uncapped foreground detail-row contract without a chevron", () => {
+    const presentation = getTraitsTriggerPresentation({
+      provider: "codex" as ProviderDriverKind,
+      presentation: "detail-row",
+    });
+
+    expect(presentation.showChevron).toBe(false);
+    expect(presentation.triggerClassName).toContain("w-full");
+    expect(presentation.triggerClassName).toContain("min-w-0");
+    expect(presentation.triggerClassName).toContain("justify-end");
+    expect(presentation.triggerClassName).toContain("!bg-transparent");
+    expect(presentation.triggerClassName).toContain("!text-foreground");
+    expect(presentation.triggerClassName).not.toContain("max-w-40");
+    expect(presentation.triggerClassName).not.toContain("sm:max-w-48");
+    expect(presentation.triggerClassName).not.toContain("text-muted-foreground");
+  });
+});
 
 describe("buildTraitsTriggerDisplay", () => {
   it("omits fast mode from the label entirely when it is off", () => {

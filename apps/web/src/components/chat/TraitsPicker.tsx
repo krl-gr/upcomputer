@@ -218,6 +218,7 @@ export interface TraitsMenuContentProps {
   allowPromptInjectedEffort?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+  triggerPresentation?: "composer" | "detail-row";
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -419,6 +420,35 @@ export function buildTraitsTriggerDisplay(input: {
   return { label: labels.join(" · "), showFastModeIcon: input.fastModeEnabled };
 }
 
+export function getTraitsTriggerPresentation(input: {
+  provider: ProviderDriverKind;
+  presentation: "composer" | "detail-row";
+}): {
+  triggerClassName: string;
+  contentClassName: string | null;
+  showChevron: boolean;
+} {
+  if (input.presentation === "detail-row") {
+    return {
+      triggerClassName:
+        "h-8 min-h-8 w-full min-w-0 max-w-full shrink justify-end overflow-hidden whitespace-nowrap border-0 !bg-transparent px-0 text-right text-sm font-normal leading-relaxed tracking-normal !text-foreground shadow-none hover:!text-foreground [&_svg]:mx-0",
+      contentClassName:
+        "flex min-w-0 w-full items-center justify-end gap-1.5 overflow-hidden text-right",
+      showChevron: false,
+    };
+  }
+
+  return {
+    triggerClassName:
+      input.provider === "codex"
+        ? "min-w-0 max-w-40 shrink justify-start overflow-hidden whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:max-w-48 sm:px-3 [&_svg]:mx-0"
+        : "shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3",
+    contentClassName:
+      input.provider === "codex" ? "flex min-w-0 w-full items-center gap-2 overflow-hidden" : null,
+    showChevron: true,
+  };
+}
+
 export const TraitsPicker = memo(function TraitsPicker({
   provider,
   instanceId,
@@ -430,6 +460,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   allowPromptInjectedEffort = true,
   triggerVariant,
   triggerClassName,
+  triggerPresentation = "composer",
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -468,7 +499,11 @@ export const TraitsPicker = memo(function TraitsPicker({
     </>
   ) : null;
 
-  const isCodexStyle = provider === "codex";
+  const triggerPresentationContract = getTraitsTriggerPresentation({
+    provider,
+    presentation: triggerPresentation,
+  });
+  const usesStructuredContent = triggerPresentation === "detail-row" || provider === "codex";
 
   return (
     <Menu
@@ -482,24 +517,21 @@ export const TraitsPicker = memo(function TraitsPicker({
           <Button
             size="sm"
             variant={triggerVariant ?? "ghost"}
-            className={cn(
-              isCodexStyle
-                ? "min-w-0 max-w-40 shrink justify-start overflow-hidden whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:max-w-48 sm:px-3 [&_svg]:mx-0"
-                : "shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3",
-              triggerClassName,
-            )}
+            className={cn(triggerPresentationContract.triggerClassName, triggerClassName)}
           />
         }
       >
-        {isCodexStyle ? (
-          <span className="flex min-w-0 w-full items-center gap-2 overflow-hidden">
+        {usesStructuredContent ? (
+          <span className={triggerPresentationContract.contentClassName ?? undefined}>
             {fastModeIcon}
             <span className="min-w-0 truncate">{triggerLabel}</span>
-            <ChevronDownIcon
-              aria-hidden="true"
-              className="size-3 shrink-0 opacity-60"
-              data-composer-control-chevron
-            />
+            {triggerPresentationContract.showChevron ? (
+              <ChevronDownIcon
+                aria-hidden="true"
+                className="size-3 shrink-0 opacity-60"
+                data-composer-control-chevron
+              />
+            ) : null}
           </span>
         ) : (
           <>
