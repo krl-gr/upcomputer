@@ -41,6 +41,7 @@ import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@t3tools/shared/upcomputerReleasePolicy";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -299,7 +300,6 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { ServerUpdateAction } from "./ServerUpdateAction";
 import {
   buildVersionMismatchDismissalKey,
   dismissVersionMismatch,
@@ -1684,6 +1684,8 @@ function ChatViewContent(props: ChatViewProps) {
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
+  const activeEnvironmentSshUnavailable =
+    activeEnvironment?.entry.target._tag === "SshConnectionTarget";
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
   const activeEnvironmentUnavailableState = useMemo<EnvironmentUnavailableState | null>(() => {
     if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
@@ -1918,22 +1920,25 @@ function ChatViewContent(props: ChatViewProps) {
         variant: connection.phase === "error" ? "error" : "warning",
         icon: <WifiOffIcon />,
         title: `${activeEnvironmentUnavailableState.label}: ${connectionStatusTitle(connection)}`,
-        description:
-          connection.error ??
-          "Reconnect this environment before sending messages or running actions.",
+        description: activeEnvironmentSshUnavailable
+          ? UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE
+          : (connection.error ??
+            "Reconnect this environment before sending messages or running actions."),
         actions: (
           <>
-            <Button
-              size="xs"
-              disabled={isReconnecting}
-              onClick={() =>
-                void handleReconnectActiveEnvironment(
-                  activeEnvironmentUnavailableState.environmentId,
-                )
-              }
-            >
-              {isReconnecting ? "Reconnecting..." : "Reconnect"}
-            </Button>
+            {!activeEnvironmentSshUnavailable ? (
+              <Button
+                size="xs"
+                disabled={isReconnecting}
+                onClick={() =>
+                  void handleReconnectActiveEnvironment(
+                    activeEnvironmentUnavailableState.environmentId,
+                  )
+                }
+              >
+                {isReconnecting ? "Reconnecting..." : "Reconnect"}
+              </Button>
+            ) : null}
             <Button
               size="xs"
               variant="outline"
@@ -1963,17 +1968,9 @@ function ChatViewContent(props: ChatViewProps) {
             {serverUpdateGuidance(versionMismatchSelfUpdate, versionMismatchServerLabel)}
           </>
         ),
-        // The desktop-managed guidance is already the description; the action
-        // slot would only repeat it.
-        actions:
-          versionMismatchSelfUpdate === "desktop-managed" ? undefined : (
-            <ServerUpdateAction
-              environmentId={versionMismatchEnvironmentId}
-              serverLabel={versionMismatchServerLabel}
-              selfUpdate={versionMismatchSelfUpdate}
-              targetVersion={versionMismatch.clientVersion}
-            />
-          ),
+        // Guidance is deliberately informational in this release. No remote
+        // npm update or copied CLI command is available from the banner.
+        actions: undefined,
         dismissLabel: "Dismiss version mismatch warning",
         onDismiss: () => {
           dismissVersionMismatch(versionMismatchDismissKey);
@@ -1983,6 +1980,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return items;
   }, [
+    activeEnvironmentSshUnavailable,
     activeEnvironmentUnavailableState,
     handleReconnectActiveEnvironment,
     navigate,

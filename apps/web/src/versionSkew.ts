@@ -1,4 +1,5 @@
 import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@t3tools/shared/upcomputerReleasePolicy";
 import * as Schema from "effect/Schema";
 
 import { APP_VERSION } from "./branding";
@@ -39,7 +40,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same Up.computer version.",
+    hint: "Version mismatch. Update the Desktop app that owns the backend when possible; official remote server updates are unavailable in this release.",
   };
 }
 
@@ -57,26 +58,16 @@ export function resolveServerSelfUpdateCapability(
   return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
 }
 
-/** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx t3@${targetVersion}`;
-}
-
 /** One sentence telling the user how to resolve version skew for a server,
     matched to the update path it offers. */
 export function serverUpdateGuidance(
   capability: ServerSelfUpdateCapability | null,
   serverLabel: string,
 ): string {
-  switch (capability) {
-    case "boot-service":
-    case "respawn":
-      return `Update the ${serverLabel} so they stay in sync.`;
-    case "desktop-managed":
-      return `The ${serverLabel} is run by the T3 Code desktop app on its machine — update the desktop app there to sync them.`;
-    default:
-      return `Relaunch the ${serverLabel} with the copied command to sync them.`;
+  if (capability === "desktop-managed") {
+    return `The ${serverLabel} is run by a Desktop app on its machine — update that app to sync them.`;
   }
+  return UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE;
 }
 
 export function buildVersionMismatchDismissalKey(

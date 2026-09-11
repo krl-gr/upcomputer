@@ -206,52 +206,32 @@ describe("connection onboarding", () => {
     }),
   );
 
-  it.effect("prepares an SSH registration from the provisioned platform environment", () =>
+  it.effect("blocks SSH registration before invoking the platform gateway", () =>
     Effect.gen(function* () {
-      const target = {
-        alias: "devbox",
-        hostname: "devbox.example.test",
-        username: "developer",
-        port: 22,
-      };
-      const registration = yield* prepareSshRegistration({
-        target,
+      const error = yield* prepareSshRegistration({
+        target: {
+          alias: "devbox",
+          hostname: "devbox.example.test",
+          username: "developer",
+          port: 22,
+        },
       }).pipe(
         Effect.provideService(
           SshEnvironmentGateway,
           SshEnvironmentGateway.of({
-            provision: () =>
-              Effect.succeed({
-                environmentId: EnvironmentId.make("environment-ssh"),
-                label: "Remote development box",
-                bootstrap: {
-                  target,
-                  httpBaseUrl: "http://127.0.0.1:3201",
-                  wsBaseUrl: "ws://127.0.0.1:3201",
-                  pairingToken: "pairing-token",
-                },
-                bearerToken: "bearer-token",
-              }),
-            prepare: () => Effect.die("unused"),
-            disconnect: () => Effect.die("unused"),
+            provision: () => Effect.die("SSH gateway must not be invoked"),
+            prepare: () => Effect.die("SSH gateway must not be invoked"),
+            disconnect: () => Effect.void,
           }),
         ),
+        Effect.flip,
       );
 
-      expect(registration).toMatchObject({
-        _tag: "SshConnectionRegistration",
-        target: {
-          environmentId: "environment-ssh",
-          label: "Remote development box",
-          connectionId: "ssh:environment-ssh",
-        },
-        profile: {
-          environmentId: "environment-ssh",
-          label: "Remote development box",
-          connectionId: "ssh:environment-ssh",
-          target,
-        },
+      expect(error).toMatchObject({
+        _tag: "ConnectionBlockedError",
+        reason: "unsupported",
       });
+      expect(error.detail).toContain("Official remote server installation");
     }),
   );
 });

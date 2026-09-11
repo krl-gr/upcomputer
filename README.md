@@ -5,7 +5,7 @@ The desktop workspace for coding-agent CLIs.
 Up.computer runs coding-agent CLIs from one visual surface. Keep Codex CLI,
 Claude Code, Cursor CLI, OpenCode, your editor, and your git workflow. Add
 durable threads, terminals, diffs, branches, source-control actions, and local
-or remote environment controls around them.
+Desktop environment controls around them.
 
 ## Status
 
@@ -28,7 +28,9 @@ binary is not represented by this public source tree alone.
 
 The official installer includes the built-in **Up** agent runtime, so a user can install
 Up.computer, sign in or configure a supported BYOK provider, and start without installing a
-third-party harness. Browser and Computer Use are integrated through that runtime.
+third-party harness. Browser and Computer Use are integrated through that runtime. The current
+release is local Desktop only; it does not distribute an official npm CLI or headless server. The
+public npm package named `t3` belongs to upstream T3 Code and is not an Up.computer install path.
 
 The public Core source also supports external provider CLIs. Install and authenticate any optional
 runtime you want to use:
@@ -85,8 +87,8 @@ vp run dev:marketing
 - Review changed files and diffs before trusting or shipping a run.
 - Use integrated terminals in the same project/worktree context.
 - Commit, push, publish repositories, and open pull requests from the app.
-- Work against local, network, and SSH-backed environments as that support
-  matures.
+- Work against local Desktop projects and use T3 Connect with the bundled Desktop backend.
+- Preserve existing remote-environment records while official remote support remains unavailable.
 
 ## Repository Layout
 

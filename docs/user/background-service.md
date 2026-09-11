@@ -1,42 +1,11 @@
-# Running T3 Code in the Background
+# Background service availability
 
-On a Linux host, T3 Code can run as a background service for your user. It starts when the machine
-boots and keeps running after you log out.
+Up.computer does not provide an official headless or background-service installation in this
+release. The supported backend is bundled with and managed by the local Desktop application.
 
-## Manage the Service
+The npm package named `t3` belongs to upstream T3 Code. Its service commands do not install or
+repair an official Up.computer backend and must not be used as an Up.computer update path.
 
-Install it with the latest T3 Code release:
-
-```sh
-npx t3@latest service install
-```
-
-Check whether it is installed:
-
-```sh
-npx t3@latest service status
-```
-
-Update or repair it:
-
-```sh
-npx t3@latest service update
-```
-
-Stop it and remove it from startup:
-
-```sh
-npx t3@latest service uninstall
-```
-
-Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.
-
-## Using It with T3 Connect
-
-T3 Connect may offer to install the service during setup so the host stays reachable after you log
-out. This is only an onboarding shortcut: the service and T3 Connect are managed separately.
-
-Signing out of T3 Connect does not remove the service. Use `t3 service uninstall` when you no longer
-want T3 Code to start in the background.
-
-The background service currently requires Linux with systemd.
+Existing service installations are not migrated or deleted by this policy. Their data remains on
+the machine, but they are not officially supported by this release. A future server/CLI
+distribution decision will define a supported installation and migration path.

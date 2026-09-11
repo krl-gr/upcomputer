@@ -1,6 +1,10 @@
 import type { DesktopWslState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { applyWslEnableSelection } from "./ConnectionsSettings.logic";
+import {
+  applyWslEnableSelection,
+  canConnectSavedEnvironment,
+  canOfferSshEnvironmentOnboarding,
+} from "./ConnectionsSettings.logic";
 
 const baseWslState: DesktopWslState = {
   enabled: false,
@@ -10,6 +14,15 @@ const baseWslState: DesktopWslState = {
   distros: [],
   preflightError: null,
 };
+
+describe("connection release policy", () => {
+  it("hides SSH onboarding and reconnect while preserving other saved environments", () => {
+    expect(canOfferSshEnvironmentOnboarding()).toBe(false);
+    expect(canConnectSavedEnvironment("SshConnectionTarget")).toBe(false);
+    expect(canConnectSavedEnvironment("BearerConnectionTarget")).toBe(true);
+    expect(canConnectSavedEnvironment("RelayConnectionTarget")).toBe(true);
+  });
+});
 
 describe("applyWslEnableSelection", () => {
   it("clears WSL-only and updates the distro before enabling both backends", async () => {

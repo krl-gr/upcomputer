@@ -1,5 +1,9 @@
 import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
 import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import {
+  UPCOMPUTER_RELEASE_CAPABILITIES,
+  UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+} from "@t3tools/shared/upcomputerReleasePolicy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -213,6 +217,13 @@ export const prepareBearerConnectionUpdate = Effect.fn(
 export const prepareSshRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.prepareSshRegistration",
 )(function* (input: SshConnectionInput) {
+  if (!UPCOMPUTER_RELEASE_CAPABILITIES.sshRemoteServerBootstrap) {
+    return yield* new ConnectionBlockedError({
+      reason: "unsupported",
+      detail: UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+    });
+  }
+
   const gateway = yield* ClientCapabilities.SshEnvironmentGateway;
   const provisioned = yield* gateway.provision(input.target);
   const connectionId = `ssh:${provisioned.environmentId}`;

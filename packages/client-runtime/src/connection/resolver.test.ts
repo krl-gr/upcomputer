@@ -401,7 +401,7 @@ describe("ConnectionResolver", () => {
     }),
   );
 
-  it.effect("delegates SSH launch to the platform gateway before remote authorization", () =>
+  it.effect("blocks saved SSH launches before invoking the platform gateway", () =>
     Effect.gen(function* () {
       const preparedTargets = yield* Ref.make<ReadonlyArray<DesktopSshEnvironmentTarget>>([]);
       const target = new SshConnectionTarget({
@@ -418,23 +418,16 @@ describe("ConnectionResolver", () => {
       const brokerLayer = yield* makeDependencies({
         prepareSsh: (input) =>
           Ref.update(preparedTargets, (values) => [...values, input.target]).pipe(
-            Effect.as({
-              bootstrap: {
-                target: input.target,
-                httpBaseUrl: "http://127.0.0.1:4010",
-                wsBaseUrl: "ws://127.0.0.1:4010",
-                pairingToken: null,
-              },
-              bearerToken: "ssh-bearer",
-            }),
+            Effect.andThen(Effect.die("SSH gateway must not be invoked")),
           ),
       });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const error = yield* broker
+        .prepare(catalogEntry(target, Option.some(profile)))
+        .pipe(Effect.flip);
 
-      expect(
-        (yield* broker.prepare(catalogEntry(target, Option.some(profile)))).socketUrl,
-      ).toContain("wsTicket=bearer");
-      expect(yield* Ref.get(preparedTargets)).toEqual([SSH_TARGET]);
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "unsupported" });
+      expect(yield* Ref.get(preparedTargets)).toEqual([]);
     }),
   );
 

@@ -1,5 +1,9 @@
 # T3 Connect Clerk Setup
 
+> Internal source-build operations only. Background/headless service commands described here are
+> not an official Up.computer distribution path in the current local-Desktop release. T3 Connect
+> in the product links clients to the backend bundled with Desktop.
+
 T3 Connect uses one Clerk application for web, desktop, and mobile authentication. The relay accepts
 Clerk JWTs only when they are generated from the `t3-relay` template with the shared
 `t3-code-relay` audience.

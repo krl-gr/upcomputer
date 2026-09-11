@@ -1,5 +1,9 @@
 import { RelayEnvironmentConnectScope } from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import {
+  UPCOMPUTER_RELEASE_CAPABILITIES,
+  UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+} from "@t3tools/shared/upcomputerReleasePolicy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -194,6 +198,13 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
   return Effect.fn("clientRuntime.connection.broker.ssh")(function* (
     entry: ConnectionCatalogEntry & { readonly target: SshConnectionTarget },
   ) {
+    if (!UPCOMPUTER_RELEASE_CAPABILITIES.sshRemoteServerBootstrap) {
+      return yield* new ConnectionBlockedError({
+        reason: "unsupported",
+        detail: UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+      });
+    }
+
     const target = entry.target;
     const profile = yield* Option.match(entry.profile, {
       onNone: () => Effect.fail(profileMissingError(target.connectionId)),

@@ -1,5 +1,9 @@
 # Remote Architecture
 
+> Future architecture reference, not current Up.computer product availability. The current release
+> supports the bundled local Desktop backend and T3 Connect clients to that backend; official
+> remote/headless server setup is unavailable.
+
 This document describes the target architecture for first-class remote environments in T3 Code.
 
 It is intentionally architecture-first. It does not define a complete implementation plan or user-facing rollout checklist. The goal is to establish the core model so remote support can be added without another broad rewrite.

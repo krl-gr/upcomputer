@@ -41,7 +41,11 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
-import { applyWslEnableSelection } from "./ConnectionsSettings.logic";
+import {
+  applyWslEnableSelection,
+  canConnectSavedEnvironment,
+  canOfferSshEnvironmentOnboarding,
+} from "./ConnectionsSettings.logic";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -1399,6 +1403,7 @@ function SavedBackendListRow({
     sshTarget ? `SSH ${formatDesktopSshTarget(sshTarget)}` : null,
     environment.relayManaged ? "T3 Connect" : null,
   ].filter((value): value is string => value !== null);
+  const canConnect = canConnectSavedEnvironment(environment.entry.target._tag);
 
   // The WSL backend is a desktop-managed local backend (it surfaces as a bearer
   // environment whose connection id is prefixed "local:"), not a remote
@@ -1439,6 +1444,12 @@ function SavedBackendListRow({
                 targetVersion={versionMismatch.clientVersion}
               />
             </div>
+          ) : null}
+          {sshTarget && !canConnect ? (
+            <p className="max-w-xl text-xs text-muted-foreground">
+              SSH launch is unavailable in this release. This saved environment is preserved and can
+              still be disconnected or removed.
+            </p>
           ) : null}
           {environment.connection.error ? (
             <p className="flex min-w-0 items-center gap-2 text-destructive text-xs">
@@ -1481,22 +1492,24 @@ function SavedBackendListRow({
                   {removingEnvironmentId === environmentId ? "Removing…" : "Remove"}
                 </Button>
               ) : null}
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={isConnecting || removingEnvironmentId === environmentId}
-                onClick={() =>
-                  void (isConnected ? onRemove(environmentId) : onConnect(environmentId))
-                }
-              >
-                {isConnected
-                  ? removingEnvironmentId === environmentId
-                    ? "Disconnecting…"
-                    : "Disconnect"
-                  : isConnecting
-                    ? "Connecting…"
-                    : "Connect"}
-              </Button>
+              {isConnected || canConnect ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={isConnecting || removingEnvironmentId === environmentId}
+                  onClick={() =>
+                    void (isConnected ? onRemove(environmentId) : onConnect(environmentId))
+                  }
+                >
+                  {isConnected
+                    ? removingEnvironmentId === environmentId
+                      ? "Disconnecting…"
+                      : "Disconnect"
+                    : isConnecting
+                      ? "Connecting…"
+                      : "Connect"}
+                </Button>
+              ) : null}
             </>
           )}
         </div>
@@ -1855,7 +1868,10 @@ export function ConnectionsSettings() {
     canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
   );
   const desktopSshHosts = useEnvironmentQuery(
-    desktopBridge && addBackendDialogOpen && savedBackendMode === "ssh"
+    desktopBridge &&
+      canOfferSshEnvironmentOnboarding() &&
+      addBackendDialogOpen &&
+      savedBackendMode === "ssh"
       ? desktopSshHostsStateAtom
       : null,
   );
@@ -3361,7 +3377,7 @@ export function ConnectionsSettings() {
                       description: "Enter a backend host and pairing code.",
                       icon: <ChevronsLeftRightEllipsisIcon aria-hidden className="size-4" />,
                     })}
-                    {desktopBridge
+                    {desktopBridge && canOfferSshEnvironmentOnboarding()
                       ? renderConnectionModeCard({
                           mode: "ssh",
                           title: "SSH",

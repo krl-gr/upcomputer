@@ -49,6 +49,38 @@ describe("sshEnvironment", () => {
     );
   });
 
+  it.effect("blocks npm-backed SSH launch while leaving discovery available", () =>
+    Effect.gen(function* () {
+      const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
+      const error = yield* sshEnvironment
+        .ensureEnvironment({
+          alias: "devbox",
+          hostname: "devbox.example.test",
+          username: null,
+          port: null,
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "SshLaunchError");
+      assert.include(error.message, "Official remote server installation and updates");
+    }).pipe(
+      Effect.provide(
+        DesktopSshEnvironment.layer().pipe(
+          Layer.provideMerge(
+            Layer.succeed(DesktopSshPasswordPrompts.DesktopSshPasswordPrompts, {
+              request: () => Effect.die("unexpected password prompt request"),
+              resolve: () => Effect.die("unexpected password prompt resolution"),
+            }),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(NodeHttpClient.layerUndici),
+          Layer.provideMerge(NetService.layer),
+        ),
+      ),
+      Effect.scoped,
+    ),
+  );
+
   it.effect("wires desktop host discovery through the ssh package runtime", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

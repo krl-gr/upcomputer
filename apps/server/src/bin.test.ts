@@ -45,9 +45,10 @@ import { environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentOrchestrationHttpApi) {}
 
-const connectCli = makeCli({ cloudEnabled: true });
-const noConnectCli = makeCli({ cloudEnabled: false });
-const runCli = (args: ReadonlyArray<string>, command = cli) =>
+const sourceDevelopmentCli = makeCli({ remoteServerCliEnabled: true });
+const connectCli = makeCli({ cloudEnabled: true, remoteServerCliEnabled: true });
+const noConnectCli = makeCli({ cloudEnabled: false, remoteServerCliEnabled: true });
+const runCli = (args: ReadonlyArray<string>, command = sourceDevelopmentCli) =>
   Command.runWith(command, { version: "0.0.0" })(args);
 const runConnectCli = (args: ReadonlyArray<string>) => runCli(args, connectCli);
 const runCliWithRuntime = (args: ReadonlyArray<string>) =>
@@ -203,7 +204,22 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }).pipe(Effect.provide(Layer.mergeAll(CliRuntimeLayer, TestConsole.layer))),
   );
 
-  it.effect("exposes service lifecycle commands without T3 Connect configuration", () =>
+  it.effect("hides and blocks remote commands in the official release CLI", () =>
+    Effect.gen(function* () {
+      const { output } = yield* captureStdout(runCli(["--help"], cli));
+
+      assert.notInclude(output, "t3 serve");
+      assert.notInclude(output, "t3 connect");
+      assert.notInclude(output, "t3 service");
+      assert.notInclude(output, "t3 project");
+
+      const error = yield* runCli([], cli).pipe(Effect.provide(CliRuntimeLayer), Effect.flip);
+      assert.instanceOf(error, CliError.UserError);
+      assert.include(error.message, "Use the Desktop application");
+    }),
+  );
+
+  it.effect("exposes service lifecycle commands for source-development coverage", () =>
     Effect.gen(function* () {
       const { output } = yield* captureStdout(runCli(["service", "--help"], noConnectCli));
 

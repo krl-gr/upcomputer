@@ -1,4 +1,13 @@
 import type { DesktopBridge, DesktopWslState } from "@t3tools/contracts";
+import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@t3tools/shared/upcomputerReleasePolicy";
+
+export function canOfferSshEnvironmentOnboarding(): boolean {
+  return UPCOMPUTER_RELEASE_CAPABILITIES.sshRemoteServerBootstrap;
+}
+
+export function canConnectSavedEnvironment(targetTag: string): boolean {
+  return targetTag !== "SshConnectionTarget" || canOfferSshEnvironmentOnboarding();
+}
 
 type WslEnableBridge = Pick<DesktopBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
 

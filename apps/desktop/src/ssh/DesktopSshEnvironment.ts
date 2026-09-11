@@ -4,6 +4,10 @@ import type {
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
+import {
+  UPCOMPUTER_RELEASE_CAPABILITIES,
+  UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+} from "@t3tools/shared/upcomputerReleasePolicy";
 import * as SshAuth from "@t3tools/ssh/auth";
 import { discoverSshHosts } from "@t3tools/ssh/config";
 import {
@@ -137,13 +141,19 @@ export const make = Effect.gen(function* () {
         Effect.withSpan("desktop.ssh.discoverHosts"),
       ),
     ensureEnvironment: (target, ensureOptions) =>
-      manager
-        .ensureEnvironment(target, ensureOptions)
-        .pipe(
-          Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
-          Effect.provide(runtimeContext),
-          Effect.withSpan("desktop.ssh.ensureEnvironment"),
-        ),
+      (UPCOMPUTER_RELEASE_CAPABILITIES.sshRemoteServerBootstrap
+        ? manager.ensureEnvironment(target, ensureOptions)
+        : Effect.fail(
+            new SshLaunchError({
+              message: UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
+              stdout: "",
+            }),
+          )
+      ).pipe(
+        Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
+        Effect.provide(runtimeContext),
+        Effect.withSpan("desktop.ssh.ensureEnvironment"),
+      ),
     disconnectEnvironment: (target) =>
       manager
         .disconnectEnvironment(target)

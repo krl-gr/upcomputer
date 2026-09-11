@@ -1,5 +1,9 @@
 # Server Update Architecture
 
+> Internal/upstream reference only. The current Up.computer release disables these remote update
+> paths and does not distribute the npm CLI named below. See the user-facing
+> [server update policy](../user/server-updates.md).
+
 T3 Code can update a connected server to the exact version of the client that detected version
 drift. This path exists primarily for remote environments, where the user may not have a terminal
 open on the server machine.

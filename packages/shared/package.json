@@ -199,6 +199,10 @@
       "types": "./src/product.ts",
       "import": "./src/product.ts"
     },
+    "./upcomputerReleasePolicy": {
+      "types": "./src/upcomputerReleasePolicy.ts",
+      "import": "./src/upcomputerReleasePolicy.ts"
+    },
     "./interactionMode": {
       "types": "./src/interactionMode.ts",
       "import": "./src/interactionMode.ts"
