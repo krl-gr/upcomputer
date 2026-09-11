@@ -1,6 +1,10 @@
 import { assert, it } from "@effect/vitest";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import {
+  applyPreferredCodexDefaultModel,
+  mapCodexModelCapabilities,
+  parseCodexModelListResponse,
+} from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -62,6 +66,35 @@ it("maps current Codex model capability fields", () => {
       currentValue: "flex",
     },
   ]);
+});
+
+it("surfaces Astra only when advertised and preserves future power choices", () => {
+  const astra = {
+    additionalSpeedTiers: [],
+    defaultReasoningEffort: "medium",
+    description: "Advertised account model",
+    displayName: "GPT-6 Astra",
+    hidden: false,
+    id: "gpt-6-astra",
+    isDefault: false,
+    model: "gpt-6-astra",
+    defaultServiceTier: null,
+    serviceTiers: [],
+    supportedReasoningEfforts: [
+      { description: "Medium", reasoningEffort: "medium" },
+      { description: "Future provider choice", reasoningEffort: "warp" },
+    ],
+  } as const;
+
+  assert.deepStrictEqual(parseCodexModelListResponse({ data: [], nextCursor: null }), []);
+  const models = parseCodexModelListResponse({ data: [astra], nextCursor: null });
+  assert.equal(models[0]?.slug, "gpt-6-astra");
+  assert.deepStrictEqual(
+    models[0]?.capabilities?.optionDescriptors?.[0]?.type === "select"
+      ? models[0].capabilities.optionDescriptors[0].options.map((choice) => choice.id)
+      : [],
+    ["medium", "warp"],
+  );
 });
 
 it("uses standard routing when the catalog has no default service tier", () => {

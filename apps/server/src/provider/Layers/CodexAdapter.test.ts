@@ -801,6 +801,41 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("surfaces non-retryable Codex rate-limit failures as provider errors", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-rate-limit-error"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "error",
+        turnId: asTurnId("turn-1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          error: {
+            message: "Usage limit reached; retry after the account window resets.",
+            codexErrorInfo: "usageLimitExceeded",
+          },
+          willRetry: false,
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag === "Some" && firstEvent.value.type === "runtime.error") {
+        NodeAssert.equal(firstEvent.value.payload.class, "provider_error");
+        NodeAssert.match(firstEvent.value.payload.message, /Usage limit reached/);
+      } else {
+        NodeAssert.fail("Expected a canonical runtime.error event");
+      }
+    }),
+  );
+
   it.effect("maps process stderr notifications to runtime.warning", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

@@ -453,6 +453,30 @@ describe("isRecoverableThreadResumeError", () => {
     );
   });
 
+  it("matches Codex 0.154 missing-rollout resume errors", () => {
+    NodeAssert.equal(
+      isRecoverableThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32603,
+          errorMessage: "state db missing rollout path for thread stale-thread",
+        }),
+      ),
+      true,
+    );
+  });
+
+  it("keeps thread/model misalignment errors visible instead of silently restarting", () => {
+    NodeAssert.equal(
+      isRecoverableThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32603,
+          errorMessage: "thread model is misaligned with the requested model",
+        }),
+      ),
+      false,
+    );
+  });
+
   it("ignores non-recoverable resume errors", () => {
     NodeAssert.equal(
       isRecoverableThreadResumeError(

@@ -1847,6 +1847,74 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ),
       );
 
+      it.effect("includes Claude Fable 5.1 once on supported Claude Code versions", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          const fable51 = status.models.filter((model) => model.slug === "claude-fable-5-1");
+          assert.strictEqual(fable51.length, 1);
+          assert.strictEqual(fable51[0]?.name, "Claude Fable 5.1");
+          assert.deepStrictEqual(
+            fable51[0]?.capabilities?.optionDescriptors?.map((option) => option.id),
+            ["effort", "contextWindow"],
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "2.1.257\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("hides Claude Fable 5.1 on older Claude Code versions", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          assert.strictEqual(
+            status.models.some((model) => model.slug === "claude-fable-5-1"),
+            false,
+          );
+          assert.strictEqual(
+            status.message,
+            "Claude Code v2.1.256 is too old for Claude Fable 5.1. Upgrade to v2.1.257 or newer to access it.",
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "2.1.256\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("does not emit duplicate built-in Claude model slugs", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          const slugs = status.models.map((model) => model.slug);
+          assert.strictEqual(new Set(slugs).size, slugs.length);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "2.1.257\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
       it.effect("includes Claude Opus 5 on supported Claude Code versions", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
@@ -1910,7 +1978,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             claudeCapabilities(),
           );
           const fable5 = status.models.find((model) => model.slug === "claude-fable-5");
-          assert.strictEqual(fable5?.name, "Claude Fable 5");
+          assert.strictEqual(fable5?.name, "Claude Fable 5 (Legacy)");
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {

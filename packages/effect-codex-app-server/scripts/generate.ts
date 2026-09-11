@@ -145,6 +145,56 @@ const ManualSchemas: Record<string, Schema.Json> = {
   },
 };
 
+// Codex 0.150 expanded these enums before our next pinned protocol refresh.
+// Apply the compatibility definitions to every generated response namespace so
+// 0.147 remains accepted while current account and multi-agent events decode.
+const CODEX_COMPATIBILITY_DEFINITION_SCHEMAS: Record<string, Schema.Json> = {
+  CollabAgentTool: {
+    type: "string",
+    enum: [
+      "spawnAgent",
+      "sendInput",
+      "resumeAgent",
+      "wait",
+      "closeAgent",
+      "sendMessage",
+      "followupTask",
+      "interruptAgent",
+      "listAgents",
+    ],
+  },
+  CollabAgentToolCallStatus: {
+    type: "string",
+    enum: ["inProgress", "completed", "failed", "interrupted"],
+  },
+  PlanType: {
+    type: "string",
+    enum: [
+      "free",
+      "go",
+      "plus",
+      "pro",
+      "prolite",
+      "team",
+      "self_serve_business_prolite",
+      "self_serve_business_usage_based",
+      "business",
+      "ent26",
+      "enterprise_cbp_automation",
+      "enterprise_cbp_usage_based",
+      "enterprise",
+      "edu",
+      "edu_plus",
+      "edu_pro",
+      "unknown",
+    ],
+  },
+  SubAgentActivityKind: {
+    type: "string",
+    enum: ["started", "interacted", "interrupted", "completed"],
+  },
+};
+
 const getGeneratedPaths = Effect.fn("getGeneratedPaths")(function* () {
   const path = yield* Path.Path;
   const generatedDir = path.join(import.meta.dirname, "..", "src", "_generated");
@@ -556,10 +606,12 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
     );
 
     for (const [definitionName, definitionSchema] of Object.entries(parsed.definitions ?? {})) {
+      const compatibleDefinitionSchema =
+        CODEX_COMPATIBILITY_DEFINITION_SCHEMAS[definitionName] ?? definitionSchema;
       aggregateSchemas[localDefinitionNames.get(definitionName)!] = stripNullDefaults(
         normalizeNullableTypes(
           rewriteExternalRefs(
-            definitionSchema,
+            compatibleDefinitionSchema,
             localDefinitionNames,
             file.namespace,
             exportNameByQualifiedName,
