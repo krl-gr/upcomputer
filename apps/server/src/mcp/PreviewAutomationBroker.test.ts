@@ -6,6 +6,8 @@ import {
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationMalformedResponseError,
   PreviewAutomationNoAvailableHostError,
+  PreviewAutomationTabNotFoundError,
+  PreviewAutomationTargetNotFoundError,
   PreviewAutomationTargetNotEditableError,
   PreviewTabId,
   ProviderInstanceId,
@@ -361,6 +363,87 @@ it.effect("preserves bounded request and remote selector diagnostics", () => {
     }),
   );
 });
+
+it.effect("classifies a missing click target without collapsing it to execution", () => {
+  const selector = "body > main > a";
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) =>
+        broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: false,
+          error: {
+            _tag: "PreviewAutomationTargetNotFoundError",
+            message: "The click target was not found or was not actionable.",
+            detail: { selectorKind: "selector", selectorLength: selector.length },
+          },
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      const error = yield* broker
+        .invoke<void>({
+          scope,
+          operation: "click",
+          input: { selector },
+          tabId: PreviewTabId.make("tab-1"),
+        })
+        .pipe(Effect.flip);
+
+      expect(error).toBeInstanceOf(PreviewAutomationTargetNotFoundError);
+      expect(error).toMatchObject({
+        selectorKind: "selector",
+        selectorLength: selector.length,
+        remoteTag: "PreviewAutomationTargetNotFoundError",
+      });
+      expect(error.message).toBe(
+        `Preview automation click could not find the selector target (${selector.length} characters).`,
+      );
+    }),
+  );
+});
+
+it.effect("classifies an unavailable preview tab without collapsing it to execution", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) =>
+        broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: false,
+          error: {
+            _tag: "PreviewAutomationTabNotFoundError",
+            message: "The preview tab is closed or unavailable.",
+          },
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      const error = yield* broker
+        .invoke<void>({
+          scope,
+          operation: "snapshot",
+          input: {},
+          tabId: PreviewTabId.make("tab-closed"),
+        })
+        .pipe(Effect.flip);
+
+      expect(error).toBeInstanceOf(PreviewAutomationTabNotFoundError);
+      expect(error).toMatchObject({
+        operation: "snapshot",
+        tabId: "tab-closed",
+        remoteTag: "PreviewAutomationTabNotFoundError",
+      });
+    }),
+  ),
+);
 
 it.effect("classifies a remote non-editable target without collapsing it to execution", () => {
   const remoteError = {

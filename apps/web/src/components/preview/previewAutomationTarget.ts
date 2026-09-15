@@ -1,8 +1,36 @@
-import type { PreviewSessionSnapshot } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PreviewAutomationOperation,
+  PreviewSessionSnapshot,
+  ThreadId,
+} from "@t3tools/contracts";
+
+import { PreviewAutomationTargetUnavailableError } from "./previewAutomationErrors";
 
 interface PreviewAutomationSessionIndex {
   readonly snapshot: PreviewSessionSnapshot | null;
   readonly sessions: Readonly<Record<string, PreviewSessionSnapshot>>;
+}
+
+export function requirePreviewAutomationTarget<T>(
+  state: PreviewAutomationSessionIndex,
+  bridge: T | null,
+  tabId: string | null,
+  context: {
+    readonly requestId: string;
+    readonly operation: PreviewAutomationOperation;
+    readonly environmentId: EnvironmentId;
+    readonly threadId: ThreadId;
+  },
+): { readonly bridge: T; readonly tabId: string } {
+  if (!bridge || !tabId || state.sessions[tabId] === undefined) {
+    throw new PreviewAutomationTargetUnavailableError({
+      ...context,
+      tabId,
+      bridgeAvailable: Boolean(bridge),
+    });
+  }
+  return { bridge, tabId };
 }
 
 export function needsPreviewAutomationSessionSync(

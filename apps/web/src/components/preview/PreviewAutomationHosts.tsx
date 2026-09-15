@@ -50,7 +50,6 @@ import {
   PreviewAutomationOperationError,
   PreviewAutomationOverlayTimeoutError,
   PreviewAutomationRecordingNotActiveError,
-  PreviewAutomationTargetUnavailableError,
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
 import { previewAutomationOpenNeedsOverlay } from "./previewAutomationOpenReadiness";
@@ -58,6 +57,7 @@ import { createPreviewAutomationRequestConsumerAtom } from "./previewAutomationR
 import { createPreviewAutomationClientId } from "./previewAutomationClientId";
 import {
   needsPreviewAutomationSessionSync,
+  requirePreviewAutomationTarget,
   resolvePreviewAutomationOpenTab,
   resolvePreviewAutomationTarget,
 } from "./previewAutomationTarget";
@@ -323,22 +323,15 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           state = readThreadPreviewState(threadRef);
         }
         tabId = request.tabId ?? state.snapshot?.tabId ?? null;
-        const unavailableTarget = {
-          requestId: request.requestId,
-          operation: request.operation,
-          environmentId,
-          threadId: request.threadId,
-          tabId,
-          bridgeAvailable: Boolean(previewBridge),
-        };
         const requireReadyTab = async () => {
-          const bridge = previewBridge;
-          const readyTabId = tabId;
-          if (!bridge || !readyTabId) {
-            throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
-          }
-          await waitForDesktopOverlay(threadRef, request.requestId, readyTabId, request.timeoutMs);
-          return { bridge, tabId: readyTabId };
+          const ready = requirePreviewAutomationTarget(state, previewBridge, tabId, {
+            requestId: request.requestId,
+            operation: request.operation,
+            environmentId,
+            threadId: request.threadId,
+          });
+          await waitForDesktopOverlay(threadRef, request.requestId, ready.tabId, request.timeoutMs);
+          return ready;
         };
         switch (request.operation) {
           case "status":

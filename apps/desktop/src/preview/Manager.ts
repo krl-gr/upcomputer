@@ -152,6 +152,10 @@ interface CdpEvaluationResult {
   };
 }
 
+interface CdpScreenshotResult {
+  readonly data?: unknown;
+}
+
 export const PreviewAutomationSelectorKind = Schema.Literals([
   "focused-element",
   "selector",
@@ -1913,10 +1917,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const captureAutomationSnapshot = Effect.fn("PreviewManager.captureAutomationSnapshot")(
     function* (tabId: string, wc: Electron.WebContents, send: SendCommand) {
-      yield* Effect.all([send("Runtime.enable"), send("Accessibility.enable")], {
-        concurrency: 2,
-        discard: true,
-      });
+      yield* Effect.all(
+        [send("Runtime.enable"), send("Accessibility.enable"), send("Page.enable")],
+        {
+          concurrency: 2,
+          discard: true,
+        },
+      );
       const page = yield* evaluateWithDebugger<{
         url: string;
         title: string;
@@ -1979,19 +1986,32 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         })()`,
         true,
       );
-      const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
+      const [accessibility, screenshotResult, diagnostics, timelines] = yield* Effect.all([
         send("Accessibility.getFullAXTree"),
-        attemptPromise(
-          {
-            operation: "automationSnapshot.capturePage",
-            tabId,
-            webContentsId: wc.id,
-          },
-          () => wc.capturePage(),
-        ),
+        send("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+          captureBeyondViewport: false,
+        }),
         Ref.get(diagnosticsRef),
         Ref.get(actionTimelineRef),
       ]);
+      const sourceImage = yield* attempt(
+        {
+          operation: "automationSnapshot.decodeScreenshot",
+          tabId,
+          webContentsId: wc.id,
+        },
+        () => {
+          const data = (screenshotResult as CdpScreenshotResult).data;
+          if (typeof data !== "string" || data.length === 0) {
+            throw new Error("CDP returned an empty screenshot payload");
+          }
+          const decoded = nativeImage.createFromBuffer(Buffer.from(data, "base64"));
+          if (decoded.isEmpty()) throw new Error("CDP returned an invalid PNG screenshot");
+          return decoded;
+        },
+      );
       const sourceSize = sourceImage.getSize();
       const image =
         sourceSize.width > MAX_SCREENSHOT_WIDTH

@@ -18,6 +18,7 @@ import {
   DesktopPreviewWebviewConfigSchema,
   PreviewAnnotationPayloadSchema,
   PreviewAutomationSnapshot,
+  PreviewAutomationRemoteError,
   PreviewAutomationStatus,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,62 @@ import * as PreviewManager from "../../preview/Manager.ts";
 import { PREVIEW_WEBVIEW_PREFERENCES } from "../../preview/WebviewPreferences.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
+
+const DesktopPreviewAutomationSnapshotResult = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), value: PreviewAutomationSnapshot }),
+  Schema.Struct({ ok: Schema.Literal(false), error: PreviewAutomationRemoteError }),
+]);
+
+const DesktopPreviewAutomationVoidResult = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true) }),
+  Schema.Struct({ ok: Schema.Literal(false), error: PreviewAutomationRemoteError }),
+]);
+
+const automationError = (
+  operation: "snapshot" | "click",
+  error: PreviewManager.PreviewManagerError,
+): PreviewAutomationRemoteError => {
+  if (
+    error._tag === "PreviewTabNotFoundError" ||
+    error._tag === "PreviewWebContentsNotFoundError" ||
+    error._tag === "PreviewWebviewNotInitializedError"
+  ) {
+    return {
+      _tag: "PreviewAutomationTabNotFoundError",
+      message: "The preview tab is closed or unavailable.",
+    };
+  }
+  if (operation === "snapshot") {
+    return {
+      _tag: "PreviewAutomationExecutionError",
+      message: "The desktop could not complete the snapshot.",
+    };
+  }
+  switch (error._tag) {
+    case "PreviewAutomationInvalidSelectorError":
+      return {
+        _tag: error._tag,
+        message: "The click locator or selector is invalid.",
+        detail: error.detail,
+      };
+    case "PreviewAutomationTargetNotFoundError":
+      return {
+        _tag: error._tag,
+        message: "The click target was not found or was not actionable.",
+        detail: {
+          selectorKind: error.selectorKind,
+          ...(error.selectorLength === undefined ? {} : { selectorLength: error.selectorLength }),
+        },
+      };
+    case "PreviewAutomationControlInterruptedError":
+      return { _tag: error._tag, message: "The click was interrupted by human input." };
+    default:
+      return {
+        _tag: "PreviewAutomationExecutionError",
+        message: "The desktop could not complete the click.",
+      };
+  }
+};
 
 export const installPreviewEventForwarding = Effect.fn(
   "desktop.ipc.preview.installEventForwarding",
@@ -267,20 +324,30 @@ export const automationStatus = DesktopIpc.makeIpcMethod({
 export const automationSnapshot = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL,
   payload: DesktopPreviewTabInputSchema,
-  result: PreviewAutomationSnapshot,
+  result: DesktopPreviewAutomationSnapshotResult,
   handler: Effect.fn("desktop.ipc.preview.automationSnapshot")(function* ({ tabId }) {
     const manager = yield* PreviewManager.PreviewManager;
-    return yield* manager.automationSnapshot(tabId);
+    return yield* manager.automationSnapshot(tabId).pipe(
+      Effect.match({
+        onFailure: (error) => ({ ok: false as const, error: automationError("snapshot", error) }),
+        onSuccess: (value) => ({ ok: true as const, value }),
+      }),
+    );
   }),
 });
 
 export const automationClick = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL,
   payload: DesktopPreviewAutomationClickInputSchema,
-  result: Schema.Void,
+  result: DesktopPreviewAutomationVoidResult,
   handler: Effect.fn("desktop.ipc.preview.automationClick")(function* ({ tabId, input }) {
     const manager = yield* PreviewManager.PreviewManager;
-    yield* manager.automationClick(tabId, input);
+    return yield* manager.automationClick(tabId, input).pipe(
+      Effect.match({
+        onFailure: (error) => ({ ok: false as const, error: automationError("click", error) }),
+        onSuccess: () => ({ ok: true as const }),
+      }),
+    );
   }),
 });
 

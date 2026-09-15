@@ -1,8 +1,9 @@
-import type { PreviewSessionSnapshot } from "@t3tools/contracts";
+import { EnvironmentId, type PreviewSessionSnapshot, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   needsPreviewAutomationSessionSync,
+  requirePreviewAutomationTarget,
   resolvePreviewAutomationOpenTab,
   resolvePreviewAutomationTarget,
 } from "./previewAutomationTarget";
@@ -17,6 +18,31 @@ const snapshot = (tabId: string): PreviewSessionSnapshot => ({
 });
 
 describe("preview automation target selection", () => {
+  it("rejects an explicitly requested tab missing after authoritative reconciliation", () => {
+    const active = snapshot("tab-active");
+    const bridge = { automation: true };
+
+    expect(() =>
+      requirePreviewAutomationTarget(
+        { snapshot: active, sessions: { [active.tabId]: active } },
+        bridge,
+        "tab-closed",
+        {
+          requestId: "request-snapshot",
+          operation: "snapshot",
+          environmentId: EnvironmentId.make("environment-1"),
+          threadId: ThreadId.make("thread-1"),
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        _tag: "PreviewAutomationTargetUnavailableError",
+        tabId: "tab-closed",
+        bridgeAvailable: true,
+      }),
+    );
+  });
+
   it("refreshes authoritative sessions whenever the caller relies on the active tab", () => {
     const active = snapshot("tab-active");
     expect(

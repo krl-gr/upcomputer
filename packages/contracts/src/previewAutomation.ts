@@ -613,19 +613,20 @@ export const PreviewAutomationStreamEvent = Schema.Union([
 ]);
 export type PreviewAutomationStreamEvent = typeof PreviewAutomationStreamEvent.Type;
 
+export const PreviewAutomationRemoteError = Schema.Struct({
+  _tag: TrimmedNonEmptyString,
+  message: Schema.String,
+  detail: Schema.optional(Schema.Unknown),
+});
+export type PreviewAutomationRemoteError = typeof PreviewAutomationRemoteError.Type;
+
 export const PreviewAutomationResponse = Schema.Struct({
   clientId: PreviewAutomationClientId,
   connectionId: PreviewAutomationConnectionId,
   requestId: TrimmedNonEmptyString,
   ok: Schema.Boolean,
   result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(
-    Schema.Struct({
-      _tag: TrimmedNonEmptyString,
-      message: Schema.String,
-      detail: Schema.optional(Schema.Unknown),
-    }),
-  ),
+  error: Schema.optional(PreviewAutomationRemoteError),
 });
 export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 
@@ -778,6 +779,23 @@ export class PreviewAutomationInvalidSelectorError extends Schema.TaggedErrorCla
   }
 }
 
+export class PreviewAutomationTargetNotFoundError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotFoundError>()(
+  "PreviewAutomationTargetNotFoundError",
+  {
+    ...PreviewAutomationRequestErrorFields,
+    ...PreviewAutomationRemoteDiagnosticFields,
+    selectorKind: Schema.optional(Schema.Literals(["locator", "selector"])),
+    selectorLength: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  },
+) {
+  override get message(): string {
+    if (this.selectorKind !== undefined && this.selectorLength !== undefined) {
+      return `Preview automation ${this.operation} could not find the ${this.selectorKind} target (${this.selectorLength} characters).`;
+    }
+    return `Preview automation ${this.operation} could not find its target.`;
+  }
+}
+
 export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotEditableError>()(
   "PreviewAutomationTargetNotEditableError",
   {
@@ -863,6 +881,7 @@ export const PreviewAutomationError = Schema.Union([
   PreviewAutomationControlInterruptedError,
   PreviewAutomationExecutionError,
   PreviewAutomationInvalidSelectorError,
+  PreviewAutomationTargetNotFoundError,
   PreviewAutomationTargetNotEditableError,
   PreviewAutomationResultTooLargeError,
   PreviewAutomationClientDisconnectedError,

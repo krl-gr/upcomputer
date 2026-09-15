@@ -350,6 +350,75 @@ describe("previewAutomationRequestConsumer", () => {
     expect(JSON.stringify(response)).not.toContain("preview-secret");
   });
 
+  it.each([
+    {
+      name: "invalid selector",
+      bridgedError: {
+        _tag: "PreviewAutomationInvalidSelectorError",
+        message: "The click locator or selector is invalid.",
+        detail: { selectorKind: "selector", selectorLength: 14 },
+      },
+    },
+    {
+      name: "missing target",
+      bridgedError: {
+        _tag: "PreviewAutomationTargetNotFoundError",
+        message: "The click target was not found or was not actionable.",
+        detail: { selectorKind: "selector", selectorLength: 14 },
+      },
+    },
+    {
+      name: "unavailable tab",
+      bridgedError: {
+        _tag: "PreviewAutomationTabNotFoundError",
+        message: "The preview tab is closed or unavailable.",
+      },
+    },
+  ] as const)("preserves a typed $name error returned by desktop IPC", ({ bridgedError }) => {
+    expect(
+      serializePreviewAutomationError(
+        { error: bridgedError, desktopPreviewAutomationError: true },
+        {
+          requestId: "request-click",
+          operation: "click",
+          environmentId,
+          threadId,
+          tabId,
+        },
+      ),
+    ).toBe(bridgedError);
+  });
+
+  it.each([
+    {
+      name: "closed tab",
+      bridgedError: {
+        _tag: "PreviewAutomationTabNotFoundError",
+        message: "The preview tab is closed or unavailable.",
+      },
+    },
+    {
+      name: "sanitized execution failure",
+      bridgedError: {
+        _tag: "PreviewAutomationExecutionError",
+        message: "The desktop could not complete the snapshot.",
+      },
+    },
+  ] as const)("preserves a snapshot $name returned by desktop IPC", ({ bridgedError }) => {
+    expect(
+      serializePreviewAutomationError(
+        { error: bridgedError, desktopPreviewAutomationError: true },
+        {
+          requestId: "request-snapshot",
+          operation: "snapshot",
+          environmentId,
+          threadId,
+          tabId,
+        },
+      ),
+    ).toBe(bridgedError);
+  });
+
   it("sanitizes unexpected handler failures at the response boundary", async () => {
     const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
       AsyncResult.initial<PreviewAutomationStreamEvent, Error>(false),

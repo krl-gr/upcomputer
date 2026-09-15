@@ -20,6 +20,7 @@ import * as BrowserSession from "./BrowserSession.ts";
 import * as PreviewManager from "./Manager.ts";
 
 const {
+  createFromBuffer,
   createFromPath,
   fromId,
   getFocusedWebContents,
@@ -29,8 +30,9 @@ const {
   writeFile,
   writeImage,
 } = vi.hoisted(() => ({
+  createFromBuffer: vi.fn(),
   createFromPath: vi.fn((): { readonly isEmpty: () => boolean } => ({ isEmpty: () => false })),
-  fromId: vi.fn(() => null),
+  fromId: vi.fn((_id?: number) => null),
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
   showItemInFolder: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock("electron", () => ({
     writeImage,
   },
   nativeImage: {
+    createFromBuffer,
     createFromPath,
   },
   shell: {
@@ -116,6 +119,7 @@ describe("PreviewManager", () => {
     showItemInFolder.mockClear();
     writeImage.mockClear();
     createFromPath.mockClear();
+    createFromBuffer.mockReset();
     webviewSend.mockClear();
   });
 
@@ -142,6 +146,196 @@ describe("PreviewManager", () => {
           loading: false,
         });
         expect(fromId).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("captures loaded and newly navigated tab snapshots through CDP", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const png = Buffer.from("snapshot-png");
+        const image = {
+          isEmpty: () => false,
+          getSize: () => ({ width: 800, height: 600 }),
+          resize: vi.fn(function (this: typeof image) {
+            return this;
+          }),
+          toPNG: () => png,
+        };
+        createFromBuffer.mockReturnValue(image);
+
+        const makeWebview = (
+          id: number,
+          title: string,
+          url = "https://example.com/",
+          loading = false,
+        ) => {
+          let rejectLocator = false;
+          const capturePage = vi.fn(async () => {
+            throw new Error("UnknownVizError");
+          });
+          const loadURL = vi.fn(async () => undefined);
+          const reload = vi.fn();
+          const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+            if (method === "Runtime.evaluate") {
+              const expression = typeof params?.expression === "string" ? params.expression : "";
+              if (expression.includes("Boolean(globalThis.__t3PlaywrightInjected)")) {
+                return { result: { value: true } };
+              }
+              if (expression.includes("injected.parseSelector")) {
+                return {
+                  result: {
+                    value: rejectLocator
+                      ? { invalidSelector: true, message: "Unexpected selector token" }
+                      : { x: 60, y: 35 },
+                  },
+                };
+              }
+              if (expression.includes("window.innerWidth")) {
+                return { result: { value: { width: 800, height: 600 } } };
+              }
+              return {
+                result: {
+                  value: {
+                    url,
+                    title,
+                    loading,
+                    visibleText: url === "about:blank" ? "" : "Example Domain",
+                    interactiveElements:
+                      url === "about:blank"
+                        ? []
+                        : [
+                            {
+                              tag: "a",
+                              role: null,
+                              name: "Learn more",
+                              selector: "body > a",
+                              x: 10,
+                              y: 20,
+                              width: 100,
+                              height: 30,
+                            },
+                          ],
+                  },
+                },
+              };
+            }
+            if (method === "Accessibility.getFullAXTree") return { nodes: [] };
+            if (method === "Page.captureScreenshot") {
+              return { data: png.toString("base64") };
+            }
+            return undefined;
+          });
+          return {
+            id,
+            capturePage,
+            loadURL,
+            webview: {
+              id,
+              isDestroyed: () => false,
+              getType: () => "webview",
+              getURL: () => url,
+              getTitle: () => title,
+              isLoading: () => loading,
+              isDevToolsOpened: () => false,
+              getZoomFactor: () => 1,
+              setZoomFactor: vi.fn(),
+              loadURL,
+              reload,
+              on: vi.fn(),
+              off: vi.fn(),
+              ipc: { on: vi.fn(), off: vi.fn() },
+              send: webviewSend,
+              navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+              setWindowOpenHandler: vi.fn(),
+              debugger: {
+                isAttached: () => false,
+                attach: vi.fn(),
+                sendCommand,
+                on: vi.fn(),
+                off: vi.fn(),
+              },
+              capturePage,
+            },
+            sendCommand,
+            rejectNextLocator: () => {
+              rejectLocator = true;
+            },
+          };
+        };
+        const first = makeWebview(42, "Example");
+        const second = makeWebview(43, "Example in new tab");
+        const blank = makeWebview(44, "", "about:blank");
+        fromId.mockImplementation((id?: number) =>
+          id === 42
+            ? (first.webview as never)
+            : id === 43
+              ? (second.webview as never)
+              : id === 44
+                ? (blank.webview as never)
+                : null,
+        );
+
+        yield* manager.createTab("tab_1");
+        yield* manager.registerWebview("tab_1", 42);
+        const firstSnapshot = yield* manager.automationSnapshot("tab_1");
+        const click = yield* manager
+          .automationClick("tab_1", { selector: firstSnapshot.interactiveElements[0]!.selector })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(click);
+        first.rejectNextLocator();
+        const invalidClick = yield* Effect.exit(
+          manager.automationClick("tab_1", { locator: "role=link[" }),
+        );
+
+        yield* manager.createTab("tab_2");
+        yield* manager.registerWebview("tab_2", 43);
+        yield* manager.navigate("tab_2", "https://example.com/new");
+        const secondSnapshot = yield* manager.automationSnapshot("tab_2");
+        yield* manager.createTab("tab_blank");
+        yield* manager.registerWebview("tab_blank", 44);
+        const blankSnapshot = yield* manager.automationSnapshot("tab_blank");
+
+        expect(firstSnapshot.interactiveElements[0]).toMatchObject({
+          name: "Learn more",
+          selector: "body > a",
+        });
+        expect(first.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.objectContaining({ type: "mousePressed", x: 60, y: 35 }),
+        );
+        expect(Exit.isFailure(invalidClick)).toBe(true);
+        if (Exit.isFailure(invalidClick)) {
+          expect(Option.getOrThrow(Cause.findErrorOption(invalidClick.cause))).toMatchObject({
+            _tag: "PreviewAutomationInvalidSelectorError",
+            selectorKind: "locator",
+            selectorLength: 10,
+          });
+        }
+        expect(secondSnapshot.title).toBe("Example in new tab");
+        expect(blankSnapshot).toMatchObject({
+          url: "about:blank",
+          title: "",
+          loading: false,
+          visibleText: "",
+          interactiveElements: [],
+        });
+        expect(second.loadURL).toHaveBeenCalledWith("https://example.com/new");
+        for (const webview of [first, second, blank]) {
+          expect(webview.capturePage).not.toHaveBeenCalled();
+          expect(webview.sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", {
+            format: "png",
+            fromSurface: true,
+            captureBeyondViewport: false,
+          });
+        }
+        expect(firstSnapshot.screenshot).toEqual({
+          mimeType: "image/png",
+          data: png.toString("base64"),
+          width: 800,
+          height: 600,
+        });
       }),
     ),
   );

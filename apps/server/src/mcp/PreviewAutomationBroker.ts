@@ -4,6 +4,7 @@ import {
   PreviewAutomationControlInterruptedError,
   PreviewAutomationExecutionError,
   PreviewAutomationInvalidSelectorError,
+  PreviewAutomationTargetNotFoundError,
   PreviewAutomationMalformedResponseError,
   PreviewAutomationNoAvailableHostError,
   PreviewAutomationRemoteUnavailableError,
@@ -217,6 +218,30 @@ const classifyResponseError = (
       return new PreviewAutomationInvalidSelectorError({
         ...context,
         ...remoteDiagnostics,
+      });
+    }
+    case "PreviewAutomationTargetNotFoundError": {
+      const detail =
+        typeof error.detail === "object" && error.detail !== null ? error.detail : undefined;
+      const selectorKind =
+        detail &&
+        "selectorKind" in detail &&
+        (detail.selectorKind === "locator" || detail.selectorKind === "selector")
+          ? detail.selectorKind
+          : context.selectorKind;
+      const selectorLength =
+        detail &&
+        "selectorLength" in detail &&
+        typeof detail.selectorLength === "number" &&
+        Number.isInteger(detail.selectorLength) &&
+        detail.selectorLength >= 0
+          ? detail.selectorLength
+          : context.selectorLength;
+      return new PreviewAutomationTargetNotFoundError({
+        ...context,
+        ...remoteDiagnostics,
+        ...(selectorKind === undefined ? {} : { selectorKind }),
+        ...(selectorLength === undefined ? {} : { selectorLength }),
       });
     }
     case "PreviewAutomationTargetNotEditableError": {

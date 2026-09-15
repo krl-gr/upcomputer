@@ -14,10 +14,38 @@ import {
 
 type AutomationStreamResult<E> = AsyncResult.AsyncResult<PreviewAutomationStreamEvent, E>;
 
+const BRIDGED_ERROR_TAGS = new Set([
+  "PreviewAutomationInvalidSelectorError",
+  "PreviewAutomationTargetNotFoundError",
+  "PreviewAutomationControlInterruptedError",
+  "PreviewAutomationTabNotFoundError",
+  "PreviewAutomationExecutionError",
+]);
+
+const isBridgedPreviewAutomationError = (
+  error: unknown,
+): error is {
+  readonly error: NonNullable<PreviewAutomationResponse["error"]>;
+  readonly desktopPreviewAutomationError: true;
+} =>
+  typeof error === "object" &&
+  error !== null &&
+  "desktopPreviewAutomationError" in error &&
+  error.desktopPreviewAutomationError === true &&
+  "error" in error &&
+  typeof error.error === "object" &&
+  error.error !== null &&
+  "_tag" in error.error &&
+  typeof error.error._tag === "string" &&
+  BRIDGED_ERROR_TAGS.has(error.error._tag) &&
+  "message" in error.error &&
+  typeof error.error.message === "string";
+
 export function serializePreviewAutomationError(
   error: unknown,
   context: PreviewAutomationOperationContext,
 ): NonNullable<PreviewAutomationResponse["error"]> {
+  if (isBridgedPreviewAutomationError(error)) return error.error;
   return serializePreviewAutomationHostError(
     PreviewAutomationOperationError.fromCause({ ...context, cause: error }),
   );

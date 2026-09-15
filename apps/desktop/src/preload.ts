@@ -27,6 +27,34 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
 }
 
+function unwrapPreviewAutomationVoidResult(result: unknown): void {
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    "ok" in result &&
+    result.ok === false &&
+    "error" in result
+  ) {
+    throw { error: result.error, desktopPreviewAutomationError: true };
+  }
+}
+
+function unwrapPreviewAutomationSnapshotResult(
+  result: unknown,
+): Awaited<ReturnType<NonNullable<DesktopBridge["preview"]>["automation"]["snapshot"]>> {
+  if (typeof result === "object" && result !== null && "ok" in result) {
+    if (result.ok === false && "error" in result) {
+      throw { error: result.error, desktopPreviewAutomationError: true };
+    }
+    if (result.ok === true && "value" in result) {
+      return result.value as Awaited<
+        ReturnType<NonNullable<DesktopBridge["preview"]>["automation"]["snapshot"]>
+      >;
+    }
+  }
+  throw new Error("Invalid preview automation snapshot response");
+}
+
 contextBridge.exposeInMainWorld("desktopBridge", {
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
@@ -207,10 +235,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     automation: {
       status: (tabId) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_STATUS_CHANNEL, { tabId }),
-      snapshot: (tabId) =>
-        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL, { tabId }),
-      click: (tabId, input) =>
-        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL, { tabId, input }),
+      snapshot: async (tabId) =>
+        unwrapPreviewAutomationSnapshotResult(
+          await ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL, { tabId }),
+        ),
+      click: async (tabId, input) =>
+        unwrapPreviewAutomationVoidResult(
+          await ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL, { tabId, input }),
+        ),
       type: (tabId, input) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_TYPE_CHANNEL, { tabId, input }),
       press: (tabId, input) =>
