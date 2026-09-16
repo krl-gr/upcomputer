@@ -88,6 +88,8 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const HANDLED_APPROVAL_RESPONSE_KEY_MAX = 10_000;
+const HANDLED_APPROVAL_RESPONSE_KEY_TTL = Duration.minutes(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 
@@ -205,6 +207,11 @@ const make = Effect.gen(function* () {
   const handledTurnStartKeys = yield* Cache.make<string, true>({
     capacity: HANDLED_TURN_START_KEY_MAX,
     timeToLive: HANDLED_TURN_START_KEY_TTL,
+    lookup: () => Effect.succeed(true),
+  });
+  const handledApprovalResponseKeys = yield* Cache.make<string, true>({
+    capacity: HANDLED_APPROVAL_RESPONSE_KEY_MAX,
+    timeToLive: HANDLED_APPROVAL_RESPONSE_KEY_TTL,
     lookup: () => Effect.succeed(true),
   });
 
@@ -979,6 +986,12 @@ const make = Effect.gen(function* () {
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.approval-response-requested" }>,
   ) {
+    const responseKey = `${event.payload.threadId}\u0000${event.payload.requestId}`;
+    const alreadyHandled = yield* Cache.getOption(handledApprovalResponseKeys, responseKey);
+    if (Option.isSome(alreadyHandled)) {
+      return;
+    }
+    yield* Cache.set(handledApprovalResponseKeys, responseKey, true);
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
       return;
@@ -1004,17 +1017,24 @@ const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.catchCause((cause) =>
-          appendProviderFailureActivity({
-            threadId: event.payload.threadId,
-            kind: "provider.approval.respond.failed",
-            summary: "Provider approval response failed",
-            detail: isUnknownPendingApprovalRequestError(cause)
-              ? stalePendingRequestDetail("approval", event.payload.requestId)
-              : Cause.pretty(cause),
-            turnId: null,
-            createdAt: event.payload.createdAt,
-            requestId: event.payload.requestId,
-          }),
+          (isUnknownPendingApprovalRequestError(cause)
+            ? Effect.void
+            : Cache.invalidate(handledApprovalResponseKeys, responseKey)
+          ).pipe(
+            Effect.andThen(
+              appendProviderFailureActivity({
+                threadId: event.payload.threadId,
+                kind: "provider.approval.respond.failed",
+                summary: "Provider approval response failed",
+                detail: isUnknownPendingApprovalRequestError(cause)
+                  ? stalePendingRequestDetail("approval", event.payload.requestId)
+                  : Cause.pretty(cause),
+                turnId: null,
+                createdAt: event.payload.createdAt,
+                requestId: event.payload.requestId,
+              }),
+            ),
+          ),
         ),
       );
   });

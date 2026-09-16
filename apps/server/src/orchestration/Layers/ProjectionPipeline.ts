@@ -1568,23 +1568,28 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
-        case "thread.approval-response-requested": {
-          const existingRow = yield* projectionPendingApprovalRepository.getByRequestId({
-            requestId: event.payload.requestId,
+        case "thread.session-set": {
+          if (
+            event.payload.session.status !== "error" &&
+            event.payload.session.status !== "stopped" &&
+            event.payload.session.status !== "interrupted"
+          ) {
+            return;
+          }
+          const approvals = yield* projectionPendingApprovalRepository.listByThreadId({
+            threadId: event.payload.threadId,
           });
-          yield* projectionPendingApprovalRepository.upsert({
-            requestId: event.payload.requestId,
-            threadId: Option.isSome(existingRow)
-              ? existingRow.value.threadId
-              : event.payload.threadId,
-            turnId: Option.isSome(existingRow) ? existingRow.value.turnId : null,
-            status: "resolved",
-            decision: event.payload.decision,
-            createdAt: Option.isSome(existingRow)
-              ? existingRow.value.createdAt
-              : event.payload.createdAt,
-            resolvedAt: event.payload.createdAt,
-          });
+          yield* Effect.forEach(
+            approvals.filter((approval) => approval.status === "pending"),
+            (approval) =>
+              projectionPendingApprovalRepository.upsert({
+                ...approval,
+                status: "resolved",
+                decision: null,
+                resolvedAt: event.occurredAt,
+              }),
+            { discard: true, concurrency: 1 },
+          );
           return;
         }
 

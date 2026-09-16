@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   CommandId,
   EventId,
   MessageId,
@@ -249,6 +250,48 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
     }),
   );
 
+  it.effect("routes approval decisions only to an open request on the selected thread", () =>
+    Effect.gen(function* () {
+      const requestId = ApprovalRequestId.make("req-open");
+      const request = {
+        id: EventId.make("activity-open-approval"),
+        tone: "approval" as const,
+        kind: "approval.requested",
+        summary: "Approval requested",
+        payload: { requestId },
+        turnId: null,
+        createdAt: NOW,
+      } satisfies OrchestrationThread["activities"][number];
+
+      const event = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.approval.respond",
+          commandId: CommandId.make("cmd-approval-open"),
+          threadId: ThreadId.make("thread-1"),
+          requestId,
+          decision: "decline",
+          createdAt: NOW,
+        },
+        readModel: makeReadModel(null, null, makeSession("running"), [request]),
+      });
+      const events = Array.isArray(event) ? event : [event];
+      expect(events[0]?.type).toBe("thread.approval-response-requested");
+
+      const staleError = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.approval.respond",
+          commandId: CommandId.make("cmd-approval-stale"),
+          threadId: ThreadId.make("thread-1"),
+          requestId: ApprovalRequestId.make("req-stale"),
+          decision: "accept",
+          createdAt: NOW,
+        },
+        readModel: makeReadModel(null, null, makeSession("running"), [request]),
+      }).pipe(Effect.flip);
+      expect(staleError._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+
   it.effect("bounds the queued-turn grace window against client clock skew", () =>
     Effect.gen(function* () {
       const userMessage = (createdAt: string): OrchestrationThread["messages"][number] => ({
@@ -467,6 +510,75 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
         const events = Array.isArray(result) ? result : [result];
         expect(events.map((event) => event.type)).toEqual(["thread.session-set"]);
       }
+    }),
+  );
+
+  it.effect("invalidates open approvals when a provider session becomes terminal", () =>
+    Effect.gen(function* () {
+      const requestId = ApprovalRequestId.make("req-orphaned");
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-interrupted"),
+          threadId: ThreadId.make("thread-1"),
+          session: makeSession("interrupted"),
+          createdAt: NOW,
+        },
+        readModel: makeReadModel(null, null, makeSession("running"), [
+          {
+            id: EventId.make("activity-orphaned-approval"),
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "File-change approval requested",
+            payload: { requestId, requestKind: "file-change" },
+            turnId: null,
+            createdAt: NOW,
+          },
+        ]),
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((event) => event.type)).toEqual([
+        "thread.session-set",
+        "thread.activity-appended",
+      ]);
+      expect(events[1]?.payload).toMatchObject({
+        activity: {
+          kind: "approval.resolved",
+          payload: { requestId, invalidated: true },
+        },
+      });
+
+      const staleDecision = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.approval.respond",
+          commandId: CommandId.make("cmd-orphaned-approval-response"),
+          threadId: ThreadId.make("thread-1"),
+          requestId,
+          decision: "accept",
+          createdAt: NOW,
+        },
+        readModel: makeReadModel(null, null, makeSession("interrupted"), [
+          {
+            id: EventId.make("activity-orphaned-approval"),
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "File-change approval requested",
+            payload: { requestId, requestKind: "file-change" },
+            turnId: null,
+            createdAt: NOW,
+          },
+          {
+            id: EventId.make("activity-orphaned-approval-invalidated"),
+            tone: "approval",
+            kind: "approval.resolved",
+            summary: "Approval invalidated",
+            payload: { requestId, invalidated: true },
+            turnId: null,
+            createdAt: NOW,
+          },
+        ]),
+      }).pipe(Effect.flip);
+      expect(staleDecision._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   CheckpointRef,
   CommandId,
   CorrelationId,
@@ -2282,6 +2283,24 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       });
 
       yield* appendAndProject({
+        type: "thread.approval-response-requested",
+        eventId: EventId.make("evt-nonstale-approval-response-requested"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-nonstale-approval"),
+        occurredAt: "2026-02-26T12:45:02.500Z",
+        commandId: CommandId.make("cmd-nonstale-approval-response-requested"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-nonstale-approval-response-requested"),
+        metadata: { requestId: ApprovalRequestId.make("approval-request-nonstale-existing") },
+        payload: {
+          threadId: ThreadId.make("thread-nonstale-approval"),
+          requestId: ApprovalRequestId.make("approval-request-nonstale-existing"),
+          decision: "accept",
+          createdAt: "2026-02-26T12:45:02.500Z",
+        },
+      });
+
+      yield* appendAndProject({
         type: "thread.activity-appended",
         eventId: EventId.make("evt-nonstale-approval-4"),
         aggregateKind: "thread",
@@ -2373,6 +2392,44 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         WHERE thread_id = 'thread-nonstale-approval'
       `;
       assert.deepEqual(threadRows, [{ pendingApprovalCount: 1 }]);
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-nonstale-approval-session-stopped"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-nonstale-approval"),
+        occurredAt: "2026-02-26T12:45:05.000Z",
+        commandId: CommandId.make("cmd-nonstale-approval-session-stopped"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-nonstale-approval-session-stopped"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-nonstale-approval"),
+          session: {
+            threadId: ThreadId.make("thread-nonstale-approval"),
+            status: "stopped",
+            providerName: "codex",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-02-26T12:45:05.000Z",
+          },
+        },
+      });
+
+      const resolvedAfterStop = yield* sql<{
+        readonly status: string;
+        readonly decision: string | null;
+        readonly resolvedAt: string | null;
+      }>`
+        SELECT status, decision, resolved_at AS "resolvedAt"
+        FROM projection_pending_approvals
+        WHERE request_id = 'approval-request-nonstale-existing'
+      `;
+      assert.deepEqual(resolvedAfterStop, [
+        { status: "resolved", decision: null, resolvedAt: "2026-02-26T12:45:05.000Z" },
+      ]);
     }),
   );
 

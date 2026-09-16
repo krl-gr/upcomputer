@@ -3025,6 +3025,34 @@ describe("ClaudeAdapterLive", () => {
 
       const permissionResult = yield* Effect.promise(() => permissionPromise);
       assert.equal((permissionResult as PermissionResult).behavior, "allow");
+
+      const deniedPermissionPromise = canUseTool(
+        "Write",
+        { file_path: "/tmp/should-not-write.txt", content: "denied" },
+        {
+          signal: new AbortController().signal,
+          toolUseID: "tool-use-denied",
+        },
+      );
+      const deniedRequest = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(deniedRequest._tag, "Some");
+      if (deniedRequest._tag !== "Some" || deniedRequest.value.type !== "request.opened") {
+        return;
+      }
+      const deniedRequestId = ApprovalRequestId.make(String(deniedRequest.value.requestId));
+      yield* adapter.respondToRequest(session.threadId, deniedRequestId, "decline");
+      const deniedResolved = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(deniedResolved._tag, "Some");
+      if (deniedResolved._tag === "Some" && deniedResolved.value.type === "request.resolved") {
+        assert.equal(deniedResolved.value.payload.decision, "decline");
+      }
+      const deniedPermissionResult = yield* Effect.promise(() => deniedPermissionPromise);
+      assert.equal((deniedPermissionResult as PermissionResult).behavior, "deny");
+
+      const duplicate = yield* adapter
+        .respondToRequest(session.threadId, deniedRequestId, "accept")
+        .pipe(Effect.flip);
+      assert.match(String(duplicate), /pending|request/i);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

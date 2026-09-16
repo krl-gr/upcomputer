@@ -1,8 +1,10 @@
 import {
+  ApprovalRequestId,
   EventId,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type OrchestrationThread,
   ThreadContextBindingId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -114,6 +116,40 @@ function hasOpenBlockingRequest(thread: {
     }
   }
   return openRequestIds.size > 0;
+}
+
+function openApprovalRequests(thread: {
+  readonly activities: ReadonlyArray<{
+    readonly kind: string;
+    readonly payload: unknown;
+    readonly turnId?: OrchestrationThread["activities"][number]["turnId"];
+  }>;
+}): ReadonlyMap<string, (typeof thread.activities)[number]> {
+  const open = new Map<string, (typeof thread.activities)[number]>();
+  for (const activity of thread.activities) {
+    const payload =
+      typeof activity.payload === "object" && activity.payload !== null
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
+    if (requestId === null) continue;
+    if (activity.kind === "approval.requested") {
+      open.set(requestId, activity);
+    } else if (
+      activity.kind === "approval.resolved" ||
+      (activity.kind === "provider.approval.respond.failed" && isStaleRequestFailureDetail(payload))
+    ) {
+      open.delete(requestId);
+    }
+  }
+  return open;
+}
+
+function hasOpenApprovalRequest(
+  thread: Parameters<typeof openApprovalRequests>[0],
+  requestId: string,
+): boolean {
+  return openApprovalRequests(thread).has(requestId);
 }
 
 /**
@@ -1095,11 +1131,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.approval.respond": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (!hasOpenApprovalRequest(thread, command.requestId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Approval request '${command.requestId}' is not pending on thread '${command.threadId}'.`,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1209,6 +1251,50 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           session: command.session,
         },
       };
+      const terminalSession =
+        command.session.status === "error" ||
+        command.session.status === "stopped" ||
+        command.session.status === "interrupted";
+      if (terminalSession) {
+        const orphanedApprovals = [...openApprovalRequests(thread)];
+        if (orphanedApprovals.length > 0) {
+          const resolvedEvents = yield* Effect.forEach(
+            orphanedApprovals,
+            ([requestId, request]) =>
+              Effect.gen(function* () {
+                const base = yield* withEventBase({
+                  aggregateKind: "thread",
+                  aggregateId: command.threadId,
+                  occurredAt: command.createdAt,
+                  commandId: command.commandId,
+                  metadata: { requestId: ApprovalRequestId.make(requestId) },
+                });
+                return {
+                  ...base,
+                  type: "thread.activity-appended" as const,
+                  payload: {
+                    threadId: command.threadId,
+                    activity: {
+                      id: base.eventId,
+                      tone: "approval" as const,
+                      kind: "approval.resolved",
+                      summary: "Approval invalidated",
+                      payload: {
+                        requestId: ApprovalRequestId.make(requestId),
+                        invalidated: true,
+                        reason: `Provider session reached terminal state '${command.session.status}'.`,
+                      },
+                      turnId: request.turnId ?? null,
+                      createdAt: command.createdAt,
+                    },
+                  },
+                };
+              }),
+            { concurrency: 1 },
+          );
+          return [sessionSetEvent, ...resolvedEvents];
+        }
+      }
       // Only a session coming alive is activity worth waking a settled thread
       // for — status writes like ready/stopped/error arrive after the fact and
       // must not fight a user's explicit settle. Snooze is deliberately NOT

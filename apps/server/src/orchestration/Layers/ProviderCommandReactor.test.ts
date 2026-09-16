@@ -2079,6 +2079,24 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
+    await harness.runPromise(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cmd-approval-requested-for-response"),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: EventId.make("activity-approval-requested-for-response"),
+          tone: "approval",
+          kind: "approval.requested",
+          summary: "Approval requested",
+          payload: { requestId: "approval-request-1", requestKind: "command" },
+          turnId: null,
+          createdAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.approval.respond",
@@ -2096,6 +2114,19 @@ describe("ProviderCommandReactor", () => {
       requestId: "approval-request-1",
       decision: "accept",
     });
+
+    await harness.runPromise(
+      harness.engine.dispatch({
+        type: "thread.approval.respond",
+        commandId: CommandId.make("cmd-approval-respond-duplicate"),
+        threadId: ThreadId.make("thread-1"),
+        requestId: asApprovalRequestId("approval-request-1"),
+        decision: "decline",
+        createdAt: now,
+      }),
+    );
+    await harness.drain;
+    expect(harness.respondToRequest.mock.calls.length).toBe(1);
   });
 
   it("reacts to thread.user-input.respond by forwarding structured user input answers", async () => {
