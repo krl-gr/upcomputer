@@ -21,6 +21,12 @@ import {
   UPCOMPUTER_HOME_DIRECTORY_NAME,
 } from "./DesktopProductIdentity.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
+import {
+  isLocalTestVersion,
+  LOCAL_TEST_APP_NAME,
+  LOCAL_TEST_APP_ID,
+  LOCAL_TEST_HOME_NAME,
+} from "./localTestProfile.ts";
 
 export interface MakeDesktopEnvironmentInput {
   readonly dirname: string;
@@ -159,7 +165,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  const configuredBaseDir = Option.orElse(config.upcomputerHome, () => config.t3Home);
+  const localTest = isLocalTestVersion(input.appVersion);
+  const configuredBaseDir = localTest
+    ? Option.some(path.join(homeDirectory, LOCAL_TEST_HOME_NAME))
+    : Option.orElse(config.upcomputerHome, () => config.t3Home);
   const preferredBaseDir = path.join(homeDirectory, UPCOMPUTER_HOME_DIRECTORY_NAME);
   const legacyBaseDir = path.join(homeDirectory, LEGACY_HOME_DIRECTORY_NAME);
   const baseDir = yield* Option.match(configuredBaseDir, {
@@ -181,10 +190,13 @@ const make = Effect.fn("desktop.environment.make")(function* (
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
-  const branding = resolveDesktopAppBranding({
+  const originalBranding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
   });
+  const branding = localTest
+    ? { ...originalBranding, displayName: LOCAL_TEST_APP_NAME }
+    : originalBranding;
   const displayName = branding.displayName;
   // An explicitly configured base dir is already the state root -- don't push
   // dev runs into a `dev` subdirectory underneath it.
@@ -192,10 +204,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
     baseDir,
     isDevelopment && Option.isNone(configuredBaseDir) ? "dev" : "userdata",
   );
-  const userDataDirName = isDevelopment ? "Up.computer (Dev)" : "Up.computer";
-  const legacyUserDataDirNames = isDevelopment
-    ? ["t3code-dev", "T3 Code (Dev)"]
-    : ["t3code", "T3 Code (Alpha)"];
+  const userDataDirName = localTest
+    ? LOCAL_TEST_APP_NAME
+    : isDevelopment
+      ? "Up.computer (Dev)"
+      : "Up.computer";
+  const legacyUserDataDirNames = localTest
+    ? []
+    : isDevelopment
+      ? ["t3code-dev", "T3 Code (Dev)"]
+      : ["t3code", "T3 Code (Alpha)"];
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -228,15 +246,17 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : path.join(input.appPath, "dev-app-update.yml"),
     devServerUrl,
     devRemoteT3ServerEntryPath: config.devRemoteT3ServerEntryPath,
-    configuredBackendPort: config.configuredBackendPort,
+    configuredBackendPort: localTest ? Option.none() : config.configuredBackendPort,
     commitHashOverride: config.commitHashOverride,
     otlpTracesUrl: config.otlpTracesUrl,
     otlpExportIntervalMs: config.otlpExportIntervalMs,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? `${UPCOMPUTER_APP_ID}.dev` : UPCOMPUTER_APP_ID,
-    ),
+    appUserModelId: localTest
+      ? LOCAL_TEST_APP_ID
+      : Option.getOrElse(config.appUserModelIdOverride, () =>
+          isDevelopment ? `${UPCOMPUTER_APP_ID}.dev` : UPCOMPUTER_APP_ID,
+        ),
     linuxDesktopEntryName: isDevelopment ? "upcomputer-dev.desktop" : "upcomputer.desktop",
     linuxWmClass: isDevelopment ? "upcomputer-dev" : "upcomputer",
     userDataDirName,

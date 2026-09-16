@@ -14,6 +14,11 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import {
+  isLocalTestVersion,
+  LOCAL_TEST_APP_NAME,
+  LOCAL_TEST_APP_ID,
+} from "../apps/desktop/src/app/localTestProfile.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -1080,6 +1085,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
+  if (isLocalTestVersion(version)) return LOCAL_TEST_APP_NAME;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "Up.computer (Nightly)"
     : (desktopPackageJson.productName ?? "Up.computer");
@@ -1094,7 +1100,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   mockUpdateServerPort: number | undefined,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: isLocalTestVersion(version) ? LOCAL_TEST_APP_ID : DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "Up.computer-${version}-${arch}.${ext}",
     directories: {
@@ -1116,10 +1122,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     asarUnpack: [...DESKTOP_ASAR_UNPACK, "apps/server/dist/**", "**/node_modules/**"],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+  const publishConfig = isLocalTestVersion(version)
+    ? undefined
+    : yield* resolveGitHubPublishConfig(updateChannel);
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
-  } else if (mockUpdates) {
+  } else if (mockUpdates && !isLocalTestVersion(version)) {
     buildConfig.publish = [
       {
         provider: "generic",
@@ -1133,12 +1141,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
-      protocols: [
-        {
-          name: "Up.computer",
-          schemes: [...DESKTOP_PROTOCOL_SCHEMES],
-        },
-      ],
+      protocols: isLocalTestVersion(version)
+        ? []
+        : [
+            {
+              name: "Up.computer",
+              schemes: [...DESKTOP_PROTOCOL_SCHEMES],
+            },
+          ],
     };
   }
 

@@ -57,6 +57,17 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
+import { isLocalTestVersion, LOCAL_TEST_HOME_NAME } from "./app/localTestProfile.ts";
+
+// Apply before Clerk/config initialization, including Finder launches with no env.
+if (isLocalTestVersion(Electron.app.getVersion())) {
+  const testStateRoot = NodePath.join(NodeOS.homedir(), LOCAL_TEST_HOME_NAME);
+  process.env.UPCOMPUTER_HOME = testStateRoot;
+  process.env.T3CODE_HOME = testStateRoot;
+  process.env.T3CODE_DISABLE_AUTO_UPDATE = "true";
+  delete process.env.VITE_DEV_SERVER_URL;
+  delete process.env.T3CODE_PORT;
+}
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());
 const configuredBaseDir =

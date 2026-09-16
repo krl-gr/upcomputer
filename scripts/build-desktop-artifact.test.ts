@@ -339,6 +339,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
   });
 
+  it.effect(
+    "isolates local-test packages and suppresses even configured update feeds and protocol claims",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.0.31-localtest.1",
+          false,
+          true,
+          4141,
+        );
+        assert.equal(config.appId, "computer.up.upcomputer.localtest");
+        assert.equal(config.productName, "UpComputer Local Test");
+        assert.notProperty(config, "publish");
+        assert.deepEqual((config.mac as Record<string, unknown>).protocols, []);
+      }).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: { T3CODE_DESKTOP_UPDATE_REPOSITORY: "krl-gr/upcomputer" },
+            }),
+          ),
+        ),
+      ),
+  );
+
   it.effect("keeps signed macOS builds independent from passkey entitlements", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined);

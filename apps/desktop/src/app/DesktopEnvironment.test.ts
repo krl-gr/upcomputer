@@ -35,6 +35,23 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect(
+    "isolates packaged local-test identity even with production environment overrides",
+    () =>
+      Effect.gen(function* () {
+        const environment = yield* makeEnvironment(
+          { isPackaged: true, appVersion: "0.0.31-localtest.1" },
+          { UPCOMPUTER_HOME: "/production", T3CODE_HOME: "/legacy", T3CODE_PORT: "3773" },
+        );
+        assert.equal(environment.baseDir, "/Users/alice/.upcomputer-local-test");
+        assert.equal(environment.stateDir, "/Users/alice/.upcomputer-local-test/userdata");
+        assert.equal(environment.userDataDirName, "UpComputer Local Test");
+        assert.deepEqual(environment.legacyUserDataDirNames, []);
+        assert.equal(environment.displayName, "UpComputer Local Test");
+        assert.equal(environment.appUserModelId, "computer.up.upcomputer.localtest");
+        assert.deepEqual(environment.configuredBackendPort, Option.none());
+      }),
+  );
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(
