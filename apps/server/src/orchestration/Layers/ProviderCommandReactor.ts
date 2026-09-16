@@ -979,8 +979,59 @@ const make = Effect.gen(function* () {
       });
     }
 
+    // Ported from upstream ccf220be: a dead provider must not strand Working.
+    const recoverInterruptFailure = (cause: Cause.Cause<unknown>) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+      const detail = formatFailureDetail(cause);
+      const stillTargetsSession = (session: OrchestrationSession | null | undefined) =>
+        session &&
+        session.status !== "stopped" &&
+        session.status !== "ready" &&
+        !(
+          event.payload.turnId !== undefined &&
+          session.activeTurnId !== null &&
+          session.activeTurnId !== event.payload.turnId
+        );
+      return Effect.gen(function* () {
+        const latest = yield* resolveThread(event.payload.threadId);
+        if (!stillTargetsSession(latest?.session)) return;
+        yield* providerService.stopSession({ threadId: event.payload.threadId }).pipe(
+          Effect.catchCause((stopCause) =>
+            Cause.hasInterruptsOnly(stopCause)
+              ? Effect.interrupt
+              : Effect.logWarning("failed to stop session after interrupt failure", {
+                  threadId: event.payload.threadId,
+                  cause: Cause.pretty(stopCause),
+                }),
+          ),
+        );
+        const stopped = yield* resolveThread(event.payload.threadId);
+        if (!stopped?.session || !stillTargetsSession(stopped.session)) return;
+        yield* setThreadSession({
+          threadId: event.payload.threadId,
+          session: {
+            ...stopped.session,
+            status: "stopped",
+            activeTurnId: null,
+            lastError: detail,
+            updatedAt: event.payload.createdAt,
+          },
+          createdAt: event.payload.createdAt,
+        });
+        yield* appendProviderFailureActivity({
+          threadId: event.payload.threadId,
+          kind: "provider.turn.interrupt.failed",
+          summary: "Provider turn interrupt failed",
+          detail,
+          turnId: event.payload.turnId ?? null,
+          createdAt: event.payload.createdAt,
+        });
+      });
+    };
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    yield* providerService
+      .interruptTurn({ threadId: event.payload.threadId })
+      .pipe(Effect.catchCause(recoverInterruptFailure));
   });
 
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
