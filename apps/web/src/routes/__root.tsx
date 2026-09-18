@@ -190,10 +190,8 @@ function InitialProviderSetupOnboarding() {
       dismissed: dismissed || sessionClosed,
       probeWaitExpired,
     });
-    // Deliberately one-way: an agent becoming usable while the screen is open
-    // must not unmount it under the user (they can be mid-login on that very
-    // row). The row turns green, the counter moves, and the user leaves through
-    // the primary button.
+    // Decide initial visibility once. The connection step finishes setup only
+    // after its chosen provider reports usable models, not on unrelated probes.
     if (checkedInitialState.current || decision === null) return;
     checkedInitialState.current = true;
     setShowOnboarding(decision);
@@ -201,7 +199,10 @@ function InitialProviderSetupOnboarding() {
 
   return showOnboarding ? (
     <ProviderOnboarding
-      onFinished={() => setShowOnboarding(false)}
+      onFinished={() => {
+        if (readDevOnboardingScenario() === null) setDismissed(true);
+        setShowOnboarding(false);
+      }}
       onClose={() => {
         setSessionClosed(true);
         setShowOnboarding(false);

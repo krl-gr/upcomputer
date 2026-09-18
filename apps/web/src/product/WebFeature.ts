@@ -83,6 +83,8 @@ export interface ExperimentalWebProviderDriverDetailsProps {
   readonly refreshProviderStatus: () => void;
   readonly onConnectionStateChange?: (ready: boolean) => void;
   readonly onboardingFixtureOutcome?: "success" | "fail" | "cancel" | "loading";
+  readonly onOnboardingStepChange?: (title: string, detailStep: boolean, subtitle: string) => void;
+  readonly onboardingBackRequest?: number;
 }
 
 export interface ExperimentalWebProviderDriverContribution {

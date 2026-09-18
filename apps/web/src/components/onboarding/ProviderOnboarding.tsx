@@ -8,8 +8,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CopyIcon, LoaderIcon, RotateCcwIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, CopyIcon, LoaderIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -18,6 +17,7 @@ import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
 import { buildProviderInstanceUpdatePatch } from "../settings/SettingsPanels.logic";
@@ -27,7 +27,6 @@ import {
   type DriverOption,
 } from "../settings/providerDriverMeta";
 import {
-  countUsableProviders,
   getProviderOnboardingRowState,
   type ProviderOnboardingRowState,
 } from "./providerOnboarding.logic";
@@ -47,8 +46,9 @@ interface ProviderOnboardingProps {
 }
 
 const UPCOMPUTER_DRIVER = ProviderDriverKind.make("up");
-const ROW_GRID =
-  "grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] sm:grid-cols-[minmax(0,1fr)_6.5rem_9.5rem]";
+const ROW_GRID = "grid-cols-[minmax(0,60%)_6rem_6rem] justify-between";
+const ROW_ACTION_BUTTON_CLASS =
+  "flex h-8 w-24 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#d4d4d4] px-3 text-sm font-medium text-[#171717] shadow-[inset_0_-1px_1px_rgba(0,0,0,0.17),inset_0_1px_1px_white] transition-transform duration-150 hover:scale-105 disabled:pointer-events-none disabled:opacity-40 not-dark:bg-[#222222] not-dark:text-white not-dark:shadow-[inset_0_-1px_1px_rgba(255,255,255,0.2),inset_0_1px_1px_rgba(255,255,255,0.2)]";
 
 interface AgentRow {
   readonly option: DriverOption;
@@ -156,16 +156,21 @@ function ReadyCell({
       );
     case "disabled":
       return (
-        <Button size="sm" variant="outline" disabled={busy} onClick={onEnable}>
+        <button
+          type="button"
+          className={ROW_ACTION_BUTTON_CLASS}
+          disabled={busy}
+          onClick={onEnable}
+        >
           Enable
-        </Button>
+        </button>
       );
     case "needs-auth":
     case "needs-models":
       return row.connectable || row.option.signIn ? (
-        <Button size="sm" variant="outline" onClick={onConnect}>
+        <button type="button" className={ROW_ACTION_BUTTON_CLASS} onClick={onConnect}>
           Connect
-        </Button>
+        </button>
       ) : (
         <span className="text-sm text-muted-foreground">
           {row.state === "needs-auth" ? "Not signed in" : "No models"}
@@ -189,15 +194,14 @@ function InstallCell({
   if (row.installed) return <span className="text-sm text-muted-foreground">Installed</span>;
   if (!row.live) return <span className="text-sm text-muted-foreground">Unavailable</span>;
   return (
-    <Button size="sm" variant="outline" disabled={busy} onClick={onInstall}>
-      {busy ? <LoaderIcon className="animate-spin" /> : null}
+    <button type="button" className={ROW_ACTION_BUTTON_CLASS} disabled={busy} onClick={onInstall}>
+      {busy ? <LoaderIcon className="size-4 animate-spin" /> : null}
       {busy ? "Installing…" : "Install"}
-    </Button>
+    </button>
   );
 }
 
 export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnboardingProps) {
-  const navigate = useNavigate();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environment = usePrimaryEnvironment();
@@ -220,6 +224,12 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
   const [signInDriver, setSignInDriver] = useState<string>();
   const [busyDrivers, setBusyDrivers] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [connectionTitle, setConnectionTitle] = useState("Connect UpComputer Agent");
+  const [connectionSubtitle, setConnectionSubtitle] = useState(
+    "Choose a subscription or API key to connect your models.",
+  );
+  const [connectionDetailStep, setConnectionDetailStep] = useState(false);
+  const [onboardingBackRequest, setOnboardingBackRequest] = useState(0);
   const fixtureEnabled = devScenario !== null;
 
   const resetDevScenario = (scenario: DevOnboardingScenario) => {
@@ -273,11 +283,6 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
     };
   });
 
-  const readyCount = fixtureEnabled
-    ? rows.filter((row) => row.ready).length
-    : countUsableProviders(providers) +
-      rows.filter((row) => row.state !== "ready" && connectionReady[row.driver] === true).length;
-
   const refresh = useCallback(() => {
     if (!environment) return;
     void refreshProviders({ environmentId: environment.environmentId, input: {} });
@@ -292,8 +297,20 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
 
   const closeConnection = useCallback(() => {
     setConnectionDriver(undefined);
+    setConnectionTitle("Connect UpComputer Agent");
+    setConnectionSubtitle("Choose a subscription or API key to connect your models.");
+    setConnectionDetailStep(false);
     refresh();
   }, [refresh]);
+
+  const handleOnboardingStepChange = useCallback(
+    (title: string, detailStep: boolean, subtitle: string) => {
+      setConnectionTitle(title);
+      setConnectionSubtitle(subtitle);
+      setConnectionDetailStep(detailStep);
+    },
+    [],
+  );
 
   // Escape closes the active popup first, then the screen.
   useEffect(() => {
@@ -324,11 +341,6 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
       delete next[driver];
       return next;
     });
-
-  const openProviders = () => {
-    onFinished();
-    void navigate({ to: "/settings/providers" });
-  };
 
   const installAgent = async (row: AgentRow) => {
     if (fixtureEnabled) {
@@ -391,18 +403,13 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
     refresh();
   };
 
-  const primaryAction =
-    readyCount > 0
-      ? { label: "Done", onClick: onFinished }
-      : { label: "Skip for now", onClick: onSkip };
-
   const signInRow = rows.find((row) => row.driver === signInDriver);
   const connectionRow = rows.find((row) => row.driver === connectionDriver);
   const ConnectionDetails =
     connectionRow?.option.onboardingDetails ?? connectionRow?.option.connectionDetails;
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto bg-background/96 backdrop-blur-md">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-background/96 px-4 py-12 backdrop-blur-md sm:px-6">
       {devScenario ? (
         <aside className="fixed right-3 bottom-3 z-[110] grid w-64 gap-2 rounded-xl border border-warning/40 bg-card/95 p-3 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between gap-2">
@@ -449,127 +456,156 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
           </Select>
         </aside>
       ) : null}
-      <main className="mx-auto flex min-h-full w-full max-w-3xl items-center px-4 py-10 sm:px-6">
-        <section className="w-full rounded-2xl border border-border/70 bg-card p-5 shadow-2xl shadow-black/20 sm:p-8">
-          <div className="grid gap-6">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Set up agents
+      <main className="mx-auto w-full max-w-3xl">
+        <section className="relative flex h-[calc(100vh-6rem)] w-full flex-col overflow-hidden rounded-[32px] border border-border/70 bg-card shadow-2xl shadow-black/20">
+          {connectionRow ? (
+            <button
+              type="button"
+              aria-label="Back"
+              className="absolute top-6 left-6 z-10 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#d4d4d4] text-[#171717] shadow-[inset_0_-1px_1px_rgba(0,0,0,0.17),inset_0_1px_1px_white] transition-transform duration-150 hover:scale-105 not-dark:bg-[#222222] not-dark:text-white not-dark:shadow-[inset_0_-1px_1px_rgba(255,255,255,0.2),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+              onClick={() => {
+                if (connectionDetailStep) setOnboardingBackRequest((value) => value + 1);
+                else closeConnection();
+              }}
+            >
+              <ArrowLeftIcon className="size-4" strokeWidth={2.75} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label="Skip setup"
+            className="absolute top-6 right-6 z-10 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#d4d4d4] text-[#171717] shadow-[inset_0_-1px_1px_rgba(0,0,0,0.17),inset_0_1px_1px_white] transition-transform duration-150 hover:scale-105 not-dark:bg-[#222222] not-dark:text-white not-dark:shadow-[inset_0_-1px_1px_rgba(255,255,255,0.2),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+            onClick={onSkip}
+          >
+            <XIcon className="size-4" strokeWidth={2.75} />
+          </button>
+          <div
+            className={
+              connectionRow
+                ? "my-auto flex max-h-full w-full flex-col py-6"
+                : "flex h-full max-h-full w-full flex-col py-6"
+            }
+          >
+            <header
+              className={
+                connectionRow
+                  ? "shrink-0 px-16 pb-5"
+                  : "flex grow shrink-0 basis-auto flex-col justify-center px-16 pb-5"
+              }
+            >
+              <h1 className="truncate text-center text-2xl font-semibold tracking-tight text-foreground">
+                {connectionRow ? connectionTitle : "Set up agents"}
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                UpComputer includes a built-in agent you can connect to your preferred subscription
-                or API key. You can also install other agents and choose the setup that works best
-                for you. Add or change providers anytime in Settings.
+              <p className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
+                {connectionRow
+                  ? connectionSubtitle
+                  : "UpComputer includes a built-in agent you can connect to your preferred subscription or API key. You can also install other agents and choose the setup that works best for you. Add or change providers anytime in Settings."}
               </p>
-            </div>
-
-            <div>
-              <div
-                className={`grid gap-2 pb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:gap-3 ${ROW_GRID}`}
-              >
-                <span>Agent</span>
-                <span className="text-right">Install</span>
-                <span className="text-right">Ready</span>
-              </div>
-              <div className="divide-y divide-border/60 border-t border-border/60">
-                {rows.map((row) => {
-                  const Icon = row.option.icon;
-                  const label = row.builtIn ? "UpComputer Agent" : row.option.label;
-                  const busy = busyDrivers[row.driver] === true;
-                  const error = errors[row.driver];
-
-                  return (
-                    <div key={row.driver} className="py-3">
-                      <div className={`grid items-center gap-2 sm:gap-3 ${ROW_GRID}`}>
-                        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/70">
-                            <Icon className="size-5 text-foreground/80" aria-hidden />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">{label}</p>
-                            <p className="mt-0.5 hidden text-xs leading-relaxed text-muted-foreground sm:block">
-                              {row.option.onboardingDescription ?? "Use this agent in UpComputer."}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="justify-self-end">
-                          <InstallCell
-                            row={row}
-                            busy={busy}
-                            onInstall={() => void installAgent(row)}
-                          />
-                        </div>
-                        <div className="justify-self-end">
-                          <ReadyCell
-                            row={row}
-                            busy={busy}
-                            onConnect={() => {
-                              if (row.connectable) {
-                                setConnectionDriver(row.driver);
-                                return;
-                              }
-                              setSignInDriver(row.driver);
-                            }}
-                            onEnable={() => enableAgent(row)}
-                          />
-                        </div>
-                      </div>
-
-                      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+            </header>
+            <div className="min-h-0 overflow-y-auto px-6 pt-4 pb-6">
+              {connectionRow && ConnectionDetails ? (
+                <div className="min-h-0">
+                  <ConnectionDetails
+                    key={connectionRow.instanceId}
+                    environmentId={environment?.environmentId}
+                    instanceId={connectionRow.instanceId}
+                    instance={connectionRow.instance}
+                    liveProvider={connectionRow.live}
+                    refreshProviderStatus={refresh}
+                    onOnboardingStepChange={handleOnboardingStepChange}
+                    onboardingBackRequest={onboardingBackRequest}
+                    onConnectionStateChange={(ready) => {
+                      setConnectionReady((current) =>
+                        current[connectionRow.driver] === ready
+                          ? current
+                          : { ...current, [connectionRow.driver]: ready },
+                      );
+                      if (!ready) return;
+                      toastManager.add(
+                        stackedThreadToast({
+                          type: "success",
+                          title: fixtureEnabled ? "Demo connection complete" : "Models connected",
+                          description: fixtureEnabled
+                            ? "Preview only — no account was connected."
+                            : "You're ready to start a conversation.",
+                        }),
+                      );
+                      onFinished();
+                    }}
+                    {...(fixtureEnabled ? { onboardingFixtureOutcome: devOutcome } : {})}
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-6">
+                  <div>
+                    <div
+                      className={`grid gap-2 pb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:gap-3 ${ROW_GRID}`}
+                    >
+                      <span>Agent</span>
+                      <span className="text-center">Install</span>
+                      <span className="text-center">Ready</span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                    <div className="divide-y divide-border/60 border-t border-border/60">
+                      {rows.map((row) => {
+                        const Icon = row.option.icon;
+                        const label = row.builtIn ? "UpComputer Agent" : row.option.label;
+                        const busy = busyDrivers[row.driver] === true;
+                        const error = errors[row.driver];
 
-            <div className="flex items-center justify-between gap-2">
-              <Button variant="outline" onClick={openProviders}>
-                Manage providers in Settings
-              </Button>
-              <Button className="sm:w-auto" variant="inverse" onClick={primaryAction.onClick}>
-                {primaryAction.label}
-              </Button>
+                        return (
+                          <div key={row.driver} className="py-3">
+                            <div className={`grid items-center gap-2 sm:gap-3 ${ROW_GRID}`}>
+                              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/70">
+                                  <Icon className="size-5 text-foreground/80" aria-hidden />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-foreground">
+                                    {label}
+                                  </p>
+                                  <p className="mt-0.5 hidden text-xs leading-relaxed text-muted-foreground sm:block">
+                                    {row.option.onboardingDescription ??
+                                      "Use this agent in UpComputer."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="justify-self-center">
+                                <InstallCell
+                                  row={row}
+                                  busy={busy}
+                                  onInstall={() => void installAgent(row)}
+                                />
+                              </div>
+                              <div className="justify-self-center">
+                                <ReadyCell
+                                  row={row}
+                                  busy={busy}
+                                  onConnect={() => {
+                                    if (row.connectable) {
+                                      setConnectionDriver(row.driver);
+                                      return;
+                                    }
+                                    setSignInDriver(row.driver);
+                                  }}
+                                  onEnable={() => enableAgent(row)}
+                                />
+                              </div>
+                            </div>
+
+                            {error ? (
+                              <p className="mt-2 text-xs text-destructive">{error}</p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
       </main>
-      {connectionRow && ConnectionDetails ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6">
-          <button
-            type="button"
-            aria-label="Close"
-            className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm"
-            onClick={closeConnection}
-          />
-          <div className="relative flex max-h-[min(85vh,48rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xl shadow-black/30">
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border/60 px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-semibold text-foreground">
-                Connect {connectionRow.builtIn ? "UpComputer Agent" : connectionRow.option.label}
-              </h2>
-              <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={closeConnection}>
-                <XIcon className="size-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 overflow-y-auto p-5 sm:p-6">
-              <ConnectionDetails
-                environmentId={environment?.environmentId}
-                instanceId={connectionRow.instanceId}
-                instance={connectionRow.instance}
-                liveProvider={connectionRow.live}
-                refreshProviderStatus={refresh}
-                onConnectionStateChange={(ready) =>
-                  setConnectionReady((current) =>
-                    current[connectionRow.driver] === ready
-                      ? current
-                      : { ...current, [connectionRow.driver]: ready },
-                  )
-                }
-                {...(fixtureEnabled ? { onboardingFixtureOutcome: devOutcome } : {})}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
       {signInRow?.option.signIn ? (
         <SignInPopup
           label={signInRow.builtIn ? "UpComputer Agent" : signInRow.option.label}
