@@ -1,4 +1,12 @@
-import { CommandId, EventId, ProjectId } from "@t3tools/contracts";
+import * as NodeV8 from "node:v8";
+import {
+  CommandId,
+  EventId,
+  ProjectId,
+  ThreadId,
+  MessageId,
+  type OrchestrationEvent,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,6 +19,31 @@ import { OrchestrationEventStore } from "../Services/OrchestrationEventStore.ts"
 import { OrchestrationEventStoreLive } from "./OrchestrationEventStore.ts";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
 const isPersistenceDecodeError = Schema.is(PersistenceDecodeError);
+
+function messageEvent(threadId: ThreadId, id: string): Omit<OrchestrationEvent, "sequence"> {
+  const now = "2026-01-01T00:00:00.000Z";
+  return {
+    type: "thread.message-sent",
+    eventId: EventId.make(id),
+    aggregateKind: "thread",
+    aggregateId: threadId,
+    occurredAt: now,
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    payload: {
+      threadId,
+      messageId: MessageId.make(id),
+      role: "assistant",
+      text: id,
+      turnId: null,
+      streaming: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
 
 const layer = it.layer(
   OrchestrationEventStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
@@ -121,3 +154,37 @@ layer("OrchestrationEventStore", (it) => {
     }),
   );
 });
+
+it.effect("releases consumed pages and respects replay limits across repeated reads", () =>
+  Effect.gen(function* () {
+    const store = yield* OrchestrationEventStore;
+    const threadId = ThreadId.make("retention-test");
+    yield* Effect.forEach(
+      Array.from({ length: 1501 }, (_, i) => i),
+      (i) => store.append(messageEvent(threadId, `retention-${i}`)),
+      { discard: true },
+    );
+    // oxlint-disable-next-line typescript/no-extraneous-class -- Identifies page markers for V8's heap query.
+    class ReplayPage {}
+    let count = 0;
+    yield* Stream.runForEach(store.readAll(), (event) =>
+      Effect.sync(() => {
+        assert.equal(event.sequence, count + 1);
+        if (count % 500 === 0) {
+          Object.assign(event, { replayPage: new ReplayPage() });
+          assert.isAtMost(NodeV8.queryObjects(ReplayPage, { format: "count" }), 1);
+        }
+        count++;
+      }),
+    );
+    assert.equal(count, 1501);
+    const replay = store.readFromSequence(500, 501.9);
+    for (let run = 0; run < 2; run++) {
+      const events = yield* Stream.runCollect(replay);
+      assert.equal(events.length, 501);
+      assert.equal(events[0]?.sequence, 501);
+      assert.equal(events.at(-1)?.sequence, 1001);
+    }
+    assert.deepEqual(yield* Stream.runCollect(store.readFromSequence(0, -1)), []);
+  }).pipe(Effect.provide(OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)))),
+);

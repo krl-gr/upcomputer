@@ -129,3 +129,32 @@ time: grep for the symbol, do not trust the absence of markers.
   predates this merge.
 - **`apps/mobile` doc comment** still refers to the removed `sidebarV2Enabled`.
   Left alone on purpose: mobile currently has zero divergence.
+
+## Targeted backend OOM backport (2026-09-21)
+
+Branch `fix/backend-oom-reconnect` adapts the following upstream fixes without
+advancing the full upstream baseline or importing newer UI/pagination features:
+
+- `ca72e381c` (#5147): bounded reconnect replay and lightweight CLI/HTTP snapshots.
+- `7e460f429` (#8992): 8 MiB replay preflight; locally includes metadata bytes too.
+- `08463e2c4` (#10777): cursor pagination releases consumed replay pages.
+- `108f295cc` (#9715): per-subscription item/byte budget, including unacknowledged
+  delivery; cancels producers when a slow client exceeds the budget. The older
+  direct thread queue is retained instead of importing the newer coalescer.
+- `71c6f8248` (#6153): most recent 500 activities plus unresolved approvals/input.
+- `a9ffb8279` (#9000): client snapshot activity projection in batches of 25 and
+  short preview strings that do not retain full tool outputs.
+
+These are adaptations, not wholesale cherry-picks. No database migrations or
+stored history deletion. Full tool payloads remain in persistence. Global event
+replay is still used for small ranges but is bounded by both cursor gap and bytes;
+thread-specific SQL replay (#9726) is a separate follow-up.
+
+Backend logs now emit numeric `backend memory sample` counters every 60 seconds,
+and `backend memory pressure` at 80% of the V8 heap limit. No heap dumps or payload
+logging are enabled. Replay byte-budget and live-buffer overflows log counts only.
+
+Focused verification includes stale/ahead reconnect cursors, captured replay
+head, byte preflight, slow-client ACK stalls and recovery, pending-action retention,
+large snapshot tool output projection, and V8 page-lifetime checks. The lifetime
+regression fails against the original recursive replay and passes with pagination.

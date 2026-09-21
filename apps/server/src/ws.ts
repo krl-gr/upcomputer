@@ -75,6 +75,7 @@ import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
+import { makeLiveStreamBudget, type RetainedLiveItem } from "./orchestration/LiveStreamBudget.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -304,6 +305,8 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 // past this gap a single O(active-threads) snapshot is cheaper and bounded.
 // Matches the event store's default page size (DEFAULT_READ_FROM_SEQUENCE_LIMIT).
 const SHELL_RESUME_MAX_GAP = 1_000;
+const THREAD_RESUME_MAX_GAP = 1_000;
+const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 
 const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
@@ -447,6 +450,49 @@ const makeWsRpcLayer = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const canReplayPersistedRange = Effect.fnUntraced(function* (
+        afterSequence: number,
+        headSequence: number,
+        maxGap: number,
+      ) {
+        const replayGap = headSequence - afterSequence;
+        if (replayGap < 0 || replayGap > maxGap) {
+          yield* Effect.logInfo("orchestration replay replaced by snapshot", {
+            afterSequence,
+            headSequence,
+            replayGap,
+            maxGap,
+            reason: replayGap < 0 ? "cursor-ahead" : "event-gap",
+          });
+          return false;
+        }
+        const stats = yield* projectionSnapshotQuery
+          .getEventReplayStats({
+            fromSequenceExclusive: afterSequence,
+            toSequenceInclusive: headSequence,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetSnapshotError({
+                  message: "Failed to measure orchestration replay range",
+                  cause,
+                }),
+            ),
+          );
+        if (stats.payloadBytes > ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES) {
+          yield* Effect.logWarning("orchestration replay replaced by snapshot", {
+            afterSequence,
+            headSequence,
+            replayGap,
+            eventCount: stats.eventCount,
+            payloadBytes: stats.payloadBytes,
+            payloadBudgetBytes: ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES,
+          });
+          return false;
+        }
+        return true;
+      });
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -855,15 +901,6 @@ const makeWsRpcLayer = (
           output.push(...(yield* coalesceShellEvents(pendingEvents)));
           return output;
         });
-
-      const coalesceShellLiveStream = <E, R>(
-        stream: Stream.Stream<ShellLiveInput, E, R>,
-      ): Stream.Stream<OrchestrationShellStreamItem, E, R> =>
-        stream.pipe(
-          Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
-          Stream.mapEffect(coalesceShellLiveInputs),
-          Stream.flatMap((items) => Stream.fromIterable(items)),
-        );
 
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
@@ -1279,16 +1316,55 @@ const makeWsRpcLayer = (
               // sequence but the live subscription is not attached yet). Every
               // path below emits from this same buffered live tail. Overlapping
               // events are deduped by sequence on the client.
-              const liveBuffer = yield* Queue.unbounded<ShellLiveInput>();
+              const liveBudget = yield* makeLiveStreamBudget();
+              const liveBuffer = yield* Queue.unbounded<
+                RetainedLiveItem<ShellLiveInput>,
+                OrchestrationGetSnapshotError
+              >();
+              let liveBufferClosed = false;
+              const closeLiveBuffer = (error?: OrchestrationGetSnapshotError) =>
+                Effect.gen(function* () {
+                  if (liveBufferClosed) {
+                    return;
+                  }
+                  liveBufferClosed = true;
+                  liveBudget.release(yield* Queue.clear(liveBuffer).pipe(Effect.orDie));
+                  if (error) {
+                    yield* Queue.fail(liveBuffer, error);
+                  }
+                  yield* Queue.shutdown(liveBuffer);
+                });
+              yield* Effect.addFinalizer(() => closeLiveBuffer());
+              yield* liveBudget.failed.pipe(
+                Effect.catchTags({ OrchestrationGetSnapshotError: closeLiveBuffer }),
+                Effect.forkScoped,
+              );
               yield* Effect.forkScoped(
                 orchestrationEngine.streamDomainEvents.pipe(
                   Stream.runForEach((event) =>
-                    Queue.offer(liveBuffer, { kind: "event" as const, event }),
+                    liveBudget.retain({ kind: "event" as const, event }, event).pipe(
+                      Effect.flatMap((item) => Queue.offer(liveBuffer, item)),
+                      Effect.uninterruptible,
+                    ),
                   ),
+                  // Stop the PubSub consumer even if RPC delivery is waiting
+                  // for an ACK and never pulls the failed buffer again.
+                  Effect.raceFirst(liveBudget.failed),
+                  Effect.catchTags({ OrchestrationGetSnapshotError: () => Effect.void }),
                 ),
                 { startImmediately: true },
               );
-              const bufferedLiveStream = coalesceShellLiveStream(Stream.fromQueue(liveBuffer));
+              const coalesceRetainedInputs = (
+                items: ReadonlyArray<RetainedLiveItem<ShellLiveInput>>,
+              ) =>
+                coalesceShellLiveInputs(items.map((item) => item.value)).pipe(
+                  Effect.flatMap((output) => liveBudget.replace(items, output)),
+                );
+              const bufferedLiveStream = Stream.fromQueue(liveBuffer).pipe(
+                Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
+                Stream.mapEffect(coalesceRetainedInputs),
+                Stream.flatMap((items) => Stream.fromIterable(items)),
+              );
 
               const loadSnapshot = projectionSnapshotQuery.getShellSnapshot().pipe(
                 Effect.tapError((cause) =>
@@ -1306,18 +1382,21 @@ const makeWsRpcLayer = (
               // Offer the completion marker into the same queue as live events.
               // Anything buffered while snapshot/replay work was in flight is
               // therefore delivered before the client is told it is synchronized.
-              const synchronizedThenLive =
+              const synchronizedThenLive = liveBudget.deliver(
                 input.requestCompletionMarker === true
                   ? Stream.concat(
                       Stream.fromEffect(
-                        Queue.offer(liveBuffer, { kind: "synchronized" as const }).pipe(
+                        liveBudget.retain({ kind: "synchronized" as const }).pipe(
+                          Effect.flatMap((item) => Queue.offer(liveBuffer, item)),
+                          Effect.uninterruptible,
                           Effect.andThen(Queue.takeAll(liveBuffer)),
-                          Effect.flatMap(coalesceShellLiveInputs),
+                          Effect.flatMap(coalesceRetainedInputs),
                         ),
                       ).pipe(Stream.flatMap((items) => Stream.fromIterable(items))),
                       bufferedLiveStream,
                     )
-                  : bufferedLiveStream;
+                  : bufferedLiveStream,
+              );
 
               // When the client already holds a shell snapshot (cached, or loaded
               // over HTTP) it passes that snapshot's sequence, and we resume by
@@ -1335,7 +1414,13 @@ const makeWsRpcLayer = (
                 // is also invalid, so reset it with a snapshot. Send the snapshot
                 // followed by the buffered live tail, exactly as the
                 // no-afterSequence path does.
-                if (replayGap < 0 || replayGap > SHELL_RESUME_MAX_GAP) {
+                if (
+                  !(yield* canReplayPersistedRange(
+                    afterSequence,
+                    headSequence,
+                    SHELL_RESUME_MAX_GAP,
+                  ))
+                ) {
                   const snapshot = yield* loadSnapshot;
                   return Stream.concat(
                     Stream.make({ kind: "snapshot" as const, snapshot }),
@@ -1407,11 +1492,39 @@ const makeWsRpcLayer = (
 
               // Attach live delivery before reading either replay or snapshot state.
               // Otherwise an event published while the snapshot is loading is lost.
-              const liveBuffer = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
-              yield* Effect.forkScoped(
-                liveStream.pipe(Stream.runForEach((item) => Queue.offer(liveBuffer, item))),
+              const liveBudget = yield* makeLiveStreamBudget();
+              const liveBuffer = yield* Queue.unbounded<
+                RetainedLiveItem<OrchestrationThreadStreamItem>,
+                OrchestrationGetSnapshotError
+              >();
+              let liveBufferClosed = false;
+              const closeLiveBuffer = (error?: OrchestrationGetSnapshotError) =>
+                Effect.gen(function* () {
+                  if (liveBufferClosed) return;
+                  liveBufferClosed = true;
+                  liveBudget.release(yield* Queue.clear(liveBuffer).pipe(Effect.orDie));
+                  if (error) yield* Queue.fail(liveBuffer, error);
+                  yield* Queue.shutdown(liveBuffer);
+                });
+              yield* Effect.addFinalizer(() => closeLiveBuffer());
+              yield* liveBudget.failed.pipe(
+                Effect.catchTags({ OrchestrationGetSnapshotError: closeLiveBuffer }),
+                Effect.forkScoped,
               );
-              const bufferedLiveStream = Stream.fromQueue(liveBuffer);
+              const offerLive = (item: OrchestrationThreadStreamItem) =>
+                liveBudget.retain(item).pipe(
+                  Effect.flatMap((retained) => Queue.offer(liveBuffer, retained)),
+                  Effect.uninterruptible,
+                );
+              yield* Effect.forkScoped(
+                liveStream.pipe(
+                  Stream.runForEach(offerLive),
+                  Effect.raceFirst(liveBudget.failed),
+                  Effect.catchTags({ OrchestrationGetSnapshotError: () => Effect.void }),
+                ),
+                { startImmediately: true },
+              );
+              const bufferedLiveStream = liveBudget.deliver(Stream.fromQueue(liveBuffer));
 
               // When the client already loaded the snapshot over HTTP it passes
               // that snapshot's sequence, and we resume the live subscription by
@@ -1426,38 +1539,52 @@ const makeWsRpcLayer = (
               // catch-up followed by the buffered/ongoing live events. Overlapping
               // events are deduped by sequence on the client.
               //
-              // Read the full range after the cursor (not the store's default
-              // page-bounded limit): the range is normally tiny (a fresh HTTP
-              // snapshot sequence) and the per-thread filter runs after reading,
-              // so a global cap could otherwise omit this thread's events.
+              // The replay is bounded to the projection head captured below. The
+              // catch-up range is normally tiny (a fresh HTTP snapshot sequence),
+              // but a stale cached cursor can sit hundreds of thousands of global
+              // events behind — replaying that decodes every intervening event
+              // (including every other thread's tool payloads) only to discard
+              // almost all of them, which has OOM-killed servers on large
+              // databases. A truncated replay would silently drop this thread's
+              // events, so past the gap cap we reset the client with a fresh
+              // thread snapshot instead, exactly like subscribeShell above.
               if (input.afterSequence !== undefined) {
                 const afterSequence = input.afterSequence;
-                const catchUpStream = orchestrationEngine
-                  .readEvents(afterSequence, Number.MAX_SAFE_INTEGER)
-                  .pipe(
-                    Stream.filter(isThisThreadDetailEvent),
-                    Stream.map((event) => ({
-                      kind: "event" as const,
-                      event: projectActivityEvent(event),
-                    })),
-                    Stream.mapError(
-                      (cause) =>
-                        new OrchestrationGetSnapshotError({
-                          message: `Failed to replay thread ${input.threadId} events`,
-                          cause,
-                        }),
-                    ),
-                  );
-                const afterCatchUp =
-                  input.requestCompletionMarker === true
-                    ? Stream.concat(
-                        Stream.fromEffect(
-                          Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                        ).pipe(Stream.drain),
-                        bufferedLiveStream,
-                      )
-                    : bufferedLiveStream;
-                return Stream.concat(catchUpStream, afterCatchUp);
+                const headSequence = yield* orchestrationEngine.latestSequence;
+                const replayGap = headSequence - afterSequence;
+                if (
+                  yield* canReplayPersistedRange(afterSequence, headSequence, THREAD_RESUME_MAX_GAP)
+                ) {
+                  const catchUpStream = orchestrationEngine
+                    .readEvents(afterSequence, replayGap)
+                    .pipe(
+                      Stream.filter(isThisThreadDetailEvent),
+                      Stream.map((event) => ({
+                        kind: "event" as const,
+                        event: projectActivityEvent(event),
+                      })),
+                      Stream.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: `Failed to replay thread ${input.threadId} events`,
+                            cause,
+                          }),
+                      ),
+                    );
+                  const afterCatchUp =
+                    input.requestCompletionMarker === true
+                      ? Stream.concat(
+                          Stream.fromEffect(offerLive({ kind: "synchronized" as const })).pipe(
+                            Stream.drain,
+                          ),
+                          bufferedLiveStream,
+                        )
+                      : bufferedLiveStream;
+                  return Stream.concat(catchUpStream, afterCatchUp);
+                }
+                // Gap too large (or cursor ahead of authoritative state): fall
+                // through to the snapshot path so the client converges from a
+                // fresh thread detail instead of an unbounded replay.
               }
 
               const snapshot = yield* projectionSnapshotQuery
@@ -1482,9 +1609,9 @@ const makeWsRpcLayer = (
               const afterSnapshot =
                 input.requestCompletionMarker === true
                   ? Stream.concat(
-                      Stream.fromEffect(
-                        Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                      ).pipe(Stream.drain),
+                      Stream.fromEffect(offerLive({ kind: "synchronized" as const })).pipe(
+                        Stream.drain,
+                      ),
                       bufferedLiveStream,
                     )
                   : bufferedLiveStream;

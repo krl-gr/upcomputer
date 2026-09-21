@@ -82,6 +82,7 @@ it.effect("launchStartupHeartbeat does not block the caller while counts are loa
           getShellSnapshot: () => Effect.die("unused"),
           getArchivedShellSnapshot: () => Effect.die("unused"),
           getSnapshotSequence: () => Effect.die("unused"),
+          getEventReplayStats: () => Effect.succeed({ eventCount: 0, payloadBytes: 0 }),
           getCounts: () =>
             Deferred.await(releaseCounts).pipe(
               Effect.as({
@@ -144,6 +145,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.succeed({ eventCount: 0, payloadBytes: 0 }),
         getCounts: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
           Effect.succeed(
@@ -200,6 +202,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.succeed({ eventCount: 0, payloadBytes: 0 }),
         getCounts: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShellById: () => Effect.die("unused"),
@@ -250,6 +253,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.succeed({ eventCount: 0, payloadBytes: 0 }),
         getCounts: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShellById: () => Effect.die("unused"),

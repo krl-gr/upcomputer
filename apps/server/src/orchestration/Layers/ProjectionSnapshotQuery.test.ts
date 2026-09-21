@@ -11,6 +11,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -19,6 +20,7 @@ import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
+const encodeJson = Schema.encodeUnknownEffect(Schema.UnknownFromJsonString);
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
@@ -1580,6 +1582,209 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
       assert.equal(shellSnapshot.projects.length, 0);
       assert.equal(shellSnapshot.threads.length, 0);
+    }),
+  );
+  it.effect("bounds activity hydration and preserves unresolved requests", () =>
+    Effect.gen(function* () {
+      const threadW = ThreadId.make("thread-w");
+      const db = yield* SqlClient.SqlClient;
+      yield* db`DELETE FROM projection_pending_approvals`;
+      yield* db`DELETE FROM projection_thread_activities`;
+      yield* db`DELETE FROM projection_threads`;
+      yield* db`DELETE FROM projection_projects`;
+      yield* db`INSERT INTO projection_projects
+        (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+        VALUES ('project-w', 'Test', '/tmp/project-w', '[]',
+          '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')`;
+      yield* db`INSERT INTO projection_threads
+        (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+         created_at, updated_at)
+        VALUES ('thread-w', 'project-w', 'Test', '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access', 'default', '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')`;
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`
+        WITH RECURSIVE activity_rows(sequence) AS (
+          SELECT 1
+          UNION ALL
+          SELECT sequence + 1 FROM activity_rows WHERE sequence < 501
+        )
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        )
+        SELECT
+          printf('activity-%04d', sequence),
+          'thread-w',
+          'turn-5',
+          'tool',
+          'tool.completed',
+          'ran tool',
+          printf('{"sequence":%d}', sequence),
+          sequence,
+          '2026-03-01T00:04:00.000Z'
+        FROM activity_rows
+      `;
+
+      const fullDetail = yield* snapshotQuery.getThreadDetailById(threadW);
+      assert.equal(fullDetail._tag, "Some");
+      if (fullDetail._tag === "Some") {
+        assert.equal(fullDetail.value.activities.length, 500);
+        assert.equal(fullDetail.value.activities[0]?.id, asEventId("activity-0002"));
+        assert.equal(fullDetail.value.activities.at(-1)?.id, asEventId("activity-0501"));
+      }
+
+      const windowedDetail = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(windowedDetail._tag, "Some");
+      if (windowedDetail._tag === "Some") {
+        assert.equal(windowedDetail.value.thread.activities.length, 500);
+        assert.equal(windowedDetail.value.thread.activities[0]?.id, asEventId("activity-0002"));
+        assert.equal(windowedDetail.value.thread.activities.at(-1)?.id, asEventId("activity-0501"));
+      }
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        )
+        VALUES
+          (
+            'approval-old', 'thread-w', NULL, 'approval', 'approval.requested',
+            'Approve old command', '{"requestId":"approval-1"}', NULL,
+            '2026-03-01T00:00:01.000Z'
+          ),
+          (
+            'user-input-old', 'thread-w', NULL, 'approval', 'user-input.requested',
+            'Answer old question', '{"requestId":"input-1"}', NULL,
+            '2026-03-01T00:00:02.000Z'
+          ),
+          (
+            'user-input-closed', 'thread-w', NULL, 'approval', 'user-input.requested',
+            'Closed question', '{"requestId":"input-closed"}', NULL,
+            '2026-03-01T00:00:03.000Z'
+          ),
+          (
+            'user-input-closed-resolution', 'thread-w', NULL, 'info', 'user-input.resolved',
+            'Closed question', '{"requestId":"input-closed"}', NULL,
+            '2026-03-01T00:00:04.000Z'
+          ),
+          (
+            'user-input-tied-z-request', 'thread-w', NULL, 'approval', 'user-input.requested',
+            'Tied open question', '{"requestId":"input-tied-open"}', NULL,
+            '2026-03-01T00:00:05.000Z'
+          ),
+          (
+            'user-input-tied-a-resolution', 'thread-w', NULL, 'info', 'user-input.resolved',
+            'Tied open question', '{"requestId":"input-tied-open"}', NULL,
+            '2026-03-01T00:00:05.000Z'
+          )
+      `;
+      yield* sql`
+        INSERT INTO projection_pending_approvals (
+          request_id, thread_id, turn_id, status, decision, created_at, resolved_at
+        )
+        VALUES (
+          'approval-1', 'thread-w', NULL, 'pending', NULL,
+          '2026-03-01T00:00:01.000Z', NULL
+        )
+      `;
+      yield* sql`
+        UPDATE projection_threads
+        SET pending_approval_count = 1, pending_user_input_count = 1
+        WHERE thread_id = 'thread-w'
+      `;
+
+      const detailWithPinnedRequests = yield* snapshotQuery.getThreadDetailById(threadW);
+      assert.equal(detailWithPinnedRequests._tag, "Some");
+      if (detailWithPinnedRequests._tag === "Some") {
+        const ids = new Set(
+          detailWithPinnedRequests.value.activities.map((activity) => activity.id),
+        );
+        assert.equal(detailWithPinnedRequests.value.activities.length, 503);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
+      }
+
+      const windowWithPinnedRequests = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(windowWithPinnedRequests._tag, "Some");
+      if (windowWithPinnedRequests._tag === "Some") {
+        const ids = new Set(
+          windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id),
+        );
+        assert.equal(windowWithPinnedRequests.value.thread.activities.length, 503);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
+      }
+
+      // More than two hydration batches of sizable tool output. The client gets
+      // only previews, while detailed output remains available in persistence.
+      yield* sql`UPDATE projection_thread_activities SET payload_json = json_object(
+        'itemType', 'command_execution', 'data', json_object('rawOutput', json_object(
+          'stdout', 'first line' || char(10) || printf('%.*c', 524288, 'x')
+        ))) WHERE sequence > 441`;
+      const projected = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(projected._tag, "Some");
+      if (projected._tag === "Some") {
+        const serialized = yield* encodeJson(projected.value.thread.activities);
+        assert.isBelow(serialized.length, 200_000);
+        assert.deepEqual(projected.value.thread.activities.at(-1)?.payload, {
+          itemType: "command_execution",
+          data: { rawOutput: { content: "first line" } },
+        });
+      }
+      const stored = yield* sql<{ bytes: number }>`SELECT length(payload_json) AS bytes
+        FROM projection_thread_activities WHERE activity_id = 'activity-0501'`;
+      assert.isAbove(stored[0]!.bytes, 524288);
+    }),
+  );
+
+  it.effect("measures replay payload bytes without decoding event bodies", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM orchestration_events`;
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+          command_id, causation_event_id, correlation_id, actor_kind, payload_json, metadata_json
+        )
+        VALUES
+          (
+            'replay-event-1', 'thread', 'thread-replay', 1, 'thread.activity-appended',
+            '2026-03-01T00:00:00.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 1000, 'x')), '{}'
+          ),
+          (
+            'replay-event-2', 'thread', 'thread-replay', 2, 'thread.activity-appended',
+            '2026-03-01T00:00:01.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 2000, 'x')), '{}'
+          ),
+          (
+            'replay-event-3', 'thread', 'thread-replay', 3, 'thread.activity-appended',
+            '2026-03-01T00:00:02.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 3000, 'x')), '{}'
+          ),
+          (
+            'replay-event-4', 'thread', 'thread-replay', 4, 'thread.activity-appended',
+            '2026-03-01T00:00:03.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', '😀'), '{}'
+          )
+      `;
+
+      // Bytes, not code points: the 4-byte emoji row is {"output":"😀"}, 17 bytes.
+      const stats = yield* snapshotQuery.getEventReplayStats({
+        fromSequenceExclusive: 1,
+        toSequenceInclusive: 4,
+      });
+      assert.deepStrictEqual(stats, {
+        eventCount: 3,
+        payloadBytes: 5049, // Includes three metadata JSON objects (2 bytes each).
+      });
     }),
   );
 });
