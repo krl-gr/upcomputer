@@ -1,3 +1,4 @@
+import { migratingUiStorage } from "./lib/legacyUiStorage";
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import {
@@ -7,7 +8,7 @@ import {
 } from "./contextQuickActions";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
-export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
+export const PERSISTED_STATE_KEY = "upcomputer:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
 const LEGACY_PERSISTED_STATE_KEYS = [
   "t3code:renderer-state:v8",
@@ -172,10 +173,10 @@ function readPersistedState(): UiState {
     return initialState;
   }
   try {
-    const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
+    const raw = migratingUiStorage(window.localStorage).getItem(PERSISTED_STATE_KEY);
     if (!raw) {
       for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        const legacyRaw = window.localStorage.getItem(legacyKey);
+        const legacyRaw = migratingUiStorage(window.localStorage).getItem(legacyKey);
         if (!legacyRaw) {
           continue;
         }
@@ -227,7 +228,7 @@ export function persistState(state: UiState): void {
         ([key]) => key !== LEGACY_PROJECT_EXPANSION_DEFAULT_KEY,
       ),
     );
-    window.localStorage.setItem(
+    migratingUiStorage(window.localStorage).setItem(
       PERSISTED_STATE_KEY,
       JSON.stringify({
         projectExpandedById,
@@ -243,7 +244,7 @@ export function persistState(state: UiState): void {
     if (!legacyKeysCleanedUp) {
       legacyKeysCleanedUp = true;
       for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        window.localStorage.removeItem(legacyKey);
+        migratingUiStorage(window.localStorage).removeItem(legacyKey);
       }
     }
   } catch {

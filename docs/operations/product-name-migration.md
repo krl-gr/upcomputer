@@ -11,8 +11,8 @@ Upstream license/copyright notices and historical attribution remain intact.
 | Public workspace packages, imports, aliases, bundlers | `@upcomputer/*`, mirrored in private optional peers/resolvers                               |
 | Lint plugin directory, package, rule IDs              | `oxlint-plugin-upcomputer`, `upcomputer/*`                                                  |
 | Server CLI package/bin and help                       | Separate change; old launch commands need compatibility                                     |
-| DOM/CSS/internal browser event names                  | Rename producers and consumers together; not persisted                                      |
-| Browser UI preferences/drafts/workspace state         | New keys with explicit legacy-key migration; never reset drafts                             |
+| DOM/CSS/internal browser event names                  | Dockview/composer classes and browser events renamed together                               |
+| Browser UI preferences/drafts/workspace state         | `upcomputer:*` keys; 16 explicit legacy aliases in `legacyUiStorage.ts`                     |
 | Environment variables                                 | New primary names with bounded legacy aliases and precedence tests                          |
 | Checked-in project config                             | Prefer `upcomputer.json`; accept existing `t3.json` without running both                    |
 | Desktop/server home and profile directories           | Existing data must remain discoverable; no rename while another process may own the profile |
@@ -38,6 +38,18 @@ with the renamed public packages.
   mobile typecheck or hide those baseline failures.
 - Focused lint-plugin, packaging, shared-shell, sidebar, Pi and task-tool tests pass.
 - Composed private server bundle builds with the new internal-package namespace.
+
+## Verification record: browser UI state
+
+- 176 focused storage/theme/draft/workspace tests pass, including quota failure,
+  new-value precedence, repeated migration and deletion without resurrection.
+- Migration copies bytes before removing an old key. Failed writes leave the
+  original readable. Only an explicit non-auth allowlist is migrated.
+- The pre-React theme bootstrap reads the new key first, then the legacy theme.
+- An isolated paired browser verified an unsent draft and dark theme surviving
+  a legacy-key migration and reload, without sending a model prompt.
+- The rendered workspace regression checks still pass after the CSS rename.
+- IndexedDB/OAuth identifiers are deliberately not covered by this UI migration.
 
 Native installed-app upgrade and platform checks remain release gates. A browser
 or a macOS bundle check is not evidence of a working Windows/mobile migration.

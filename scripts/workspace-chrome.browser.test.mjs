@@ -48,7 +48,7 @@ NodeTest.test(
             await tabs.nth(i).focus();
             const geometry = await tabs.nth(i).evaluate((tab) => {
               const rect = tab.getBoundingClientRect();
-              const content = tab.querySelector(".t3-workspace-tab").getBoundingClientRect();
+              const content = tab.querySelector(".upcomputer-workspace-tab").getBoundingClientRect();
               const focus = getComputedStyle(tab, "::after");
               return {
                 height: rect.height,

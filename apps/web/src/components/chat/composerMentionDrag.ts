@@ -5,7 +5,7 @@ import { serializeComposerFileLink } from "@upcomputer/shared/composerTrigger";
  * start in the workspace file tree so the composer can tell them apart from
  * OS file drags and plain text selections.
  */
-export const COMPOSER_MENTION_DRAG_TYPE = "application/x-t3code-composer-mention";
+export const COMPOSER_MENTION_DRAG_TYPE = "application/x-upcomputer-composer-mention";
 
 export function composerMentionFromTreePath(treePath: string): string | null {
   const relativePath = treePath.replace(/\/+$/, "");

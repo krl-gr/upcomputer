@@ -161,7 +161,7 @@ function DockviewHeaderIconButton(props: {
 function getDockviewHeaderElements(actionsElement: HTMLElement | null) {
   const headerElement = actionsElement?.closest(".dv-tabs-and-actions-container");
   const tabsContainer = headerElement?.querySelector(".dv-tabs-container");
-  const dockviewElement = actionsElement?.closest(".t3code-dockview-theme");
+  const dockviewElement = actionsElement?.closest(".upcomputer-dockview-theme");
   return {
     dockviewElement: dockviewElement instanceof HTMLElement ? dockviewElement : null,
     headerElement: headerElement instanceof HTMLElement ? headerElement : null,
@@ -170,8 +170,8 @@ function getDockviewHeaderElements(actionsElement: HTMLElement | null) {
 }
 
 function getWorkspaceTabNaturalWidth(tabElement: HTMLElement): number {
-  const titleElement = tabElement.querySelector<HTMLElement>(".t3-workspace-tab-title");
-  const closeElement = tabElement.querySelector<HTMLElement>(".t3-workspace-tab-close");
+  const titleElement = tabElement.querySelector<HTMLElement>(".upcomputer-workspace-tab-title");
+  const closeElement = tabElement.querySelector<HTMLElement>(".upcomputer-workspace-tab-close");
   const closeWidth = closeElement?.offsetWidth ?? 0;
   return Math.max(
     WORKSPACE_TAB_MIN_WIDTH_PX,
@@ -430,7 +430,7 @@ function DockviewChatTab(props: IDockviewPanelHeaderProps) {
   return (
     <div
       className={cn(
-        "t3-workspace-tab flex w-full items-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 transition-colors",
+        "upcomputer-workspace-tab flex w-full items-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 transition-colors",
         SIDEBAR_LABEL_TEXT_CLASS,
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -438,13 +438,13 @@ function DockviewChatTab(props: IDockviewPanelHeaderProps) {
       )}
       title={title}
     >
-      <span className="t3-workspace-tab-title min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+      <span className="upcomputer-workspace-tab-title min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
         {title}
       </span>
       {active ? (
         <button
           aria-label={`Close ${title}`}
-          className="t3-workspace-tab-close inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/55 hover:text-sidebar-accent-foreground focus-visible:outline-none"
+          className="upcomputer-workspace-tab-close inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/55 hover:text-sidebar-accent-foreground focus-visible:outline-none"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -901,7 +901,7 @@ export function ChatWorkspace({ children, routeTarget = null }: ChatWorkspacePro
     <ChatWorkspaceContext.Provider value={contextValue}>
       <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none text-foreground md:h-dvh">
         <DockviewReact
-          className="t3code-dockview-theme h-full w-full"
+          className="upcomputer-dockview-theme h-full w-full"
           components={{ [CHAT_PANEL_COMPONENT_ID]: DockviewChatPanel }}
           defaultRenderer="onlyWhenVisible"
           defaultTabComponent={DockviewChatTab}

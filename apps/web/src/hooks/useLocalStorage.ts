@@ -1,3 +1,4 @@
+import { migratingUiStorage } from "../lib/legacyUiStorage";
 import * as Schema from "effect/Schema";
 import * as Record from "effect/Record";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
@@ -17,7 +18,7 @@ export class LocalStorageOperationError extends Schema.TaggedErrorClass<LocalSto
 
 const isomorphicLocalStorage: Storage =
   typeof window !== "undefined"
-    ? window.localStorage
+    ? migratingUiStorage(window.localStorage)
     : (function () {
         const store = new Map<string, string>();
         return {
@@ -78,7 +79,7 @@ export const removeLocalStorageItem = (key: string) => {
   }
 };
 
-const LOCAL_STORAGE_CHANGE_EVENT = "t3code:local_storage_change";
+const LOCAL_STORAGE_CHANGE_EVENT = "upcomputer:local_storage_change";
 
 interface LocalStorageChangeDetail {
   key: string;

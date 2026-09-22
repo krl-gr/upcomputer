@@ -151,7 +151,7 @@ body::after {
 
 /* Dockview workspace chrome. Upstream has no dockview integration, so none of
  * this overrides anything -- it is ours end to end. */
-.t3code-dockview-theme {
+.upcomputer-dockview-theme {
   --workspace-tab-height: 32px;
   --workspace-tab-inset: max(
     0px,
@@ -190,54 +190,54 @@ body::after {
   font-family: inherit;
 }
 
-.t3code-dockview-theme .dv-tabs-and-actions-container {
+.upcomputer-dockview-theme .dv-tabs-and-actions-container {
   border-bottom: 0;
 }
 
-.electron-windows .t3code-dockview-theme,
-.wco-windows .t3code-dockview-theme {
+.electron-windows .upcomputer-dockview-theme,
+.wco-windows .upcomputer-dockview-theme {
   --dv-tabs-and-actions-container-height: env(titlebar-area-height, 40px);
 }
 
-.electron .t3code-dockview-theme .dv-tabs-and-actions-container {
+.electron .upcomputer-dockview-theme .dv-tabs-and-actions-container {
   -webkit-app-region: drag;
 }
 
-.t3code-dockview-theme .dv-pre-actions-container,
-.t3code-dockview-theme .dv-left-actions-container,
-.t3code-dockview-theme .dv-right-actions-container {
+.upcomputer-dockview-theme .dv-pre-actions-container,
+.upcomputer-dockview-theme .dv-left-actions-container,
+.upcomputer-dockview-theme .dv-right-actions-container {
   display: flex;
   flex-shrink: 0;
 }
 
-.electron .t3code-dockview-theme .dv-tab,
-.electron .t3code-dockview-theme button {
+.electron .upcomputer-dockview-theme .dv-tab,
+.electron .upcomputer-dockview-theme button {
   -webkit-app-region: no-drag;
 }
 
-.t3code-dockview-theme .dv-scrollable {
+.upcomputer-dockview-theme .dv-scrollable {
   box-sizing: border-box;
   flex-shrink: 1;
   min-width: 0;
   padding-left: 8px;
 }
 
-.t3code-dockview-theme .dv-scrollable .dv-scrollbar-horizontal {
+.upcomputer-dockview-theme .dv-scrollable .dv-scrollbar-horizontal {
   display: none;
 }
 
-.t3code-dockview-theme .dv-tabs-container {
+.upcomputer-dockview-theme .dv-tabs-container {
   align-items: flex-start;
   gap: 2px;
   overflow: hidden;
   scrollbar-width: none;
 }
 
-.t3code-dockview-theme .dv-tabs-container::-webkit-scrollbar {
+.upcomputer-dockview-theme .dv-tabs-container::-webkit-scrollbar {
   display: none;
 }
 
-.t3code-dockview-theme .dv-tab {
+.upcomputer-dockview-theme .dv-tab {
   box-sizing: border-box;
   flex: 0 0 auto;
   height: var(--dv-tabs-and-actions-container-height);
@@ -249,69 +249,76 @@ body::after {
   width: max-content;
 }
 
-.t3code-dockview-theme .dv-tabs-container[data-tab-sizing="fill"] .dv-tab {
+.upcomputer-dockview-theme .dv-tabs-container[data-tab-sizing="fill"] .dv-tab {
   flex: 1 1 0;
   width: auto;
 }
 
-.t3code-dockview-theme .dv-tab.dv-active-tab {
+.upcomputer-dockview-theme .dv-tab.dv-active-tab {
   box-shadow: none;
 }
 
-.t3code-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .t3-workspace-tab {
+.upcomputer-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .upcomputer-workspace-tab {
   background: transparent;
   border-color: transparent;
   border-radius: 0;
   box-shadow: none;
 }
 
-.t3code-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .dv-tab {
+.upcomputer-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .dv-tab {
   flex: 1 1 auto;
   max-width: none;
   width: auto;
 }
 
-.t3code-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .dv-tab:focus::after,
-.t3code-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .dv-tab:focus-within::after {
+.upcomputer-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .dv-tab:focus::after,
+.upcomputer-dockview-theme
+  .dv-tabs-and-actions-container.dv-single-tab
+  .dv-tab:focus-within::after {
   display: none;
 }
 
-.t3code-dockview-theme .dv-tabs-and-actions-container.dv-single-tab .t3-workspace-tab-close {
+.upcomputer-dockview-theme
+  .dv-tabs-and-actions-container.dv-single-tab
+  .upcomputer-workspace-tab-close {
   display: none;
 }
 
-.t3code-dockview-theme .dv-tab:focus::after,
-.t3code-dockview-theme .dv-tab:focus-within::after {
+.upcomputer-dockview-theme .dv-tab:focus::after,
+.upcomputer-dockview-theme .dv-tab:focus-within::after {
   border-radius: 8px;
   height: var(--workspace-tab-height);
   top: var(--workspace-tab-inset);
 }
 
-.t3code-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before {
+.upcomputer-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before {
   background-color: #2b2b2c;
   height: 12px;
   top: calc((var(--dv-tabs-and-actions-container-height) - 12px) / 2);
 }
 
-.t3code-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab.dv-active-tab::before,
-.t3code-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab.dv-active-tab + .dv-tab::before {
+.upcomputer-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab.dv-active-tab::before,
+.upcomputer-dockview-theme
+  .dv-tabs-container.dv-horizontal
+  .dv-tab.dv-active-tab
+  + .dv-tab::before {
   display: none;
 }
 
-.t3code-dockview-theme .dv-void-container {
+.upcomputer-dockview-theme .dv-void-container {
   min-width: 12px;
 }
 
-.electron .t3code-dockview-theme .dv-void-container {
+.electron .upcomputer-dockview-theme .dv-void-container {
   pointer-events: none;
 }
 
-.t3code-dockview-theme .t3-workspace-tab {
+.upcomputer-dockview-theme .upcomputer-workspace-tab {
   height: var(--workspace-tab-height);
   font-family: Inter, sans-serif;
 }
 
-.t3code-dockview-theme .dv-view {
+.upcomputer-dockview-theme .dv-view {
   background: transparent;
 }
 
