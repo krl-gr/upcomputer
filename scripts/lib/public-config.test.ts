@@ -78,6 +78,27 @@ describe("loadRepoEnv", () => {
     });
   });
 
+  it("prefers current names within one source but preserves source precedence", () => {
+    expect(
+      resolvePublicConfig({
+        UPCOMPUTER_RELAY_URL: "https://new.example.test",
+        T3CODE_RELAY_URL: "https://old.example.test",
+      }).relayUrl,
+    ).toBe("https://new.example.test");
+    expect(
+      resolvePublicConfig(
+        { T3CODE_RELAY_URL: "https://process.example.test" },
+        { UPCOMPUTER_RELAY_URL: "https://dotenv.example.test" },
+      ).relayUrl,
+    ).toBe("https://process.example.test");
+    const env = loadRepoEnv({
+      baseEnv: { UPCOMPUTER_RELAY_URL: "https://new.example.test" },
+      repoRoot: makeTemporaryDirectory(),
+    });
+    expect(env.VITE_UPCOMPUTER_RELAY_URL).toBe("https://new.example.test");
+    expect(env.VITE_T3CODE_RELAY_URL).toBe("https://new.example.test");
+  });
+
   it("accepts legacy framework aliases as root overrides", () => {
     expect(
       resolvePublicConfig({
@@ -114,6 +135,9 @@ describe("loadRepoEnv", () => {
         repoRoot: makeTemporaryDirectory(),
       }),
     ).toEqual({
+      UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
+      UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_DATASET: "relay-client-traces",
+      UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_TOKEN: "relay-client-token",
       T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
       T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: "relay-client-traces",
       T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: "relay-client-token",
@@ -135,6 +159,11 @@ describe("loadRepoEnv", () => {
         repoRoot: makeTemporaryDirectory(),
       }),
     ).toEqual({
+      UPCOMPUTER_RELAY_URL: "https://relay.example.test",
+      VITE_UPCOMPUTER_RELAY_URL: "https://relay.example.test",
+      UPCOMPUTER_MOBILE_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
+      UPCOMPUTER_MOBILE_OTLP_TRACES_DATASET: "mobile-traces",
+      UPCOMPUTER_MOBILE_OTLP_TRACES_TOKEN: "mobile-token",
       T3CODE_RELAY_URL: "https://relay.example.test",
       VITE_T3CODE_RELAY_URL: "https://relay.example.test",
       T3CODE_MOBILE_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",

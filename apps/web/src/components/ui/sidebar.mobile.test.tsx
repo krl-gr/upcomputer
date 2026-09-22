@@ -34,6 +34,6 @@ describe("mobile sidebar theme scope", () => {
     expect(html).toContain(`data-upcomputer-sidebar-version="${version}"`);
     expect(html).toContain('data-sidebar-mode="focus"');
     expect(html).toContain('aria-label="Chats"');
-    expect(html).toContain("t3-sidebar-glass");
+    expect(html).toContain("upcomputer-sidebar-glass");
   });
 });

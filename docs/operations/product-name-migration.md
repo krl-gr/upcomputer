@@ -13,7 +13,7 @@ Upstream license/copyright notices and historical attribution remain intact.
 | Server CLI package/bin and help                       | Separate change; old launch commands need compatibility                                     |
 | DOM/CSS/internal browser event names                  | Dockview/composer classes and browser events renamed together                               |
 | Browser UI preferences/drafts/workspace state         | `upcomputer:*` keys; 16 explicit legacy aliases in `legacyUiStorage.ts`                     |
-| Environment variables                                 | New primary names with bounded legacy aliases and precedence tests                          |
+| Environment variables                                 | Core server/desktop/telemetry config supports `UPCOMPUTER_*`; remaining emitters pending    |
 | Checked-in project config                             | Prefer `upcomputer.json`; accept existing `t3.json` without running both                    |
 | Desktop/server home and profile directories           | Existing data must remain discoverable; no rename while another process may own the profile |
 | IndexedDB authentication/connection stores            | Security-sensitive, asynchronous migration; must preserve keys and connections              |
@@ -53,3 +53,24 @@ with the renamed public packages.
 
 Native installed-app upgrade and platform checks remain release gates. A browser
 or a macOS bundle check is not evidence of a working Windows/mobile migration.
+
+## Verification record: core environment boundary
+
+Server CLI configuration, desktop configuration and telemetry now read
+`UPCOMPUTER_*`, with `T3CODE_*` fallback only when the primary name is absent.
+Invalid primary values fail rather than silently selecting the legacy value.
+The Effect adapter preserves injected/nested ConfigProviders and does not mutate
+process.env. Build-time public config normalizes each source separately, retaining
+process > .env.local > .env precedence and legacy renderer aliases.
+
+The old variables are still accepted. Remaining launch-script/provider/cloud
+emitters are not yet globally renamed; do not assume every old environment
+variable has already gained a new spelling. Build-time constants and local shell
+capture markers use `__UPCOMPUTER_*` on both producer and consumer sides.
+
+76 focused configuration, shell and sidebar checks pass. The real composed server
+was launched on a disposable profile with conflicting old/new ports and homes;
+it selected the new port/home and did not create the legacy home. Browser storage
+and workspace checks pass together when run sequentially (`--test-concurrency=1`)
+against one paired disposable browser. The verifier uses its own Vite cache to
+avoid invalidating a retained human-test dev server's optimized dependencies.

@@ -227,7 +227,7 @@ function Sidebar({
       <SidebarInstanceContext value={instanceContextValue}>
         <div
           className={cn(
-            "t3-sidebar-glass flex h-full w-(--sidebar-width) flex-col text-sidebar-foreground",
+            "upcomputer-sidebar-glass flex h-full w-(--sidebar-width) flex-col text-sidebar-foreground",
             className,
           )}
           data-slot="sidebar"
@@ -246,7 +246,7 @@ function Sidebar({
           <SheetPopup
             {...props}
             className={cn(
-              "t3-sidebar-glass w-(--sidebar-width) max-w-none p-0 text-sidebar-foreground",
+              "upcomputer-sidebar-glass w-(--sidebar-width) max-w-none p-0 text-sidebar-foreground",
               className,
             )}
             data-mobile="true"
@@ -316,7 +316,7 @@ function Sidebar({
           {...props}
         >
           <div
-            className="t3-sidebar-glass flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border"
+            className="upcomputer-sidebar-glass flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border"
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >

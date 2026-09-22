@@ -8,8 +8,8 @@ const desktopSourcemapEnv = process.env.T3CODE_DESKTOP_SOURCEMAP?.trim().toLower
 const shouldGenerateDesktopSourcemaps =
   desktopSourcemapEnv !== "0" && desktopSourcemapEnv !== "false";
 const publicConfigDefine = {
-  __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
-    repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
+  __UPCOMPUTER_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
+    repoEnv.UPCOMPUTER_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
 };
 

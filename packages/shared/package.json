@@ -214,6 +214,14 @@
     "./devProxy": {
       "types": "./src/devProxy.ts",
       "import": "./src/devProxy.ts"
+    },
+    "./legacyEnvironment": {
+      "types": "./src/legacyEnvironment.ts",
+      "import": "./src/legacyEnvironment.ts"
+    },
+    "./environmentNames": {
+      "types": "./src/environmentNames.ts",
+      "import": "./src/environmentNames.ts"
     }
   },
   "scripts": {

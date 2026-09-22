@@ -1,3 +1,4 @@
+import { withLegacyEnvironment } from "@upcomputer/shared/legacyEnvironment";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Option from "effect/Option";
@@ -38,23 +39,23 @@ export const DesktopConfig = Config.all({
   upcomputerHome: trimmedString("UPCOMPUTER_HOME"),
   t3Home: trimmedString("T3CODE_HOME"),
   devServerUrl: Config.url("VITE_DEV_SERVER_URL").pipe(Config.option),
-  appUserModelIdOverride: trimmedString("T3CODE_DESKTOP_APP_USER_MODEL_ID"),
-  devRemoteT3ServerEntryPath: trimmedString("T3CODE_DEV_REMOTE_T3_SERVER_ENTRY_PATH"),
-  configuredBackendPort: Config.port("T3CODE_PORT").pipe(Config.option),
-  commitHashOverride: trimmedString("T3CODE_COMMIT_HASH"),
-  desktopLanHostOverride: trimmedString("T3CODE_DESKTOP_LAN_HOST"),
-  desktopHttpsEndpointUrls: commaSeparatedStrings("T3CODE_DESKTOP_HTTPS_ENDPOINTS"),
-  otlpTracesUrl: trimmedString("T3CODE_OTLP_TRACES_URL"),
-  otlpExportIntervalMs: Config.int("T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
+  appUserModelIdOverride: trimmedString("UPCOMPUTER_DESKTOP_APP_USER_MODEL_ID"),
+  devRemoteT3ServerEntryPath: trimmedString("UPCOMPUTER_DEV_REMOTE_T3_SERVER_ENTRY_PATH"),
+  configuredBackendPort: Config.port("UPCOMPUTER_PORT").pipe(Config.option),
+  commitHashOverride: trimmedString("UPCOMPUTER_COMMIT_HASH"),
+  desktopLanHostOverride: trimmedString("UPCOMPUTER_DESKTOP_LAN_HOST"),
+  desktopHttpsEndpointUrls: commaSeparatedStrings("UPCOMPUTER_DESKTOP_HTTPS_ENDPOINTS"),
+  otlpTracesUrl: trimmedString("UPCOMPUTER_OTLP_TRACES_URL"),
+  otlpExportIntervalMs: Config.int("UPCOMPUTER_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
   appImagePath: trimmedString("APPIMAGE"),
-  disableAutoUpdate: optionalBoolean("T3CODE_DISABLE_AUTO_UPDATE"),
-  mockUpdates: optionalBoolean("T3CODE_DESKTOP_MOCK_UPDATES"),
-  mockUpdateServerPort: Config.port("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
+  disableAutoUpdate: optionalBoolean("UPCOMPUTER_DISABLE_AUTO_UPDATE"),
+  mockUpdates: optionalBoolean("UPCOMPUTER_DESKTOP_MOCK_UPDATES"),
+  mockUpdateServerPort: Config.port("UPCOMPUTER_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
     Config.withDefault(3000),
   ),
-});
+}).pipe(withLegacyEnvironment);
 
 export const layerTest = (env: Readonly<Record<string, string | undefined>>) =>
   ConfigProvider.layer(ConfigProvider.fromEnv({ env: compactEnv(env) }));
