@@ -1,3 +1,4 @@
+import { CONNECT_AUTH_STATE_KEY, readConnectAuthState } from "./legacyConnectAuthState";
 import {
   buildConnectClerkAuthorizeUrl,
   connectCallbackUrl,
@@ -8,8 +9,6 @@ import { clerkFrontendApiUrlFromPublishableKey } from "@upcomputer/shared/relayA
 
 import { configuredHostedAppUrl, isHostedStaticApp } from "../hostedPairing";
 import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";
-
-const CONNECT_CLI_AUTH_STATE_STORAGE_KEY = "t3code-connect-cli-auth-state";
 
 export function resolveConnectCliOAuthClientId(): string | null {
   return trimNonEmpty(import.meta.env.VITE_CLERK_CLI_OAUTH_CLIENT_ID as string | undefined);
@@ -53,7 +52,7 @@ export function buildConnectCliClerkAuthorizeUrl(request: ConnectAuthorizeReques
 
 export function rememberConnectCliAuthState(state: string): void {
   try {
-    window.sessionStorage.setItem(CONNECT_CLI_AUTH_STATE_STORAGE_KEY, state);
+    window.sessionStorage.setItem(CONNECT_AUTH_STATE_KEY, state);
   } catch {
     // Session storage can be unavailable (e.g. blocked). The callback page
     // then falls back to trusting the state Clerk echoed back.
@@ -61,14 +60,14 @@ export function rememberConnectCliAuthState(state: string): void {
 }
 
 /**
- * Read-only on purpose: this runs during render, where a removal would be
+ * Does not consume the state: this runs during render, where consumption would be
  * consumed by React's double-invoked/discarded renders (StrictMode) and
  * silently disable the state check. The value is not a secret and is
  * overwritten by the next /connect visit.
  */
 export function readConnectCliAuthState(): string | null {
   try {
-    return window.sessionStorage.getItem(CONNECT_CLI_AUTH_STATE_STORAGE_KEY);
+    return readConnectAuthState(window.sessionStorage);
   } catch {
     return null;
   }

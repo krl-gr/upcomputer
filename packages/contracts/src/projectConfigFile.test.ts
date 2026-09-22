@@ -1,11 +1,11 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { T3ProjectFile } from "./t3ProjectFile.ts";
+import { ProjectConfigFile } from "./projectConfigFile.ts";
 
-const decode = Schema.decodeUnknownSync(T3ProjectFile);
+const decode = Schema.decodeUnknownSync(ProjectConfigFile);
 
-describe("T3ProjectFile", () => {
+describe("ProjectConfigFile", () => {
   it("decodes a full project file", () => {
     const decoded = decode({
       $schema: "https://t3.codes/schema/t3.json",

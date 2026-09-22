@@ -8,13 +8,13 @@ import * as PlatformError from "effect/PlatformError";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as ProjectConfigFileLoader from "./ProjectConfigFileLoader.ts";
 
 const TestLayer = Layer.empty.pipe(
   Layer.provideMerge(
     ProjectFaviconResolver.layer.pipe(
       Layer.provide(WorkspacePaths.layer),
-      Layer.provide(T3ProjectFileLoader.layer),
+      Layer.provide(ProjectConfigFileLoader.layer),
     ),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -43,7 +43,7 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 
 const makeResolverWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
   ProjectFaviconResolver.make.pipe(
-    Effect.provide([WorkspacePaths.layer, T3ProjectFileLoader.layer]),
+    Effect.provide([WorkspacePaths.layer, ProjectConfigFileLoader.layer]),
     Effect.provideService(FileSystem.FileSystem, fileSystem),
   );
 

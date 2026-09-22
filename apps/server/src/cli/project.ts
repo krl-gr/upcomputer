@@ -22,6 +22,7 @@ import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
+import { migrateProjectConfig } from "../project/ProjectConfigMigration.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
 import * as ServerConfig from "../config.ts";
@@ -570,7 +571,36 @@ const projectRenameCommand = Command.make("rename", {
   ),
 );
 
+const projectMigrateConfigCommand = Command.make("migrate-config", {
+  workspace: Argument.string("workspace"),
+  confirm: Flag.boolean("confirm").pipe(
+    Flag.withDescription("Create upcomputer.json; retain the old file as a rollback copy."),
+  ),
+}).pipe(
+  Command.withDescription(
+    "Inspect or migrate legacy project configuration. This changes the project's Git working tree.",
+  ),
+  Command.withHandler((flags) =>
+    migrateProjectConfig(flags.workspace, flags.confirm).pipe(
+      Effect.flatMap((result) =>
+        Console.log(
+          result === "confirmation-required"
+            ? "Legacy project config found. Re-run with --confirm to create upcomputer.json. The original will be retained."
+            : result === "migrated"
+              ? "Created upcomputer.json. The legacy file is retained as a rollback copy; only the new file will be used."
+              : result,
+        ),
+      ),
+    ),
+  ),
+);
+
 export const projectCommand = Command.make("project").pipe(
   Command.withDescription("Manage projects."),
-  Command.withSubcommands([projectAddCommand, projectRemoveCommand, projectRenameCommand]),
+  Command.withSubcommands([
+    projectAddCommand,
+    projectRemoveCommand,
+    projectRenameCommand,
+    projectMigrateConfigCommand,
+  ]),
 );

@@ -1,3 +1,5 @@
+import { AuthEnvironmentBootstrapTokenType } from "./auth.ts";
+import { LegacyEnvironmentBootstrapTokenType } from "./legacyNames.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -39,6 +41,9 @@ export const ServerSelfUpdateCapability = Schema.Literals([
 export type ServerSelfUpdateCapability = typeof ServerSelfUpdateCapability.Type;
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
+  bootstrapTokenType: Schema.optionalKey(
+    Schema.Literals([AuthEnvironmentBootstrapTokenType, LegacyEnvironmentBootstrapTokenType]),
+  ),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.settle / thread.unsettle commands. Absent on

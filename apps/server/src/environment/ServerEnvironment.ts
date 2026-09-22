@@ -1,3 +1,4 @@
+import { AuthEnvironmentBootstrapTokenType } from "@upcomputer/contracts";
 import {
   EnvironmentId,
   type ExecutionEnvironmentDescriptor,
@@ -144,6 +145,7 @@ export const makeForProduct = (productManifest: ProductManifestSnapshot) =>
       },
       serverVersion: packageJson.version,
       capabilities: {
+        bootstrapTokenType: AuthEnvironmentBootstrapTokenType,
         repositoryIdentity: true,
         connectionProbe: true,
         threadSettlement: true,

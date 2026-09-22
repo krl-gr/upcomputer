@@ -152,6 +152,7 @@ export const ProjectFileOperation = Schema.Literals([
 export type ProjectFileOperation = typeof ProjectFileOperation.Type;
 
 type ProjectFileFailureContext = {
+  readonly notFound?: boolean;
   readonly cwd: string;
   readonly relativePath: string;
   readonly failure: ProjectFileFailure;
@@ -172,6 +173,7 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
     resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
     operation: Schema.optional(ProjectFileOperation),
     operationPath: Schema.optional(TrimmedNonEmptyString),
+    notFound: Schema.optional(Schema.Boolean),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
   },

@@ -95,7 +95,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
-import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
+import * as ProjectConfigFileLoader from "./project/ProjectConfigFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -545,7 +545,7 @@ const buildAppUnderTest = (options?: {
       ),
       ProjectFaviconResolver.layer.pipe(
         Layer.provide(WorkspacePaths.layer),
-        Layer.provide(T3ProjectFileLoader.layer),
+        Layer.provide(ProjectConfigFileLoader.layer),
       ),
     );
     const gitWorkflowLayer = GitWorkflowService.layer.pipe(
@@ -1344,7 +1344,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
-      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
+      const url = yield* getHttpServerUrl("/.well-known/upcomputer/environment");
       const response = yield* fetchEffect(url);
       const body = yield* responseJsonEffect<typeof testEnvironmentDescriptor>(response);
 
@@ -1398,7 +1398,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       ]);
       // Desktop, so port-scoped: instances scan for a free port and share
       // 127.0.0.1, and cookies are not scoped by port.
-      assert.isTrue(body.auth.sessionCookieName.startsWith("t3_session_"));
+      assert.isTrue(body.auth.sessionCookieName.startsWith("upcomputer_session_"));
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -1433,6 +1433,35 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(sessionBody.authenticated, true);
       assert.equal(sessionBody.sessionMethod, "browser-session-cookie");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "migrates a valid legacy cookie, without falling back around an invalid new cookie",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest();
+        const { cookie } = yield* bootstrapBrowserSession();
+        const current = cookie?.split(";")[0] ?? "";
+        const legacy = current.replace(/^upcomputer_session/, "t3_session");
+        const url = yield* getHttpServerUrl("/api/auth/session");
+        const migrated = yield* fetchEffect(url, { headers: { cookie: legacy } });
+        const body = yield* responseJsonEffect<{ authenticated: boolean }>(migrated);
+        assert.isTrue(body.authenticated);
+        const migratedCookie = migrated.cookies.cookies[current.split("=")[0]!];
+        const retiredCookie = migrated.cookies.cookies[legacy.split("=")[0]!];
+        assert.isTrue(migratedCookie?.options?.httpOnly ?? false);
+        assert.equal(
+          Duration.toMillis(Duration.fromInputUnsafe(retiredCookie?.options?.maxAge ?? -1)),
+          0,
+        );
+        const denied = yield* fetchEffect(url, {
+          headers: { cookie: `${current.split("=")[0]}=invalid-fixture; ${legacy}` },
+        });
+        assert.isFalse(
+          (yield* responseJsonEffect<{ authenticated: boolean }>(denied)).authenticated,
+        );
+        assert.isUndefined(denied.headers["set-cookie"]);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("exchanges a bootstrap grant for a scoped bearer access token", () =>
@@ -4647,6 +4676,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cwd: workspaceDir,
               relativePath: "linked-outside.txt",
             }).pipe(Effect.result),
+            missing: client[WS_METHODS.projectsReadFile]({
+              cwd: workspaceDir,
+              relativePath: "upcomputer.json",
+            }).pipe(Effect.result),
             browse: client[WS_METHODS.filesystemBrowse]({
               cwd: workspaceDir,
               partialPath: "./missing-browse/child",
@@ -4692,7 +4725,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       if (results.read._tag !== "Failure" || results.read.failure._tag !== "ProjectReadFileError") {
         assert.fail("Expected a ProjectReadFileError");
       }
+      if (
+        results.missing._tag !== "Failure" ||
+        results.missing.failure._tag !== "ProjectReadFileError"
+      )
+        assert.fail("Expected a structured missing-file error");
+      assert.equal(results.missing.failure.notFound, true);
       const readError = results.read.failure;
+      assert.notEqual(readError.notFound, true);
       assert.equal(
         readError.message,
         `Failed to read workspace file 'linked-outside.txt' in '${workspaceDir}'.`,

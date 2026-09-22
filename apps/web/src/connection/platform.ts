@@ -327,6 +327,7 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   const access = yield* bootstrapRemoteBearerSession({
     httpBaseUrl,
     credential: entry.bootstrapToken,
+    bootstrapTokenType: descriptor.capabilities.bootstrapTokenType,
     scopes: AuthStandardClientScopes,
     clientMetadata: clientMetadata(),
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));

@@ -15,6 +15,12 @@ export function readUpcomputerEnvironment(
 
 /** Normalize each dotenv/process source before merging, preserving source precedence. */
 export function normalizeUpcomputerEnvironment(
+  env: Readonly<Record<string, string>>,
+): Record<string, string>;
+export function normalizeUpcomputerEnvironment(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined>;
+export function normalizeUpcomputerEnvironment(
   env: Readonly<Record<string, string | undefined>>,
 ): Record<string, string | undefined> {
   const normalized = { ...env };

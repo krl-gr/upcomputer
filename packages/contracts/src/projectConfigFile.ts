@@ -3,14 +3,14 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ProjectScriptIcon } from "./orchestration.ts";
 
-/** File name of the checked-in T3 project file, resolved at the workspace root. */
-export const T3_PROJECT_FILE_NAME = "t3.json";
+/** File name of the checked-in UpComputer project file, resolved at the workspace root. */
+export const PROJECT_CONFIG_FILE_NAME = "upcomputer.json";
 
-/** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
-export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
+/** Public URL of the published JSON Schema for {@link ProjectConfigFile}. */
+export const PROJECT_CONFIG_FILE_SCHEMA_URL = "https://up.computer/schema/upcomputer.json";
 
-const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
-const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
+const PROJECT_CONFIG_FILE_PATH_MAX_LENGTH = 512;
+const PROJECT_CONFIG_FILE_MAX_SCRIPTS = 50;
 
 // Annotations go on the encoded (string) side so they survive into the
 // published JSON Schema; decoding still trims and re-validates non-emptiness.
@@ -23,12 +23,12 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
   return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
 };
 
-export const T3ProjectFileScript = Schema.Struct({
+export const ProjectConfigFileScript = Schema.Struct({
   name: trimmedNonEmpty({
-    description: "Display name for the script, shown in the T3 Code scripts menu.",
+    description: "Display name for the script, shown in the Up.computer scripts menu.",
   }),
   command: trimmedNonEmpty({
-    description: "Shell command executed in a T3 Code terminal at the project root.",
+    description: "Shell command executed in a Up.computer terminal at the project root.",
   }),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
@@ -54,35 +54,36 @@ export const T3ProjectFileScript = Schema.Struct({
     }),
   ),
 }).annotate({
-  description: "A project script that team members can import into T3 Code.",
+  description: "A project script that team members can import into Up.computer.",
 });
-export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
+export type ProjectConfigFileScript = typeof ProjectConfigFileScript.Type;
 
-export const T3ProjectFile = Schema.Struct({
+export const ProjectConfigFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
-      description: `URL of the JSON Schema for this file, typically "${T3_PROJECT_FILE_SCHEMA_URL}".`,
+      description: `URL of the JSON Schema for this file, typically "${PROJECT_CONFIG_FILE_SCHEMA_URL}".`,
     }),
   ),
   iconPath: Schema.optionalKey(
     trimmedNonEmpty(
       {
         description:
-          'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before T3 Code\'s built-in icon locations.',
+          'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before Up.computer\'s built-in icon locations.',
       },
-      T3_PROJECT_FILE_PATH_MAX_LENGTH,
+      PROJECT_CONFIG_FILE_PATH_MAX_LENGTH,
     ),
   ),
   scripts: Schema.optionalKey(
-    Schema.Array(T3ProjectFileScript)
+    Schema.Array(ProjectConfigFileScript)
       .annotate({
-        description: "Project scripts shared with everyone who opens this repository in T3 Code.",
+        description:
+          "Project scripts shared with everyone who opens this repository in Up.computer.",
       })
-      .check(Schema.isMaxLength(T3_PROJECT_FILE_MAX_SCRIPTS)),
+      .check(Schema.isMaxLength(PROJECT_CONFIG_FILE_MAX_SCRIPTS)),
   ),
 }).annotate({
-  title: "T3 project file",
+  title: "UpComputer project file",
   description:
-    "Checked-in project configuration for T3 Code (t3.json at the repository root). See https://t3.codes for documentation.",
+    "Checked-in project configuration for Up.computer (upcomputer.json at the repository root). See https://up.computer for documentation.",
 });
-export type T3ProjectFile = typeof T3ProjectFile.Type;
+export type ProjectConfigFile = typeof ProjectConfigFile.Type;

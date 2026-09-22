@@ -228,6 +228,7 @@ function projectFileFailureContext(
     | WorkspacePaths.WorkspacePathOutsideRootError,
 ): {
   readonly failure: ProjectFileFailure;
+  readonly notFound?: boolean;
   readonly resolvedPath?: string;
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
@@ -239,6 +240,12 @@ function projectFileFailureContext(
     case "WorkspaceFileSystemOperationError":
       return {
         failure: "operation_failed",
+        notFound:
+          (error.operation === "realpath-target" || error.operation === "open") &&
+          typeof error.cause === "object" &&
+          error.cause !== null &&
+          "code" in error.cause &&
+          error.cause.code === "ENOENT",
         resolvedPath: error.resolvedPath,
         operation: error.operation,
         operationPath: error.operationPath,

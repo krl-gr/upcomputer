@@ -1,3 +1,4 @@
+import { readConnectAuthState, CONNECT_AUTH_STATE_KEY } from "./legacyConnectAuthState";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -12,6 +13,25 @@ const TEST_PUBLISHABLE_KEY = `pk_test_${btoa("witty-mole-42.clerk.accounts.dev$"
 describe("connectCliAuth", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it("moves legacy request state without consuming it across repeated reads", () => {
+    const values = new Map([["t3code-connect-cli-auth-state", "fixture-state"]]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+    } as Storage;
+    expect(readConnectAuthState(storage)).toBe("fixture-state");
+    expect(readConnectAuthState(storage)).toBe("fixture-state");
+    expect(values.has("t3code-connect-cli-auth-state")).toBe(false);
+    values.set(CONNECT_AUTH_STATE_KEY, "current-fixture");
+    values.set("t3code-connect-cli-auth-state", "old-fixture");
+    expect(readConnectAuthState(storage)).toBe("current-fixture");
   });
 
   it("requires both the publishable key and the CLI OAuth client id", () => {

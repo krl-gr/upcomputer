@@ -73,13 +73,15 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
       Effect.provide([
         NodeHttpServer.layerHttpServices,
         HttpApiBuilder.group(EnvironmentHttpApi, "metadata", (handlers) =>
-          handlers.handle(
-            "descriptor",
-            Effect.fn("test.environment.metadata.descriptor")(function* () {
-              calls.descriptor += 1;
-              return yield* scenario.descriptor?.() ?? unexpectedEndpoint("metadata.descriptor");
-            }),
-          ),
+          handlers
+            .handle("legacyDescriptor", () => unexpectedEndpoint("metadata.legacyDescriptor"))
+            .handle(
+              "descriptor",
+              Effect.fn("test.environment.metadata.descriptor")(function* () {
+                calls.descriptor += 1;
+                return yield* scenario.descriptor?.() ?? unexpectedEndpoint("metadata.descriptor");
+              }),
+            ),
         ),
         HttpApiBuilder.group(EnvironmentHttpApi, "auth", (handlers) =>
           handlers

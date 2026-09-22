@@ -1,3 +1,4 @@
+import { openMigratedBrowserDatabase } from "../lib/legacyIndexedDb";
 import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
@@ -21,8 +22,6 @@ export class BrowserDpopError extends Data.TaggedError("BrowserDpopError")<{
   readonly cause?: unknown;
 }> {}
 
-const DPOP_DATABASE_NAME = "t3code:cloud-auth";
-const DPOP_DATABASE_VERSION = 1;
 const DPOP_KEY_STORE_NAME = "keys";
 const DPOP_KEY_ID = "relay-dpop-proof-key";
 const decodeDpopPublicJwk = Schema.decodeUnknownEffect(DpopPublicJwk);
@@ -45,19 +44,10 @@ function dpopError(message: string, cause?: unknown) {
 }
 
 function openDpopDatabase(): Effect.Effect<IDBDatabase, BrowserDpopError> {
-  return Effect.callback<IDBDatabase, BrowserDpopError>((resume) => {
-    const request = indexedDB.open(DPOP_DATABASE_NAME, DPOP_DATABASE_VERSION);
-    request.addEventListener("error", () =>
-      resume(
-        Effect.fail(dpopError("Could not open DPoP key storage.", request.error ?? undefined)),
-      ),
-    );
-    request.addEventListener("upgradeneeded", () => {
-      if (!request.result.objectStoreNames.contains(DPOP_KEY_STORE_NAME)) {
-        request.result.createObjectStore(DPOP_KEY_STORE_NAME);
-      }
-    });
-    request.addEventListener("success", () => resume(Effect.succeed(request.result)));
+  return Effect.tryPromise({
+    try: () => openMigratedBrowserDatabase("proofKeys"),
+    catch: (cause) =>
+      dpopError("Could not migrate DPoP key storage. Close other app tabs and retry.", cause),
   });
 }
 

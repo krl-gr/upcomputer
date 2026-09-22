@@ -1,3 +1,4 @@
+import { readUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
 import * as NodeURL from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -32,7 +33,8 @@ const publicRouteTree = NodeURL.fileURLToPath(new URL("./src/routeTree.gen.ts", 
 // pins the client to localhost and breaks every non-localhost origin — the
 // exact failure single-origin mode exists to prevent, and an invisible one
 // since the page still loads.
-const isSingleOriginDev = process.env.T3CODE_SINGLE_ORIGIN_DEV === "1";
+const isSingleOriginDev =
+  readUpcomputerEnvironment(process.env, "UPCOMPUTER_SINGLE_ORIGIN_DEV") === "1";
 
 const port = Number(process.env.PORT ?? 5733);
 const explicitHost = process.env.HOST?.trim();
@@ -61,12 +63,16 @@ const configuredHostedAppUrl = (() => {
   }
   return undefined;
 })();
-const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
+const sourcemapEnv = readUpcomputerEnvironment(process.env, "UPCOMPUTER_WEB_SOURCEMAP")
+  ?.trim()
+  .toLowerCase();
 
 // Vite 8.1's experimental bundled dev mode: serves rolldown-bundled chunks in
 // dev for much faster startup/reload on large module graphs, with HMR served
 // as hot patches. Opt-in while experimental: T3CODE_BUNDLED_DEV=1 pnpm dev:web
-const bundledDevEnv = process.env.T3CODE_BUNDLED_DEV?.trim().toLowerCase();
+const bundledDevEnv = readUpcomputerEnvironment(process.env, "UPCOMPUTER_BUNDLED_DEV")
+  ?.trim()
+  .toLowerCase();
 const bundledDev = bundledDevEnv === "1" || bundledDevEnv === "true";
 
 const buildSourcemap: boolean | "hidden" =
@@ -127,13 +133,18 @@ const defaultProductEntry = NodeURL.fileURLToPath(
   new URL("./src/product/defaultProductEntry.ts", import.meta.url),
 );
 
-const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configuredWsUrl);
+const devProxyTarget = resolveDevProxyTarget(
+  readUpcomputerEnvironment(process.env, "UPCOMPUTER_PORT"),
+  configuredWsUrl,
+);
 
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
 // Anything else (ngrok, a LAN IP alias) goes through the env var.
-const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
+const configuredAllowedHosts = (
+  readUpcomputerEnvironment(process.env, "UPCOMPUTER_DEV_ALLOWED_HOSTS") ?? ""
+)
   .split(",")
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);

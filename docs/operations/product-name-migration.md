@@ -85,3 +85,122 @@ permissions and distribution of the new package name are separate release gates.
 The relay workspace package is `@upcomputer/relay`; deployed resource IDs are not
 renamed. Existing background-service identifiers are intentionally unchanged.
 51 focused CLI/configuration/service/project/release-version tests pass.
+
+## One-way transition policy
+
+The target is a single UpComputer environment, not permanent dual naming. Legacy
+inputs belong in explicit migration/compatibility modules. The final bridge
+release and the supported upgrade window have not yet been assigned. Removing
+these modules requires verifying the maintained profiles have migrated; older
+installations must then upgrade through the bridge release. Attribution and
+licenses are not migration targets.
+
+### Project configuration
+
+`upcomputer.json` is preferred. The loader falls back to `t3.json` **only** on
+NotFound, never because the preferred file is invalid/unreadable. The scripts
+menus in Classic and Focus use direct file reads with the same precedence; they
+do not merge both sets of commands or infer absence from a filtered search index.
+The RPC adds an optional `notFound` bit. Automatic legacy discovery requires this
+bridge server: older message-only errors fail closed instead of treating an
+unknown read failure as proof of absence.
+
+`upcomputer project migrate-config <workspace>` performs a read-only inspection;
+`--confirm` publishes the preferred file. It is a Git working-tree change, so it
+is not performed during ordinary project discovery. Publication uses an fsynced
+staging file and an exclusive hard link (no overwrite, no partially written
+preferred file). JSONC/comments and original bytes are preserved. The original
+`t3.json` is the rollback copy and is not deleted. Symlinked configuration requires manual migration rather than copying its
+target into the repository. Different existing files are a
+conflict; a repeated identical migration is a no-op. Hard-link-unsupported
+filesystems fail without changing either configuration. Do not edit the source
+while migrating; concurrent late edits remain in the original for reconciliation.
+The schema endpoint is built at `/schema/upcomputer.json`; deployment is a
+separate release step. Historical `$schema` strings in user files are not blindly
+rewritten inside arbitrary JSONC/comments.
+
+### Browser stores and pending OAuth state
+
+`legacyIndexedDb.ts` transitions connection catalogs and DPoP keys to UpComputer
+names. It requires a secure context with Web Locks. The old database is retained
+as a recovery source; a version-change barrier requires old handles to close and
+prevents pinned old clients from writing after retirement. Blocked upgrades fail
+with a close-other-tabs instruction, not an empty profile. A cancelled queued
+upgrade must abort when eventually unblocked.
+
+The destination records and completion marker commit in one transaction.
+Interrupted/quota-failed copies can retry from retained data. Existing independent
+destination state is a conflict, not something to overwrite or merge. The marker
+prevents a later logout/deletion from resurrecting old records. Server-derived
+caches are rebuilt, not copied. Non-extractable CryptoKeys use IndexedDB's native
+structured clone; no key export, stringification or logging is involved.
+
+This is a **one-way** browser schema transition. Merely reinstalling an old binary
+is not a rollback: old clients pinned to the prior IndexedDB version are rejected.
+Restore a pre-upgrade profile backup to roll back. No automatic source-database
+cleanup or production-profile conversion was executed during development.
+
+Pending Connect OAuth request state (not saved access credentials) moves to its
+new sessionStorage key without consuming it across repeated React renders. A
+failed write leaves the legacy state check available.
+
+### HTTP/auth compatibility
+
+New clients request `/.well-known/upcomputer/environment`; an explicit 404 alone
+permits retrying the legacy descriptor endpoint. Authentication errors, malformed
+responses and timeouts do not trigger a naming downgrade. New servers serve both
+endpoints. The descriptor advertises the UpComputer bootstrap token type; older
+servers without this capability use the legacy type, and new servers accept both.
+Callers without a descriptor still use the compatibility default during this
+bridge. Some desktop/Tailscale health probes still use the legacy endpoint.
+
+Browser sessions use `upcomputer_session` with the existing port-isolation rules.
+A valid legacy browser cookie is exchanged in the session-state response for the
+same server-side session under the new cookie name, with HttpOnly/path/SameSite
+and expiry preserved; the old cookie is expired. A present invalid new cookie is
+not bypassed by a valid old cookie. Session scopes, revocation and DPoP checks are
+unchanged.
+
+### Environment continuation
+
+Direct dev/Vite/relay/lifecycle reads and Bitbucket configuration now prefer the
+new names through the shared legacy adapter. Project-script runtime environment
+emits new names plus temporary legacy aliases; overrides normalize before merge.
+External shell/CI configuration is not rewritten. This is not yet a claim that
+all launchers, deployment configuration and platform-specific emitters have
+been converted.
+
+### Native profile migration is not activated
+
+There are two separate owned roots: backend state (`.t3` vs `.upcomputer`) and the
+Electron profile. Desktop connection data additionally uses OS `safeStorage`;
+renaming the browser databases does not migrate that encrypted store. Startup
+selects roots in both early `main.ts` and the Effect environment layer, so changing
+only one produces a split profile. These paths currently retain their existing
+compatibility resolution.
+
+Before activating automatic native relocation, implement and verify a single
+pre-start migration coordinator: owner/lock checks **before any database opens**,
+pre-migration backup, durable journal, interrupted-copy recovery, absolute
+session/attachment path audit, and validation of the encrypted catalog using the
+actual Electron/OS identity. A native fresh-install/0.0.31 upgrade/downgrade test
+is required on each supported platform. A raw recursive copy plus a directory
+existence check is not an acceptable substitute. Working Alpha and its live
+profile must stay out of this verification.
+
+## Verification record: one-way bridge implementation
+
+- Focused project/schema/config/storage/auth/HTTP tests passed, including a real
+  RPC missing-file flag and valid-legacy/invalid-new cookie precedence.
+- Ten integrated browser assertions/tests pass on the rebuilt isolated stack:
+  migration/retry/conflict/old-writer retirement, non-extractable synthetic-key
+  preservation, concurrent opens, no logout resurrection, project-config
+  precedence/fallback/visible invalid-config warning in Focus, legacy UI draft
+  retention, and workspace chrome. No script or model prompt was executed.
+- The composed CLI was exercised against a disposable JSONC project: no write
+  without consent, byte-preserving publication, original retained, repeatable.
+- Public server/web/desktop and private agent/task-server typechecks, private
+  focused integration tests, composed server build, desktop code build and
+  marketing schema build passed. These are not native installed-app upgrade tests.
+- No installed Alpha, real profile, real provider credentials or deployed cloud
+  resources were migrated. The human-test dev environment was not restarted.

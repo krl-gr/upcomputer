@@ -87,9 +87,9 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
-    "./t3ProjectFile": {
-      "types": "./src/t3ProjectFile.ts",
-      "import": "./src/t3ProjectFile.ts"
+    "./projectConfigFile": {
+      "types": "./src/projectConfigFile.ts",
+      "import": "./src/projectConfigFile.ts"
     },
     "./orchestrationTiming": {
       "types": "./src/orchestrationTiming.ts",
@@ -222,6 +222,10 @@
     "./environmentNames": {
       "types": "./src/environmentNames.ts",
       "import": "./src/environmentNames.ts"
+    },
+    "./legacyProjectConfig": {
+      "types": "./src/legacyProjectConfig.ts",
+      "import": "./src/legacyProjectConfig.ts"
     }
   },
   "scripts": {

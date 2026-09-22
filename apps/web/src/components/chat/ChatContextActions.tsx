@@ -1,3 +1,4 @@
+import { useProjectConfigFileScripts } from "~/hooks/useProjectConfigFileScripts";
 import type {
   EditorId,
   EnvironmentId,
@@ -58,6 +59,7 @@ interface ChatContextActionsProps {
   draftId?: DraftId;
   projectKey: string;
   projectName: string | undefined;
+  projectCwd: string;
   projectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
   availableEditors: ReadonlyArray<EditorId>;
@@ -93,6 +95,10 @@ function ContextBarSeparator() {
 }
 
 export const ChatContextActions = memo(function ChatContextActions(props: ChatContextActionsProps) {
+  const fileScripts = useProjectConfigFileScripts(
+    props.environmentId,
+    props.projectScripts ? props.projectCwd : null,
+  );
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [visibleQuickAccessCount, setVisibleQuickAccessCount] = useState<number | null>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -363,6 +369,8 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
           <MenuPopup align="end" className="min-w-64" keepMounted side="top">
             {props.projectScripts ? (
               <ProjectScriptsControl
+                fileScripts={fileScripts.scripts}
+                fileScriptsError={fileScripts.error}
                 keybindings={props.keybindings}
                 onAddScript={props.onAddProjectScript}
                 onDeleteScript={props.onDeleteProjectScript}

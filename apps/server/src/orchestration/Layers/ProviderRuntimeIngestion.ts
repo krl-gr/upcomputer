@@ -1,3 +1,4 @@
+import { readUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
 import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
@@ -92,7 +93,8 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
-const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
+const STRICT_PROVIDER_LIFECYCLE_GUARD =
+  readUpcomputerEnvironment(process.env, "UPCOMPUTER_STRICT_PROVIDER_LIFECYCLE_GUARD") !== "0";
 
 type TurnStartRequestedDomainEvent = Extract<
   OrchestrationEvent,

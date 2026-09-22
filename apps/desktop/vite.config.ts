@@ -1,10 +1,14 @@
+import { readUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
 import { defineConfig } from "vite-plus";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const repoEnv = loadRepoEnv();
-const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
-const desktopSourcemapEnv = process.env.T3CODE_DESKTOP_SOURCEMAP?.trim().toLowerCase();
+const shouldLaunchElectronAfterPack =
+  readUpcomputerEnvironment(process.env, "UPCOMPUTER_DESKTOP_DEV") === "1";
+const desktopSourcemapEnv = readUpcomputerEnvironment(process.env, "UPCOMPUTER_DESKTOP_SOURCEMAP")
+  ?.trim()
+  .toLowerCase();
 const shouldGenerateDesktopSourcemaps =
   desktopSourcemapEnv !== "0" && desktopSourcemapEnv !== "false";
 const publicConfigDefine = {

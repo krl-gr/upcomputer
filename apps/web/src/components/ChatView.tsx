@@ -6279,6 +6279,7 @@ function ChatViewContent(props: ChatViewProps) {
                           {...(routeKind === "draft" && draftId ? { draftId } : {})}
                           projectKey={activeProject.id}
                           projectName={activeProject.title}
+                          projectCwd={activeProject.workspaceRoot}
                           projectScripts={activeProject.scripts}
                           preferredScriptId={lastInvokedScriptByProjectId[activeProject.id] ?? null}
                           availableEditors={availableEditors}

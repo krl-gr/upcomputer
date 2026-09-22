@@ -2,7 +2,7 @@ import type {
   ProjectScript,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
-  T3ProjectFileScript,
+  ProjectConfigFileScript,
 } from "@upcomputer/contracts";
 import {
   isAtomCommandInterrupted,
@@ -110,12 +110,13 @@ export interface NewProjectScriptInput {
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
 
-const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_FILE_SCRIPTS: ReadonlyArray<ProjectConfigFileScript> = [];
 
 interface ProjectScriptsControlProps {
   scripts: ReadonlyArray<ProjectScript>;
-  /** Scripts declared in the project's checked-in t3.json, offered for import. */
-  fileScripts?: ReadonlyArray<T3ProjectFileScript>;
+  /** Scripts declared in the project's checked-in project config, offered for import. */
+  fileScripts?: ReadonlyArray<ProjectConfigFileScript>;
+  fileScriptsError?: string | null;
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
   presentation?: "header" | "context-menu";
@@ -134,6 +135,7 @@ interface ProjectScriptsControlProps {
 export default function ProjectScriptsControl({
   scripts,
   fileScripts = NO_FILE_SCRIPTS,
+  fileScriptsError = null,
   keybindings,
   preferredScriptId = null,
   presentation = "header",
@@ -296,7 +298,7 @@ export default function ProjectScriptsControl({
     [onRequestMenuClose],
   );
 
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
+  const importFileScript = async (fileScript: ProjectConfigFileScript) => {
     const payload: NewProjectScriptInput = {
       name: fileScript.name,
       command: fileScript.command,
@@ -325,11 +327,16 @@ export default function ProjectScriptsControl({
     }
   };
 
-  const importMenuItems = importableScripts.length > 0 && (
+  const importMenuItems = (fileScriptsError !== null || importableScripts.length > 0) && (
     <>
       {primaryScript && <MenuSeparator />}
       <MenuGroup>
-        <MenuGroupLabel>From t3.json</MenuGroupLabel>
+        <MenuGroupLabel>From project configuration</MenuGroupLabel>
+        {fileScriptsError && (
+          <MenuGroupLabel className="max-w-72 whitespace-normal text-destructive">
+            {fileScriptsError}
+          </MenuGroupLabel>
+        )}
         {importableScripts.map((fileScript) => (
           <MenuItem
             key={`${fileScript.name} ${fileScript.command}`}
@@ -400,6 +407,7 @@ export default function ProjectScriptsControl({
               );
             })}
           </MenuGroup>
+          {importMenuItems}
           <MenuItem onClick={() => openAfterMenuClose(openAddDialog)}>
             <PlusIcon className="size-4" />
             Add action

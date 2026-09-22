@@ -1,7 +1,8 @@
 import {
   AuthAccessTokenType,
   type AuthClientPresentationMetadata,
-  AuthEnvironmentBootstrapTokenType,
+  LegacyEnvironmentBootstrapTokenType,
+  type ExecutionEnvironmentCapabilities,
   AuthTokenExchangeGrantType,
   type AuthEnvironmentScope,
 } from "@upcomputer/contracts";
@@ -37,6 +38,7 @@ export const exchangeRemoteDpopAccessToken = Effect.fn(
 )(function* (input: {
   readonly httpBaseUrl: string;
   readonly credential: string;
+  readonly bootstrapTokenType?: ExecutionEnvironmentCapabilities["bootstrapTokenType"];
   readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
   readonly clientMetadata?: AuthClientPresentationMetadata;
   readonly dpopProof: string;
@@ -51,7 +53,7 @@ export const exchangeRemoteDpopAccessToken = Effect.fn(
       payload: {
         grant_type: AuthTokenExchangeGrantType,
         subject_token: input.credential,
-        subject_token_type: AuthEnvironmentBootstrapTokenType,
+        subject_token_type: input.bootstrapTokenType ?? LegacyEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
         ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
         ...clientMetadataTokenExchangeFields(input.clientMetadata),
@@ -66,6 +68,7 @@ export const bootstrapRemoteBearerSession = Effect.fn(
 )(function* (input: {
   readonly httpBaseUrl: string;
   readonly credential: string;
+  readonly bootstrapTokenType?: ExecutionEnvironmentCapabilities["bootstrapTokenType"];
   readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
   readonly clientMetadata?: AuthClientPresentationMetadata;
   readonly timeoutMs?: number;
@@ -79,7 +82,7 @@ export const bootstrapRemoteBearerSession = Effect.fn(
       payload: {
         grant_type: AuthTokenExchangeGrantType,
         subject_token: input.credential,
-        subject_token_type: AuthEnvironmentBootstrapTokenType,
+        subject_token_type: input.bootstrapTokenType ?? LegacyEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
         ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
         ...clientMetadataTokenExchangeFields(input.clientMetadata),

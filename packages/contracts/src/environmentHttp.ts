@@ -1,3 +1,4 @@
+import { LegacyEnvironmentDescriptorPath } from "./legacyNames.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -372,7 +373,10 @@ export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
 export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
 
 export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
-  HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
+  HttpApiEndpoint.get("descriptor", "/.well-known/upcomputer/environment", {
+    success: ExecutionEnvironmentDescriptor,
+  }),
+  HttpApiEndpoint.get("legacyDescriptor", LegacyEnvironmentDescriptorPath, {
     success: ExecutionEnvironmentDescriptor,
   }),
 ) {}

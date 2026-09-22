@@ -1,22 +1,25 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildT3ProjectFileJsonSchema, T3ProjectFileFromJson } from "./t3ProjectFile.ts";
+import {
+  buildProjectConfigFileJsonSchema,
+  ProjectConfigFileFromJson,
+} from "./projectConfigFile.ts";
 
-const decodeJson = Schema.decodeUnknownSync(T3ProjectFileFromJson);
+const decodeJson = Schema.decodeUnknownSync(ProjectConfigFileFromJson);
 
-describe("buildT3ProjectFileJsonSchema", () => {
+describe("buildProjectConfigFileJsonSchema", () => {
   it("emits a draft 2020-12 schema with the published $id", () => {
-    const schema = buildT3ProjectFileJsonSchema();
+    const schema = buildProjectConfigFileJsonSchema();
 
     expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
-    expect(schema.$id).toBe("https://t3.codes/schema/t3.json");
+    expect(schema.$id).toBe("https://up.computer/schema/upcomputer.json");
     expect(schema.type).toBe("object");
     expect(schema.additionalProperties).toBe(false);
   });
 
   it("documents every supported field", () => {
-    const schema = buildT3ProjectFileJsonSchema() as {
+    const schema = buildProjectConfigFileJsonSchema() as {
       properties: Record<
         string,
         {
@@ -44,12 +47,12 @@ describe("buildT3ProjectFileJsonSchema", () => {
   });
 
   it("stays JSON-serializable", () => {
-    const schema = buildT3ProjectFileJsonSchema();
+    const schema = buildProjectConfigFileJsonSchema();
     expect(JSON.parse(JSON.stringify(schema))).toEqual(schema);
   });
 });
 
-describe("T3ProjectFileFromJson", () => {
+describe("ProjectConfigFileFromJson", () => {
   it("decodes lenient JSONC with comments and trailing commas", () => {
     const decoded = decodeJson(`{
       // team scripts

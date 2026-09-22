@@ -1,3 +1,4 @@
+import { readUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -33,7 +34,10 @@ const watchedDirectories = [
 const forcedShutdownTimeoutMs = 1_500;
 const restartDebounceMs = 120;
 const childTreeGracePeriodMs = 1_200;
-const remoteDebuggingPort = process.env.T3CODE_DESKTOP_REMOTE_DEBUGGING_PORT?.trim();
+const remoteDebuggingPort = readUpcomputerEnvironment(
+  process.env,
+  "UPCOMPUTER_DESKTOP_REMOTE_DEBUGGING_PORT",
+)?.trim();
 // oxlint-disable-next-line upcomputer/no-global-process-runtime -- Standalone dev script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 

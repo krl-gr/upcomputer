@@ -8,7 +8,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Encoding from "effect/Encoding";
 import * as Result from "effect/Result";
 
-const SESSION_COOKIE_NAME = "t3_session";
+const SESSION_COOKIE_NAME = "upcomputer_session";
 
 /**
  * Cookies are scoped by host but *not* by port, so any two servers that can be

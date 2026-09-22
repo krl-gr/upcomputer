@@ -16,7 +16,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as ProjectConfigFileLoader from "./ProjectConfigFileLoader.ts";
 
 // Well-known favicon paths checked in order.
 const FAVICON_CANDIDATES = [
@@ -118,7 +118,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-  const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const projectFileLoader = yield* ProjectConfigFileLoader.ProjectConfigFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");

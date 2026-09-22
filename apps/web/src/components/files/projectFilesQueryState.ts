@@ -1,3 +1,4 @@
+import { isMissingProjectConfigFile } from "@upcomputer/shared/legacyProjectConfig";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
@@ -22,6 +23,7 @@ function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativeP
 }
 
 interface ProjectQueryState<A> {
+  readonly notFound?: boolean;
   readonly data: A | null;
   readonly error: string | null;
   readonly isPending: boolean;
@@ -156,6 +158,7 @@ export function useProjectFileQuery(
 
   return {
     data: optimisticFile?.data ?? data,
+    notFound: result._tag === "Failure" && isMissingProjectConfigFile(Cause.squash(result.cause)),
     error: errorMessage(result),
     isPending: result.waiting,
     refresh,

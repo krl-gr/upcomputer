@@ -1,3 +1,7 @@
+import {
+  readUpcomputerEnvironment,
+  withLegacyEnvironment,
+} from "@upcomputer/shared/legacyEnvironment";
 import { CONNECT_OAUTH_SCOPES, DEFAULT_HOSTED_APP_URL } from "@upcomputer/shared/connectAuth";
 import { clerkFrontendApiUrlFromPublishableKey } from "@upcomputer/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@upcomputer/shared/relayUrl";
@@ -82,10 +86,15 @@ export function resolveRelayClientTracingConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
   fallback = buildTimeRelayClientTracing,
 ) {
-  const tracesUrl = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() || fallback.tracesUrl;
+  const tracesUrl =
+    readUpcomputerEnvironment(env, "UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_URL")?.trim() ||
+    fallback.tracesUrl;
   const tracesDataset =
-    env.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;
-  const tracesToken = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() || fallback.tracesToken;
+    readUpcomputerEnvironment(env, "UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_DATASET")?.trim() ||
+    fallback.tracesDataset;
+  const tracesToken =
+    readUpcomputerEnvironment(env, "UPCOMPUTER_RELAY_CLIENT_OTLP_TRACES_TOKEN")?.trim() ||
+    fallback.tracesToken;
   const normalizedTracesUrl = normalizeSecureUrl(tracesUrl);
   return normalizedTracesUrl && tracesDataset && tracesToken
     ? { tracesUrl: normalizedTracesUrl, tracesDataset, tracesToken }
@@ -93,7 +102,7 @@ export function resolveRelayClientTracingConfig(
 }
 
 export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
-  const runtimeConfig = Config.nonEmptyString("T3CODE_RELAY_URL");
+  const runtimeConfig = withLegacyEnvironment(Config.nonEmptyString("UPCOMPUTER_RELAY_URL"));
   return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
     Config.mapOrFail(validateRelayUrl),
   );
@@ -107,7 +116,7 @@ export const relayUrlConfig = makeRelayUrlConfig();
  * matching hosted deployment.
  */
 export const hostedAppUrlConfig = makePublicValueConfig(
-  "T3CODE_HOSTED_APP_URL",
+  "UPCOMPUTER_HOSTED_APP_URL",
   DEFAULT_HOSTED_APP_URL,
 ).pipe(Config.mapOrFail(validateHostedAppUrl));
 
@@ -140,7 +149,7 @@ function validateHostedAppUrl(value: string) {
 }
 
 function makePublicValueConfig(name: string, fallback: string) {
-  const runtimeConfig = Config.nonEmptyString(name);
+  const runtimeConfig = withLegacyEnvironment(Config.nonEmptyString(name));
   return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
     Config.map((value) => value.trim()),
   );
@@ -163,11 +172,11 @@ export function makeCloudCliOAuthConfig({
 } = {}) {
   return Config.all({
     clerkPublishableKey: makePublicValueConfig(
-      "T3CODE_CLERK_PUBLISHABLE_KEY",
+      "UPCOMPUTER_CLERK_PUBLISHABLE_KEY",
       clerkPublishableKeyFallback,
     ),
     clientId: makePublicValueConfig(
-      "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
+      "UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID",
       clerkCliOAuthClientIdFallback,
     ),
   }).pipe(
@@ -200,7 +209,10 @@ export function makeCloudCliOAuthConfig({
 export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
 
 export const hasCloudPublicConfig = Boolean(
-  (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
-  (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
-  (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
+  (normalizeSecureRelayUrl(readUpcomputerEnvironment(process.env, "UPCOMPUTER_RELAY_URL") ?? "") ??
+    buildTimeRelayUrl) &&
+  (readUpcomputerEnvironment(process.env, "UPCOMPUTER_CLERK_PUBLISHABLE_KEY")?.trim() ||
+    buildTimeClerkPublishableKey) &&
+  (readUpcomputerEnvironment(process.env, "UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID")?.trim() ||
+    buildTimeClerkCliOAuthClientId),
 );

@@ -89,6 +89,35 @@ const expectFetchCall = (
 };
 
 describe("remote environment authorization", () => {
+  it.effect("uses the legacy descriptor only after an explicit 404", () =>
+    Effect.gen(function* () {
+      const fetch = recordedFetch(
+        new Response(null, { status: 404 }),
+        Response.json({
+          environmentId: "fixture-environment",
+          label: "Fixture",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.31",
+          capabilities: { repositoryIdentity: false },
+        }),
+      );
+      yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: "https://remote.example.com" }).pipe(
+        provideRemoteHttp(fetch.fetchFn),
+      );
+      expect(fetch.calls.map(([url]) => String(url))).toEqual([
+        "https://remote.example.com/.well-known/upcomputer/environment",
+        "https://remote.example.com/.well-known/t3/environment",
+      ]);
+      const denied = recordedFetch(new Response(null, { status: 403 }));
+      yield* Effect.exit(
+        fetchRemoteEnvironmentDescriptor({ httpBaseUrl: "https://remote.example.com" }).pipe(
+          provideRemoteHttp(denied.fetchFn),
+        ),
+      );
+      expect(denied.calls).toHaveLength(1);
+    }),
+  );
+
   it.effect("bootstraps bearer auth against a remote backend", () =>
     Effect.gen(function* () {
       const fetch = recordedFetch(
@@ -108,6 +137,7 @@ describe("remote environment authorization", () => {
       const result = yield* bootstrapRemoteBearerSession({
         httpBaseUrl: "https://remote.example.com/",
         credential: "pairing-token",
+        bootstrapTokenType: "urn:upcomputer:params:oauth:token-type:environment-bootstrap",
       }).pipe(provideRemoteHttp(fetch.fetchFn));
 
       expect(result).toMatchObject({
@@ -121,7 +151,7 @@ describe("remote environment authorization", () => {
         headers: {
           "content-type": "application/x-www-form-urlencoded",
         },
-        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3At3%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token",
+        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3Aupcomputer%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token",
       });
     }),
   );
@@ -318,7 +348,7 @@ describe("remote environment authorization", () => {
       });
 
       expectFetchCall(fetch.calls, 1, {
-        url: "https://remote.example.com/.well-known/t3/environment",
+        url: "https://remote.example.com/.well-known/upcomputer/environment",
         method: "GET",
       });
       expectFetchCall(fetch.calls, 2, {
@@ -391,7 +421,7 @@ describe("remote environment authorization", () => {
 
       expect(error).toBeInstanceOf(RemoteEnvironmentAuthTimeoutError);
       expect(error.message).toBe(
-        "Remote environment endpoint http://remote.example.com/.well-known/t3/environment timed out after 25ms.",
+        "Remote environment endpoint http://remote.example.com/.well-known/upcomputer/environment timed out after 25ms.",
       );
     }).pipe(Effect.provide(TestClock.layer())),
   );
