@@ -130,7 +130,7 @@ const withIdentity = <A, E, R>(
                       path.endsWith(input.existingUserDataDirectoryName),
                   ),
             readFileString: () =>
-              Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
+              Effect.succeed(input.packageJson ?? '{"upcomputerCommitHash":"abcdef1234567890"}'),
           }),
         ),
         Layer.provideMerge(makeAssetsLayer(input.pngIconPath ?? Option.none())),
@@ -192,6 +192,35 @@ describe("DesktopAppIdentity", () => {
       { legacyPathProbeError: cause },
     );
   });
+
+  for (const packageJson of [
+    '{"upcomputerCommitHash":"abcdef1234567890"}',
+    '{"t3codeCommitHash":"abcdef1234567890"}',
+    '{"upcomputerCommitHash":"abcdef1234567890","t3codeCommitHash":"1111111111111111"}',
+  ]) {
+    it.effect(`reads packaged commit metadata: ${packageJson}`, () => {
+      const calls: ElectronAppCalls = { setAboutPanelOptions: [], setDockIcon: [], setName: [] };
+      return withIdentity(
+        Effect.gen(function* () {
+          const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+          yield* identity.configure;
+          assert.equal(calls.setAboutPanelOptions[0]?.version, "abcdef123456");
+          assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "Up.computer (Alpha)");
+        }),
+        { calls, packageJson },
+      );
+    });
+  }
+
+  it.effect("preserves an existing Windows profile despite the package rename", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(yield* identity.resolveUserDataPath, "/Users/alice/AppData/Roaming/t3code");
+      }),
+      { existingUserDataDirectoryName: "t3code", environment: { platform: "win32" } },
+    ),
+  );
 
   it.effect("configures app identity from the environment commit override", () => {
     const calls: ElectronAppCalls = {

@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeModule from "node:module";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -21,6 +22,7 @@ import {
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopProductName,
+  resolveDesktopPackageMetadata,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
   resolveGitHubPublishConfig,
@@ -75,6 +77,60 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
+
+  it("stages only Up.computer package branding and commit metadata", () => {
+    const metadata = resolveDesktopPackageMetadata("0.0.32", "abcdef1234567890");
+    assert.equal(metadata.name, "upcomputer");
+    assert.deepStrictEqual(metadata.author, { name: "Up.computer" });
+    assert.equal(metadata.version, "0.0.32");
+    assert.equal(metadata.upcomputerCommitHash, "abcdef1234567890");
+    assert.notMatch(JSON.stringify(metadata), /t3code|T3 Tools/i);
+  });
+
+  it.effect("derives branded Windows resources and updater cache with the real packager", () =>
+    Effect.gen(function* () {
+      const desktopRequire = NodeModule.createRequire(
+        new URL("../apps/desktop/package.json", import.meta.url),
+      );
+      const builderRequire = NodeModule.createRequire(desktopRequire.resolve("electron-builder"));
+      const { AppInfo } = builderRequire("app-builder-lib/out/appInfo.js");
+      const config = yield* createBuildConfig("win", "nsis", "0.0.32", false, false, undefined);
+      const appInfo = new AppInfo(
+        {
+          metadata: resolveDesktopPackageMetadata("0.0.32", "abcdef1234567890"),
+          devMetadata: {},
+          config,
+        },
+        undefined,
+        config.win,
+      );
+      assert.equal(appInfo.id, "computer.up.upcomputer");
+      assert.equal(appInfo.name, "upcomputer");
+      assert.equal(appInfo.companyName, "Up.computer");
+      assert.equal(appInfo.productName, "Up.computer (Alpha)");
+      assert.equal(appInfo.productFilename, "Up.computer (Alpha)");
+      assert.equal(appInfo.updaterCacheDirName, "upcomputer-updater");
+      assert.notMatch(appInfo.copyright, /T3 Tools/);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("keeps Windows installation identity stable while rebranding the package", () =>
+    Effect.gen(function* () {
+      for (const version of ["0.0.31", "0.0.32", "0.0.32-nightly.20260922.1"]) {
+        const config = yield* createBuildConfig("win", "nsis", version, false, false, undefined);
+        // NSIS derives its upgrade/uninstall GUID from appId, not package.name.
+        assert.equal(config.appId, "computer.up.upcomputer");
+        assert.equal(config.artifactName, "Up.computer-${version}-${arch}.${ext}");
+        assert.match(String(config.productName), /^Up\.computer/);
+        assert.notMatch(
+          Object.values(config)
+            .filter((value) => typeof value === "string")
+            .join(" "),
+          /t3code|T3 Tools/i,
+        );
+      }
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "Up.computer (Alpha)");

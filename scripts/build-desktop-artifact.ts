@@ -20,6 +20,14 @@ import {
   LOCAL_TEST_APP_ID,
 } from "../apps/desktop/src/app/localTestProfile.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  UPCOMPUTER_APP_ID,
+  UPCOMPUTER_EXECUTABLE_NAME,
+  UPCOMPUTER_PROTOCOL_SCHEME,
+  UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
+  UPCOMPUTER_PUBLISHER_NAME,
+  UPCOMPUTER_WSL_PTY_MARKER,
+} from "../apps/desktop/src/app/DesktopProductIdentity.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -36,9 +44,10 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "computer.up.upcomputer";
-const DESKTOP_EXECUTABLE_NAME = "upcomputer";
-const DESKTOP_PROTOCOL_SCHEMES = ["upcomputer", "upcomputer-dev"] as const;
+const DESKTOP_PROTOCOL_SCHEMES = [
+  UPCOMPUTER_PROTOCOL_SCHEME,
+  UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
+] as const;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -536,12 +545,12 @@ interface StagePackageJson {
   readonly name: string;
   readonly version: string;
   readonly buildVersion: string;
-  readonly t3codeCommitHash: string;
+  readonly upcomputerCommitHash: string;
   readonly upcomputerSourceBom?: string;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
-  readonly author: string;
+  readonly author: { readonly name: string };
   readonly main: string;
   readonly build: Record<string, unknown>;
   readonly dependencies: Record<string, unknown>;
@@ -871,7 +880,7 @@ function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: bo
     }
 
     const tmpRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3code-icon-build-",
+      prefix: "upcomputer-icon-build-",
     });
 
     const iconPngPath = path.join(stageResourcesDir, "icon.png");
@@ -1084,6 +1093,21 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
+// Keep the packaged application identity separate from workspace package names.
+// `name` also determines the NSIS package name and electron-updater cache directory.
+export function resolveDesktopPackageMetadata(version: string, commitHash: string) {
+  return {
+    name: UPCOMPUTER_EXECUTABLE_NAME,
+    version,
+    buildVersion: version,
+    upcomputerCommitHash: commitHash,
+    private: true as const,
+    description: "Up.computer desktop build",
+    author: { name: UPCOMPUTER_PUBLISHER_NAME },
+    main: "apps/desktop/dist-electron/main.cjs",
+  };
+}
+
 export function resolveDesktopProductName(version: string): string {
   if (isLocalTestVersion(version)) return LOCAL_TEST_APP_NAME;
   return resolveDesktopUpdateChannel(version) === "nightly"
@@ -1100,7 +1124,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   mockUpdateServerPort: number | undefined,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: isLocalTestVersion(version) ? LOCAL_TEST_APP_ID : DESKTOP_APP_ID,
+    appId: isLocalTestVersion(version) ? LOCAL_TEST_APP_ID : UPCOMPUTER_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "Up.computer-${version}-${arch}.${ext}",
     directories: {
@@ -1155,12 +1179,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: DESKTOP_EXECUTABLE_NAME,
+      executableName: UPCOMPUTER_EXECUTABLE_NAME,
       icon: "icons",
       category: "Development",
       desktop: {
         entry: {
-          StartupWMClass: DESKTOP_EXECUTABLE_NAME,
+          StartupWMClass: UPCOMPUTER_EXECUTABLE_NAME,
         },
       },
     };
@@ -1210,7 +1234,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
 // backend never compiles on the user's machine. node-pty publishes no Linux
 // prebuilt and the WSL Linux Node can't load the Windows/Electron binary, so the
 // Linux CI job builds pty.node and hands it here. We drop it into the staged
-// node-pty's prebuilds/linux-<arch>/ with a t3code marker the WSL preflight
+// node-pty's prebuilds/linux-<arch>/ with an Up.computer marker the WSL preflight
 // checks (arch + node-pty version; the binary is N-API, hence ABI-stable across
 // Node versions). A missing prebuild is a warning, not an error, so local and
 // non-Windows builds still succeed — they just won't ship a working WSL backend.
@@ -1269,7 +1293,7 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
   yield* fs.makeDirectory(prebuildDir, { recursive: true });
   yield* fs.copyFile(input.prebuildPath, path.join(prebuildDir, "pty.node"));
   const markerJson = yield* encodeJsonString({ arch: linuxArch, nodePtyVersion });
-  yield* fs.writeFileString(path.join(prebuildDir, "t3code-wsl-node-pty.json"), `${markerJson}\n`);
+  yield* fs.writeFileString(path.join(prebuildDir, UPCOMPUTER_WSL_PTY_MARKER), `${markerJson}\n`);
 
   yield* Effect.log(
     `[desktop-artifact] Staged WSL node-pty prebuild (linux-${linuxArch}, node-pty ${nodePtyVersion}).`,
@@ -1339,7 +1363,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
-    prefix: `t3code-desktop-${options.platform}-stage-`,
+    prefix: `upcomputer-desktop-${options.platform}-stage-`,
   });
 
   const stageAppDir = path.join(stageRoot, "app");
@@ -1451,16 +1475,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageDependencies,
   );
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
-    version: appVersion,
-    buildVersion: appVersion,
-    t3codeCommitHash: commitHash,
+    ...resolveDesktopPackageMetadata(appVersion, commitHash),
     ...(options.sourceBom !== undefined ? { upcomputerSourceBom: "source-bom.json" } : {}),
-    private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "Up.computer desktop build",
-    author: "T3 Tools",
-    main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
       options.target,
