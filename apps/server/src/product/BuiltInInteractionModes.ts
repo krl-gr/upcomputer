@@ -1,8 +1,8 @@
-import type { InteractionModeDescriptor } from "@t3tools/contracts";
+import type { InteractionModeDescriptor } from "@upcomputer/contracts";
 import {
   createExperimentalInteractionModeRegistry,
   type ExperimentalInteractionModeRegistration,
-} from "@t3tools/shared/interactionMode";
+} from "@upcomputer/shared/interactionMode";
 
 import {
   ASK_MODE_PROMPT_PREFIX,

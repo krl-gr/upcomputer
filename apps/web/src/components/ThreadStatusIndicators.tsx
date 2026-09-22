@@ -2,8 +2,8 @@ import {
   scopeProjectRef,
   scopedThreadKey,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import type { VcsStatusResult } from "@t3tools/contracts";
+} from "@upcomputer/client-runtime/environment";
+import type { VcsStatusResult } from "@upcomputer/contracts";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";

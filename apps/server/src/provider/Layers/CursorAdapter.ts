@@ -21,8 +21,8 @@ import {
   type RuntimeMode,
   type ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import type { ResolvedInteractionMode } from "@t3tools/shared/interactionMode";
+} from "@upcomputer/contracts";
+import type { ResolvedInteractionMode } from "@upcomputer/shared/interactionMode";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";

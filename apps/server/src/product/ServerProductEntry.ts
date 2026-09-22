@@ -1,4 +1,4 @@
-import type { ProductManifestSnapshot } from "@t3tools/contracts";
+import type { ProductManifestSnapshot } from "@upcomputer/contracts";
 
 import type { ExperimentalServerProductComposition } from "./ServerProductComposition.ts";
 

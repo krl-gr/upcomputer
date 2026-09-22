@@ -1,4 +1,4 @@
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProviderSkill } from "@upcomputer/contracts";
 import type { Ref } from "react";
 import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 

@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@upcomputer/contracts";
 
 import {
   CORE_INTERACTION_MODE_PRESENTATIONS,

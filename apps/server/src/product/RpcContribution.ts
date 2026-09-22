@@ -1,4 +1,4 @@
-import type { AuthSessionId } from "@t3tools/contracts";
+import type { AuthSessionId } from "@upcomputer/contracts";
 import * as Layer from "effect/Layer";
 import type * as Rpc from "effect/unstable/rpc/Rpc";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";

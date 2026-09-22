@@ -1,5 +1,9 @@
-import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
-import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@t3tools/shared/upcomputerReleasePolicy";
+import type {
+  EnvironmentId,
+  ServerConfig,
+  ServerSelfUpdateCapability,
+} from "@upcomputer/contracts";
+import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@upcomputer/shared/upcomputerReleasePolicy";
 import * as Schema from "effect/Schema";
 
 import { APP_VERSION } from "./branding";

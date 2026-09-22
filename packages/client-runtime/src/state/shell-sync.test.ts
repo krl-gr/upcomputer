@@ -3,7 +3,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamItem,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

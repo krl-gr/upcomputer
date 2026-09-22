@@ -3,8 +3,8 @@ import type {
   GitRunStackedActionResult,
   GitStackedAction,
   VcsStatusResult,
-} from "@t3tools/contracts";
-import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+} from "@upcomputer/contracts";
+import { isTemporaryWorktreeBranch } from "@upcomputer/shared/git";
 
 export type GitActionIconName = "commit" | "push" | "pr";
 

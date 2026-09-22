@@ -2,8 +2,8 @@ import {
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
-import { resolveSelectableModel } from "@t3tools/shared/model";
+} from "@upcomputer/contracts";
+import { resolveSelectableModel } from "@upcomputer/shared/model";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { SearchIcon } from "lucide-react";

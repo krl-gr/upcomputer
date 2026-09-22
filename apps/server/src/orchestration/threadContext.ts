@@ -11,7 +11,7 @@ import {
   THREAD_CONTEXT_MAX_TOTAL_CHARS,
   THREAD_CONTEXT_MIN_USER_PROMPT_BUDGET,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 export { THREAD_CONTEXT_MAX_BINDINGS };
 

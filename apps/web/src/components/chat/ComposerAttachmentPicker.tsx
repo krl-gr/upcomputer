@@ -1,4 +1,4 @@
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId } from "@upcomputer/contracts";
 import { ArrowLeftIcon, FilesIcon, GitBranchIcon, ImagePlusIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 

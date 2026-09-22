@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { TerminalSummary } from "@t3tools/contracts";
-import { DEFAULT_TERMINAL_ID } from "@t3tools/contracts";
+import type { TerminalSummary } from "@upcomputer/contracts";
+import { DEFAULT_TERMINAL_ID } from "@upcomputer/contracts";
 
 import { getTerminalLabel, nextTerminalId, resolveTerminalSessionLabel } from "./terminalLabels.ts";
 

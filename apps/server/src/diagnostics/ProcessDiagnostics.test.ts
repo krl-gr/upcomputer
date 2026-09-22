@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
 import * as ProcessDiagnostics from "./ProcessDiagnostics.ts";
 

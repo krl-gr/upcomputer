@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ProviderDriverKind, ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ProviderDriverKind, ProviderOptionDescriptor } from "@upcomputer/contracts";
 import { buildTraitsTriggerDisplay, getTraitsTriggerPresentation } from "./TraitsPicker";
 
 function selectDescriptor(

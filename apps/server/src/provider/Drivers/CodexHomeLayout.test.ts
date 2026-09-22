@@ -6,7 +6,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import { CodexSettings } from "@t3tools/contracts";
+import { CodexSettings } from "@upcomputer/contracts";
 import {
   CodexShadowHomeEntryConflictError,
   CodexShadowHomePathConflictError,

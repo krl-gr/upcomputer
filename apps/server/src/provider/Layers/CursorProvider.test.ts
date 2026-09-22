@@ -8,8 +8,8 @@ import * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import type { CursorSettings } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import type { CursorSettings } from "@upcomputer/contracts";
+import { createModelCapabilities } from "@upcomputer/shared/model";
 
 import {
   buildCursorProviderSnapshot,

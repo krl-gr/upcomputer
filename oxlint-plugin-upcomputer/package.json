@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/oxlint-plugin-t3code",
+  "name": "@upcomputer/oxlint-plugin-upcomputer",
   "private": true,
   "type": "module",
   "scripts": {

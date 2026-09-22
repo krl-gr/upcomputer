@@ -3,7 +3,7 @@ import type {
   PreviewAutomationOperation,
   PreviewSessionSnapshot,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 import { PreviewAutomationTargetUnavailableError } from "./previewAutomationErrors";
 

@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId } from "@upcomputer/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";

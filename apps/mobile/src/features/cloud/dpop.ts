@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import * as ExpoCrypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { p256 } from "@noble/curves/nist";
-import { DpopPublicJwk, normalizeDpopHtu } from "@t3tools/shared/dpopCommon";
+import { DpopPublicJwk, normalizeDpopHtu } from "@upcomputer/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
 export class CloudDpopError extends Data.TaggedError("CloudDpopError")<{

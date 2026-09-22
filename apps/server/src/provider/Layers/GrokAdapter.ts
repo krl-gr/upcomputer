@@ -11,7 +11,7 @@ import {
   RuntimeRequestId,
   type ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";

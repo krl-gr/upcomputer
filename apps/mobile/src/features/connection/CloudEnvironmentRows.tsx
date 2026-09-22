@@ -3,8 +3,8 @@ import { SymbolView } from "../../components/AppSymbol";
 import {
   connectionStatusText,
   type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@upcomputer/client-runtime/connection";
+import type { EnvironmentId } from "@upcomputer/contracts";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,

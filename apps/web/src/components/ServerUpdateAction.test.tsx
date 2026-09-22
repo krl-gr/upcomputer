@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type { EnvironmentId, ServerSelfUpdateCapability } from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ServerUpdateAction } from "./ServerUpdateAction";

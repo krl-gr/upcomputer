@@ -1,8 +1,8 @@
-import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type { EnvironmentId, ServerSelfUpdateCapability } from "@upcomputer/contracts";
 import {
   canOfferRemoteServerSelfUpdate,
   UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
-} from "@t3tools/shared/upcomputerReleasePolicy";
+} from "@upcomputer/shared/upcomputerReleasePolicy";
 
 /**
  * Version-skew guidance follows the official release policy. The only supported

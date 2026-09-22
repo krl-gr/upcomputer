@@ -15,7 +15,7 @@ import {
   ProviderSessionRuntimeStatus,
   RuntimeMode,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 import {
   PersistenceDecodeError,

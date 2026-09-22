@@ -37,12 +37,12 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
-    "@t3tools/web": "workspace:*",
     "@types/bun": "1.3.14",
     "@types/node": "catalog:",
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "@upcomputer/tailscale": "workspace:*",
+    "@upcomputer/web": "workspace:*",
     "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
     "vite-plus": "catalog:"

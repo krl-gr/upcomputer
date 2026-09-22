@@ -6,8 +6,8 @@ import * as Option from "effect/Option";
 import { Command } from "effect/unstable/cli";
 import * as CliError from "effect/unstable/cli/CliError";
 
-import * as NetService from "@t3tools/shared/Net";
-import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@t3tools/shared/upcomputerReleasePolicy";
+import * as NetService from "@upcomputer/shared/Net";
+import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@upcomputer/shared/upcomputerReleasePolicy";
 import packageJson from "../package.json" with { type: "json" };
 import { authCommand } from "./cli/auth.ts";
 import { connectCommand } from "./cli/connect.ts";

@@ -4,8 +4,8 @@ import * as Layer from "effect/Layer";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
-import { InteractionModeRegistryError } from "@t3tools/shared/interactionMode";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { InteractionModeRegistryError } from "@upcomputer/shared/interactionMode";
+import { ProviderDriverKind } from "@upcomputer/contracts";
 
 import {
   CORE_SERVER_PRODUCT_COMPOSITION,

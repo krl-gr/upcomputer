@@ -1,4 +1,4 @@
-import { HostProcessHostname, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessHostname, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";

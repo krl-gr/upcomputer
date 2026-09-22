@@ -8,7 +8,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { type ChatMessage, type SessionPhase, type Thread } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";

@@ -1,6 +1,6 @@
 import { createContext, useContext, type PropsWithChildren } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { RpcSessionClientFactory, WsRpcProtocolClient } from "@t3tools/client-runtime/rpc";
+import type { EnvironmentId } from "@upcomputer/contracts";
+import type { RpcSessionClientFactory, WsRpcProtocolClient } from "@upcomputer/client-runtime/rpc";
 
 import {
   defineExperimentalWebFeature,

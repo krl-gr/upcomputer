@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import {
   RelayDeliveryKind as RelayDeliveryKindSchema,
   type RelayDeliveryResult,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 
 import {
   sanitizeAgentActivityAggregateState,

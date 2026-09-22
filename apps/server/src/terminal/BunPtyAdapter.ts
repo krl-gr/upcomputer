@@ -3,7 +3,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
 import * as PtyAdapter from "./PtyAdapter.ts";
 

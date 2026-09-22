@@ -11,8 +11,8 @@ import {
   EnvironmentOrchestrationHttpApi,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
+} from "@upcomputer/contracts";
+import * as NetService from "@upcomputer/shared/Net";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";

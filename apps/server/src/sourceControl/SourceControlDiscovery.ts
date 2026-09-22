@@ -2,7 +2,7 @@ import {
   type SourceControlDiscoveryResult,
   type VcsDiscoveryItem,
   type VcsDriverKind,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

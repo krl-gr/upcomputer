@@ -4,7 +4,7 @@ import {
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 
 export class InvalidScopedProjectKeyError extends Schema.TaggedErrorClass<InvalidScopedProjectKeyError>()(

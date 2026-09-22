@@ -19,8 +19,8 @@ import type {
   ThreadId,
   ProviderTurnStartResult,
   TurnId,
-} from "@t3tools/contracts";
-import type { ResolvedInteractionMode } from "@t3tools/shared/interactionMode";
+} from "@upcomputer/contracts";
+import type { ResolvedInteractionMode } from "@upcomputer/shared/interactionMode";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 

@@ -1,4 +1,4 @@
-import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedProjectRef, ScopedThreadRef } from "@upcomputer/contracts";
 import { create } from "zustand";
 
 import type { DraftId, DraftThreadEnvMode } from "../composerDraftStore";

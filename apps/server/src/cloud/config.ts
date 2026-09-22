@@ -1,4 +1,4 @@
-import { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
+import { RelayManagedEndpointRuntimeConfig } from "@upcomputer/contracts/relay";
 import * as Schema from "effect/Schema";
 
 export const CLOUD_MINT_PUBLIC_KEY = "cloud-mint-ed25519-public-key";

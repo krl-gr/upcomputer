@@ -5,8 +5,8 @@ import {
   type RepositoryIdentity,
   type ResolvedKeybindingsConfig,
   type ThreadId,
-} from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@upcomputer/contracts";
+import { scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";

@@ -3,8 +3,8 @@ import {
   connectCallbackUrl,
   CONNECT_OAUTH_SCOPES,
   type ConnectAuthorizeRequest,
-} from "@t3tools/shared/connectAuth";
-import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
+} from "@upcomputer/shared/connectAuth";
+import { clerkFrontendApiUrlFromPublishableKey } from "@upcomputer/shared/relayAuth";
 
 import { configuredHostedAppUrl, isHostedStaticApp } from "../hostedPairing";
 import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";

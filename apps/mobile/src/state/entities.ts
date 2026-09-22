@@ -2,13 +2,13 @@ import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 import type {
   EnvironmentId,
   ScopedProjectRef,
   ScopedThreadRef,
   ServerConfig,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { environmentProjects } from "./projects";

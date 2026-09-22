@@ -1,4 +1,4 @@
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 import { Atom, type AtomRegistry } from "effect/unstable/reactivity";
 

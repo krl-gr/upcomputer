@@ -1,8 +1,8 @@
-import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import { isTransportConnectionErrorMessage } from "@upcomputer/client-runtime/errors";
 import type {
   EnvironmentShellStatus,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 import {
   CommandId,
   EnvironmentId,
@@ -18,7 +18,7 @@ import {
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 
 import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema";

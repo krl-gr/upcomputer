@@ -1,4 +1,4 @@
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { serializeComposerFileLink } from "@upcomputer/shared/composerTrigger";
 
 /**
  * Drag payload type carrying a serialized composer mention. Set on drags that

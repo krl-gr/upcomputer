@@ -1,4 +1,4 @@
-import { type ProviderInstanceId } from "@t3tools/contracts";
+import { type ProviderInstanceId } from "@upcomputer/contracts";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SparklesIcon, StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";

@@ -19,7 +19,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderInstanceId,
   type ProviderDriverKind,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

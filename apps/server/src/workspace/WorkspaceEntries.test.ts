@@ -11,7 +11,7 @@ import * as PlatformError from "effect/PlatformError";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";

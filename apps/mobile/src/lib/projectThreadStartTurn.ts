@@ -6,7 +6,7 @@ import {
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
 

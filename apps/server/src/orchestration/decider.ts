@@ -6,7 +6,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationThread,
   ThreadContextBindingId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

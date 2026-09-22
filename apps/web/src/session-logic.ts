@@ -11,8 +11,8 @@ import {
   type UserInputQuestion,
   type ThreadId,
   type TurnId,
-} from "@t3tools/contracts";
-import { extractProposedPlanMarkdown } from "@t3tools/shared/interactionMode";
+} from "@upcomputer/contracts";
+import { extractProposedPlanMarkdown } from "@upcomputer/shared/interactionMode";
 
 import type {
   ChatMessage,

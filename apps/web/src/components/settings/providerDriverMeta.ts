@@ -5,7 +5,7 @@ import {
   GrokSettings,
   OpenCodeSettings,
   ProviderDriverKind,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import type * as Schema from "effect/Schema";
 import type { ComponentType } from "react";
 import {

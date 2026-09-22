@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@upcomputer/contracts";
 
 import { groupProjectsByRepository } from "./repositoryGroups";
-import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { EnvironmentProject, EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
 
 function makeProject(
   input: Partial<EnvironmentProject> & Pick<EnvironmentProject, "environmentId" | "id" | "title">,

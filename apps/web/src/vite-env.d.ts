@@ -1,6 +1,6 @@
 /// <reference types="vite-plus/client" />
 
-import type { DesktopBridge, LocalApi } from "@t3tools/contracts";
+import type { DesktopBridge, LocalApi } from "@upcomputer/contracts";
 
 interface ImportMetaEnv {
   readonly VITE_HTTP_URL: string;

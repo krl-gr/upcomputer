@@ -1,4 +1,4 @@
-import type { InteractionModeDescriptor } from "@t3tools/contracts";
+import type { InteractionModeDescriptor } from "@upcomputer/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 

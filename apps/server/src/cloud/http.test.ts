@@ -6,12 +6,12 @@ import * as PlatformError from "effect/PlatformError";
 import * as Tracer from "effect/Tracer";
 import { HttpClient, HttpServerRequest } from "effect/unstable/http";
 
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
+import { RelayClientTracer } from "@upcomputer/shared/relayTracing";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
-import type { RelayLinkProofRequest } from "@t3tools/contracts/relay";
+import type { RelayLinkProofRequest } from "@upcomputer/contracts/relay";
 import {
   consumeCloudReplayGuards,
   isSupportedLinkProviderKind,

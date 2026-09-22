@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { VcsProcessExitError } from "@t3tools/contracts";
+import { VcsProcessExitError } from "@upcomputer/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitLabCli from "./GitLabCli.ts";

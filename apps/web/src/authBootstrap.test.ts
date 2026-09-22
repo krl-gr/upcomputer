@@ -4,7 +4,7 @@ import {
   type AuthCreatePairingCredentialInput,
   type AuthSessionState,
   type DesktopBridge,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";

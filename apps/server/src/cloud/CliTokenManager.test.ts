@@ -1,4 +1,4 @@
-import { readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { readConnectAuthorizeRequest } from "@upcomputer/shared/connectAuth";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";

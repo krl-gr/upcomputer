@@ -5,7 +5,7 @@ import {
   isWindowsDrivePath,
   normalizeProjectPathForComparison,
   normalizeProjectPathForDispatch,
-} from "@t3tools/shared/path";
+} from "@upcomputer/shared/path";
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 

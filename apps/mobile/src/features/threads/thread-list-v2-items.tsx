@@ -1,7 +1,7 @@
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, type ComponentProps } from "react";
 import { Platform, Pressable, useWindowDimensions, View } from "react-native";

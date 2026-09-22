@@ -10,7 +10,7 @@ import {
   type OrchestrationMessage,
   type OrchestrationReadModel,
   type OrchestrationThread,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { describe, it } from "vitest";
 
 import {

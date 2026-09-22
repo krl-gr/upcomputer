@@ -6,12 +6,12 @@ import {
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 import type {
   EnvironmentId,
   SidebarProjectGroupingMode,
   SidebarThreadSortOrder,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

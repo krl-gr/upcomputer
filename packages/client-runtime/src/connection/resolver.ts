@@ -1,9 +1,9 @@
-import { RelayEnvironmentConnectScope } from "@t3tools/contracts/relay";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import { RelayEnvironmentConnectScope } from "@upcomputer/contracts/relay";
+import { withRelayClientTracing } from "@upcomputer/shared/relayTracing";
 import {
   UPCOMPUTER_RELEASE_CAPABILITIES,
   UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
-} from "@t3tools/shared/upcomputerReleasePolicy";
+} from "@upcomputer/shared/upcomputerReleasePolicy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -44,7 +44,7 @@ export class ConnectionResolver extends Context.Service<
       entry: ConnectionCatalogEntry,
     ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/connection/resolver/ConnectionResolver") {}
+>()("@upcomputer/client-runtime/connection/resolver/ConnectionResolver") {}
 
 const isBearerProfile = Schema.is(BearerConnectionProfile);
 const isSshProfile = Schema.is(SshConnectionProfile);

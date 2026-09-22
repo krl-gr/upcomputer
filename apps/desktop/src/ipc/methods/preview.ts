@@ -20,7 +20,7 @@ import {
   PreviewAutomationSnapshot,
   PreviewAutomationRemoteError,
   PreviewAutomationStatus,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as NodeURL from "node:url";

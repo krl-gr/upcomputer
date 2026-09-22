@@ -1,4 +1,4 @@
-import type { ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import type { ContextMenuItem, LocalApi } from "@upcomputer/contracts";
 
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 import { showContextMenuFallback } from "./contextMenuFallback";

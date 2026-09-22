@@ -1,4 +1,4 @@
-import { createCoreProductManifest } from "@t3tools/shared/product";
+import { createCoreProductManifest } from "@upcomputer/shared/product";
 
 import packageJson from "../package.json" with { type: "json" };
 

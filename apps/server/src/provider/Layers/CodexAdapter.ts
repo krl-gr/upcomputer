@@ -23,7 +23,7 @@ import {
   ProviderApprovalDecision,
   ThreadId,
   ProviderSendTurnInput,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
@@ -37,11 +37,11 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@upcomputer/shared/model";
 import {
   applyResolvedInteractionModePrompt,
   type ResolvedInteractionMode,
-} from "@t3tools/shared/interactionMode";
+} from "@upcomputer/shared/interactionMode";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import type { ExperimentalDynamicToolRegistry } from "../../product/DynamicToolRegistry.ts";

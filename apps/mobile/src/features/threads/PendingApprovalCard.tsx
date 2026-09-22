@@ -1,4 +1,4 @@
-import type { ApprovalRequestId, ProviderApprovalDecision } from "@t3tools/contracts";
+import type { ApprovalRequestId, ProviderApprovalDecision } from "@upcomputer/contracts";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";

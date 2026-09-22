@@ -1,7 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
-import { signRelayJwt } from "@t3tools/shared/relayJwt";
+import { signRelayJwt } from "@upcomputer/shared/relayJwt";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";

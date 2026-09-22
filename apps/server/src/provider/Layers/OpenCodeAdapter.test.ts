@@ -20,8 +20,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@upcomputer/contracts";
+import { createModelSelection } from "@upcomputer/shared/model";
 import { ServerConfig } from "../../config.ts";
 import { BUILT_IN_INTERACTION_MODE_REGISTRY } from "../../product/BuiltInInteractionModes.ts";
 import { ASK_MODE_PROMPT_PREFIX, DEFAULT_MODE_PROMPT_PREFIX } from "../AskModeInstructions.ts";

@@ -3,11 +3,11 @@ import {
   createManagedRelayQueryManager,
   managedRelaySessionAtom,
   readManagedRelaySnapshotState,
-} from "@t3tools/client-runtime/relay";
+} from "@upcomputer/client-runtime/relay";
 import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect } from "react";
 

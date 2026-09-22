@@ -1,4 +1,4 @@
-import { deriveProjectVisualIdentityKey } from "@t3tools/shared/projectFavicon";
+import { deriveProjectVisualIdentityKey } from "@upcomputer/shared/projectFavicon";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

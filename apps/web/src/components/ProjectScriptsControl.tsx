@@ -3,12 +3,12 @@ import type {
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
   T3ProjectFileScript,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@upcomputer/client-runtime/state/runtime";
 import {
   BugIcon,
   ChevronDownIcon,

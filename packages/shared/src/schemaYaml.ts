@@ -48,7 +48,7 @@ function formatYamlParseError(error: unknown): string {
  * **Example** (Parse YAML)
  *
  * ```ts
- * import { parseYaml } from "@t3tools/shared/schemaYaml"
+ * import { parseYaml } from "@upcomputer/shared/schemaYaml"
  *
  * const parse = parseYaml<string>()
  * // Getter<unknown, string>
@@ -83,7 +83,7 @@ export function parseYaml<E extends string>(
  * **Example** (Stringify YAML)
  *
  * ```ts
- * import { stringifyYaml } from "@t3tools/shared/schemaYaml"
+ * import { stringifyYaml } from "@upcomputer/shared/schemaYaml"
  *
  * const stringify = stringifyYaml()
  * // Getter<string, unknown>
@@ -119,7 +119,7 @@ export function stringifyYaml(
  *
  * ```ts
  * import * as Schema from "effect/Schema"
- * import { fromYamlString } from "@t3tools/shared/schemaYaml"
+ * import { fromYamlString } from "@upcomputer/shared/schemaYaml"
  *
  * const schema = Schema.String.pipe(Schema.decodeTo(Schema.Unknown, fromYamlString))
  * ```

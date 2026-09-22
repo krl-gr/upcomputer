@@ -9,7 +9,7 @@ import {
   listExperimentalWebSettings,
 } from "./WebComposition";
 import { WebFeatureInvariantError } from "./WebFeature";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 
 const loadRoute = async () => ({ default: () => null });

@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@upcomputer/contracts";
 
 export type ExternalLinkContextMenuAction = "open-in-preview" | "open-external" | "copy-link";
 

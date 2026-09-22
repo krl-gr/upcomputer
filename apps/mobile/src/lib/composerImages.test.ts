@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@upcomputer/contracts";
 
 const files = new Map<string, { base64: string; deleted: boolean }>();
 

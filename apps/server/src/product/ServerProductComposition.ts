@@ -1,4 +1,4 @@
-import type { InteractionModeProviderBehavior } from "@t3tools/contracts";
+import type { InteractionModeProviderBehavior } from "@upcomputer/contracts";
 import * as Layer from "effect/Layer";
 
 import {
@@ -20,7 +20,7 @@ import {
   createExperimentalInteractionModeRegistry,
   type ExperimentalInteractionModeRegistration,
   type ExperimentalInteractionModeRegistry,
-} from "@t3tools/shared/interactionMode";
+} from "@upcomputer/shared/interactionMode";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "../provider/builtInDrivers.ts";
 import type { AnyProviderDriver } from "../provider/ProviderDriver.ts";
 

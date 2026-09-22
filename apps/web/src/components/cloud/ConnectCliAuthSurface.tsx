@@ -1,5 +1,5 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
-import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@upcomputer/shared/connectAuth";
 import { useEffect, useRef, useState } from "react";
 
 import {

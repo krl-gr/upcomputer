@@ -1,9 +1,9 @@
-import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
-import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@upcomputer/contracts";
+import { resolveRemotePairingTarget } from "@upcomputer/shared/remote";
 import {
   UPCOMPUTER_RELEASE_CAPABILITIES,
   UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE,
-} from "@t3tools/shared/upcomputerReleasePolicy";
+} from "@upcomputer/shared/upcomputerReleasePolicy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,7 +72,7 @@ export class ConnectionOnboarding extends Context.Service<
       input: BearerConnectionUpdateInput,
     ) => Effect.Effect<void, ConnectionAttemptError | Persistence.ConnectionPersistenceError>;
   }
->()("@t3tools/client-runtime/connection/onboarding/ConnectionOnboarding") {}
+>()("@upcomputer/client-runtime/connection/onboarding/ConnectionOnboarding") {}
 
 const resolvePairingTarget = Effect.fn("clientRuntime.connection.onboarding.resolvePairingTarget")(
   function* (input: PairingConnectionInput) {

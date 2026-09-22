@@ -92,7 +92,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @upcomputer/desktop ensure:electron
 
       - id: release_meta
         name: Resolve release version
@@ -619,8 +619,8 @@ jobs:
           run-install: |
             args:
               - --filter=t3...
-              - --filter=@t3tools/web...
-              - --filter=@t3tools/scripts...
+              - --filter=@upcomputer/web...
+              - --filter=@upcomputer/scripts...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -640,7 +640,7 @@ jobs:
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
       - name: Build web package
-        run: vp run --filter @t3tools/web build
+        run: vp run --filter @upcomputer/web build
 
       - name: Build CLI package
         run: vp run --filter t3 build
@@ -675,7 +675,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@upcomputer/scripts...
 
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
@@ -799,8 +799,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/web...
+              - --filter=@upcomputer/scripts...
+              - --filter=@upcomputer/web...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -922,8 +922,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/oxlint-plugin-t3code...
+              - --filter=@upcomputer/scripts...
+              - --filter=@upcomputer/oxlint-plugin-upcomputer...
 
       - id: update_versions
         name: Update version strings
@@ -982,7 +982,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@upcomputer/scripts...
 
       - name: Announce prerelease on Discord
         if: needs.preflight.outputs.is_prerelease == 'true'

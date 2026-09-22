@@ -1,7 +1,7 @@
 import { SymbolView } from "../../components/AppSymbol";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { connectionStatusText } from "@upcomputer/client-runtime/connection";
+import type { AtomCommandResult } from "@upcomputer/client-runtime/state/runtime";
+import type { EnvironmentId } from "@upcomputer/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useState } from "react";

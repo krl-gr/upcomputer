@@ -1,5 +1,5 @@
-import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
+import { type EnvironmentConnectionPhase } from "@upcomputer/client-runtime/connection";
+import type { EnvironmentThreadStatus } from "@upcomputer/client-runtime/state/threads";
 import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import type {
@@ -13,7 +13,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Platform, View, type GestureResponderEvent } from "react-native";

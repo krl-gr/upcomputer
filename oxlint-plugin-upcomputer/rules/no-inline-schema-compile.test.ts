@@ -2,9 +2,9 @@ import { assert, describe } from "@effect/vitest";
 
 import { createOxlintRuleHarness } from "../test/utils.ts";
 
-const rule = createOxlintRuleHarness("t3code/no-inline-schema-compile");
+const rule = createOxlintRuleHarness("upcomputer/no-inline-schema-compile");
 
-describe("t3code/no-inline-schema-compile", () => {
+describe("upcomputer/no-inline-schema-compile", () => {
   rule.valid(
     "allows schema compilers hoisted to module scope",
     `

@@ -1,5 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import type { RelayManagedEndpoint } from "@t3tools/contracts/relay";
+import { EnvironmentId } from "@upcomputer/contracts";
+import type { RelayManagedEndpoint } from "@upcomputer/contracts/relay";
 import {
   exchangeRemoteDpopAccessToken,
   type RemoteEnvironmentAuthError,
@@ -55,7 +55,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       >;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
+>()("@upcomputer/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
 const TOKEN_EXPIRY_SAFETY_MARGIN_MS = 60_000;
 const CACHED_ENDPOINT_FAILURE_THRESHOLD = 2;

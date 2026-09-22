@@ -1,5 +1,11 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  TurnId,
+} from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

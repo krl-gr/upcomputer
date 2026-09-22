@@ -1,4 +1,4 @@
-import type { ExperimentalInteractionModeRegistry } from "@t3tools/shared/interactionMode";
+import type { ExperimentalInteractionModeRegistry } from "@upcomputer/shared/interactionMode";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 

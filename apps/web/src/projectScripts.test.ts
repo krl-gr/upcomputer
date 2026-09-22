@@ -3,7 +3,7 @@ import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
   setupProjectScript,
-} from "@t3tools/shared/projectScripts";
+} from "@upcomputer/shared/projectScripts";
 
 import {
   buildProjectScript,

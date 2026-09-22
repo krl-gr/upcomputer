@@ -1,4 +1,4 @@
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { serializeComposerFileLink } from "@upcomputer/shared/composerTrigger";
 
 function normalizeContextPickerPath(path: string): string {
   return path.trim().replace(/\\/g, "/").replace(/\/+$/g, "");

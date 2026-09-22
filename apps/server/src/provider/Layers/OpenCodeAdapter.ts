@@ -12,7 +12,7 @@ import {
   type ToolLifecycleItemType,
   TurnId,
   type UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -28,8 +28,8 @@ import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@
 import {
   applyResolvedInteractionModePrompt,
   type ResolvedInteractionMode,
-} from "@t3tools/shared/interactionMode";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+} from "@upcomputer/shared/interactionMode";
+import { getModelSelectionStringOptionValue } from "@upcomputer/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";

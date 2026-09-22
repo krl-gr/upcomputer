@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@upcomputer/contracts";
 
 import {
   CheckpointRefUnavailableError,

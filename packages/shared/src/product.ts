@@ -3,7 +3,7 @@ import type {
   ProductExtensionLifecycleState,
   ProductExtensionSnapshot,
   ProductManifestSnapshot,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const KNOWN_EXTENSION_SOURCES = new Set(["core", "official", "third-party"]);

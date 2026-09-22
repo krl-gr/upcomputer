@@ -53,27 +53,27 @@ import {
   type ResolvedKeybindingsConfig,
   type SidebarProjectGroupingMode,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   parseScopedThreadKey,
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+} from "@upcomputer/client-runtime/environment";
+import { safeErrorLogAttributes } from "@upcomputer/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@upcomputer/client-runtime/state/runtime";
 import { useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-router";
-import { truncate } from "@t3tools/shared/String";
+import { truncate } from "@upcomputer/shared/String";
 import type {
   SidebarThreadPreviewCount,
   SidebarThreadSortOrder,
   SidebarViewMode,
-} from "@t3tools/contracts/settings";
+} from "@upcomputer/contracts/settings";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { isElectron } from "../env";

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
 import {
   CommandId,
   EnvironmentId,
@@ -8,7 +8,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 
 import {

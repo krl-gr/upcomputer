@@ -1,4 +1,4 @@
-import { EnvironmentId, type PreviewSessionSnapshot, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, type PreviewSessionSnapshot, ThreadId } from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

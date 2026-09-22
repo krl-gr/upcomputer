@@ -7,7 +7,7 @@ import noManualEffectRuntimeInTests from "./rules/no-manual-effect-runtime-in-te
 
 export default definePlugin({
   meta: {
-    name: "t3code",
+    name: "upcomputer",
   },
   rules: {
     "namespace-node-imports": namespaceNodeImports,

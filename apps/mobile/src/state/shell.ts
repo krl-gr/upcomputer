@@ -3,7 +3,7 @@ import {
   createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";

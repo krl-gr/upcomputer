@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@upcomputer/contracts";
 
 import type { DraftId } from "../composerDraftStore";
 import { randomUUID } from "../lib/utils";

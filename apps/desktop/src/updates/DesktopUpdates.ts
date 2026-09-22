@@ -5,7 +5,7 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateCheckResult,
   type DesktopUpdateState,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -160,7 +160,7 @@ export class DesktopUpdates extends Context.Service<
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
   }
->()("@t3tools/desktop/updates/DesktopUpdates") {}
+>()("@upcomputer/desktop/updates/DesktopUpdates") {}
 
 const {
   logInfo: logUpdaterInfo,

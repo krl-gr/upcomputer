@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { T3ProjectFile, T3_PROJECT_FILE_SCHEMA_URL } from "@t3tools/contracts";
+import { T3ProjectFile, T3_PROJECT_FILE_SCHEMA_URL } from "@upcomputer/contracts";
 
 import { fromLenientJson } from "./schemaJson.ts";
 

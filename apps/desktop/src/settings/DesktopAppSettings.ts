@@ -3,8 +3,8 @@ import {
   DesktopUpdateChannelSchema,
   type DesktopServerExposureMode,
   type DesktopUpdateChannel,
-} from "@t3tools/contracts";
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
+} from "@upcomputer/contracts";
+import { fromLenientJson } from "@upcomputer/shared/schemaJson";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -173,7 +173,7 @@ export class DesktopAppSettings extends Context.Service<
     >;
     readonly applyWslWindowsFallbackInMemory: Effect.Effect<DesktopSettingsChange>;
   }
->()("@t3tools/desktop/settings/DesktopAppSettings") {}
+>()("@upcomputer/desktop/settings/DesktopAppSettings") {}
 
 export function resolveDefaultDesktopSettings(appVersion: string): DesktopSettings {
   return {

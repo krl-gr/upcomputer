@@ -1,6 +1,6 @@
 import * as NodeOS from "node:os";
 
-import { QrCode } from "@t3tools/shared/qrCode";
+import { QrCode } from "@upcomputer/shared/qrCode";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
 

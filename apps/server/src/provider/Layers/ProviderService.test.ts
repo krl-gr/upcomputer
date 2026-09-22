@@ -8,7 +8,7 @@ import type {
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   ApprovalRequestId,
   EventId,
@@ -18,12 +18,12 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   createExperimentalInteractionModeRegistry,
   type ExperimentalInteractionModeRegistry,
-} from "@t3tools/shared/interactionMode";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@upcomputer/shared/interactionMode";
+import { createModelSelection } from "@upcomputer/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";

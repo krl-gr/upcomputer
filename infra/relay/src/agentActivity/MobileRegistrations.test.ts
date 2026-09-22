@@ -1,7 +1,7 @@
 import type {
   RelayAgentActivityState,
   RelayDeviceRegistrationRequest,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 import type { SignedApnsDeliveryJob } from "./apnsDeliveryJobs.ts";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";

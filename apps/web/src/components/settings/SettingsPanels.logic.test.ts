@@ -3,7 +3,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   buildProviderInstanceUpdatePatch,

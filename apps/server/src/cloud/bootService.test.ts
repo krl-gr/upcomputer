@@ -12,7 +12,7 @@ import {
   HostProcessArguments,
   HostProcessExecutablePath,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+} from "@upcomputer/shared/hostProcess";
 
 import { reconcileService } from "../cli/service.ts";
 import * as ProcessRunner from "../processRunner.ts";

@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
 import { lt } from "drizzle-orm";
 
-import { verifyDpopProof } from "@t3tools/shared/dpop";
+import { verifyDpopProof } from "@upcomputer/shared/dpop";
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 

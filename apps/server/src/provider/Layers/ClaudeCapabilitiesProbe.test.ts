@@ -1,4 +1,4 @@
-import { ClaudeSettings } from "@t3tools/contracts";
+import { ClaudeSettings } from "@upcomputer/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";

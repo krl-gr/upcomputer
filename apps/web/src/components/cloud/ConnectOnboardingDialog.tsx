@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/react";
-import { AuthAdministrativeScopes, AuthRelayWriteScope } from "@t3tools/contracts";
+import { AuthAdministrativeScopes, AuthRelayWriteScope } from "@upcomputer/contracts";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 

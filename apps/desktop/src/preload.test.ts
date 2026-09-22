@@ -1,4 +1,4 @@
-import type { DesktopBridge, PreviewAutomationSnapshot } from "@t3tools/contracts";
+import type { DesktopBridge, PreviewAutomationSnapshot } from "@upcomputer/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { beforeAll, beforeEach, describe, expect, vi } from "vite-plus/test";

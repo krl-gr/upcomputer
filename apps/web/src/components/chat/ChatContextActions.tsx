@@ -4,7 +4,7 @@ import type {
   ProjectScript,
   ResolvedKeybindingsConfig,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { FileDiffIcon, TerminalSquareIcon } from "lucide-react";
 import {
   memo,
@@ -26,7 +26,7 @@ import {
   type ContextQuickActionId,
 } from "~/contextQuickActions";
 import { shortcutLabelForCommand } from "~/keybindings";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useUiStateStore } from "~/uiStateStore";
 import GitActionsControl from "../GitActionsControl";

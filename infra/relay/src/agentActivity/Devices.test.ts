@@ -1,4 +1,4 @@
-import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
+import type { RelayDeviceRegistrationRequest } from "@upcomputer/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";

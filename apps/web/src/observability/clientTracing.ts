@@ -6,8 +6,11 @@ import * as Tracer from "effect/Tracer";
 import { HttpClient } from "effect/unstable/http";
 import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 
-import { settleAsyncResult, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  settleAsyncResult,
+  squashAtomCommandFailure,
+} from "@upcomputer/client-runtime/state/runtime";
+import { safeErrorLogAttributes } from "@upcomputer/client-runtime/errors";
 import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import { isElectron } from "../env";

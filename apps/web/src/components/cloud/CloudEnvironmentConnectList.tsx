@@ -1,15 +1,15 @@
-import { findErrorTraceId } from "@t3tools/client-runtime/errors";
+import { findErrorTraceId } from "@upcomputer/client-runtime/errors";
 import {
   type EnvironmentConnectionPresentation,
   RelayConnectionRegistration,
   RelayConnectionTarget,
-} from "@t3tools/client-runtime/connection";
+} from "@upcomputer/client-runtime/connection";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
+} from "@upcomputer/client-runtime/state/runtime";
+import type { EnvironmentId } from "@upcomputer/contracts";
+import type { RelayClientEnvironmentRecord } from "@upcomputer/contracts/relay";
 import * as Option from "effect/Option";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 

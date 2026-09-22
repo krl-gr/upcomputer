@@ -18,7 +18,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import type * as Option from "effect/Option";
 import type * as Effect from "effect/Effect";

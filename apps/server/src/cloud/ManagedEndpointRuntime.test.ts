@@ -9,7 +9,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import * as RelayClient from "@t3tools/shared/relayClient";
+import * as RelayClient from "@upcomputer/shared/relayClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";

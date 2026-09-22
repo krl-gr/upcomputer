@@ -1,7 +1,7 @@
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@upcomputer/contracts";
 import { useCallback, useState } from "react";
 import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

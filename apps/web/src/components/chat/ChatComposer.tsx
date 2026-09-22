@@ -11,7 +11,7 @@ import type {
   ServerProvider,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -19,17 +19,17 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   THREAD_CONTEXT_MAX_BINDINGS,
   ThreadContextBindingId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   connectionStatusText,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
+} from "@upcomputer/client-runtime/connection";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+} from "@upcomputer/client-runtime/state/runtime";
+import { serializeComposerFileLink } from "@upcomputer/shared/composerTrigger";
+import { createModelSelection, normalizeModelSlug } from "@upcomputer/shared/model";
 import {
   memo,
   type ReactNode,
@@ -183,7 +183,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@upcomputer/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";

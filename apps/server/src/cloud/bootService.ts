@@ -13,7 +13,7 @@ import {
   HostProcessArguments,
   HostProcessExecutablePath,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+} from "@upcomputer/shared/hostProcess";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { ensurePinnedRuntimeInstalled, pinnedRuntimePaths } from "./pinnedRuntime.ts";

@@ -1,7 +1,7 @@
 import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeCrypto from "node:crypto";

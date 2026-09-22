@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { createExperimentalProductManifest } from "@t3tools/shared/product";
+import { createExperimentalProductManifest } from "@upcomputer/shared/product";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

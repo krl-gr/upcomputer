@@ -18,9 +18,9 @@ import type {
   GitPreparePullRequestThreadInput,
   ModelSelection,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
-import { GitCommandError, TextGenerationError } from "@t3tools/contracts";
+import { GitCommandError, TextGenerationError } from "@upcomputer/contracts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";

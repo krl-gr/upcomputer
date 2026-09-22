@@ -1,10 +1,10 @@
-import type { EnvironmentId, ProductManifestSnapshot } from "@t3tools/contracts";
-import { EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
+import type { EnvironmentId, ProductManifestSnapshot } from "@upcomputer/contracts";
+import { EnvironmentSupervisor } from "@upcomputer/client-runtime/connection";
 import {
   EnvironmentRpcUnavailableError,
   type WsRpcProtocolClient,
-} from "@t3tools/client-runtime/rpc";
-import { createRuntimeCommand, runInEnvironment } from "@t3tools/client-runtime/state/runtime";
+} from "@upcomputer/client-runtime/rpc";
+import { createRuntimeCommand, runInEnvironment } from "@upcomputer/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";

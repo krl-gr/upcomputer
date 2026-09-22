@@ -9,7 +9,7 @@ import {
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   ApprovalRequestId,
   CommandId,
@@ -21,7 +21,7 @@ import {
   type ServerSettings,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

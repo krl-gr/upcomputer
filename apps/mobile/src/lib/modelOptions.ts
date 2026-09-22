@@ -2,11 +2,11 @@ import type {
   ModelCapabilities,
   ModelSelection,
   ServerConfig as T3ServerConfig,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+} from "@upcomputer/shared/model";
 
 export type ModelOption = {
   readonly key: string;

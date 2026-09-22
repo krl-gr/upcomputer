@@ -46,7 +46,7 @@ export class DesktopLifecycle extends Context.Service<
     ) => Effect.Effect<void, never, DesktopLifecycleRuntimeServices>;
     readonly register: Effect.Effect<void, never, Scope.Scope | DesktopLifecycleRuntimeServices>;
   }
->()("@t3tools/desktop/app/DesktopLifecycle") {}
+>()("@upcomputer/desktop/app/DesktopLifecycle") {}
 
 const { logInfo: logLifecycleInfo, logError: logLifecycleError } =
   makeComponentLogger("desktop-lifecycle");

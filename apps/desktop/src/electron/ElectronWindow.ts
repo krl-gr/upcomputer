@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -92,7 +92,7 @@ export class ElectronWindow extends Context.Service<
       sync: (window: Electron.BrowserWindow) => Effect.Effect<void, E, R>,
     ) => Effect.Effect<void, E, R>;
   }
->()("@t3tools/desktop/electron/ElectronWindow") {}
+>()("@upcomputer/desktop/electron/ElectronWindow") {}
 
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;

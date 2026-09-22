@@ -1,4 +1,4 @@
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@upcomputer/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -10,7 +10,7 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
-import { ServerSettingsError } from "@t3tools/contracts";
+import { ServerSettingsError } from "@upcomputer/contracts";
 
 interface ProviderSnapshotState {
   readonly snapshot: ServerProvider;

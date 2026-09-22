@@ -1,5 +1,5 @@
-import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
-import { createEnvironmentServerConfigsAtom } from "@t3tools/client-runtime/state/shell";
+import { createServerEnvironmentAtoms } from "@upcomputer/client-runtime/state/server";
+import { createEnvironmentServerConfigsAtom } from "@upcomputer/client-runtime/state/shell";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";

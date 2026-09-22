@@ -17,7 +17,7 @@
  *
  * @module provider/Services/ProviderInstanceRegistry
  */
-import type { ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type { ProviderInstanceId, ServerProvider } from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as PubSub from "effect/PubSub";

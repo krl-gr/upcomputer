@@ -1,4 +1,4 @@
-import { GrokSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import { GrokSettings, ProviderDriverKind, type ServerProvider } from "@upcomputer/contracts";
 import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

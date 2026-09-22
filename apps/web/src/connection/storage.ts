@@ -10,13 +10,13 @@ import {
   removeCatalogValue,
   removeConnectionFromCatalog,
   replaceCatalogValue,
-} from "@t3tools/client-runtime/platform";
-import { TokenStore } from "@t3tools/client-runtime/authorization";
+} from "@upcomputer/client-runtime/platform";
+import { TokenStore } from "@upcomputer/client-runtime/authorization";
 import {
   ConnectionTransientError,
   CredentialStore,
   ProfileStore,
-} from "@t3tools/client-runtime/connection";
+} from "@upcomputer/client-runtime/connection";
 import {
   EnvironmentId,
   OrchestrationShellSnapshot,
@@ -24,7 +24,7 @@ import {
   ServerConfig,
   ThreadId,
   VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

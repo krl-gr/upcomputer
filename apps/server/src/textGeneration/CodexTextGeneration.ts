@@ -7,15 +7,15 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { type CodexSettings, type ModelSelection } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { type CodexSettings, type ModelSelection } from "@upcomputer/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@upcomputer/shared/git";
+import { resolveSpawnCommand } from "@upcomputer/shared/shell";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@upcomputer/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildBranchNamePrompt,
@@ -30,7 +30,7 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@upcomputer/shared/model";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 
 const CODEX_GIT_TEXT_GENERATION_REASONING_EFFORT = "low";

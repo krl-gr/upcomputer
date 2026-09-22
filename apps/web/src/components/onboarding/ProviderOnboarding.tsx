@@ -6,7 +6,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { ArrowLeftIcon, CheckIcon, CopyIcon, LoaderIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";

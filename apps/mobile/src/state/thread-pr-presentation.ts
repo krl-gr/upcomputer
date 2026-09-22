@@ -1,5 +1,5 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
-import { resolveChangeRequestPresentation } from "@t3tools/shared/sourceControl";
+import type { VcsStatusResult } from "@upcomputer/contracts";
+import { resolveChangeRequestPresentation } from "@upcomputer/shared/sourceControl";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 

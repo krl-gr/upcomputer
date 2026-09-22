@@ -1,4 +1,4 @@
-import type { DesktopWslState } from "@t3tools/contracts";
+import type { DesktopWslState } from "@upcomputer/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,

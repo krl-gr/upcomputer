@@ -1,5 +1,5 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
+import type { AtomCommandResult } from "@upcomputer/client-runtime/state/runtime";
 import {
   CommandId,
   type EnvironmentId,
@@ -9,7 +9,7 @@ import {
   type ServerConfig,
   type ThreadId,
   type UploadChatImageAttachment,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 
 import type { DraftComposerImageAttachment } from "../lib/composerImages";

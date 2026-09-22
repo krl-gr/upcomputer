@@ -1,11 +1,11 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@upcomputer/contracts";
 import {
   isProjectFaviconFallbackUrl,
   resolveProjectVisualIdentityKey,
   type ProjectVisualIdentityKey,
   type ProjectVisualIdentityInput,
   type ProjectVisualIdentityOverride,
-} from "@t3tools/shared/projectFavicon";
+} from "@upcomputer/shared/projectFavicon";
 import type { ComponentType, CSSProperties } from "react";
 import { useState } from "react";
 import { useAssetUrl } from "../assets/assetUrls";
@@ -66,7 +66,7 @@ export function resolveProjectAvatarFallback(
 
 /**
  * Kept as a named export for call sites and tests; the actual shape is owned by
- * `@t3tools/shared/projectFavicon`, which the asset route emits.
+ * `@upcomputer/shared/projectFavicon`, which the asset route emits.
  */
 export function isServerProjectFaviconFallbackUrl(src: string): boolean {
   return isProjectFaviconFallbackUrl(src);

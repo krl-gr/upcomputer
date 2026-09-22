@@ -1,5 +1,5 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
-import { deriveProjectVisualIdentityKey } from "@t3tools/shared/projectFavicon";
+import { EnvironmentId, ProjectId, ProviderInstanceId } from "@upcomputer/contracts";
+import { deriveProjectVisualIdentityKey } from "@upcomputer/shared/projectFavicon";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildSidebarProjectSnapshots } from "./sidebarProjectGrouping";

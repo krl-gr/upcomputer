@@ -61,7 +61,7 @@ export class ElectronSafeStorage extends Context.Service<
       value: Uint8Array,
     ) => Effect.Effect<string, ElectronSafeStorageDecryptError>;
   }
->()("@t3tools/desktop/electron/ElectronSafeStorage") {}
+>()("@upcomputer/desktop/electron/ElectronSafeStorage") {}
 
 export const make = ElectronSafeStorage.of({
   isEncryptionAvailable: Effect.try({

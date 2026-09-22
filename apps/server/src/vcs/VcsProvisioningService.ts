@@ -7,7 +7,7 @@ import {
   type VcsError,
   type VcsInitInput,
   VcsUnsupportedOperationError,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 
 export class VcsProvisioningService extends Context.Service<

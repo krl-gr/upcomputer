@@ -113,7 +113,7 @@ Reuse the native build and retain the disposable environment:
 
 Run Metro separately:
 
-    pnpm --filter @t3tools/mobile showcase
+    pnpm --filter @upcomputer/mobile showcase
     pnpm screenshots:mobile --skip-build --skip-metro --device iphone-6.9
 
 List the matrix and flags:

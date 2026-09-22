@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { ProviderInstanceId, type ModelSelection, type ServerConfig } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
+import { ProviderInstanceId, type ModelSelection, type ServerConfig } from "@upcomputer/contracts";
 
 import { resolveExistingThreadModelSelection } from "./effectiveThreadModelSelection";
 

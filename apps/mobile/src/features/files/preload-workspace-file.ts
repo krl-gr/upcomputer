@@ -1,5 +1,5 @@
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { executeAtomQuery } from "@upcomputer/client-runtime/state/runtime";
+import type { EnvironmentId } from "@upcomputer/contracts";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironment } from "../../state/projects";

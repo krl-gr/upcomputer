@@ -4,8 +4,8 @@ import type {
   ProductExtensionLifecycleState,
   ProductExtensionSnapshot,
   ProductManifestSnapshot,
-} from "@t3tools/contracts";
-import { supportsProductCapability } from "@t3tools/shared/product";
+} from "@upcomputer/contracts";
+import { supportsProductCapability } from "@upcomputer/shared/product";
 
 import { serverEnvironment, environmentServerConfigsAtom } from "../state/server";
 import type {

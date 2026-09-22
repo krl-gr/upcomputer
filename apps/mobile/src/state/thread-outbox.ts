@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@upcomputer/contracts";
 
 import { appAtomRegistry } from "./atom-registry";
 import { createThreadOutboxManager } from "./thread-outbox-manager";

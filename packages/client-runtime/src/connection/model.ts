@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 
 const ConnectionTargetBase = {

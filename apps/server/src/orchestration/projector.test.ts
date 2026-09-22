@@ -5,7 +5,7 @@ import {
   ProviderDriverKind,
   ThreadId,
   type OrchestrationEvent,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 

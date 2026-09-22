@@ -8,7 +8,7 @@ import type {
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 export interface SourceControlProviderContext {
   readonly provider: SourceControlProviderInfo;

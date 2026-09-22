@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@upcomputer/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 function createLocalStorageStub(): Storage {

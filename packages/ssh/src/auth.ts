@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -42,7 +42,7 @@ export interface SshPasswordPromptShape {
 }
 
 export class SshPasswordPrompt extends Context.Service<SshPasswordPrompt, SshPasswordPromptShape>()(
-  "@t3tools/ssh/auth/SshPasswordPrompt",
+  "@upcomputer/ssh/auth/SshPasswordPrompt",
 ) {
   static readonly disabledLayer = Layer.succeed(
     SshPasswordPrompt,

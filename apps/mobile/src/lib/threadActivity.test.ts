@@ -9,7 +9,7 @@ import {
   TurnId,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 import {
   buildThreadFeed,

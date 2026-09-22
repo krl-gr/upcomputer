@@ -25,12 +25,12 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   TurnId,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   resolveInteractionModeFinalOutput,
   type ResolvedInteractionMode,
-} from "@t3tools/shared/interactionMode";
-import { causeErrorTag } from "@t3tools/shared/observability";
+} from "@upcomputer/shared/interactionMode";
+import { causeErrorTag } from "@upcomputer/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

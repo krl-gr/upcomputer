@@ -11,7 +11,7 @@ import {
   AuthEnvironmentScopes,
   AuthSessionId,
   ServerAuthSessionMethod,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 
 import {
   type AuthSessionRepositoryError,

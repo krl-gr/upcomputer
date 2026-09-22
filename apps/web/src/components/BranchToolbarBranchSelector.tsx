@@ -1,9 +1,9 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { ContextMenuItem, EnvironmentId, VcsRef, ThreadId } from "@t3tools/contracts";
+} from "@upcomputer/client-runtime/state/runtime";
+import type { ContextMenuItem, EnvironmentId, VcsRef, ThreadId } from "@upcomputer/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { GitBranchIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import {

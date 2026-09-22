@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { ModelCapabilities } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import type { ModelCapabilities } from "@upcomputer/contracts";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
+import { createModelCapabilities } from "@upcomputer/shared/model";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";

@@ -1,4 +1,4 @@
-import { createExperimentalProductManifest } from "@t3tools/shared/product";
+import { createExperimentalProductManifest } from "@upcomputer/shared/product";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

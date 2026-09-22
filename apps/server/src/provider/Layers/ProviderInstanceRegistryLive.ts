@@ -39,7 +39,7 @@ import {
   type ProviderInstanceConfigMap,
   type ProviderDriverKind,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";

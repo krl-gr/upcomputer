@@ -1,4 +1,4 @@
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@upcomputer/client-runtime/relay";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";

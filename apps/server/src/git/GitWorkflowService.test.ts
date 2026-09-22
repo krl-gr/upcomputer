@@ -2,7 +2,7 @@ import { assert, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+import { VcsRepositoryDetectionError } from "@upcomputer/contracts";
 
 import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";

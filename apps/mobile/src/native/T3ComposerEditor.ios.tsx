@@ -1,4 +1,4 @@
-import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
+import { collectComposerInlineTokens } from "@upcomputer/shared/composerInlineTokens";
 import { requireNativeView } from "expo";
 import {
   useCallback,
@@ -12,8 +12,8 @@ import {
 import type { NativeSyntheticEvent, StyleProp, ViewProps, ViewStyle } from "react-native";
 import { Image, StyleSheet } from "react-native";
 
-import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
-import { resolveMarkdownFileIcon } from "@t3tools/mobile-markdown-text/links";
+import { markdownFileIconSource } from "@upcomputer/mobile-markdown-text/file-icons";
+import { resolveMarkdownFileIcon } from "@upcomputer/mobile-markdown-text/links";
 import { useThemeColor } from "../lib/useThemeColor";
 import { useFontFamily } from "../lib/useFontFamily";
 import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";

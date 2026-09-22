@@ -1,8 +1,8 @@
 import * as NodeNet from "node:net";
 
 import { it as effectIt } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import * as Net from "@t3tools/shared/Net";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
+import * as Net from "@upcomputer/shared/Net";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

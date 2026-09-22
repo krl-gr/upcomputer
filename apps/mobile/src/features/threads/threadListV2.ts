@@ -1,6 +1,9 @@
-import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  effectiveSettled,
+  effectiveSnoozed,
+} from "@upcomputer/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
+import type { EnvironmentId, ProjectId } from "@upcomputer/contracts";
 
 /**
  * Thread List v2 model, ported from the web sidebar v2

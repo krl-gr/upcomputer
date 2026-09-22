@@ -1,4 +1,8 @@
-import { EditorId, type EnvironmentId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import {
+  EditorId,
+  type EnvironmentId,
+  type ResolvedKeybindingsConfig,
+} from "@upcomputer/contracts";
 import { memo, useCallback, useEffect, useMemo } from "react";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
 import { usePreferredEditor } from "../../editorPreferences";

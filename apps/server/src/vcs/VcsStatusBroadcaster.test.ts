@@ -18,8 +18,8 @@ import type {
   VcsStatusRemoteResult,
   VcsStatusResult,
   VcsStatusStreamEvent,
-} from "@t3tools/contracts";
-import { GitManagerError } from "@t3tools/contracts";
+} from "@upcomputer/contracts";
+import { GitManagerError } from "@upcomputer/contracts";
 
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";

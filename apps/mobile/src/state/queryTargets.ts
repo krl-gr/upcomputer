@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@upcomputer/contracts";
 
 export interface CheckpointDiffTarget {
   readonly environmentId: EnvironmentId | null;

@@ -60,7 +60,7 @@ import {
   type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { clamp } from "effect/Number";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -129,7 +129,7 @@ import {
   type AnyNamespacedRpcContribution,
   type RpcsOfContribution,
 } from "./product/RpcContribution.ts";
-import * as RelayClient from "@t3tools/shared/relayClient";
+import * as RelayClient from "@upcomputer/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);

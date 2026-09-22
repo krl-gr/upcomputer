@@ -1,4 +1,4 @@
-import { isProviderAvailable, type ServerProvider } from "@t3tools/contracts";
+import { isProviderAvailable, type ServerProvider } from "@upcomputer/contracts";
 
 export function areInitialProviderProbesSettled(providers: ReadonlyArray<ServerProvider>): boolean {
   return (

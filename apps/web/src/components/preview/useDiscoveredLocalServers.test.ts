@@ -1,4 +1,4 @@
-import type { DiscoveredLocalServer } from "@t3tools/contracts";
+import type { DiscoveredLocalServer } from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { mergeServers, type PreviewableServer } from "./useDiscoveredLocalServers";

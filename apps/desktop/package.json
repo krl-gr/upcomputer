@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/desktop",
+  "name": "@upcomputer/desktop",
   "version": "0.0.31",
   "private": true,
   "type": "module",
@@ -14,11 +14,11 @@
   "dependencies": {
     "@clerk/electron": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@t3tools/client-runtime": "workspace:*",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/ssh": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
+    "@upcomputer/client-runtime": "workspace:*",
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "@upcomputer/ssh": "workspace:*",
+    "@upcomputer/tailscale": "workspace:*",
     "effect": "catalog:",
     "electron": "41.5.0",
     "electron-store": "^8.2.0",

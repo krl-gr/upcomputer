@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { GitCommandError, SourceControlProviderError } from "@t3tools/contracts";
+import { GitCommandError, SourceControlProviderError } from "@upcomputer/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";

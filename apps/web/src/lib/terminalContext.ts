@@ -1,4 +1,4 @@
-import { type ThreadId } from "@t3tools/contracts";
+import { type ThreadId } from "@upcomputer/contracts";
 
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 

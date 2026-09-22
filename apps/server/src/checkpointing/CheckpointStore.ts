@@ -13,7 +13,7 @@
  *
  * @module CheckpointStore
  */
-import { VcsUnsupportedOperationError, type CheckpointRef } from "@t3tools/contracts";
+import { VcsUnsupportedOperationError, type CheckpointRef } from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

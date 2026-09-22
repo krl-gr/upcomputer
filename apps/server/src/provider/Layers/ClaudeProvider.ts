@@ -4,7 +4,7 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -17,9 +17,9 @@ import {
   getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+} from "@upcomputer/shared/model";
+import { resolveSpawnCommand } from "@upcomputer/shared/shell";
+import { compareSemverVersions } from "@upcomputer/shared/semver";
 import {
   query as claudeQuery,
   type Options as ClaudeQueryOptions,

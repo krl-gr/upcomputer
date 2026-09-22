@@ -1,4 +1,4 @@
-import { InteractionModeId, type ProviderInteractionMode } from "@t3tools/contracts";
+import { InteractionModeId, type ProviderInteractionMode } from "@upcomputer/contracts";
 import * as Schema from "effect/Schema";
 
 export interface InteractionModePresentation {

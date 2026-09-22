@@ -1,4 +1,4 @@
-import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
+import type { RelayClientDeviceRecord } from "@upcomputer/contracts/relay";
 import { RefreshCwIcon, SmartphoneIcon } from "lucide-react";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";

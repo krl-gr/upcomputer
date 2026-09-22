@@ -1,4 +1,4 @@
-import type { EnvironmentId, OrchestrationShellSnapshot } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationShellSnapshot } from "@upcomputer/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 

@@ -1,4 +1,4 @@
-import { ServerSettings, type ServerSettingsPatch } from "@t3tools/contracts";
+import { ServerSettings, type ServerSettingsPatch } from "@upcomputer/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@upcomputer/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {

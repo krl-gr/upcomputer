@@ -2,8 +2,8 @@ import {
   EnvironmentId,
   type ExecutionEnvironmentDescriptor,
   type ProductManifestSnapshot,
-} from "@t3tools/contracts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@upcomputer/contracts";
+import { HostProcessArchitecture, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

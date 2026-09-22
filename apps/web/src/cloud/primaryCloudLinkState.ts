@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentCloudLinkStateResult } from "@t3tools/contracts";
+import type { EnvironmentCloudLinkStateResult } from "@upcomputer/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

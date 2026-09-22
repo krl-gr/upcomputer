@@ -2,8 +2,8 @@ import {
   T3_PROJECT_FILE_NAME,
   type EnvironmentId,
   type T3ProjectFileScript,
-} from "@t3tools/contracts";
-import { T3ProjectFileFromJson } from "@t3tools/shared/t3ProjectFile";
+} from "@upcomputer/contracts";
+import { T3ProjectFileFromJson } from "@upcomputer/shared/t3ProjectFile";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { useMemo } from "react";

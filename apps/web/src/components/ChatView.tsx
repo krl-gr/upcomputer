@@ -20,28 +20,31 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
-import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+} from "@upcomputer/client-runtime/connection";
+import {
+  effectiveSettled,
+  effectiveSnoozed,
+} from "@upcomputer/client-runtime/state/thread-settled";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@upcomputer/client-runtime/environment";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { truncate } from "@t3tools/shared/String";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
-import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@t3tools/shared/upcomputerReleasePolicy";
+} from "@upcomputer/shared/model";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@upcomputer/shared/chatList";
+import { projectScriptCwd, projectScriptRuntimeEnv } from "@upcomputer/shared/projectScripts";
+import { truncate } from "@upcomputer/shared/String";
+import { nextTerminalId, resolveTerminalSessionLabel } from "@upcomputer/shared/terminalLabels";
+import { UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE } from "@upcomputer/shared/upcomputerReleasePolicy";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -64,7 +67,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@upcomputer/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
@@ -124,7 +127,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { buildTemporaryWorktreeBranchName } from "@upcomputer/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useRightPanelLayoutMode } from "../hooks/useRightPanelLayoutMode";
 import { RIGHT_PANEL_GLOBAL_SHEET_MEDIA_QUERY } from "../rightPanelLayout";

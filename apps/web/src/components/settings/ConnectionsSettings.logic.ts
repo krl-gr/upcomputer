@@ -1,5 +1,5 @@
-import type { DesktopBridge, DesktopWslState } from "@t3tools/contracts";
-import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@t3tools/shared/upcomputerReleasePolicy";
+import type { DesktopBridge, DesktopWslState } from "@upcomputer/contracts";
+import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@upcomputer/shared/upcomputerReleasePolicy";
 
 export function canOfferSshEnvironmentOnboarding(): boolean {
   return UPCOMPUTER_RELEASE_CAPABILITIES.sshRemoteServerBootstrap;

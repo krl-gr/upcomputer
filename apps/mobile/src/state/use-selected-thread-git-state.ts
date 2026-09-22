@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
+import { dedupeRemoteBranchesWithLocalMatches } from "@upcomputer/shared/git";
 
 import { useBranches } from "./queries";
 import { useEnvironmentQuery } from "./query";

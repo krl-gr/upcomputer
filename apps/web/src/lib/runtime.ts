@@ -3,8 +3,8 @@ import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Socket from "effect/unstable/socket/Socket";
 
-import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
-import { makeRelayClientTracingLayer } from "@t3tools/shared/relayTracing";
+import { remoteHttpClientLayer } from "@upcomputer/client-runtime/rpc";
+import { makeRelayClientTracingLayer } from "@upcomputer/shared/relayTracing";
 import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClient";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 

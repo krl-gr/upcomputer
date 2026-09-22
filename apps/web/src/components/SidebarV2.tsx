@@ -5,18 +5,18 @@ import {
   effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+} from "@upcomputer/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/models";
 import {
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
+} from "@upcomputer/client-runtime/environment";
 import type {
   RepositoryIdentity,
   ScopedThreadRef,
   SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -56,7 +56,7 @@ import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@upcomputer/client-runtime/state/runtime";
 import { isElectron } from "../env";
 import {
   resolveShortcutCommand,

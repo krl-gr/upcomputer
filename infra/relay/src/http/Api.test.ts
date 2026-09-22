@@ -14,7 +14,7 @@ import * as Tracer from "effect/Tracer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { RelayEnvironmentAuth } from "@t3tools/contracts/relay";
+import { RelayEnvironmentAuth } from "@upcomputer/contracts/relay";
 
 import {
   RELAY_REQUEST_DEADLINE_MS,

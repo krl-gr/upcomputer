@@ -1,6 +1,6 @@
 import { DownloadIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
-import type { RelayClientInstallProgressStage } from "@t3tools/contracts";
+import type { RelayClientInstallProgressStage } from "@upcomputer/contracts";
 
 import {
   completeRelayClientInstallDialogClose,

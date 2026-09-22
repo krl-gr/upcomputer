@@ -12,4 +12,4 @@ export {
   selectProjectGroupingSettings,
   type ProjectGroupingMode,
   type ProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@upcomputer/client-runtime/state/project-grouping";

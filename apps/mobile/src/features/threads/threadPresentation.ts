@@ -1,6 +1,6 @@
 import type { StatusTone } from "../../components/StatusPill";
-import type { OrchestrationLatestTurn, OrchestrationSession } from "@t3tools/contracts";
-import { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { OrchestrationLatestTurn, OrchestrationSession } from "@upcomputer/contracts";
+import { EnvironmentThreadShell } from "@upcomputer/client-runtime/state/shell";
 
 export function threadSortValue(thread: EnvironmentThreadShell): number {
   const candidate = Date.parse(thread.updatedAt ?? thread.createdAt);

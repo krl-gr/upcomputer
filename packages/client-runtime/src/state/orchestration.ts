@@ -1,4 +1,4 @@
-import { ORCHESTRATION_WS_METHODS } from "@t3tools/contracts";
+import { ORCHESTRATION_WS_METHODS } from "@upcomputer/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";

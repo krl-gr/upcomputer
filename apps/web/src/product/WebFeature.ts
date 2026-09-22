@@ -7,10 +7,10 @@ import type {
   ProviderInstanceId,
   ProviderInteractionMode,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import type * as Schema from "effect/Schema";
 
-import type { ProductCapabilityVersionRequirement } from "@t3tools/shared/product";
+import type { ProductCapabilityVersionRequirement } from "@upcomputer/shared/product";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const ROUTE_PATH = /^\/[a-z0-9][a-z0-9._-]*$/;

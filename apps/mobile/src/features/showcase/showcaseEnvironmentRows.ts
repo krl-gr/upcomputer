@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@upcomputer/contracts";
 
 import type { RelayEnvironmentView } from "../connection/useConnectionController";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";

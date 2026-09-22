@@ -1,11 +1,11 @@
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import {
   listLoginShellCandidates,
   mergePathEntries,
   readPathFromLoginShell,
   readPathFromLaunchctl,
   resolveWindowsEnvironment,
-} from "@t3tools/shared/shell";
+} from "@upcomputer/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

@@ -33,7 +33,7 @@ import {
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
 function mockProcess(exitCode: number) {
   return ChildProcessSpawner.makeHandle({
@@ -202,10 +202,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopRuntimeDependencies(
         {
           "@effect/platform-node": "catalog:",
-          "@t3tools/contracts": "workspace:*",
-          "@t3tools/shared": "workspace:*",
-          "@t3tools/ssh": "workspace:*",
-          "@t3tools/tailscale": "workspace:*",
+          "@upcomputer/contracts": "workspace:*",
+          "@upcomputer/shared": "workspace:*",
+          "@upcomputer/ssh": "workspace:*",
+          "@upcomputer/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
         },

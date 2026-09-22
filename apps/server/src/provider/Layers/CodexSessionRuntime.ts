@@ -16,10 +16,10 @@ import {
   RuntimeMode,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { normalizeModelSlug } from "@t3tools/shared/model";
-import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+} from "@upcomputer/contracts";
+import { resolveSpawnCommand } from "@upcomputer/shared/shell";
+import { normalizeModelSlug } from "@upcomputer/shared/model";
+import { compareSemverVersions, parseSemver } from "@upcomputer/shared/semver";
 import { codexVersionFromUserAgent } from "../codexVersion.ts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";

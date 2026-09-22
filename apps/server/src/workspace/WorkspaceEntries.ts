@@ -16,9 +16,9 @@ import type {
   ProjectListEntriesResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
+} from "@upcomputer/contracts";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
+import { isExplicitRelativePath, isWindowsAbsolutePath } from "@upcomputer/shared/path";
 
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";

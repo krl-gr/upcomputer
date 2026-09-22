@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { WsRpcGroup } from "@t3tools/contracts";
+import { WsRpcGroup } from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";

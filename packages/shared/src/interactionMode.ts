@@ -3,7 +3,7 @@ import type {
   InteractionModeDescriptorSnapshot,
   InteractionModeProviderBehavior,
   InteractionModeSandboxPolicy,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 
 const STABLE_MODE_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;

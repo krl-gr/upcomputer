@@ -1,4 +1,4 @@
-import type { ProviderDriverKind, ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderDriverKind, ProviderInteractionMode } from "@upcomputer/contracts";
 
 export const ACTIVATION_EVENT_SCHEMA_VERSION = 1;
 

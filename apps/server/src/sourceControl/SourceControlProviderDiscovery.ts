@@ -3,7 +3,7 @@ import type {
   SourceControlProviderDiscoveryItem,
   SourceControlProviderInfo,
   SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 

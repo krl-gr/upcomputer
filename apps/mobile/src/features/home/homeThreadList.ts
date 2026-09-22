@@ -2,23 +2,23 @@ import {
   deriveLogicalProjectKey,
   derivePhysicalProjectKey,
   deriveProjectGroupLabel,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@upcomputer/client-runtime/state/project-grouping";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@upcomputer/client-runtime/state/shell";
 import {
   getThreadSortTimestamp,
   sortThreads,
   toSortableTimestamp,
-} from "@t3tools/client-runtime/state/thread-sort";
+} from "@upcomputer/client-runtime/state/thread-sort";
 import type {
   EnvironmentId,
   ScopedProjectRef,
   SidebarProjectGroupingMode,
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";

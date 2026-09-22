@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { WS_METHODS } from "@t3tools/contracts";
+import { WS_METHODS } from "@upcomputer/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

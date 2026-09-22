@@ -1,7 +1,7 @@
 import type {
   DesktopPreviewRecordingArtifact,
   DesktopPreviewRecordingFrame,
-} from "@t3tools/contracts";
+} from "@upcomputer/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/unstable/reactivity";

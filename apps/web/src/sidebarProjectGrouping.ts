@@ -1,6 +1,6 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import type { ProjectVisualIdentityKey } from "@t3tools/shared/projectFavicon";
+import { scopeProjectRef } from "@upcomputer/client-runtime/environment";
+import type { EnvironmentId, ScopedProjectRef } from "@upcomputer/contracts";
+import type { ProjectVisualIdentityKey } from "@upcomputer/shared/projectFavicon";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,

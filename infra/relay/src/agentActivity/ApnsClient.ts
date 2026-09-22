@@ -1,4 +1,4 @@
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityAggregateState } from "@upcomputer/contracts/relay";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

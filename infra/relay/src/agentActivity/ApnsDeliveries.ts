@@ -3,12 +3,12 @@ import type {
   RelayAgentAwarenessPreferences,
   RelayDeliveryKind,
   RelayDeliveryResult,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 import {
   RelayAgentActivityAggregateState as RelayAgentActivityAggregateStateSchema,
   RelayAgentAwarenessPreferences as RelayAgentAwarenessPreferencesSchema,
   RelayDeliveryKind as RelayDeliveryKindSchema,
-} from "@t3tools/contracts/relay";
+} from "@upcomputer/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -1,4 +1,4 @@
-import { EDITORS, type EditorId } from "@t3tools/contracts";
+import { EDITORS, type EditorId } from "@upcomputer/contracts";
 
 export type ContextOpenEditorActionId = `open.${EditorId}`;
 export type ContextPreferredOpenActionId = "open.preferred";

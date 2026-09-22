@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderDriverKind } from "@upcomputer/contracts";
 
 /**
  * Model slugs that show a gold "NEW" chip in the model picker list.

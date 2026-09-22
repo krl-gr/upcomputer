@@ -1,4 +1,4 @@
-import { EnvironmentId, type VcsRef } from "@t3tools/contracts";
+import { EnvironmentId, type VcsRef } from "@upcomputer/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   dedupeRemoteBranchesWithLocalMatches,
