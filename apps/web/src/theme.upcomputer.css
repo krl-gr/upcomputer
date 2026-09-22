@@ -152,6 +152,11 @@ body::after {
 /* Dockview workspace chrome. Upstream has no dockview integration, so none of
  * this overrides anything -- it is ours end to end. */
 .t3code-dockview-theme {
+  --workspace-tab-height: 32px;
+  --workspace-tab-inset: max(
+    0px,
+    calc((var(--dv-tabs-and-actions-container-height) - var(--workspace-tab-height)) / 2)
+  );
   --dv-active-sash-color: color-mix(in srgb, var(--ring) 55%, transparent);
   --dv-active-sash-transition-delay: 0s;
   --dv-active-sash-transition-duration: 0.08s;
@@ -189,8 +194,9 @@ body::after {
   border-bottom: 0;
 }
 
+.electron-windows .t3code-dockview-theme,
 .wco-windows .t3code-dockview-theme {
-  --dv-tabs-and-actions-container-height: env(titlebar-area-height);
+  --dv-tabs-and-actions-container-height: env(titlebar-area-height, 40px);
 }
 
 .electron .t3code-dockview-theme .dv-tabs-and-actions-container {
@@ -234,18 +240,13 @@ body::after {
 .t3code-dockview-theme .dv-tab {
   box-sizing: border-box;
   flex: 0 0 auto;
-  height: 48px;
+  height: var(--dv-tabs-and-actions-container-height);
   letter-spacing: 0;
   max-width: none;
   min-width: 96px;
   overflow: visible;
-  padding: 8px 0;
+  padding: var(--workspace-tab-inset) 0;
   width: max-content;
-}
-
-.wco-windows .t3code-dockview-theme .dv-tab {
-  height: env(titlebar-area-height);
-  padding: 4px 0;
 }
 
 .t3code-dockview-theme .dv-tabs-container[data-tab-sizing="fill"] .dv-tab {
@@ -282,14 +283,14 @@ body::after {
 .t3code-dockview-theme .dv-tab:focus::after,
 .t3code-dockview-theme .dv-tab:focus-within::after {
   border-radius: 8px;
-  height: 32px;
-  top: 8px;
+  height: var(--workspace-tab-height);
+  top: var(--workspace-tab-inset);
 }
 
 .t3code-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before {
   background-color: #2b2b2c;
   height: 12px;
-  top: 18px;
+  top: calc((var(--dv-tabs-and-actions-container-height) - 12px) / 2);
 }
 
 .t3code-dockview-theme .dv-tabs-container.dv-horizontal .dv-tab.dv-active-tab::before,
@@ -306,6 +307,7 @@ body::after {
 }
 
 .t3code-dockview-theme .t3-workspace-tab {
+  height: var(--workspace-tab-height);
   font-family: Inter, sans-serif;
 }
 

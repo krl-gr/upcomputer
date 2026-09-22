@@ -222,7 +222,7 @@ function DockviewPrefixHeaderActions(props: IDockviewHeaderActionsProps) {
   return (
     <div
       className={cn(
-        "flex h-full items-start py-0 pr-2 pt-2 pl-2 wco-windows:pt-1",
+        "flex h-full items-center px-2",
         reserveMacTrafficLights && "pl-[90px] wco:pl-[calc(env(titlebar-area-x)+1em)]",
       )}
     >
@@ -345,7 +345,7 @@ function DockviewRightHeaderActions(props: IDockviewHeaderActionsProps) {
     <div
       ref={actionsRef}
       className={cn(
-        "flex h-full items-start gap-1 px-2 pt-2 wco-windows:pt-1",
+        "flex h-full items-center gap-1 px-2",
         reserveWindowControlsInset &&
           "wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+8px)]",
       )}
@@ -430,7 +430,7 @@ function DockviewChatTab(props: IDockviewPanelHeaderProps) {
   return (
     <div
       className={cn(
-        "t3-workspace-tab flex h-8 w-full items-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 transition-colors",
+        "t3-workspace-tab flex w-full items-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 transition-colors",
         SIDEBAR_LABEL_TEXT_CLASS,
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"

@@ -242,8 +242,9 @@ function Sidebar({
   if (isMobile) {
     return (
       <SidebarInstanceContext value={instanceContextValue}>
-        <Sheet onOpenChange={setOpenMobile} open={openMobile} {...props}>
+        <Sheet onOpenChange={setOpenMobile} open={openMobile}>
           <SheetPopup
+            {...props}
             className={cn(
               "t3-sidebar-glass w-(--sidebar-width) max-w-none p-0 text-sidebar-foreground",
               className,

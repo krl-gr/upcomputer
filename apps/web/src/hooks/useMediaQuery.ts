@@ -83,5 +83,7 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
 }
 
 export function useIsMobile(): boolean {
-  return useMediaQuery("max-md");
+  // Match the sidebar's sm: visibility and the composer's compact layout.
+  // A narrow desktop window must not enter a different shell at 768px.
+  return useMediaQuery("max-sm");
 }
