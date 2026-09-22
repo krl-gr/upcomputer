@@ -1,3 +1,4 @@
+import { SidebarThreadAccessory } from "./sidebar/SidebarThreadAccessory";
 import {
   ArchiveIcon,
   ArrowRightIcon,
@@ -804,9 +805,16 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                   </Tooltip>
                 ) : (
                   <span className={cn(SIDEBAR_MUTED_TEXT_CLASS, SIDEBAR_LABEL_TEXT_CLASS)}>
-                    {formatSidebarThreadTimestamp(
-                      thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-                    )}
+                    <SidebarThreadAccessory
+                      environmentId={thread.environmentId}
+                      threadId={thread.id}
+                      timeLabel={formatSidebarThreadTimestamp(
+                        thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+                      )}
+                      fallback={formatSidebarThreadTimestamp(
+                        thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+                      )}
+                    />
                   </span>
                 )}
               </span>

@@ -1,6 +1,7 @@
-import type { ComponentType, FunctionComponent, SVGProps } from "react";
+import type { ComponentType, FunctionComponent, ReactNode, SVGProps } from "react";
 import type {
   EnvironmentId,
+  ThreadId,
   ProviderDriverKind,
   ProviderInstanceConfig,
   ProviderInstanceId,
@@ -111,6 +112,13 @@ export interface ExperimentalWebProviderDriverContribution {
   readonly details?: ComponentType<ExperimentalWebProviderDriverDetailsProps>;
 }
 
+export interface ExperimentalWebThreadAccessoryProps {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly timeLabel: string;
+  readonly fallback: ReactNode;
+}
+
 /**
  * Trusted, build-time web contribution. Executable UI is deliberately kept
  * separate from the server-advertised product manifest.
@@ -127,6 +135,11 @@ export interface ExperimentalWebFeatureContribution {
   readonly navigation?: ReadonlyArray<ExperimentalWebNavigationContribution>;
   readonly settings?: ReadonlyArray<ExperimentalWebSettingsPageContribution>;
   readonly interactionModes?: ReadonlyArray<ExperimentalWebInteractionModePresentation>;
+  /** Replaces the row timestamp when available; the host retains layout and fallback. */
+  readonly threadAccessory?: {
+    readonly component: ComponentType<ExperimentalWebThreadAccessoryProps>;
+    readonly capabilities?: ReadonlyArray<ExperimentalWebCapabilityRequirement>;
+  };
   readonly providerDrivers?: ReadonlyArray<ExperimentalWebProviderDriverContribution>;
 }
 
