@@ -9,7 +9,7 @@ export interface InteractionModeRegistryServiceShape {
 export class InteractionModeRegistryService extends Context.Service<
   InteractionModeRegistryService,
   InteractionModeRegistryServiceShape
->()("t3/product/InteractionModeRegistryService") {}
+>()("@upcomputer/server/product/InteractionModeRegistryService") {}
 
 export const layer = (registry: ExperimentalInteractionModeRegistry) =>
   Layer.succeed(InteractionModeRegistryService, { registry });

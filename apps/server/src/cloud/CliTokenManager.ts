@@ -231,7 +231,7 @@ export class CloudCliTokenManager extends Context.Service<
     readonly store: (token: PersistedToken) => Effect.Effect<void, CloudCliTokenManagerError>;
     readonly clear: Effect.Effect<void, CloudCliTokenManagerError>;
   }
->()("t3/cloud/CliTokenManager/CloudCliTokenManager") {}
+>()("@upcomputer/server/cloud/CliTokenManager/CloudCliTokenManager") {}
 
 function stringToBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);

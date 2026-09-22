@@ -68,7 +68,7 @@ export class Devices extends Context.Service<
       readonly userId: string;
     }) => Effect.Effect<ReadonlyArray<RelayClientDeviceRecord>, DeviceListPersistenceError>;
   }
->()("t3code-relay/agentActivity/Devices") {}
+>()("@upcomputer/relay/agentActivity/Devices") {}
 
 export const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;

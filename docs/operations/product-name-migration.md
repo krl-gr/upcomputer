@@ -10,7 +10,7 @@ Upstream license/copyright notices and historical attribution remain intact.
 | Desktop package/publisher/update cache                | Already branded `upcomputer` / `Up.computer`; stable appId                                  |
 | Public workspace packages, imports, aliases, bundlers | `@upcomputer/*`, mirrored in private optional peers/resolvers                               |
 | Lint plugin directory, package, rule IDs              | `oxlint-plugin-upcomputer`, `upcomputer/*`                                                  |
-| Server CLI package/bin and help                       | Separate change; old launch commands need compatibility                                     |
+| Server CLI package/bin and help                       | `@upcomputer/server`, primary `upcomputer` bin; `t3` remains a launch alias                 |
 | DOM/CSS/internal browser event names                  | Dockview/composer classes and browser events renamed together                               |
 | Browser UI preferences/drafts/workspace state         | `upcomputer:*` keys; 16 explicit legacy aliases in `legacyUiStorage.ts`                     |
 | Environment variables                                 | Core server/desktop/telemetry config supports `UPCOMPUTER_*`; remaining emitters pending    |
@@ -74,3 +74,14 @@ it selected the new port/home and did not create the legacy home. Browser storag
 and workspace checks pass together when run sequentially (`--test-concurrency=1`)
 against one paired disposable browser. The verifier uses its own Vite cache to
 avoid invalidating a retained human-test dev server's optimized dependencies.
+
+## Verification record: CLI package
+
+The workspace server is `@upcomputer/server`, with `upcomputer` as its primary
+executable and `t3` as a compatibility alias pointing at the same entry. CLI help
+uses Up.computer/UpComputer Connect. Build and publish filters reference the new
+workspace name. No npm publication or cloud deployment was performed; publication
+permissions and distribution of the new package name are separate release gates.
+The relay workspace package is `@upcomputer/relay`; deployed resource IDs are not
+renamed. Existing background-service identifiers are intentionally unchanged.
+51 focused CLI/configuration/service/project/release-version tests pass.

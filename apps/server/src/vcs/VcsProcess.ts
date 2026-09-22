@@ -44,7 +44,7 @@ export class VcsProcess extends Context.Service<
   {
     readonly run: (input: VcsProcessInput) => Effect.Effect<VcsProcessOutput, VcsError>;
   }
->()("t3/vcs/VcsProcess") {}
+>()("@upcomputer/server/vcs/VcsProcess") {}
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;

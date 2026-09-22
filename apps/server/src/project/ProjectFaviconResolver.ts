@@ -93,7 +93,7 @@ export class ProjectFaviconResolver extends Context.Service<
       cwd: string,
     ) => Effect.Effect<string | null, ProjectFaviconResolutionError>;
   }
->()("t3/project/ProjectFaviconResolver") {}
+>()("@upcomputer/server/project/ProjectFaviconResolver") {}
 
 function extractIconHref(source: string): string | null {
   const htmlMatch = source.match(LINK_ICON_HTML_RE);

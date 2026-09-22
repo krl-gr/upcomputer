@@ -124,7 +124,7 @@ export class WorkspaceFileSystem extends Context.Service<
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
   }
->()("t3/workspace/WorkspaceFileSystem") {}
+>()("@upcomputer/server/workspace/WorkspaceFileSystem") {}
 
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;

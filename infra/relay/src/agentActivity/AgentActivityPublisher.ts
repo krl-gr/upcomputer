@@ -45,7 +45,7 @@ export class AgentActivityPublisher extends Context.Service<
       readonly deviceId: string;
     }) => Effect.Effect<RelayDeliveryResult | null, AgentActivityPublishError>;
   }
->()("t3code-relay/agentActivity/AgentActivityPublisher") {}
+>()("@upcomputer/relay/agentActivity/AgentActivityPublisher") {}
 
 export const make = Effect.gen(function* () {
   const rows = yield* AgentActivityRows.AgentActivityRows;

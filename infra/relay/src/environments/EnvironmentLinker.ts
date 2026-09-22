@@ -88,7 +88,7 @@ export class EnvironmentLinker extends Context.Service<
       EnvironmentLinkError
     >;
   }
->()("t3code-relay/environments/EnvironmentLinker") {}
+>()("@upcomputer/relay/environments/EnvironmentLinker") {}
 
 const decodeProof = Schema.decodeUnknownEffect(RelayEnvironmentLinkProofPayload);
 

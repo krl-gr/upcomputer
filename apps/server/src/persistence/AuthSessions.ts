@@ -104,7 +104,7 @@ export class AuthSessionRepository extends Context.Service<
       input: SetAuthSessionLastConnectedAtInput,
     ) => Effect.Effect<void, AuthSessionRepositoryError>;
   }
->()("t3/persistence/AuthSessions/AuthSessionRepository") {}
+>()("@upcomputer/server/persistence/AuthSessions/AuthSessionRepository") {}
 
 const AuthSessionDbRow = Schema.Struct({
   sessionId: AuthSessionId,

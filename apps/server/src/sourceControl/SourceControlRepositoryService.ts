@@ -37,7 +37,7 @@ export class SourceControlRepositoryService extends Context.Service<
       input: SourceControlPublishRepositoryInput,
     ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
   }
->()("t3/sourceControl/SourceControlRepositoryService") {}
+>()("@upcomputer/server/sourceControl/SourceControlRepositoryService") {}
 
 function mapRepositoryError(operation: string, provider: SourceControlProviderKind) {
   return Effect.mapError((cause: unknown) =>

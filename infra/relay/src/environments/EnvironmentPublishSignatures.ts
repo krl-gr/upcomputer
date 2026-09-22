@@ -83,7 +83,7 @@ export class EnvironmentPublishSignatures extends Context.Service<
       readonly request: RelayAgentActivityPublishRequest;
     }) => Effect.Effect<void, EnvironmentPublishSignatureError>;
   }
->()("t3code-relay/environments/EnvironmentPublishSignatures") {}
+>()("@upcomputer/relay/environments/EnvironmentPublishSignatures") {}
 
 const decodeProof = Schema.decodeUnknownEffect(RelayAgentActivityPublishProofPayload);
 

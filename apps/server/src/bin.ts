@@ -21,7 +21,7 @@ import { CORE_SERVER_PRODUCT_ENTRY } from "./product/defaultProductEntry.ts";
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+  "UpComputer Connect commands are unavailable: this build is missing UpComputer Connect public configuration.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -57,12 +57,14 @@ function bundledDesktopServerFlags(bootstrapFd: Option.Option<number>): CliServe
 }
 
 const connectUnavailableCommand = Command.make("connect").pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  Command.withDescription(
+    "UpComputer Connect is unavailable in builds without public configuration.",
+  ),
   Command.withHidden,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["t3", "connect"],
+        commandPath: ["upcomputer", "connect"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -79,7 +81,7 @@ export const makeCli = ({
   readonly remoteServerCliEnabled?: boolean;
 } = {}) =>
   Command.make(
-    "t3",
+    "upcomputer",
     remoteServerCliEnabled ? { ...sharedServerCommandFlags } : bundledDesktopCommandFlags,
   ).pipe(
     Command.withDescription(

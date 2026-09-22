@@ -25,7 +25,7 @@ export interface ExperimentalProductServerCliInput<
 
 const ProductServerCliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+  "UpComputer Connect commands are unavailable: this build is missing UpComputer Connect public configuration.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -34,12 +34,14 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 }
 
 const connectUnavailableCommand = Command.make("connect").pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  Command.withDescription(
+    "UpComputer Connect is unavailable in builds without public configuration.",
+  ),
   Command.withHidden,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["t3", "connect"],
+        commandPath: ["upcomputer", "connect"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -50,7 +52,7 @@ const connectUnavailableCommand = Command.make("connect").pipe(
 export function makeExperimentalProductServerCli<
   const Input extends ExperimentalProductServerCliInput,
 >(input: Input) {
-  return Command.make(input.commandName ?? "t3", { ...sharedServerCommandFlags }).pipe(
+  return Command.make(input.commandName ?? "upcomputer", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription(input.description ?? `Run the ${input.manifest.displayName} server.`),
     Command.withHandler((flags) => runServerCommandForProduct(flags, input)),
     Command.withSubcommands([

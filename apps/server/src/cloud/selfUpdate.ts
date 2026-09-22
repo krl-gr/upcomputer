@@ -149,7 +149,7 @@ export class ServerSelfUpdate extends Context.Service<
       input: ServerSelfUpdateInput,
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
   }
->()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("@upcomputer/server/cloud/selfUpdate/ServerSelfUpdate") {}
 
 export const make = Effect.fn("cloud.server_self_update.make")(function* (options?: {
   readonly host?: Partial<ServerSelfUpdateHost>;

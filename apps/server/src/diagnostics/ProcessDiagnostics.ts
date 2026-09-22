@@ -41,7 +41,7 @@ export class ProcessDiagnostics extends Context.Service<
       readonly signal: ServerProcessSignal;
     }) => Effect.Effect<ServerSignalProcessResult>;
   }
->()("t3/diagnostics/ProcessDiagnostics") {}
+>()("@upcomputer/server/diagnostics/ProcessDiagnostics") {}
 
 class ProcessDiagnosticsQueryTimeoutError extends Schema.TaggedErrorClass<ProcessDiagnosticsQueryTimeoutError>()(
   "ProcessDiagnosticsQueryTimeoutError",

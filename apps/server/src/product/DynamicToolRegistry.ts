@@ -203,7 +203,7 @@ export class ExperimentalDynamicToolRegistry<R = never, E = never> {
 export class ExperimentalDynamicToolRegistryService extends Context.Service<
   ExperimentalDynamicToolRegistryService,
   ExperimentalDynamicToolRegistry<never, never>
->()("t3/product/DynamicToolRegistry/ExperimentalDynamicToolRegistryService") {}
+>()("@upcomputer/server/product/DynamicToolRegistry/ExperimentalDynamicToolRegistryService") {}
 
 /** Registers one fully captured owner for exactly the lifetime of its feature layer. */
 export function experimentalDynamicToolOwnerLayer(

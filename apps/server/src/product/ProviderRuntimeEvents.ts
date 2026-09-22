@@ -13,7 +13,7 @@ export interface ExperimentalProviderRuntimeEventsShape {
 export class ExperimentalProviderRuntimeEvents extends Context.Service<
   ExperimentalProviderRuntimeEvents,
   ExperimentalProviderRuntimeEventsShape
->()("t3/product/ProviderRuntimeEvents/ExperimentalProviderRuntimeEvents") {}
+>()("@upcomputer/server/product/ProviderRuntimeEvents/ExperimentalProviderRuntimeEvents") {}
 
 export const ExperimentalProviderRuntimeEventsLive = Layer.effect(
   ExperimentalProviderRuntimeEvents,

@@ -128,7 +128,7 @@ export class ServerSettingsService extends Context.Service<
     /** Stream of settings change events. */
     readonly streamChanges: Stream.Stream<ServerSettings>;
   }
->()("t3/serverSettings/ServerSettingsService") {
+>()("@upcomputer/server/serverSettings/ServerSettingsService") {
   /** @deprecated Import and use `layerTest` from this module. */
   static readonly layerTest = (overrides: DeepPartial<ServerSettings> = {}) => layerTest(overrides);
 }

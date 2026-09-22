@@ -15,7 +15,7 @@ export class RelayDb extends Context.Service<
   EffectPgDatabase & {
     readonly $client: PgClient;
   }
->()("t3code-relay/db/RelayDb") {}
+>()("@upcomputer/relay/db/RelayDb") {}
 
 export const PlanetscaleDatabase = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;

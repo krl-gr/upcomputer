@@ -73,5 +73,5 @@ export class ProjectionThreadContextBindingRepository extends Context.Service<
   ProjectionThreadContextBindingRepository,
   ProjectionThreadContextBindingRepositoryShape
 >()(
-  "t3/persistence/Services/ProjectionThreadContextBindings/ProjectionThreadContextBindingRepository",
+  "@upcomputer/server/persistence/Services/ProjectionThreadContextBindings/ProjectionThreadContextBindingRepository",
 ) {}

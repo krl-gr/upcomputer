@@ -120,7 +120,7 @@ export class LiveActivities extends Context.Service<
       readonly invalidatedAt: string;
     }) => Effect.Effect<void, LiveActivityDeliveryMarkPersistenceError>;
   }
->()("t3code-relay/agentActivity/LiveActivities") {}
+>()("@upcomputer/relay/agentActivity/LiveActivities") {}
 
 const decodeJsonString = Schema.decodeEffect(Schema.UnknownFromJsonString);
 const encodeJsonValue = Schema.encodeEffect(Schema.UnknownFromJsonString);

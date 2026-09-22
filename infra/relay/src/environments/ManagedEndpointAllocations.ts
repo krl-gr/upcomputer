@@ -102,7 +102,7 @@ export class ManagedEndpointAllocations extends Context.Service<
       input: ManagedEndpointAllocationKey,
     ) => Effect.Effect<void, ManagedEndpointAllocationPersistenceError>;
   }
->()("t3code-relay/environments/ManagedEndpointAllocations") {}
+>()("@upcomputer/relay/environments/ManagedEndpointAllocations") {}
 
 const allocationSelection = {
   userId: relayManagedEndpointAllocations.userId,

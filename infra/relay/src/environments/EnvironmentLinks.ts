@@ -138,7 +138,7 @@ export class EnvironmentLinks extends Context.Service<
       readonly environmentId: string;
     }) => Effect.Effect<boolean, EnvironmentLinkRevokePersistenceError>;
   }
->()("t3code-relay/environments/EnvironmentLinks") {}
+>()("@upcomputer/relay/environments/EnvironmentLinks") {}
 
 function agentAwarenessDeliveryUserCondition(environmentId: string) {
   return and(

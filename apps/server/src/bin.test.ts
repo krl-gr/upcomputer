@@ -195,12 +195,15 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "connect"]);
-      assert.include(error.errors[0]?.message ?? "", "missing T3 Connect public configuration");
+      assert.deepEqual(error.commandPath, ["upcomputer", "connect"]);
+      assert.include(
+        error.errors[0]?.message ?? "",
+        "missing UpComputer Connect public configuration",
+      );
 
       const output = (yield* TestConsole.errorLines).join("\n");
       assert.include(output, "ERROR");
-      assert.include(output, "missing T3 Connect public configuration");
+      assert.include(output, "missing UpComputer Connect public configuration");
     }).pipe(Effect.provide(Layer.mergeAll(CliRuntimeLayer, TestConsole.layer))),
   );
 
@@ -208,10 +211,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     Effect.gen(function* () {
       const { output } = yield* captureStdout(runCli(["--help"], cli));
 
-      assert.notInclude(output, "t3 serve");
-      assert.notInclude(output, "t3 connect");
-      assert.notInclude(output, "t3 service");
-      assert.notInclude(output, "t3 project");
+      assert.notInclude(output, "upcomputer serve");
+      assert.notInclude(output, "upcomputer connect");
+      assert.notInclude(output, "upcomputer service");
+      assert.notInclude(output, "upcomputer project");
 
       const error = yield* runCli([], cli).pipe(Effect.provide(CliRuntimeLayer), Effect.flip);
       assert.instanceOf(error, CliError.UserError);
@@ -223,7 +226,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     Effect.gen(function* () {
       const { output } = yield* captureStdout(runCli(["service", "--help"], noConnectCli));
 
-      assert.include(output, "Manage the T3 Code background service.");
+      assert.include(output, "Manage the Up.computer background service.");
       assert.include(output, "install");
       assert.include(output, "uninstall");
       assert.include(output, "update");
@@ -265,10 +268,13 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "status", "--base-dir", baseDir]),
       );
 
-      assert.include(output, "T3 Connect\n  Exposure: disabled");
+      assert.include(output, "UpComputer Connect\n  Exposure: disabled");
       assert.include(output, "  Authorization: missing");
       assert.include(output, "  Environment link: not provisioned");
-      assert.include(output, "Next: Run `t3 connect link` to authorize and enable T3 Connect.");
+      assert.include(
+        output,
+        "Next: Run `upcomputer connect link` to authorize and enable UpComputer Connect.",
+      );
     }),
   );
 
@@ -316,7 +322,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "unlink", "--base-dir", baseDir]),
       );
 
-      assert.equal(output, "T3 Connect is disabled locally.");
+      assert.equal(output, "UpComputer Connect is disabled locally.");
     }),
   );
 
@@ -336,7 +342,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       assert.equal(
         output,
-        "Signed out of T3 Connect locally.\nThe background service is managed separately with `t3 service`.",
+        "Signed out of UpComputer Connect locally.\nThe background service is managed separately with `upcomputer service`.",
       );
       assert.isFalse(NodeFS.existsSync(tokenPath));
     }),
@@ -439,7 +445,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "auth", "pairing", "create"]);
+      assert.deepEqual(error.commandPath, ["upcomputer", "auth", "pairing", "create"]);
       const ttlError = error.errors[0] as CliError.CliError | undefined;
       if (!ttlError || ttlError._tag !== "InvalidValue") {
         assert.fail(`Expected InvalidValue, got ${String(ttlError?._tag)}`);
@@ -607,7 +613,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "project", "add"]);
+      assert.deepEqual(error.commandPath, ["upcomputer", "project", "add"]);
       const optionError = error.errors[0] as CliError.CliError | undefined;
       if (!optionError || optionError._tag !== "UnrecognizedOption") {
         assert.fail(`Expected UnrecognizedOption, got ${String(optionError?._tag)}`);

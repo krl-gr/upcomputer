@@ -44,7 +44,7 @@ export class PortDiscovery extends Context.Service<
       readonly terminalId: string;
     }) => Effect.Effect<void>;
   }
->()("t3/preview/PortScanner/PortDiscovery") {}
+>()("@upcomputer/server/preview/PortScanner/PortDiscovery") {}
 
 export const COMMON_DEV_PORTS: ReadonlyArray<number> = Object.freeze([
   3000, 3001, 3333, 4173, 4200, 4321, 5000, 5173, 5174, 5175, 5500, 8000, 8080, 8081, 8888, 9000,

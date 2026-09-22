@@ -1,5 +1,5 @@
 {
-  "name": "t3code-relay",
+  "name": "@upcomputer/relay",
   "private": true,
   "type": "module",
   "scripts": {

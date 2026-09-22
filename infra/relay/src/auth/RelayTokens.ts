@@ -113,7 +113,7 @@ export class RelayTokens extends Context.Service<
       readonly nowEpochSeconds: number;
     }) => Effect.Effect<RelayDpopAccessTokenClaims | null>;
   }
->()("t3code-relay/auth/RelayTokens") {}
+>()("@upcomputer/relay/auth/RelayTokens") {}
 
 const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
