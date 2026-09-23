@@ -226,6 +226,10 @@
     "./legacyProjectConfig": {
       "types": "./src/legacyProjectConfig.ts",
       "import": "./src/legacyProjectConfig.ts"
+    },
+    "./profileMigration": {
+      "types": "./src/profileMigration.ts",
+      "import": "./src/profileMigration.ts"
     }
   },
   "scripts": {

@@ -1,3 +1,9 @@
+import {
+  assertProfileMigrationStartupAllowed,
+  profileMigrationDirectory,
+  resolveMigratedProfileRoot,
+  ProfileMigrationError,
+} from "@upcomputer/shared/profileMigration";
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -148,7 +154,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   input: MakeDesktopEnvironmentInput,
 ): Effect.fn.Return<
   DesktopEnvironment["Service"],
-  Config.ConfigError | PlatformError.PlatformError,
+  Config.ConfigError | PlatformError.PlatformError | ProfileMigrationError,
   FileSystem.FileSystem | Path.Path
 > {
   const path = yield* Path.Path;
@@ -166,12 +172,17 @@ const make = Effect.fn("desktop.environment.make")(function* (
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
   const localTest = isLocalTestVersion(input.appVersion);
+  if (!localTest)
+    yield* Effect.try({
+      try: () => assertProfileMigrationStartupAllowed(profileMigrationDirectory(homeDirectory)),
+      catch: () => new ProfileMigrationError("startup-check-failed"),
+    });
   const configuredBaseDir = localTest
     ? Option.some(path.join(homeDirectory, LOCAL_TEST_HOME_NAME))
     : Option.orElse(config.upcomputerHome, () => config.t3Home);
   const preferredBaseDir = path.join(homeDirectory, UPCOMPUTER_HOME_DIRECTORY_NAME);
   const legacyBaseDir = path.join(homeDirectory, LEGACY_HOME_DIRECTORY_NAME);
-  const baseDir = yield* Option.match(configuredBaseDir, {
+  const selectedBaseDir = yield* Option.match(configuredBaseDir, {
     onSome: (value) => Effect.succeed(value),
     onNone: () =>
       fileSystem
@@ -188,6 +199,13 @@ const make = Effect.fn("desktop.environment.make")(function* (
           ),
         ),
   });
+  const baseDir = localTest
+    ? selectedBaseDir
+    : yield* Effect.try({
+        try: () =>
+          resolveMigratedProfileRoot(profileMigrationDirectory(homeDirectory), selectedBaseDir),
+        catch: () => new ProfileMigrationError("startup-check-failed"),
+      });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const originalBranding = resolveDesktopAppBranding({

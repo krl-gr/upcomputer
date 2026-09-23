@@ -1,3 +1,8 @@
+import {
+  profileMigrationDirectory,
+  resolveMigratedProfileRoot,
+} from "@upcomputer/shared/profileMigration";
+import { isLocalTestVersion } from "./localTestProfile.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -118,7 +123,21 @@ export const make = Effect.gen(function* () {
     }
 
     return preferredPath;
-  }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
+  }).pipe(
+    Effect.flatMap((path) =>
+      Effect.try({
+        try: () =>
+          isLocalTestVersion(environment.appVersion)
+            ? path
+            : resolveMigratedProfileRoot(
+                profileMigrationDirectory(environment.homeDirectory),
+                path,
+              ),
+        catch: (cause) => new DesktopUserDataPathResolutionError({ path, cause }),
+      }),
+    ),
+    Effect.withSpan("desktop.appIdentity.resolveUserDataPath"),
+  );
 
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;

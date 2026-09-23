@@ -176,17 +176,19 @@ There are two separate owned roots: backend state (`.t3` vs `.upcomputer`) and t
 Electron profile. Desktop connection data additionally uses OS `safeStorage`;
 renaming the browser databases does not migrate that encrypted store. Startup
 selects roots in both early `main.ts` and the Effect environment layer, so changing
-only one produces a split profile. These paths currently retain their existing
-compatibility resolution.
+only one produces a split profile. Existing unjournaled installations still use compatibility resolution.
+A completed coordinator journal also redirects exact legacy root overrides;
+pending, unreadable or inconsistent journals stop startup rather than selecting
+one half of a migration.
 
-Before activating automatic native relocation, implement and verify a single
-pre-start migration coordinator: owner/lock checks **before any database opens**,
-pre-migration backup, durable journal, interrupted-copy recovery, absolute
-session/attachment path audit, and validation of the encrypted catalog using the
-actual Electron/OS identity. A native fresh-install/0.0.31 upgrade/downgrade test
-is required on each supported platform. A raw recursive copy plus a directory
-existence check is not an acceptable substitute. Working Alpha and its live
-profile must stay out of this verification.
+The [offline coordinator and startup fencing](native-profile-coordinator.md) now
+implement verified copies, process-interruption recovery and pre-activation
+rollback. This is **not automatic profile migration**: native ownership leases,
+production reference-rewriting/validation adapters, transactional Git worktree
+repair and actual encrypted-catalog validation are still release gates. There
+is no production migration command or automatic launcher yet. A native fresh
+install/0.0.31 upgrade/downgrade test is required on each supported platform.
+Working Alpha and its live profile remain outside development verification.
 
 ## Verification record: one-way bridge implementation
 

@@ -16,6 +16,11 @@ import * as Layer from "effect/Layer";
 
 import * as Electron from "electron";
 
+import {
+  assertProfileMigrationStartupAllowed,
+  profileMigrationDirectory,
+  resolveMigratedProfileRoot,
+} from "@upcomputer/shared/profileMigration";
 import * as NetService from "@upcomputer/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
@@ -69,18 +74,36 @@ if (isLocalTestVersion(Electron.app.getVersion())) {
   delete process.env.T3CODE_PORT;
 }
 
+// Must precede Clerk storage construction, not merely Electron.whenReady.
+const migrationDirectory = profileMigrationDirectory(NodeOS.homedir());
+if (!isLocalTestVersion(Electron.app.getVersion())) {
+  try {
+    assertProfileMigrationStartupAllowed(migrationDirectory);
+  } catch {
+    Electron.dialog.showErrorBox(
+      "Up.computer profile maintenance",
+      "A profile migration is incomplete or needs recovery. Resume or roll back the migration before starting Up.computer. No profile has been opened.",
+    );
+    Electron.app.exit(1);
+    throw new Error("Profile migration startup guard stopped initialization.");
+  }
+}
+
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());
 const configuredBaseDir =
   process.env.UPCOMPUTER_HOME?.trim() || process.env.T3CODE_HOME?.trim() || undefined;
 const preferredBaseDir = NodePath.join(NodeOS.homedir(), ".upcomputer");
 const legacyBaseDir = NodePath.join(NodeOS.homedir(), ".t3");
-const baseDir =
+const selectedBaseDir =
   configuredBaseDir ??
   (NodeFS.existsSync(preferredBaseDir)
     ? preferredBaseDir
     : NodeFS.existsSync(legacyBaseDir)
       ? legacyBaseDir
       : preferredBaseDir);
+const baseDir = isLocalTestVersion(Electron.app.getVersion())
+  ? selectedBaseDir
+  : resolveMigratedProfileRoot(migrationDirectory, selectedBaseDir);
 const desktopClerkBridge = DesktopClerk.createDesktopClerkBridge(
   NodePath.join(baseDir, isDevelopment ? "dev" : "userdata"),
   isDevelopment,

@@ -1,5 +1,10 @@
+// @effect-diagnostics nodeBuiltinImport:off - Native startup fixtures exercise the pre-Effect filesystem boundary using disposable profiles.
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeOS from "node:os";
+import { migrateProfile, profileMigrationDirectory } from "@upcomputer/shared/profileMigration";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, describe, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -163,3 +168,51 @@ describe("DesktopEnvironment", () => {
     }),
   );
 });
+
+it.effect(
+  "blocks incomplete migration and uses the committed root even with an old explicit override",
+  () =>
+    Effect.gen(function* () {
+      const home = yield* Effect.acquireRelease(
+        Effect.promise(async () =>
+          NodeFSP.realpath(
+            await NodeFSP.mkdtemp(
+              NodePath.join(NodeOS.tmpdir(), "upcomputer-desktop-profile-startup-"),
+            ),
+          ),
+        ),
+        (home) => Effect.promise(() => NodeFSP.rm(home, { recursive: true, force: true })),
+      );
+      const source = NodePath.join(home, ".t3"),
+        destination = NodePath.join(home, ".upcomputer");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(source);
+        await NodeFSP.writeFile(NodePath.join(source, "fixture"), "synthetic");
+      });
+      const plan = {
+        directory: profileMigrationDirectory(home),
+        roots: [{ id: "backend" as const, source, destination }],
+      };
+      const adapter = {
+        acquireOfflineLease: async () => ({ assertHeld: async () => {}, release: async () => {} }),
+        prepare: async () => {},
+        validate: async () => {},
+      };
+      yield* Effect.promise(() =>
+        expect(
+          migrateProfile(plan, {
+            adapter,
+            checkpoint: async (phase) => {
+              if (phase === "prepared") throw new Error("fixture stop");
+            },
+          }),
+        ).rejects.toThrow(),
+      );
+      const resolve = () => makeEnvironment({ homeDirectory: home }, { UPCOMPUTER_HOME: source });
+      expect(yield* Effect.flip(resolve())).toMatchObject({ code: "startup-check-failed" });
+      yield* Effect.promise(() => migrateProfile(plan, { adapter }));
+      const environment = yield* resolve();
+      assert.equal(environment.baseDir, destination);
+      assert.equal(environment.stateDir, NodePath.join(destination, "userdata"));
+    }).pipe(Effect.scoped),
+);
