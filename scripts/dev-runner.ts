@@ -73,15 +73,7 @@ export function isProxiableBindHost(host: string): boolean {
 
 export const DEFAULT_T3_HOME = Effect.gen(function* () {
   const path = yield* Path.Path;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const preferredPath = path.join(NodeOS.homedir(), ".upcomputer");
-  if (yield* fileSystem.exists(preferredPath).pipe(Effect.orElseSucceed(() => false))) {
-    return preferredPath;
-  }
-
-  const legacyPath = path.join(NodeOS.homedir(), ".t3");
-  const legacyExists = yield* fileSystem.exists(legacyPath).pipe(Effect.orElseSucceed(() => false));
-  return legacyExists ? legacyPath : preferredPath;
+  return path.join(NodeOS.homedir(), ".upcomputer");
 });
 
 const MODE_ARGS = {
@@ -339,7 +331,7 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    // Precedence (--home-dir > worktree .t3 > ambient T3CODE_HOME) is resolved
+    // Precedence (--home-dir > worktree .t3 > ambient UPCOMPUTER_HOME) is resolved
     // by the caller; an unset t3Home here genuinely means "use the default".
     const configuredBaseDir = t3Home?.trim() || undefined;
     const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
@@ -355,7 +347,7 @@ export function createDevRunnerEnv({
 
     if (configuredBaseDir !== undefined) {
       output.UPCOMPUTER_HOME = resolvedBaseDir;
-      output.T3CODE_HOME = resolvedBaseDir;
+      delete output.T3CODE_HOME;
     } else {
       delete output.UPCOMPUTER_HOME;
       delete output.T3CODE_HOME;
@@ -689,7 +681,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     const hostEnvironment = yield* HostProcessEnvironment;
     // A dev server started inside a worktree defaults to that worktree's own
     // (gitignored) `.t3` — see @upcomputer/shared/devHome for why this must
-    // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
+    // outrank an ambient UPCOMPUTER_HOME. `--home-dir` still wins.
     const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcessWorkingDirectory);
     // Trim before choosing: `--home-dir ""` is not a selection, and treating it
     // as one would skip the worktree default and land on the shared home —
@@ -697,8 +689,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     const resolvedT3Home =
       (input.t3Home?.trim() || undefined) ??
       worktreeHome ??
-      (hostEnvironment.UPCOMPUTER_HOME?.trim() || undefined) ??
-      (hostEnvironment.T3CODE_HOME?.trim() || undefined);
+      (hostEnvironment.UPCOMPUTER_HOME?.trim() || undefined);
     const env = yield* createDevRunnerEnv({
       mode: input.mode,
       baseEnv: hostEnvironment,
@@ -717,7 +708,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       serverOffset !== offset || webOffset !== offset
         ? ` selectedOffset(server=${serverOffset},web=${webOffset})`
         : "";
-    const baseDir = env.T3CODE_HOME ?? (yield* DEFAULT_T3_HOME);
+    const baseDir = env.UPCOMPUTER_HOME ?? (yield* DEFAULT_T3_HOME);
 
     yield* Effect.logInfo(
       `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
@@ -866,7 +857,7 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   t3Home: Flag.string("home-dir").pipe(
     Flag.withDescription(
-      "Base directory for all Up.computer data (UPCOMPUTER_HOME; legacy T3CODE_HOME is supported). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
+      "Base directory for all Up.computer data (UPCOMPUTER_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
     ),
     // No withFallbackConfig: the env fallback is applied together with the
     // worktree default where the precedence is decided, not here.

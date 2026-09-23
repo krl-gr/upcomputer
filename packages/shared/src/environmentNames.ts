@@ -2,6 +2,8 @@ const CURRENT_PREFIX = "UPCOMPUTER_";
 const LEGACY_PREFIX = "T3CODE_";
 
 export function legacyEnvironmentName(name: string): string {
+  // A legacy HOME can point at a running old application's database. Never adopt it.
+  if (name === "UPCOMPUTER_HOME") return name;
   return name.startsWith(CURRENT_PREFIX) ? LEGACY_PREFIX + name.slice(CURRENT_PREFIX.length) : name;
 }
 
@@ -25,7 +27,7 @@ export function normalizeUpcomputerEnvironment(
 ): Record<string, string | undefined> {
   const normalized = { ...env };
   for (const [key, value] of Object.entries(env)) {
-    if (!key.startsWith(LEGACY_PREFIX)) continue;
+    if (!key.startsWith(LEGACY_PREFIX) || key === "T3CODE_HOME") continue;
     const current = CURRENT_PREFIX + key.slice(LEGACY_PREFIX.length);
     if (normalized[current] === undefined) normalized[current] = value;
   }

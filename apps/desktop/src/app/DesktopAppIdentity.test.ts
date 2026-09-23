@@ -142,31 +142,31 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("does not adopt the existing T3 userData path", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/UpComputer");
       }),
       { existingUserDataDirectoryName: "T3 Code (Alpha)" },
     ),
   );
 
-  it.effect("prefers the new Up.computer userData path when it already exists", () =>
+  it.effect("uses the independent UpComputer userData path", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/Up.computer");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/UpComputer");
       }),
-      { existingUserDataDirectoryName: "Up.computer" },
+      { existingUserDataDirectoryName: "UpComputer" },
     ),
   );
 
-  it.effect("preserves failures while inspecting the legacy userData path", () => {
+  it.effect("preserves failures while inspecting the new userData path", () => {
     const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
@@ -182,11 +182,11 @@ describe("DesktopAppIdentity", () => {
         const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
 
         assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.path, "/Users/alice/Library/Application Support/Up.computer");
+        assert.equal(error.path, "/Users/alice/Library/Application Support/UpComputer");
         assert.strictEqual(error.cause, cause);
         assert.equal(
           error.message,
-          'Failed to inspect desktop user-data path at "/Users/alice/Library/Application Support/Up.computer".',
+          'Failed to inspect desktop user-data path at "/Users/alice/Library/Application Support/UpComputer".',
         );
       }),
       { legacyPathProbeError: cause },
@@ -212,11 +212,14 @@ describe("DesktopAppIdentity", () => {
     });
   }
 
-  it.effect("preserves an existing Windows profile despite the package rename", () =>
+  it.effect("does not reuse the old Windows profile", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        assert.equal(yield* identity.resolveUserDataPath, "/Users/alice/AppData/Roaming/t3code");
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          "/Users/alice/AppData/Roaming/UpComputer",
+        );
       }),
       { existingUserDataDirectoryName: "t3code", environment: { platform: "win32" } },
     ),

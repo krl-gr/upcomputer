@@ -1,9 +1,3 @@
-import {
-  assertProfileMigrationStartupAllowed,
-  profileMigrationDirectory,
-  resolveMigratedProfileRoot,
-  ProfileMigrationError,
-} from "@upcomputer/shared/profileMigration";
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -21,11 +15,7 @@ import * as PlatformError from "effect/PlatformError";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
-import {
-  LEGACY_HOME_DIRECTORY_NAME,
-  UPCOMPUTER_APP_ID,
-  UPCOMPUTER_HOME_DIRECTORY_NAME,
-} from "./DesktopProductIdentity.ts";
+import { UPCOMPUTER_APP_ID, UPCOMPUTER_HOME_DIRECTORY_NAME } from "./DesktopProductIdentity.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import {
   isLocalTestVersion,
@@ -86,7 +76,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxDesktopEntryName: string;
     readonly linuxWmClass: string;
     readonly userDataDirName: string;
-    readonly legacyUserDataDirNames: readonly string[];
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -154,11 +143,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
   input: MakeDesktopEnvironmentInput,
 ): Effect.fn.Return<
   DesktopEnvironment["Service"],
-  Config.ConfigError | PlatformError.PlatformError | ProfileMigrationError,
+  Config.ConfigError | PlatformError.PlatformError,
   FileSystem.FileSystem | Path.Path
 > {
   const path = yield* Path.Path;
-  const fileSystem = yield* FileSystem.FileSystem;
   const config = yield* DesktopConfig.DesktopConfig;
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
@@ -172,40 +160,11 @@ const make = Effect.fn("desktop.environment.make")(function* (
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
   const localTest = isLocalTestVersion(input.appVersion);
-  if (!localTest)
-    yield* Effect.try({
-      try: () => assertProfileMigrationStartupAllowed(profileMigrationDirectory(homeDirectory)),
-      catch: () => new ProfileMigrationError("startup-check-failed"),
-    });
   const configuredBaseDir = localTest
     ? Option.some(path.join(homeDirectory, LOCAL_TEST_HOME_NAME))
-    : Option.orElse(config.upcomputerHome, () => config.t3Home);
+    : config.upcomputerHome;
   const preferredBaseDir = path.join(homeDirectory, UPCOMPUTER_HOME_DIRECTORY_NAME);
-  const legacyBaseDir = path.join(homeDirectory, LEGACY_HOME_DIRECTORY_NAME);
-  const selectedBaseDir = yield* Option.match(configuredBaseDir, {
-    onSome: (value) => Effect.succeed(value),
-    onNone: () =>
-      fileSystem
-        .exists(preferredBaseDir)
-        .pipe(
-          Effect.flatMap((preferredExists) =>
-            preferredExists
-              ? Effect.succeed(preferredBaseDir)
-              : fileSystem
-                  .exists(legacyBaseDir)
-                  .pipe(
-                    Effect.map((legacyExists) => (legacyExists ? legacyBaseDir : preferredBaseDir)),
-                  ),
-          ),
-        ),
-  });
-  const baseDir = localTest
-    ? selectedBaseDir
-    : yield* Effect.try({
-        try: () =>
-          resolveMigratedProfileRoot(profileMigrationDirectory(homeDirectory), selectedBaseDir),
-        catch: () => new ProfileMigrationError("startup-check-failed"),
-      });
+  const baseDir = Option.getOrElse(configuredBaseDir, () => preferredBaseDir);
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const originalBranding = resolveDesktopAppBranding({
@@ -225,13 +184,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const userDataDirName = localTest
     ? LOCAL_TEST_APP_NAME
     : isDevelopment
-      ? "Up.computer (Dev)"
-      : "Up.computer";
-  const legacyUserDataDirNames = localTest
-    ? []
-    : isDevelopment
-      ? ["t3code-dev", "T3 Code (Dev)"]
-      : ["t3code", "T3 Code (Alpha)"];
+      ? "UpComputer Dev"
+      : "UpComputer";
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -278,7 +232,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxDesktopEntryName: isDevelopment ? "upcomputer-dev.desktop" : "upcomputer.desktop",
     linuxWmClass: isDevelopment ? "upcomputer-dev" : "upcomputer",
     userDataDirName,
-    legacyUserDataDirNames,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

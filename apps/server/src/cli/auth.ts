@@ -1,4 +1,3 @@
-import { acquireCliProfileOwnership } from "./profileOwnership.ts";
 import {
   AuthAdministrativeScopes,
   AuthSessionId,
@@ -36,7 +35,6 @@ const runWithEnvironmentAuth = <A, E>(
 ) =>
   Effect.gen(function* () {
     const logLevel = yield* GlobalFlag.LogLevel;
-    yield* acquireCliProfileOwnership();
     const config = yield* resolveCliAuthConfig(flags, logLevel);
     const minimumLogLevel = options?.quietLogs ? "Error" : config.logLevel;
     return yield* Effect.gen(function* () {

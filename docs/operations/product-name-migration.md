@@ -170,25 +170,23 @@ External shell/CI configuration is not rewritten. This is not yet a claim that
 all launchers, deployment configuration and platform-specific emitters have
 been converted.
 
-### Native profile migration is not activated
+### Local data copy, not an automatic migration system
 
-There are two separate owned roots: backend state (`.t3` vs `.upcomputer`) and the
-Electron profile. Desktop connection data additionally uses OS `safeStorage`;
-renaming the browser databases does not migrate that encrypted store. Startup
-selects roots in both early `main.ts` and the Effect environment layer, so changing
-only one produces a split profile. Existing unjournaled installations still use compatibility resolution.
-A completed coordinator journal also redirects exact legacy root overrides;
-pending, unreadable or inconsistent journals stop startup rather than selecting
-one half of a migration.
+The generic native migration coordinator, ownership database, startup fences,
+Git/Pi migration participants and encryption-name bridge have been removed.
+No background/native profile relocation is installed. Preserve the original
+profile and arrange a stopped-app copy separately; retain `state.sqlite` and its
+associated attachments/sessions, and review stored absolute paths in the copy.
+Remote connection catalogs are not required for the current local-only transfer.
+Provider sign-in is a separate check, not evidence that chat data was lost.
 
-The [offline coordinator and startup fencing](native-profile-coordinator.md) now
-implement verified copies, process-interruption recovery and pre-activation
-rollback. This is **not automatic profile migration**: native ownership leases,
-production reference-rewriting/validation adapters, transactional Git worktree
-repair and complete cross-platform encrypted-state validation are still release gates. There
-is no production migration command or automatic launcher yet. A native fresh
-install/0.0.31 upgrade/downgrade test is required on each supported platform.
-Working Alpha and its live profile remain outside development verification.
+New native defaults are `~/.upcomputer` for backend data and `UpComputer` (or
+`UpComputer Dev`) under the platform application-support directory for Electron.
+Neither root discovers old T3 folders. `T3CODE_HOME` is no longer an accepted
+fallback: use `UPCOMPUTER_HOME` or an explicit CLI base directory. An explicit
+operator-selected directory is still honored. New encryption uses the package's
+UpComputer identity; no legacy-name override is installed. The existing old app
+and old profiles must remain untouched until the local copy is agreed.
 
 ## Verification record: one-way bridge implementation
 
@@ -206,13 +204,3 @@ Working Alpha and its live profile remain outside development verification.
   marketing schema build passed. These are not native installed-app upgrade tests.
 - No installed Alpha, real profile, real provider credentials or deployed cloud
   resources were migrated. The human-test dev environment was not restarted.
-
-### macOS encryption identity bridge
-
-[Real Tart catalog validation](native-profile-macos-validation.md) reproduced a
-separate package-rename regression: changing the early Electron name selects a
-different macOS Safe Storage context. `legacyEncryptionIdentity.ts` temporarily
-retains the old encryption boot name before Clerk/readiness, while package and
-visible branding stay UpComputer. The catalog survived verified relocation and
-a cold guest restart. This does not establish full profile/Clerk/browser restore
-or authorize automatic migration; the bridge has explicit retirement gates.

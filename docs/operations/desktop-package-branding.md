@@ -61,3 +61,13 @@ Before release, still run native Windows checks on an isolated machine:
 
 Configuration/unit tests on macOS are not proof of a successful Windows install
 or upgrade. Do not use a working user's profile for these tests.
+
+## Local standalone profile update
+
+The earlier legacy-directory retention described above has been superseded for
+the standalone build. Default backend state is now strictly `~/.upcomputer`,
+and the Electron profile is `UpComputer` (`UpComputer Dev` for development).
+Old T3 directories and `T3CODE_HOME` are not automatically adopted. The generic
+native migration/ownership system and legacy encryption-name override were
+removed; copying the user's data is a separate, stopped-app operation. Existing
+source profiles remain untouched. See `product-name-migration.md`.

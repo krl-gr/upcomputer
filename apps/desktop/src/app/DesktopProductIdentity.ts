@@ -5,4 +5,3 @@ export const UPCOMPUTER_EXECUTABLE_NAME = "upcomputer";
 export const UPCOMPUTER_PUBLISHER_NAME = "Up.computer";
 export const UPCOMPUTER_WSL_PTY_MARKER = "upcomputer-wsl-node-pty.json";
 export const UPCOMPUTER_HOME_DIRECTORY_NAME = ".upcomputer";
-export const LEGACY_HOME_DIRECTORY_NAME = ".t3";

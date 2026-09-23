@@ -226,18 +226,6 @@
     "./legacyProjectConfig": {
       "types": "./src/legacyProjectConfig.ts",
       "import": "./src/legacyProjectConfig.ts"
-    },
-    "./profileMigration": {
-      "types": "./src/profileMigration.ts",
-      "import": "./src/profileMigration.ts"
-    },
-    "./profileGitWorktrees": {
-      "types": "./src/profileGitWorktrees.ts",
-      "import": "./src/profileGitWorktrees.ts"
-    },
-    "./profileOwnership": {
-      "types": "./src/profileOwnership.ts",
-      "import": "./src/profileOwnership.ts"
     }
   },
   "scripts": {

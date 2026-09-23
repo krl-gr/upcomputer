@@ -1,9 +1,3 @@
-import {
-  assertProfileMigrationStartupAllowed,
-  profileMigrationDirectory,
-  resolveMigratedProfileRoot,
-  ProfileMigrationError,
-} from "@upcomputer/shared/profileMigration";
 import { HostProcessEnvironment, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import {
   listLoginShellCandidates,
@@ -90,27 +84,9 @@ export const expandHomePath = Effect.fn(function* (input: string) {
 });
 
 export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
-  const migrationDirectory = profileMigrationDirectory(NodeOS.homedir());
-  yield* Effect.try({
-    try: () => assertProfileMigrationStartupAllowed(migrationDirectory),
-    catch: () => new ProfileMigrationError("startup-check-failed"),
-  });
   const { join, resolve } = yield* Path.Path;
-  let selected: string;
   if (!raw || raw.trim().length === 0) {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const preferredPath = join(NodeOS.homedir(), ".upcomputer");
-    const legacyPath = join(NodeOS.homedir(), ".t3");
-    selected = (yield* fileSystem.exists(preferredPath))
-      ? preferredPath
-      : (yield* fileSystem.exists(legacyPath))
-        ? legacyPath
-        : preferredPath;
-  } else {
-    selected = resolve(yield* expandHomePath(raw.trim()));
+    return join(NodeOS.homedir(), ".upcomputer");
   }
-  return yield* Effect.try({
-    try: () => resolveMigratedProfileRoot(migrationDirectory, selected),
-    catch: () => new ProfileMigrationError("startup-check-failed"),
-  });
+  return resolve(yield* expandHomePath(raw.trim()));
 });

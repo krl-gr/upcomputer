@@ -17,6 +17,17 @@ const config = withLegacyEnvironment(
 );
 
 describe("UpComputer environment compatibility", () => {
+  it.effect("never adopts T3CODE_HOME through any environment reader", () =>
+    Effect.gen(function* () {
+      const source = { T3CODE_HOME: "/old-live-profile" };
+      assert.isUndefined(readUpcomputerEnvironment(source, "UPCOMPUTER_HOME"));
+      assert.isUndefined(normalizeUpcomputerEnvironment(source).UPCOMPUTER_HOME);
+      const home = yield* withLegacyEnvironment(
+        Config.string("UPCOMPUTER_HOME").pipe(Config.withDefault("new-profile")),
+      ).parse(ConfigProvider.fromEnv({ env: source }));
+      assert.equal(home, "new-profile");
+    }),
+  );
   it.effect("reads legacy-only settings before defaults", () =>
     Effect.gen(function* () {
       const value = yield* config.parse(

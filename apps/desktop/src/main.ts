@@ -9,22 +9,12 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
-import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as Electron from "electron";
 
-import {
-  assertProfileMigrationStartupAllowed,
-  profileMigrationDirectory,
-  resolveMigratedProfileRoot,
-} from "@upcomputer/shared/profileMigration";
-import {
-  acquireProfileOwnership,
-  profileOwnershipDirectory,
-} from "@upcomputer/shared/profileOwnership";
 import * as NetService from "@upcomputer/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
@@ -67,69 +57,21 @@ import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import { isLocalTestVersion, LOCAL_TEST_HOME_NAME } from "./app/localTestProfile.ts";
-import { configureLegacyEncryptionIdentity } from "./app/legacyEncryptionIdentity.ts";
 
 // Apply before Clerk/config initialization, including Finder launches with no env.
 if (isLocalTestVersion(Electron.app.getVersion())) {
   const testStateRoot = NodePath.join(NodeOS.homedir(), LOCAL_TEST_HOME_NAME);
   process.env.UPCOMPUTER_HOME = testStateRoot;
-  process.env.T3CODE_HOME = testStateRoot;
-  process.env.T3CODE_DISABLE_AUTO_UPDATE = "true";
+  process.env.UPCOMPUTER_DISABLE_AUTO_UPDATE = "true";
   delete process.env.VITE_DEV_SERVER_URL;
+  delete process.env.UPCOMPUTER_PORT;
   delete process.env.T3CODE_PORT;
 }
 
-// Acquire before any application storage. This gate covers cooperating versions,
-// not old binaries or unmanaged descendants; it does not activate migration.
-try {
-  const ownership = acquireProfileOwnership(
-    profileOwnershipDirectory(NodeOS.homedir()),
-    "application",
-  );
-  Electron.app.once("will-quit", () => ownership.release());
-} catch {
-  Electron.dialog.showErrorBox(
-    "Up.computer profile maintenance",
-    "Profile ownership is unavailable or maintenance is running. No profile has been opened. Close maintenance and retry; do not delete lock files.",
-  );
-  Electron.app.exit(1);
-  throw new Error("Profile ownership stopped initialization.");
-}
-
-// Must precede Clerk storage construction, not merely Electron.whenReady.
-const migrationDirectory = profileMigrationDirectory(NodeOS.homedir());
-if (!isLocalTestVersion(Electron.app.getVersion())) {
-  try {
-    assertProfileMigrationStartupAllowed(migrationDirectory);
-  } catch {
-    Electron.dialog.showErrorBox(
-      "Up.computer profile maintenance",
-      "A profile migration is incomplete or needs recovery. Resume or roll back the migration before starting Up.computer. No profile has been opened.",
-    );
-    Electron.app.exit(1);
-    throw new Error("Profile migration startup guard stopped initialization.");
-  }
-}
-
-// Must run before Clerk construction AND Electron readiness. The visible product
-// name is still configured later by DesktopAppIdentity; native keys remain usable.
-configureLegacyEncryptionIdentity(Electron.app);
-
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());
-const configuredBaseDir =
-  process.env.UPCOMPUTER_HOME?.trim() || process.env.T3CODE_HOME?.trim() || undefined;
+const configuredBaseDir = process.env.UPCOMPUTER_HOME?.trim() || undefined;
 const preferredBaseDir = NodePath.join(NodeOS.homedir(), ".upcomputer");
-const legacyBaseDir = NodePath.join(NodeOS.homedir(), ".t3");
-const selectedBaseDir =
-  configuredBaseDir ??
-  (NodeFS.existsSync(preferredBaseDir)
-    ? preferredBaseDir
-    : NodeFS.existsSync(legacyBaseDir)
-      ? legacyBaseDir
-      : preferredBaseDir);
-const baseDir = isLocalTestVersion(Electron.app.getVersion())
-  ? selectedBaseDir
-  : resolveMigratedProfileRoot(migrationDirectory, selectedBaseDir);
+const baseDir = configuredBaseDir ?? preferredBaseDir;
 const desktopClerkBridge = DesktopClerk.createDesktopClerkBridge(
   NodePath.join(baseDir, isDevelopment ? "dev" : "userdata"),
   isDevelopment,

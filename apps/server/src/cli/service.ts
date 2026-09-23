@@ -1,4 +1,3 @@
-import { acquireCliProfileOwnership } from "./profileOwnership.ts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -70,7 +69,6 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  yield* acquireCliProfileOwnership();
   const config = yield* resolveCliAuthConfig(flags, logLevel);
   return yield* run.pipe(Effect.provide(bootServiceLayer(config)));
 });
