@@ -139,8 +139,14 @@ advancing the full upstream baseline or importing newer UI/pagination features:
 - `7e460f429` (#8992): 8 MiB replay preflight; locally includes metadata bytes too.
 - `08463e2c4` (#10777): cursor pagination releases consumed replay pages.
 - `108f295cc` (#9715): per-subscription item/byte budget, including unacknowledged
-  delivery; cancels producers when a slow client exceeds the budget. The older
-  direct thread queue is retained instead of importing the newer coalescer.
+  delivery; cancels producers when a slow client exceeds the budget.
+- `7e4ce3bbb` (#8368) with the #9715 budget integration: thread subscriptions use
+  `ThreadLiveEventCoalescer`, which keeps the newest `tool.updated` per stable
+  tool-call id within a 50 ms window. The `ActivityPayloadProjection.ts` part is
+  not taken because our projection lacks the snapshot tool-update dropping it edits.
+- `ce4712d5b` (#9799), server live-stream parts only: shell queues retain event
+  identity only, and the thread coalescer retains projected payloads. The
+  `http.ts` static-asset caching and all client changes are not taken.
 - `71c6f8248` (#6153): most recent 500 activities plus unresolved approvals/input.
 - `a9ffb8279` (#9000): client snapshot activity projection in batches of 25 and
   short preview strings that do not retain full tool outputs.
