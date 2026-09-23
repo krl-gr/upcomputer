@@ -1,3 +1,4 @@
+import { acquireCliProfileOwnership } from "./profileOwnership.ts";
 import {
   AuthRelayWriteScope,
   EnvironmentHttpApi,
@@ -436,6 +437,7 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
   },
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
+  yield* acquireCliProfileOwnership();
   const config = yield* resolveCliAuthConfig(flags, logLevel);
   const minimumLogLevel = options?.quietLogs ? "Error" : config.logLevel;
   const runtimeLayer = Layer.mergeAll(

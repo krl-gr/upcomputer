@@ -234,6 +234,10 @@
     "./profileGitWorktrees": {
       "types": "./src/profileGitWorktrees.ts",
       "import": "./src/profileGitWorktrees.ts"
+    },
+    "./profileOwnership": {
+      "types": "./src/profileOwnership.ts",
+      "import": "./src/profileOwnership.ts"
     }
   },
   "scripts": {

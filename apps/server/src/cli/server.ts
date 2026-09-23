@@ -1,3 +1,4 @@
+import { acquireCliProfileOwnership } from "./profileOwnership.ts";
 import * as Effect from "effect/Effect";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 
@@ -19,6 +20,7 @@ export const runServerCommandForProduct = <
 ) =>
   Effect.gen(function* () {
     const logLevel = yield* GlobalFlag.LogLevel;
+    yield* acquireCliProfileOwnership();
     const config = yield* resolveServerConfig(flags, logLevel, options);
     return yield* runServerForProduct(productEntry).pipe(
       Effect.provideService(ServerConfig, config),

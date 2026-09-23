@@ -21,6 +21,10 @@ import {
   profileMigrationDirectory,
   resolveMigratedProfileRoot,
 } from "@upcomputer/shared/profileMigration";
+import {
+  acquireProfileOwnership,
+  profileOwnershipDirectory,
+} from "@upcomputer/shared/profileOwnership";
 import * as NetService from "@upcomputer/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
@@ -72,6 +76,23 @@ if (isLocalTestVersion(Electron.app.getVersion())) {
   process.env.T3CODE_DISABLE_AUTO_UPDATE = "true";
   delete process.env.VITE_DEV_SERVER_URL;
   delete process.env.T3CODE_PORT;
+}
+
+// Acquire before any application storage. This gate covers cooperating versions,
+// not old binaries or unmanaged descendants; it does not activate migration.
+try {
+  const ownership = acquireProfileOwnership(
+    profileOwnershipDirectory(NodeOS.homedir()),
+    "application",
+  );
+  Electron.app.once("will-quit", () => ownership.release());
+} catch {
+  Electron.dialog.showErrorBox(
+    "Up.computer profile maintenance",
+    "Profile ownership is unavailable or maintenance is running. No profile has been opened. Close maintenance and retry; do not delete lock files.",
+  );
+  Electron.app.exit(1);
+  throw new Error("Profile ownership stopped initialization.");
 }
 
 // Must precede Clerk storage construction, not merely Electron.whenReady.

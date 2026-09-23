@@ -1,3 +1,7 @@
+import {
+  acquireProfileOwnership,
+  profileOwnershipDirectory,
+} from "../packages/shared/src/profileOwnership.ts";
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -74,7 +78,7 @@ for (const method of ["encryptString", "decryptString", "isEncryptionAvailable"]
 }
 Electron.dialog.showErrorBox = (title, message) => {
   if (title !== "Up.computer profile maintenance" || !message.includes("No profile has been opened")) throw new Error("Unexpected startup error");
-  fs.writeFileSync(path.join(home, "guard-observed"), "blocked");
+  fs.writeFileSync(path.join(home, "guard-observed"), message.startsWith("Profile ownership") ? "ownership" : "journal");
 };
 require(${JSON.stringify(main)});
 fs.writeFileSync(path.join(home, "unexpected-continuation"), "continued");
@@ -83,30 +87,43 @@ fs.writeFileSync(path.join(home, "unexpected-continuation"), "continued");
       const require = NodeModule.createRequire(
         new URL("../apps/desktop/package.json", import.meta.url),
       );
-      child = NodeChildProcess.spawn(require("electron"), [entry], {
-        env: {
-          HOME: home,
-          PATH: "/usr/bin:/bin",
-          TMPDIR: NodePath.join(home, "tmp"),
-          UPCOMPUTER_HOME: source,
-        },
-        stdio: "ignore",
-      });
-      closed = new Promise((resolve) => child.once("close", resolve));
-      const deadline = setTimeout(() => child.kill("SIGKILL"), 15000);
-      try {
-        const code = await new Promise((resolve, reject) => {
-          child.once("error", reject);
-          child.once("exit", resolve);
+      const launch = async () => {
+        child = NodeChildProcess.spawn(require("electron"), [entry], {
+          env: {
+            HOME: home,
+            PATH: "/usr/bin:/bin",
+            TMPDIR: NodePath.join(home, "tmp"),
+            UPCOMPUTER_HOME: source,
+          },
+          stdio: "ignore",
         });
-        NodeAssert.equal(code, 1);
-      } finally {
-        clearTimeout(deadline);
-      }
+        closed = new Promise((resolve) => child.once("close", resolve));
+        const deadline = setTimeout(() => child.kill("SIGKILL"), 15000);
+        try {
+          const code = await new Promise((resolve, reject) => {
+            child.once("error", reject);
+            child.once("exit", resolve);
+          });
+          NodeAssert.equal(code, 1);
+        } finally {
+          clearTimeout(deadline);
+        }
+      };
+      await launch();
       NodeAssert.equal(
         await NodeFSP.readFile(NodePath.join(home, "guard-observed"), "utf8"),
-        "blocked",
+        "journal",
       );
+      const maintenance = acquireProfileOwnership(profileOwnershipDirectory(home), "maintenance");
+      try {
+        await launch();
+        NodeAssert.equal(
+          await NodeFSP.readFile(NodePath.join(home, "guard-observed"), "utf8"),
+          "ownership",
+        );
+      } finally {
+        maintenance.release();
+      }
       for (const name of [
         "unexpected-crypto",
         "unexpected-continuation",

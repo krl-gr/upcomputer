@@ -7,6 +7,9 @@ backup/candidate copies, process-crash recovery, pre-activation rollback, and
 startup fencing. **Not activated:** no production CLI, startup migration trigger,
 native ownership adapter or complete data-reference adapter is provided yet.
 The mandatory adapter methods deliberately have no default implementations.
+A [cooperative native ownership gate](profile-ownership.md) now protects new
+desktop/CLI owners. It does not exclude old binaries or arbitrary external Git
+processes and is not substituted for the complete offline lease.
 
 The installed Alpha, working profiles, running agents and retained human-test
 dev were not migrated or restarted. Tests used newly created disposable homes,

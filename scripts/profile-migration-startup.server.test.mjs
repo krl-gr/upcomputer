@@ -1,3 +1,7 @@
+import {
+  acquireProfileOwnership,
+  profileOwnershipDirectory,
+} from "../packages/shared/src/profileOwnership.ts";
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -91,6 +95,23 @@ NodeTest.test(
       await NodeAssert.rejects(NodeFSP.stat(destination), { code: "ENOENT" });
       await NodeAssert.rejects(NodeFSP.stat(NodePath.join(source, "userdata")), { code: "ENOENT" });
       await migrateProfile(plan, { adapter });
+      const maintenance = acquireProfileOwnership(profileOwnershipDirectory(home), "maintenance");
+      try {
+        let gateBlocked = false;
+        const blockedOwner = launch();
+        for (const stream of [blockedOwner.stdout, blockedOwner.stderr])
+          stream.on("data", (chunk) => {
+            if (chunk.toString().includes("Profile ownership check failed (busy)"))
+              gateBlocked = true;
+          });
+        NodeAssert.notEqual(await closed, 0);
+        NodeAssert.ok(gateBlocked, "Expected native ownership exclusion before profile startup");
+        await NodeAssert.rejects(NodeFSP.stat(NodePath.join(destination, "userdata")), {
+          code: "ENOENT",
+        });
+      } finally {
+        maintenance.release();
+      }
       launch();
       let ready = false;
       for (let i = 0; i < 100 && child.exitCode === null; i++) {
@@ -110,6 +131,10 @@ NodeTest.test(
         await NodeTimersPromises.setTimeout(100);
       }
       NodeAssert.ok(ready, "Isolated backend did not become ready");
+      NodeAssert.throws(
+        () => acquireProfileOwnership(profileOwnershipDirectory(home), "maintenance"),
+        { code: "busy" },
+      );
       await NodeFSP.stat(NodePath.join(destination, "userdata", "state.sqlite"));
       await NodeAssert.rejects(NodeFSP.stat(NodePath.join(source, "userdata")), { code: "ENOENT" });
     } finally {
@@ -122,6 +147,8 @@ NodeTest.test(
           clearTimeout(deadline);
         }
       }
+      const released = acquireProfileOwnership(profileOwnershipDirectory(home), "maintenance");
+      released.release();
       await NodeFSP.rm(home, { recursive: true, force: true });
     }
   },

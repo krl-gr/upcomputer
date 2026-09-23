@@ -1,3 +1,4 @@
+import { acquireCliProfileOwnership } from "./profileOwnership.ts";
 import {
   CommandId,
   AuthAdministrativeScopes,
@@ -394,6 +395,7 @@ const runProjectMutation = Effect.fn("runProjectMutation")(function* (
   >,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
+  yield* acquireCliProfileOwnership();
   const config = yield* resolveCliAuthConfig(flags, logLevel);
   const minimumLogLevel = config.logLevel;
 
@@ -581,7 +583,10 @@ const projectMigrateConfigCommand = Command.make("migrate-config", {
     "Inspect or migrate legacy project configuration. This changes the project's Git working tree.",
   ),
   Command.withHandler((flags) =>
-    migrateProjectConfig(flags.workspace, flags.confirm).pipe(
+    Effect.andThen(
+      flags.confirm ? acquireCliProfileOwnership() : Effect.void,
+      migrateProjectConfig(flags.workspace, flags.confirm),
+    ).pipe(
       Effect.flatMap((result) =>
         Console.log(
           result === "confirmation-required"
