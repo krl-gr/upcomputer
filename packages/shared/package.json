@@ -230,6 +230,10 @@
     "./profileMigration": {
       "types": "./src/profileMigration.ts",
       "import": "./src/profileMigration.ts"
+    },
+    "./profileGitWorktrees": {
+      "types": "./src/profileGitWorktrees.ts",
+      "import": "./src/profileGitWorktrees.ts"
     }
   },
   "scripts": {

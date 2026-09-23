@@ -27,10 +27,13 @@ synthetic records and synthetic SQLite files. No working credentials were used.
 | Owners                                | Backend `server-runtime.json` includes a PID, but missing/stale records do not prove quiescence. Electron single-instance acquisition currently happens in Clerk configuration, after early storage construction. Agents, terminals and old binaries need native maintenance coordination.                                         |
 
 Worktree backlink repair is an **additional transaction participant**, not a
-string replacement inside the copied profile. It may change an external Git
-repository and needs its own validated backup/rollback protocol. The current
-candidate-only `prepare` hook is not authorization to mutate those external
-repositories. Profiles needing that repair cannot be enabled by a no-op adapter.
+string replacement inside the copied profile. `profileGitWorktrees.ts` now
+implements that participant for standard, absolute linked-worktree pointers.
+It snapshots external backlinks before publication, commits them only after
+candidate roots are published, and restores them before rollback quarantines
+those roots. Candidate preparation still cannot mutate external repositories.
+The native offline lease must cover these external repositories as well as the
+profile roots; the participant does not claim that a PID check provides that lease.
 
 ## Engine and commit protocol
 
@@ -61,8 +64,14 @@ permission to merge or overwrite it.
    Each directory rename is flushed on supported POSIX filesystems. A restart
    can recognize mixed staged/published roots by their recorded digests; merely
    finding a directory is not success.
-6. Validate the published candidates, confirm digests and lease ownership, then
-   persist `complete`. Only this journal state permits normal startup.
+6. Replay the versioned external participant's commit, if present, then validate
+   the published candidates, confirm digests and lease ownership, and persist
+   `complete`. Only this journal state permits normal startup.
+
+Jobs with an external participant use journal **version 2**, so older version-1
+engines reject them instead of silently skipping external repair. The participant
+ID is persisted and must match on resume/rollback. Validation receives a
+`candidate` or `published` phase: only the latter may require final backlinks.
 
 Files and directory metadata are flushed in order, including creation of the
 journal's parent directories. Windows directory fsync is not available through
@@ -90,8 +99,8 @@ trigger fallback to a fresh profile. No automatic backup pruning is implemented.
   while reclaiming the mutex requires explicit maintenance review; age alone
   never grants permission to steal a lock.
 - `rollbackProfileMigration`: available only before `complete`. Verify original
-  sources and any published candidates, record `rolling-back`, and quarantine
-  published candidates under the job directory. Originals remain in place.
+  sources and any published candidates, record `rolling-back`, restore external
+  references, and then quarantine published candidates under the job directory. Originals remain in place.
   Interrupted rollback resumes as rollback, not as forward migration.
 - `complete`: repeat is non-destructive. New activity in the destination is not
   overwritten. Automatic rollback is refused; restoring a pre-upgrade backup
@@ -139,3 +148,38 @@ participants, validate OS-encrypted catalog/key retention with real isolated
 Electron identities, and test fresh install, 0.0.31 upgrade, interruption,
 restoration and downgrade on macOS and Windows. Only then schedule maintenance
 of the working profile with its owner. No live migration is implied by this pass.
+
+## Structured-reference participants (follow-up)
+
+`packages/shared/src/profileGitWorktrees.ts` discovers standard linked worktrees
+under the owned backend `worktrees` directory. Its immutable `git-worktrees.json`
+records exact old/new backlink contents. A backlink already at the requested
+value is a replay, not another rewrite. Any independent change is a conflict;
+neither forward progress nor rollback overwrites it. Reciprocal Git
+pointer relationships and candidate `.git` files are rechecked. No Git hooks or
+commands are executed by the participant itself.
+
+Relative Git pointers, embedded main repositories, symlinks, nonstandard common
+directories and unclassified entries require review. Original worktree copies
+remain rollback material, not concurrently usable worktrees sharing one index.
+Native locking/retirement of old owners is still required before activation.
+
+The bundled Pi participant rewrites only selected runtime cursor/cwd fields and
+version-3 session headers in the copied candidate. Message bodies are streamed
+without modification. A combined disposable fixture verifies actual Git linkage,
+SQLite references and SDK session reopening, without sending a model request.
+This does not cover all project/orchestration/provider reference formats.
+
+Follow-up verification: **50 focused public tests**, **23 bundled regression and
+participant tests**, including interrupted external repair/rollback, foreign
+backlink conflicts, missing participant recovery, large session bodies, external
+session refusal and a cold WAL left by a killed fixture process. The two opt-in
+backend/macOS Electron startup probes remain the integrated startup checks;
+they are not OS encryption round-trip or installed Windows upgrade evidence.
+
+The backlink snapshot is sufficient only for the **pre-activation** rollback
+covered here, while the lease excludes Git activity. It is not a complete
+post-activation Git backup (indexes, refs and objects can subsequently change).
+A full restore/downgrade procedure must separately preserve/reconcile external
+repository state and newer worktree changes; restoring only the profile tree
+or only the saved backlink must not be advertised as a complete rollback.

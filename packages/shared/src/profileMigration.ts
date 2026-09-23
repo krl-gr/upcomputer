@@ -27,7 +27,16 @@ export interface ProfileMigrationAdapter {
   /** Rewrite only audited structured references in candidates, never in sources/backups. */
   readonly prepare: (roots: ReadonlyArray<ProfileMigrationCandidate>) => Promise<void>;
   /** Required native/SQLite/crypto/path validation. A successful byte copy is insufficient. */
-  readonly validate: (roots: ReadonlyArray<ProfileMigrationCandidate>) => Promise<void>;
+  readonly validate: (
+    roots: ReadonlyArray<ProfileMigrationCandidate>,
+    phase: "candidate" | "published",
+  ) => Promise<void>;
+  /** Versioned, replayable external transaction. Its journal must precede every external write. */
+  readonly external?: {
+    readonly id: string;
+    readonly commit: () => Promise<void>;
+    readonly rollback: () => Promise<void>;
+  };
 }
 
 export class ProfileMigrationError extends Error {
@@ -54,8 +63,9 @@ const RootState = Schema.Struct({
   candidateDigest: Schema.optional(Schema.String),
 });
 const Journal = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literals([1, 2]),
   planDigest: Schema.String,
+  externalId: Schema.optional(Schema.String),
   paths: Schema.Array(RootPath),
   phase: Schema.Literals([
     "copying",
@@ -243,6 +253,8 @@ function readJournal(path: string): Journal | null {
     if (!stat.isFile() || stat.size > 16384) return fail("invalid-journal");
     const journal = decodeJournal(NodeFS.readFileSync(path, "utf8"));
     if (
+      (journal.version === 1 && journal.externalId !== undefined) ||
+      (journal.version === 2 && !journal.externalId) ||
       journal.paths.length < 1 ||
       journal.paths.length > 2 ||
       journal.roots.length !== journal.paths.length ||
@@ -435,6 +447,16 @@ async function migrateProfileImpl(
   planInput: ProfileMigrationPlan,
   options: ProfileMigrationOptions,
 ): Promise<"complete"> {
+  const external = options.adapter.external;
+  if (
+    external &&
+    (typeof external.id !== "string" ||
+      external.id.trim().length === 0 ||
+      external.id.length > 128 ||
+      typeof external.commit !== "function" ||
+      typeof external.rollback !== "function")
+  )
+    fail("invalid-external-participant");
   const plan = normalize(planInput);
   await makeDurableJobDirectory(plan.directory);
   await assertControlLayout(plan);
@@ -449,6 +471,7 @@ async function migrateProfileImpl(
     if (
       journal &&
       (journal.planDigest !== identity ||
+        journal.externalId !== options.adapter.external?.id ||
         journal.roots.length !== plan.roots.length ||
         journal.roots.some((root, i) => root.id !== plan.roots[i]!.id))
     )
@@ -466,7 +489,14 @@ async function migrateProfileImpl(
       const roots = [];
       for (const root of plan.roots)
         roots.push({ id: root.id, sourceDigest: await treeDigest(root.source) });
-      journal = { version: 1, planDigest: identity, paths: plan.roots, phase: "copying", roots };
+      journal = {
+        version: options.adapter.external ? 2 : 1,
+        planDigest: identity,
+        paths: plan.roots,
+        phase: "copying",
+        roots,
+        ...(options.adapter.external ? { externalId: options.adapter.external.id } : {}),
+      };
       await writeJournal(plan, journal);
     }
     for (const root of plan.roots) {
@@ -502,7 +532,7 @@ async function migrateProfileImpl(
         source: candidatePath(plan, root.id),
       }));
       await options.adapter.prepare(candidates);
-      await options.adapter.validate(candidates);
+      await options.adapter.validate(candidates, "candidate");
       const roots = [];
       for (const root of plan.roots)
         roots.push({
@@ -528,7 +558,7 @@ async function migrateProfileImpl(
         fail("candidate-changed");
       candidates.push({ ...root, originalSource: root.source, source });
     }
-    await options.adapter.validate(candidates);
+    await options.adapter.validate(candidates, "candidate");
     for (const candidate of candidates) {
       if (
         (await treeDigest(candidate.source)) !==
@@ -564,12 +594,15 @@ async function migrateProfileImpl(
       }
       await options.checkpoint?.("publishing", root.id);
     }
+    await lease.assertHeld();
+    await options.adapter.external?.commit();
     await options.adapter.validate(
       plan.roots.map((root) => ({
         ...root,
         originalSource: root.source,
         source: root.destination,
       })),
+      "published",
     );
     await lease.assertHeld();
     for (const root of plan.roots) {
@@ -612,7 +645,11 @@ async function rollbackProfileMigrationImpl(
     lease = await options.adapter.acquireOfflineLease(plan);
     await lease.assertHeld();
     let journal = readJournal(journalPath(plan))!;
-    if (journal.planDigest !== planDigest(plan)) fail("plan-mismatch");
+    if (
+      journal.planDigest !== planDigest(plan) ||
+      journal.externalId !== options.adapter.external?.id
+    )
+      fail("plan-mismatch");
     if (journal.phase === "complete") fail("activated-profile-requires-explicit-restore");
     if (journal.phase === "rolled-back") return "rolled-back";
     for (const root of plan.roots) {
@@ -630,6 +667,8 @@ async function rollbackProfileMigrationImpl(
     }
     journal = { ...journal, phase: "rolling-back" };
     await writeJournal(plan, journal);
+    await lease.assertHeld();
+    await options.adapter.external?.rollback();
     const quarantine = NodePath.join(plan.directory, "rolled-back");
     await NodeFSP.mkdir(quarantine, { recursive: true, mode: 0o700 });
     for (const root of plan.roots) {
