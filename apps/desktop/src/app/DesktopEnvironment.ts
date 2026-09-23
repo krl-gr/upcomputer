@@ -184,8 +184,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const userDataDirName = localTest
     ? LOCAL_TEST_APP_NAME
     : isDevelopment
-      ? "UpComputer Dev"
-      : "UpComputer";
+      ? "Up.computer (Dev)"
+      : "Up.computer";
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({

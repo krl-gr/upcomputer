@@ -148,7 +148,7 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/UpComputer");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/Up.computer");
       }),
       { existingUserDataDirectoryName: "UpComputer (Alpha)" },
     ),
@@ -160,9 +160,9 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/UpComputer");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/Up.computer");
       }),
-      { existingUserDataDirectoryName: "UpComputer" },
+      { existingUserDataDirectoryName: "Up.computer" },
     ),
   );
 
@@ -182,11 +182,11 @@ describe("DesktopAppIdentity", () => {
         const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
 
         assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.path, "/Users/alice/Library/Application Support/UpComputer");
+        assert.equal(error.path, "/Users/alice/Library/Application Support/Up.computer");
         assert.strictEqual(error.cause, cause);
         assert.equal(
           error.message,
-          'Failed to inspect desktop user-data path at "/Users/alice/Library/Application Support/UpComputer".',
+          'Failed to inspect desktop user-data path at "/Users/alice/Library/Application Support/Up.computer".',
         );
       }),
       { legacyPathProbeError: cause },
@@ -217,7 +217,7 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         assert.equal(
           yield* identity.resolveUserDataPath,
-          "/Users/alice/AppData/Roaming/UpComputer",
+          "/Users/alice/AppData/Roaming/Up.computer",
         );
       }),
       { existingUserDataDirectoryName: "t3code", environment: { platform: "win32" } },

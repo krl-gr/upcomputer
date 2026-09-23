@@ -54,7 +54,7 @@ describe("DesktopEnvironment", () => {
         ),
       );
       assert.equal(environment.baseDir, "/Users/alice/.upcomputer");
-      assert.equal(environment.userDataDirName, "UpComputer");
+      assert.equal(environment.userDataDirName, "Up.computer");
     }),
   );
   it.effect(

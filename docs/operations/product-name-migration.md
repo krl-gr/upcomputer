@@ -10,7 +10,7 @@ reference URLs, and historical evidence remain intact.
 | -------------------------------------- | -------------------------------------------------------------- |
 | Backend home                           | `~/.upcomputer` (or explicit `UPCOMPUTER_HOME` / `--base-dir`) |
 | Production database                    | `~/.upcomputer/userdata/state.sqlite`                          |
-| Electron profile                       | `UpComputer`; development `UpComputer Dev`                     |
+| Electron profile                       | `Up.computer`; development `Up.computer (Dev)`                 |
 | Workspace packages                     | `@upcomputer/*`                                                |
 | CLI/package                            | `upcomputer` / `@upcomputer/server`; no `t3` launch alias      |
 | Configuration environment              | `UPCOMPUTER_*`; no `T3CODE_*` lookup or emission               |

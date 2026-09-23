@@ -35,7 +35,7 @@ updater can install the new release, whose updater then uses the new cache.
 Database, chats, tasks, settings, and Electron profile paths are resolved explicitly
 by `DesktopEnvironment` / `DesktopAppIdentity`, independently of package name.
 The standalone defaults are `~/.upcomputer/userdata/state.sqlite` and the
-`UpComputer` Electron profile (`UpComputer Dev` in development). No old T3 home,
+`Up.computer` Electron profile (`Up.computer (Dev)` in development). No old T3 home,
 profile, environment variable, or commit-metadata alias is read automatically.
 Copying existing data is a separate, stopped-app operation; the source is retained.
 
