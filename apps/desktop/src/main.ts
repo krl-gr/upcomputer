@@ -67,6 +67,7 @@ import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import { isLocalTestVersion, LOCAL_TEST_HOME_NAME } from "./app/localTestProfile.ts";
+import { configureLegacyEncryptionIdentity } from "./app/legacyEncryptionIdentity.ts";
 
 // Apply before Clerk/config initialization, including Finder launches with no env.
 if (isLocalTestVersion(Electron.app.getVersion())) {
@@ -109,6 +110,10 @@ if (!isLocalTestVersion(Electron.app.getVersion())) {
     throw new Error("Profile migration startup guard stopped initialization.");
   }
 }
+
+// Must run before Clerk construction AND Electron readiness. The visible product
+// name is still configured later by DesktopAppIdentity; native keys remain usable.
+configureLegacyEncryptionIdentity(Electron.app);
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());
 const configuredBaseDir =

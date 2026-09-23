@@ -186,3 +186,12 @@ post-activation Git backup (indexes, refs and objects can subsequently change).
 A full restore/downgrade procedure must separately preserve/reconcile external
 repository state and newer worktree changes; restoring only the profile tree
 or only the saved backlink must not be advertised as a complete rollback.
+
+## Subsequent macOS native evidence
+
+The [Tart catalog validation](native-profile-macos-validation.md) now exercises
+real OS-backed encryption during candidate and published validation, a cold guest
+restart, corrupt-ciphertext refusal and preservation of newer catalog state. It
+also found and fixed early application-name compatibility. These are synthetic
+catalog tests, not a complete native ownership/restore adapter or signed-candidate
+upgrade. The older crypto-sentinel startup tests above remain distinct.

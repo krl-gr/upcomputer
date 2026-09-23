@@ -185,7 +185,7 @@ The [offline coordinator and startup fencing](native-profile-coordinator.md) now
 implement verified copies, process-interruption recovery and pre-activation
 rollback. This is **not automatic profile migration**: native ownership leases,
 production reference-rewriting/validation adapters, transactional Git worktree
-repair and actual encrypted-catalog validation are still release gates. There
+repair and complete cross-platform encrypted-state validation are still release gates. There
 is no production migration command or automatic launcher yet. A native fresh
 install/0.0.31 upgrade/downgrade test is required on each supported platform.
 Working Alpha and its live profile remain outside development verification.
@@ -206,3 +206,13 @@ Working Alpha and its live profile remain outside development verification.
   marketing schema build passed. These are not native installed-app upgrade tests.
 - No installed Alpha, real profile, real provider credentials or deployed cloud
   resources were migrated. The human-test dev environment was not restarted.
+
+### macOS encryption identity bridge
+
+[Real Tart catalog validation](native-profile-macos-validation.md) reproduced a
+separate package-rename regression: changing the early Electron name selects a
+different macOS Safe Storage context. `legacyEncryptionIdentity.ts` temporarily
+retains the old encryption boot name before Clerk/readiness, while package and
+visible branding stay UpComputer. The catalog survived verified relocation and
+a cold guest restart. This does not establish full profile/Clerk/browser restore
+or authorize automatic migration; the bridge has explicit retirement gates.

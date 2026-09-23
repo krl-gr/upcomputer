@@ -93,3 +93,7 @@ startup: stop owners first, then acquire exclusive ownership, and retain it acro
 all verification/publication/restore steps. It must not try to upgrade a shared
 application lease in place. The ordinary desktop entry deliberately cannot open
 its normal UI while a durable migration needs recovery.
+
+The later [macOS Tart validation](native-profile-macos-validation.md) covers native
+catalog encryption in a separate guest. It does not broaden this gate's ownership
+coverage or replace the remaining complete-profile/restore requirements.
