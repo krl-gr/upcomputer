@@ -17,7 +17,6 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { PROJECT_CONFIG_FILE_NAME, type ProjectConfigFile } from "@upcomputer/contracts";
-import { LEGACY_PROJECT_CONFIG_FILE_NAME } from "@upcomputer/shared/legacyProjectConfig";
 import { ProjectConfigFileFromJson } from "@upcomputer/shared/projectConfigFile";
 
 const decodeProjectConfigFileJson = Schema.decodeEffect(ProjectConfigFileFromJson);
@@ -67,15 +66,8 @@ export const make = Effect.gen(function* () {
   const load: ProjectConfigFileLoader["Service"]["load"] = Effect.fn(
     "ProjectConfigFileLoader.load",
   )(function* (workspaceRoot) {
-    let filePath = path.join(workspaceRoot, PROJECT_CONFIG_FILE_NAME);
+    const filePath = path.join(workspaceRoot, PROJECT_CONFIG_FILE_NAME);
     const raw = yield* fileSystem.readFileString(filePath).pipe(
-      Effect.catchTags({
-        PlatformError: (error) => {
-          if (error.reason._tag !== "NotFound") return Effect.fail(error);
-          filePath = path.join(workspaceRoot, LEGACY_PROJECT_CONFIG_FILE_NAME);
-          return fileSystem.readFileString(filePath);
-        },
-      }),
       Effect.map(Option.some),
       Effect.catchTags({
         PlatformError: (error) =>

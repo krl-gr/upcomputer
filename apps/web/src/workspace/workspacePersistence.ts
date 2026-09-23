@@ -1,4 +1,3 @@
-import { migratingUiStorage } from "../lib/legacyUiStorage";
 import { scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@upcomputer/contracts";
 
@@ -84,7 +83,7 @@ export function sanitizePersistedChatWorkspaceState(value: unknown): PersistedCh
 export function readPersistedChatWorkspaceState(): PersistedChatWorkspaceStateV1 {
   if (typeof window === "undefined") return EMPTY_CHAT_WORKSPACE_STATE;
   try {
-    const raw = migratingUiStorage(window.localStorage).getItem(CHAT_WORKSPACE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(CHAT_WORKSPACE_STORAGE_KEY);
     return raw ? sanitizePersistedChatWorkspaceState(JSON.parse(raw)) : EMPTY_CHAT_WORKSPACE_STATE;
   } catch {
     return EMPTY_CHAT_WORKSPACE_STATE;
@@ -94,10 +93,7 @@ export function readPersistedChatWorkspaceState(): PersistedChatWorkspaceStateV1
 export function writePersistedChatWorkspaceState(state: PersistedChatWorkspaceStateV1): void {
   if (typeof window === "undefined") return;
   try {
-    migratingUiStorage(window.localStorage).setItem(
-      CHAT_WORKSPACE_STORAGE_KEY,
-      JSON.stringify(state),
-    );
+    window.localStorage.setItem(CHAT_WORKSPACE_STORAGE_KEY, JSON.stringify(state));
   } catch {
     // Persistence must never block the workspace.
   }

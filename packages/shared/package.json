@@ -215,17 +215,13 @@
       "types": "./src/devProxy.ts",
       "import": "./src/devProxy.ts"
     },
-    "./legacyEnvironment": {
-      "types": "./src/legacyEnvironment.ts",
-      "import": "./src/legacyEnvironment.ts"
-    },
     "./environmentNames": {
       "types": "./src/environmentNames.ts",
       "import": "./src/environmentNames.ts"
     },
-    "./legacyProjectConfig": {
-      "types": "./src/legacyProjectConfig.ts",
-      "import": "./src/legacyProjectConfig.ts"
+    "./projectConfigReadError": {
+      "types": "./src/projectConfigReadError.ts",
+      "import": "./src/projectConfigReadError.ts"
     }
   },
   "scripts": {

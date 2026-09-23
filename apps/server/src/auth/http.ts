@@ -1,5 +1,3 @@
-import * as Result from "effect/Result";
-import { legacySessionCookieName } from "./legacyCookie.ts";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -214,36 +212,6 @@ export const authHttpApiLayer = HttpApiBuilder.group(
             yield* annotateEnvironmentRequest(args.endpoint.name);
             const request = yield* HttpServerRequest.HttpServerRequest;
             const state = yield* serverAuth.getSessionState(request);
-            const legacyName = legacySessionCookieName(sessions.cookieName);
-            const legacy = request.cookies[legacyName];
-            if (
-              state.authenticated &&
-              state.sessionMethod === "browser-session-cookie" &&
-              legacy &&
-              !request.cookies[sessions.cookieName]
-            ) {
-              const cookies = yield* Effect.fromResult(
-                Cookies.set(Cookies.empty, sessions.cookieName, legacy, {
-                  ...(state.expiresAt ? { expires: DateTime.toDate(state.expiresAt) } : {}),
-                  httpOnly: true,
-                  path: "/",
-                  sameSite: "lax",
-                }).pipe(
-                  Result.flatMap((cookies) =>
-                    Cookies.set(cookies, legacyName, "", {
-                      maxAge: 0,
-                      httpOnly: true,
-                      path: "/",
-                      sameSite: "lax",
-                    }),
-                  ),
-                ),
-              ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")));
-              yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-                Effect.succeed(HttpServerResponse.mergeCookies(response, cookies)),
-              );
-              yield* appendCredentialResponseHeaders;
-            }
             return state;
           },
           Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>

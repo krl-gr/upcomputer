@@ -1,8 +1,8 @@
 import { expect, it } from "vite-plus/test";
 import { ProjectReadFileError } from "@upcomputer/contracts";
-import { isMissingProjectConfigFile } from "./legacyProjectConfig.ts";
+import { isMissingProjectConfigFile } from "./projectConfigReadError.ts";
 
-it("only permits fallback for an explicit missing-file result", () => {
+it("recognizes an explicit missing-file result", () => {
   const base = {
     cwd: "/fixture",
     relativePath: "upcomputer.json",

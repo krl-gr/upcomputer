@@ -12,7 +12,7 @@ export const UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE =
 export const UPCOMPUTER_RELEASE_CAPABILITIES = Object.freeze({
   bundledDesktopBackend: true,
   localProviders: true,
-  t3ConnectToBundledDesktop: true,
+  connectToBundledDesktop: true,
   npmRemoteServerDistribution: false,
   sshRemoteServerBootstrap: false,
   remoteServerSelfUpdate: false,

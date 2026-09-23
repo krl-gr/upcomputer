@@ -6,19 +6,19 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
 import { useT3ConnectAuthPrompt } from "./useT3ConnectAuthPrompt";
 
-export function T3ConnectSidebarSignIn() {
+export function UpcomputerConnectSidebarSignIn() {
   if (!hasCloudPublicConfig()) return null;
 
-  return <ConfiguredT3ConnectSidebarSignIn />;
+  return <ConfiguredUpcomputerConnectSidebarSignIn />;
 }
 
-export function T3ConnectSidebarAvatar() {
+export function UpcomputerConnectSidebarAvatar() {
   if (!hasCloudPublicConfig()) return null;
 
-  return <ConfiguredT3ConnectSidebarAvatar />;
+  return <ConfiguredUpcomputerConnectSidebarAvatar />;
 }
 
-function ConfiguredT3ConnectSidebarAvatar() {
+function ConfiguredUpcomputerConnectSidebarAvatar() {
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded || !isSignedIn) return null;
@@ -43,7 +43,7 @@ function ConfiguredT3ConnectSidebarAvatar() {
   );
 }
 
-function ConfiguredT3ConnectSidebarSignIn() {
+function ConfiguredUpcomputerConnectSidebarSignIn() {
   const { isLoaded, isSignedIn } = useAuth();
   const { authPrompt, openAuthPrompt } = useT3ConnectAuthPrompt();
 
@@ -59,7 +59,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
             onClick={openAuthPrompt}
           >
             <LogInIcon className="size-4 shrink-0" />
-            <span>Sign in to T3 Connect</span>
+            <span>Sign in to UpComputer Connect</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

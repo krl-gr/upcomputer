@@ -14,7 +14,7 @@ export const headlessRelayClientTracingLayer = makeRelayClientTracingLayer(
 );
 
 export const serverRelayBrokerTracingLayer = makeRelayClientTracingLayer(relayClientTracingConfig, {
-  serviceName: "t3-server",
+  serviceName: "upcomputer-server",
   runtime: "node",
   client: "environment-server",
   component: "relay-broker",

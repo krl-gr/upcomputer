@@ -366,8 +366,8 @@ describe("DesktopServerExposure", () => {
         );
       }),
       {
-        T3CODE_DESKTOP_LAN_HOST: "10.0.0.7",
-        T3CODE_DESKTOP_HTTPS_ENDPOINTS: "https://public.example.test",
+        UPCOMPUTER_DESKTOP_LAN_HOST: "10.0.0.7",
+        UPCOMPUTER_DESKTOP_HTTPS_ENDPOINTS: "https://public.example.test",
       },
     ),
   );
@@ -466,7 +466,7 @@ describe("DesktopServerExposure", () => {
         ]);
       }),
       {
-        T3CODE_DESKTOP_HTTPS_ENDPOINTS:
+        UPCOMPUTER_DESKTOP_HTTPS_ENDPOINTS:
           "https://desktop.example.ts.net,http://desktop.example.test:3773,not-a-url",
       },
     ),

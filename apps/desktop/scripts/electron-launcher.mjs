@@ -110,13 +110,13 @@ export function makeDevelopmentLauncherScript({
 }) {
   const envEntries = [
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
-    ["T3CODE_PORT", environment.T3CODE_PORT],
+    ["UPCOMPUTER_PORT", environment.UPCOMPUTER_PORT],
     ["UPCOMPUTER_HOME", environment.UPCOMPUTER_HOME],
-    ["T3CODE_HOME", environment.T3CODE_HOME],
-    ["T3CODE_COMMIT_HASH", environment.T3CODE_COMMIT_HASH],
-    ["T3CODE_OTLP_TRACES_URL", environment.T3CODE_OTLP_TRACES_URL],
-    ["T3CODE_OTLP_EXPORT_INTERVAL_MS", environment.T3CODE_OTLP_EXPORT_INTERVAL_MS],
-    ["T3CODE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
+    ["UPCOMPUTER_HOME", environment.UPCOMPUTER_HOME],
+    ["UPCOMPUTER_COMMIT_HASH", environment.UPCOMPUTER_COMMIT_HASH],
+    ["UPCOMPUTER_OTLP_TRACES_URL", environment.UPCOMPUTER_OTLP_TRACES_URL],
+    ["UPCOMPUTER_OTLP_EXPORT_INTERVAL_MS", environment.UPCOMPUTER_OTLP_EXPORT_INTERVAL_MS],
+    ["UPCOMPUTER_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
   ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
   return [
     "#!/bin/sh",
@@ -124,7 +124,7 @@ export function makeDevelopmentLauncherScript({
       ([name, value]) =>
         `if [ -z "\${${name}:-}" ]; then export ${name}=${shellSingleQuote(value)}; fi`,
     ),
-    `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
+    `exec ${shellSingleQuote(electronBinaryPath)} --upcomputer-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
     "",
   ].join("\n");
 }

@@ -17,8 +17,6 @@ export interface UpcomputerPublicConfig {
   readonly relayClientOtlpTracesToken: string | undefined;
 }
 
-import { normalizeUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
-
 type Environment = Readonly<Record<string, string | undefined>>;
 
 const REPO_ROOT = NodePath.dirname(
@@ -32,16 +30,14 @@ export function loadRepoEnv({
   readonly baseEnv?: Environment;
   readonly repoRoot?: string;
 } = {}): Record<string, string | undefined> {
-  const rootEnv = normalizeUpcomputerEnvironment(readEnvFile(NodePath.join(repoRoot, ".env")));
-  const localEnv = normalizeUpcomputerEnvironment(
-    readEnvFile(NodePath.join(repoRoot, ".env.local")),
-  );
+  const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
+  const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
   const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
 
   return {
     ...rootEnv,
     ...localEnv,
-    ...normalizeUpcomputerEnvironment(baseEnv),
+    ...baseEnv,
     ...(config.clerkPublishableKey
       ? {
           UPCOMPUTER_CLERK_PUBLISHABLE_KEY: config.clerkPublishableKey,
@@ -66,8 +62,6 @@ export function loadRepoEnv({
       ? {
           UPCOMPUTER_RELAY_URL: config.relayUrl,
           VITE_UPCOMPUTER_RELAY_URL: config.relayUrl,
-          // Compatibility with renderer builds that still consume the old Vite define.
-          VITE_T3CODE_RELAY_URL: config.relayUrl,
         }
       : {}),
     ...(config.mobileOtlpTracesUrl
@@ -128,12 +122,7 @@ export function resolvePublicConfig(...sources: readonly Environment[]): Upcompu
       "UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID",
       "VITE_CLERK_CLI_OAUTH_CLIENT_ID",
     ),
-    relayUrl: firstNonEmpty(
-      sources,
-      "UPCOMPUTER_RELAY_URL",
-      "VITE_UPCOMPUTER_RELAY_URL",
-      "VITE_T3CODE_RELAY_URL",
-    ),
+    relayUrl: firstNonEmpty(sources, "UPCOMPUTER_RELAY_URL", "VITE_UPCOMPUTER_RELAY_URL"),
     mobileOtlpTracesUrl: firstNonEmpty(
       sources,
       "UPCOMPUTER_MOBILE_OTLP_TRACES_URL",
@@ -169,7 +158,7 @@ export function resolvePublicConfig(...sources: readonly Environment[]): Upcompu
 
 function firstNonEmpty(sources: readonly Environment[], ...names: readonly string[]) {
   for (const original of sources) {
-    const source = normalizeUpcomputerEnvironment(original);
+    const source = original;
     for (const name of names) {
       const value = source[name]?.trim();
       if (value) {

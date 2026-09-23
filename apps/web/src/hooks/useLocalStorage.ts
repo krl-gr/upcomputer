@@ -1,4 +1,3 @@
-import { migratingUiStorage } from "../lib/legacyUiStorage";
 import * as Schema from "effect/Schema";
 import * as Record from "effect/Record";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
@@ -18,7 +17,7 @@ export class LocalStorageOperationError extends Schema.TaggedErrorClass<LocalSto
 
 const isomorphicLocalStorage: Storage =
   typeof window !== "undefined"
-    ? migratingUiStorage(window.localStorage)
+    ? window.localStorage
     : (function () {
         const store = new Map<string, string>();
         return {

@@ -1,5 +1,4 @@
 import { AuthEnvironmentBootstrapTokenType } from "./auth.ts";
-import { LegacyEnvironmentBootstrapTokenType } from "./legacyNames.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -31,7 +30,7 @@ export type ServerSelfUpdateMethod = typeof ServerSelfUpdateMethod.Type;
 
 /** What update path a client should offer for a server: one of the RPC
     self-update methods above, or "desktop-managed" when the backend's
-    version belongs to the T3 Code desktop app supervising it — updating the
+    version belongs to the UpComputer desktop app supervising it — updating the
     app on that machine is the only way to update the server. */
 export const ServerSelfUpdateCapability = Schema.Literals([
   "boot-service",
@@ -41,9 +40,7 @@ export const ServerSelfUpdateCapability = Schema.Literals([
 export type ServerSelfUpdateCapability = typeof ServerSelfUpdateCapability.Type;
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
-  bootstrapTokenType: Schema.optionalKey(
-    Schema.Literals([AuthEnvironmentBootstrapTokenType, LegacyEnvironmentBootstrapTokenType]),
-  ),
+  bootstrapTokenType: Schema.optionalKey(Schema.Literal(AuthEnvironmentBootstrapTokenType)),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.settle / thread.unsettle commands. Absent on

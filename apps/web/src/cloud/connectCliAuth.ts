@@ -1,4 +1,4 @@
-import { CONNECT_AUTH_STATE_KEY, readConnectAuthState } from "./legacyConnectAuthState";
+import { CONNECT_AUTH_STATE_KEY, readConnectAuthState } from "./connectAuthState";
 import {
   buildConnectClerkAuthorizeUrl,
   connectCallbackUrl,

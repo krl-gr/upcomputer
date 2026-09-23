@@ -1,4 +1,4 @@
-import { openMigratedBrowserDatabase } from "../lib/legacyIndexedDb";
+import { openBrowserDatabase } from "../lib/browserDatabase";
 import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
@@ -45,7 +45,7 @@ function dpopError(message: string, cause?: unknown) {
 
 function openDpopDatabase(): Effect.Effect<IDBDatabase, BrowserDpopError> {
   return Effect.tryPromise({
-    try: () => openMigratedBrowserDatabase("proofKeys"),
+    try: () => openBrowserDatabase("proofKeys"),
     catch: (cause) =>
       dpopError("Could not migrate DPoP key storage. Close other app tabs and retry.", cause),
   });

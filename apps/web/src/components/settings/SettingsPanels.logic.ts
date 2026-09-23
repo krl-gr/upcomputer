@@ -1,4 +1,3 @@
-import { migratingUiStorage } from "../../lib/legacyUiStorage";
 import type {
   ProviderDriverKind,
   ProviderInstanceConfig,
@@ -25,8 +24,7 @@ const LAST_ENABLED_PROJECT_GROUPING_MODE_KEY = "upcomputer:last-enabled-project-
 
 export function readLastEnabledProjectGroupingMode(): SidebarProjectGroupingMode {
   try {
-    return migratingUiStorage(localStorage).getItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY) ===
-      "repository_path"
+    return localStorage.getItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY) === "repository_path"
       ? "repository_path"
       : "repository";
   } catch {
@@ -37,7 +35,7 @@ export function readLastEnabledProjectGroupingMode(): SidebarProjectGroupingMode
 export function rememberEnabledProjectGroupingMode(mode: SidebarProjectGroupingMode): void {
   if (mode === "separate") return;
   try {
-    migratingUiStorage(localStorage).setItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY, mode);
+    localStorage.setItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY, mode);
   } catch {
     // Storage can be unavailable in restricted browser contexts.
   }

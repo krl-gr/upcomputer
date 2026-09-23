@@ -6,11 +6,10 @@ import {
   AuthAccessTokenType,
   AuthTokenExchangeGrantType,
 } from "./auth.ts";
-import { LegacyEnvironmentBootstrapTokenType } from "./legacyNames.ts";
 
 const decode = Schema.decodeUnknownSync(AuthTokenExchangeRequest);
-describe("bootstrap protocol migration", () => {
-  it.each([AuthEnvironmentBootstrapTokenType, LegacyEnvironmentBootstrapTokenType])(
+describe("UpComputer bootstrap protocol", () => {
+  it.each([AuthEnvironmentBootstrapTokenType])(
     "accepts the supported type %s",
     (subject_token_type) => {
       expect(
@@ -23,11 +22,11 @@ describe("bootstrap protocol migration", () => {
       ).toBe(subject_token_type);
     },
   );
-  it("does not broaden acceptance to arbitrary token types", () => {
+  it("rejects the retired T3 token type", () => {
     expect(() =>
       decode({
         grant_type: AuthTokenExchangeGrantType,
-        subject_token_type: "unrecognized",
+        subject_token_type: "urn:t3:params:oauth:token-type:environment-bootstrap",
         subject_token: "synthetic-pairing-fixture",
         requested_token_type: AuthAccessTokenType,
       }),

@@ -34,21 +34,20 @@ updater can install the new release, whose updater then uses the new cache.
 
 Database, chats, tasks, settings, and Electron profile paths are resolved explicitly
 by `DesktopEnvironment` / `DesktopAppIdentity`, independently of package name.
-They do **not** move in this change. Existing legacy profile/home directories are
-still recognized, avoiding a blank profile after upgrading. New installs already
-prefer `.upcomputer` and the `Up.computer` Electron profile. The legacy commit field
-is read-only compatibility; new packages emit only the new field.
+The standalone defaults are `~/.upcomputer/userdata/state.sqlite` and the
+`UpComputer` Electron profile (`UpComputer Dev` in development). No old T3 home,
+profile, environment variable, or commit-metadata alias is read automatically.
+Copying existing data is a separate, stopped-app operation; the source is retained.
 
-Legacy path lookup strings, environment-variable compatibility, upstream workspace
-namespaces, and third-party copyright/license notices are not product branding.
-Do not remove those with a global text replacement or erase upstream attribution.
+Upstream copyright/license notices and attribution are retained. Technical runtime
+aliases are not attribution. See `product-name-migration.md` for the current scope.
 
 ## Verification
 
 Focused packaging tests exercise the installed electron-builder `AppInfo`, not
 just our input literals: publisher, product/executable names, updater cache, and
-application ID. Identity tests cover new/legacy commit metadata and retained
-Windows profiles. Desktop and packaging-script typechecks also cover both WSL
+application ID. Identity tests cover canonical commit metadata, ignored old metadata, and
+explicitly resolved profiles. Desktop and packaging-script typechecks also cover both WSL
 marker producers and its consumer.
 
 Before release, still run native Windows checks on an isolated machine:
@@ -61,13 +60,3 @@ Before release, still run native Windows checks on an isolated machine:
 
 Configuration/unit tests on macOS are not proof of a successful Windows install
 or upgrade. Do not use a working user's profile for these tests.
-
-## Local standalone profile update
-
-The earlier legacy-directory retention described above has been superseded for
-the standalone build. Default backend state is now strictly `~/.upcomputer`,
-and the Electron profile is `UpComputer` (`UpComputer Dev` for development).
-Old T3 directories and `T3CODE_HOME` are not automatically adopted. The generic
-native migration/ownership system and legacy encryption-name override were
-removed; copying the user's data is a separate, stopped-app operation. Existing
-source profiles remain untouched. See `product-name-migration.md`.

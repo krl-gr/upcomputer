@@ -1,4 +1,3 @@
-import { LegacyEnvironmentBootstrapTokenType } from "./legacyNames.ts";
 import * as Schema from "effect/Schema";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
@@ -176,10 +175,7 @@ export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetada
 export const AuthTokenExchangeRequest = Schema.Struct({
   grant_type: Schema.Literal(AuthTokenExchangeGrantType),
   subject_token: TrimmedNonEmptyString,
-  subject_token_type: Schema.Literals([
-    AuthEnvironmentBootstrapTokenType,
-    LegacyEnvironmentBootstrapTokenType,
-  ]),
+  subject_token_type: Schema.Literals([AuthEnvironmentBootstrapTokenType]),
   requested_token_type: Schema.Literal(AuthAccessTokenType),
   scope: Schema.optionalKey(TrimmedNonEmptyString),
   client_label: Schema.optionalKey(TrimmedNonEmptyString),

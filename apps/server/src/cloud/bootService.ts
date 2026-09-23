@@ -19,16 +19,16 @@ import * as ProcessRunner from "../processRunner.ts";
 import { ensurePinnedRuntimeInstalled, pinnedRuntimePaths } from "./pinnedRuntime.ts";
 
 /**
- * Installs T3 Code as a per-user boot service. Linux-only for now: systemd
+ * Installs UpComputer as a per-user boot service. Linux-only for now: systemd
  * user unit + loginctl enable-linger. The service runs a stable or pinned
  * runtime — never an ephemeral `npx t3` cache whose eviction could break
  * startup.
  */
 
-const BOOT_SERVICE_NAME = "t3code";
+const BOOT_SERVICE_NAME = "upcomputer";
 
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
-export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
+export const BOOT_SERVICE_UNIT_ENV = "UPCOMPUTER_BOOT_SERVICE_UNIT";
 
 const EPHEMERAL_CACHE_SEGMENTS = [
   "/_npx/", // npx
@@ -72,7 +72,7 @@ export interface BootServicePlan {
   /** Absolute path of the node binary running this CLI. */
   readonly nodePath: string;
   /** Absolute path of the pinned t3 entry point the unit will run. */
-  readonly t3EntryPath: string;
+  readonly serverEntryPath: string;
   readonly baseDir: string;
   readonly logPath: string;
   readonly unitPath: string;
@@ -90,7 +90,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
   // relay connection, and Restart=always covers early-boot failures.
   return [
     "[Unit]",
-    "Description=T3 Code server",
+    "Description=UpComputer server",
     // Give up after 5 crashes in 5 minutes so a persistently broken install
     // (deleted runtime, broken workspace) stops instead of restarting every
     // 5s forever and growing the unrotated append log without bound.
@@ -100,9 +100,9 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "[Service]",
     "Type=simple",
     "WorkingDirectory=%h",
-    `Environment=T3CODE_HOME=${quoteSystemdValue(plan.baseDir)}`,
+    `Environment=UPCOMPUTER_HOME=${quoteSystemdValue(plan.baseDir)}`,
     `Environment=${BOOT_SERVICE_UNIT_ENV}=${BOOT_SERVICE_UNIT_FILE}`,
-    `ExecStart=${quoteSystemdValue(plan.nodePath)} ${quoteSystemdValue(plan.t3EntryPath)} serve`,
+    `ExecStart=${quoteSystemdValue(plan.nodePath)} ${quoteSystemdValue(plan.serverEntryPath)} serve`,
     "Restart=always",
     "RestartSec=5",
     `StandardOutput=append:${escapeSystemdSpecifiers(plan.logPath)}`,
@@ -145,7 +145,7 @@ export class BootServiceInstallError extends Schema.TaggedErrorClass<BootService
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not set up the T3 Code background service.";
+    return "Could not set up the UpComputer background service.";
   }
 }
 
@@ -293,7 +293,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     : host.cliEntryPath;
   const plan: BootServicePlan = {
     nodePath: host.execPath,
-    t3EntryPath: plannedEntryPath,
+    serverEntryPath: plannedEntryPath,
     baseDir: input.baseDir,
     logPath,
     unitPath,
@@ -412,7 +412,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     const unit = yield* fs.readFileString(unitPath);
     // A unit is current only if it matches what install would write now (an
     // older CLI wrote a different runtime/node path) AND the entry point it
-    // references still exists (a pinned runtime under ~/.t3 can be deleted to
+    // references still exists (a pinned runtime under ~/.upcomputer can be deleted to
     // reclaim space). Either mismatch makes connect offer a repair.
     const entryExists = yield* fs.exists(plannedEntryPath);
     const current = unit === renderBootServiceUnit(plan) && entryExists;

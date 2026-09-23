@@ -1,4 +1,3 @@
-import { LegacyEnvironmentDescriptorPath } from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 
 import { environmentEndpointUrl } from "./endpoint.ts";
@@ -14,15 +13,5 @@ export const fetchRemoteEnvironmentDescriptor = Effect.fn(
     environmentEndpointUrl(input.httpBaseUrl, "/.well-known/upcomputer/environment"),
     input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
     client.metadata.descriptor(),
-  ).pipe(
-    Effect.catchTag("RemoteEnvironmentAuthUndeclaredStatusError", (error) =>
-      error.status === 404
-        ? executeEnvironmentHttpRequest(
-            environmentEndpointUrl(input.httpBaseUrl, LegacyEnvironmentDescriptorPath),
-            input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
-            client.metadata.legacyDescriptor(),
-          )
-        : Effect.fail(error),
-    ),
   );
 });

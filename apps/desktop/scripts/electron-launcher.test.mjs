@@ -14,8 +14,8 @@ describe("electron development launcher", () => {
       desktopRoot: "/repo/apps/desktop",
       environment: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:8526",
-        T3CODE_PORT: "16566",
-        T3CODE_HOME: "/tmp/t3",
+        UPCOMPUTER_PORT: "16566",
+        UPCOMPUTER_HOME: "/tmp/t3",
       },
     });
 
@@ -26,7 +26,7 @@ describe("electron development launcher", () => {
     assert.notInclude(script, "\nexport VITE_DEV_SERVER_URL=");
     assert.include(
       script,
-      "exec '/repo/node_modules/electron/Electron' --t3code-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",
+      "exec '/repo/node_modules/electron/Electron' --upcomputer-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",
     );
   });
 

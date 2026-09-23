@@ -20,9 +20,9 @@ const defaultEnvironmentInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "1.2.3",
-  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  appPath: "/Applications/UpComputer.app/Contents/Resources/app.asar",
   isPackaged: true,
-  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  resourcesPath: "/Applications/UpComputer.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -150,7 +150,7 @@ describe("DesktopAppIdentity", () => {
 
         assert.equal(userDataPath, "/Users/alice/Library/Application Support/UpComputer");
       }),
-      { existingUserDataDirectoryName: "T3 Code (Alpha)" },
+      { existingUserDataDirectoryName: "UpComputer (Alpha)" },
     ),
   );
 
@@ -167,7 +167,7 @@ describe("DesktopAppIdentity", () => {
   );
 
   it.effect("preserves failures while inspecting the new userData path", () => {
-    const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
+    const legacyPath = "/Users/alice/Library/Application Support/UpComputer (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -195,7 +195,6 @@ describe("DesktopAppIdentity", () => {
 
   for (const packageJson of [
     '{"upcomputerCommitHash":"abcdef1234567890"}',
-    '{"t3codeCommitHash":"abcdef1234567890"}',
     '{"upcomputerCommitHash":"abcdef1234567890","t3codeCommitHash":"1111111111111111"}',
   ]) {
     it.effect(`reads packaged commit metadata: ${packageJson}`, () => {
@@ -247,7 +246,7 @@ describe("DesktopAppIdentity", () => {
         calls,
         environment: {
           env: {
-            T3CODE_COMMIT_HASH: "0123456789abcdef",
+            UPCOMPUTER_COMMIT_HASH: "0123456789abcdef",
           },
         },
         pngIconPath: Option.some("/icon.png"),

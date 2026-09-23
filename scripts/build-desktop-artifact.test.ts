@@ -163,7 +163,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "krl-gr/upcomputer",
+                UPCOMPUTER_DESKTOP_UPDATE_REPOSITORY: "krl-gr/upcomputer",
               },
             }),
           ),
@@ -415,7 +415,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         Effect.provide(
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
-              env: { T3CODE_DESKTOP_UPDATE_REPOSITORY: "krl-gr/upcomputer" },
+              env: { UPCOMPUTER_DESKTOP_UPDATE_REPOSITORY: "krl-gr/upcomputer" },
             }),
           ),
         ),
@@ -581,11 +581,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_SKIP_BUILD: "true",
-                T3CODE_DESKTOP_KEEP_STAGE: "true",
-                T3CODE_DESKTOP_SIGNED: "true",
-                T3CODE_DESKTOP_VERBOSE: "true",
-                T3CODE_DESKTOP_MOCK_UPDATES: "true",
+                UPCOMPUTER_DESKTOP_SKIP_BUILD: "true",
+                UPCOMPUTER_DESKTOP_KEEP_STAGE: "true",
+                UPCOMPUTER_DESKTOP_SIGNED: "true",
+                UPCOMPUTER_DESKTOP_VERBOSE: "true",
+                UPCOMPUTER_DESKTOP_MOCK_UPDATES: "true",
               },
             }),
           ),

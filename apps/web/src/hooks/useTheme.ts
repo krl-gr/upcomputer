@@ -1,4 +1,3 @@
-import { migratingUiStorage } from "../lib/legacyUiStorage";
 import type { DesktopBridge } from "@upcomputer/contracts";
 import { safeErrorLogAttributes } from "@upcomputer/client-runtime/errors";
 import * as Schema from "effect/Schema";
@@ -74,7 +73,7 @@ export function readThemePreference(): Theme {
   if (typeof window === "undefined") return DEFAULT_THEME_SNAPSHOT.theme;
   let raw: string | null;
   try {
-    raw = migratingUiStorage(window.localStorage).getItem(STORAGE_KEY);
+    raw = window.localStorage.getItem(STORAGE_KEY);
   } catch (cause) {
     throw new ThemeStorageError({
       operation: "read",
@@ -89,7 +88,7 @@ export function readThemePreference(): Theme {
 export function writeThemePreference(theme: Theme): void {
   if (typeof window === "undefined") return;
   try {
-    migratingUiStorage(window.localStorage).setItem(STORAGE_KEY, theme);
+    window.localStorage.setItem(STORAGE_KEY, theme);
     themeStorageReadFailure = null;
   } catch (cause) {
     throw new ThemeStorageError({

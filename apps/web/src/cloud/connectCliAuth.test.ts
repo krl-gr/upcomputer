@@ -1,4 +1,4 @@
-import { readConnectAuthState, CONNECT_AUTH_STATE_KEY } from "./legacyConnectAuthState";
+import { readConnectAuthState, CONNECT_AUTH_STATE_KEY } from "./connectAuthState";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -15,7 +15,7 @@ describe("connectCliAuth", () => {
     vi.unstubAllEnvs();
   });
 
-  it("moves legacy request state without consuming it across repeated reads", () => {
+  it("ignores old request state and leaves it untouched", () => {
     const values = new Map([["t3code-connect-cli-auth-state", "fixture-state"]]);
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -26,9 +26,9 @@ describe("connectCliAuth", () => {
         values.delete(key);
       },
     } as Storage;
-    expect(readConnectAuthState(storage)).toBe("fixture-state");
-    expect(readConnectAuthState(storage)).toBe("fixture-state");
-    expect(values.has("t3code-connect-cli-auth-state")).toBe(false);
+    expect(readConnectAuthState(storage)).toBeNull();
+    expect(readConnectAuthState(storage)).toBeNull();
+    expect(values.has("t3code-connect-cli-auth-state")).toBe(true);
     values.set(CONNECT_AUTH_STATE_KEY, "current-fixture");
     values.set("t3code-connect-cli-auth-state", "old-fixture");
     expect(readConnectAuthState(storage)).toBe("current-fixture");
@@ -37,7 +37,7 @@ describe("connectCliAuth", () => {
   it("requires both the publishable key and the CLI OAuth client id", () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", TEST_PUBLISHABLE_KEY);
     vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "t3-relay");
-    vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.com");
+    vi.stubEnv("VITE_UPCOMPUTER_RELAY_URL", "https://relay.example.com");
     expect(hasConnectCliAuthConfig()).toBe(false);
 
     vi.stubEnv("VITE_CLERK_CLI_OAUTH_CLIENT_ID", "oauthapp_123");

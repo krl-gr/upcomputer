@@ -15,8 +15,6 @@ const COMMIT_HASH_DISPLAY_LENGTH = 12;
 
 const AppPackageMetadata = Schema.Struct({
   upcomputerCommitHash: Schema.optional(Schema.String),
-  // Read-only compatibility for older packages; new builds emit only the Up.computer key.
-  t3codeCommitHash: Schema.optional(Schema.String),
 });
 const decodeAppPackageMetadata = Schema.decodeEffect(Schema.fromJsonString(AppPackageMetadata));
 
@@ -62,7 +60,7 @@ export const make = Effect.gen(function* () {
       onSome: (value) =>
         decodeAppPackageMetadata(value).pipe(
           Effect.map((parsed) =>
-            Option.fromNullishOr(parsed.upcomputerCommitHash ?? parsed.t3codeCommitHash).pipe(
+            Option.fromNullishOr(parsed.upcomputerCommitHash).pipe(
               Option.flatMap(normalizeCommitHash),
             ),
           ),

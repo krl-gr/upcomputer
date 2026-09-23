@@ -6,11 +6,11 @@ import {
 } from "./upcomputerReleasePolicy.ts";
 
 describe("Up.computer release policy", () => {
-  it("supports the bundled local Desktop and T3 Connect without an npm server", () => {
+  it("supports the bundled local Desktop and UpComputer Connect without an npm server", () => {
     expect(UPCOMPUTER_RELEASE_CAPABILITIES).toMatchObject({
       bundledDesktopBackend: true,
       localProviders: true,
-      t3ConnectToBundledDesktop: true,
+      connectToBundledDesktop: true,
       npmRemoteServerDistribution: false,
       sshRemoteServerBootstrap: false,
       remoteServerSelfUpdate: false,

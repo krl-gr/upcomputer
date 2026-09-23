@@ -1,4 +1,3 @@
-import { legacySessionCookieName } from "./legacyCookie.ts";
 import {
   AuthAccessTokenType,
   AuthAccessWriteScope,
@@ -593,9 +592,7 @@ export const make = Effect.gen(function* () {
   const authenticateRequest = (
     request: HttpServerRequest.HttpServerRequest,
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
-    const cookieToken =
-      request.cookies[sessions.cookieName] ??
-      request.cookies[legacySessionCookieName(sessions.cookieName)];
+    const cookieToken = request.cookies[sessions.cookieName];
     const bearerToken = parseBearerToken(request);
     const dpopToken = parseDpopToken(request);
     const credential = cookieToken ?? bearerToken ?? dpopToken;

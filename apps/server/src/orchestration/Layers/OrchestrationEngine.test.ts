@@ -514,7 +514,7 @@ describe("OrchestrationEngine", () => {
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
-        branch: "t3code/generated-branch-name",
+        branch: "upcomputer/generated-branch-name",
         worktreePath: "/tmp/project-branch-race-worktree",
         createdAt,
       }),
@@ -525,13 +525,13 @@ describe("OrchestrationEngine", () => {
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-stale-temporary-branch-sync"),
         threadId: ThreadId.make("thread-branch-race"),
-        branch: "t3code/1234abcd",
-        expectedBranch: "t3code/1234abcd",
+        branch: "upcomputer/1234abcd",
+        expectedBranch: "upcomputer/1234abcd",
       }),
     );
 
     const snapshot = await system.readModel();
-    expect(snapshot.threads[0]?.branch).toBe("t3code/generated-branch-name");
+    expect(snapshot.threads[0]?.branch).toBe("upcomputer/generated-branch-name");
     await system.dispose();
   });
 
@@ -577,13 +577,13 @@ describe("OrchestrationEngine", () => {
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-authoritative-worktree-bootstrap"),
         threadId: ThreadId.make("thread-worktree-bootstrap"),
-        branch: "t3code/1234abcd",
+        branch: "upcomputer/1234abcd",
         worktreePath: "/tmp/project-worktree-bootstrap-worktree",
       }),
     );
 
     const snapshot = await system.readModel();
-    expect(snapshot.threads[0]?.branch).toBe("t3code/1234abcd");
+    expect(snapshot.threads[0]?.branch).toBe("upcomputer/1234abcd");
     expect(snapshot.threads[0]?.worktreePath).toBe("/tmp/project-worktree-bootstrap-worktree");
     await system.dispose();
   });
@@ -721,7 +721,7 @@ describe("OrchestrationEngine", () => {
         threadId: ThreadId.make("thread-turn-diff"),
         turnId: asTurnId("turn-1"),
         completedAt: createdAt,
-        checkpointRef: asCheckpointRef("refs/t3/checkpoints/thread-turn-diff/turn/1"),
+        checkpointRef: asCheckpointRef("refs/upcomputer/checkpoints/thread-turn-diff/turn/1"),
         status: "ready",
         files: [],
         checkpointTurnCount: 1,
@@ -736,7 +736,7 @@ describe("OrchestrationEngine", () => {
       {
         turnId: asTurnId("turn-1"),
         checkpointTurnCount: 1,
-        checkpointRef: asCheckpointRef("refs/t3/checkpoints/thread-turn-diff/turn/1"),
+        checkpointRef: asCheckpointRef("refs/upcomputer/checkpoints/thread-turn-diff/turn/1"),
         status: "ready",
         files: [],
         assistantMessageId: null,

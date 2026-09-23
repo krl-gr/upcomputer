@@ -1,4 +1,3 @@
-import { LegacyEnvironmentDescriptorPath } from "./legacyNames.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -376,9 +375,6 @@ export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").ad
   HttpApiEndpoint.get("descriptor", "/.well-known/upcomputer/environment", {
     success: ExecutionEnvironmentDescriptor,
   }),
-  HttpApiEndpoint.get("legacyDescriptor", LegacyEnvironmentDescriptorPath, {
-    success: ExecutionEnvironmentDescriptor,
-  }),
 ) {}
 
 export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
@@ -533,7 +529,7 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("health", "/api/t3-connect/health", {
+    HttpApiEndpoint.post("health", "/api/upcomputer-connect/health", {
       payload: RelayCloudEnvironmentHealthRequest,
       success: RelayEnvironmentHealthResponse,
       error: EnvironmentHttpCloudErrors,
@@ -547,7 +543,7 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   )
   .add(
-    HttpApiEndpoint.post("t3MintCredential", "/api/t3-connect/mint-credential", {
+    HttpApiEndpoint.post("upcomputerMintCredential", "/api/upcomputer-connect/mint-credential", {
       payload: RelayCloudMintCredentialRequest,
       success: RelayEnvironmentMintResponse,
       error: EnvironmentHttpCloudErrors,

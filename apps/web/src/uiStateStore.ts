@@ -1,4 +1,3 @@
-import { migratingUiStorage } from "./lib/legacyUiStorage";
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import {
@@ -10,18 +9,6 @@ import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "upcomputer:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
-const LEGACY_PERSISTED_STATE_KEYS = [
-  "t3code:renderer-state:v8",
-  "t3code:renderer-state:v7",
-  "t3code:renderer-state:v6",
-  "t3code:renderer-state:v5",
-  "t3code:renderer-state:v4",
-  "t3code:renderer-state:v3",
-  "codething:renderer-state:v4",
-  "codething:renderer-state:v3",
-  "codething:renderer-state:v2",
-  "codething:renderer-state:v1",
-] as const;
 
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
@@ -173,17 +160,8 @@ function readPersistedState(): UiState {
     return initialState;
   }
   try {
-    const raw = migratingUiStorage(window.localStorage).getItem(PERSISTED_STATE_KEY);
-    if (!raw) {
-      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        const legacyRaw = migratingUiStorage(window.localStorage).getItem(legacyKey);
-        if (!legacyRaw) {
-          continue;
-        }
-        return parsePersistedState(JSON.parse(legacyRaw) as PersistedUiState);
-      }
-      return initialState;
-    }
+    const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
+    if (!raw) return initialState;
     return parsePersistedState(JSON.parse(raw) as PersistedUiState);
   } catch {
     return initialState;
@@ -228,7 +206,7 @@ export function persistState(state: UiState): void {
         ([key]) => key !== LEGACY_PROJECT_EXPANSION_DEFAULT_KEY,
       ),
     );
-    migratingUiStorage(window.localStorage).setItem(
+    window.localStorage.setItem(
       PERSISTED_STATE_KEY,
       JSON.stringify({
         projectExpandedById,
@@ -243,9 +221,6 @@ export function persistState(state: UiState): void {
     );
     if (!legacyKeysCleanedUp) {
       legacyKeysCleanedUp = true;
-      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        migratingUiStorage(window.localStorage).removeItem(legacyKey);
-      }
     }
   } catch {
     // Ignore quota/storage errors to avoid breaking chat UX.

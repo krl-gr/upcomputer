@@ -65,7 +65,6 @@ if (isLocalTestVersion(Electron.app.getVersion())) {
   process.env.UPCOMPUTER_DISABLE_AUTO_UPDATE = "true";
   delete process.env.VITE_DEV_SERVER_URL;
   delete process.env.UPCOMPUTER_PORT;
-  delete process.env.T3CODE_PORT;
 }
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());

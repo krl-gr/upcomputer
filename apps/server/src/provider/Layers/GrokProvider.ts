@@ -134,7 +134,7 @@ const discoverGrokModelsViaAcp = (
       environment,
       childProcessSpawner,
       cwd: process.cwd(),
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+      clientInfo: { name: "upcomputer-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
     return buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models);

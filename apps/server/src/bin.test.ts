@@ -76,7 +76,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
       otlpExportIntervalMs: 10_000,
-      otlpServiceName: "t3-server",
+      otlpServiceName: "upcomputer-server",
       mode: "web",
       port: 0,
       host: "127.0.0.1",

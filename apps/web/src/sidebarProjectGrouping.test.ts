@@ -8,9 +8,9 @@ import type { Project } from "./types";
 const environmentId = EnvironmentId.make("env-primary");
 const repositoryIdentity = {
   canonicalKey: "github.com/pingdotgg/t3code",
-  displayName: "pingdotgg/t3code",
-  name: "t3code",
-  rootPath: "/repo/t3code",
+  displayName: "pingdotgg/upcomputer",
+  name: "upcomputer",
+  rootPath: "/repo/upcomputer",
   locator: {
     source: "git-remote" as const,
     remoteName: "origin",
@@ -37,8 +37,8 @@ function makeProject(id: string, title: string, workspaceRoot: string): Project 
 
 describe("sidebar project grouping", () => {
   it("uses an explicit order-independent identity for a repository group", () => {
-    const web = makeProject("project-web", "web", "/repo/t3code/apps/web");
-    const api = makeProject("project-api", "api", "/repo/t3code/apps/api");
+    const web = makeProject("project-web", "web", "/repo/upcomputer/apps/web");
+    const api = makeProject("project-api", "api", "/repo/upcomputer/apps/api");
     const settings = {
       sidebarProjectGroupingMode: "repository" as const,
       sidebarProjectGroupingOverrides: {},
@@ -59,7 +59,7 @@ describe("sidebar project grouping", () => {
     expect(webFirst[0]?.projectKey).toBe(repositoryIdentity.canonicalKey);
     expect(webFirst[0]?.visualIdentityKey).toBe(repositoryIdentity.canonicalKey);
     expect(apiFirst[0]?.visualIdentityKey).toBe(webFirst[0]?.visualIdentityKey);
-    expect(webFirst[0]?.displayName).toBe("pingdotgg/t3code");
+    expect(webFirst[0]?.displayName).toBe("pingdotgg/upcomputer");
 
     // Active-project surfaces keep the concrete subproject identity instead of
     // inheriting whichever member happened to represent the grouped sidebar row.

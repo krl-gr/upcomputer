@@ -1,4 +1,4 @@
-import { isMissingProjectConfigFile } from "@upcomputer/shared/legacyProjectConfig";
+import { isMissingProjectConfigFile } from "@upcomputer/shared/projectConfigReadError";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,

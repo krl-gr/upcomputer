@@ -27,7 +27,7 @@ export default defineConfig({
       },
       dev: {
         command:
-          "node scripts/build-preview-annotation-css.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
+          "node scripts/build-preview-annotation-css.mjs && cross-env UPCOMPUTER_DESKTOP_DEV=1 vp pack --watch",
         dependsOn: ["@upcomputer/server#build"],
         cache: false,
       },

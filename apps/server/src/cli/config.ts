@@ -1,4 +1,3 @@
-import { withLegacyEnvironment } from "@upcomputer/shared/legacyEnvironment";
 import * as NetService from "@upcomputer/shared/Net";
 import { parsePersistedServerObservabilitySettings } from "@upcomputer/shared/serverSettings";
 import { DesktopBackendBootstrap, PortSchema } from "@upcomputer/contracts";
@@ -57,7 +56,7 @@ export const autoBootstrapProjectFromCwdFlag = Flag.boolean("auto-bootstrap-proj
 );
 export const logWebSocketEventsFlag = Flag.boolean("log-websocket-events").pipe(
   Flag.withDescription(
-    "Emit server-side logs for outbound WebSocket push traffic (equivalent to T3CODE_LOG_WS_EVENTS).",
+    "Emit server-side logs for outbound WebSocket push traffic (equivalent to UPCOMPUTER_LOG_WS_EVENTS).",
   ),
   Flag.withAlias("log-ws-events"),
   Flag.optional,
@@ -101,7 +100,7 @@ const EnvServerConfig = Config.all({
     Config.withDefault(10_000),
   ),
   otlpServiceName: Config.string("UPCOMPUTER_OTLP_SERVICE_NAME").pipe(
-    Config.withDefault("t3-server"),
+    Config.withDefault("upcomputer-server"),
   ),
   mode: Config.schema(ServerConfig.RuntimeMode, "UPCOMPUTER_MODE").pipe(
     Config.option,
@@ -147,7 +146,7 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-}).pipe(withLegacyEnvironment);
+});
 
 export interface CliServerFlags {
   readonly mode: Option.Option<ServerConfig.RuntimeMode>;
@@ -287,7 +286,7 @@ export const resolveServerConfig = (
         resolveOptionPrecedence(
           normalizedFlags.baseDir,
           Option.fromUndefinedOr(env.upcomputerHome),
-          Option.fromUndefinedOr(bootstrap?.t3Home),
+          Option.fromUndefinedOr(bootstrap?.upcomputerHome),
         ),
       ),
     );

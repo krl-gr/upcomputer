@@ -1,4 +1,4 @@
-import { openMigratedBrowserDatabase } from "../lib/legacyIndexedDb";
+import { openBrowserDatabase } from "../lib/browserDatabase";
 import {
   ConnectionCatalogDocument,
   type ConnectionCatalogDocument as ConnectionCatalogDocumentType,
@@ -115,7 +115,7 @@ function persistenceError(
 
 const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(() =>
   Effect.tryPromise({
-    try: () => openMigratedBrowserDatabase("connections"),
+    try: () => openBrowserDatabase("connections"),
     catch: (cause) => catalogError("migrate", cause),
   }),
 );

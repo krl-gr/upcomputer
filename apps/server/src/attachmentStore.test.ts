@@ -46,7 +46,7 @@ describe("attachmentStore", () => {
 
   it("resolves attachment path by id using the extension that exists on disk", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+      NodePath.join(NodeOS.tmpdir(), "upcomputer-attachment-store-"),
     );
     try {
       const attachmentId = "thread-1-attachment";
@@ -65,7 +65,7 @@ describe("attachmentStore", () => {
 
   it("returns null when no attachment file exists for the id", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+      NodePath.join(NodeOS.tmpdir(), "upcomputer-attachment-store-"),
     );
     try {
       const resolved = resolveAttachmentPathById({

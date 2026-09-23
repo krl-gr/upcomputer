@@ -16,19 +16,19 @@ const TestLayer = Layer.empty.pipe(
 const makeTempDir = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.makeTempDirectoryScoped({
-    prefix: "t3code-project-file-",
+    prefix: "upcomputer-project-file-",
   });
 });
 
 const writeProjectFile = Effect.fn("writeProjectFile")(function* (cwd: string, contents: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fileSystem.writeFileString(path.join(cwd, "t3.json"), contents).pipe(Effect.orDie);
+  yield* fileSystem.writeFileString(path.join(cwd, "upcomputer.json"), contents).pipe(Effect.orDie);
 });
 
 it.layer(TestLayer)("ProjectConfigFileLoader", (it) => {
   describe("load", () => {
-    it.effect("loads and decodes a valid t3.json", () =>
+    it.effect("loads and decodes a valid upcomputer.json", () =>
       Effect.gen(function* () {
         const loader = yield* ProjectConfigFileLoader.ProjectConfigFileLoader;
         const cwd = yield* makeTempDir;
@@ -57,7 +57,8 @@ it.layer(TestLayer)("ProjectConfigFileLoader", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
-        yield* writeProjectFile(cwd, '{"iconPath":"legacy.svg"}');
+        yield* fs.writeFileString(path.join(cwd, "t3.json"), '{"iconPath":"legacy.svg"}');
+        expect(Option.isNone(yield* loader.load(cwd))).toBe(true);
         yield* fs.writeFileString(path.join(cwd, "upcomputer.json"), '{"iconPath":"current.svg"}');
         expect(Option.getOrThrow(yield* loader.load(cwd)).iconPath).toBe("current.svg");
         yield* fs.writeFileString(path.join(cwd, "upcomputer.json"), "invalid");
@@ -65,7 +66,7 @@ it.layer(TestLayer)("ProjectConfigFileLoader", (it) => {
       }),
     );
 
-    it.effect("returns none when t3.json is missing", () =>
+    it.effect("returns none when upcomputer.json is missing", () =>
       Effect.gen(function* () {
         const loader = yield* ProjectConfigFileLoader.ProjectConfigFileLoader;
         const cwd = yield* makeTempDir;

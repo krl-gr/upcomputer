@@ -61,7 +61,7 @@ describe("SSH environment IPC", () => {
         serverVersion: "1.2.3",
         capabilities: { repositoryIdentity: true },
       });
-      assert.deepEqual(requestUrls, ["http://127.0.0.1:41773/.well-known/t3/environment"]);
+      assert.deepEqual(requestUrls, ["http://127.0.0.1:41773/.well-known/upcomputer/environment"]);
     }).pipe(Effect.provide(layer));
   });
 

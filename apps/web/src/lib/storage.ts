@@ -1,5 +1,3 @@
-import { migratingUiStorage } from "./legacyUiStorage";
-
 import { Debouncer } from "@tanstack/react-pacer";
 
 export interface StateStorage<R = unknown> {
@@ -38,9 +36,6 @@ export function isStateStorage(
 }
 
 export function resolveStorage(storage: Partial<StateStorage> | null | undefined): StateStorage {
-  if (isStateStorage(storage) && typeof window !== "undefined" && storage === window.localStorage) {
-    return migratingUiStorage(window.localStorage);
-  }
   return isStateStorage(storage) ? storage : createMemoryStorage();
 }
 

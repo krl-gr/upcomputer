@@ -603,7 +603,7 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:t3code-preview` (or whatever the desktop chose). */
+  /** `persist:upcomputer-preview` (or whatever the desktop chose). */
   partition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security

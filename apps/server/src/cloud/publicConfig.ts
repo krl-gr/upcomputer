@@ -1,7 +1,4 @@
-import {
-  readUpcomputerEnvironment,
-  withLegacyEnvironment,
-} from "@upcomputer/shared/legacyEnvironment";
+import { readUpcomputerEnvironment } from "@upcomputer/shared/environmentNames";
 import { CONNECT_OAUTH_SCOPES, DEFAULT_HOSTED_APP_URL } from "@upcomputer/shared/connectAuth";
 import { clerkFrontendApiUrlFromPublishableKey } from "@upcomputer/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@upcomputer/shared/relayUrl";
@@ -102,7 +99,7 @@ export function resolveRelayClientTracingConfig(
 }
 
 export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
-  const runtimeConfig = withLegacyEnvironment(Config.nonEmptyString("UPCOMPUTER_RELAY_URL"));
+  const runtimeConfig = Config.nonEmptyString("UPCOMPUTER_RELAY_URL");
   return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
     Config.mapOrFail(validateRelayUrl),
   );
@@ -149,7 +146,7 @@ function validateHostedAppUrl(value: string) {
 }
 
 function makePublicValueConfig(name: string, fallback: string) {
-  const runtimeConfig = withLegacyEnvironment(Config.nonEmptyString(name));
+  const runtimeConfig = Config.nonEmptyString(name);
   return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
     Config.map((value) => value.trim()),
   );

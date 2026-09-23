@@ -3612,11 +3612,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(ultracode ? { ultracode: true } : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-      if (mcpSession && Object.hasOwn(dynamicToolMcpServers, "t3-code")) {
+      if (mcpSession && Object.hasOwn(dynamicToolMcpServers, "upcomputer")) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "startSession",
-          issue: "Dynamic-tool namespace 't3-code' conflicts with the app MCP session.",
+          issue: "Dynamic-tool namespace 'upcomputer' conflicts with the app MCP session.",
         });
       }
       const queryOptions: ClaudeQueryOptions = {
@@ -3650,7 +3650,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
                 ...dynamicToolMcpServers,
                 ...(mcpSession
                   ? {
-                      "t3-code": {
+                      upcomputer: {
                         type: "http" as const,
                         url: mcpSession.endpoint,
                         headers: {

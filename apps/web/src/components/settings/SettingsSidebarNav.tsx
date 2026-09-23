@@ -20,7 +20,10 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../ui/sidebar";
-import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
+import {
+  UpcomputerConnectSidebarAvatar,
+  UpcomputerConnectSidebarSignIn,
+} from "../clerk/UpcomputerConnectSidebarSignIn";
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "../sidebar/sidebarTextStyles";
 import { WebFeatureSettingsNavigationItems } from "../product/WebFeatureSettingsNavigation";
 
@@ -130,7 +133,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-2">
-        <T3ConnectSidebarSignIn />
+        <UpcomputerConnectSidebarSignIn />
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
           <SidebarMenu className="min-w-0">
             <SidebarMenuItem>
@@ -144,7 +147,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-          <T3ConnectSidebarAvatar />
+          <UpcomputerConnectSidebarAvatar />
         </div>
       </SidebarFooter>
     </>

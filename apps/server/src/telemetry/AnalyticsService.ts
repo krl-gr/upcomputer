@@ -1,4 +1,3 @@
-import { withLegacyEnvironment } from "@upcomputer/shared/legacyEnvironment";
 /**
  * Anonymous PostHog telemetry service.
  *
@@ -49,7 +48,7 @@ const TelemetryEnvConfig = Config.all({
     Config.withDefault(1_000),
   ),
   wslDistroName: Config.string("WSL_DISTRO_NAME").pipe(Config.option),
-}).pipe(withLegacyEnvironment);
+});
 
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
@@ -137,7 +136,7 @@ export const make = Effect.gen(function* () {
           platform: hostPlatform,
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
-          t3CodeVersion: packageJson.version,
+          upcomputerVersion: packageJson.version,
           serverVersion: packageJson.version,
           desktopVersion: serverConfig.desktopVersion,
           releaseChannel: serverConfig.releaseChannel,

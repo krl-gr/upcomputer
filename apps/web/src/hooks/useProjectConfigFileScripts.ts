@@ -4,7 +4,6 @@ import {
   type ProjectConfigFileScript,
 } from "@upcomputer/contracts";
 import { ProjectConfigFileFromJson } from "@upcomputer/shared/projectConfigFile";
-import { LEGACY_PROJECT_CONFIG_FILE_NAME } from "@upcomputer/shared/legacyProjectConfig";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { useMemo } from "react";
@@ -30,14 +29,8 @@ export function useProjectConfigFileScripts(
     PROJECT_CONFIG_FILE_NAME,
     cwd !== null,
   );
-  const legacy = useProjectFileQuery(
-    environmentId,
-    cwd ?? "",
-    LEGACY_PROJECT_CONFIG_FILE_NAME,
-    cwd !== null && preferred.notFound === true,
-  );
-  const query = preferred.notFound ? legacy : preferred;
-  const fileName = preferred.notFound ? LEGACY_PROJECT_CONFIG_FILE_NAME : PROJECT_CONFIG_FILE_NAME;
+  const query = preferred;
+  const fileName = PROJECT_CONFIG_FILE_NAME;
   const error =
     query.error && !query.notFound
       ? `Cannot read ${fileName}. Check file access and server compatibility.`

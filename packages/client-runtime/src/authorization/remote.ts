@@ -1,7 +1,7 @@
 import {
   AuthAccessTokenType,
   type AuthClientPresentationMetadata,
-  LegacyEnvironmentBootstrapTokenType,
+  AuthEnvironmentBootstrapTokenType,
   type ExecutionEnvironmentCapabilities,
   AuthTokenExchangeGrantType,
   type AuthEnvironmentScope,
@@ -53,7 +53,7 @@ export const exchangeRemoteDpopAccessToken = Effect.fn(
       payload: {
         grant_type: AuthTokenExchangeGrantType,
         subject_token: input.credential,
-        subject_token_type: input.bootstrapTokenType ?? LegacyEnvironmentBootstrapTokenType,
+        subject_token_type: input.bootstrapTokenType ?? AuthEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
         ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
         ...clientMetadataTokenExchangeFields(input.clientMetadata),
@@ -82,7 +82,7 @@ export const bootstrapRemoteBearerSession = Effect.fn(
       payload: {
         grant_type: AuthTokenExchangeGrantType,
         subject_token: input.credential,
-        subject_token_type: input.bootstrapTokenType ?? LegacyEnvironmentBootstrapTokenType,
+        subject_token_type: input.bootstrapTokenType ?? AuthEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
         ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
         ...clientMetadataTokenExchangeFields(input.clientMetadata),

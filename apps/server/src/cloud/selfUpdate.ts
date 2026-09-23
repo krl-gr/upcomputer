@@ -75,12 +75,12 @@ function normalizeEntryPath(entryPath: string): string {
  * npm identity, and the desktop manages its own updates.
  */
 export function isPublishedCliEntry(entryPath: string): boolean {
-  return normalizeEntryPath(entryPath).includes("/node_modules/t3/dist/");
+  return normalizeEntryPath(entryPath).includes("/node_modules/@upcomputer/server/dist/");
 }
 
 /**
  * The update path this process can offer, or null when only a manual
- * relaunch works. "desktop-managed" — the T3 Code desktop app spawned this
+ * relaunch works. "desktop-managed" — the UpComputer desktop app spawned this
  * backend and owns its version; only updating the app updates it.
  * "boot-service" — this is the systemd-supervised process from
  * bootService.ts: rewrite the unit and let systemd swap it. "respawn" — a
@@ -117,7 +117,7 @@ export const resolveServerSelfUpdateCapability = Effect.fn(
       Effect.orElseSucceed(() => false),
     );
     // INVOCATION_ID only proves that some systemd unit launched us. The
-    // explicit marker written into t3code.service identifies this unit as the
+    // explicit marker written into upcomputer.service identifies this unit as the
     // supervisor that will replace the current process when restarted.
     if (
       unitReferencesEntry &&
@@ -230,7 +230,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
   )(function* (input) {
     if (capability === "desktop-managed") {
       return yield* failWith(
-        "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
+        "This server is managed by the UpComputer desktop app on its machine; update the desktop app to update it.",
       );
     }
     if (capability === null) {
@@ -241,7 +241,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
     const activeMethod = capability;
     const targetVersion = input.targetVersion.trim();
     if (!EXACT_VERSION_PATTERN.test(targetVersion)) {
-      return yield* failWith(`'${targetVersion}' is not an exact t3 version.`);
+      return yield* failWith(`'${targetVersion}' is not an exact UpComputer server version.`);
     }
 
     const alreadyRunning = yield* Ref.getAndSet(inFlight, true);
@@ -257,7 +257,9 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
         path,
         runner,
       }).pipe(
-        Effect.mapError((error) => failWith("Could not install the requested t3 version.", error)),
+        Effect.mapError((error) =>
+          failWith("Could not install the requested UpComputer server version.", error),
+        ),
       );
 
       // A broken artifact (failed native build, incompatible node) must be
@@ -270,7 +272,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
         })
         .pipe(
           Effect.mapError((cause) =>
-            failWith(`Could not verify the installed t3@${targetVersion}.`, cause),
+            failWith(`Could not verify the installed @upcomputer/server@${targetVersion}.`, cause),
           ),
         );
       // Effect CLI's unstable formatVersion currently emits `${name} v${version}`.
@@ -287,13 +289,16 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
           path,
         }).pipe(
           Effect.mapError((error) =>
-            failWith(`Could not remove the failed t3@${targetVersion} installation.`, error),
+            failWith(
+              `Could not remove the failed @upcomputer/server@${targetVersion} installation.`,
+              error,
+            ),
           ),
         );
         return yield* failWith(
           preflight.code !== 0
-            ? `The installed t3@${targetVersion} failed its version check (exit code ${String(preflight.code)}).`
-            : `The installed runtime did not report the requested t3@${targetVersion} version.`,
+            ? `The installed @upcomputer/server@${targetVersion} failed its version check (exit code ${String(preflight.code)}).`
+            : `The installed runtime did not report the requested @upcomputer/server@${targetVersion} version.`,
         );
       }
 
@@ -309,7 +314,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
         // still recognize the unit as current.
         const unit = renderBootServiceUnit({
           nodePath: host.execPath,
-          t3EntryPath: runtimePaths.entryPath,
+          serverEntryPath: runtimePaths.entryPath,
           baseDir: serverConfig.baseDir,
           logPath: path.join(serverConfig.logsDir, "boot-service.log"),
           unitPath,
@@ -392,21 +397,21 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (option
           .spawnDetached("/bin/sh", [
             "-c",
             'sleep 3; exec "$@"',
-            "t3-self-update",
+            "upcomputer-self-update",
             host.execPath,
             runtimePaths.entryPath,
             ...host.cliArgs,
           ])
           .pipe(
             Effect.mapError((cause) =>
-              failWith("Could not start the replacement t3 process.", cause),
+              failWith("Could not start the replacement UpComputer process.", cause),
             ),
           );
         yield* Effect.logInfo("Server self-update installed; respawning.", { targetVersion });
         yield* scheduleRestart(
           Effect.try({
             try: () => host.exitProcess(),
-            catch: (cause) => failWith("Could not exit the replaced t3 process.", cause),
+            catch: (cause) => failWith("Could not exit the replaced UpComputer process.", cause),
           }).pipe(
             Effect.catch((error) =>
               Effect.logError("Server self-update could not exit the replaced process.").pipe(

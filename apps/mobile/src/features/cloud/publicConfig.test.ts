@@ -18,7 +18,7 @@ vi.mock("expo-constants", () => ({
 describe("resolveCloudPublicConfig", () => {
   it("reports the missing Clerk JWT template as structured configuration", () => {
     expect(() => resolveRelayClerkTokenOptions()).toThrowError(
-      new CloudPublicConfigMissingError({ key: "T3CODE_CLERK_JWT_TEMPLATE" }),
+      new CloudPublicConfigMissingError({ key: "UPCOMPUTER_CLERK_JWT_TEMPLATE" }),
     );
   });
 

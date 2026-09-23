@@ -42,7 +42,7 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
           headRefName: "feature/source-control",
           state: "open",
           isCrossRepository: true,
-          headRepositoryNameWithOwner: "fork/t3code",
+          headRepositoryNameWithOwner: "fork/upcomputer",
           headRepositoryOwnerLogin: "fork",
         }),
     });
@@ -62,7 +62,7 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
       state: "open",
       updatedAt: Option.none(),
       isCrossRepository: true,
-      headRepositoryNameWithOwner: "fork/t3code",
+      headRepositoryNameWithOwner: "fork/upcomputer",
       headRepositoryOwnerLogin: "fork",
     });
   }),

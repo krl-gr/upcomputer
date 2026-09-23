@@ -89,7 +89,7 @@ const expectFetchCall = (
 };
 
 describe("remote environment authorization", () => {
-  it.effect("uses the legacy descriptor only after an explicit 404", () =>
+  it.effect("does not contact a legacy descriptor after 404 or 403", () =>
     Effect.gen(function* () {
       const fetch = recordedFetch(
         new Response(null, { status: 404 }),
@@ -103,10 +103,10 @@ describe("remote environment authorization", () => {
       );
       yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: "https://remote.example.com" }).pipe(
         provideRemoteHttp(fetch.fetchFn),
+        Effect.flip,
       );
       expect(fetch.calls.map(([url]) => String(url))).toEqual([
         "https://remote.example.com/.well-known/upcomputer/environment",
-        "https://remote.example.com/.well-known/t3/environment",
       ]);
       const denied = recordedFetch(new Response(null, { status: 403 }));
       yield* Effect.exit(
@@ -177,7 +177,7 @@ describe("remote environment authorization", () => {
         credential: "one-time-credential",
         dpopProof: "token-proof",
         clientMetadata: {
-          label: "T3 Code Mobile",
+          label: "UpComputer Mobile",
           deviceType: "mobile",
           os: "iOS",
         },
@@ -192,7 +192,7 @@ describe("remote environment authorization", () => {
         url: "https://remote.example.com/oauth/token",
         method: "POST",
         headers: { dpop: "token-proof", "content-type": "application/x-www-form-urlencoded" },
-        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=one-time-credential&subject_token_type=urn%3At3%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&client_label=T3+Code+Mobile&client_device_type=mobile&client_os=iOS",
+        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=one-time-credential&subject_token_type=urn%3Aupcomputer%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&client_label=UpComputer+Mobile&client_device_type=mobile&client_os=iOS",
       });
       expectFetchCall(fetch.calls, 2, {
         url: "https://remote.example.com/api/auth/websocket-ticket",
@@ -225,7 +225,7 @@ describe("remote environment authorization", () => {
         httpBaseUrl: "https://remote.example.com/",
         credential: "pairing-token",
         clientMetadata: {
-          label: "T3 Code Mobile",
+          label: "UpComputer Mobile",
           deviceType: "mobile",
           os: "iOS",
         },
@@ -234,7 +234,7 @@ describe("remote environment authorization", () => {
       expectFetchCall(fetch.calls, 1, {
         url: "https://remote.example.com/oauth/token",
         method: "POST",
-        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3At3%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&client_label=T3+Code+Mobile&client_device_type=mobile&client_os=iOS",
+        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3Aupcomputer%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&client_label=UpComputer+Mobile&client_device_type=mobile&client_os=iOS",
       });
     }),
   );
@@ -263,7 +263,7 @@ describe("remote environment authorization", () => {
       expectFetchCall(fetch.calls, 1, {
         url: "https://remote.example.com/oauth/token",
         method: "POST",
-        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3At3%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&scope=orchestration%3Aread",
+        body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=pairing-token&subject_token_type=urn%3Aupcomputer%3Aparams%3Aoauth%3Atoken-type%3Aenvironment-bootstrap&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&scope=orchestration%3Aread",
       });
     }),
   );

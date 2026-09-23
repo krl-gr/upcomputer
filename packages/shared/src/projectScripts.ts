@@ -1,5 +1,3 @@
-import { normalizeUpcomputerEnvironment } from "./environmentNames.ts";
-import { withLegacyProjectScriptEnvironment } from "./legacyProjectConfig.ts";
 import type { ProjectScript } from "@upcomputer/contracts";
 
 interface ProjectScriptRuntimeEnvInput {
@@ -29,12 +27,12 @@ export function projectScriptRuntimeEnv(
     env.UPCOMPUTER_WORKTREE_PATH = input.worktreePath;
   }
   if (input.extraEnv) {
-    return withLegacyProjectScriptEnvironment({
+    return {
       ...env,
-      ...normalizeUpcomputerEnvironment(input.extraEnv),
-    });
+      ...input.extraEnv,
+    };
   }
-  return withLegacyProjectScriptEnvironment(env);
+  return env;
 }
 
 export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {

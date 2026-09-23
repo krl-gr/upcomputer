@@ -1,4 +1,4 @@
-name: Deploy T3 Connect relay
+name: Deploy UpComputer Connect relay
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
 
       - name: Deploy production relay stage
         id: deploy
-        run: vp run --filter t3code-relay deploy --stage prod --yes --github-output
+        run: vp run --filter @upcomputer/relay deploy --stage prod --yes --github-output
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}

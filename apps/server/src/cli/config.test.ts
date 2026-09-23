@@ -29,7 +29,7 @@ const makeDesktopBootstrap = (
   mode: "desktop",
   noBrowser: true,
   port: 4888,
-  t3Home: "/tmp/t3-bootstrap-home",
+  upcomputerHome: "/tmp/t3-bootstrap-home",
   host: "127.0.0.1",
   desktopBootstrapToken: "desktop-bootstrap-token",
   tailscaleServeEnabled: false,
@@ -47,7 +47,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
-    otlpServiceName: "t3-server",
+    otlpServiceName: "upcomputer-server",
     devAllowedOrigins: [],
   } as const;
 
@@ -90,17 +90,17 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_LOG_LEVEL: "Warn",
-                  T3CODE_MODE: "desktop",
-                  T3CODE_PORT: "4001",
-                  T3CODE_HOST: "0.0.0.0",
+                  UPCOMPUTER_LOG_LEVEL: "Warn",
+                  UPCOMPUTER_MODE: "desktop",
+                  UPCOMPUTER_PORT: "4001",
+                  UPCOMPUTER_HOST: "0.0.0.0",
                   UPCOMPUTER_HOME: baseDir,
                   VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
-                  T3CODE_DEV_ALLOWED_ORIGINS:
+                  UPCOMPUTER_DEV_ALLOWED_ORIGINS:
                     "https://host.example.ts.net, https://phone.example.ts.net ",
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  UPCOMPUTER_NO_BROWSER: "true",
+                  UPCOMPUTER_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
+                  UPCOMPUTER_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -163,15 +163,15 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_LOG_LEVEL: "Warn",
-                  T3CODE_MODE: "desktop",
-                  T3CODE_PORT: "4001",
-                  T3CODE_HOST: "0.0.0.0",
+                  UPCOMPUTER_LOG_LEVEL: "Warn",
+                  UPCOMPUTER_MODE: "desktop",
+                  UPCOMPUTER_PORT: "4001",
+                  UPCOMPUTER_HOST: "0.0.0.0",
                   UPCOMPUTER_HOME: join(NodeOS.tmpdir(), "ignored-base"),
                   VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
-                  T3CODE_NO_BROWSER: "false",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
-                  T3CODE_LOG_WS_EVENTS: "false",
+                  UPCOMPUTER_NO_BROWSER: "false",
+                  UPCOMPUTER_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
+                  UPCOMPUTER_LOG_WS_EVENTS: "false",
                 },
               }),
             ),
@@ -241,10 +241,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_BOOTSTRAP_FD: String(fd),
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  UPCOMPUTER_BOOTSTRAP_FD: String(fd),
+                  UPCOMPUTER_NO_BROWSER: "true",
+                  UPCOMPUTER_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  UPCOMPUTER_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -283,7 +283,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         makeDesktopBootstrap({
           port: 4888,
           host: "127.0.0.2",
-          t3Home: baseDir,
+          upcomputerHome: baseDir,
           noBrowser: true,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
@@ -316,7 +316,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_BOOTSTRAP_FD: String(fd),
+                  UPCOMPUTER_BOOTSTRAP_FD: String(fd),
                 },
               }),
             ),
@@ -407,7 +407,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         makeDesktopBootstrap({
           port: 4888,
           host: "127.0.0.2",
-          t3Home: "/tmp/t3-bootstrap-home",
+          upcomputerHome: "/tmp/t3-bootstrap-home",
           noBrowser: false,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
@@ -441,12 +441,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_MODE: "web",
-                  T3CODE_BOOTSTRAP_FD: String(fd),
+                  UPCOMPUTER_MODE: "web",
+                  UPCOMPUTER_BOOTSTRAP_FD: String(fd),
                   UPCOMPUTER_HOME: baseDir,
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  UPCOMPUTER_NO_BROWSER: "true",
+                  UPCOMPUTER_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  UPCOMPUTER_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -577,8 +577,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_NO_BROWSER: "false",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  UPCOMPUTER_NO_BROWSER: "false",
+                  UPCOMPUTER_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                 },
               }),
             ),

@@ -563,16 +563,18 @@ describe("MessagesTimeline", () => {
               turnId: "turn-1" as never,
               label: "Updated files",
               tone: "tool",
-              changedFiles: ["C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts"],
+              changedFiles: ["C:/Users/mike/dev-stuff/upcomputer/apps/web/src/session-logic.ts"],
             },
           },
         ]}
-        workspaceRoot="C:/Users/mike/dev-stuff/t3code"
+        workspaceRoot="C:/Users/mike/dev-stuff/upcomputer"
       />,
     );
 
-    expect(markup).toContain("t3code/apps/web/src/session-logic.ts");
-    expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
+    expect(markup).toContain("upcomputer/apps/web/src/session-logic.ts");
+    expect(markup).not.toContain(
+      "C:/Users/mike/dev-stuff/upcomputer/apps/web/src/session-logic.ts",
+    );
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {

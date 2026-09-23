@@ -659,9 +659,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         ...process.env,
         GIT_INDEX_FILE: tempIndexPath,
         GIT_AUTHOR_NAME: "Up.computer",
-        GIT_AUTHOR_EMAIL: "t3code@users.noreply.github.com",
+        GIT_AUTHOR_EMAIL: "upcomputer@users.noreply.github.com",
         GIT_COMMITTER_NAME: "Up.computer",
-        GIT_COMMITTER_EMAIL: "t3code@users.noreply.github.com",
+        GIT_COMMITTER_EMAIL: "upcomputer@users.noreply.github.com",
       };
 
       const cleanupTempIndex = fileSystem

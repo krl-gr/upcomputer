@@ -1474,13 +1474,16 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? {
                 environment: {
                   ...(options?.environment ?? process.env),
-                  T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
+                  UPCOMPUTER_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(
+                    /^Bearer\s+/,
+                    "",
+                  ),
                 },
                 appServerArgs: [
                   "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+                  `mcp_servers.upcomputer.url=${mcpSession.endpoint}`,
                   "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  'mcp_servers.upcomputer.bearer_token_env_var="UPCOMPUTER_MCP_BEARER_TOKEN"',
                 ],
               }
             : {}),
