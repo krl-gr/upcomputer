@@ -30,7 +30,6 @@ import {
   type ProviderApprovalDecision,
   ProviderDriverKind,
   ProviderInstanceId,
-  type ModelSelection,
   ProviderItemId,
   type ProviderRuntimeEvent,
   type ProviderRuntimeTurnStatus,
@@ -67,6 +66,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
+  scopeClaudeModelCatalog,
+  resolveClaudeCatalogContextWindowTokens,
+} from "../ClaudeModelCatalog.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -81,7 +86,6 @@ import {
   isClaudeUltracodeEffort,
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
-  resolveClaudeContextWindow,
   resolveClaudeEffort,
 } from "./ClaudeProvider.ts";
 import {
@@ -221,6 +225,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
 }
 
 export interface ClaudeAdapterLiveOptions {
+  readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
   readonly createQuery?: (input: {
@@ -278,10 +283,11 @@ function normalizeClaudeStreamMessages(
 }
 
 function getEffectiveClaudeAgentEffort(
+  catalog: ClaudeModelCatalog,
   effort: string | null | undefined,
   model: string | null | undefined,
 ): ClaudeSdkEffort | null {
-  const normalized = normalizeClaudeCliEffort(effort, model);
+  const normalized = normalizeClaudeCliEffort(effort, model, catalog);
   return normalized ? (normalized as ClaudeSdkEffort) : null;
 }
 
@@ -342,26 +348,6 @@ function maxClaudeContextWindowFromModelUsage(
   }
 
   return maxContextWindow;
-}
-
-function selectedClaudeContextWindow(
-  modelSelection: ModelSelection | undefined,
-): number | undefined {
-  switch (modelSelection?.model) {
-    case "claude-opus-4-8":
-    case "claude-opus-4-7":
-      // Always 1M at the API; these models expose no contextWindow option.
-      return 1_000_000;
-  }
-
-  switch (resolveClaudeContextWindow(modelSelection)) {
-    case "1m":
-      return 1_000_000;
-    case "200k":
-      return 200_000;
-    default:
-      return undefined;
-  }
 }
 
 function finiteNonNegativeInteger(value: unknown): number | undefined {
@@ -896,6 +882,7 @@ const CLAUDE_SETTING_SOURCES = [
 ] as const satisfies ReadonlyArray<SettingSource>;
 
 function buildPromptText(
+  catalog: ClaudeModelCatalog,
   input: ProviderAdapterSendTurnInput,
   boundInstanceId: ProviderInstanceId,
 ): string {
@@ -905,7 +892,7 @@ function buildPromptText(
       : null;
   const claudeModel =
     input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection.model : undefined;
-  const caps = getClaudeModelCapabilities(claudeModel);
+  const caps = getClaudeModelCapabilities(claudeModel, catalog);
 
   const promptEffort = resolvePromptInjectedEffort(caps, rawEffort);
   const text = applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
@@ -947,10 +934,11 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
   dependencies: {
     readonly fileSystem: FileSystem.FileSystem;
     readonly attachmentsDir: string;
+    readonly modelCatalog: ClaudeModelCatalog;
     readonly boundInstanceId: ProviderInstanceId;
   },
 ) {
-  const text = buildPromptText(input, dependencies.boundInstanceId);
+  const text = buildPromptText(dependencies.modelCatalog, input, dependencies.boundInstanceId);
   const sdkContent: Array<Record<string, unknown>> = [];
 
   if (text.length > 0) {
@@ -1390,6 +1378,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   claudeSettings: ClaudeSettings,
   options?: ClaudeAdapterLiveOptions,
 ) {
+  const readModelCatalog = (
+    options?.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG)
+  ).pipe(Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)));
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("claudeAgent");
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -3580,10 +3571,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
-      const caps = getClaudeModelCapabilities(modelSelection?.model);
+      const catalog = yield* readModelCatalog;
+      const caps = getClaudeModelCapabilities(modelSelection?.model, catalog);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
-      const initialContextWindow = selectedClaudeContextWindow(modelSelection);
+      const apiModelId = modelSelection
+        ? resolveClaudeApiModelId(modelSelection, catalog)
+        : undefined;
+      const initialContextWindow = resolveClaudeCatalogContextWindowTokens(catalog, modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
       const fastModeSupported = descriptors.some(
@@ -3599,7 +3593,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ? getModelSelectionBooleanOptionValue(modelSelection, "thinking")
         : undefined;
       const ultracode = isClaudeUltracodeEffort(effort);
-      const effectiveEffort = getEffectiveClaudeAgentEffort(effort, modelSelection?.model);
+      const effectiveEffort = getEffectiveClaudeAgentEffort(catalog, effort, modelSelection?.model);
       const runtimeModeToPermission: Record<string, PermissionMode> = {
         "auto-accept-edits": "acceptEdits",
         auto: "auto",
@@ -3823,6 +3817,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   );
 
   const sendTurn: ClaudeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    const catalog = yield* readModelCatalog;
     const context = yield* requireSession(input.threadId);
     const modelSelection =
       input.modelSelection !== undefined && input.modelSelection.instanceId === boundInstanceId
@@ -3841,7 +3836,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (modelSelection?.model) {
-      const apiModelId = resolveClaudeApiModelId(modelSelection);
+      const apiModelId = resolveClaudeApiModelId(modelSelection, catalog);
       if (context.currentApiModelId !== apiModelId) {
         yield* Effect.tryPromise({
           try: () => context.query.setModel(apiModelId),
@@ -3913,6 +3908,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const message = yield* buildUserMessageEffect(input, {
       fileSystem,
       attachmentsDir: serverConfig.attachmentsDir,
+      modelCatalog: catalog,
       boundInstanceId,
     });
 

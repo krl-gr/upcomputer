@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import { manifest } from "../ClaudeModelCatalog.testFixtures.ts";
+import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -159,6 +161,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 }
 
 function makeHarness(config?: {
+  readonly modelCatalog?: ClaudeAdapterLiveOptions["modelCatalog"];
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: ClaudeAdapterLiveOptions["nativeEventLogger"];
   readonly cwd?: string;
@@ -176,6 +179,7 @@ function makeHarness(config?: {
     | undefined;
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
+    ...(config?.modelCatalog ? { modelCatalog: config.modelCatalog } : {}),
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
     ...(config?.dynamicToolRegistry ? { dynamicToolRegistry: config.dynamicToolRegistry } : {}),
     createQuery: (input) => {
@@ -602,6 +606,56 @@ describe("ClaudeAdapterLive", () => {
 
       const createInput = harness.getLastCreateQueryInput();
       assert.equal(createInput?.options.effort, "max");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("uses refreshed catalog mappings for SDK start and later model switches", () => {
+    const data = manifest();
+    let catalog = resolveClaudeModelCatalog(data);
+    const harness = makeHarness({ modelCatalog: Effect.sync(() => catalog) });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const modelSelection = createModelSelection(
+        ProviderInstanceId.make("claudeAgent"),
+        "synthetic",
+      );
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection,
+        runtimeMode: "full-access",
+      });
+      assert.equal(
+        harness.getLastCreateQueryInput()?.options.model,
+        "claude-synthetic-next[large]",
+      );
+      assert.equal(harness.getLastCreateQueryInput()?.options.effort, "high");
+      catalog = resolveClaudeModelCatalog({
+        ...data,
+        providers: {
+          claudeAgent: {
+            ...data.providers.claudeAgent,
+            profiles: {
+              synthetic: {
+                ...data.providers.claudeAgent.profiles.synthetic!,
+                adapter: {
+                  claudeCode: { modelSuffixes: { contextWindow: { large: "[refreshed]" } } },
+                },
+              },
+            },
+          },
+        },
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "synthetic fixture only",
+        modelSelection,
+        attachments: [],
+      });
+      assert.deepEqual(harness.query.setModelCalls, ["claude-synthetic-next[refreshed]"]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

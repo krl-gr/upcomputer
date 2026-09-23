@@ -1,3 +1,8 @@
+import { manifest } from "../provider/ClaudeModelCatalog.testFixtures.ts";
+import {
+  resolveClaudeModelCatalog,
+  type ClaudeModelCatalog,
+} from "../provider/ClaudeModelCatalog.ts";
 import { ClaudeSettings, ProviderInstanceId } from "@upcomputer/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
@@ -78,6 +83,7 @@ function withFakeClaudeEnv<A, E, R>(
     stdinMustContain?: string;
     configDirMustBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
+    catalog?: ClaudeModelCatalog;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -184,12 +190,38 @@ function withFakeClaudeEnv<A, E, R>(
     );
 
     const config = decodeClaudeSettings(input.claudeConfig ?? {});
-    const textGeneration = yield* makeClaudeTextGeneration(config);
+    const textGeneration = yield* makeClaudeTextGeneration(
+      config,
+      undefined,
+      input.catalog ? Effect.succeed(input.catalog) : undefined,
+    );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("uses a supplied catalog for CLI model and effort dispatch", () =>
+    withFakeClaudeEnv(
+      {
+        catalog: resolveClaudeModelCatalog(manifest()),
+        output: JSON.stringify({ structured_output: { subject: "Catalog fixture", body: "" } }),
+        argsMustContain: "--model claude-synthetic-next[large] --effort high",
+      },
+      (textGeneration) =>
+        textGeneration
+          .generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "fixture",
+            stagedSummary: "fixture",
+            stagedPatch: "fixture",
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              "synthetic",
+            ),
+          })
+          .pipe(Effect.asVoid),
+    ),
+  );
   it.effect("forwards Claude thinking settings for Haiku without passing effort", () =>
     withFakeClaudeEnv(
       {

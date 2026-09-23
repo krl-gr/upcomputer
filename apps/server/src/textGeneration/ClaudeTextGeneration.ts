@@ -7,6 +7,11 @@
  *
  * @module ClaudeTextGeneration
  */
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
+  scopeClaudeModelCatalog,
+} from "../provider/ClaudeModelCatalog.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -61,6 +66,7 @@ const decodeClaudeOutputEnvelope = Schema.decodeEffect(Schema.fromJsonString(Cla
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
+  modelCatalog: Effect.Effect<ClaudeModelCatalog> = Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG),
 ) {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
@@ -126,7 +132,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       toJsonSchemaObject(outputSchemaJson),
       "Failed to encode structured output schema.",
     );
-    const caps = getClaudeModelCapabilities(modelSelection.model);
+    const catalog = scopeClaudeModelCatalog(yield* modelCatalog, claudeSettings.customModels);
+    const caps = getClaudeModelCapabilities(modelSelection.model, catalog);
     const descriptors = getProviderOptionDescriptors({
       caps,
       selections: modelSelection.options,
@@ -134,7 +141,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
     const rawEffortSelection = getModelSelectionStringOptionValue(modelSelection, "effort");
     const resolvedEffort = resolveClaudeEffort(caps, rawEffortSelection);
-    const cliEffort = normalizeClaudeCliEffort(resolvedEffort, modelSelection.model);
+    const cliEffort = normalizeClaudeCliEffort(resolvedEffort, modelSelection.model, catalog);
     const ultracode = isClaudeUltracodeEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");
@@ -166,7 +173,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--json-schema",
           jsonSchemaStr,
           "--model",
-          resolveClaudeApiModelId(modelSelection),
+          resolveClaudeApiModelId(modelSelection, catalog),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
           "--dangerously-skip-permissions",

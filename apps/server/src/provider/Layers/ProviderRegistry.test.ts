@@ -1,3 +1,4 @@
+import * as ModelManifest from "../ModelManifest.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -1431,6 +1432,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(ModelManifest.layerTest),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1524,6 +1526,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(ModelManifest.layerTest),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1646,6 +1649,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(ModelManifest.layerTest),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1708,6 +1712,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
             const providerRegistryLayer = ProviderRegistryLive.pipe(
               Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+              Layer.provideMerge(ModelManifest.layerTest),
               Layer.provideMerge(
                 Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
               ),
@@ -2008,7 +2013,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
           assert.strictEqual(
             status.message,
-            "Claude Code v2.1.168 is too old for Claude Fable 5. Upgrade to v2.1.169 or newer to access it.",
+            "Claude Code v2.1.168 is too old for Claude Fable 5 (Legacy). Upgrade to v2.1.169 or newer to access it.",
           );
         }).pipe(
           Effect.provide(
@@ -2082,7 +2087,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
           assert.strictEqual(
             status.message,
-            "Claude Code v2.1.110 is too old for Claude Opus 4.7. Upgrade to v2.1.111 or newer to access it.",
+            "Claude Code v2.1.110 is too old for Claude Opus 4.7 (Legacy). Upgrade to v2.1.111 or newer to access it.",
           );
         }).pipe(
           Effect.provide(

@@ -12,6 +12,8 @@
  *
  * @module provider/Drivers/ClaudeDriver
  */
+import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import * as ModelManifest from "../ModelManifest.ts";
 import { ClaudeSettings, ProviderDriverKind, type ServerProvider } from "@upcomputer/contracts";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -87,6 +89,7 @@ export type ClaudeDriverEnv =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | HttpClient.HttpClient
+  | ModelManifest.ModelManifest
   | Path.Path
   | ExperimentalDynamicToolRegistryService
   | ProviderEventLoggers
@@ -125,6 +128,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const { cwd } = yield* ServerConfig;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      const modelManifest = yield* ModelManifest.ModelManifest;
+      const modelCatalog = modelManifest.current.pipe(Effect.map(resolveClaudeModelCatalog));
       const eventLoggers = yield* ProviderEventLoggers;
       const dynamicToolRegistry = yield* ExperimentalDynamicToolRegistryService;
       const processEnv = mergeProviderInstanceEnvironment(environment);
@@ -146,13 +151,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       });
 
       const adapterOptions = {
+        modelCatalog,
         instanceId,
         environment: processEnv,
         dynamicToolRegistry,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
-      const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv);
+      const textGeneration = yield* makeClaudeTextGeneration(
+        effectiveConfig,
+        processEnv,
+        modelCatalog,
+      );
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.
@@ -166,12 +176,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig, cwd);
 
-      const checkProvider = checkClaudeProviderStatus(
-        effectiveConfig,
-        () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
-        processEnv,
-        cwd,
-      ).pipe(
+      const checkProvider = modelManifest.refreshInBackground.pipe(
+        Effect.andThen(modelCatalog),
+        Effect.flatMap((catalog) =>
+          checkClaudeProviderStatus(
+            effectiveConfig,
+            () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
+            processEnv,
+            cwd,
+            catalog,
+          ),
+        ),
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -185,7 +200,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          makePendingClaudeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
+          modelCatalog.pipe(
+            Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
+            Effect.map(stampIdentity),
+          ),
         checkProvider,
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities, {
@@ -217,7 +235,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        snapshot,
+        snapshot: {
+          ...snapshot,
+          refresh: modelManifest.forceRefresh.pipe(Effect.andThen(snapshot.refresh)),
+        },
         adapter,
         textGeneration,
       } satisfies ProviderInstance;

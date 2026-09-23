@@ -1,3 +1,4 @@
+import * as ModelManifest from "./provider/ModelManifest.ts";
 import { EnvironmentHttpApi } from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -342,6 +343,7 @@ const makeRuntimeCoreDependenciesLive = <const ProductEntry extends Experimental
     // `providerInstances` hydration merges `settings.providers.<kind>`
     // with explicit `providerInstances` entries on boot.
     Layer.provideMerge(providerInstanceRegistryHydrationLayer),
+    Layer.provideMerge(ModelManifest.layer),
     // Shared native/canonical NDJSON writers used by both the per-instance
     // drivers (native stream, written from inside each `<X>Adapter`) and
     // `ProviderService` (canonical stream, written after event normalization).

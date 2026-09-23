@@ -22,6 +22,8 @@
  * binaries. That keeps the assertions focused on registry routing
  * behaviour rather than the runtime details of each provider.
  */
+import { manifest } from "../ClaudeModelCatalog.testFixtures.ts";
+import * as ModelManifest from "../ModelManifest.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -129,6 +131,7 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(ExperimentalDynamicToolRegistryEmpty),
     Layer.provideMerge(TestHttpClientLive),
+    Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
   );
 
@@ -268,8 +271,55 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(ExperimentalDynamicToolRegistryEmpty),
     Layer.provideMerge(TestHttpClientLive),
+    Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
   );
+
+  it.live("refreshes a live Claude instance from the shared catalog without rebuilding it", () => {
+    let current = manifest();
+    let refreshes = 0;
+    const service = ModelManifest.ModelManifest.of({
+      current: Effect.sync(() => current),
+      refresh: Effect.sync(() => current),
+      refreshInBackground: Effect.void,
+      forceRefresh: Effect.sync(() => {
+        refreshes++;
+        current = {
+          ...current,
+          providers: {
+            claudeAgent: {
+              ...current.providers.claudeAgent,
+              models: [
+                {
+                  slug: "future-fixture",
+                  name: "Future Fixture",
+                  status: "current",
+                  profile: "synthetic",
+                },
+              ],
+            },
+          },
+        };
+        return current;
+      }),
+    });
+    return Effect.gen(function* () {
+      const instance = yield* ClaudeDriver.create({
+        instanceId: ProviderInstanceId.make("claude-fixture"),
+        displayName: undefined,
+        environment: [],
+        enabled: false,
+        config: makeClaudeConfig({ enabled: false }),
+      });
+      expect((yield* instance.snapshot.getSnapshot).models.map((m) => m.slug)).toContain(
+        "claude-synthetic-next",
+      );
+      const refreshed = yield* instance.snapshot.refresh;
+      expect(refreshes).toBe(1);
+      expect(refreshed.models.map((m) => m.slug)).toContain("future-fixture");
+      expect(refreshed.models.map((m) => m.slug)).not.toContain("claude-synthetic-next");
+    }).pipe(Effect.provideService(ModelManifest.ModelManifest, service), Effect.provide(testLayer));
+  });
 
   it.live("boots one instance of every shipped driver from a single config map", () =>
     Effect.gen(function* () {
