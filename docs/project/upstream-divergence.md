@@ -151,10 +151,15 @@ advancing the full upstream baseline or importing newer UI/pagination features:
 - `a9ffb8279` (#9000): client snapshot activity projection in batches of 25 and
   short preview strings that do not retain full tool outputs.
 
+- `50bfca43d` (#9726): thread resume measures and replays only that thread's rows
+  through the captured head on the existing `(aggregate_kind, stream_id, sequence)`
+  index, capped at 1,000 thread events and 8 MiB. A `thread.created` in range forces
+  a snapshot; a bounded replay still syncs a thread that was since deleted. Locally
+  the byte budget includes metadata, and pages use the #10777 `Stream.paginate` reader.
+
 These are adaptations, not wholesale cherry-picks. No database migrations or
-stored history deletion. Full tool payloads remain in persistence. Global event
-replay is still used for small ranges but is bounded by both cursor gap and bytes;
-thread-specific SQL replay (#9726) is a separate follow-up.
+stored history deletion. Full tool payloads remain in persistence. Shell resume
+still uses global event replay for small ranges, bounded by both cursor gap and bytes.
 
 Backend logs now emit numeric `backend memory sample` counters every 60 seconds,
 and `backend memory pressure` at 80% of the V8 heap limit. No heap dumps or payload

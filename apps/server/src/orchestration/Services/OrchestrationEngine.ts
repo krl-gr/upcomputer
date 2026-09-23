@@ -10,13 +10,20 @@
  *
  * @module OrchestrationEngineService
  */
-import type { OrchestrationCommand, OrchestrationEvent } from "@upcomputer/contracts";
+import type { OrchestrationCommand, OrchestrationEvent, ThreadId } from "@upcomputer/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 import type { OrchestrationDispatchError } from "../Errors.ts";
 import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
+import type { OrchestrationAggregateReplayStats } from "../../persistence/Services/OrchestrationEventStore.ts";
+
+export interface OrchestrationThreadReplayRange {
+  readonly threadId: ThreadId;
+  readonly fromSequenceExclusive: number;
+  readonly toSequenceInclusive: number;
+}
 
 /**
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
@@ -28,14 +35,23 @@ export interface OrchestrationEngineShape {
    * @param fromSequenceExclusive - Sequence cursor (exclusive).
    * @param limit - Maximum number of events to read. Defaults to the event
    *   store's page-bounded default; pass a higher value when the caller must
-   *   read every event after the cursor (e.g. per-thread catch-up that filters
-   *   a small subset out of a potentially larger global range).
+   *   read a wider global range. Thread subscriptions use readThreadEvents.
    * @returns Stream containing ordered events.
    */
   readonly readEvents: (
     fromSequenceExclusive: number,
     limit?: number,
   ) => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError, never>;
+
+  /** Read only this thread's events through a captured authoritative head. */
+  readonly readThreadEvents: (
+    input: OrchestrationThreadReplayRange & { readonly limit?: number },
+  ) => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
+
+  /** Measure a bounded thread replay without decoding its event bodies. */
+  readonly getThreadReplayStats: (
+    input: OrchestrationThreadReplayRange & { readonly maxEvents: number },
+  ) => Effect.Effect<OrchestrationAggregateReplayStats, OrchestrationEventStoreError>;
 
   /**
    * Dispatch a validated orchestration command.
