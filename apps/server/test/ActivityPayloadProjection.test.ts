@@ -114,9 +114,9 @@ const fixtures = [
       server: "repository",
       tool: "search",
       arguments: { query: "activity projection" },
-      aggregatedOutput: "mcp payload remains available",
+      aggregatedOutput: "mcp bulk is dropped",
     },
-    ignored: "MCP data is rendered verbatim",
+    ignored: "top-level bulk",
   }),
   makeActivity("search", "web_search", {
     rawOutput: {
@@ -181,13 +181,85 @@ describe("projectActivityPayload", () => {
     });
   });
 
-  it("passes MCP tool data through unchanged", () => {
-    expect(projectActivityPayload(fixtures[4]!)).toBe(fixtures[4]);
+  it("slims MCP tool data to the fields the expanded row renders", () => {
+    expect(projectActivityPayload(fixtures[4]!).payload).toEqual({
+      itemType: "mcp_tool_call",
+      title: "mcp_tool_call",
+      detail: "mcp_tool_call detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        item: {
+          server: "repository",
+          tool: "search",
+          arguments: { query: "activity projection" },
+        },
+      },
+    });
+  });
+
+  it("slims Codex-shaped mcp_tool_call items to rendered fields plus a result summary", () => {
+    const projected = projectActivityPayload(
+      makeActivity("mcp-codex", "mcp_tool_call", {
+        item: {
+          type: "mcpToolCall",
+          id: "item-1",
+          tool: "fetch_pr",
+          server: "github",
+          status: "completed",
+          arguments: { pr: 42 },
+          durationMs: 1200,
+          result: {
+            content: [{ type: "text", text: `PR body line one\n${"x".repeat(5000)}` }],
+            structuredContent: { huge: "y".repeat(5000) },
+          },
+          _meta: { internal: true },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.tool).toBe("fetch_pr");
+    expect(item.server).toBe("github");
+    expect(item.arguments).toEqual({ pr: 42 });
+    expect(item._meta).toBeUndefined();
+    expect(item.result).toEqual({ content: "PR body line one" });
+    expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
+  });
+
+  it("slims Claude-shaped mcp_tool_call data (toolName/input/result block)", () => {
+    const projected = projectActivityPayload(
+      makeActivity("mcp-claude", "mcp_tool_call", {
+        toolName: "mcp__github__fetch_pr",
+        input: { pr: 42 },
+        result: {
+          type: "tool_result",
+          tool_use_id: "toolu_1",
+          content: [{ type: "text", text: `first line of output\n${"z".repeat(5000)}` }],
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.toolName).toBe("mcp__github__fetch_pr");
+    expect(data.input).toEqual({ pr: 42 });
+    expect(data.result).toEqual({ content: "first line of output" });
+    expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
   });
 
   it("keeps current web and mobile derived output identical for every tool item type", () => {
     for (const activity of fixtures) {
       const projected = projectActivityPayload(activity);
+      if (activity === fixtures[4]) {
+        // MCP is the one deliberate difference: the expanded row's toolData
+        // loses result bulk but keeps the rendered identity fields.
+        const [entry] = deriveWorkLogEntries([projected]);
+        expect(entry?.toolData).toEqual({
+          server: "repository",
+          tool: "search",
+          arguments: { query: "activity projection" },
+        });
+        continue;
+      }
       expect(deriveWorkLogEntries([projected])).toEqual(deriveWorkLogEntries([activity]));
       expect(comparableThreadFeed([projected])).toEqual(comparableThreadFeed([activity]));
     }
