@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ProviderDriverKind, ProviderOptionDescriptor } from "@upcomputer/contracts";
+import { ProviderDriverKind, type ProviderOptionDescriptor } from "@upcomputer/contracts";
 import { buildTraitsTriggerDisplay, getTraitsTriggerPresentation } from "./TraitsPicker";
 
 function selectDescriptor(
   id: string,
-  options: ReadonlyArray<{ id: string; label: string }>,
+  options: ReadonlyArray<{ id: string; label: string; isDefault?: boolean }>,
   currentValue: string,
 ): Extract<ProviderOptionDescriptor, { type: "select" }> {
   return { id, label: id, type: "select", options: [...options], currentValue };
@@ -17,7 +17,7 @@ function fastModeDescriptor(
 }
 
 const EFFORT = selectDescriptor(
-  "effort",
+  "reasoningEffort",
   [
     { id: "high", label: "High" },
     { id: "max", label: "Max" },
@@ -33,10 +33,13 @@ const CONTEXT_WINDOW = selectDescriptor(
   "1m",
 );
 
+const CODEX = ProviderDriverKind.make("codex");
+
 function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>, fastModeEnabled: boolean) {
   return buildTraitsTriggerDisplay({
+    provider: CODEX,
     descriptors,
-    primarySelectDescriptorId: "effort",
+    primarySelectDescriptorId: "reasoningEffort",
     ultrathinkPromptControlled: false,
     fastModeEnabled,
   });
@@ -88,6 +91,16 @@ describe("buildTraitsTriggerDisplay", () => {
     });
   });
 
+  it("omits Codex's default Standard tier beside reasoning", () => {
+    const serviceTier = selectDescriptor(
+      "serviceTier",
+      [{ id: "default", label: "Standard", isDefault: true }],
+      "default",
+    );
+
+    expect(display([EFFORT, serviceTier], false).label).toBe("High");
+  });
+
   it("keeps non-fastMode booleans as text labels", () => {
     const thinking: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
       id: "thinking",
@@ -131,8 +144,9 @@ describe("buildTraitsTriggerDisplay", () => {
   it("still renders the prompt-controlled ultrathink label alongside the bolt", () => {
     expect(
       buildTraitsTriggerDisplay({
+        provider: CODEX,
         descriptors: [EFFORT, fastModeDescriptor(true)],
-        primarySelectDescriptorId: "effort",
+        primarySelectDescriptorId: "reasoningEffort",
         ultrathinkPromptControlled: true,
         fastModeEnabled: true,
       }),
