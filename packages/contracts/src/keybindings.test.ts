@@ -20,6 +20,7 @@ const decode = <S extends Schema.Top>(
   >;
 
 const decodeResolvedRule = Schema.decodeUnknownEffect(ResolvedKeybindingRule as never);
+const encodeResolvedKeybindings = Schema.encodeEffect(ResolvedKeybindingsConfig);
 
 it.effect("parses keybinding rules", () =>
   Effect.gen(function* () {
@@ -158,6 +159,70 @@ it.effect("parses resolved keybindings arrays", () =>
       },
     ]);
     assert.lengthOf(parsed, 2);
+  }),
+);
+
+const shortcut = {
+  key: "p",
+  metaKey: false,
+  ctrlKey: false,
+  shiftKey: false,
+  altKey: false,
+  modKey: true,
+};
+
+it.effect("drops resolved rules with commands this build does not know", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decode(ResolvedKeybindingsConfig, [
+      { command: "sidebar.toggle", shortcut },
+      { command: "someFuture.toggle", shortcut },
+      { command: "commandPalette.toggle", shortcut },
+    ]);
+    assert.deepEqual(
+      parsed.map((rule) => rule.command),
+      ["sidebar.toggle", "commandPalette.toggle"],
+    );
+  }),
+);
+
+it.effect("drops resolved rules with unknown when-node types", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decode(ResolvedKeybindingsConfig, [
+      {
+        command: "sidebar.toggle",
+        shortcut,
+        whenAst: { type: "xor", left: 1, right: 2 },
+      },
+      { command: "diff.toggle", shortcut },
+    ]);
+    assert.deepEqual(
+      parsed.map((rule) => rule.command),
+      ["diff.toggle"],
+    );
+  }),
+);
+
+it.effect("drops malformed resolved rule entries", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decode(ResolvedKeybindingsConfig, [
+      "garbage",
+      { command: "sidebar.toggle", shortcut },
+      null,
+    ]);
+    assert.deepEqual(
+      parsed.map((rule) => rule.command),
+      ["sidebar.toggle"],
+    );
+  }),
+);
+
+it.effect("encodes resolved keybindings to the plain wire shape", () =>
+  Effect.gen(function* () {
+    const rules = [{ command: "sidebar.toggle" as const, shortcut }];
+    const encoded = yield* encodeResolvedKeybindings(rules);
+    assert.deepEqual(encoded, rules);
+    const roundTripped = yield* decode(ResolvedKeybindingsConfig, encoded);
+    assert.deepEqual(roundTripped, rules);
   }),
 );
 
