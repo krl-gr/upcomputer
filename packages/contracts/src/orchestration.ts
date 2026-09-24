@@ -395,10 +395,6 @@ export const OrchestrationThread = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  settledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   // Snooze is an overlay on the active lifecycle, not a fourth destination:
   // a snoozed thread stays "active" in the model and is only suppressed from
   // the inbox until snoozedUntil passes (or the thread raises its hand).
@@ -454,10 +450,6 @@ export const OrchestrationThreadShell = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  settledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   session: Schema.NullOr(OrchestrationSession),
@@ -620,22 +612,6 @@ const ThreadUnarchiveCommand = Schema.Struct({
   type: Schema.Literal("thread.unarchive"),
   commandId: CommandId,
   threadId: ThreadId,
-});
-
-const ThreadSettleCommand = Schema.Struct({
-  type: Schema.Literal("thread.settle"),
-  commandId: CommandId,
-  threadId: ThreadId,
-});
-
-const ThreadUnsettleCommand = Schema.Struct({
-  type: Schema.Literal("thread.unsettle"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  // Commands only carry "user": activity un-settles are decided server-side
-  // (the decider emits thread.unsettled(reason: "activity") events directly,
-  // never through this command), so a client cannot forge the neutral reset.
-  reason: Schema.Literal("user"),
 });
 
 const ThreadSnoozeCommand = Schema.Struct({
@@ -845,8 +821,6 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
-  ThreadSettleCommand,
-  ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
   ThreadMetaUpdateCommand,
@@ -873,8 +847,6 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
-  ThreadSettleCommand,
-  ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
   ThreadMetaUpdateCommand,
@@ -1068,6 +1040,9 @@ export const ThreadUnarchivedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+// thread.settled / thread.unsettled are retired: nothing emits them anymore,
+// but existing event stores still contain them, so they keep decoding and
+// projections ignore them.
 export const ThreadSettledPayload = Schema.Struct({
   threadId: ThreadId,
   settledAt: IsoDateTime,
@@ -1090,8 +1065,7 @@ export const ThreadSnoozedPayload = Schema.Struct({
 export const ThreadUnsnoozedPayload = Schema.Struct({
   threadId: ThreadId,
   // user: explicit "wake now". activity: real work arrived (user message /
-  // session coming alive) and the decider cleared the snooze — mirrors
-  // thread.unsettled's activity resets. Timer wakes emit no event: clients
+  // session coming alive) and the decider cleared the snooze. Timer wakes emit no event: clients
   // derive them from snoozedUntil passing.
   reason: Schema.Literals(["user", "activity"]),
   updatedAt: IsoDateTime,

@@ -35,8 +35,6 @@ const baseThread: OrchestrationThread = {
   createdAt: "2026-04-01T00:00:00.000Z",
   updatedAt: "2026-04-01T00:00:00.000Z",
   archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
   deletedAt: null,
   messages: [],
   proposedPlans: [],
@@ -219,58 +217,33 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.settled / thread.unsettled", () => {
-    it("sets the settled override and timestamp", () => {
-      const settledAt = "2026-04-01T05:00:00.000Z";
-      const result = applyThreadDetailEvent(baseThread, {
+    it("ignores the retired settled lifecycle events from older event streams", () => {
+      const occurredAt = "2026-04-01T05:00:00.000Z";
+      const settled = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,
         sequence: 5,
-        occurredAt: settledAt,
+        occurredAt,
         aggregateKind: "thread",
         aggregateId: ThreadId.make("thread-1"),
         type: "thread.settled",
         payload: {
           threadId: ThreadId.make("thread-1"),
-          settledAt,
-          updatedAt: settledAt,
+          settledAt: occurredAt,
+          updatedAt: occurredAt,
         },
       });
-
-      expect(result.kind).toBe("updated");
-      if (result.kind === "updated") {
-        expect(result.thread.settledOverride).toBe("settled");
-        expect(result.thread.settledAt).toBe(settledAt);
-      }
-    });
-
-    it.each([
-      ["user", "active"],
-      ["activity", null],
-    ] as const)("unsettles for %s with override %s", (reason, settledOverride) => {
-      const settledThread: OrchestrationThread = {
-        ...baseThread,
-        settledOverride: "settled",
-        settledAt: "2026-04-01T05:00:00.000Z",
-      };
-      const updatedAt = "2026-04-01T06:00:00.000Z";
-      const result = applyThreadDetailEvent(settledThread, {
+      const unsettled = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,
         sequence: 6,
-        occurredAt: updatedAt,
+        occurredAt,
         aggregateKind: "thread",
         aggregateId: ThreadId.make("thread-1"),
         type: "thread.unsettled",
-        payload: {
-          threadId: ThreadId.make("thread-1"),
-          reason,
-          updatedAt,
-        },
+        payload: { threadId: ThreadId.make("thread-1"), reason: "user", updatedAt: occurredAt },
       });
 
-      expect(result.kind).toBe("updated");
-      if (result.kind === "updated") {
-        expect(result.thread.settledOverride).toBe(settledOverride);
-        expect(result.thread.settledAt).toBeNull();
-      }
+      expect(settled.kind).toBe("unchanged");
+      expect(unsettled.kind).toBe("unchanged");
     });
   });
 

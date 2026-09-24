@@ -449,36 +449,26 @@ it.effect("decodes thread archive and unarchive commands", () =>
   }),
 );
 
-it.effect("decodes thread settle and unsettle commands", () =>
+it.effect("rejects the retired thread settle and unsettle commands", () =>
   Effect.gen(function* () {
     const settle = yield* decodeOrchestrationCommand({
       type: "thread.settle",
       commandId: "cmd-settle-1",
       threadId: "thread-1",
-    });
+    }).pipe(Effect.flip);
     const unsettle = yield* decodeOrchestrationCommand({
       type: "thread.unsettle",
       commandId: "cmd-unsettle-1",
       threadId: "thread-1",
       reason: "user",
-    });
-
-    assert.strictEqual(settle.type, "thread.settle");
-    assert.strictEqual(unsettle.type, "thread.unsettle");
-
-    // "activity" is server-owned: it exists on the event, never on the
-    // command, so a client cannot forge the neutral reset.
-    const forged = yield* decodeOrchestrationCommand({
-      type: "thread.unsettle",
-      commandId: "cmd-unsettle-2",
-      threadId: "thread-1",
-      reason: "activity",
     }).pipe(Effect.flip);
-    assert.ok(forged);
+
+    assert.ok(settle);
+    assert.ok(unsettle);
   }),
 );
 
-it.effect("defaults settled fields when decoding historical thread data", () =>
+it.effect("decodes thread data from servers that still send settled fields", () =>
   Effect.gen(function* () {
     const common = {
       id: "thread-1",
@@ -493,6 +483,8 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       archivedAt: null,
+      settledOverride: "settled",
+      settledAt: "2026-01-01T00:00:00.000Z",
       session: null,
     };
     const thread = yield* decodeOrchestrationThread({
@@ -511,10 +503,8 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
       hasActionableProposedPlan: false,
     });
 
-    assert.strictEqual(thread.settledOverride, null);
-    assert.strictEqual(thread.settledAt, null);
-    assert.strictEqual(shell.settledOverride, null);
-    assert.strictEqual(shell.settledAt, null);
+    assert.notProperty(thread, "settledOverride");
+    assert.notProperty(shell, "settledAt");
   }),
 );
 

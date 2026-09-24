@@ -310,8 +310,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
-          settledOverride: null,
-          settledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           deletedAt: null,
@@ -425,8 +423,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
-          settledOverride: null,
-          settledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           session: {
@@ -605,7 +601,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
-  it.effect("keeps settled threads in the shell snapshot with non-null settlement fields", () =>
+  it.effect("loads thread rows that still carry retired settled_* values", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
       const sql = yield* SqlClient.SqlClient;
@@ -694,23 +690,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           (${ORCHESTRATION_PROJECTOR_NAMES.checkpoints}, 4, '2026-04-06T00:00:07.000Z')
       `;
 
-      // Settled ≠ archived: the thread must appear in the LIVE shell
-      // snapshot, carrying its settlement fields through the row aliases.
+      // Rows written while the retired settled lifecycle existed keep their
+      // settled_* values; they must still load as ordinary live threads.
       const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
       assert.deepEqual(
         shellSnapshot.threads.map((thread) => thread.id),
         [ThreadId.make("thread-settled")],
       );
-      assert.equal(shellSnapshot.threads[0]?.settledOverride, "settled");
-      assert.equal(shellSnapshot.threads[0]?.settledAt, "2026-04-06T00:00:04.000Z");
 
-      // And the full command read model carries them too.
       const readModel = yield* snapshotQuery.getCommandReadModel();
-      const thread = readModel.threads.find(
-        (candidate) => candidate.id === ThreadId.make("thread-settled"),
+      assert.deepEqual(
+        readModel.threads.map((thread) => thread.id),
+        [ThreadId.make("thread-settled")],
       );
-      assert.equal(thread?.settledOverride, "settled");
-      assert.equal(thread?.settledAt, "2026-04-06T00:00:04.000Z");
     }),
   );
 

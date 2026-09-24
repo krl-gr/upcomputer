@@ -1,58 +1,11 @@
 import * as Schema from "effect/Schema";
-import { useEffect, useState } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { useClientSettings } from "../../hooks/useSettings";
 import { PROJECT_STATUS_INDICATOR_EXPERIMENT_KEY } from "../sidebar/experiments";
 import { resolveAvailableSidebarViewMode } from "../sidebar/sidebarViewMode";
-import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-
-const AUTO_SETTLE_MIN_DAYS = 1;
-const AUTO_SETTLE_MAX_DAYS = 90;
-const AUTO_SETTLE_DEFAULT_DAYS = 3;
-
-function AutoSettleDaysInput({
-  value,
-  onCommit,
-}: {
-  value: number;
-  onCommit: (days: number) => void;
-}) {
-  // Local draft so the field can be emptied mid-edit; the setting only moves
-  // on valid input and snaps back to the persisted value on blur.
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => {
-    setDraft(String(value));
-  }, [value]);
-
-  return (
-    <Input
-      type="number"
-      min={AUTO_SETTLE_MIN_DAYS}
-      max={AUTO_SETTLE_MAX_DAYS}
-      className="w-full sm:w-24"
-      value={draft}
-      onChange={(event) => {
-        setDraft(event.target.value);
-        // Number(), not parseInt: "3.5" must be rejected (not truncated to a
-        // committed 3 while the field shows 3.5) — commit only when the
-        // persisted value matches the displayed one.
-        const parsed = Number(event.target.value);
-        if (
-          Number.isInteger(parsed) &&
-          parsed >= AUTO_SETTLE_MIN_DAYS &&
-          parsed <= AUTO_SETTLE_MAX_DAYS
-        ) {
-          onCommit(parsed);
-        }
-      }}
-      onBlur={() => setDraft(String(value))}
-      aria-label="Days of inactivity before auto-settle"
-    />
-  );
-}
 
 export function BetaSettingsPanel() {
   // Keep the settings surface aligned with the mode the sidebar can actually
@@ -60,10 +13,6 @@ export function BetaSettingsPanel() {
   // Classic until Flat view is re-enabled.
   const storedSidebarViewMode = useClientSettings((settings) => settings.sidebarViewMode);
   const sidebarViewMode = resolveAvailableSidebarViewMode(storedSidebarViewMode);
-  const sidebarAutoSettleAfterDays = useClientSettings(
-    (settings) => settings.sidebarAutoSettleAfterDays,
-  );
-  const updateSettings = useUpdateClientSettings();
   const [projectStatusIndicatorEnabled, setProjectStatusIndicatorEnabled] = useLocalStorage(
     PROJECT_STATUS_INDICATOR_EXPERIMENT_KEY,
     false,
@@ -86,37 +35,7 @@ export function BetaSettingsPanel() {
         />
       </SettingsSection>
       <SettingsSection title="Beta features">
-        {sidebarViewMode === "v2" ? (
-          <>
-            <SettingsRow
-              title="Auto-settle inactive threads"
-              description="Threads with no activity for this long settle automatically. Threads on merged or closed PRs always settle."
-              control={
-                <Switch
-                  checked={sidebarAutoSettleAfterDays !== null}
-                  onCheckedChange={(checked) =>
-                    updateSettings({
-                      sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
-                    })
-                  }
-                  aria-label="Auto-settle inactive threads"
-                />
-              }
-            />
-            {sidebarAutoSettleAfterDays !== null ? (
-              <SettingsRow
-                title="Days of inactivity before auto-settle"
-                description="Any new activity un-settles a thread automatically."
-                control={
-                  <AutoSettleDaysInput
-                    value={sidebarAutoSettleAfterDays}
-                    onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
-                  />
-                }
-              />
-            ) : null}
-          </>
-        ) : (
+        {sidebarViewMode === "v2" ? null : (
           <SettingsRow
             title="Sidebar v2"
             description="One flat thread list in creation order. Temporarily unavailable: the sidebar's view switcher lives inside the classic sidebar, so selecting this mode left no way back. It returns once the switcher moves into the shared sidebar chrome."

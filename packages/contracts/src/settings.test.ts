@@ -67,20 +67,12 @@ describe("ClientSettings glass opacity", () => {
   });
 });
 
-describe("ClientSettings sidebar v2", () => {
-  it("defaults to a three-day auto-settle threshold", () => {
-    expect(decodeClientSettings({}).sidebarAutoSettleAfterDays).toBe(3);
-  });
-
-  it("allows auto-settle by inactivity to be disabled", () => {
-    expect(
-      decodeClientSettings({ sidebarAutoSettleAfterDays: null }).sidebarAutoSettleAfterDays,
-    ).toBeNull();
-  });
-
-  it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
-    expect(() => decodeClientSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
+describe("ClientSettings retired auto-settle setting", () => {
+  it("still decodes stored settings that carry sidebarAutoSettleAfterDays, ignoring it", () => {
+    const decoded = decodeClientSettings({ sidebarAutoSettleAfterDays: 3, glassOpacity: 60 });
+    expect(decoded.glassOpacity).toBe(60);
+    expect(decoded).not.toHaveProperty("sidebarAutoSettleAfterDays");
+    expect(decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: null })).toEqual({});
   });
 });
 

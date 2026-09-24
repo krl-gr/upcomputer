@@ -1,35 +1,11 @@
 import type { OrchestrationThreadShell } from "@upcomputer/contracts";
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
-
-export function threadLastActivityAt(shell: OrchestrationThreadShell): string | null {
-  const candidates = [
-    shell.latestUserMessageAt,
-    shell.latestTurn?.requestedAt,
-    shell.latestTurn?.startedAt,
-    shell.latestTurn?.completedAt,
-  ];
-  let latest: string | null = null;
-  let latestTimestamp = Number.NEGATIVE_INFINITY;
-
-  for (const candidate of candidates) {
-    if (candidate === null || candidate === undefined) continue;
-    const timestamp = Date.parse(candidate);
-    if (timestamp > latestTimestamp) {
-      latest = candidate;
-      latestTimestamp = timestamp;
-    }
-  }
-
-  return latest;
-}
-
 /**
  * A queued turn start lives for at most this long: session adoption takes
  * seconds, so a user message still unadopted after the grace window is a
  * failed start (or stale data — shells from older servers can carry user
  * messages with no latestTurn at all), not pending work. Without this bound
- * such threads would be permanently unsettleable.
+ * such threads would be permanently unsnoozable.
  */
 export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
@@ -67,28 +43,6 @@ export function hasQueuedTurnStart(
 }
 
 /**
- * A thread may be settled only when none of effectiveSettled's activity
- * blockers hold. This is deliberately the same list: anything the partition
- * refuses to CLASSIFY as settled must also be refused as a settle TARGET.
- * The server enforces its own invariants; this client-side twin exists so
- * the UI can disable/reject before a round trip.
- */
-export function canSettle(
-  shell: Pick<
-    OrchestrationThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "session" | "latestUserMessageAt" | "latestTurn"
-  >,
-  options: { readonly now: string },
-): boolean {
-  if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
-  // Queued work is as blocked-on-progress as a live session: settling it
-  // (or auto-settling it on a closed PR) would hide a just-requested turn.
-  if (hasQueuedTurnStart(shell, options)) return false;
-  return true;
-}
-
-/**
  * The snooze lifecycle fields plus everything needed to detect a raised
  * hand. Snooze is an overlay on the active state: a snoozed thread stays
  * "active" in the data model and is only suppressed from the inbox until
@@ -110,8 +64,7 @@ export type ThreadSnoozeShell = Pick<
  * the session failed, or a run completed after the snooze was set — the
  * v1 taste of event-based snooze ("something happened" wakes early).
  * Raising a hand never clears the server-side snooze fields; it only stops
- * the thread from CLASSIFYING as snoozed, exactly like blocked work and
- * effectiveSettled.
+ * the thread from CLASSIFYING as snoozed.
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
@@ -139,8 +92,8 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
 /**
  * A thread may be snoozed unless the agent is blocked on the user: hiding a
  * pending approval or user-input request defeats the request, and a queued
- * turn start (a message no turn has adopted yet) is invisible pending work
- * the same way it is for settle. A running session IS snoozable — snooze
+ * turn start (a message no turn has adopted yet) is invisible pending work.
+ * A running session IS snoozable — snooze
  * only affects visibility, never the agent. Client-side twin of the server
  * invariants so the UI can reject before a round trip.
  */
@@ -210,59 +163,4 @@ export function threadWokeAt(
   }
   // No raised hand: woke iff the timer elapsed (still-snoozed → null).
   return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
-}
-
-/**
- * Settled resolution over the server-backed settled lifecycle. Activity
- * blockers (pending approval/user-input, a live session, an unadjudicated
- * queued turn) are checked first and hold a thread active regardless of any
- * override. Past the blockers, the explicit user override (thread.settle /
- * thread.unsettle commands, projected into settledOverride + settledAt)
- * wins in both directions; without one, a thread auto-settles on
- * inactivity past the window. The server
- * un-settles on real activity (user message, session start, approval/
- * user-input request), so an override never goes stale silently.
- */
-export function effectiveSettled(
-  shell: OrchestrationThreadShell,
-  options: {
-    readonly now: string;
-    readonly autoSettleAfterDays: number | null;
-  },
-): boolean {
-  // Blocked work must remain visible even when a user explicitly settled it.
-  if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
-  if (hasQueuedTurnStart(shell, { now: options.now })) {
-    // The queued-turn blocker alone is forgivable: it is clock-derived, and
-    // list callers pass a coarser `now` than the settle action used. When
-    // the server already adjudicated the queued message by accepting a
-    // settle after it (settledAt stamps server accept time), trust that
-    // ruling — otherwise a settle near the grace boundary leaves the row
-    // pinned active until the caller's clock ticks over. A message NEWER
-    // than settledAt is genuinely new work and keeps the block until the
-    // server's auto-unsettle lands.
-    const serverAdjudicated =
-      shell.settledOverride === "settled" &&
-      shell.settledAt !== null &&
-      shell.latestUserMessageAt !== null &&
-      Date.parse(shell.settledAt) >= Date.parse(shell.latestUserMessageAt);
-    if (!serverAdjudicated) return false;
-  }
-  if (shell.settledOverride === "settled") return true;
-  // "active" is the explicit keep-active pin: it suppresses auto-settle
-  // until real activity clears it server-side.
-  if (shell.settledOverride === "active") return false;
-  if (options.autoSettleAfterDays === null) return false;
-
-  const lastActivityAt = threadLastActivityAt(shell);
-  if (lastActivityAt === null) return false;
-
-  // threadLastActivityAt only returns candidates whose Date.parse beat
-  // -Infinity, so this parse is a real number; a malformed `now` yields NaN,
-  // the comparison is false, and the thread stays active (never a surprise
-  // auto-settle on bad input).
-  return (
-    Date.parse(lastActivityAt) < Date.parse(options.now) - options.autoSettleAfterDays * DAY_MS
-  );
 }

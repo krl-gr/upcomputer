@@ -148,7 +148,6 @@ export const makeForProduct = (productManifest: ProductManifestSnapshot) =>
         bootstrapTokenType: AuthEnvironmentBootstrapTokenType,
         repositoryIdentity: true,
         connectionProbe: true,
-        threadSettlement: true,
         threadSnooze: true,
         ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       },

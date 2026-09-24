@@ -51,8 +51,6 @@ function makeReadModel(started: boolean): OrchestrationReadModel {
         createdAt: NOW,
         updatedAt: NOW,
         archivedAt: null,
-        settledOverride: null,
-        settledAt: null,
         deletedAt: null,
         messages: started ? [message] : [],
         proposedPlans: [],

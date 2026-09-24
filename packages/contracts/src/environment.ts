@@ -43,12 +43,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   bootstrapTokenType: Schema.optionalKey(Schema.Literal(AuthEnvironmentBootstrapTokenType)),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
-  /** Server understands thread.settle / thread.unsettle commands. Absent on
-      pre-settlement servers, so clients treat missing as unsupported and
-      never send the commands under version skew. */
-  threadSettlement: Schema.optionalKey(Schema.Boolean),
-  /** Server understands thread.snooze / thread.unsnooze commands. Same
-      version-skew contract as threadSettlement. */
+  /** Server understands thread.snooze / thread.unsnooze commands. Absent on
+      pre-snooze servers, so clients treat missing as unsupported and never
+      send the commands under version skew. */
   threadSnooze: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows

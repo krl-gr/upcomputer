@@ -177,7 +177,7 @@ describe("canSnooze", () => {
     ).toBe(false);
   });
 
-  it("refuses a queued turn start — same invisible-pending-work rule as settle", () => {
+  it("refuses a queued turn start (invisible pending work)", () => {
     // Fresh user message, no turn has adopted it, within the grace window.
     expect(
       canSnooze(

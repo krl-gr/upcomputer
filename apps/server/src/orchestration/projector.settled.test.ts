@@ -30,7 +30,7 @@ function makeEvent(input: {
   } as OrchestrationEvent;
 }
 
-it.effect("projects settled lifecycle events", () =>
+it.effect("ignores retired settled lifecycle events from existing event stores", () =>
   Effect.gen(function* () {
     const now = "2026-01-01T00:00:00.000Z";
     const created = yield* projectEvent(
@@ -52,6 +52,8 @@ it.effect("projects settled lifecycle events", () =>
         },
       }),
     );
+    // Retired settled lifecycle: nothing emits these anymore, but existing
+    // event stores still contain them and must keep projecting.
     const settled = yield* projectEvent(
       created,
       makeEvent({
@@ -60,10 +62,7 @@ it.effect("projects settled lifecycle events", () =>
         payload: { threadId: ThreadId.make("thread-1"), settledAt: now, updatedAt: now },
       }),
     );
-    expect(settled.threads[0]?.settledOverride).toBe("settled");
-    expect(settled.threads[0]?.settledAt).toBe(now);
-
-    const userUnsettled = yield* projectEvent(
+    const unsettled = yield* projectEvent(
       settled,
       makeEvent({
         sequence: 3,
@@ -71,18 +70,7 @@ it.effect("projects settled lifecycle events", () =>
         payload: { threadId: ThreadId.make("thread-1"), reason: "user", updatedAt: now },
       }),
     );
-    expect(userUnsettled.threads[0]?.settledOverride).toBe("active");
-    expect(userUnsettled.threads[0]?.settledAt).toBeNull();
-
-    const activityUnsettled = yield* projectEvent(
-      userUnsettled,
-      makeEvent({
-        sequence: 4,
-        type: "thread.unsettled",
-        payload: { threadId: ThreadId.make("thread-1"), reason: "activity", updatedAt: now },
-      }),
-    );
-    expect(activityUnsettled.threads[0]?.settledOverride).toBeNull();
-    expect(activityUnsettled.threads[0]?.settledAt).toBeNull();
+    expect(unsettled.snapshotSequence).toBe(3);
+    expect(unsettled.threads).toEqual(created.threads);
   }),
 );

@@ -91,8 +91,6 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         createdAt: "2026-03-24T00:00:00.000Z",
         updatedAt: "2026-03-24T00:00:00.000Z",
         archivedAt: null,
-        settledOverride: null,
-        settledAt: null,
         snoozedUntil: null,
         snoozedAt: null,
         latestUserMessageAt: null,
@@ -133,7 +131,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
     }),
   );
 
-  it.effect("round-trips non-null settlement values through the thread row", () =>
+  it.effect("round-trips non-null snooze values through the thread row", () =>
     Effect.gen(function* () {
       const threads = yield* ProjectionThreadRepository;
 
@@ -153,8 +151,6 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         createdAt: "2026-03-24T00:00:00.000Z",
         updatedAt: "2026-03-25T00:00:00.000Z",
         archivedAt: null,
-        settledOverride: "settled",
-        settledAt: "2026-03-25T00:00:00.000Z",
         snoozedUntil: "2026-03-26T09:00:00.000Z",
         snoozedAt: "2026-03-25T00:00:00.000Z",
         latestUserMessageAt: null,
@@ -171,17 +167,12 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       if (!row) {
         return yield* Effect.die("Expected settled projection_threads row to exist.");
       }
-      assert.strictEqual(row.settledOverride, "settled");
-      assert.strictEqual(row.settledAt, "2026-03-25T00:00:00.000Z");
       assert.strictEqual(row.snoozedUntil, "2026-03-26T09:00:00.000Z");
       assert.strictEqual(row.snoozedAt, "2026-03-25T00:00:00.000Z");
 
-      // Un-settle to the keep-active pin and wake the snooze; confirm the
-      // flips persist.
+      // Wake the snooze; confirm the flip persists.
       yield* threads.upsert({
         ...row,
-        settledOverride: "active",
-        settledAt: null,
         snoozedUntil: null,
         snoozedAt: null,
       });
@@ -189,8 +180,6 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         threadId: ThreadId.make("thread-settled"),
       });
       const updated = Option.getOrNull(repersisted);
-      assert.strictEqual(updated?.settledOverride, "active");
-      assert.strictEqual(updated?.settledAt, null);
       assert.strictEqual(updated?.snoozedUntil, null);
       assert.strictEqual(updated?.snoozedAt, null);
     }),

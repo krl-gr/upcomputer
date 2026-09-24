@@ -174,8 +174,8 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         assert.equal(row.lastAppliedSequence, 3);
       }
 
-      // Settled lifecycle through the DB pipeline: thread.settled writes the
-      // override + timestamp, thread.unsettled(user) flips to the active pin.
+      // Retired settled lifecycle: existing event stores still contain these
+      // events. They must project as no-ops without stalling any projector.
       yield* eventStore.append({
         type: "thread.settled",
         eventId: EventId.make("evt-settle-1"),
@@ -192,21 +192,6 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           updatedAt: "2026-01-01T00:00:01.000Z",
         },
       });
-      yield* projectionPipeline.bootstrap;
-
-      const settledRows = yield* sql<{
-        readonly settledOverride: string | null;
-        readonly settledAt: string | null;
-      }>`
-        SELECT
-          settled_override AS "settledOverride",
-          settled_at AS "settledAt"
-        FROM projection_threads
-        WHERE thread_id = 'thread-1'
-      `;
-      assert.deepEqual(settledRows, [
-        { settledOverride: "settled", settledAt: "2026-01-01T00:00:01.000Z" },
-      ]);
 
       yield* eventStore.append({
         type: "thread.unsettled",
@@ -226,7 +211,15 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       });
       yield* projectionPipeline.bootstrap;
 
-      const unsettledRows = yield* sql<{
+      const retiredStateRows = yield* sql<{ readonly lastAppliedSequence: number }>`
+        SELECT last_applied_sequence AS "lastAppliedSequence"
+        FROM projection_state
+      `;
+      assert.equal(retiredStateRows.length, Object.keys(ORCHESTRATION_PROJECTOR_NAMES).length);
+      for (const row of retiredStateRows) {
+        assert.equal(row.lastAppliedSequence, 5);
+      }
+      const retiredThreadRows = yield* sql<{
         readonly settledOverride: string | null;
         readonly settledAt: string | null;
       }>`
@@ -236,7 +229,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         FROM projection_threads
         WHERE thread_id = 'thread-1'
       `;
-      assert.deepEqual(unsettledRows, [{ settledOverride: "active", settledAt: null }]);
+      assert.deepEqual(retiredThreadRows, [{ settledOverride: null, settledAt: null }]);
     }),
   );
 });

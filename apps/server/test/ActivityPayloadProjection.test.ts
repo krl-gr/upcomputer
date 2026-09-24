@@ -58,8 +58,6 @@ function makeThread(activities: ReadonlyArray<OrchestrationThreadActivity>): Orc
     createdAt: "2026-07-27T00:00:00.000Z",
     updatedAt: "2026-07-27T00:00:00.000Z",
     archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
     deletedAt: null,
     messages: [],
     proposedPlans: [],
