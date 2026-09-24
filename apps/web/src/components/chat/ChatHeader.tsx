@@ -1,7 +1,6 @@
 import {
   type EnvironmentId,
   type EditorId,
-  type ProjectScript,
   type RepositoryIdentity,
   type ResolvedKeybindingsConfig,
   type ThreadId,
@@ -11,13 +10,8 @@ import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useProjectConfigFileScripts } from "~/hooks/useProjectConfigFileScripts";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { cn } from "~/lib/utils";
 
@@ -30,19 +24,10 @@ interface ChatHeaderProps {
   activeProjectCwd: string | null;
   activeProjectRepositoryIdentity?: RepositoryIdentity | null | undefined;
   openInCwd: string | null;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
-  preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
   gitCwd: string | null;
-  onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -66,22 +51,12 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectCwd,
   activeProjectRepositoryIdentity,
   openInCwd,
-  activeProjectScripts,
-  preferredScriptId,
   keybindings,
   availableEditors,
   rightPanelOpen,
   gitCwd,
-  onRunProjectScript,
-  onAddProjectScript,
-  onUpdateProjectScript,
-  onDeleteProjectScript,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const fileScripts = useProjectConfigFileScripts(
-    activeThreadEnvironmentId,
-    activeProjectScripts ? activeProjectCwd : null,
-  );
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
     activeThreadEnvironmentId,
@@ -132,19 +107,6 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts.scripts}
-            fileScriptsError={fileScripts.error}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
         {showOpenInPicker && (
           <OpenInPicker
             environmentId={activeThreadEnvironmentId}

@@ -14,7 +14,6 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { getFallbackThreadIdAfterDelete } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -27,7 +26,6 @@ import {
   readProject,
   readThreadShell,
 } from "../state/entities";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -95,7 +93,6 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedErrorClass<ThreadSnoo
 }
 
 export function useThreadActions() {
-  const closeTerminal = useAtomCommand(terminalEnvironment.close);
   const archiveThreadMutation = useAtomCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
@@ -130,7 +127,6 @@ export function useThreadActions() {
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
-  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
   // Keep a ref so archiveThread can call handleNewThread without appearing in
@@ -284,11 +280,6 @@ export function useThreadActions() {
         });
       }
 
-      await closeTerminal({
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, deleteHistory: true },
-      });
-
       const deletedThreadIds = deletedIds ?? new Set<ThreadId>();
       const currentRouteThreadRef = getCurrentRouteThreadRef();
       const shouldNavigateToFallback =
@@ -313,7 +304,6 @@ export function useThreadActions() {
         scopeProjectRef(threadRef.environmentId, thread.projectId),
         threadRef,
       );
-      clearTerminalUiState(threadRef);
 
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
@@ -399,8 +389,6 @@ export function useThreadActions() {
     [
       clearComposerDraftForThread,
       clearProjectDraftThreadById,
-      clearTerminalUiState,
-      closeTerminal,
       deleteThreadMutation,
       getCurrentRouteThreadRef,
       refreshVcsStatus,

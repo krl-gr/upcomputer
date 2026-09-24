@@ -301,7 +301,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         arch: "x64",
         allowBuilds: {
           electron: true,
-          "node-pty": true,
+          esbuild: true,
           "browser-tabs-lock": false,
         },
         patchedDependencies: {
@@ -319,7 +319,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         },
         allowBuilds: {
           electron: true,
-          "node-pty": true,
+          esbuild: true,
           "browser-tabs-lock": false,
         },
         patchedDependencies: {
@@ -535,7 +535,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         verbose: Option.none(),
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
-        wslPrebuild: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -575,7 +574,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         verbose: Option.some(false),
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
-        wslPrebuild: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(
@@ -616,7 +614,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         verbose: Option.none(),
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
-        wslPrebuild: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

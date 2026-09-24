@@ -62,7 +62,6 @@ export function mergeServers(input: {
       url: parsed.url,
       processName: null,
       pid: null,
-      terminal: null,
       source: "configured",
       listening: false,
     });
@@ -78,7 +77,6 @@ export function mergeServers(input: {
         ...existing,
         processName: server.processName ?? existing.processName,
         pid: server.pid ?? existing.pid,
-        terminal: server.terminal ?? existing.terminal,
         listening: true,
       });
       continue;
@@ -97,7 +95,6 @@ export function mergeServers(input: {
       url: parsed.url,
       processName: null,
       pid: null,
-      terminal: null,
       source: "recent",
       listening: false,
     });

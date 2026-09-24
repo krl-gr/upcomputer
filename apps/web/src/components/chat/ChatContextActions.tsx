@@ -1,12 +1,10 @@
-import { useProjectConfigFileScripts } from "~/hooks/useProjectConfigFileScripts";
 import type {
   EditorId,
   EnvironmentId,
-  ProjectScript,
   ResolvedKeybindingsConfig,
   ThreadId,
 } from "@upcomputer/contracts";
-import { FileDiffIcon, TerminalSquareIcon } from "lucide-react";
+import { FileDiffIcon } from "lucide-react";
 import {
   memo,
   type ReactNode,
@@ -32,20 +30,11 @@ import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useUiStateStore } from "~/uiStateStore";
 import GitActionsControl from "../GitActionsControl";
 import { SidebarRightIcon } from "./SidebarRightIcon";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
 import { ContextActionMenuItem } from "../ContextActionMenuItem";
-import {
-  ContextBarDiffIcon,
-  ContextBarMoreIcon,
-  ContextBarTerminalIcon,
-} from "../BranchToolbar.icons";
+import { ContextBarDiffIcon, ContextBarMoreIcon } from "../BranchToolbar.icons";
 import {
   CONTEXT_BAR_ICON_TRIGGER_CLASS,
   CONTEXT_BAR_SEPARATOR_CLASS,
-  CONTEXT_BAR_TEXT_TRIGGER_CLASS,
 } from "../BranchToolbar.styles";
 import { Button } from "../ui/button";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -57,30 +46,16 @@ interface ChatContextActionsProps {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
-  projectKey: string;
   projectName: string | undefined;
-  projectCwd: string;
-  projectScripts: ReadonlyArray<ProjectScript> | undefined;
-  preferredScriptId: string | null;
   availableEditors: ReadonlyArray<EditorId>;
   keybindings: ResolvedKeybindingsConfig;
   gitCwd: string | null;
-  terminalAvailable: boolean;
-  terminalOpen: boolean;
   diffAvailable: boolean;
   diffOpen: boolean;
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
-  onToggleTerminal: () => void;
   onToggleDiff: () => void;
   onToggleRightPanel: () => void;
-  onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
 interface QuickActionNode {
@@ -88,17 +63,11 @@ interface QuickActionNode {
   node: ReactNode;
 }
 
-const EMPTY_PROJECT_QUICK_ACTION_IDS: readonly string[] = [];
-
 function ContextBarSeparator() {
   return <div aria-hidden="true" className={CONTEXT_BAR_SEPARATOR_CLASS} />;
 }
 
 export const ChatContextActions = memo(function ChatContextActions(props: ChatContextActionsProps) {
-  const fileScripts = useProjectConfigFileScripts(
-    props.environmentId,
-    props.projectScripts ? props.projectCwd : null,
-  );
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [visibleQuickAccessCount, setVisibleQuickAccessCount] = useState<number | null>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -107,19 +76,10 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
   const updateFrameRef = useRef<number | null>(null);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const contextQuickActionIds = useUiStateStore((state) => state.contextQuickActionIds);
-  const projectQuickActionIds = useUiStateStore(
-    (state) =>
-      state.projectQuickActionIdsByProjectKey[props.projectKey] ?? EMPTY_PROJECT_QUICK_ACTION_IDS,
-  );
   const setContextQuickActionPinned = useUiStateStore((state) => state.setContextQuickActionPinned);
-  const setProjectQuickActionPinned = useUiStateStore((state) => state.setProjectQuickActionPinned);
   const pinnedContextActionIds = useMemo(
     () => new Set(contextQuickActionIds),
     [contextQuickActionIds],
-  );
-  const pinnedProjectScriptIds = useMemo(
-    () => new Set(projectQuickActionIds),
-    [projectQuickActionIds],
   );
   const showOpenInPicker =
     Boolean(props.projectName) &&
@@ -145,23 +105,6 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
 
   const quickActionNodes = useMemo(() => {
     const nodes: QuickActionNode[] = [];
-    for (const script of props.projectScripts ?? []) {
-      if (!pinnedProjectScriptIds.has(script.id)) continue;
-      nodes.push({
-        actionId: `project.${script.id}`,
-        node: (
-          <Button
-            className={`${CONTEXT_BAR_TEXT_TRIGGER_CLASS} max-w-36`}
-            onClick={() => props.onRunProjectScript(script)}
-            size="xs"
-            title={`Run ${script.name}`}
-            variant="ghost"
-          >
-            <span className="truncate">{script.name}</span>
-          </Button>
-        ),
-      });
-    }
     for (const actionId of orderedContextActionIds) {
       if (actionId.startsWith("git.")) {
         nodes.push({
@@ -196,32 +139,6 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
               openInCwd={props.gitCwd}
               presentation="context-bar"
             />
-          ),
-        });
-        continue;
-      }
-      if (actionId === "terminal.toggle") {
-        nodes.push({
-          actionId,
-          node: (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Toggle
-                    aria-label="Toggle terminal drawer"
-                    className={CONTEXT_BAR_ICON_TRIGGER_CLASS}
-                    disabled={!props.terminalAvailable}
-                    onPressedChange={props.onToggleTerminal}
-                    pressed={props.terminalOpen}
-                    size="xs"
-                    variant="outline"
-                  />
-                }
-              >
-                <ContextBarTerminalIcon className="size-4" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Toggle terminal drawer</TooltipPopup>
-            </Tooltip>
           ),
         });
         continue;
@@ -279,7 +196,7 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
       }
     }
     return nodes;
-  }, [orderedContextActionIds, pinnedProjectScriptIds, props, showOpenInPicker, threadRef]);
+  }, [orderedContextActionIds, props, showOpenInPicker, threadRef]);
 
   const updateVisibleQuickActions = useCallback(() => {
     const actions = actionsRef.current;
@@ -361,26 +278,6 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
             <ContextBarMoreIcon className="size-4" />
           </MenuTrigger>
           <MenuPopup align="end" className="min-w-64" keepMounted side="top">
-            {props.projectScripts ? (
-              <ProjectScriptsControl
-                fileScripts={fileScripts.scripts}
-                fileScriptsError={fileScripts.error}
-                keybindings={props.keybindings}
-                onAddScript={props.onAddProjectScript}
-                onDeleteScript={props.onDeleteProjectScript}
-                onRequestMenuClose={() => setMoreMenuOpen(false)}
-                onRunScript={props.onRunProjectScript}
-                onScriptPinnedChange={(scriptId, pinned) =>
-                  setProjectQuickActionPinned(props.projectKey, scriptId, pinned)
-                }
-                onUpdateScript={props.onUpdateProjectScript}
-                pinnedScriptIds={pinnedProjectScriptIds}
-                preferredScriptId={props.preferredScriptId}
-                presentation="context-menu"
-                scripts={props.projectScripts}
-              />
-            ) : null}
-            <MenuSeparator />
             <GitActionsControl
               activeThreadRef={threadRef}
               {...(props.draftId ? { draftId: props.draftId } : {})}
@@ -406,17 +303,6 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
             <MenuSeparator />
             <MenuGroup>
               <MenuGroupLabel>View</MenuGroupLabel>
-              <ContextActionMenuItem
-                actionId="terminal.toggle"
-                checked={pinnedContextActionIds.has("terminal.toggle")}
-                disabled={!props.terminalAvailable}
-                icon={<TerminalSquareIcon className="size-4" />}
-                shortcutLabel={shortcutLabelForCommand(props.keybindings, "terminal.toggle")}
-                onCheckedChange={setContextQuickActionPinned}
-                onSelect={props.onToggleTerminal}
-              >
-                Terminal
-              </ContextActionMenuItem>
               <ContextActionMenuItem
                 actionId="diff.toggle"
                 checked={pinnedContextActionIds.has("diff.toggle")}

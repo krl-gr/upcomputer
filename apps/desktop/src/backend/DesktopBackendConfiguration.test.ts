@@ -196,7 +196,7 @@ describe("DesktopBackendConfiguration", () => {
                   observedDistros.push(distro);
                   return Option.some("/repo/apps/server/dist/bin.mjs");
                 },
-                ensureNodePty: (distro) => {
+                ensureNode: (distro) => {
                   observedDistros.push(distro);
                   return { ok: true, nodePath: "/usr/bin/node", resolvedPath: "/usr/bin:/bin" };
                 },
@@ -254,7 +254,7 @@ describe("DesktopBackendConfiguration", () => {
                   isAvailable: true,
                   distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
                   windowsToWslPath: () => Option.some(linuxEntryPath),
-                  ensureNodePty: () => ({ ok: true, nodePath, resolvedPath }),
+                  ensureNode: () => ({ ok: true, nodePath, resolvedPath }),
                   getDistroIp: () => Option.some("172.27.0.99"),
                 }),
               ),

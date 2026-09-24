@@ -169,6 +169,13 @@ function encodeWhenAst(node: KeybindingWhenNode): string {
   }
 }
 
+// The built-in terminal was removed; existing configs still carry its
+// `terminal.*` rules, so drop them silently instead of reporting them as invalid.
+const isRemovedTerminalKeybinding = (entry: unknown): boolean =>
+  Predicate.hasProperty(entry, "command") &&
+  typeof entry.command === "string" &&
+  entry.command.startsWith("terminal.");
+
 const RawKeybindingsEntries = fromLenientJson(Schema.Array(Schema.Unknown));
 const KeybindingsConfigPrettyJson = fromJsonStringPretty(KeybindingsConfig);
 const decodeKeybindingRuleExit = Schema.decodeUnknownExit(KeybindingRule);
@@ -345,6 +352,7 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.forEach(rawConfig, (entry) =>
       Effect.gen(function* () {
+        if (isRemovedTerminalKeybinding(entry)) return null;
         const decodedRule = decodeKeybindingRuleExit(entry);
         if (decodedRule._tag === "Failure") {
           yield* Effect.logWarning("ignoring invalid keybinding entry", {
@@ -392,6 +400,7 @@ const make = Effect.gen(function* () {
     const keybindings: KeybindingRule[] = [];
     const issues: ServerConfigIssue[] = [];
     for (const [index, entry] of decodedEntries.value.entries()) {
+      if (isRemovedTerminalKeybinding(entry)) continue;
       const decodedRule = decodeKeybindingRuleExit(entry);
       if (decodedRule._tag === "Failure") {
         const detail = Cause.pretty(decodedRule.cause);

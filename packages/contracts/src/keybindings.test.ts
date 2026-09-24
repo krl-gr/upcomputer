@@ -23,12 +23,6 @@ const decodeResolvedRule = Schema.decodeUnknownEffect(ResolvedKeybindingRule as 
 
 it.effect("parses keybinding rules", () =>
   Effect.gen(function* () {
-    const parsed = yield* decode(KeybindingRule, {
-      key: "mod+j",
-      command: "terminal.toggle",
-    });
-    assert.strictEqual(parsed.command, "terminal.toggle");
-
     const parsedSidebarToggle = yield* decode(KeybindingRule, {
       key: "mod+b",
       command: "sidebar.toggle",
@@ -40,12 +34,6 @@ it.effect("parses keybinding rules", () =>
       command: "rightPanel.toggle",
     });
     assert.strictEqual(parsedRightPanelToggle.command, "rightPanel.toggle");
-
-    const parsedClose = yield* decode(KeybindingRule, {
-      key: "mod+w",
-      command: "terminal.close",
-    });
-    assert.strictEqual(parsedClose.command, "terminal.close");
 
     const parsedDiffToggle = yield* decode(KeybindingRule, {
       key: "mod+d",
@@ -110,9 +98,9 @@ it.effect("accepts dynamic script run commands", () =>
 it.effect("parses keybindings array payload", () =>
   Effect.gen(function* () {
     const parsed = yield* decode(KeybindingsConfig, [
-      { key: "mod+j", command: "terminal.toggle" },
-      { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
-      { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
+      { key: "mod+b", command: "sidebar.toggle" },
+      { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
+      { key: "mod+d", command: "diff.toggle", when: "!previewFocus" },
     ]);
     assert.lengthOf(parsed, 3);
   }),
@@ -121,7 +109,7 @@ it.effect("parses keybindings array payload", () =>
 it.effect("parses resolved keybinding rules", () =>
   Effect.gen(function* () {
     const parsed = yield* decode(ResolvedKeybindingRule, {
-      command: "terminal.split",
+      command: "diff.toggle",
       shortcut: {
         key: "d",
         metaKey: false,
@@ -132,10 +120,10 @@ it.effect("parses resolved keybinding rules", () =>
       },
       whenAst: {
         type: "and",
-        left: { type: "identifier", name: "terminalOpen" },
+        left: { type: "identifier", name: "previewOpen" },
         right: {
           type: "not",
-          node: { type: "identifier", name: "terminalFocus" },
+          node: { type: "identifier", name: "previewFocus" },
         },
       },
     });
@@ -147,9 +135,9 @@ it.effect("parses resolved keybindings arrays", () =>
   Effect.gen(function* () {
     const parsed = yield* decode(ResolvedKeybindingsConfig, [
       {
-        command: "terminal.toggle",
+        command: "sidebar.toggle",
         shortcut: {
-          key: "j",
+          key: "b",
           metaKey: false,
           ctrlKey: false,
           shiftKey: false,
@@ -175,21 +163,21 @@ it.effect("parses resolved keybindings arrays", () =>
 
 it.effect("drops unknown fields in resolved keybinding rules", () =>
   decodeResolvedRule({
-    command: "terminal.toggle",
+    command: "sidebar.toggle",
     shortcut: {
-      key: "j",
+      key: "b",
       metaKey: false,
       ctrlKey: false,
       shiftKey: false,
       altKey: false,
       modKey: true,
     },
-    key: "mod+j",
+    key: "mod+b",
   }).pipe(
     Effect.map((parsed) => {
       const view = parsed as Record<string, unknown>;
       assert.strictEqual("key" in view, false);
-      assert.strictEqual(view.command, "terminal.toggle");
+      assert.strictEqual(view.command, "sidebar.toggle");
     }),
   ),
 );

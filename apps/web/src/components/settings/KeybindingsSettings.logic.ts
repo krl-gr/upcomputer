@@ -29,7 +29,7 @@ export interface KeybindingRow {
 export type WhenVariableOption = string;
 export type KeybindingCommandOption = KeybindingCommand;
 
-const CORE_WHEN_VARIABLES = ["terminalFocus", "terminalOpen", "true", "false"] as const;
+const CORE_WHEN_VARIABLES = ["true", "false"] as const;
 
 const DEFAULT_WHEN_VARIABLES = new Set<string>(CORE_WHEN_VARIABLES);
 for (const binding of DEFAULT_RESOLVED_KEYBINDINGS) {
@@ -39,7 +39,7 @@ for (const binding of DEFAULT_RESOLVED_KEYBINDINGS) {
 export const DEFAULT_WHEN_VARIABLE =
   [...DEFAULT_WHEN_VARIABLES].find(
     (identifier) => identifier !== "true" && identifier !== "false",
-  ) ?? "terminalFocus";
+  ) ?? "previewFocus";
 const KNOWN_WHEN_VARIABLES = new Set(DEFAULT_WHEN_VARIABLES);
 
 export function shortcutToKeybindingInput(shortcut: KeybindingShortcut): string {

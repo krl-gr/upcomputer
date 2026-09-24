@@ -62,7 +62,7 @@ export class PinnedRuntimeInstallError extends Schema.TaggedErrorClass<PinnedRun
  * Installs `@upcomputer/server@<version>` into the pinned runtime directory unless a complete
  * install is already there, and returns its paths. The sentinel is written
  * only after npm exits 0; checking the entry file alone is not enough — npm
- * extracts files before running native builds (node-pty), so a killed
+ * extracts files before running native builds, so a killed
  * install leaves a plausible-looking but broken tree behind.
  */
 export const ensurePinnedRuntimeInstalled = Effect.fn("cloud.pinned_runtime.ensure_installed")(
@@ -115,7 +115,7 @@ export const ensurePinnedRuntimeInstalled = Effect.fn("cloud.pinned_runtime.ensu
               "--no-audit",
               `@upcomputer/server@${input.version}`,
             ],
-            // Native deps (node-pty) can compile from source on slow boxes; the
+            // Native deps can compile from source on slow boxes; the
             // ProcessRunner default of 60s would kill a healthy install.
             timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
           })

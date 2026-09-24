@@ -1,7 +1,6 @@
 import {
   type EnvironmentId,
   isProviderDriverKind,
-  ProjectId,
   type ModelSelection,
   type ProviderDriverKind,
   type ServerProvider,
@@ -11,21 +10,11 @@ import {
 } from "@upcomputer/contracts";
 import { type ChatMessage, type SessionPhase, type Thread } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
-import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails, environmentThreadShells } from "../state/threads";
-import {
-  filterTerminalContextsWithText,
-  stripInlineTerminalContextPlaceholders,
-  type TerminalContextDraft,
-} from "../lib/terminalContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
-export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "upcomputer:last-invoked-script-by-project";
-export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
-
-export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
@@ -113,22 +102,6 @@ export function buildThreadTurnInterruptInput(thread: Pick<Thread, "id" | "sessi
     threadId: thread.id,
     ...(runningTurnId !== null ? { turnId: runningTurnId } : {}),
   };
-}
-
-export function reconcileMountedTerminalThreadIds(input: {
-  currentThreadIds: ReadonlyArray<string>;
-  openThreadIds: ReadonlyArray<string>;
-  activeThreadId: string | null;
-  activeThreadTerminalOpen: boolean;
-  maxHiddenThreadCount?: number;
-}): string[] {
-  return reconcileRetainedMountedThreadIds({
-    currentThreadIds: input.currentThreadIds,
-    openThreadIds: input.openThreadIds,
-    activeThreadId: input.activeThreadId,
-    activeThreadOpen: input.activeThreadTerminalOpen,
-    maxHiddenThreadCount: input.maxHiddenThreadCount ?? MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
-  });
 }
 
 export function reconcileRetainedMountedThreadIds(input: {
@@ -237,51 +210,22 @@ export function cloneComposerImageForRetry(
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
-  terminalContexts: ReadonlyArray<TerminalContextDraft>;
   /**
    * Optional element-pick attachment count. Element contexts contribute to
-   * "sendable content" exactly like images and (text-bearing) terminal
-   * contexts do: a prompt of just element chips is still a valid send.
+   * "sendable content" exactly like images do: a prompt of just element chips
+   * is still a valid send.
    */
   elementContextCount?: number;
 }): {
   trimmedPrompt: string;
-  sendableTerminalContexts: TerminalContextDraft[];
-  expiredTerminalContextCount: number;
   hasSendableContent: boolean;
 } {
-  const trimmedPrompt = stripInlineTerminalContextPlaceholders(options.prompt).trim();
-  const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
-  const expiredTerminalContextCount =
-    options.terminalContexts.length - sendableTerminalContexts.length;
+  const trimmedPrompt = options.prompt.trim();
   const elementContextCount = options.elementContextCount ?? 0;
   return {
     trimmedPrompt,
-    sendableTerminalContexts,
-    expiredTerminalContextCount,
     hasSendableContent:
-      trimmedPrompt.length > 0 ||
-      options.imageCount > 0 ||
-      sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0,
-  };
-}
-
-export function buildExpiredTerminalContextToastCopy(
-  expiredTerminalContextCount: number,
-  variant: "omitted" | "empty",
-): { title: string; description: string } {
-  const count = Math.max(1, Math.floor(expiredTerminalContextCount));
-  const noun = count === 1 ? "Expired terminal context" : "Expired terminal contexts";
-  if (variant === "empty") {
-    return {
-      title: `${noun} won't be sent`,
-      description: "Remove it or re-add it to include terminal output.",
-    };
-  }
-  return {
-    title: `${noun} omitted from message`,
-    description: "Re-add it if you want that terminal output included.",
+      trimmedPrompt.length > 0 || options.imageCount > 0 || elementContextCount > 0,
   };
 }
 

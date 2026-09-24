@@ -13,7 +13,6 @@ import {
   buildWslNodeEnvPreamble,
   DesktopWslDistroListError,
   formatMissingToolsReason,
-  formatNodePtyProbeFailureReason,
   formatWslShellTransportFailureReason,
   parseNodePath,
   parseNodeVersion,
@@ -85,19 +84,6 @@ describe("probeWslDistros", () => {
       expect(error).toBeInstanceOf(DesktopWslDistroListError);
       expect(error.message).toContain("timed out");
     }).pipe(Effect.provide(layer));
-  });
-});
-
-describe("formatNodePtyProbeFailureReason", () => {
-  it("identifies a packaged build that omitted the Linux node-pty prebuild", () => {
-    const reason = formatNodePtyProbeFailureReason(4);
-
-    expect(reason).toContain("packaged Linux node-pty binary was not included");
-    expect(reason).toContain("--wsl-prebuild");
-  });
-
-  it("leaves other node-pty load failures to the compatibility diagnostic", () => {
-    expect(formatNodePtyProbeFailureReason(1)).toBeNull();
   });
 });
 
@@ -230,12 +216,11 @@ describe("formatMissingToolsReason", () => {
 
   it("flags missing node first", () => {
     const reason = formatMissingToolsReason(
-      { missingTools: ["node", "make"], nodeVersion: null },
+      { missingTools: ["node"], nodeVersion: null },
       "^24.10",
     );
     expect(reason).toContain("node");
     expect(reason).toContain("^24.10");
-    expect(reason).toContain("make");
     expect(reason).toContain("nvm");
   });
 
@@ -246,16 +231,5 @@ describe("formatMissingToolsReason", () => {
     );
     expect(reason).toContain("node 20.0.0");
     expect(reason).toContain("requires ^24.10 || ^22.16");
-  });
-
-  it("flags missing build tools without node when node is fine", () => {
-    const reason = formatMissingToolsReason(
-      { missingTools: ["g++", "python3"], nodeVersion: "24.10.0" },
-      "^24.10",
-    );
-    expect(reason).toContain("g++");
-    expect(reason).toContain("python3");
-    expect(reason).toContain("build-essential");
-    expect(reason).not.toContain("nvm");
   });
 });

@@ -13,7 +13,7 @@ OAuth-style scope strings:
 | ----------------------- | ------------------------------------------------------------------------ |
 | `orchestration:read`    | Read snapshots, status, events, configuration, and filesystem/VCS state. |
 | `orchestration:operate` | Dispatch user operations and mutate environment-side workspace state.    |
-| `terminal:operate`      | Create, attach, input, resize, clear, restart, and terminate terminals.  |
+| `terminal:operate`      | Legacy; still accepted and granted, but no RPC requires it any more.     |
 | `review:write`          | Read review diff previews used to compose review feedback.               |
 | `access:read`           | Inspect pairing links and client sessions.                               |
 | `access:write`          | Create or revoke pairing links and client sessions.                      |
@@ -76,8 +76,7 @@ An ordinary paired client therefore cannot exchange its grant for
 a short-lived, single-purpose WebSocket ticket. This keeps bearer tokens and
 browser cookies out of WebSocket URLs while allowing the socket handshake to
 authenticate. The ticket carries its session's scopes; each RPC method then
-enforces `orchestration:read`, `orchestration:operate`, `terminal:operate`,
-`review:write`, or `access:read` as appropriate. Review feedback submission
+enforces `orchestration:read`, `orchestration:operate`, `review:write`, or `access:read` as appropriate. Review feedback submission
 currently dispatches an orchestration operation, so clients performing it also
 need `orchestration:operate`. Creating a ticket is not
 authorization to call every RPC method.

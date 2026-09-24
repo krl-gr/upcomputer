@@ -15,12 +15,10 @@ workspace's package name is not sufficient to change the shipped metadata.
 | Application / Windows AppUserModelID | `computer.up.upcomputer` (unchanged)             |
 | electron-updater download cache      | `upcomputer-updater`                             |
 | Embedded commit field                | `upcomputerCommitHash`                           |
-| Packaged WSL node-pty marker         | `upcomputer-wsl-node-pty.json`                   |
 
 Local-test builds retain their separate application ID and profile. Linux retains
 its already-branded `upcomputer` executable. Windows keeps its already-branded
 executable filename and shortcut/product name, rather than renaming them again.
-The WSL marker writer, preflight reader, and development rebuild use one constant.
 
 ## Existing installations and data
 
@@ -47,8 +45,7 @@ aliases are not attribution. See `product-name-migration.md` for the current sco
 Focused packaging tests exercise the installed electron-builder `AppInfo`, not
 just our input literals: publisher, product/executable names, updater cache, and
 application ID. Identity tests cover canonical commit metadata, ignored old metadata, and
-explicitly resolved profiles. Desktop and packaging-script typechecks also cover both WSL
-marker producers and its consumer.
+explicitly resolved profiles.
 
 Before release, still run native Windows checks on an isolated machine:
 
@@ -56,7 +53,7 @@ Before release, still run native Windows checks on an isolated machine:
    entry, launch and update check.
 2. Upgrade from 0.0.31 with seeded chats/tasks/settings: same installation entry,
    same profile and data, no duplicate shortcuts, subsequent update download.
-3. WSL preflight loads the newly packaged node-pty marker and binary.
+3. WSL preflight finds Node.js and the unpacked server dependencies.
 
 Configuration/unit tests on macOS are not proof of a successful Windows install
 or upgrade. Do not use a working user's profile for these tests.

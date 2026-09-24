@@ -19,9 +19,9 @@ describe("KeybindingsSettings.logic", () => {
     const rows = buildKeybindingRows(
       [
         {
-          command: "terminal.toggle",
+          command: "sidebar.toggle",
           shortcut: {
-            key: "j",
+            key: "b",
             modKey: true,
             metaKey: false,
             ctrlKey: false,
@@ -30,19 +30,19 @@ describe("KeybindingsSettings.logic", () => {
           },
           whenAst: {
             type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
+            node: { type: "identifier", name: "previewFocus" },
           },
         },
       ] satisfies ResolvedKeybindingsConfig,
-      "terminal",
+      "sidebar",
     );
 
     expect(rows).toEqual([
       expect.objectContaining({
-        command: "terminal.toggle",
-        key: "mod+j",
-        when: "!terminalFocus",
-        defaultKey: "mod+j",
+        command: "sidebar.toggle",
+        key: "mod+b",
+        when: "!previewFocus",
+        defaultKey: "mod+b",
         defaultWhen: "",
         source: "Custom",
       }),
@@ -82,12 +82,12 @@ describe("KeybindingsSettings.logic", () => {
         left: { type: "identifier", name: "editorFocus" },
         right: {
           type: "not",
-          node: { type: "identifier", name: "terminalFocus" },
+          node: { type: "identifier", name: "previewFocus" },
         },
       }),
-    ).toBe("editorFocus && !terminalFocus");
+    ).toBe("editorFocus && !previewFocus");
 
-    expect(parseWhenExpressionDraft("editorFocus && (!terminalFocus || modelPickerOpen)")).toEqual({
+    expect(parseWhenExpressionDraft("editorFocus && (!previewFocus || modelPickerOpen)")).toEqual({
       ok: true,
       value: {
         type: "and",
@@ -96,7 +96,7 @@ describe("KeybindingsSettings.logic", () => {
           type: "or",
           left: {
             type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
+            node: { type: "identifier", name: "previewFocus" },
           },
           right: { type: "identifier", name: "modelPickerOpen" },
         },
@@ -107,13 +107,13 @@ describe("KeybindingsSettings.logic", () => {
       message: "Use variables with !, &&, ||, and parentheses.",
     });
 
-    expect(parseWhenExpressionDraft("!(terminalFocus || modelPickerOpen)")).toEqual({
+    expect(parseWhenExpressionDraft("!(previewFocus || modelPickerOpen)")).toEqual({
       ok: true,
       value: {
         type: "not",
         node: {
           type: "or",
-          left: { type: "identifier", name: "terminalFocus" },
+          left: { type: "identifier", name: "previewFocus" },
           right: { type: "identifier", name: "modelPickerOpen" },
         },
       },
@@ -129,7 +129,7 @@ describe("KeybindingsSettings.logic", () => {
     const options = buildWhenVariableOptions();
 
     expect(options).toEqual(
-      expect.arrayContaining(["terminalFocus", "terminalOpen", "modelPickerOpen", "true", "false"]),
+      expect.arrayContaining(["previewFocus", "modelPickerOpen", "true", "false"]),
     );
     expect(options).not.toContain("customModeActive");
   });
@@ -153,10 +153,10 @@ describe("KeybindingsSettings.logic", () => {
   });
 
   it("reports unknown when variables without rejecting parseable expressions", () => {
-    const parsed = parseWhenExpressionDraft("!terminalFocus && terminalFoc");
+    const parsed = parseWhenExpressionDraft("!previewFocus && previewFoc");
 
     expect(parsed.ok).toBe(true);
-    expect(unknownWhenVariables(parsed.ok ? parsed.value : undefined)).toEqual(["terminalFoc"]);
+    expect(unknownWhenVariables(parsed.ok ? parsed.value : undefined)).toEqual(["previewFoc"]);
   });
 
   it("marks each default shortcut for multi-binding commands as default", () => {
@@ -172,10 +172,6 @@ describe("KeybindingsSettings.logic", () => {
             altKey: false,
             shiftKey: false,
           },
-          whenAst: {
-            type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
-          },
         },
         {
           command: "chat.new",
@@ -186,10 +182,6 @@ describe("KeybindingsSettings.logic", () => {
             ctrlKey: false,
             altKey: false,
             shiftKey: true,
-          },
-          whenAst: {
-            type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
           },
         },
       ] satisfies ResolvedKeybindingsConfig,
@@ -214,7 +206,7 @@ describe("KeybindingsSettings.logic", () => {
           },
           whenAst: {
             type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
+            node: { type: "identifier", name: "previewFocus" },
           },
         },
         {
@@ -229,7 +221,7 @@ describe("KeybindingsSettings.logic", () => {
           },
           whenAst: {
             type: "not",
-            node: { type: "identifier", name: "terminalFocus" },
+            node: { type: "identifier", name: "previewFocus" },
           },
         },
       ] satisfies ResolvedKeybindingsConfig,

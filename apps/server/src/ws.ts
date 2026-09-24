@@ -15,7 +15,6 @@ import {
   AuthOrchestrationReadScope,
   AuthReviewWriteScope,
   AuthRelayWriteScope,
-  AuthTerminalOperateScope,
   AuthAccessReadScope,
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
@@ -53,10 +52,6 @@ import {
   EnvironmentAuthorizationError,
   ThreadContextBindingId,
   ThreadId,
-  type TerminalAttachStreamEvent,
-  type TerminalError,
-  type TerminalEvent,
-  type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
 } from "@upcomputer/contracts";
@@ -90,7 +85,6 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
@@ -362,15 +356,6 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.vcsSwitchRef, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsInit, AuthOrchestrationOperateScope],
   [WS_METHODS.reviewGetDiffPreview, AuthReviewWriteScope],
-  [WS_METHODS.terminalOpen, AuthTerminalOperateScope],
-  [WS_METHODS.terminalAttach, AuthTerminalOperateScope],
-  [WS_METHODS.terminalWrite, AuthTerminalOperateScope],
-  [WS_METHODS.terminalResize, AuthTerminalOperateScope],
-  [WS_METHODS.terminalClear, AuthTerminalOperateScope],
-  [WS_METHODS.terminalRestart, AuthTerminalOperateScope],
-  [WS_METHODS.terminalClose, AuthTerminalOperateScope],
-  [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
-  [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
   [WS_METHODS.previewOpen, AuthOrchestrationOperateScope],
   [WS_METHODS.previewNavigate, AuthOrchestrationOperateScope],
   [WS_METHODS.previewResize, AuthOrchestrationOperateScope],
@@ -445,7 +430,6 @@ const makeWsRpcLayer = (
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
-      const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -958,7 +942,7 @@ const makeWsRpcLayer = (
             return appendSetupScriptActivity({
               threadId: command.threadId,
               kind: "setup-script.failed",
-              summary: "Setup script failed to start",
+              summary: "Setup script failed",
               createdAt: input.requestedAt,
               payload: {
                 detail,
@@ -968,7 +952,7 @@ const makeWsRpcLayer = (
             }).pipe(
               Effect.ignoreCause({ log: false }),
               Effect.flatMap(() =>
-                Effect.logWarning("bootstrap turn start failed to launch setup script", {
+                Effect.logWarning("bootstrap turn start setup script failed", {
                   threadId: command.threadId,
                   worktreePath: input.worktreePath,
                   detail,
@@ -982,14 +966,12 @@ const makeWsRpcLayer = (
             readonly worktreePath: string;
             readonly scriptId: string;
             readonly scriptName: string;
-            readonly terminalId: string;
           }) =>
             Effect.gen(function* () {
               const startedAt = yield* nowIso;
               const payload = {
                 scriptId: input.scriptId,
                 scriptName: input.scriptName,
-                terminalId: input.terminalId,
                 worktreePath: input.worktreePath,
               };
               yield* Effect.all([
@@ -1018,7 +1000,6 @@ const makeWsRpcLayer = (
                       threadId: command.threadId,
                       worktreePath: input.worktreePath,
                       scriptId: input.scriptId,
-                      terminalId: input.terminalId,
                       detail: error.message,
                     },
                   ),
@@ -1057,8 +1038,24 @@ const makeWsRpcLayer = (
                         worktreePath,
                         scriptId: setupResult.scriptId,
                         scriptName: setupResult.scriptName,
-                        terminalId: setupResult.terminalId,
-                      });
+                      }).pipe(
+                        Effect.andThen(
+                          setupResult.completion.pipe(
+                            Effect.catch((error) =>
+                              nowIso.pipe(
+                                Effect.flatMap((failedAt) =>
+                                  recordSetupScriptLaunchFailure({
+                                    error,
+                                    requestedAt: failedAt,
+                                    worktreePath,
+                                  }),
+                                ),
+                              ),
+                            ),
+                            Effect.forkDetach,
+                          ),
+                        ),
+                      );
                     },
                   }),
                 );
@@ -1248,15 +1245,6 @@ const makeWsRpcLayer = (
                     ),
                   );
                 }
-
-                yield* terminalManager.close({ threadId: normalizedCommand.threadId }).pipe(
-                  Effect.catch((error) =>
-                    Effect.logWarning("failed to close thread terminals after archive", {
-                      threadId: normalizedCommand.threadId,
-                      error: error.message,
-                    }),
-                  ),
-                );
               }
               return result;
             }).pipe(
@@ -2043,63 +2031,6 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.reviewGetDiffPreview, review.getDiffPreview(input), {
             "rpc.aggregate": "review",
           }),
-        [WS_METHODS.terminalOpen]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.terminalAttach]: (input) =>
-          observeRpcStream(
-            WS_METHODS.terminalAttach,
-            Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
-              Effect.acquireRelease(
-                terminalManager.attachStream(input, (event) => Queue.offer(queue, event)),
-                (unsubscribe) => Effect.sync(unsubscribe),
-              ),
-            ),
-            { "rpc.aggregate": "terminal" },
-          ),
-        [WS_METHODS.terminalWrite]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalWrite, terminalManager.write(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.terminalResize]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalResize, terminalManager.resize(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.terminalClear]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalClear, terminalManager.clear(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.terminalRestart]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalRestart, terminalManager.restart(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.terminalClose]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
-            "rpc.aggregate": "terminal",
-          }),
-        [WS_METHODS.subscribeTerminalEvents]: (_input) =>
-          observeRpcStream(
-            WS_METHODS.subscribeTerminalEvents,
-            Stream.callback<TerminalEvent>((queue) =>
-              Effect.acquireRelease(
-                terminalManager.subscribe((event) => Queue.offer(queue, event)),
-                (unsubscribe) => Effect.sync(unsubscribe),
-              ),
-            ),
-            { "rpc.aggregate": "terminal" },
-          ),
-        [WS_METHODS.subscribeTerminalMetadata]: (_input) =>
-          observeRpcStream(
-            WS_METHODS.subscribeTerminalMetadata,
-            Stream.callback<TerminalMetadataStreamEvent>((queue) =>
-              Effect.acquireRelease(
-                terminalManager.subscribeMetadata((event) => Queue.offer(queue, event)),
-                (unsubscribe) => Effect.sync(unsubscribe),
-              ),
-            ),
-            { "rpc.aggregate": "terminal" },
-          ),
         [WS_METHODS.previewOpen]: (input) =>
           observeRpcEffect(WS_METHODS.previewOpen, previewManager.open(input), {
             "rpc.aggregate": "preview",

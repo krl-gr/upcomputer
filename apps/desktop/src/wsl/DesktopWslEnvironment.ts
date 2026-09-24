@@ -13,7 +13,6 @@ import { buildRemoteNodeEnvScript } from "@upcomputer/ssh/tunnel";
 import { satisfiesSemverRange } from "@upcomputer/shared/semver";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { UPCOMPUTER_WSL_PTY_MARKER } from "../app/DesktopProductIdentity.ts";
 import { parseWslDistroList, type WslDistro } from "./wslPathParsing.ts";
 
 const PROCESS_TERMINATE_GRACE = Duration.seconds(1);
@@ -22,17 +21,14 @@ const PRE_WARM_TIMEOUT = Duration.seconds(10);
 const WSLPATH_TIMEOUT = Duration.seconds(10);
 const PROBE_TIMEOUT = Duration.seconds(10);
 const TOOLCHAIN_TIMEOUT = Duration.seconds(10);
-const BUILD_TIMEOUT = Duration.minutes(5);
 const USER_HOME_TIMEOUT = Duration.seconds(5);
 const TOOLCHAIN_TRANSPORT_RETRY_LIMIT = 12;
-const BUILD_TRANSPORT_RETRY_LIMIT = 2;
 
-export interface EnsureWslNodePtyOptions {
-  readonly allowBuild?: boolean;
+export interface EnsureWslNodeOptions {
   readonly nodeEngineRange?: string | null;
 }
 
-export type EnsureWslNodePtyResult =
+export type EnsureWslNodeResult =
   | {
       readonly ok: true;
       readonly nodePath: string;
@@ -80,11 +76,11 @@ export class DesktopWslEnvironment extends Context.Service<
     // (the backend can be listening for 30+ seconds before wslhost starts
     // forwarding 127.0.0.1:port to WSL-side localhost).
     readonly getDistroIp: (distro: string | null) => Effect.Effect<Option.Option<string>>;
-    readonly ensureNodePty: (
+    readonly ensureNode: (
       distro: string | null,
       windowsRepoRoot: string,
-      options?: EnsureWslNodePtyOptions,
-    ) => Effect.Effect<EnsureWslNodePtyResult>;
+      options?: EnsureWslNodeOptions,
+    ) => Effect.Effect<EnsureWslNodeResult>;
   }
 >()("@upcomputer/desktop/wsl/DesktopWslEnvironment") {}
 
@@ -150,7 +146,7 @@ const runWslShell = (
   distro: string | null,
   bashScript: string,
   timeout: Duration.Duration,
-  options: EnsureWslNodePtyOptions = {},
+  options: EnsureWslNodeOptions = {},
 ): Effect.Effect<ShellResult, never, ChildProcessSpawner.ChildProcessSpawner> => {
   const spawner = ChildProcessSpawner.ChildProcessSpawner;
   // -l picks up profile-managed PATH; the shared resolver covers supported
@@ -189,7 +185,7 @@ const runWslShell = (
       }
       const handle = spawnResult.handle;
       // Drain stdout and stderr concurrently so neither pipe buffer can fill
-      // and stall the child (node-gyp rebuild emits large output on both).
+      // and stall the child.
       const [stdoutBytes, stderrBytes, exitCode] = yield* Effect.all(
         [Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr), handle.exitCode],
         { concurrency: "unbounded" },
@@ -217,14 +213,7 @@ const runWslShell = (
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-const NODE_PTY_PREBUILD_MISSING_EXIT_CODE = 4;
-
-export const formatNodePtyProbeFailureReason = (exitCode: number): string | null =>
-  exitCode === NODE_PTY_PREBUILD_MISSING_EXIT_CODE
-    ? "WSL support is missing from this Up.computer build: the packaged Linux node-pty binary was not included. Rebuild the Windows artifact with `--wsl-prebuild <path-to-linux-pty.node>` or install a build that includes WSL support."
-    : null;
-
-const NODE_PTY_PROBE_SCRIPT = (
+const NODE_PROBE_SCRIPT = (
   linuxServerDir: string,
 ) => `printf 'nodePath:%s\\n' "$(command -v node 2>/dev/null)"
 printf 'nodeVersion:%s\\n' "$(node -p 'process.versions.node' 2>/dev/null)"
@@ -234,61 +223,19 @@ cd ${shellQuote(linuxServerDir)} && node <<'NODE' >/dev/null 2>&1
 // can't read inside app.asar, so confirm those deps are unpacked on the real
 // filesystem before reporting the backend healthy. "effect" is the framework
 // every server module imports; resolving it validates the whole node_modules
-// tree. Exit 3 marks this distinct from a node-pty problem so the caller can
-// report it accurately instead of letting the server crash on
-// ERR_MODULE_NOT_FOUND at launch (which, in wsl-only mode, would just fail to
-// launch with no fallback).
+// tree. Exit 3 lets the caller report it accurately instead of letting the
+// server crash on ERR_MODULE_NOT_FOUND at launch (which, in wsl-only mode,
+// would just fail to launch with no fallback).
 try { require.resolve("effect"); } catch (_e) { process.exit(3); }
-const fs = require("node:fs");
-const path = require("node:path");
-const pkgDir = path.dirname(require.resolve("node-pty/package.json"));
-// node-pty 1.x is N-API based, so a single Linux pty.node is ABI-stable across
-// Node versions — require() succeeding IS the real compatibility test. Compare
-// only arch and node-pty version (a stale binary from a different node-pty),
-// NOT process.versions.modules: that would reject a perfectly loadable prebuilt
-// whenever the user's WSL Node ABI differs from the build's, defeating the
-// whole point of shipping one prebuilt for all Node versions.
-const expected = {
-  arch: process.arch,
-  nodePtyVersion: require("node-pty/package.json").version,
-};
-const prebuildDir = path.join(pkgDir, "prebuilds", "linux-" + process.arch);
-const marker = path.join(prebuildDir, "${UPCOMPUTER_WSL_PTY_MARKER}");
-const binary = path.join(prebuildDir, "pty.node");
-if (!fs.existsSync(marker) || !fs.existsSync(binary)) process.exit(${NODE_PTY_PREBUILD_MISSING_EXIT_CODE});
-require("node-pty");
-const actual = JSON.parse(fs.readFileSync(marker, "utf8"));
-for (const key of Object.keys(expected)) {
-  if (actual[key] !== expected[key]) process.exit(2);
-}
 NODE`;
 
 const TOOLCHAIN_CHECK_SCRIPT = [
-  "for tool in node make g++ python3; do",
-  '  command -v "$tool" >/dev/null 2>&1 || echo "missing:$tool"',
-  "done",
+  'command -v node >/dev/null 2>&1 || echo "missing:node"',
   "if command -v node >/dev/null 2>&1; then",
   `  ver="$(node -p 'process.versions.node' 2>/dev/null)"`,
   '  if [ -n "$ver" ]; then printf "nodeVersion:%s\\n" "$ver"; fi',
   "fi",
 ].join("\n");
-
-const NODE_PTY_BUILD_SCRIPT = (linuxServerDir: string) =>
-  [
-    "set -e",
-    `cd ${shellQuote(linuxServerDir)}`,
-    `pkg_dir=$(node -p "require('node:path').dirname(require.resolve('node-pty/package.json'))")`,
-    `arch=$(node -p "process.arch")`,
-    `modules=$(node -p "process.versions.modules")`,
-    `node_pty_version=$(node -p "require('node-pty/package.json').version")`,
-    `cd "$pkg_dir"`,
-    "npx --yes node-gyp rebuild",
-    `prebuild_dir="prebuilds/linux-$arch"`,
-    `mkdir -p "$prebuild_dir"`,
-    `cp build/Release/pty.node "$prebuild_dir/pty.node"`,
-    `printf '{"arch":"%s","modules":"%s","nodePtyVersion":"%s"}\\n' "$arch" "$modules" "$node_pty_version" > "$prebuild_dir/${UPCOMPUTER_WSL_PTY_MARKER}"`,
-    `node -e 'require("node-pty")'`,
-  ].join("\n");
 
 export interface ToolchainReport {
   readonly missingTools: ReadonlyArray<string>;
@@ -312,8 +259,7 @@ export const parseToolchainReport = (stdout: string): ToolchainReport => {
 
 // Pulls the absolute node path the WSL distro resolved after the shared remote
 // resolver repaired PATH. Returns null when no node was found, which the caller
-// turns into an actionable "install Node" message instead of a confusing
-// node-pty error.
+// turns into an actionable "install Node" message.
 export const parseNodePath = (stdout: string): string | null => {
   const path = stdout
     .split("\n")
@@ -355,46 +301,24 @@ export const formatMissingToolsReason = (
     requiredRange !== null &&
     report.nodeVersion !== null &&
     !satisfiesSemverRange(report.nodeVersion, requiredRange);
-  const buildToolsMissing = report.missingTools.filter((tool) => tool !== "node");
-
-  if (!nodeMissing && !nodeOutOfRange && buildToolsMissing.length === 0) {
-    return null;
-  }
-
-  const issues: string[] = [];
-  const remediations: string[] = [];
-
   if (nodeMissing) {
-    issues.push("node");
-    remediations.push(
-      `Node.js${requiredRange ? ` satisfying \`${requiredRange}\`` : " 18+"} (e.g. via nvm)`,
-    );
-  } else if (nodeOutOfRange) {
-    issues.push(`node ${report.nodeVersion} (requires ${requiredRange})`);
-    remediations.push(
-      `a newer Node.js satisfying \`${requiredRange}\` (e.g. \`nvm install 24 && nvm alias default 24\`)`,
-    );
+    return `WSL distro is missing required tools: node. Install Node.js${requiredRange ? ` satisfying \`${requiredRange}\`` : " 18+"} (e.g. via nvm), then retry.`;
   }
-
-  if (buildToolsMissing.length > 0) {
-    issues.push(...buildToolsMissing);
-    remediations.push(
-      "the build toolchain (e.g. `sudo apt install -y build-essential python3` on Ubuntu/Debian)",
-    );
+  if (nodeOutOfRange) {
+    return `WSL distro is missing required tools: node ${report.nodeVersion} (requires ${requiredRange}). Install a newer Node.js satisfying \`${requiredRange}\` (e.g. \`nvm install 24 && nvm alias default 24\`), then retry.`;
   }
-
-  return `WSL distro is missing required tools: ${issues.join(", ")}. Install ${remediations.join(" and ")}, then retry.`;
+  return null;
 };
 
-const ensureNodePtyImpl = (
+const ensureNodeImpl = (
   distro: string | null,
   windowsRepoRoot: string,
   windowsToWslPath: (
     distro: string | null,
     windowsPath: string,
   ) => Effect.Effect<Option.Option<string>>,
-  options: EnsureWslNodePtyOptions = {},
-): Effect.Effect<EnsureWslNodePtyResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  options: EnsureWslNodeOptions = {},
+): Effect.Effect<EnsureWslNodeResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const linuxRepoRootOption = yield* windowsToWslPath(distro, windowsRepoRoot);
     if (Option.isNone(linuxRepoRootOption)) {
@@ -405,13 +329,13 @@ const ensureNodePtyImpl = (
       } as const;
     }
     const linuxRepoRoot = linuxRepoRootOption.value;
-    // node-pty lives in the apps/server workspace's node_modules; resolve from
-    // there rather than the monorepo root, where Bun's hoist layout omits it.
+    // Server dependencies live in the apps/server workspace's node_modules;
+    // resolve from there rather than the monorepo root.
     const linuxServerDir = `${linuxRepoRoot}/apps/server`;
 
     const probe = yield* runWslShell(
       distro,
-      NODE_PTY_PROBE_SCRIPT(linuxServerDir),
+      NODE_PROBE_SCRIPT(linuxServerDir),
       PROBE_TIMEOUT,
       options,
     );
@@ -428,8 +352,7 @@ const ensureNodePtyImpl = (
     }
 
     // No node at all, even after the shared resolver repaired PATH. Surface
-    // the specific, actionable toolchain message rather than a confusing
-    // node-pty error, and don't try to build.
+    // the specific, actionable toolchain message.
     if (nodePath === null) {
       const toolchainCheck = yield* runWslShell(
         distro,
@@ -494,89 +417,9 @@ const ensureNodePtyImpl = (
       return { ok: true, nodePath, resolvedPath } as const;
     }
 
-    if (options.allowBuild !== true) {
-      const packagedProbeFailure = formatNodePtyProbeFailureReason(probe.exitCode);
-      if (packagedProbeFailure !== null) {
-        return {
-          ok: false,
-          reason: packagedProbeFailure,
-          fatal: true,
-        } as const;
-      }
-    }
-
-    // node is present but node-pty's native module didn't load.
-    const toolchainCheck = yield* runWslShell(
-      distro,
-      TOOLCHAIN_CHECK_SCRIPT,
-      TOOLCHAIN_TIMEOUT,
-      options,
-    );
-    const toolchainTransportFailure = formatWslShellTransportFailureReason(
-      toolchainCheck.transportFailure,
-    );
-    if (toolchainTransportFailure !== null) {
-      return {
-        ok: false,
-        reason: toolchainTransportFailure,
-        fatal: false,
-        retryLimit: TOOLCHAIN_TRANSPORT_RETRY_LIMIT,
-      } as const;
-    }
-    const report = parseToolchainReport(toolchainCheck.stdout);
-
-    if (options.allowBuild !== true) {
-      // Packaged builds ship a prebuilt Linux node-pty, so no compiler, node-gyp,
-      // or network is needed — and we must not nag the user to install build
-      // tools they don't need. Still surface a missing/too-old Node (both the
-      // prebuilt and the server require a compatible Node); otherwise reaching
-      // here means the bundled binary itself couldn't load, which is almost
-      // always an unsupported CPU architecture or incompatible system libraries.
-      const nodeOnlyReason = formatMissingToolsReason(
-        {
-          missingTools: report.missingTools.filter((tool) => tool === "node"),
-          nodeVersion: report.nodeVersion,
-        },
-        options.nodeEngineRange?.trim() || null,
-      );
-      return {
-        ok: false,
-        reason:
-          nodeOnlyReason ??
-          "The bundled WSL backend binary (node-pty) could not be loaded in this distro. This usually means an unsupported CPU architecture or incompatible system libraries (glibc). Use a glibc-based x64/arm64 WSL distro such as Ubuntu; if you already are, please report this with your distro and the output of `uname -m`.",
-        fatal: true,
-      } as const;
-    }
-
-    // Dev only: no prebuilt is bundled in a checkout, so compile node-pty from
-    // source. Run the toolchain check first so a missing compiler or out-of-range
-    // Node surfaces a specific, actionable message instead of an opaque node-gyp
-    // failure. Developers have the toolchain; end users never reach this path.
-    const missingReason = formatMissingToolsReason(report, options.nodeEngineRange?.trim() || null);
-    if (missingReason !== null) {
-      return { ok: false, reason: missingReason, fatal: true } as const;
-    }
-
-    const build = yield* runWslShell(
-      distro,
-      NODE_PTY_BUILD_SCRIPT(linuxServerDir),
-      BUILD_TIMEOUT,
-      options,
-    );
-    const buildTransportFailure = formatWslShellTransportFailureReason(build.transportFailure);
-    if (buildTransportFailure !== null) {
-      return {
-        ok: false,
-        reason: buildTransportFailure,
-        fatal: false,
-        retryLimit: BUILD_TRANSPORT_RETRY_LIMIT,
-      } as const;
-    }
-    if (build.exitCode === 0) return { ok: true, nodePath, resolvedPath } as const;
-    const trimmedTail = `${build.stdout}${build.stderr}`.trim().slice(-500);
     return {
       ok: false,
-      reason: `node-pty Linux build failed (exit ${build.exitCode}): ${trimmedTail || "no stderr captured"}`,
+      reason: `WSL backend preflight failed (exit ${probe.exitCode}): ${probe.stderr.trim().slice(-500) || "no stderr captured"}`,
       fatal: true,
     } as const;
   });
@@ -775,11 +618,11 @@ export interface DesktopWslEnvironmentTestStub {
   readonly windowsToWslPath?: (distro: string | null, windowsPath: string) => Option.Option<string>;
   readonly getUserHome?: (distro: string | null) => Option.Option<string>;
   readonly getDistroIp?: (distro: string | null) => Option.Option<string>;
-  readonly ensureNodePty?: (
+  readonly ensureNode?: (
     distro: string | null,
     windowsRepoRoot: string,
-    options?: EnsureWslNodePtyOptions,
-  ) => EnsureWslNodePtyResult;
+    options?: EnsureWslNodeOptions,
+  ) => EnsureWslNodeResult;
 }
 
 export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
@@ -797,11 +640,11 @@ export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
         Effect.succeed(stub.windowsToWslPath?.(distro, windowsPath) ?? Option.none()),
       getUserHome: (distro) => Effect.succeed(stub.getUserHome?.(distro) ?? Option.none<string>()),
       getDistroIp: (distro) => Effect.succeed(stub.getDistroIp?.(distro) ?? Option.none<string>()),
-      ensureNodePty: (distro, windowsRepoRoot, options) =>
+      ensureNode: (distro, windowsRepoRoot, options) =>
         Effect.succeed(
-          stub.ensureNodePty?.(distro, windowsRepoRoot, options) ?? {
+          stub.ensureNode?.(distro, windowsRepoRoot, options) ?? {
             ok: false,
-            reason: "ensureNodePty stub not configured",
+            reason: "ensureNode stub not configured",
             fatal: true,
           },
         ),
@@ -879,9 +722,9 @@ export const layer = Layer.effect(
       windowsToWslPath,
       getUserHome,
       getDistroIp,
-      ensureNodePty: (distro, windowsRepoRoot, options) =>
-        provideSpawner(ensureNodePtyImpl(distro, windowsRepoRoot, windowsToWslPath, options)).pipe(
-          Effect.withSpan("desktop.wsl.ensureNodePty"),
+      ensureNode: (distro, windowsRepoRoot, options) =>
+        provideSpawner(ensureNodeImpl(distro, windowsRepoRoot, windowsToWslPath, options)).pipe(
+          Effect.withSpan("desktop.wsl.ensureNode"),
         ),
     });
   }),

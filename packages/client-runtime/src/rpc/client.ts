@@ -45,13 +45,10 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeAuthAccess
   | typeof WS_METHODS.subscribeServerConfig
   | typeof WS_METHODS.subscribeServerLifecycle
-  | typeof WS_METHODS.subscribeTerminalEvents
-  | typeof WS_METHODS.subscribeTerminalMetadata
   | typeof WS_METHODS.subscribePreviewEvents
   | typeof WS_METHODS.subscribeDiscoveredLocalServers
   | typeof WS_METHODS.previewAutomationConnect
-  | typeof WS_METHODS.subscribeVcsStatus
-  | typeof WS_METHODS.terminalAttach;
+  | typeof WS_METHODS.subscribeVcsStatus;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient

@@ -11,7 +11,7 @@
  * Polling is reference-counted via scoped `retain`. A single layer-scoped fiber
  * polls forever, but each tick is a no-op when the retain count is zero.
  */
-import { ThreadId, type DiscoveredLocalServer } from "@upcomputer/contracts";
+import type { DiscoveredLocalServer } from "@upcomputer/contracts";
 import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Net from "@upcomputer/shared/Net";
 import { LSOF_LOCAL_HOST_TOKENS } from "@upcomputer/shared/preview";
@@ -34,15 +34,6 @@ export class PortDiscovery extends Context.Service<
       listener: (servers: ReadonlyArray<DiscoveredLocalServer>) => Effect.Effect<void>,
     ) => Effect.Effect<void, never, Scope.Scope>;
     readonly retain: Effect.Effect<void, never, Scope.Scope>;
-    readonly registerTerminalProcesses: (input: {
-      readonly threadId: string;
-      readonly terminalId: string;
-      readonly processIds: ReadonlyArray<number>;
-    }) => Effect.Effect<void>;
-    readonly unregisterTerminal: (input: {
-      readonly threadId: string;
-      readonly terminalId: string;
-    }) => Effect.Effect<void>;
   }
 >()("@upcomputer/server/preview/PortScanner/PortDiscovery") {}
 
@@ -59,30 +50,10 @@ type Listener = (servers: ReadonlyArray<DiscoveredLocalServer>) => Effect.Effect
 interface ScannerState {
   readonly lastSnapshot: ReadonlyArray<DiscoveredLocalServer>;
   readonly listeners: ReadonlySet<Listener>;
-  readonly terminalProcesses: ReadonlyMap<
-    string,
-    {
-      readonly owner: TerminalProcessOwner;
-      readonly processIds: ReadonlySet<number>;
-    }
-  >;
   readonly retainCount: number;
 }
 
-interface TerminalProcessOwner {
-  readonly threadId: ThreadId;
-  readonly terminalId: string;
-}
-
-const terminalOwnerKey = (owner: {
-  readonly threadId: string;
-  readonly terminalId: string;
-}): string => `${owner.threadId}\u0000${owner.terminalId}`;
-
-const parseLsofOutput = (
-  raw: string,
-  terminalByProcessId: ReadonlyMap<number, TerminalProcessOwner> = new Map(),
-): ReadonlyArray<DiscoveredLocalServer> => {
+const parseLsofOutput = (raw: string): ReadonlyArray<DiscoveredLocalServer> => {
   const seen = new Map<string, DiscoveredLocalServer>();
   let pid: number | null = null;
   let processName: string | null = null;
@@ -113,7 +84,6 @@ const parseLsofOutput = (
         url,
         processName,
         pid,
-        terminal: pid === null ? null : (terminalByProcessId.get(pid) ?? null),
       });
     }
   }
@@ -136,10 +106,7 @@ const parsePortFromLsofName = (name: string): number | null => {
   return port;
 };
 
-const parseWindowsListenerOutput = (
-  raw: string,
-  terminalByProcessId: ReadonlyMap<number, TerminalProcessOwner> = new Map(),
-): ReadonlyArray<DiscoveredLocalServer> => {
+const parseWindowsListenerOutput = (raw: string): ReadonlyArray<DiscoveredLocalServer> => {
   const seen = new Map<number, DiscoveredLocalServer>();
   for (const line of raw.split(/\r?\n/g)) {
     const [hostRaw, portRaw, pidRaw, processNameRaw] = line.trim().split("|", 4);
@@ -156,7 +123,6 @@ const parseWindowsListenerOutput = (
       url: `http://localhost:${port}`,
       processName: processNameRaw?.trim() || null,
       pid: normalizedPid,
-      terminal: normalizedPid === null ? null : (terminalByProcessId.get(normalizedPid) ?? null),
     });
   }
   return [...seen.values()].toSorted((left, right) => left.port - right.port);
@@ -176,9 +142,7 @@ const serversEqual = (
       a.port !== b.port ||
       a.url !== b.url ||
       a.processName !== b.processName ||
-      a.pid !== b.pid ||
-      a.terminal?.threadId !== b.terminal?.threadId ||
-      a.terminal?.terminalId !== b.terminal?.terminalId
+      a.pid !== b.pid
     ) {
       return false;
     }
@@ -193,7 +157,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const stateRef = yield* Ref.make<ScannerState>({
     lastSnapshot: [],
     listeners: new Set(),
-    terminalProcesses: new Map(),
     retainCount: 0,
   });
 
@@ -217,7 +180,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         url: `http://localhost:${result.port}`,
         processName: null,
         pid: null,
-        terminal: null,
       }));
   });
 
@@ -230,13 +192,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       }).pipe(Effect.as(null));
 
   const scanOnce = Effect.fn("PortDiscovery.scan")(function* () {
-    const state = yield* Ref.get(stateRef);
-    const terminalByProcessId = new Map<number, TerminalProcessOwner>();
-    for (const registration of state.terminalProcesses.values()) {
-      for (const processId of registration.processIds) {
-        terminalByProcessId.set(processId, registration.owner);
-      }
-    }
     if (hostPlatform === "win32") {
       const recoverWindowsProbeFailure = recoverProcessProbeFailure("windows-listeners");
       const command =
@@ -250,7 +205,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
           outputMode: "truncate",
         })
         .pipe(
-          Effect.map((result) => parseWindowsListenerOutput(result.stdout, terminalByProcessId)),
+          Effect.map((result) => parseWindowsListenerOutput(result.stdout)),
           Effect.catchTags({
             ProcessSpawnError: recoverWindowsProbeFailure,
             ProcessStdinError: recoverWindowsProbeFailure,
@@ -272,7 +227,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         outputMode: "truncate",
       })
       .pipe(
-        Effect.map((result) => parseLsofOutput(result.stdout, terminalByProcessId)),
+        Effect.map((result) => parseLsofOutput(result.stdout)),
         Effect.catchTags({
           ProcessSpawnError: recoverLsofProbeFailure,
           ProcessStdinError: recoverLsofProbeFailure,
@@ -347,43 +302,10 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       ),
   );
 
-  const registerTerminalProcesses: PortDiscovery["Service"]["registerTerminalProcesses"] =
-    Effect.fn("PortDiscovery.registerTerminalProcesses")(function* (input) {
-      const owner = {
-        threadId: ThreadId.make(input.threadId),
-        terminalId: input.terminalId,
-      };
-      const processIds = new Set(
-        input.processIds.filter((processId) => Number.isInteger(processId) && processId > 0),
-      );
-      yield* Ref.update(stateRef, (state) => {
-        const terminalProcesses = new Map(state.terminalProcesses);
-        const key = terminalOwnerKey(owner);
-        if (processIds.size === 0) {
-          terminalProcesses.delete(key);
-        } else {
-          terminalProcesses.set(key, { owner, processIds });
-        }
-        return { ...state, terminalProcesses };
-      });
-    });
-
-  const unregisterTerminal: PortDiscovery["Service"]["unregisterTerminal"] = Effect.fn(
-    "PortDiscovery.unregisterTerminal",
-  )(function* (input) {
-    yield* Ref.update(stateRef, (state) => {
-      const terminalProcesses = new Map(state.terminalProcesses);
-      terminalProcesses.delete(terminalOwnerKey(input));
-      return { ...state, terminalProcesses };
-    });
-  });
-
   return PortDiscovery.of({
     scan: scanOnce,
     subscribe,
     retain,
-    registerTerminalProcesses,
-    unregisterTerminal,
   });
 }).pipe(Effect.withSpan("PortDiscovery.make"));
 

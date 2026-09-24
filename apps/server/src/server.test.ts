@@ -20,7 +20,6 @@ import {
   type OrchestrationShellStreamItem,
   ExternalLauncherCommandNotFoundError,
   type OrchestrationThreadShell,
-  TerminalNotRunningError,
   type OrchestrationCommand,
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
@@ -92,7 +91,6 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/provid
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
@@ -379,7 +377,6 @@ const buildAppUnderTest = (options?: {
     projectSetupScriptRunner?: Partial<
       ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]
     >;
-    terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
@@ -696,11 +693,6 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(TerminalManager.TerminalManager)({
-          ...options?.layers?.terminalManager,
-        }),
-      ),
-      Layer.provide(
         Layer.mergeAll(
           Layer.mock(PreviewManager.PreviewManager)({
             open: () => Effect.die("PreviewManager not stubbed in this test"),
@@ -719,8 +711,6 @@ const buildAppUnderTest = (options?: {
             scan: () => Effect.succeed([]),
             subscribe: () => Effect.void,
             retain: Effect.void,
-            registerTerminalProcesses: () => Effect.void,
-            unregisterTerminal: () => Effect.void,
           }),
         ),
       ),
@@ -4202,11 +4192,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("routes websocket rpc server.upsertKeybinding", () =>
     Effect.gen(function* () {
       const rule: KeybindingRule = {
-        command: "terminal.toggle",
+        command: "sidebar.toggle",
         key: "ctrl+k",
       };
       const resolved: ResolvedKeybindingRule = {
-        command: "terminal.toggle",
+        command: "sidebar.toggle",
         shortcut: {
           key: "k",
           metaKey: false,
@@ -4238,11 +4228,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("routes websocket rpc server.removeKeybinding", () =>
     Effect.gen(function* () {
       const rule: KeybindingRule = {
-        command: "terminal.toggle",
+        command: "sidebar.toggle",
         key: "ctrl+k",
       };
       const resolved: ResolvedKeybindingRule = {
-        command: "terminal.toggle",
+        command: "sidebar.toggle",
         shortcut: {
           key: "j",
           metaKey: false,
@@ -6839,7 +6829,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("stops the provider session and closes thread terminals after archive", () =>
+  it.effect("stops the provider session after archive", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive");
       const effects: string[] = [];
@@ -6848,12 +6838,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
-          terminalManager: {
-            close: (input) =>
-              Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
-              }),
-          },
           orchestrationEngine: {
             dispatch: (command) =>
               Effect.sync(() => {
@@ -6897,11 +6881,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       const sessionStopCommand = dispatchedCommands[1];
       assert.equal(sessionStopCommand?.type, "thread.session.stop");
       if (sessionStopCommand?.type === "thread.session.stop") {
@@ -6920,12 +6900,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
-          terminalManager: {
-            close: (input) =>
-              Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
-              }),
-          },
           orchestrationEngine: {
             dispatch: (command) =>
               Effect.sync(() => {
@@ -6979,7 +6953,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "query:thread-shell:active",
         "dispatch:thread.archive",
         "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
       ]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
@@ -6996,12 +6969,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
-          terminalManager: {
-            close: (input) =>
-              Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
-              }),
-          },
           orchestrationEngine: {
             dispatch: (command) =>
               Effect.sync(() => {
@@ -7031,7 +6998,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, ["dispatch:thread.archive", `terminal.close:${threadId}`]);
+      assert.deepEqual(effects, ["dispatch:thread.archive"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive"],
@@ -7050,12 +7017,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
         yield* buildAppUnderTest({
           layers: {
-            terminalManager: {
-              close: (input) =>
-                Effect.sync(() => {
-                  effects.push(`terminal.close:${input.threadId}`);
-                }),
-            },
             orchestrationEngine: {
               dispatch: (command) =>
                 Effect.sync(() => {
@@ -7099,7 +7060,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
 
         assert.equal(dispatchResult.sequence, 1);
-        assert.deepEqual(effects, ["dispatch:thread.archive", `terminal.close:${threadId}`]);
+        assert.deepEqual(effects, ["dispatch:thread.archive"]);
         assert.deepEqual(
           dispatchedCommands.map((command) => command.type),
           ["thread.archive"],
@@ -7107,7 +7068,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("archives and still closes terminals when session stop fails", () =>
+  it.effect("archives when session stop fails", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive-stop-failure");
       const effects: string[] = [];
@@ -7116,12 +7077,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
-          terminalManager: {
-            close: (input) =>
-              Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
-              }),
-          },
           orchestrationEngine: {
             dispatch: (command) => {
               dispatchedCommands.push(command);
@@ -7172,11 +7127,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive", "thread.session.stop"],
@@ -7184,7 +7135,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("archives and still closes terminals when session stop defects", () =>
+  it.effect("archives when session stop defects", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive-stop-defect");
       const effects: string[] = [];
@@ -7193,12 +7144,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
-          terminalManager: {
-            close: (input) =>
-              Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
-              }),
-          },
           orchestrationEngine: {
             dispatch: (command) => {
               dispatchedCommands.push(command);
@@ -7244,11 +7189,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive", "thread.session.stop"],
@@ -7318,8 +7259,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               status: "started" as const,
               scriptId: "setup",
               scriptName: "Setup",
-              terminalId: "setup-setup",
               cwd: "/tmp/bootstrap-worktree",
+              completion: Effect.void,
             }),
         );
 
@@ -7480,8 +7421,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             new ProjectSetupScriptRunner.ProjectSetupScriptOperationError({
               threadId: input.threadId,
               worktreePath: input.worktreePath,
-              operation: "openTerminal",
-              cause: { message: "pty unavailable" },
+              operation: "resolveProject",
+              cause: { message: "projection unavailable" },
             }),
           ),
       );
@@ -7556,11 +7497,119 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
       assert.equal(setupFailureActivity?.activity.kind, "setup-script.failed");
       assert.deepEqual(setupFailureActivity?.activity.payload, {
-        detail: "pty unavailable",
+        detail: "projection unavailable",
         worktreePath: "/tmp/bootstrap-worktree",
       });
       assertTrue(dispatchedCommands.every((command) => command.type !== "thread.delete"));
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("records a setup-script failure after the background script exits non-zero", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const completion = yield* Deferred.make<
+        void,
+        ProjectSetupScriptRunner.ProjectSetupScriptOperationError
+      >();
+
+      yield* buildAppUnderTest({
+        layers: {
+          gitVcsDriver: {
+            createWorktree: () =>
+              Effect.succeed({
+                worktree: {
+                  refName: "upcomputer/bootstrap-refName",
+                  path: "/tmp/bootstrap-worktree",
+                },
+              }),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+          projectSetupScriptRunner: {
+            runForThread: () =>
+              Effect.succeed({
+                status: "started" as const,
+                scriptId: "setup",
+                scriptName: "Setup",
+                cwd: "/tmp/bootstrap-worktree",
+                completion: Deferred.await(completion),
+              }),
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-turn-start-setup-exit"),
+            threadId: ThreadId.make("thread-bootstrap-setup-exit"),
+            message: {
+              messageId: MessageId.make("msg-bootstrap-setup-exit"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+              prepareWorktree: {
+                projectCwd: "/tmp/project",
+                baseBranch: "main",
+                branch: "upcomputer/bootstrap-refName",
+              },
+              runSetupScript: true,
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      // Thread start is not blocked by the running script.
+      assertTrue(dispatchedCommands.some((command) => command.type === "thread.turn.start"));
+
+      yield* Deferred.fail(
+        completion,
+        new ProjectSetupScriptRunner.ProjectSetupScriptOperationError({
+          threadId: "thread-bootstrap-setup-exit",
+          worktreePath: "/tmp/bootstrap-worktree",
+          operation: "runScript",
+          cause: new Error("Setup script 'Setup' exited with code 1."),
+        }),
+      );
+      const failedActivity = () =>
+        dispatchedCommands.find(
+          (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
+            command.type === "thread.activity.append" &&
+            command.activity.kind === "setup-script.failed",
+        );
+      for (let attempt = 0; attempt < 100 && !failedActivity(); attempt += 1) {
+        yield* Effect.sleep("10 millis");
+      }
+      assert.deepEqual(failedActivity()?.activity.payload, {
+        detail: "Setup script 'Setup' exited with code 1.",
+        worktreePath: "/tmp/bootstrap-worktree",
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
   it.effect("does not misattribute setup activity dispatch failures as setup launch failures", () =>
@@ -7585,8 +7634,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             status: "started" as const,
             scriptId: "setup",
             scriptName: "Setup",
-            terminalId: "setup-setup",
             cwd: "/tmp/bootstrap-worktree",
+            completion: Effect.void,
           }),
       );
       let setupActivityAppendAttempt = 0;
@@ -7760,130 +7809,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("routes websocket rpc terminal methods", () =>
-    Effect.gen(function* () {
-      const snapshot = {
-        threadId: "thread-1",
-        terminalId: "default",
-        cwd: "/tmp/project",
-        worktreePath: null,
-        status: "running" as const,
-        pid: 1234,
-        history: "",
-        exitCode: null,
-        exitSignal: null,
-        label: "Primary",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-
-      yield* buildAppUnderTest({
-        layers: {
-          terminalManager: {
-            open: () => Effect.succeed(snapshot),
-            write: () => Effect.void,
-            resize: () => Effect.void,
-            clear: () => Effect.void,
-            restart: () => Effect.succeed(snapshot),
-            close: () => Effect.void,
-          },
-        },
-      });
-
-      const wsUrl = yield* getWsServerUrl("/ws");
-
-      const opened = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalOpen]({
-            threadId: "thread-1",
-            terminalId: "default",
-            cwd: "/tmp/project",
-          }),
-        ),
-      );
-      assert.equal(opened.terminalId, "default");
-
-      yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalWrite]({
-            threadId: "thread-1",
-            terminalId: "default",
-            data: "echo hi\n",
-          }),
-        ),
-      );
-
-      yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalResize]({
-            threadId: "thread-1",
-            terminalId: "default",
-            cols: 120,
-            rows: 40,
-          }),
-        ),
-      );
-
-      yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalClear]({
-            threadId: "thread-1",
-            terminalId: "default",
-          }),
-        ),
-      );
-
-      const restarted = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalRestart]({
-            threadId: "thread-1",
-            terminalId: "default",
-            cwd: "/tmp/project",
-            cols: 120,
-            rows: 40,
-          }),
-        ),
-      );
-      assert.equal(restarted.terminalId, "default");
-
-      yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalClose]({
-            threadId: "thread-1",
-            terminalId: "default",
-          }),
-        ),
-      );
-    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
-
-  it.effect("routes websocket rpc terminal.write errors", () =>
-    Effect.gen(function* () {
-      const terminalError = new TerminalNotRunningError({
-        threadId: "thread-1",
-        terminalId: "default",
-      });
-      yield* buildAppUnderTest({
-        layers: {
-          terminalManager: {
-            write: () => Effect.fail(terminalError),
-          },
-        },
-      });
-
-      const wsUrl = yield* getWsServerUrl("/ws");
-      const result = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.terminalWrite]({
-            threadId: "thread-1",
-            terminalId: "default",
-            data: "echo fail\n",
-          }),
-        ).pipe(Effect.result),
-      );
-
-      assertFailure(result, terminalError);
-    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
   it.effect("subscriptions snapshot instead of decoding an oversized replay range", () =>
     Effect.gen(function* () {
       let readEventsCalls = 0;

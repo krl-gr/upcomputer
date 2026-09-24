@@ -453,33 +453,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("rounded-2xl rounded-br-sm border border-border");
   });
 
-  it("renders inline terminal labels with the composer chip UI", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          buildUserTimelineEntry(
-            [
-              buildLongUserMessageText("yoo what's @terminal-1:1-5 mean"),
-              "",
-              "<terminal_context>",
-              "- Terminal 1 lines 1-5:",
-              "  1 | julius@mac effect-http-ws-cli % bun i",
-              "  2 | bun install v1.3.9 (cf6cdbbb)",
-              "</terminal_context>",
-            ].join("\n"),
-          ),
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Terminal 1 lines 1-5");
-    expect(markup).toContain("lucide-terminal");
-    expect(markup).toContain("yoo what&#x27;s</p>");
-    expect(markup).toContain('<span aria-hidden="true"> </span>');
-    expect(markup).toContain("Show full message");
-  }, 20_000);
-
   it("renders chips for standalone element-pick context messages", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

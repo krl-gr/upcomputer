@@ -1,32 +1,12 @@
 import { scopedThreadKey, scopeThreadRef } from "@upcomputer/client-runtime/environment";
-import { CloudIcon, FolderGit2Icon, TerminalIcon } from "lucide-react";
+import { CloudIcon, FolderGit2Icon } from "lucide-react";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
-import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { SIDEBAR_LABEL_TEXT_CLASS } from "./sidebar/sidebarTextStyles";
-
-export interface TerminalStatusIndicator {
-  label: "Terminal process running";
-  colorClass: string;
-  pulse: boolean;
-}
-
-export function terminalStatusFromRunningIds(
-  runningTerminalIds: ReadonlyArray<string>,
-): TerminalStatusIndicator | null {
-  if (runningTerminalIds.length === 0) {
-    return null;
-  }
-  return {
-    label: "Terminal process running",
-    colorClass: "text-teal-600 dark:text-teal-300/90",
-    pulse: true,
-  };
-}
 
 export function ThreadWorktreeIndicator({
   thread,
@@ -136,46 +116,23 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
 
 /**
  * Non-interactive trailing status icons for a thread row in compact contexts
- * like the command palette. Shows a terminal-running indicator and a remote
- * environment indicator, matching the sidebar's trailing indicators.
+ * like the command palette. Shows a remote environment indicator, matching the
+ * sidebar's trailing indicators.
  */
 export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSummary }) {
-  const runningTerminalIds = useThreadRunningTerminalIds({
-    environmentId: thread.environmentId,
-    threadId: thread.id,
-  });
   const environment = useEnvironment(thread.environmentId);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isRemoteThread =
     primaryEnvironmentId !== null && thread.environmentId !== primaryEnvironmentId;
   const remoteEnvLabel = environment?.label ?? null;
   const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? "Remote") : null;
-  const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
 
-  if (!terminalStatus && !isRemoteThread) {
+  if (!isRemoteThread) {
     return null;
   }
 
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      {terminalStatus ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                role="img"
-                aria-label={terminalStatus.label}
-                className={`inline-flex items-center justify-center ${terminalStatus.colorClass}`}
-              />
-            }
-          >
-            <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "animate-status-pulse" : ""}`}
-            />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
-        </Tooltip>
-      ) : null}
       {isRemoteThread ? (
         <Tooltip>
           <TooltipTrigger

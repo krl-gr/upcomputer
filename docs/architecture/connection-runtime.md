@@ -104,8 +104,8 @@ The public package subpaths mirror the runtime layers:
 - `connection/atoms` adapts shared services to application-owned Atom runtimes.
 - `connection/presentation` contains pure UI projections.
 
-Other reusable state lives in domain subpaths such as `shell`, `threads`,
-`terminal`, and `vcs`. Applications must import explicit package subpaths; the
+Other reusable state lives in domain subpaths such as `shell`, `threads`, and
+`vcs`. Applications must import explicit package subpaths; the
 package intentionally has no root export.
 
 ## Application Boundary

@@ -13,7 +13,6 @@ import {
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setContextQuickActionPinned,
-  setProjectQuickActionPinned,
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   type UiState,
@@ -27,7 +26,6 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     contextQuickActionIds: [],
-    projectQuickActionIdsByProjectKey: {},
     ...overrides,
   };
 }
@@ -36,13 +34,9 @@ describe("uiStateStore pure functions", () => {
   it("parses and updates persisted context-bar quick actions", () => {
     const parsed = parsePersistedState({
       contextQuickActionIds: ["git.push", "invalid", "rightPanel.toggle"],
-      projectQuickActionIdsByProjectKey: {
-        project: ["script-a", "script-a", ""],
-      },
     });
 
     expect(parsed.contextQuickActionIds).toEqual(["git.push", "rightPanel.toggle"]);
-    expect(parsed.projectQuickActionIdsByProjectKey).toEqual({ project: ["script-a"] });
 
     const withDiff = setContextQuickActionPinned(parsed, "diff.toggle", true);
     expect(withDiff.contextQuickActionIds).toEqual([
@@ -50,12 +44,6 @@ describe("uiStateStore pure functions", () => {
       "rightPanel.toggle",
       "diff.toggle",
     ]);
-    const withScript = setProjectQuickActionPinned(withDiff, "project", "script-b", true);
-    expect(withScript.projectQuickActionIdsByProjectKey.project).toEqual(["script-a", "script-b"]);
-    expect(
-      setProjectQuickActionPinned(withScript, "project", "script-a", false)
-        .projectQuickActionIdsByProjectKey.project,
-    ).toEqual(["script-b"]);
   });
 
   it("stores server timestamps without moving visit state backwards", () => {
@@ -207,7 +195,6 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       contextQuickActionIds: ["git.quick", "rightPanel.toggle"],
-      projectQuickActionIdsByProjectKey: {},
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -328,7 +315,6 @@ describe("uiStateStore persistence", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       contextQuickActionIds: [],
-      projectQuickActionIdsByProjectKey: {},
       threadChangedFilesExpansionVersion: 1,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {

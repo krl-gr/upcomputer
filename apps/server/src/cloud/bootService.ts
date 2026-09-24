@@ -249,7 +249,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
    * install (global bin, repo checkout) is used as-is; an ephemeral cache
    * entry is replaced by `npm install --prefix`-ing the exact running
    * version into <baseDir>/runtime/versions/<v>. A real install (not a copy
-   * of bin.mjs) because t3 ships native deps like node-pty.
+   * of bin.mjs) because t3 ships native deps like @ff-labs/fff-node.
    */
   const ensurePinnedRuntime = Effect.gen(function* () {
     if (!isEphemeralCacheEntry(host.cliEntryPath)) {

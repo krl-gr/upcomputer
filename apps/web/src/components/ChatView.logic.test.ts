@@ -11,9 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Thread } from "../types";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
-  MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
-  buildExpiredTerminalContextToastCopy,
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -21,7 +19,6 @@ import {
   getStartedThreadModelChangeBlockReason,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
-  reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
@@ -138,63 +135,14 @@ describe("buildThreadTurnInterruptInput", () => {
 });
 
 describe("deriveComposerSendState", () => {
-  it("treats expired terminal pills as non-sendable content", () => {
-    const state = deriveComposerSendState({
-      prompt: "\uFFFC",
-      imageCount: 0,
-      terminalContexts: [
-        {
-          id: "ctx-expired",
-          threadId,
-          terminalId: "default",
-          terminalLabel: "Terminal 1",
-          lineStart: 4,
-          lineEnd: 4,
-          text: "",
-          createdAt: now,
-        },
-      ],
-    });
-
-    expect(state.trimmedPrompt).toBe("");
-    expect(state.sendableTerminalContexts).toEqual([]);
-    expect(state.expiredTerminalContextCount).toBe(1);
-    expect(state.hasSendableContent).toBe(false);
-  });
-
-  it("keeps text sendable while excluding expired terminal pills", () => {
-    const state = deriveComposerSendState({
-      prompt: `yoo \uFFFC waddup`,
-      imageCount: 0,
-      terminalContexts: [
-        {
-          id: "ctx-expired",
-          threadId,
-          terminalId: "default",
-          terminalLabel: "Terminal 1",
-          lineStart: 4,
-          lineEnd: 4,
-          text: "",
-          createdAt: now,
-        },
-      ],
-    });
-
-    expect(state.trimmedPrompt).toBe("yoo  waddup");
-    expect(state.expiredTerminalContextCount).toBe(1);
-    expect(state.hasSendableContent).toBe(true);
-  });
-
-  it("treats element contexts as sendable content (no text, no images, no terminals)", () => {
+  it("treats element contexts as sendable content (no text, no images)", () => {
     const state = deriveComposerSendState({
       prompt: "",
       imageCount: 0,
-      terminalContexts: [],
       elementContextCount: 1,
     });
 
     expect(state.trimmedPrompt).toBe("");
-    expect(state.expiredTerminalContextCount).toBe(0);
     expect(state.hasSendableContent).toBe(true);
   });
 
@@ -203,23 +151,9 @@ describe("deriveComposerSendState", () => {
       deriveComposerSendState({
         prompt: "",
         imageCount: 0,
-        terminalContexts: [],
         elementContextCount: 0,
       }).hasSendableContent,
     ).toBe(false);
-  });
-});
-
-describe("buildExpiredTerminalContextToastCopy", () => {
-  it("formats empty and omission guidance", () => {
-    expect(buildExpiredTerminalContextToastCopy(1, "empty")).toEqual({
-      title: "Expired terminal context won't be sent",
-      description: "Remove it or re-add it to include terminal output.",
-    });
-    expect(buildExpiredTerminalContextToastCopy(2, "omitted")).toEqual({
-      title: "Expired terminal contexts omitted from message",
-      description: "Re-add it if you want that terminal output included.",
-    });
   });
 });
 
@@ -440,35 +374,6 @@ describe("session branch mismatch dismissal", () => {
     expect(isBranchMismatchDismissedForSession("t1:a:b")).toBe(true);
     expect(isBranchMismatchDismissedForSession("t1:a:c")).toBe(false);
     expect(isBranchMismatchDismissedForSession(null)).toBe(false);
-  });
-});
-
-describe("reconcileMountedTerminalThreadIds", () => {
-  it("keeps open threads and makes the active thread most recent", () => {
-    expect(
-      reconcileMountedTerminalThreadIds({
-        currentThreadIds: ["thread-a", "thread-b", "thread-c"],
-        openThreadIds: ["thread-a", "thread-b", "thread-c"],
-        activeThreadId: "thread-a",
-        activeThreadTerminalOpen: true,
-        maxHiddenThreadCount: 2,
-      }),
-    ).toEqual(["thread-b", "thread-c", "thread-a"]);
-  });
-
-  it("drops closed threads and enforces the hidden mounted cap", () => {
-    const ids = Array.from(
-      { length: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS + 2 },
-      (_, index) => `thread-${index}`,
-    );
-    expect(
-      reconcileMountedTerminalThreadIds({
-        currentThreadIds: ids,
-        openThreadIds: ids.slice(1),
-        activeThreadId: null,
-        activeThreadTerminalOpen: false,
-      }),
-    ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
   });
 });
 

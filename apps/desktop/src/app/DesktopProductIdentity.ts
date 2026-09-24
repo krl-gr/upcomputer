@@ -3,5 +3,4 @@ export const UPCOMPUTER_PROTOCOL_SCHEME = "upcomputer";
 export const UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME = "upcomputer-dev";
 export const UPCOMPUTER_EXECUTABLE_NAME = "upcomputer";
 export const UPCOMPUTER_PUBLISHER_NAME = "Up.computer";
-export const UPCOMPUTER_WSL_PTY_MARKER = "upcomputer-wsl-node-pty.json";
 export const UPCOMPUTER_HOME_DIRECTORY_NAME = ".upcomputer";

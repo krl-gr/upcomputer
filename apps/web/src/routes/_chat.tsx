@@ -17,9 +17,7 @@ import {
   startNewThreadInWorkspacePanelFromContext,
 } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
@@ -57,11 +55,6 @@ function ChatRouteGlobalShortcuts() {
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
-  const terminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
   // The `previewOpen` shortcut-context flag here uses the store-only value;
   // the URL-aware arbitration lives inside ChatView's `onTogglePreview`,
   // which we invoke via the action bus to avoid duplicating the rule.
@@ -75,8 +68,6 @@ function ChatRouteGlobalShortcuts() {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
-          terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
         },
@@ -183,7 +174,6 @@ function ChatRouteGlobalShortcuts() {
     routeThreadRef,
     selectedThreadKeysSize,
     sidebarViewMode,
-    terminalOpen,
   ]);
 
   return null;

@@ -5,7 +5,7 @@ The web app communicates with the server via WebSocket using a simple JSON-RPC-s
 - **Request/Response**: `{ id, method, params }` → `{ id, result }` or `{ id, error }`
 - **Push events**: typed envelopes with `channel`, `sequence` (monotonic per connection), and channel-specific `data`
 
-Push channels: `server.welcome`, `server.configUpdated`, `terminal.event`, `orchestration.domainEvent`. Payloads are schema-validated at the transport boundary (`wsTransport.ts`). Decode failures produce structured `WsDecodeDiagnostic` with `code`, `reason`, and path info.
+Push channels: `server.welcome`, `server.configUpdated`, `orchestration.domainEvent`. Payloads are schema-validated at the transport boundary (`wsTransport.ts`). Decode failures produce structured `WsDecodeDiagnostic` with `code`, `reason`, and path info.
 
 Methods mirror the `NativeApi` interface defined in `@upcomputer/contracts`:
 

@@ -145,13 +145,13 @@ describe("environment RPC", () => {
     Effect.gen(function* () {
       const subscriptions: string[] = [];
       const firstClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("first");
           return Stream.never;
         },
       } as unknown as WsRpcProtocolClient;
       const secondClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("second");
           return Stream.never;
         },
@@ -169,7 +169,7 @@ describe("environment RPC", () => {
         return yield* Effect.die(new Error(`Expected ${count} durable subscriptions.`));
       });
 
-      const subscriptionFiber = yield* subscribe(WS_METHODS.subscribeTerminalEvents, {}).pipe(
+      const subscriptionFiber = yield* subscribe(WS_METHODS.subscribePreviewEvents, {}).pipe(
         Stream.runDrain,
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         Effect.forkChild,
@@ -189,7 +189,7 @@ describe("environment RPC", () => {
     Effect.gen(function* () {
       const subscriptions: string[] = [];
       const firstClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("first");
           return Stream.fail(
             new RpcClientError.RpcClientError({
@@ -202,14 +202,14 @@ describe("environment RPC", () => {
         },
       } as unknown as WsRpcProtocolClient;
       const secondClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("second");
           return Stream.never;
         },
       } as unknown as WsRpcProtocolClient;
       const { activeSession, retryCount, supervisor } = yield* makeHarness();
 
-      const subscriptionFiber = yield* subscribe(WS_METHODS.subscribeTerminalEvents, {}).pipe(
+      const subscriptionFiber = yield* subscribe(WS_METHODS.subscribePreviewEvents, {}).pipe(
         Stream.runDrain,
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         Effect.forkChild,
@@ -233,14 +233,14 @@ describe("environment RPC", () => {
 
   it.effect("surfaces domain subscription failures without reconnecting", () =>
     Effect.gen(function* () {
-      const domainError = new Error("terminal subscription rejected");
+      const domainError = new Error("preview subscription rejected");
       const client = {
-        [WS_METHODS.subscribeTerminalEvents]: () => Stream.fail(domainError),
+        [WS_METHODS.subscribePreviewEvents]: () => Stream.fail(domainError),
       } as unknown as WsRpcProtocolClient;
       const { activeSession, retryCount, supervisor } = yield* makeHarness();
 
       yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
-      const error = yield* subscribe(WS_METHODS.subscribeTerminalEvents, {}).pipe(
+      const error = yield* subscribe(WS_METHODS.subscribePreviewEvents, {}).pipe(
         Stream.runDrain,
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         Effect.flip,
@@ -253,17 +253,17 @@ describe("environment RPC", () => {
 
   it.effect("keeps handled domain failures dormant until a replacement session arrives", () =>
     Effect.gen(function* () {
-      const domainError = new Error("terminal subscription rejected");
+      const domainError = new Error("preview subscription rejected");
       const subscriptions: string[] = [];
       const observedFailures: Error[] = [];
       const firstClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("first");
           return Stream.fail(domainError);
         },
       } as unknown as WsRpcProtocolClient;
       const secondClient = {
-        [WS_METHODS.subscribeTerminalEvents]: () => {
+        [WS_METHODS.subscribePreviewEvents]: () => {
           subscriptions.push("second");
           return Stream.never;
         },
@@ -272,7 +272,7 @@ describe("environment RPC", () => {
 
       yield* SubscriptionRef.set(activeSession, Option.some(session(firstClient)));
       const subscriptionFiber = yield* subscribe(
-        WS_METHODS.subscribeTerminalEvents,
+        WS_METHODS.subscribePreviewEvents,
         {},
         {
           onExpectedFailure: (cause) =>
@@ -309,7 +309,7 @@ describe("environment RPC", () => {
       const subscriptionCount = yield* Ref.make(0);
       const expectedFailureCount = yield* Ref.make(0);
       const client = {
-        [WS_METHODS.subscribeTerminalEvents]: () =>
+        [WS_METHODS.subscribePreviewEvents]: () =>
           Stream.unwrap(
             Ref.getAndUpdate(subscriptionCount, (count) => count + 1).pipe(
               Effect.map((count) => (count === 0 ? Stream.fail(domainError) : Stream.never)),
@@ -320,7 +320,7 @@ describe("environment RPC", () => {
 
       yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
       const subscriptionFiber = yield* subscribe(
-        WS_METHODS.subscribeTerminalEvents,
+        WS_METHODS.subscribePreviewEvents,
         {},
         {
           onExpectedFailure: () => Ref.update(expectedFailureCount, (count) => count + 1),
@@ -360,13 +360,13 @@ describe("environment RPC", () => {
       const defect = new Error("subscription invariant failed");
       let expectedFailureCount = 0;
       const client = {
-        [WS_METHODS.subscribeTerminalEvents]: () => Stream.die(defect),
+        [WS_METHODS.subscribePreviewEvents]: () => Stream.die(defect),
       } as unknown as WsRpcProtocolClient;
       const { activeSession, supervisor } = yield* makeHarness();
 
       yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
       const exit = yield* subscribe(
-        WS_METHODS.subscribeTerminalEvents,
+        WS_METHODS.subscribePreviewEvents,
         {},
         {
           onExpectedFailure: () =>

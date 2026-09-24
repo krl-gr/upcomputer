@@ -70,11 +70,6 @@ import {
   DraftId,
 } from "./composerDraftStore";
 import { removeLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
-import {
-  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
-  insertInlineTerminalContextPlaceholder,
-  type TerminalContextDraft,
-} from "./lib/terminalContext";
 import { createDebouncedStorage } from "./lib/storage";
 
 function makeImage(input: {
@@ -101,26 +96,6 @@ function makeImage(input: {
     sizeBytes: file.size,
     previewUrl: input.previewUrl,
     file,
-  };
-}
-
-function makeTerminalContext(input: {
-  id: string;
-  text?: string;
-  terminalId?: string;
-  terminalLabel?: string;
-  lineStart?: number;
-  lineEnd?: number;
-}): TerminalContextDraft {
-  return {
-    id: input.id,
-    threadId: ThreadId.make("thread-dedupe"),
-    terminalId: input.terminalId ?? "default",
-    terminalLabel: input.terminalLabel ?? "Terminal 1",
-    lineStart: input.lineStart ?? 4,
-    lineEnd: input.lineEnd ?? 5,
-    text: input.text ?? "git status\nOn branch main",
-    createdAt: "2026-03-13T12:00:00.000Z",
   };
 }
 
@@ -345,9 +320,8 @@ describe("composerDraftStore syncPersistedAttachments", () => {
   });
 });
 
-describe("composerDraftStore terminal contexts", () => {
+describe("composerDraftStore legacy terminal contexts", () => {
   const threadId = ThreadId.make("thread-dedupe");
-  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
 
   beforeEach(() => {
     useComposerDraftStore.setState({
@@ -359,93 +333,7 @@ describe("composerDraftStore terminal contexts", () => {
     });
   });
 
-  it("deduplicates identical terminal contexts by selection signature", () => {
-    const first = makeTerminalContext({ id: "ctx-1" });
-    const duplicate = makeTerminalContext({ id: "ctx-2" });
-
-    useComposerDraftStore.getState().addTerminalContexts(threadRef, [first, duplicate]);
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-1"]);
-  });
-
-  it("clears terminal contexts when clearing composer content", () => {
-    useComposerDraftStore
-      .getState()
-      .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-1" }));
-
-    useComposerDraftStore.getState().clearComposerContent(threadRef);
-
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
-  });
-
-  it("inserts terminal contexts at the requested inline prompt position", () => {
-    const firstInsertion = insertInlineTerminalContextPlaceholder("alpha beta", 6);
-    const secondInsertion = insertInlineTerminalContextPlaceholder(firstInsertion.prompt, 0);
-
-    expect(
-      useComposerDraftStore
-        .getState()
-        .insertTerminalContext(
-          threadRef,
-          firstInsertion.prompt,
-          makeTerminalContext({ id: "ctx-1" }),
-          firstInsertion.contextIndex,
-        ),
-    ).toBe(true);
-    expect(
-      useComposerDraftStore.getState().insertTerminalContext(
-        threadRef,
-        secondInsertion.prompt,
-        makeTerminalContext({
-          id: "ctx-2",
-          terminalLabel: "Terminal 2",
-          lineStart: 9,
-          lineEnd: 10,
-        }),
-        secondInsertion.contextIndex,
-      ),
-    ).toBe(true);
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.prompt).toBe(
-      `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} alpha ${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} beta`,
-    );
-    expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-2", "ctx-1"]);
-  });
-
-  it("omits terminal context text from persisted drafts", () => {
-    useComposerDraftStore
-      .getState()
-      .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-persist" }));
-
-    const persistApi = useComposerDraftStore.persist as unknown as {
-      getOptions: () => {
-        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
-      };
-    };
-    const persistedState = persistApi.getOptions().partialize(useComposerDraftStore.getState()) as {
-      draftsByThreadKey?: Record<string, { terminalContexts?: Array<Record<string, unknown>> }>;
-    };
-
-    expect(
-      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
-        ?.terminalContexts?.[0],
-      "Expected terminal context metadata to be persisted.",
-    ).toMatchObject({
-      id: "ctx-persist",
-      terminalId: "default",
-      terminalLabel: "Terminal 1",
-      lineStart: 4,
-      lineEnd: 5,
-    });
-    expect(
-      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
-        ?.terminalContexts?.[0]?.text,
-    ).toBeUndefined();
-  });
-
-  it("hydrates persisted terminal contexts without in-memory snapshot text", () => {
+  it("drops legacy terminal contexts and their inline placeholders when hydrating", () => {
     const persistApi = useComposerDraftStore.persist as unknown as {
       getOptions: () => {
         merge: (
@@ -458,7 +346,7 @@ describe("composerDraftStore terminal contexts", () => {
       {
         draftsByThreadId: {
           [threadId]: {
-            prompt: INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
+            prompt: "\uFFFC fix this",
             attachments: [],
             terminalContexts: [
               {
@@ -479,16 +367,9 @@ describe("composerDraftStore terminal contexts", () => {
       useComposerDraftStore.getInitialState(),
     );
 
-    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.terminalContexts).toMatchObject([
-      {
-        id: "ctx-rehydrated",
-        terminalId: "default",
-        terminalLabel: "Terminal 1",
-        lineStart: 4,
-        lineEnd: 5,
-        text: "",
-      },
-    ]);
+    const draft = mergedState.draftsByThreadKey[threadKeyFor(threadId)];
+    expect(draft?.prompt).toBe(" fix this");
+    expect(draft && "terminalContexts" in draft).toBe(false);
   });
 
   it("sanitizes malformed persisted drafts during merge", () => {

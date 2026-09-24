@@ -25,6 +25,6 @@ sessions. Independent `state` modules consume the connection registry and expose
 focused state or Atom constructors to application-owned runtimes.
 
 Applications should import the narrowest relevant subpath. There is no broad
-`state` export: use domain paths such as `state/shell`, `state/threads`,
-`state/terminal`, or `state/vcs`. Subpath indices and explicitly exported domain
-files are public API boundaries; all other files remain implementation details.
+`state` export: use domain paths such as `state/shell`, `state/threads`, or
+`state/vcs`. Subpath indices and explicitly exported domain files are public API
+boundaries; all other files remain implementation details.

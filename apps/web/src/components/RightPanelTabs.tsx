@@ -1,6 +1,5 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@upcomputer/contracts";
-import { getTerminalLabel } from "@upcomputer/shared/terminalLabels";
-import { ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import { ClipboardList, FileDiff, Files, Globe2, Plus, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -32,7 +31,6 @@ interface RightPanelTabsProps {
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
-  terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
   onCloseSurface: (surface: RightPanelSurface) => void;
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
@@ -40,7 +38,6 @@ interface RightPanelTabsProps {
   onCloseAllSurfaces: () => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
-  onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   browserAvailable: boolean;
@@ -87,7 +84,6 @@ function SurfaceMenuItem(props: {
 
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
-  onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   browserAvailable: boolean;
@@ -102,14 +98,6 @@ function RightPanelEmptyState(props: {
       available: props.browserAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.browser,
       onClick: props.onAddBrowser,
-    },
-    {
-      label: "Terminal",
-      description: "Start a shell in this workspace.",
-      icon: TerminalSquare,
-      available: true,
-      disabledReason: null,
-      onClick: props.onAddTerminal,
     },
     {
       label: "Files",
@@ -188,7 +176,6 @@ function RightPanelEmptyState(props: {
 function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
-  terminalLabelsById: ReadonlyMap<string, string>,
 ): string {
   switch (surface.kind) {
     case "diff":
@@ -197,11 +184,6 @@ function surfaceTitle(
       return "Files";
     case "file":
       return surface.relativePath.slice(surface.relativePath.lastIndexOf("/") + 1);
-    case "terminal":
-      return (
-        terminalLabelsById.get(surface.activeTerminalId) ??
-        getTerminalLabel(surface.activeTerminalId)
-      );
     case "plan":
       return "Plan";
     case "preview": {
@@ -261,8 +243,6 @@ function SurfaceIcon({
           className="size-3.5"
         />
       );
-    case "terminal":
-      return <TerminalSquare className="size-3.5 shrink-0" />;
     case "plan":
       return <ClipboardList className="size-3.5 shrink-0" />;
   }
@@ -372,7 +352,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             {props.surfaces.map((surface) => {
               const active = surface.id === props.activeSurfaceId;
               const pending = props.pendingSurfaceIds.has(surface.id);
-              const title = surfaceTitle(surface, props.previewSessions, props.terminalLabelsById);
+              const title = surfaceTitle(surface, props.previewSessions);
               return (
                 <div
                   key={surface.id}
@@ -447,10 +427,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Globe2 />
                     Browser
                   </SurfaceMenuItem>
-                  <SurfaceMenuItem available onClick={props.onAddTerminal}>
-                    <TerminalSquare />
-                    Terminal
-                  </SurfaceMenuItem>
                   <SurfaceMenuItem
                     available={props.filesAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.files}
@@ -478,7 +454,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
-            onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             browserAvailable={props.browserAvailable}

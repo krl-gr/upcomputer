@@ -43,6 +43,7 @@ type ModelPickerItem = {
 };
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
+const MODEL_JUMP_SHORTCUT_CONTEXT = { modelPickerOpen: true } as const;
 
 // Split a `${instanceId}:${slug}` combobox key back into its pieces. Slugs
 // can contain colons (e.g. some vendor model ids), so we only split on the
@@ -86,7 +87,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
    * model set but are free to diverge via customModels).
    */
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
-  terminalOpen: boolean;
   onRequestClose?: () => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
@@ -447,22 +447,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     setShowTopScrollFade(scrollElement.scrollTop > 1);
     setShowBottomScrollFade(maxScrollOffset - scrollElement.scrollTop > 1);
   }, []);
-  const modelJumpShortcutContext = useMemo(
-    () =>
-      ({
-        terminalFocus: false,
-        terminalOpen: props.terminalOpen,
-        modelPickerOpen: true,
-      }) as const,
-    [props.terminalOpen],
-  );
   const modelJumpLabelByKey = useMemo((): ReadonlyMap<string, string> => {
     if (modelJumpCommandByKey.size === 0) {
       return EMPTY_MODEL_JUMP_LABELS;
     }
     const shortcutLabelOptions = {
       platform: navigator.platform,
-      context: modelJumpShortcutContext,
+      context: MODEL_JUMP_SHORTCUT_CONTEXT,
     };
     const mapping = new Map<string, string>();
     for (const [modelKey, command] of modelJumpCommandByKey) {
@@ -472,7 +463,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     return mapping.size > 0 ? mapping : EMPTY_MODEL_JUMP_LABELS;
-  }, [keybindings, modelJumpCommandByKey, modelJumpShortcutContext]);
+  }, [keybindings, modelJumpCommandByKey]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -482,7 +473,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
-        context: modelJumpShortcutContext,
+        context: MODEL_JUMP_SHORTCUT_CONTEXT,
       });
       const jumpIndex = modelPickerJumpIndexFromCommand(command ?? "");
       if (jumpIndex === null) {
@@ -504,7 +495,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown, true);
     };
-  }, [handleModelSelect, keybindings, modelJumpModelKeys, modelJumpShortcutContext]);
+  }, [handleModelSelect, keybindings, modelJumpModelKeys]);
 
   useLayoutEffect(() => {
     setShowTopScrollFade(false);

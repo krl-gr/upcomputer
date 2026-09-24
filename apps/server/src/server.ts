@@ -34,7 +34,6 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { makeProviderInstanceRegistryHydrationLayer } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
-import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -108,18 +107,6 @@ import { disableTailscaleServe, ensureTailscaleServe } from "@upcomputer/tailsca
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
-
-const PtyAdapterLive = Layer.unwrap(
-  Effect.gen(function* () {
-    if (typeof Bun !== "undefined") {
-      const BunPtyAdapter = yield* Effect.promise(() => import("./terminal/BunPtyAdapter.ts"));
-      return BunPtyAdapter.layer;
-    } else {
-      const NodePtyAdapter = yield* Effect.promise(() => import("./terminal/NodePtyAdapter.ts"));
-      return NodePtyAdapter.layer;
-    }
-  }),
-);
 
 const RelayClientLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -209,7 +196,7 @@ const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.lay
 );
 
 const GitManagerLayerLive = GitManager.layer.pipe(
-  Layer.provideMerge(ProjectSetupScriptRunner.layer),
+  Layer.provideMerge(ProjectSetupScriptRunner.layer.pipe(Layer.provide(ProcessRunner.layer))),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(TextGeneration.layer),
@@ -251,11 +238,6 @@ const CheckpointingLayerLive = Layer.empty.pipe(
 );
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
-
-const TerminalLayerLive = TerminalManager.layer.pipe(
-  Layer.provide(PtyAdapterLive),
-  Layer.provide(PortScannerLayerLive),
-);
 
 const PreviewLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PreviewManager.layer),
@@ -333,7 +315,7 @@ const makeRuntimeCoreDependenciesLive = <const ProductEntry extends Experimental
     Layer.provideMerge(GitLayerLive),
     Layer.provideMerge(VcsLayerLive),
     Layer.provideMerge(providerRuntimeWithInteractionModesLayer),
-    Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
+    Layer.provideMerge(PreviewLayerLive),
     Layer.provideMerge(persistenceLayer),
     Layer.provideMerge(Keybindings.layer),
     Layer.provideMerge(ProviderRegistryLive),

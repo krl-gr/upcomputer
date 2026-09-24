@@ -16,7 +16,6 @@ export const DEFAULT_CONTEXT_QUICK_ACTION_IDS = ["git.quick", "rightPanel.toggle
 
 export const CONTEXT_NON_EDITOR_QUICK_ACTION_IDS = [
   "git.quick",
-  "terminal.toggle",
   "diff.toggle",
   "rightPanel.toggle",
   "git.commit",
@@ -41,7 +40,6 @@ export const CONTEXT_OPEN_EDITOR_QUICK_ACTION_ORDER = EDITORS.map((editor) =>
 );
 
 export const CONTEXT_VIEW_QUICK_ACTION_ORDER = [
-  "terminal.toggle",
   "diff.toggle",
   "rightPanel.toggle",
 ] as const satisfies ReadonlyArray<ContextNonEditorQuickActionId>;

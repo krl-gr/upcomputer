@@ -173,8 +173,7 @@ function buildSingleContextLines(context: ElementContextSelection): string[] {
 
 /**
  * Serialize element-context drafts into the `<element_context>` block we
- * append to the user's outgoing message text. Mirrors the `<terminal_context>`
- * block format so it composes cleanly when both are present.
+ * append to the user's outgoing message text.
  */
 export function buildElementContextBlock(contexts: ReadonlyArray<ElementContextSelection>): string {
   if (contexts.length === 0) return "";

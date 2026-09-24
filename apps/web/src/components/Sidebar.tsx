@@ -10,10 +10,9 @@ import {
   PlusIcon,
   SearchIcon,
   SquarePenIcon,
-  TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { terminalStatusFromRunningIds, ThreadStatusLabel } from "./ThreadStatusIndicators";
+import { ThreadStatusLabel } from "./ThreadStatusIndicators";
 import * as Schema from "effect/Schema";
 
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -70,7 +69,6 @@ import type {
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { isElectron } from "../env";
-import { isTerminalFocused } from "../lib/terminalFocus";
 import { cn, isMacPlatform, newThreadId } from "../lib/utils";
 import {
   readThreadShell,
@@ -79,8 +77,6 @@ import {
   useThreadShells,
   useThreadShellsForProjectRefs,
 } from "../state/entities";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   legacyProjectCwdPreferenceKey,
@@ -248,7 +244,6 @@ function projectGroupingModeDescription(mode: SidebarProjectGroupingMode): strin
 function buildThreadJumpLabelMap(input: {
   keybindings: ResolvedKeybindingsConfig;
   platform: string;
-  terminalOpen: boolean;
   threadJumpCommandByKey: ReadonlyMap<
     string,
     NonNullable<ReturnType<typeof threadJumpCommandForIndex>>
@@ -258,13 +253,7 @@ function buildThreadJumpLabelMap(input: {
     return EMPTY_THREAD_JUMP_LABELS;
   }
 
-  const shortcutLabelOptions = {
-    platform: input.platform,
-    context: {
-      terminalFocus: false,
-      terminalOpen: input.terminalOpen,
-    },
-  } as const;
+  const shortcutLabelOptions = { platform: input.platform } as const;
   const mapping = new Map<string, string>();
   for (const [threadKey, command] of input.threadJumpCommandByKey) {
     const label = shortcutLabelForCommand(input.keybindings, command, shortcutLabelOptions);
@@ -342,10 +331,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const threadKey = scopedThreadKey(threadRef);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
-  const runningTerminalIds = useThreadRunningTerminalIds({
-    environmentId: thread.environmentId,
-    threadId: thread.id,
-  });
   const isMobile = useIsMobile();
   const environment = useEnvironment(thread.environmentId);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -370,7 +355,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       lastVisitedAt,
     },
   });
-  const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const isConfirmingArchive = confirmingArchiveThreadKey === threadKey && !isThreadRunning;
   const threadMetaClassName = isConfirmingArchive
     ? "pointer-events-none opacity-0"
@@ -627,24 +611,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {terminalStatus && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span
-                    role="img"
-                    aria-label={terminalStatus.label}
-                    className={`inline-flex items-center justify-center ${terminalStatus.colorClass}`}
-                  />
-                }
-              >
-                <TerminalIcon
-                  className={`size-3 ${terminalStatus.pulse ? "animate-status-pulse" : ""}`}
-                />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
-            </Tooltip>
-          )}
           <div
             className={`flex min-w-fit justify-end ${
               isRemoteThread ? "max-sm:min-w-24" : "max-sm:min-w-20"
@@ -3196,11 +3162,6 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
-  const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
@@ -3337,22 +3298,11 @@ export default function Sidebar() {
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
-      terminalFocus: isTerminalFocused(),
-      terminalOpen: routeTerminalOpen,
       modelPickerOpen: isModelPickerOpen(),
     }),
-    [routeTerminalOpen],
+    [],
   );
-  const newThreadShortcutLabelOptions = useMemo(
-    () => ({
-      platform,
-      context: {
-        terminalFocus: false,
-        terminalOpen: false,
-      },
-    }),
-    [platform],
-  );
+  const newThreadShortcutLabelOptions = useMemo(() => ({ platform }), [platform]);
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.newLocal", newThreadShortcutLabelOptions) ??
     shortcutLabelForCommand(keybindings, "chat.new", newThreadShortcutLabelOptions);
@@ -3616,8 +3566,6 @@ export default function Sidebar() {
     [threadJumpCommandByKey],
   );
   const sidebarShortcutContext = {
-    terminalFocus: false,
-    terminalOpen: routeTerminalOpen,
     modelPickerOpen: isModelPickerOpen(),
   };
   const threadJumpLabelByKey = useMemo(
@@ -3625,10 +3573,9 @@ export default function Sidebar() {
       buildThreadJumpLabelMap({
         keybindings,
         platform,
-        terminalOpen: sidebarShortcutContext.terminalOpen,
         threadJumpCommandByKey,
       }),
-    [keybindings, platform, sidebarShortcutContext.terminalOpen, threadJumpCommandByKey],
+    [keybindings, platform, threadJumpCommandByKey],
   );
   const shouldShowThreadJumpHintsNow = shouldShowThreadJumpHintsForModifiers(
     shortcutModifiers,

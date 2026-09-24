@@ -10,7 +10,6 @@ import {
   replaceTextRange,
   shouldSubmitComposerOnEnter,
 } from "./composer-logic";
-import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 describe("shouldSubmitComposerOnEnter", () => {
   it("submits plain Enter on desktop", () => {
@@ -338,15 +337,6 @@ describe("isCollapsedCursorAdjacentToInlineToken", () => {
     expect(isCollapsedCursorAdjacentToInlineToken(text, mentionStart, "right")).toBe(true);
     expect(isCollapsedCursorAdjacentToInlineToken(text, mentionEnd, "right")).toBe(false);
     expect(isCollapsedCursorAdjacentToInlineToken(text, mentionStart - 1, "right")).toBe(false);
-  });
-
-  it("treats terminal pills as inline tokens for adjacency checks", () => {
-    const text = `open ${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} next`;
-    const tokenStart = "open ".length;
-    const tokenEnd = tokenStart + 1;
-
-    expect(isCollapsedCursorAdjacentToInlineToken(text, tokenEnd, "left")).toBe(true);
-    expect(isCollapsedCursorAdjacentToInlineToken(text, tokenStart, "right")).toBe(true);
   });
 
   it("treats skill pills as inline tokens for adjacency checks", () => {

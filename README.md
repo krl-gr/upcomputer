@@ -4,7 +4,7 @@ The desktop workspace for coding-agent CLIs.
 
 Up.computer runs coding-agent CLIs from one visual surface. Keep Codex CLI,
 Claude Code, Cursor CLI, OpenCode, your editor, and your git workflow. Add
-durable threads, terminals, diffs, branches, source-control actions, and local
+durable threads, diffs, branches, source-control actions, and local
 Desktop environment controls around them.
 
 ## Status
@@ -85,7 +85,6 @@ vp run dev:marketing
 - Keep agent work grouped into project threads instead of scattered terminal
   sessions.
 - Review changed files and diffs before trusting or shipping a run.
-- Use integrated terminals in the same project/worktree context.
 - Commit, push, publish repositories, and open pull requests from the app.
 - Work against local Desktop projects and use T3 Connect with the bundled Desktop backend.
 - Preserve existing remote-environment records while official remote support remains unavailable.

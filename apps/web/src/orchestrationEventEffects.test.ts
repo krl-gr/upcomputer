@@ -40,7 +40,7 @@ function makeEvent<T extends OrchestrationEvent["type"]>(
 }
 
 describe("deriveOrchestrationBatchEffects", () => {
-  it("targets draft promotion and terminal cleanup from thread lifecycle events", () => {
+  it("targets draft promotion and deletion cleanup from thread lifecycle events", () => {
     const createdThreadId = ThreadId.make("thread-created");
     const deletedThreadId = ThreadId.make("thread-deleted");
     const archivedThreadId = ThreadId.make("thread-archived");
@@ -71,7 +71,6 @@ describe("deriveOrchestrationBatchEffects", () => {
 
     expect(effects.promoteDraftThreadIds).toEqual([createdThreadId]);
     expect(effects.clearDeletedThreadIds).toEqual([deletedThreadId]);
-    expect(effects.removeTerminalUiStateThreadIds).toEqual([deletedThreadId, archivedThreadId]);
     expect(effects.needsProviderInvalidation).toBe(false);
   });
 
@@ -109,7 +108,6 @@ describe("deriveOrchestrationBatchEffects", () => {
 
     expect(effects.promoteDraftThreadIds).toEqual([threadId]);
     expect(effects.clearDeletedThreadIds).toEqual([]);
-    expect(effects.removeTerminalUiStateThreadIds).toEqual([]);
     expect(effects.needsProviderInvalidation).toBe(true);
   });
 
@@ -130,6 +128,5 @@ describe("deriveOrchestrationBatchEffects", () => {
 
     expect(effects.promoteDraftThreadIds).toEqual([]);
     expect(effects.clearDeletedThreadIds).toEqual([]);
-    expect(effects.removeTerminalUiStateThreadIds).toEqual([]);
   });
 });

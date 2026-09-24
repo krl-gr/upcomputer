@@ -53,7 +53,7 @@ function isWhitespace(char: string): boolean {
  * Detect an active trigger (@path, $skill, /command) at the cursor position.
  *
  * Accepts an optional `isWhitespaceChar` override so callers with inline
- * placeholder characters (e.g. terminal context chips on web) can treat
+ * placeholder characters can treat
  * those as token boundaries.
  */
 export function detectComposerTrigger(

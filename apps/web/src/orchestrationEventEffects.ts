@@ -3,7 +3,6 @@ import type { OrchestrationEvent, ThreadId } from "@upcomputer/contracts";
 export interface OrchestrationBatchEffects {
   promoteDraftThreadIds: ThreadId[];
   clearDeletedThreadIds: ThreadId[];
-  removeTerminalUiStateThreadIds: ThreadId[];
   needsProviderInvalidation: boolean;
 }
 
@@ -15,7 +14,6 @@ export function deriveOrchestrationBatchEffects(
     {
       clearPromotedDraft: boolean;
       clearDeletedThread: boolean;
-      removeTerminalUiState: boolean;
     }
   >();
   let needsProviderInvalidation = false;
@@ -32,7 +30,6 @@ export function deriveOrchestrationBatchEffects(
         threadLifecycleEffects.set(event.payload.threadId, {
           clearPromotedDraft: true,
           clearDeletedThread: false,
-          removeTerminalUiState: false,
         });
         break;
       }
@@ -41,7 +38,6 @@ export function deriveOrchestrationBatchEffects(
         threadLifecycleEffects.set(event.payload.threadId, {
           clearPromotedDraft: false,
           clearDeletedThread: true,
-          removeTerminalUiState: true,
         });
         break;
       }
@@ -50,7 +46,6 @@ export function deriveOrchestrationBatchEffects(
         threadLifecycleEffects.set(event.payload.threadId, {
           clearPromotedDraft: false,
           clearDeletedThread: false,
-          removeTerminalUiState: true,
         });
         break;
       }
@@ -59,7 +54,6 @@ export function deriveOrchestrationBatchEffects(
         threadLifecycleEffects.set(event.payload.threadId, {
           clearPromotedDraft: false,
           clearDeletedThread: false,
-          removeTerminalUiState: false,
         });
         break;
       }
@@ -72,7 +66,6 @@ export function deriveOrchestrationBatchEffects(
 
   const promoteDraftThreadIds: ThreadId[] = [];
   const clearDeletedThreadIds: ThreadId[] = [];
-  const removeTerminalUiStateThreadIds: ThreadId[] = [];
   for (const [threadId, effect] of threadLifecycleEffects) {
     if (effect.clearPromotedDraft) {
       promoteDraftThreadIds.push(threadId);
@@ -80,15 +73,11 @@ export function deriveOrchestrationBatchEffects(
     if (effect.clearDeletedThread) {
       clearDeletedThreadIds.push(threadId);
     }
-    if (effect.removeTerminalUiState) {
-      removeTerminalUiStateThreadIds.push(threadId);
-    }
   }
 
   return {
     promoteDraftThreadIds,
     clearDeletedThreadIds,
-    removeTerminalUiStateThreadIds,
     needsProviderInvalidation,
   };
 }

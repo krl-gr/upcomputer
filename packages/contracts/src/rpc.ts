@@ -75,20 +75,6 @@ import {
   ProjectWriteFileResult,
 } from "./project.ts";
 import {
-  TerminalAttachInput,
-  TerminalAttachStreamEvent,
-  TerminalClearInput,
-  TerminalCloseInput,
-  TerminalError,
-  TerminalEvent,
-  TerminalMetadataStreamEvent,
-  TerminalOpenInput,
-  TerminalResizeInput,
-  TerminalRestartInput,
-  TerminalSessionSnapshot,
-  TerminalWriteInput,
-} from "./terminal.ts";
-import {
   DiscoveredLocalServerList,
   PreviewCloseInput,
   PreviewError,
@@ -176,15 +162,6 @@ export const WS_METHODS = {
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
 
-  // Terminal methods
-  terminalOpen: "terminal.open",
-  terminalAttach: "terminal.attach",
-  terminalWrite: "terminal.write",
-  terminalResize: "terminal.resize",
-  terminalClear: "terminal.clear",
-  terminalRestart: "terminal.restart",
-  terminalClose: "terminal.close",
-
   // Preview methods
   previewOpen: "preview.open",
   previewNavigate: "preview.navigate",
@@ -224,8 +201,6 @@ export const WS_METHODS = {
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
-  subscribeTerminalEvents: "subscribeTerminalEvents",
-  subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribePreviewEvents: "subscribePreviewEvents",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeServerConfig: "subscribeServerConfig",
@@ -477,45 +452,6 @@ export const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPrevie
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
-export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
-  payload: TerminalOpenInput,
-  success: TerminalSessionSnapshot,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
-export const WsTerminalAttachRpc = Rpc.make(WS_METHODS.terminalAttach, {
-  payload: TerminalAttachInput,
-  success: TerminalAttachStreamEvent,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-  stream: true,
-});
-
-export const WsTerminalWriteRpc = Rpc.make(WS_METHODS.terminalWrite, {
-  payload: TerminalWriteInput,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
-export const WsTerminalResizeRpc = Rpc.make(WS_METHODS.terminalResize, {
-  payload: TerminalResizeInput,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
-export const WsTerminalClearRpc = Rpc.make(WS_METHODS.terminalClear, {
-  payload: TerminalClearInput,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
-export const WsTerminalRestartRpc = Rpc.make(WS_METHODS.terminalRestart, {
-  payload: TerminalRestartInput,
-  success: TerminalSessionSnapshot,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
-export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
-  payload: TerminalCloseInput,
-  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
-});
-
 export const WsPreviewOpenRpc = Rpc.make(WS_METHODS.previewOpen, {
   payload: PreviewOpenInput,
   success: PreviewSessionSnapshot,
@@ -645,20 +581,6 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
-export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
-  payload: Schema.Struct({}),
-  success: TerminalEvent,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-
-export const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMetadata, {
-  payload: Schema.Struct({}),
-  success: TerminalMetadataStreamEvent,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-
 export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
   payload: Schema.Struct({}),
   success: ServerConfigStreamEvent,
@@ -718,15 +640,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
-  WsTerminalOpenRpc,
-  WsTerminalAttachRpc,
-  WsTerminalWriteRpc,
-  WsTerminalResizeRpc,
-  WsTerminalClearRpc,
-  WsTerminalRestartRpc,
-  WsTerminalCloseRpc,
-  WsSubscribeTerminalEventsRpc,
-  WsSubscribeTerminalMetadataRpc,
   WsPreviewOpenRpc,
   WsPreviewNavigateRpc,
   WsPreviewResizeRpc,

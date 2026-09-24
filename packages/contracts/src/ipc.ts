@@ -41,18 +41,6 @@ import type {
   ServerTraceDiagnosticsResult,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
-import type {
-  TerminalAttachInput,
-  TerminalAttachStreamEvent,
-  TerminalClearInput,
-  TerminalCloseInput,
-  TerminalMetadataStreamEvent,
-  TerminalOpenInput,
-  TerminalResizeInput,
-  TerminalRestartInput,
-  TerminalSessionSnapshot,
-  TerminalWriteInput,
-} from "./terminal.ts";
 import type { ServerRemoveKeybindingInput, ServerUpsertKeybindingInput } from "./server.ts";
 import * as Schema from "effect/Schema";
 import type {
@@ -1175,33 +1163,12 @@ export interface LocalApi {
  * APIs bound to a specific backend environment connection.
  *
  * These operations must always be routed with explicit environment context.
- * They represent remote stateful capabilities such as orchestration, terminal,
+ * They represent remote stateful capabilities such as orchestration,
  * project, VCS, and provider operations. In multi-environment mode, each environment gets
  * its own instance of this surface, and callers should resolve it by
  * `environmentId` rather than reaching through the local desktop bridge.
  */
 export interface EnvironmentApi {
-  terminal: {
-    open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    attach: (
-      input: typeof TerminalAttachInput.Encoded,
-      callback: (event: TerminalAttachStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    write: (input: typeof TerminalWriteInput.Encoded) => Promise<void>;
-    resize: (input: typeof TerminalResizeInput.Encoded) => Promise<void>;
-    clear: (input: typeof TerminalClearInput.Encoded) => Promise<void>;
-    restart: (input: typeof TerminalRestartInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    close: (input: typeof TerminalCloseInput.Encoded) => Promise<void>;
-    onMetadata: (
-      callback: (event: TerminalMetadataStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
   projects: {
     listEntries: (input: ProjectListEntriesInput) => Promise<ProjectListEntriesResult>;
     readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;

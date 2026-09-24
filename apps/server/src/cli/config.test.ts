@@ -387,7 +387,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         resolved.stateDir,
         resolved.logsDir,
         resolved.providerLogsDir,
-        resolved.terminalLogsDir,
         resolved.attachmentsDir,
         resolved.worktreesDir,
         path.dirname(resolved.serverLogPath),

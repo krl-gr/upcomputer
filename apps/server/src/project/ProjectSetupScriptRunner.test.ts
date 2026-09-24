@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as TerminalManager from "../terminal/Manager.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
 const isProjectSetupScriptOperationError = Schema.is(
@@ -47,34 +47,37 @@ const makeProjectionSnapshotQueryLayer = (project: OrchestrationProject) =>
     getThreadDetailSnapshot: () => Effect.die("unused"),
   });
 
-const makeTerminalManagerLayer = (
-  overrides: Pick<TerminalManager.TerminalManager["Service"], "open" | "write">,
-) =>
-  Layer.succeed(TerminalManager.TerminalManager, {
-    ...overrides,
-    attachStream: () => Effect.die(new Error("unused")),
-    resize: () => Effect.void,
-    clear: () => Effect.void,
-    restart: () => Effect.die(new Error("unused")),
-    close: () => Effect.void,
-    subscribe: () => Effect.succeed(() => undefined),
-    subscribeMetadata: () => Effect.succeed(() => undefined),
-  });
+const setupProject = makeProject([
+  {
+    id: "setup",
+    name: "Setup",
+    command: "bun install",
+    icon: "configure",
+    runOnWorktreeCreate: true,
+  },
+]);
 
 const testLayer = (
   project: OrchestrationProject,
-  terminal: Pick<TerminalManager.TerminalManager["Service"], "open" | "write">,
+  run: ProcessRunner.ProcessRunner["Service"]["run"],
 ) =>
   ProjectSetupScriptRunner.layer.pipe(
     Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
-    Layer.provideMerge(makeTerminalManagerLayer(terminal)),
+    Layer.provideMerge(Layer.succeed(ProcessRunner.ProcessRunner, { run })),
   );
+
+const processOutput = (code: number): ProcessRunner.ProcessRunOutput => ({
+  stdout: "",
+  stderr: "",
+  code: code as ProcessRunner.ProcessRunOutput["code"],
+  timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+});
 
 describe("ProjectSetupScriptRunner", () => {
   it.effect("returns no-script when no setup script exists", () => {
-    const open = vi.fn(() => Effect.die("unexpected open"));
-    const write = vi.fn(() => Effect.die("unexpected write"));
-    const project = makeProject([]);
+    const run = vi.fn(() => Effect.die("unexpected run"));
 
     return Effect.gen(function* () {
       const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
@@ -85,116 +88,70 @@ describe("ProjectSetupScriptRunner", () => {
       });
 
       expect(result).toEqual({ status: "no-script" });
-      expect(open).not.toHaveBeenCalled();
-      expect(write).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(testLayer(project, { open, write })));
+      expect(run).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(testLayer(makeProject([]), run)));
   });
 
-  it.effect(
-    "opens the deterministic setup terminal with worktree env and writes the command",
-    () => {
-      const open = vi.fn(() =>
-        Effect.succeed({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
-          cwd: "/repo/worktrees/a",
-          worktreePath: "/repo/worktrees/a",
-          status: "running" as const,
-          pid: 123,
-          history: "",
-          exitCode: null,
-          exitSignal: null,
-          label: "setup-setup",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        }),
-      );
-      const write = vi.fn(() => Effect.void);
-      const project = makeProject([
-        {
-          id: "setup",
-          name: "Setup",
-          command: "bun install",
-          icon: "configure",
-          runOnWorktreeCreate: true,
-        },
-      ]);
-
-      return Effect.gen(function* () {
-        const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-        const result = yield* runner.runForThread({
-          threadId: "thread-1",
-          projectCwd: "/repo/project",
-          worktreePath: "/repo/worktrees/a",
-        });
-
-        expect(result).toEqual({
-          status: "started",
-          scriptId: "setup",
-          scriptName: "Setup",
-          terminalId: "setup-setup",
-          cwd: "/repo/worktrees/a",
-        });
-        expect(open).toHaveBeenCalledWith({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
-          cwd: "/repo/worktrees/a",
-          worktreePath: "/repo/worktrees/a",
-          env: {
-            UPCOMPUTER_PROJECT_ROOT: "/repo/project",
-            UPCOMPUTER_WORKTREE_PATH: "/repo/worktrees/a",
-          },
-        });
-        expect(write).toHaveBeenCalledWith({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
-          data: "bun install\r",
-        });
-      }).pipe(Effect.provide(testLayer(project, { open, write })));
-    },
-  );
-
-  it.effect("keeps terminal failures as the exact cause of a structured operation error", () => {
-    const rootCause = new Error("stat failed");
-    const terminalError = new TerminalManager.TerminalCwdStatError({
-      cwd: "/repo/worktrees/a",
-      cause: rootCause,
-    });
-    const project = makeProject([
-      {
-        id: "setup",
-        name: "Setup",
-        command: "bun install",
-        icon: "configure",
-        runOnWorktreeCreate: true,
-      },
-    ]);
+  it.effect("runs the setup command through the shell in the worktree with script env", () => {
+    const run = vi.fn((_input: ProcessRunner.ProcessRunInput) => Effect.succeed(processOutput(0)));
 
     return Effect.gen(function* () {
       const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-      const error = yield* runner
-        .runForThread({
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectCwd: "/repo/project",
+        worktreePath: "/repo/worktrees/a",
+      });
+      if (result.status !== "started") {
+        return expect.fail("expected the setup script to start");
+      }
+      expect(result).toMatchObject({
+        scriptId: "setup",
+        scriptName: "Setup",
+        cwd: "/repo/worktrees/a",
+      });
+      yield* result.completion;
+
+      const input = run.mock.calls[0]?.[0];
+      expect(input?.cwd).toBe("/repo/worktrees/a");
+      expect(input?.env).toEqual({
+        UPCOMPUTER_PROJECT_ROOT: "/repo/project",
+        UPCOMPUTER_WORKTREE_PATH: "/repo/worktrees/a",
+      });
+      expect(input?.args.at(-1)).toBe("bun install");
+    }).pipe(Effect.provide(testLayer(setupProject, run)));
+  });
+
+  it.effect("fails completion with a runScript error on non-zero exit or spawn failure", () => {
+    const spawnError = new ProcessRunner.ProcessSpawnError({
+      command: "/bin/sh",
+      argumentCount: 2,
+      cause: new Error("ENOENT"),
+    });
+    const outcomes = [Effect.succeed(processOutput(1)), Effect.fail(spawnError)];
+    const run = vi.fn(() => outcomes.shift() ?? Effect.die("unexpected run"));
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      for (const expectedCause of [undefined, spawnError]) {
+        const result = yield* runner.runForThread({
           threadId: "thread-1",
           projectId: "project-1",
           worktreePath: "/repo/worktrees/a",
-        })
-        .pipe(Effect.flip);
-
-      expect(isProjectSetupScriptOperationError(error)).toBe(true);
-      if (isProjectSetupScriptOperationError(error)) {
-        expect(error.operation).toBe("openTerminal");
-        expect(error.threadId).toBe("thread-1");
-        expect(error.projectId).toBe("project-1");
+        });
+        if (result.status !== "started") {
+          return expect.fail("expected the setup script to start");
+        }
+        const error = yield* Effect.flip(result.completion);
+        expect(isProjectSetupScriptOperationError(error)).toBe(true);
+        expect(error.operation).toBe("runScript");
         expect(error.worktreePath).toBe("/repo/worktrees/a");
-        expect(error.cause).toBe(terminalError);
-        expect(terminalError.cause).toBe(rootCause);
+        if (expectedCause) {
+          expect(error.cause).toBe(expectedCause);
+        } else {
+          expect(String(error.cause)).toContain("exited with code 1");
+        }
       }
-    }).pipe(
-      Effect.provide(
-        testLayer(project, {
-          open: () => Effect.fail(terminalError),
-          write: () => Effect.die("unexpected write"),
-        }),
-      ),
-    );
+    }).pipe(Effect.provide(testLayer(setupProject, run)));
   });
 });

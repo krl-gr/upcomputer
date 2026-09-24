@@ -1,13 +1,15 @@
 import { ProjectId } from "@upcomputer/contracts";
 import { projectScriptRuntimeEnv, setupProjectScript } from "@upcomputer/shared/projectScripts";
+import { HostProcessEnvironment, HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as TerminalManager from "../terminal/Manager.ts";
+import * as ProcessRunner from "../processRunner.ts";
 
 export interface ProjectSetupScriptRunnerResultNoScript {
   readonly status: "no-script";
@@ -17,8 +19,9 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly status: "started";
   readonly scriptId: string;
   readonly scriptName: string;
-  readonly terminalId: string;
   readonly cwd: string;
+  /** Resolves when the background script exits successfully; fails otherwise. */
+  readonly completion: Effect.Effect<void, ProjectSetupScriptOperationError>;
 }
 
 export type ProjectSetupScriptRunnerResult =
@@ -30,7 +33,6 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
-  readonly preferredTerminalId?: string;
 }
 
 export class ProjectSetupScriptOperationError extends Schema.TaggedErrorClass<ProjectSetupScriptOperationError>()(
@@ -40,7 +42,7 @@ export class ProjectSetupScriptOperationError extends Schema.TaggedErrorClass<Pr
     projectId: Schema.optional(Schema.String),
     projectCwd: Schema.optional(Schema.String),
     worktreePath: Schema.String,
-    operation: Schema.Literals(["resolveProject", "openTerminal", "writeCommand"]),
+    operation: Schema.Literals(["resolveProject", "runScript"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -69,6 +71,11 @@ export const ProjectSetupScriptRunnerError = Schema.Union([
 ]);
 export type ProjectSetupScriptRunnerError = typeof ProjectSetupScriptRunnerError.Type;
 
+// Setup scripts typically install dependencies, so allow far more than the
+// ProcessRunner default before giving up.
+const SETUP_SCRIPT_TIMEOUT = "30 minutes";
+const SETUP_SCRIPT_MAX_OUTPUT_BYTES = 64 * 1024;
+
 export class ProjectSetupScriptRunner extends Context.Service<
   ProjectSetupScriptRunner,
   {
@@ -80,7 +87,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const terminalManager = yield* TerminalManager.TerminalManager;
+  const processRunner = yield* ProcessRunner.ProcessRunner;
 
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
@@ -131,54 +138,68 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
-    const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
     const cwd = input.worktreePath;
     const env = projectScriptRuntimeEnv({
       project: { cwd: project.workspaceRoot },
       worktreePath: input.worktreePath,
     });
+    const hostEnv = yield* HostProcessEnvironment;
+    const shell =
+      (yield* HostProcessPlatform) === "win32"
+        ? { command: hostEnv.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", script.command] }
+        : { command: hostEnv.SHELL ?? "/bin/sh", args: ["-lc", script.command] };
 
-    yield* terminalManager
-      .open({
-        threadId: input.threadId,
-        terminalId,
+    const fiber = yield* processRunner
+      .run({
+        ...shell,
         cwd,
-        worktreePath: input.worktreePath,
         env,
+        timeout: SETUP_SCRIPT_TIMEOUT,
+        maxOutputBytes: SETUP_SCRIPT_MAX_OUTPUT_BYTES,
+        outputMode: "truncate",
       })
       .pipe(
         Effect.mapError(
           (cause) =>
             new ProjectSetupScriptOperationError({
               ...errorContext,
-              operation: "openTerminal",
+              operation: "runScript",
               cause,
             }),
         ),
-      );
-    yield* terminalManager
-      .write({
-        threadId: input.threadId,
-        terminalId,
-        data: `${script.command}\r`,
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProjectSetupScriptOperationError({
-              ...errorContext,
-              operation: "writeCommand",
-              cause,
-            }),
+        Effect.flatMap((result) =>
+          Effect.logInfo("project setup script exited", {
+            threadId: input.threadId,
+            scriptId: script.id,
+            cwd,
+            exitCode: result.code,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          }).pipe(
+            Effect.andThen(
+              result.code === 0
+                ? Effect.void
+                : Effect.fail(
+                    new ProjectSetupScriptOperationError({
+                      ...errorContext,
+                      operation: "runScript",
+                      cause: new Error(
+                        `Setup script '${script.name}' exited with code ${String(result.code)}.`,
+                      ),
+                    }),
+                  ),
+            ),
+          ),
         ),
+        Effect.forkDetach,
       );
 
     return {
       status: "started",
       scriptId: script.id,
       scriptName: script.name,
-      terminalId,
       cwd,
+      completion: Fiber.join(fiber),
     } as const;
   });
 

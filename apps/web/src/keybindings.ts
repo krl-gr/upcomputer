@@ -28,8 +28,6 @@ export interface ShortcutModifierStateLike {
 }
 
 export interface ShortcutMatchContext {
-  terminalFocus: boolean;
-  terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
   [key: string]: boolean;
@@ -44,11 +42,6 @@ interface ResolvedShortcutLabelOptions extends ShortcutMatchOptions {
   platform?: string;
 }
 
-const TERMINAL_WORD_BACKWARD = "\u001bb";
-const TERMINAL_WORD_FORWARD = "\u001bf";
-const TERMINAL_LINE_START = "\u0001";
-const TERMINAL_LINE_END = "\u0005";
-const TERMINAL_DELETE_TO_LINE_START = "\u0015";
 const EVENT_CODE_KEY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   BracketLeft: ["["],
   BracketRight: ["]"],
@@ -116,8 +109,6 @@ function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
 
 function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatchContext {
   return {
-    terminalFocus: false,
-    terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
     ...options?.context,
@@ -347,46 +338,6 @@ export function shouldShowModelPickerJumpHintsForModifiers(
   return false;
 }
 
-export function isTerminalToggleShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "terminal.toggle", options);
-}
-
-export function isTerminalSplitShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "terminal.split", options);
-}
-
-export function isTerminalSplitVerticalShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "terminal.splitVertical", options);
-}
-
-export function isTerminalNewShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "terminal.new", options);
-}
-
-export function isTerminalCloseShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "terminal.close", options);
-}
-
 export function isDiffToggleShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -441,89 +392,4 @@ export function isOpenFavoriteEditorShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "editor.openFavorite", options);
-}
-
-export function isTerminalClearShortcut(
-  event: ShortcutEventLike,
-  platform = navigator.platform,
-): boolean {
-  if (event.type !== undefined && event.type !== "keydown") {
-    return false;
-  }
-
-  const key = event.key.toLowerCase();
-
-  if (key === "l" && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-    return true;
-  }
-
-  return (
-    isMacPlatform(platform) &&
-    key === "k" &&
-    event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey &&
-    !event.shiftKey
-  );
-}
-
-export function terminalDeleteShortcutData(
-  event: ShortcutEventLike,
-  platform = navigator.platform,
-): string | null {
-  if (event.type !== undefined && event.type !== "keydown") {
-    return null;
-  }
-
-  if (!isMacPlatform(platform)) {
-    return null;
-  }
-
-  const key = normalizeEventKey(event.key);
-  if (key !== "backspace") {
-    return null;
-  }
-
-  return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
-    ? TERMINAL_DELETE_TO_LINE_START
-    : null;
-}
-
-export function terminalNavigationShortcutData(
-  event: ShortcutEventLike,
-  platform = navigator.platform,
-): string | null {
-  if (event.type !== undefined && event.type !== "keydown") {
-    return null;
-  }
-
-  if (event.shiftKey) return null;
-
-  const key = normalizeEventKey(event.key);
-  if (key !== "arrowleft" && key !== "arrowright") {
-    return null;
-  }
-
-  const moveWord = key === "arrowleft" ? TERMINAL_WORD_BACKWARD : TERMINAL_WORD_FORWARD;
-  const moveLine = key === "arrowleft" ? TERMINAL_LINE_START : TERMINAL_LINE_END;
-
-  if (isMacPlatform(platform)) {
-    if (event.altKey && !event.metaKey && !event.ctrlKey) {
-      return moveWord;
-    }
-    if (event.metaKey && !event.altKey && !event.ctrlKey) {
-      return moveLine;
-    }
-    return null;
-  }
-
-  if (event.ctrlKey && !event.metaKey && !event.altKey) {
-    return moveWord;
-  }
-
-  if (event.altKey && !event.metaKey && !event.ctrlKey) {
-    return moveWord;
-  }
-
-  return null;
 }

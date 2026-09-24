@@ -155,10 +155,6 @@
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"
     },
-    "./terminalLabels": {
-      "types": "./src/terminalLabels.ts",
-      "import": "./src/terminalLabels.ts"
-    },
     "./relayClient": {
       "types": "./src/relayClient.ts",
       "import": "./src/relayClient.ts"

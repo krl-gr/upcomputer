@@ -9,7 +9,6 @@ import { parseScopedThreadKey } from "@upcomputer/client-runtime/environment";
 import { resolveChatListAnchoredEndSpace } from "@upcomputer/shared/chatList";
 import {
   createContext,
-  Fragment,
   memo,
   use,
   useCallback,
@@ -80,12 +79,7 @@ import {
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
 } from "./MessagesTimeline.logic";
-import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
 import {
   extractTrailingElementContexts,
   type ParsedElementContextEntry,
@@ -99,11 +93,6 @@ import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@upcomputer/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
-import {
-  buildInlineTerminalContextText,
-  formatInlineTerminalContextLabel,
-  textContainsInlineTerminalContextLabels,
-} from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
@@ -855,10 +844,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const userImages = row.message.attachments ?? [];
-  const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
-  const terminalContexts = displayedUserMessage.contexts;
+  const trailingElementContexts = extractTrailingElementContexts(row.message.text);
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
+  let visibleText = trailingElementContexts.promptText;
   while (true) {
     const extracted = extractTrailingPreviewAnnotation(visibleText);
     if (!extracted.annotation) break;
@@ -866,10 +854,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     visibleText = extracted.promptText;
   }
   const elementContextState = extractTrailingElementContexts(visibleText);
-  const elementContexts = [
-    ...displayedUserMessage.elementContexts,
-    ...elementContextState.contexts,
-  ];
+  const elementContexts = [...trailingElementContexts.contexts, ...elementContextState.contexts];
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
@@ -930,7 +915,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           ) : null}
           <CollapsibleUserMessageBody
             text={elementContextState.promptText}
-            terminalContexts={terminalContexts}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}
           />
@@ -950,9 +934,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </TooltipPopup>
             </Tooltip>
             <div className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100">
-              {displayedUserMessage.copyText && (
+              {row.message.text && (
                 <MessageCopyButton
-                  text={displayedUserMessage.copyText}
+                  text={row.message.text}
                   size="icon-sm"
                   className="shadow-none before:hidden"
                 />
@@ -1328,17 +1312,6 @@ function AssistantChangedFilesSectionInner({
 // Leaf components
 // ---------------------------------------------------------------------------
 
-const UserMessageTerminalContextInlineLabel = memo(
-  function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
-    const tooltipText =
-      props.context.body.length > 0
-        ? `${props.context.header}\n${props.context.body}`
-        : props.context.header;
-
-    return <TerminalContextInlineChip label={props.context.header} tooltipText={tooltipText} />;
-  },
-);
-
 const UserMessageElementContextChip = memo(function UserMessageElementContextChip(props: {
   context: ParsedElementContextEntry;
 }) {
@@ -1432,13 +1405,12 @@ function shouldCollapseUserMessage(text: string): boolean {
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
   footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasVisibleBody = props.text.trim().length > 0 || props.terminalContexts.length > 0;
+  const hasVisibleBody = props.text.trim().length > 0;
   const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
   const isCollapsed = canCollapse && !expanded;
 
@@ -1462,7 +1434,6 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
         >
           <UserMessageBody
             text={props.text}
-            terminalContexts={props.terminalContexts}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
           />
@@ -1500,38 +1471,10 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
-  const renderInlineMarkdownSegment = (text: string, key: string) => {
-    const leadingWhitespace = /^\s+/.exec(text)?.[0] ?? "";
-    const textWithoutLeadingWhitespace = text.slice(leadingWhitespace.length);
-    const trailingWhitespace = /\s+$/.exec(textWithoutLeadingWhitespace)?.[0] ?? "";
-    const content = textWithoutLeadingWhitespace.slice(
-      0,
-      textWithoutLeadingWhitespace.length - trailingWhitespace.length,
-    );
-
-    return (
-      <Fragment key={key}>
-        {leadingWhitespace ? <span aria-hidden="true">{leadingWhitespace}</span> : null}
-        {content ? (
-          <ChatMarkdown
-            text={content}
-            cwd={props.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-            skills={props.skills}
-            className="text-foreground"
-            lineBreaks
-          />
-        ) : null}
-        {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
-      </Fragment>
-    );
-  };
-
   const reviewCommentSegments = parseReviewCommentMessageSegments(props.text);
   if (reviewCommentSegments.some((segment) => segment.kind === "review-comment")) {
     return (
@@ -1554,96 +1497,6 @@ const UserMessageBody = memo(function UserMessageBody(props: {
             <UserMessageReviewCommentCard key={segment.comment.id} comment={segment.comment} />
           ),
         )}
-      </div>
-    );
-  }
-
-  if (props.terminalContexts.length > 0) {
-    const hasEmbeddedInlineLabels = textContainsInlineTerminalContextLabels(
-      props.text,
-      props.terminalContexts,
-    );
-    const inlinePrefix = buildInlineTerminalContextText(props.terminalContexts);
-    const inlineNodes: ReactNode[] = [];
-
-    if (hasEmbeddedInlineLabels) {
-      let cursor = 0;
-
-      for (const context of props.terminalContexts) {
-        const label = formatInlineTerminalContextLabel(context.header);
-        const matchIndex = props.text.indexOf(label, cursor);
-        if (matchIndex === -1) {
-          inlineNodes.length = 0;
-          break;
-        }
-        if (matchIndex > cursor) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor, matchIndex),
-              `user-terminal-context-inline-before:${context.header}:${cursor}`,
-            ),
-          );
-        }
-        inlineNodes.push(
-          <UserMessageTerminalContextInlineLabel
-            key={`user-terminal-context-inline:${context.header}`}
-            context={context}
-          />,
-        );
-        cursor = matchIndex + label.length;
-      }
-
-      if (inlineNodes.length > 0) {
-        if (cursor < props.text.length) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor),
-              `user-message-terminal-context-inline-rest:${cursor}`,
-            ),
-          );
-        }
-
-        return (
-          <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
-            {inlineNodes}
-          </div>
-        );
-      }
-    }
-
-    for (const context of props.terminalContexts) {
-      inlineNodes.push(
-        <UserMessageTerminalContextInlineLabel
-          key={`user-terminal-context-inline:${context.header}`}
-          context={context}
-        />,
-      );
-      inlineNodes.push(
-        <span key={`user-terminal-context-inline-space:${context.header}`} aria-hidden="true">
-          {" "}
-        </span>,
-      );
-    }
-
-    if (props.text.length > 0) {
-      inlineNodes.push(
-        <ChatMarkdown
-          key="user-message-terminal-context-inline-text"
-          text={props.text}
-          cwd={props.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          skills={props.skills}
-          className="text-foreground"
-          lineBreaks
-        />,
-      );
-    } else if (inlinePrefix.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
-        {inlineNodes}
       </div>
     );
   }

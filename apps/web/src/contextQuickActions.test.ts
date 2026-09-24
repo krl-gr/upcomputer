@@ -22,6 +22,7 @@ describe("context quick actions", () => {
         "git.push",
         "rightPanel.toggle",
         "unknown",
+        "terminal.toggle",
         "open.cursor",
       ]),
     ).toEqual(["rightPanel.toggle", "git.push", "open.cursor"]);
@@ -35,13 +36,13 @@ describe("context quick actions", () => {
   });
 
   it("pins idempotently and unpins without reordering other actions", () => {
-    const initial = sanitizeContextQuickActionIds(["git.quick", "terminal.toggle"]);
+    const initial = sanitizeContextQuickActionIds(["git.quick", "diff.toggle"]);
     expect(setContextQuickActionPinned(initial, "git.push", true)).toEqual([
       "git.quick",
-      "terminal.toggle",
+      "diff.toggle",
       "git.push",
     ]);
     expect(setContextQuickActionPinned(initial, "git.quick", true)).toEqual(initial);
-    expect(setContextQuickActionPinned(initial, "git.quick", false)).toEqual(["terminal.toggle"]);
+    expect(setContextQuickActionPinned(initial, "git.quick", false)).toEqual(["diff.toggle"]);
   });
 });
