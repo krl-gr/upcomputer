@@ -4975,7 +4975,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 hasUpstream: true,
                 aheadCount: 0,
                 behindCount: 0,
-                pr: null,
               }),
             status: () =>
               Effect.succeed({
@@ -4988,7 +4987,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 hasUpstream: true,
                 aheadCount: 0,
                 behindCount: 0,
-                pr: null,
               }),
             runStackedAction: (input, options) =>
               Effect.gen(function* () {
@@ -5001,7 +4999,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     subject: "feat: demo",
                   },
                   push: { status: "skipped_not_requested" as const },
-                  pr: { status: "skipped_not_requested" as const },
                   toast: {
                     title: "Committed abc123",
                     description: "feat: demo",
@@ -5037,30 +5034,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 );
 
                 return result;
-              }),
-            resolvePullRequest: () =>
-              Effect.succeed({
-                pullRequest: {
-                  number: 1,
-                  title: "Demo PR",
-                  url: "https://example.com/pr/1",
-                  baseBranch: "main",
-                  headBranch: "feature/demo",
-                  state: "open",
-                },
-              }),
-            preparePullRequestThread: () =>
-              Effect.succeed({
-                pullRequest: {
-                  number: 1,
-                  title: "Demo PR",
-                  url: "https://example.com/pr/1",
-                  baseBranch: "main",
-                  headBranch: "feature/demo",
-                  state: "open",
-                },
-                branch: "feature/demo",
-                worktreePath: null,
               }),
           },
           gitVcsDriver: {
@@ -5105,7 +5078,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 hasUpstream: true,
                 aheadCount: 0,
                 behindCount: 0,
-                pr: null,
               }),
           },
           reviewService: {
@@ -5171,27 +5143,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       if (lastStackedEvent?.kind === "action_finished") {
         assert.equal(lastStackedEvent.result.action, "commit");
       }
-
-      const resolvedPr = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.gitResolvePullRequest]({
-            cwd: "/tmp/repo",
-            reference: "1",
-          }),
-        ),
-      );
-      assert.equal(resolvedPr.pullRequest.number, 1);
-
-      const prepared = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.gitPreparePullRequestThread]({
-            cwd: "/tmp/repo",
-            reference: "1",
-            mode: "local",
-          }),
-        ),
-      );
-      assert.equal(prepared.branch, "feature/demo");
 
       const refs = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) => client[WS_METHODS.vcsListRefs]({ cwd: "/tmp/repo" })),
@@ -5297,7 +5248,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   hasUpstream: true,
                   aheadCount: 0,
                   behindCount: 0,
-                  pr: null,
                 };
               }),
             status: () =>
@@ -5313,7 +5263,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   hasUpstream: true,
                   aheadCount: 0,
                   behindCount: 0,
-                  pr: null,
                 };
               }),
           },
@@ -5374,7 +5323,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   hasUpstream: true,
                   aheadCount: 0,
                   behindCount: 0,
-                  pr: null,
                 };
               }),
             status: () =>
@@ -5390,7 +5338,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   hasUpstream: true,
                   aheadCount: 0,
                   behindCount: 0,
-                  pr: null,
                 };
               }),
             runStackedAction: () => Effect.fail(gitError),
@@ -5446,7 +5393,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   hasUpstream: true,
                   aheadCount: 0,
                   behindCount: 0,
-                  pr: null,
                 }),
               ),
           },
@@ -5493,7 +5439,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     hasUpstream: true,
                     aheadCount: 0,
                     behindCount: 0,
-                    pr: null,
                   }),
                 ),
               runStackedAction: () =>
@@ -5506,7 +5451,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     subject: "feat: demo",
                   },
                   push: { status: "skipped_not_requested" as const },
-                  pr: { status: "skipped_not_requested" as const },
                   toast: {
                     title: "Committed abc123",
                     description: "feat: demo",
@@ -5575,7 +5519,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     hasUpstream: true,
                     aheadCount: 0,
                     behindCount: 0,
-                    pr: null,
                   }),
                 ),
               runStackedAction: () =>
@@ -5588,7 +5531,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     subject: "feat: demo",
                   },
                   push: { status: "skipped_not_requested" as const },
-                  pr: { status: "skipped_not_requested" as const },
                   toast: {
                     title: "Committed abc123",
                     description: "feat: demo",
@@ -7335,7 +7277,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             hasUpstream: true,
             aheadCount: 0,
             behindCount: 0,
-            pr: null,
           }),
         );
         const fetchRemote = vi.fn(

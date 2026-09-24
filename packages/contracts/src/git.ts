@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
@@ -8,15 +8,9 @@ const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
 
 // Domain Types
 
-export const GitStackedAction = Schema.Literals([
-  "commit",
-  "push",
-  "create_pr",
-  "commit_push",
-  "commit_push_pr",
-]);
+export const GitStackedAction = Schema.Literals(["commit", "push", "commit_push"]);
 export type GitStackedAction = typeof GitStackedAction.Type;
-export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr"]);
+export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push"]);
 export type GitActionProgressPhase = typeof GitActionProgressPhase.Type;
 export const GitActionProgressKind = Schema.Literals([
   "action_started",
@@ -41,11 +35,6 @@ const GitPushStepStatus = Schema.Literals([
   "skipped_up_to_date",
 ]);
 const GitBranchStepStatus = Schema.Literals(["created", "skipped_not_requested"]);
-const GitPrStepStatus = Schema.Literals(["created", "opened_existing", "skipped_not_requested"]);
-const VcsStatusChangeRequestState = Schema.Literals(["open", "closed", "merged"]);
-const GitPullRequestReference = TrimmedNonEmptyStringSchema;
-const GitPullRequestState = Schema.Literals(["open", "closed", "merged"]);
-const GitPreparePullRequestThreadMode = Schema.Literals(["local", "worktree"]);
 export const GitRunStackedActionToastRunAction = Schema.Struct({
   kind: GitStackedAction,
 });
@@ -53,11 +42,6 @@ export type GitRunStackedActionToastRunAction = typeof GitRunStackedActionToastR
 const GitRunStackedActionToastCta = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("none"),
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("open_pr"),
-    label: TrimmedNonEmptyStringSchema,
-    url: Schema.String,
   }),
   Schema.Struct({
     kind: Schema.Literal("run_action"),
@@ -87,15 +71,6 @@ const VcsWorktree = Schema.Struct({
   path: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,
 });
-const GitResolvedPullRequest = Schema.Struct({
-  number: PositiveInt,
-  title: TrimmedNonEmptyStringSchema,
-  url: Schema.String,
-  baseBranch: TrimmedNonEmptyStringSchema,
-  headBranch: TrimmedNonEmptyStringSchema,
-  state: GitPullRequestState,
-});
-export type GitResolvedPullRequest = typeof GitResolvedPullRequest.Type;
 
 // RPC Inputs
 
@@ -142,20 +117,6 @@ export const VcsCreateWorktreeInput = Schema.Struct({
 });
 export type VcsCreateWorktreeInput = typeof VcsCreateWorktreeInput.Type;
 
-export const GitPullRequestRefInput = Schema.Struct({
-  cwd: TrimmedNonEmptyStringSchema,
-  reference: GitPullRequestReference,
-});
-export type GitPullRequestRefInput = typeof GitPullRequestRefInput.Type;
-
-export const GitPreparePullRequestThreadInput = Schema.Struct({
-  cwd: TrimmedNonEmptyStringSchema,
-  reference: GitPullRequestReference,
-  mode: GitPreparePullRequestThreadMode,
-  threadId: Schema.optional(ThreadId),
-});
-export type GitPreparePullRequestThreadInput = typeof GitPreparePullRequestThreadInput.Type;
-
 export const VcsRemoveWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
@@ -189,15 +150,6 @@ export type VcsInitInput = typeof VcsInitInput.Type;
 
 // RPC Results
 
-const VcsStatusChangeRequest = Schema.Struct({
-  number: PositiveInt,
-  title: TrimmedNonEmptyStringSchema,
-  url: Schema.String,
-  baseRef: TrimmedNonEmptyStringSchema,
-  headRef: TrimmedNonEmptyStringSchema,
-  state: VcsStatusChangeRequestState,
-});
-
 const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
@@ -223,7 +175,6 @@ const VcsStatusRemoteShape = {
   aheadCount: NonNegativeInt,
   behindCount: NonNegativeInt,
   aheadOfDefaultCount: Schema.optional(NonNegativeInt),
-  pr: Schema.NullOr(VcsStatusChangeRequest),
 };
 
 export const VcsStatusLocalResult = Schema.Struct(VcsStatusLocalShape);
@@ -266,18 +217,6 @@ export const VcsCreateWorktreeResult = Schema.Struct({
 });
 export type VcsCreateWorktreeResult = typeof VcsCreateWorktreeResult.Type;
 
-export const GitResolvePullRequestResult = Schema.Struct({
-  pullRequest: GitResolvedPullRequest,
-});
-export type GitResolvePullRequestResult = typeof GitResolvePullRequestResult.Type;
-
-export const GitPreparePullRequestThreadResult = Schema.Struct({
-  pullRequest: GitResolvedPullRequest,
-  branch: TrimmedNonEmptyStringSchema,
-  worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
-});
-export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
-
 export const VcsSwitchRefResult = Schema.Struct({
   refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
 });
@@ -299,14 +238,6 @@ export const GitRunStackedActionResult = Schema.Struct({
     branch: Schema.optional(TrimmedNonEmptyStringSchema),
     upstreamBranch: Schema.optional(TrimmedNonEmptyStringSchema),
     setUpstream: Schema.optional(Schema.Boolean),
-  }),
-  pr: Schema.Struct({
-    status: GitPrStepStatus,
-    url: Schema.optional(Schema.String),
-    number: Schema.optional(PositiveInt),
-    baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
-    headBranch: Schema.optional(TrimmedNonEmptyStringSchema),
-    title: Schema.optional(TrimmedNonEmptyStringSchema),
   }),
   toast: GitRunStackedActionToast,
 });
@@ -361,25 +292,8 @@ export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()(
   }
 }
 
-export class GitPullRequestMaterializationError extends Schema.TaggedErrorClass<GitPullRequestMaterializationError>()(
-  "GitPullRequestMaterializationError",
-  {
-    cwd: TrimmedNonEmptyStringSchema,
-    pullRequestNumber: PositiveInt,
-    headRepository: Schema.NullOr(TrimmedNonEmptyStringSchema),
-    headBranch: TrimmedNonEmptyStringSchema,
-    localBranch: TrimmedNonEmptyStringSchema,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to materialize pull request #${this.pullRequestNumber} branch ${this.headBranch} as ${this.localBranch}.`;
-  }
-}
-
 export const GitManagerServiceError = Schema.Union([
   GitManagerError,
-  GitPullRequestMaterializationError,
   GitCommandError,
   SourceControlProviderError,
   TextGenerationError,

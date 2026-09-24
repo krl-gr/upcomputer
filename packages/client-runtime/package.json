@@ -63,10 +63,6 @@
       "types": "./src/state/filesystem.ts",
       "default": "./src/state/filesystem.ts"
     },
-    "./state/git": {
-      "types": "./src/state/git.ts",
-      "default": "./src/state/git.ts"
-    },
     "./state/models": {
       "types": "./src/state/models.ts",
       "default": "./src/state/models.ts"

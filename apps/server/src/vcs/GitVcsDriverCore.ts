@@ -44,9 +44,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
-const RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
-const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
-const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
@@ -1520,7 +1517,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         aheadCount: details.aheadCount,
         behindCount: details.behindCount,
         aheadOfDefaultCount: details.aheadOfDefaultCount,
-        pr: null,
       })),
     );
 
@@ -1770,50 +1766,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       status: beforeSha.length > 0 && beforeSha === afterSha ? "skipped_up_to_date" : "pulled",
       refName,
       upstreamRef: refreshed.upstreamRef,
-    };
-  });
-
-  const readRangeContext: GitVcsDriver.GitVcsDriver["Service"]["readRangeContext"] = Effect.fn(
-    "readRangeContext",
-  )(function* (cwd, baseRef) {
-    const range = `${baseRef}..HEAD`;
-    const [commitSummary, diffSummary, diffPatch] = yield* Effect.all(
-      [
-        runGitStdoutWithOptions(
-          "GitVcsDriver.readRangeContext.log",
-          cwd,
-          ["log", "--oneline", range],
-          {
-            maxOutputBytes: RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES,
-            appendTruncationMarker: true,
-          },
-        ),
-        runGitStdoutWithOptions(
-          "GitVcsDriver.readRangeContext.diffStat",
-          cwd,
-          ["diff", "--stat", range],
-          {
-            maxOutputBytes: RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES,
-            appendTruncationMarker: true,
-          },
-        ),
-        runGitStdoutWithOptions(
-          "GitVcsDriver.readRangeContext.diffPatch",
-          cwd,
-          ["diff", "--no-ext-diff", "--patch", "--minimal", range],
-          {
-            maxOutputBytes: RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES,
-            appendTruncationMarker: true,
-          },
-        ),
-      ],
-      { concurrency: "unbounded" },
-    );
-
-    return {
-      commitSummary,
-      diffSummary,
-      diffPatch,
     };
   });
 
@@ -2301,25 +2253,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
-  const fetchPullRequestBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchPullRequestBranch"] =
-    Effect.fn("fetchPullRequestBranch")(function* (input) {
-      const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
-      yield* executeGit(
-        "GitVcsDriver.fetchPullRequestBranch",
-        input.cwd,
-        [
-          "fetch",
-          "--quiet",
-          "--no-tags",
-          remoteName,
-          `+refs/pull/${input.prNumber}/head:refs/heads/${input.branch}`,
-        ],
-        {
-          fallbackErrorDetail: "git fetch pull request branch failed",
-        },
-      );
-    });
-
   const fetchRemote: GitVcsDriver.GitVcsDriver["Service"]["fetchRemote"] = Effect.fn("fetchRemote")(
     function* (input) {
       yield* executeGit(
@@ -2351,47 +2284,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
       return { commitSha, remoteRefName };
     });
-
-  const fetchRemoteBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchRemoteBranch"] = Effect.fn(
-    "fetchRemoteBranch",
-  )(function* (input) {
-    yield* runGit("GitVcsDriver.fetchRemoteBranch.fetch", input.cwd, [
-      "fetch",
-      "--quiet",
-      "--no-tags",
-      input.remoteName,
-      `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remoteName}/${input.remoteBranch}`,
-    ]);
-
-    const localBranchAlreadyExists = yield* branchExists(input.cwd, input.localBranch);
-    const targetRef = `${input.remoteName}/${input.remoteBranch}`;
-    yield* runGit(
-      "GitVcsDriver.fetchRemoteBranch.materialize",
-      input.cwd,
-      localBranchAlreadyExists
-        ? ["branch", "--force", input.localBranch, targetRef]
-        : ["branch", input.localBranch, targetRef],
-    );
-  });
-
-  const fetchRemoteTrackingBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchRemoteTrackingBranch"] =
-    Effect.fn("fetchRemoteTrackingBranch")(function* (input) {
-      yield* runGit("GitVcsDriver.fetchRemoteTrackingBranch", input.cwd, [
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        input.remoteName,
-        `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remoteName}/${input.remoteBranch}`,
-      ]);
-    });
-
-  const setBranchUpstream: GitVcsDriver.GitVcsDriver["Service"]["setBranchUpstream"] = (input) =>
-    runGit("GitVcsDriver.setBranchUpstream", input.cwd, [
-      "branch",
-      "--set-upstream-to",
-      `${input.remoteName}/${input.remoteBranch}`,
-      input.branch,
-    ]);
 
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
@@ -2561,19 +2453,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     commit,
     pushCurrentBranch,
     pullCurrentBranch,
-    readRangeContext,
     getReviewDiffPreview,
     readConfigValue,
     listRefs,
     createWorktree,
-    fetchPullRequestBranch,
     ensureRemote,
     resolvePrimaryRemoteName,
     fetchRemote,
     resolveRemoteTrackingCommit,
-    fetchRemoteBranch,
-    fetchRemoteTrackingBranch,
-    setBranchUpstream,
     removeWorktree,
     renameBranch,
     createRef,

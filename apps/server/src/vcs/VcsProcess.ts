@@ -66,20 +66,7 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
     return "authentication";
   }
 
-  if (
-    (command === "gh" &&
-      (normalized.includes("could not resolve to a pullrequest") ||
-        normalized.includes("repository.pullrequest") ||
-        normalized.includes("no pull requests found for branch") ||
-        normalized.includes("pull request not found"))) ||
-    (command === "glab" &&
-      (normalized.includes("merge request not found") ||
-        normalized.includes("not found") ||
-        normalized.includes("404"))) ||
-    (command === "az" &&
-      normalized.includes("pull request") &&
-      (normalized.includes("not found") || normalized.includes("does not exist")))
-  ) {
+  if (command === "glab" && (normalized.includes("not found") || normalized.includes("404"))) {
     return "not-found";
   }
 

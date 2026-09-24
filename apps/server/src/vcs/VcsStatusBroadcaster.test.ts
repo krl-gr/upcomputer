@@ -42,19 +42,11 @@ const baseRemoteStatus: VcsStatusRemoteResult = {
   hasUpstream: true,
   aheadCount: 0,
   behindCount: 0,
-  pr: null,
 };
 
-const remoteStatusWithPr: VcsStatusRemoteResult = {
+const remoteStatusAhead: VcsStatusRemoteResult = {
   ...baseRemoteStatus,
-  pr: {
-    number: 2978,
-    title: "[codex] Rewrite client connection architecture",
-    url: "https://github.com/pingdotgg/t3code/pull/2978",
-    baseRef: "main",
-    headRef: "codex/connection-state-audit",
-    state: "open",
-  },
+  aheadCount: 1,
 };
 
 const baseStatus: VcsStatusResult = {
@@ -382,7 +374,7 @@ describe("VcsStatusBroadcaster", () => {
   it.effect("loads remote status once when periodic refreshes are disabled", () => {
     const state = {
       currentLocalStatus: baseLocalStatus,
-      currentRemoteStatus: remoteStatusWithPr,
+      currentRemoteStatus: remoteStatusAhead,
       localStatusCalls: 0,
       remoteStatusCalls: 0,
       localInvalidationCalls: 0,
@@ -421,7 +413,7 @@ describe("VcsStatusBroadcaster", () => {
       } satisfies VcsStatusStreamEvent);
       assert.deepStrictEqual(remoteUpdated, {
         _tag: "remoteUpdated",
-        remote: remoteStatusWithPr,
+        remote: remoteStatusAhead,
       } satisfies VcsStatusStreamEvent);
       assert.equal(state.remoteStatusCalls, 1);
       assert.equal(state.remoteInvalidationCalls, 0);
@@ -480,7 +472,7 @@ describe("VcsStatusBroadcaster", () => {
                   ),
                 );
               }
-              return Effect.succeed(remoteStatusWithPr);
+              return Effect.succeed(remoteStatusAhead);
             }),
           invalidateLocalStatus: () =>
             Effect.sync(() => {
@@ -537,7 +529,7 @@ describe("VcsStatusBroadcaster", () => {
 
       assert.deepStrictEqual(remoteUpdated, {
         _tag: "remoteUpdated",
-        remote: remoteStatusWithPr,
+        remote: remoteStatusAhead,
       } satisfies VcsStatusStreamEvent);
       assert.equal(state.remoteStatusCalls, 2);
       assert.equal(state.remoteInvalidationCalls, 0);

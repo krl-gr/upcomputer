@@ -27,70 +27,9 @@ function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
     hasUpstream: true,
     aheadCount: 0,
     behindCount: 0,
-    pr: null,
     ...overrides,
   };
 }
-
-describe("when: ref is clean and has an open PR", () => {
-  it("resolveQuickAction opens the existing PR", () => {
-    const quick = resolveQuickAction(
-      status({
-        pr: {
-          number: 10,
-          title: "Open PR",
-          url: "https://example.com/pr/10",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
-    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
-  });
-
-  it("buildMenuItems disables commit/push and enables open PR", () => {
-    const items = buildMenuItems(
-      status({
-        pr: {
-          number: 11,
-          title: "Existing PR",
-          url: "https://example.com/pr/11",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
-    assert.deepEqual(items, [
-      {
-        id: "commit",
-        label: "Commit",
-        disabled: true,
-        icon: "commit",
-        kind: "open_dialog",
-        dialogAction: "commit",
-      },
-      {
-        id: "push",
-        label: "Push",
-        disabled: true,
-        icon: "push",
-        kind: "open_dialog",
-        dialogAction: "push",
-      },
-      {
-        id: "pr",
-        label: "View PR",
-        disabled: false,
-        icon: "pr",
-        kind: "open_pr",
-      },
-    ]);
-  });
-});
 
 describe("when: actions are busy", () => {
   it("resolveQuickAction returns running disabled state", () => {
@@ -122,14 +61,6 @@ describe("when: actions are busy", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 });
@@ -151,40 +82,14 @@ describe("when: git status is unavailable", () => {
   });
 });
 
-describe("when: ref is clean, ahead, and has an open PR", () => {
-  it("resolveQuickAction prefers push", () => {
-    const quick = resolveQuickAction(
-      status({
-        aheadCount: 3,
-        pr: {
-          number: 13,
-          title: "Open PR",
-          url: "https://example.com/pr/13",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
+describe("when: ref is clean and ahead", () => {
+  it("resolveQuickAction pushes", () => {
+    const quick = resolveQuickAction(status({ aheadCount: 2 }), false);
     assert.deepInclude(quick, { kind: "run_action", action: "push", label: "Push" });
   });
 
-  it("buildMenuItems enables push and keeps open PR available", () => {
-    const items = buildMenuItems(
-      status({
-        aheadCount: 2,
-        pr: {
-          number: 12,
-          title: "Existing PR",
-          url: "https://example.com/pr/12",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
+  it("buildMenuItems enables push, with commit disabled", () => {
+    const items = buildMenuItems(status({ aheadCount: 2 }), false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -202,115 +107,21 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "View PR",
-        disabled: false,
-        icon: "pr",
-        kind: "open_pr",
-      },
     ]);
   });
 });
 
-describe("when: ref is clean, ahead, and has no open PR", () => {
-  it("resolveQuickAction pushes and creates a PR", () => {
-    const quick = resolveQuickAction(status({ aheadCount: 2, pr: null }), false);
-    assert.deepInclude(quick, {
-      kind: "run_action",
-      action: "create_pr",
-      label: "Push & create PR",
-    });
-  });
-
-  it("buildMenuItems enables push and create PR, with commit disabled", () => {
-    const items = buildMenuItems(status({ aheadCount: 2, pr: null }), false);
-    assert.deepEqual(items, [
-      {
-        id: "commit",
-        label: "Commit",
-        disabled: true,
-        icon: "commit",
-        kind: "open_dialog",
-        dialogAction: "commit",
-      },
-      {
-        id: "push",
-        label: "Push",
-        disabled: false,
-        icon: "push",
-        kind: "open_dialog",
-        dialogAction: "push",
-      },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: false,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
-    ]);
-  });
-});
-
-describe("when: source control provider uses merge requests", () => {
-  it("uses GitLab MR terminology in quick actions and menu items", () => {
-    const gitlabStatus = status({
-      aheadCount: 2,
-      sourceControlProvider: {
-        kind: "gitlab",
-        name: "GitLab",
-        baseUrl: "https://gitlab.com",
-      },
-    });
-
-    const quick = resolveQuickAction(gitlabStatus, false);
-    const items = buildMenuItems(gitlabStatus, false);
-
-    assert.deepInclude(quick, {
-      kind: "run_action",
-      action: "create_pr",
-      label: "Push & create MR",
-    });
-    assert.deepInclude(items[2], {
-      id: "pr",
-      label: "Create MR",
-    });
-  });
-});
-
-describe("when: ref is clean, up to date, and has no open PR", () => {
-  it("enables create PR when synced with upstream but ahead of default", () => {
-    const syncedFeature = status({
-      aheadCount: 0,
-      behindCount: 0,
-      aheadOfDefaultCount: 1,
-      pr: null,
-    });
-
-    const quick = resolveQuickAction(syncedFeature, false);
-    assert.deepInclude(quick, {
-      label: "Create PR",
-      disabled: false,
-      kind: "run_action",
-      action: "create_pr",
-    });
-
-    const items = buildMenuItems(syncedFeature, false);
-    assert.equal(items.find((item) => item.id === "pr")?.disabled, false);
-  });
-
+describe("when: ref is clean and up to date", () => {
   it("resolveQuickAction returns disabled no-action state", () => {
     const quick = resolveQuickAction(
-      status({ aheadCount: 0, behindCount: 0, hasWorkingTreeChanges: false, pr: null }),
+      status({ aheadCount: 0, behindCount: 0, hasWorkingTreeChanges: false }),
       false,
     );
     assert.deepInclude(quick, { kind: "show_hint", label: "Commit", disabled: true });
   });
 
-  it("buildMenuItems disables commit, push, and create PR", () => {
-    const items = buildMenuItems(status({ aheadCount: 0, behindCount: 0, pr: null }), false);
+  it("buildMenuItems disables commit and push", () => {
+    const items = buildMenuItems(status({ aheadCount: 0, behindCount: 0 }), false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -327,14 +138,6 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
         icon: "push",
         kind: "open_dialog",
         dialogAction: "push",
-      },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
       },
     ]);
   });
@@ -346,8 +149,8 @@ describe("when: ref is behind upstream", () => {
     assert.deepInclude(quick, { kind: "run_pull", label: "Pull", disabled: false });
   });
 
-  it("buildMenuItems disables push and create PR", () => {
-    const items = buildMenuItems(status({ behindCount: 1, pr: null }), false);
+  it("buildMenuItems disables push", () => {
+    const items = buildMenuItems(status({ behindCount: 1 }), false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -364,14 +167,6 @@ describe("when: ref is behind upstream", () => {
         icon: "push",
         kind: "open_dialog",
         dialogAction: "push",
-      },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
       },
     ]);
   });
@@ -390,12 +185,12 @@ describe("when: ref has diverged from upstream", () => {
 });
 
 describe("when: working tree has local changes", () => {
-  it("resolveQuickAction returns commit, push, and create PR", () => {
+  it("resolveQuickAction returns commit and push", () => {
     const quick = resolveQuickAction(status({ hasWorkingTreeChanges: true }), false);
     assert.deepInclude(quick, {
       kind: "run_action",
-      action: "commit_push_pr",
-      label: "Commit, push & PR",
+      action: "commit_push",
+      label: "Commit & push",
     });
   });
 
@@ -414,29 +209,7 @@ describe("when: working tree has local changes", () => {
     });
   });
 
-  it("resolveQuickAction returns commit and push when open PR exists", () => {
-    const quick = resolveQuickAction(
-      status({
-        hasWorkingTreeChanges: true,
-        pr: {
-          number: 16,
-          title: "Existing PR",
-          url: "https://example.com/pr/16",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
-    assert.deepInclude(quick, {
-      kind: "run_action",
-      action: "commit_push",
-      label: "Commit & push",
-    });
-  });
-
-  it("buildMenuItems enables commit and disables push and PR", () => {
+  it("buildMenuItems enables commit and disables push", () => {
     const items = buildMenuItems(status({ hasWorkingTreeChanges: true }), false);
     assert.deepEqual(items, [
       {
@@ -454,14 +227,6 @@ describe("when: working tree has local changes", () => {
         icon: "push",
         kind: "open_dialog",
         dialogAction: "push",
-      },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
       },
     ]);
   });
@@ -497,19 +262,11 @@ describe("when: working tree has local changes", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 });
 
-describe("when: on default ref without open PR", () => {
+describe("when: on default ref", () => {
   it("resolveQuickAction returns commit and push when local changes exist", () => {
     const quick = resolveQuickAction(
       status({ refName: "main", hasWorkingTreeChanges: true }),
@@ -525,11 +282,7 @@ describe("when: on default ref without open PR", () => {
   });
 
   it("resolveQuickAction returns push when ref is ahead", () => {
-    const quick = resolveQuickAction(
-      status({ refName: "main", aheadCount: 2, pr: null }),
-      false,
-      true,
-    );
+    const quick = resolveQuickAction(status({ refName: "main", aheadCount: 2 }), false, true);
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "commit_push",
@@ -540,19 +293,19 @@ describe("when: on default ref without open PR", () => {
 });
 
 describe("when: working tree has local changes and ref is behind upstream", () => {
-  it("resolveQuickAction still prefers commit, push, and create PR", () => {
+  it("resolveQuickAction still prefers commit and push", () => {
     const quick = resolveQuickAction(
       status({ hasWorkingTreeChanges: true, behindCount: 1 }),
       false,
     );
     assert.deepInclude(quick, {
       kind: "run_action",
-      action: "commit_push_pr",
-      label: "Commit, push & PR",
+      action: "commit_push",
+      label: "Commit & push",
     });
   });
 
-  it("buildMenuItems enables commit and keeps push and PR disabled", () => {
+  it("buildMenuItems enables commit and keeps push disabled", () => {
     const items = buildMenuItems(status({ hasWorkingTreeChanges: true, behindCount: 2 }), false);
     assert.deepEqual(items, [
       {
@@ -571,14 +324,6 @@ describe("when: working tree has local changes and ref is behind upstream", () =
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 });
@@ -592,7 +337,7 @@ describe("when: HEAD is detached and there are no local changes", () => {
     assert.deepInclude(quick, { kind: "show_hint", label: "Commit", disabled: true });
   });
 
-  it("buildMenuItems keeps commit, push, and PR disabled", () => {
+  it("buildMenuItems keeps commit and push disabled", () => {
     const items = buildMenuItems(status({ refName: null, hasWorkingTreeChanges: false }), false);
     assert.deepEqual(items, [
       {
@@ -611,24 +356,13 @@ describe("when: HEAD is detached and there are no local changes", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 });
 
 describe("when: ref has no upstream configured", () => {
   it("resolveQuickAction is disabled when clean, no upstream, and no local commits are ahead", () => {
-    const quick = resolveQuickAction(
-      status({ hasUpstream: false, pr: null, aheadCount: 0 }),
-      false,
-    );
+    const quick = resolveQuickAction(status({ hasUpstream: false, aheadCount: 0 }), false);
     assert.deepInclude(quick, {
       kind: "show_hint",
       label: "Push",
@@ -637,42 +371,11 @@ describe("when: ref has no upstream configured", () => {
     });
   });
 
-  it("resolveQuickAction opens PR when clean, no upstream, no local commits are ahead, and PR exists", () => {
-    const quick = resolveQuickAction(
-      status({
-        hasUpstream: false,
-        aheadCount: 0,
-        pr: {
-          number: 14,
-          title: "Existing PR",
-          url: "https://example.com/pr/14",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
-      }),
-      false,
-    );
-    assert.deepInclude(quick, {
-      kind: "open_pr",
-      label: "View PR",
-      disabled: false,
-    });
-  });
-
   it("resolveQuickAction runs push when clean, no upstream, and local commits are ahead", () => {
     const quick = resolveQuickAction(
       status({
         hasUpstream: false,
         aheadCount: 1,
-        pr: {
-          number: 15,
-          title: "Existing PR",
-          url: "https://example.com/pr/15",
-          baseRef: "main",
-          headRef: "feature/test",
-          state: "open",
-        },
       }),
       false,
     );
@@ -684,8 +387,8 @@ describe("when: ref has no upstream configured", () => {
     });
   });
 
-  it("buildMenuItems disables push and create PR when no commits are ahead", () => {
-    const items = buildMenuItems(status({ hasUpstream: false, pr: null, aheadCount: 0 }), false);
+  it("buildMenuItems disables push when no commits are ahead", () => {
+    const items = buildMenuItems(status({ hasUpstream: false, aheadCount: 0 }), false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -703,30 +406,21 @@ describe("when: ref has no upstream configured", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 
-  it("resolveQuickAction runs push and create PR when no upstream and commits are ahead", () => {
+  it("resolveQuickAction runs push when no upstream and commits are ahead", () => {
     const quick = resolveQuickAction(
       status({
         hasUpstream: false,
         aheadCount: 2,
-        pr: null,
       }),
       false,
     );
     assert.deepInclude(quick, {
       kind: "run_action",
-      action: "create_pr",
-      label: "Push & create PR",
+      action: "push",
+      label: "Push",
       disabled: false,
     });
   });
@@ -736,7 +430,6 @@ describe("when: ref has no upstream configured", () => {
       status({
         hasUpstream: false,
         aheadCount: 2,
-        pr: null,
       }),
       false,
       false,
@@ -749,8 +442,8 @@ describe("when: ref has no upstream configured", () => {
     });
   });
 
-  it("buildMenuItems enables create PR when no upstream and commits are ahead", () => {
-    const items = buildMenuItems(status({ hasUpstream: false, pr: null, aheadCount: 2 }), false);
+  it("buildMenuItems enables push when no upstream and commits are ahead", () => {
+    const items = buildMenuItems(status({ hasUpstream: false, aheadCount: 2 }), false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -768,23 +461,11 @@ describe("when: ref has no upstream configured", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: false,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 
-  it("buildMenuItems hides push and create PR when no origin remote exists", () => {
-    const items = buildMenuItems(
-      status({ hasUpstream: false, pr: null, aheadCount: 2 }),
-      false,
-      false,
-    );
+  it("buildMenuItems hides push when no origin remote exists", () => {
+    const items = buildMenuItems(status({ hasUpstream: false, aheadCount: 2 }), false, false);
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -803,7 +484,6 @@ describe("when: ref has no upstream configured", () => {
         refName: "main",
         hasUpstream: false,
         aheadCount: 0,
-        pr: null,
       }),
       false,
       true,
@@ -822,7 +502,6 @@ describe("when: ref has no upstream configured", () => {
         refName: "main",
         hasUpstream: false,
         aheadCount: 1,
-        pr: null,
       }),
       false,
       true,
@@ -835,13 +514,12 @@ describe("when: ref has no upstream configured", () => {
     });
   });
 
-  it("buildMenuItems still disables push and create PR when ref is behind", () => {
+  it("buildMenuItems still disables push when ref is behind", () => {
     const items = buildMenuItems(
       status({
         hasUpstream: false,
         behindCount: 1,
         aheadCount: 0,
-        pr: null,
       }),
       false,
     );
@@ -862,14 +540,6 @@ describe("when: ref has no upstream configured", () => {
         kind: "open_dialog",
         dialogAction: "push",
       },
-      {
-        id: "pr",
-        label: "Create PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "create_pr",
-      },
     ]);
   });
 });
@@ -878,9 +548,7 @@ describe("requiresDefaultBranchConfirmation", () => {
   it("requires confirmation for push actions on default ref", () => {
     assert.isFalse(requiresDefaultBranchConfirmation("commit", true));
     assert.isTrue(requiresDefaultBranchConfirmation("push", true));
-    assert.isTrue(requiresDefaultBranchConfirmation("create_pr", true));
     assert.isTrue(requiresDefaultBranchConfirmation("commit_push", true));
-    assert.isTrue(requiresDefaultBranchConfirmation("commit_push_pr", true));
     assert.isFalse(requiresDefaultBranchConfirmation("commit_push", false));
     assert.isFalse(requiresDefaultBranchConfirmation("push", false));
   });
@@ -902,33 +570,18 @@ describe("resolveDefaultBranchActionDialogCopy", () => {
     });
   });
 
-  it("uses push-and-pr copy when creating a PR without a commit", () => {
-    const copy = resolveDefaultBranchActionDialogCopy({
-      action: "commit_push_pr",
-      branchName: "main",
-      includesCommit: false,
-    });
-
-    assert.deepEqual(copy, {
-      title: "Push & create PR from default ref?",
-      description:
-        'This action will push local commits and create a pull request on "main". You can continue on this ref or create a feature ref and run the same action there.',
-      continueLabel: "Push & create PR",
-    });
-  });
-
   it("keeps commit copy when the action includes a commit", () => {
     const copy = resolveDefaultBranchActionDialogCopy({
-      action: "commit_push_pr",
+      action: "commit_push",
       branchName: "main",
       includesCommit: true,
     });
 
     assert.deepEqual(copy, {
-      title: "Commit, push & create PR from default ref?",
+      title: "Commit & push to default ref?",
       description:
-        'This action will commit, push, and create a pull request on "main". You can continue on this ref or create a feature ref and run the same action there.',
-      continueLabel: "Commit, push & create PR",
+        'This action will commit and push changes on "main". You can continue on this ref or create a feature ref and run the same action there.',
+      continueLabel: "Commit & push to main",
     });
   });
 });
@@ -944,36 +597,6 @@ describe("buildGitActionProgressStages", () => {
     assert.deepEqual(stages, ["Pushing to origin/feature/test..."]);
   });
 
-  it("shows push and PR progress for create-pr actions that still need a push", () => {
-    const stages = buildGitActionProgressStages({
-      action: "create_pr",
-      hasCustomCommitMessage: false,
-      hasWorkingTreeChanges: false,
-      pushTarget: "origin/feature/test",
-      shouldPushBeforePr: true,
-    });
-    assert.deepEqual(stages, [
-      "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
-    ]);
-  });
-
-  it("shows only PR progress when create-pr can skip the push", () => {
-    const stages = buildGitActionProgressStages({
-      action: "create_pr",
-      hasCustomCommitMessage: false,
-      hasWorkingTreeChanges: false,
-      shouldPushBeforePr: false,
-    });
-    assert.deepEqual(stages, [
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
-    ]);
-  });
-
   it("includes commit stages for commit+push when working tree is dirty", () => {
     const stages = buildGitActionProgressStages({
       action: "commit_push",
@@ -987,28 +610,12 @@ describe("buildGitActionProgressStages", () => {
       "Pushing to origin/feature/test...",
     ]);
   });
-
-  it("includes granular PR stages for commit+push+PR actions", () => {
-    const stages = buildGitActionProgressStages({
-      action: "commit_push_pr",
-      hasCustomCommitMessage: true,
-      hasWorkingTreeChanges: true,
-      pushTarget: "origin/feature/test",
-    });
-    assert.deepEqual(stages, [
-      "Committing...",
-      "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
-    ]);
-  });
 });
 
 describe("resolveThreadBranchUpdate", () => {
   it("returns a branch update when the action created a new branch", () => {
     const update = resolveThreadBranchUpdate({
-      action: "commit_push_pr",
+      action: "commit_push",
       branch: {
         status: "created",
         name: "feature/fix-toast-copy",
@@ -1019,7 +626,6 @@ describe("resolveThreadBranchUpdate", () => {
         subject: "feat: add ref sync",
       },
       push: { status: "pushed", branch: "feature/fix-toast-copy" },
-      pr: { status: "skipped_not_requested" },
       toast: {
         title: "Pushed 89abcde to origin/feature/fix-toast-copy",
         cta: { kind: "none" },
@@ -1043,7 +649,6 @@ describe("resolveThreadBranchUpdate", () => {
         subject: "feat: add ref sync",
       },
       push: { status: "pushed", branch: "feature/fix-toast-copy" },
-      pr: { status: "skipped_not_requested" },
       toast: {
         title: "Pushed 89abcde to origin/feature/fix-toast-copy",
         cta: { kind: "none" },

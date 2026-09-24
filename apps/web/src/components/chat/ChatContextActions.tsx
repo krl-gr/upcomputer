@@ -170,13 +170,7 @@ export const ChatContextActions = memo(function ChatContextActions(props: ChatCo
             <GitActionsControl
               activeThreadRef={threadRef}
               contextActionId={
-                actionId === "git.quick"
-                  ? "quick"
-                  : actionId === "git.commit"
-                    ? "commit"
-                    : actionId === "git.push"
-                      ? "push"
-                      : "pr"
+                actionId === "git.quick" ? "quick" : actionId === "git.commit" ? "commit" : "push"
               }
               {...(props.draftId ? { draftId: props.draftId } : {})}
               gitCwd={props.gitCwd}

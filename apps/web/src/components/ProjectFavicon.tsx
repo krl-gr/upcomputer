@@ -6,7 +6,7 @@ import {
   type ProjectVisualIdentityInput,
   type ProjectVisualIdentityOverride,
 } from "@upcomputer/shared/projectFavicon";
-import type { ComponentType, CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import { useAssetUrl } from "../assets/assetUrls";
 import { cn } from "../lib/utils";
@@ -76,11 +76,6 @@ type ProjectFaviconInput = ProjectVisualIdentityInput &
   ProjectVisualIdentityOverride & {
     environmentId: EnvironmentId;
     className?: string | undefined;
-    /**
-     * Accepted for upstream call sites (SidebarV2) and ignored: this fork always
-     * falls back to the coloured project avatar, never a generic icon.
-     */
-    fallbackIcon?: ComponentType<{ className?: string }> | undefined;
   };
 
 function ProjectAvatarFallback(input: Omit<ProjectFaviconInput, "environmentId">) {

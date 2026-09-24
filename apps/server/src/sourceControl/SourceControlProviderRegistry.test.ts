@@ -130,13 +130,13 @@ it.effect("includes the request cwd when an unregistered provider is used", () =
     const provider = yield* registry.get("unknown");
 
     const error = yield* provider
-      .getChangeRequest({ cwd: "/repo", reference: "#42" })
+      .getRepositoryCloneUrls({ cwd: "/repo", repository: "owner/repo" })
       .pipe(Effect.flip);
 
     assert.strictEqual(error.provider, "unknown");
-    assert.strictEqual(error.operation, "getChangeRequest");
+    assert.strictEqual(error.operation, "getRepositoryCloneUrls");
     assert.strictEqual(error.cwd, "/repo");
-    assert.strictEqual(error.reference, "#42");
+    assert.strictEqual(error.repository, "owner/repo");
   }),
 );
 

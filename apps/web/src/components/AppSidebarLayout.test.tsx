@@ -24,7 +24,6 @@ vi.mock("./sidebar/sidebarViewMode", () => ({
 }));
 
 vi.mock("./Sidebar", () => ({ default: () => <div data-testid="sidebar-v1" /> }));
-vi.mock("./SidebarV2", () => ({ default: () => <div data-testid="sidebar-v2" /> }));
 vi.mock("./ui/sidebar", () => ({
   Sidebar: ({
     children,
@@ -57,23 +56,13 @@ describe("AppSidebarLayout theme scope", () => {
     vi.stubGlobal("window", { innerWidth: 1200 });
   });
 
-  it("scopes the classic and focused views to the v1 implementation", () => {
-    for (const mode of ["nested", "focused"]) {
+  it("scopes every view mode to the v1 implementation", () => {
+    for (const mode of ["nested", "focused", "v2"]) {
       mocks.sidebarViewMode = mode;
       const html = renderLayout();
 
       expect(html).toContain('data-upcomputer-sidebar-version="v1"');
       expect(html).toContain('data-testid="sidebar-v1"');
     }
-  });
-
-  it("scopes the flat view to v2, except on settings routes that render v1", () => {
-    mocks.sidebarViewMode = "v2";
-    expect(renderLayout()).toContain('data-upcomputer-sidebar-version="v2"');
-
-    mocks.pathname = "/settings/agents";
-    const settingsHtml = renderLayout();
-    expect(settingsHtml).toContain('data-upcomputer-sidebar-version="v1"');
-    expect(settingsHtml).toContain('data-testid="sidebar-v1"');
   });
 });

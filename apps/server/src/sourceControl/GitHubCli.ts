@@ -2,7 +2,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
@@ -12,10 +11,6 @@ import {
 } from "@upcomputer/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import {
-  decodeGitHubPullRequestJson,
-  decodeGitHubPullRequestListJson,
-} from "./gitHubPullRequests.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -51,19 +46,6 @@ export class GitHubCliAuthenticationError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
-export class GitHubPullRequestNotFoundError extends Schema.TaggedErrorClass<GitHubPullRequestNotFoundError>()(
-  "GitHubPullRequestNotFoundError",
-  gitHubCliFailureFields,
-) {
-  get detail(): string {
-    return "Pull request not found. Check the PR number or URL and try again.";
-  }
-
-  override get message(): string {
-    return `GitHub CLI failed in execute: ${this.detail}`;
-  }
-}
-
 export class GitHubCliCommandError extends Schema.TaggedErrorClass<GitHubCliCommandError>()(
   "GitHubCliCommandError",
   gitHubCliFailureFields,
@@ -83,45 +65,6 @@ const gitHubCliDecodeFields = {
   cause: Schema.Defect(),
 } as const;
 
-export class GitHubPullRequestListDecodeError extends Schema.TaggedErrorClass<GitHubPullRequestListDecodeError>()(
-  "GitHubPullRequestListDecodeError",
-  gitHubCliDecodeFields,
-) {
-  get detail(): string {
-    return "GitHub CLI returned invalid PR list JSON.";
-  }
-
-  override get message(): string {
-    return `GitHub CLI failed in listOpenPullRequests: ${this.detail}`;
-  }
-}
-
-export class GitHubChangeRequestListDecodeError extends Schema.TaggedErrorClass<GitHubChangeRequestListDecodeError>()(
-  "GitHubChangeRequestListDecodeError",
-  gitHubCliDecodeFields,
-) {
-  get detail(): string {
-    return "GitHub CLI returned invalid change request JSON.";
-  }
-
-  override get message(): string {
-    return `GitHub CLI failed in listChangeRequests: ${this.detail}`;
-  }
-}
-
-export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHubPullRequestDecodeError>()(
-  "GitHubPullRequestDecodeError",
-  gitHubCliDecodeFields,
-) {
-  get detail(): string {
-    return "GitHub CLI returned invalid pull request JSON.";
-  }
-
-  override get message(): string {
-    return `GitHub CLI failed in getPullRequest: ${this.detail}`;
-  }
-}
-
 export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
@@ -138,11 +81,7 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubR
 export const GitHubCliError = Schema.Union([
   GitHubCliUnavailableError,
   GitHubCliAuthenticationError,
-  GitHubPullRequestNotFoundError,
   GitHubCliCommandError,
-  GitHubPullRequestListDecodeError,
-  GitHubChangeRequestListDecodeError,
-  GitHubPullRequestDecodeError,
   GitHubRepositoryDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
@@ -170,24 +109,9 @@ export function fromVcsError(
     if (error.failureKind === "authentication") {
       return new GitHubCliAuthenticationError({ ...context, cause: error });
     }
-    if (error.failureKind === "not-found") {
-      return new GitHubPullRequestNotFoundError({ ...context, cause: error });
-    }
   }
 
   return new GitHubCliCommandError({ ...context, cause: error });
-}
-
-export interface GitHubPullRequestSummary {
-  readonly number: number;
-  readonly title: string;
-  readonly url: string;
-  readonly baseRefName: string;
-  readonly headRefName: string;
-  readonly state?: "open" | "closed" | "merged";
-  readonly isCrossRepository?: boolean;
-  readonly headRepositoryNameWithOwner?: string | null;
-  readonly headRepositoryOwnerLogin?: string | null;
 }
 
 export interface GitHubRepositoryCloneUrls {
@@ -205,17 +129,6 @@ export class GitHubCli extends Context.Service<
       readonly timeoutMs?: number;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCliError>;
 
-    readonly listOpenPullRequests: (input: {
-      readonly cwd: string;
-      readonly headSelector: string;
-      readonly limit?: number;
-    }) => Effect.Effect<ReadonlyArray<GitHubPullRequestSummary>, GitHubCliError>;
-
-    readonly getPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-    }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
-
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -226,24 +139,6 @@ export class GitHubCli extends Context.Service<
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
-
-    readonly createPullRequest: (input: {
-      readonly cwd: string;
-      readonly baseBranch: string;
-      readonly headSelector: string;
-      readonly title: string;
-      readonly bodyFile: string;
-    }) => Effect.Effect<void, GitHubCliError>;
-
-    readonly getDefaultBranch: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<string | null, GitHubCliError>;
-
-    readonly checkoutPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-      readonly force?: boolean;
-    }) => Effect.Effect<void, GitHubCliError>;
   }
 >()("@upcomputer/server/sourceControl/GitHubCli") {}
 
@@ -319,77 +214,6 @@ export const make = Effect.gen(function* () {
 
   return GitHubCli.of({
     execute,
-    listOpenPullRequests: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "pr",
-          "list",
-          "--head",
-          input.headSelector,
-          "--state",
-          "open",
-          "--limit",
-          String(input.limit ?? 1),
-          "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
-        ],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          raw.length === 0
-            ? Effect.succeed([])
-            : Effect.sync(() => decodeGitHubPullRequestListJson(raw)).pipe(
-                Effect.flatMap((decoded) => {
-                  if (!Result.isSuccess(decoded)) {
-                    return Effect.fail(
-                      new GitHubPullRequestListDecodeError({
-                        command: "gh",
-                        cwd: input.cwd,
-                        cause: decoded.failure,
-                      }),
-                    );
-                  }
-
-                  return Effect.succeed(
-                    decoded.success.map(({ updatedAt: _updatedAt, ...summary }) => summary),
-                  );
-                }),
-              ),
-        ),
-      ),
-    getPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "pr",
-          "view",
-          input.reference,
-          "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
-        ],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          Effect.sync(() => decodeGitHubPullRequestJson(raw)).pipe(
-            Effect.flatMap((decoded) => {
-              if (!Result.isSuccess(decoded)) {
-                return Effect.fail(
-                  new GitHubPullRequestDecodeError({
-                    command: "gh",
-                    cwd: input.cwd,
-                    cause: decoded.failure,
-                  }),
-                );
-              }
-
-              return Effect.succeed(
-                (({ updatedAt: _updatedAt, ...summary }) => summary)(decoded.success),
-              );
-            }),
-          ),
-        ),
-      ),
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,
@@ -419,37 +243,6 @@ export const make = Effect.gen(function* () {
           deriveRepositoryCloneUrlsFromCreateOutput(result.stdout, input.repository),
         ),
       ),
-    createPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "pr",
-          "create",
-          "--base",
-          input.baseBranch,
-          "--head",
-          input.headSelector,
-          "--title",
-          input.title,
-          "--body-file",
-          input.bodyFile,
-        ],
-      }).pipe(Effect.asVoid),
-    getDefaultBranch: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
-      }).pipe(
-        Effect.map((value) => {
-          const trimmed = value.stdout.trim();
-          return trimmed.length > 0 ? trimmed : null;
-        }),
-      ),
-    checkoutPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
-      }).pipe(Effect.asVoid),
   });
 });
 

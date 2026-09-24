@@ -95,8 +95,6 @@ import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
-import { getSourceControlPresentation } from "~/sourceControlPresentation";
-import { openPullRequestLink } from "~/lib/openPullRequestLink";
 import { ContextActionMenuItem } from "~/components/ContextActionMenuItem";
 import { CONTEXT_BAR_TEXT_TRIGGER_CLASS } from "~/components/BranchToolbar.styles";
 import type { ContextQuickActionId } from "~/contextQuickActions";
@@ -112,9 +110,7 @@ interface GitActionsControlProps {
 }
 
 function pinnedContextActionIdForGitItem(itemId: GitActionMenuItem["id"]): ContextQuickActionId {
-  if (itemId === "commit") return "git.commit";
-  if (itemId === "push") return "git.push";
-  return "git.pr";
+  return itemId === "commit" ? "git.commit" : "git.push";
 }
 
 interface PendingDefaultBranchAction {
@@ -294,10 +290,8 @@ function getMenuActionDisabledReason({
 
   const hasBranch = gitStatus.refName !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
-  const hasOpenPr = gitStatus.pr?.state === "open";
   const isAhead = gitStatus.aheadCount > 0;
   const isBehind = gitStatus.behindCount > 0;
-  const terminology = getSourceControlPresentation(gitStatus.sourceControlProvider).terminology;
 
   if (item.id === "commit") {
     if (!hasChanges) {
@@ -306,79 +300,39 @@ function getMenuActionDisabledReason({
     return "Commit is currently unavailable.";
   }
 
-  if (item.id === "push") {
-    if (!hasBranch) {
-      return "Detached HEAD: checkout a refName before pushing.";
-    }
-    if (hasChanges) {
-      return "Commit or stash local changes before pushing.";
-    }
-    if (isBehind) {
-      return "Branch is behind upstream. Pull/rebase before pushing.";
-    }
-    if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-      return 'Add an "origin" remote before pushing.';
-    }
-    if (!isAhead) {
-      return "No local commits to push.";
-    }
-    return "Push is currently unavailable.";
-  }
-
-  if (hasOpenPr) {
-    return `View ${terminology.singular} is currently unavailable.`;
-  }
   if (!hasBranch) {
-    return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
+    return "Detached HEAD: checkout a refName before pushing.";
   }
   if (hasChanges) {
-    return `Commit local changes before creating a ${terminology.singular}.`;
-  }
-  if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-    return `Add an "origin" remote before creating a ${terminology.singular}.`;
-  }
-  if (!isAhead) {
-    return `No local commits to include in a ${terminology.singular}.`;
+    return "Commit or stash local changes before pushing.";
   }
   if (isBehind) {
-    return `Branch is behind upstream. Pull/rebase before creating a ${terminology.singular}.`;
+    return "Branch is behind upstream. Pull/rebase before pushing.";
   }
-  return `Create ${terminology.singular} is currently unavailable.`;
+  if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
+    return 'Add an "origin" remote before pushing.';
+  }
+  if (!isAhead) {
+    return "No local commits to push.";
+  }
+  return "Push is currently unavailable.";
 }
 
 const COMMIT_DIALOG_TITLE = "Commit changes";
 const COMMIT_DIALOG_DESCRIPTION =
   "Review and confirm your commit. Leave the message blank to auto-generate one.";
 
-function GitActionItemIcon({
-  icon,
-  SourceControlIcon,
-}: {
-  icon: GitActionIconName;
-  SourceControlIcon: ReturnType<typeof getSourceControlPresentation>["Icon"];
-}) {
-  if (icon === "commit") return <GitCommitIcon />;
-  if (icon === "push") return <CloudUploadIcon />;
-  return <SourceControlIcon />;
+function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
+  return icon === "commit" ? <GitCommitIcon /> : <CloudUploadIcon />;
 }
 
-function GitQuickActionIcon({
-  quickAction,
-  SourceControlIcon,
-}: {
-  quickAction: GitQuickAction;
-  SourceControlIcon: ReturnType<typeof getSourceControlPresentation>["Icon"];
-}) {
+function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
   const iconClassName = "size-3.5";
-  if (quickAction.kind === "open_pr") return <SourceControlIcon className={iconClassName} />;
   if (quickAction.kind === "open_publish") return <CloudUploadIcon className={iconClassName} />;
   if (quickAction.kind === "run_pull") return <InfoIcon className={iconClassName} />;
   if (quickAction.kind === "run_action") {
     if (quickAction.action === "commit") return <GitCommitIcon className={iconClassName} />;
-    if (quickAction.action === "push" || quickAction.action === "commit_push") {
-      return <CloudUploadIcon className={iconClassName} />;
-    }
-    return <SourceControlIcon className={iconClassName} />;
+    return <CloudUploadIcon className={iconClassName} />;
   }
   if (quickAction.label === "Commit") return <GitCommitIcon className={iconClassName} />;
   return <InfoIcon className={iconClassName} />;
@@ -1112,12 +1066,6 @@ export default function GitActionsControl({
     reportFailure: false,
   });
   const { data: gitStatus, error: gitStatusError } = gitStatusQuery;
-  const sourceControlPresentation = useMemo(
-    () => getSourceControlPresentation(gitStatus?.sourceControlProvider),
-    [gitStatus?.sourceControlProvider],
-  );
-  const changeRequestTerminology = sourceControlPresentation.terminology;
-  const SourceControlIcon = sourceControlPresentation.Icon;
   // Default to true while loading so we don't flash init controls.
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
@@ -1184,7 +1132,6 @@ export default function GitActionsControl({
         action: pendingDefaultBranchAction.action,
         branchName: pendingDefaultBranchAction.branchName,
         includesCommit: pendingDefaultBranchAction.includesCommit,
-        terminology: changeRequestTerminology,
       })
     : null;
 
@@ -1234,38 +1181,6 @@ export default function GitActionsControl({
     };
   }, [activeEnvironmentId, gitCwd, refreshVcsStatus]);
 
-  const openExistingPr = useCallback(async () => {
-    const api = readLocalApi();
-    if (!api) {
-      toastManager.add({
-        type: "error",
-        title: "Link opening is unavailable.",
-        data: threadToastData,
-      });
-      return;
-    }
-    const prUrl = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr.url : null;
-    if (!prUrl) {
-      toastManager.add({
-        type: "error",
-        title: "No open pull request found.",
-        data: threadToastData,
-      });
-      return;
-    }
-    void openPullRequestLink(api.shell, prUrl).catch((err: unknown) => {
-      console.error(err);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to open pull request link",
-          description: err instanceof Error ? err.message : "An error occurred.",
-          ...(threadToastData !== undefined ? { data: threadToastData } : {}),
-        }),
-      );
-    });
-  }, [gitStatusForActions, threadToastData]);
-
   runGitActionWithToast = useEffectEvent(
     async ({
       action,
@@ -1280,8 +1195,7 @@ export default function GitActionsControl({
       const actionStatus = statusOverride ?? gitStatusForActions;
       const actionBranch = actionStatus?.refName ?? null;
       const actionIsDefaultBranch = featureBranch ? false : isDefaultRef;
-      const actionCanCommit =
-        action === "commit" || action === "commit_push" || action === "commit_push_pr";
+      const actionCanCommit = action === "commit" || action === "commit_push";
       const includesCommit =
         actionCanCommit &&
         (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
@@ -1290,12 +1204,7 @@ export default function GitActionsControl({
         requiresDefaultBranchConfirmation(action, actionIsDefaultBranch) &&
         actionBranch
       ) {
-        if (
-          action !== "push" &&
-          action !== "create_pr" &&
-          action !== "commit_push" &&
-          action !== "commit_push_pr"
-        ) {
+        if (action !== "push" && action !== "commit_push") {
           return;
         }
         setPendingDefaultBranchAction({
@@ -1315,10 +1224,6 @@ export default function GitActionsControl({
         hasCustomCommitMessage: !!commitMessage?.trim(),
         hasWorkingTreeChanges: !!actionStatus?.hasWorkingTreeChanges,
         featureBranch,
-        terminology: changeRequestTerminology,
-        shouldPushBeforePr:
-          action === "create_pr" &&
-          (!actionStatus?.hasUpstream || (actionStatus?.aheadCount ?? 0) > 0),
       });
       const scopedToastData = threadToastData ? { ...threadToastData } : undefined;
       const actionId = randomUUID();
@@ -1460,16 +1365,6 @@ export default function GitActionsControl({
             });
           },
         };
-      } else if (toastCta.kind === "open_pr") {
-        toastActionProps = {
-          children: toastCta.label,
-          onClick: () => {
-            const api = readLocalApi();
-            if (!api) return;
-            closeResultToast();
-            void api.shell.openExternal(toastCta.url);
-          },
-        };
       }
 
       const successToastData = {
@@ -1547,10 +1442,6 @@ export default function GitActionsControl({
   };
 
   const runQuickAction = () => {
-    if (quickAction.kind === "open_pr") {
-      void openExistingPr();
-      return;
-    }
     if (quickAction.kind === "open_publish") {
       setIsPublishDialogOpen(true);
       return;
@@ -1611,16 +1502,8 @@ export default function GitActionsControl({
 
   const openDialogForMenuItem = (item: GitActionMenuItem) => {
     if (item.disabled) return;
-    if (item.kind === "open_pr") {
-      void openExistingPr();
-      return;
-    }
     if (item.dialogAction === "push") {
       void runGitActionWithToast({ action: "push" });
-      return;
-    }
-    if (item.dialogAction === "create_pr") {
-      void runGitActionWithToast({ action: "create_pr" });
       return;
     }
     setExcludedFiles(new Set());
@@ -1692,10 +1575,7 @@ export default function GitActionsControl({
             disabled={isRepo ? quickAction.disabled : initAction.isPending}
             icon={
               isRepo ? (
-                <GitQuickActionIcon
-                  quickAction={quickAction}
-                  SourceControlIcon={SourceControlIcon}
-                />
+                <GitQuickActionIcon quickAction={quickAction} />
               ) : (
                 <GitBranchPlusIcon className="size-4" />
               )
@@ -1722,9 +1602,7 @@ export default function GitActionsControl({
                     actionId={actionId}
                     checked={pinnedContextActionIds?.has(actionId)}
                     disabled={item.disabled}
-                    icon={
-                      <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
-                    }
+                    icon={<GitActionItemIcon icon={item.icon} />}
                     keepMenuOpenOnSelect={item.dialogAction === "commit"}
                     onCheckedChange={onContextActionPinnedChange}
                     onSelect={() => openDialogForMenuItem(item)}
@@ -1818,10 +1696,7 @@ export default function GitActionsControl({
                   />
                 }
               >
-                <GitQuickActionIcon
-                  quickAction={quickAction}
-                  SourceControlIcon={SourceControlIcon}
-                />
+                <GitQuickActionIcon quickAction={quickAction} />
                 <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                   {quickAction.label}
                 </span>
@@ -1837,7 +1712,7 @@ export default function GitActionsControl({
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
-              <GitQuickActionIcon quickAction={quickAction} SourceControlIcon={SourceControlIcon} />
+              <GitQuickActionIcon quickAction={quickAction} />
               <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                 {quickAction.label}
               </span>
@@ -1874,10 +1749,7 @@ export default function GitActionsControl({
                         render={<span className="block w-max cursor-not-allowed" />}
                       >
                         <MenuItem className="w-full" disabled>
-                          <GitActionItemIcon
-                            icon={item.icon}
-                            SourceControlIcon={SourceControlIcon}
-                          />
+                          <GitActionItemIcon icon={item.icon} />
                           {item.label}
                         </MenuItem>
                       </PopoverTrigger>
@@ -1896,7 +1768,7 @@ export default function GitActionsControl({
                       openDialogForMenuItem(item);
                     }}
                   >
-                    <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
+                    <GitActionItemIcon icon={item.icon} />
                     {item.label}
                   </MenuItem>
                 );
@@ -1914,8 +1786,7 @@ export default function GitActionsControl({
               ) : null}
               {gitStatusForActions?.refName === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a refName to enable push and pull request
-                  actions.
+                  Detached HEAD: create and checkout a refName to enable push actions.
                 </p>
               )}
               {gitStatusForActions &&

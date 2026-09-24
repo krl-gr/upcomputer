@@ -3,19 +3,13 @@ import * as Schema from "effect/Schema";
 
 import {
   VcsCreateWorktreeInput,
-  GitPreparePullRequestThreadInput,
   GitRunStackedActionResult,
   GitRunStackedActionInput,
-  GitResolvePullRequestResult,
 } from "./git.ts";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
-const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
-  GitPreparePullRequestThreadInput,
-);
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
-const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
 
 describe("VcsCreateWorktreeInput", () => {
   it("accepts omitted newRefName for existing-refName worktrees", () => {
@@ -42,47 +36,16 @@ describe("VcsCreateWorktreeInput", () => {
   });
 });
 
-describe("GitPreparePullRequestThreadInput", () => {
-  it("accepts pull request references and mode", () => {
-    const parsed = decodePreparePullRequestThreadInput({
-      cwd: "/repo",
-      reference: "#42",
-      mode: "worktree",
-    });
-
-    expect(parsed.reference).toBe("#42");
-    expect(parsed.mode).toBe("worktree");
-  });
-});
-
-describe("GitResolvePullRequestResult", () => {
-  it("decodes resolved pull request metadata", () => {
-    const parsed = decodeResolvePullRequestResult({
-      pullRequest: {
-        number: 42,
-        title: "PR threads",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/42",
-        baseBranch: "main",
-        headBranch: "feature/pr-threads",
-        state: "open",
-      },
-    });
-
-    expect(parsed.pullRequest.number).toBe(42);
-    expect(parsed.pullRequest.headBranch).toBe("feature/pr-threads");
-  });
-});
-
 describe("GitRunStackedActionInput", () => {
   it("accepts explicit stacked actions and requires a client-provided actionId", () => {
     const parsed = decodeRunStackedActionInput({
       actionId: "action-1",
       cwd: "/repo",
-      action: "create_pr",
+      action: "commit_push",
     });
 
     expect(parsed.actionId).toBe("action-1");
-    expect(parsed.action).toBe("create_pr");
+    expect(parsed.action).toBe("commit_push");
   });
 });
 
@@ -104,17 +67,14 @@ describe("GitRunStackedActionResult", () => {
         branch: "feature/server-owned-toast",
         upstreamBranch: "origin/feature/server-owned-toast",
       },
-      pr: {
-        status: "skipped_not_requested",
-      },
       toast: {
         title: "Pushed 89abcde to origin/feature/server-owned-toast",
         description: "feat: move toast state into git manager",
         cta: {
           kind: "run_action",
-          label: "Create PR",
+          label: "Push",
           action: {
-            kind: "create_pr",
+            kind: "push",
           },
         },
       },
@@ -122,7 +82,7 @@ describe("GitRunStackedActionResult", () => {
 
     expect(parsed.toast.cta.kind).toBe("run_action");
     if (parsed.toast.cta.kind === "run_action") {
-      expect(parsed.toast.cta.action.kind).toBe("create_pr");
+      expect(parsed.toast.cta.action.kind).toBe("push");
     }
   });
 });

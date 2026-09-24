@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import ThreadSidebar from "./Sidebar";
-import ThreadSidebarV2 from "./SidebarV2";
 import { Sidebar, SidebarProvider, SidebarRail } from "./ui/sidebar";
 import { resolveAvailableSidebarViewMode } from "./sidebar/sidebarViewMode";
 
@@ -25,11 +24,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const storedSidebarViewMode = useClientSettings((settings) => settings.sidebarViewMode);
   const sidebarViewMode = resolveAvailableSidebarViewMode(storedSidebarViewMode);
   const updateSettings = useUpdateClientSettings();
-  // Settings routes render the settings nav, which lives in the v1 component
-  // and is the same for every view mode — so v1 stays mounted there.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  const showSidebarV2 = sidebarViewMode === "v2" && !isOnSettings;
 
   useEffect(() => {
     if (storedSidebarViewMode !== sidebarViewMode) {
@@ -61,8 +57,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         collapsible="offcanvas"
         // Deliberately use a fork-owned version hook: upstream's similarly named
         // attribute carries its whole opaque sidebar palette and hides our glass.
-        // Settings always render the v1 implementation, even when v2 is selected.
-        data-upcomputer-sidebar-version={showSidebarV2 ? "v2" : "v1"}
+        data-upcomputer-sidebar-version="v1"
         data-sidebar-mode={sidebarViewMode}
         className="border-r border-black/[0.04] bg-transparent text-foreground dark:border-white/[0.03]"
         resizable={{
@@ -78,7 +73,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
         }}
       >
-        {showSidebarV2 ? <ThreadSidebarV2 /> : <ThreadSidebar />}
+        <ThreadSidebar />
         <SidebarRail />
       </Sidebar>
       {children}

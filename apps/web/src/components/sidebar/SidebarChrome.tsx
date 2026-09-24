@@ -20,13 +20,12 @@ import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "./sidebarTextStyles";
 
 /**
- * Shared chrome for every sidebar view mode, including upstream's v2.
+ * Shared chrome for every sidebar view mode.
  *
  * Upstream's own version of this file renders their stage badge, brand
  * wordmark, update pills and the per-channel header artwork from
- * `SidebarStageBackdrop`. This fork keeps its own header and footer and
- * exports them under the same two names, so `SidebarV2.tsx` can go on
- * importing them unmodified and all three view modes share one chrome.
+ * `SidebarStageBackdrop`. This fork keeps its own header and footer under
+ * the same two names.
  */
 
 function UpComputerAppIcon() {

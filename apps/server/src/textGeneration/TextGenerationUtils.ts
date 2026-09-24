@@ -33,15 +33,6 @@ export function sanitizeCommitSubject(raw: string): string {
   return withoutTrailingPeriod.slice(0, 72).trimEnd();
 }
 
-/** Normalise a raw PR title to a single line with a sensible fallback. */
-export function sanitizePrTitle(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
-  if (singleLine.length > 0) {
-    return singleLine;
-  }
-  return "Update project changes";
-}
-
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
   const normalized = raw

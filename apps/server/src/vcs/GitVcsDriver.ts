@@ -120,12 +120,6 @@ export interface GitPushResult {
   setUpstream?: boolean | undefined;
 }
 
-export interface GitRangeContext {
-  commitSummary: string;
-  diffSummary: string;
-  diffPatch: string;
-}
-
 export interface GitRenameBranchInput {
   cwd: string;
   oldBranch: string;
@@ -136,29 +130,10 @@ export interface GitRenameBranchResult {
   branch: string;
 }
 
-export interface GitFetchPullRequestBranchInput {
-  cwd: string;
-  prNumber: number;
-  branch: string;
-}
-
 export interface GitEnsureRemoteInput {
   cwd: string;
   preferredName: string;
   url: string;
-}
-
-export interface GitFetchRemoteBranchInput {
-  cwd: string;
-  remoteName: string;
-  remoteBranch: string;
-  localBranch: string;
-}
-
-export interface GitFetchRemoteTrackingBranchInput {
-  cwd: string;
-  remoteName: string;
-  remoteBranch: string;
 }
 
 export interface GitFetchRemoteInput {
@@ -175,13 +150,6 @@ export interface GitResolveRemoteTrackingCommitInput {
 export interface GitResolveRemoteTrackingCommitResult {
   commitSha: string;
   remoteRefName: string;
-}
-
-export interface GitSetBranchUpstreamInput {
-  cwd: string;
-  branch: string;
-  remoteName: string;
-  remoteBranch: string;
 }
 
 export interface GitRemoteStatusOptions {
@@ -214,10 +182,6 @@ export class GitVcsDriver extends Context.Service<
       fallbackBranch: string | null,
       options?: { readonly remoteName?: string | null },
     ) => Effect.Effect<GitPushResult, GitCommandError>;
-    readonly readRangeContext: (
-      cwd: string,
-      baseRef: string,
-    ) => Effect.Effect<GitRangeContext, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
@@ -232,24 +196,12 @@ export class GitVcsDriver extends Context.Service<
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
-    readonly fetchPullRequestBranch: (
-      input: GitFetchPullRequestBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
     readonly ensureRemote: (input: GitEnsureRemoteInput) => Effect.Effect<string, GitCommandError>;
     readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
     readonly fetchRemote: (input: GitFetchRemoteInput) => Effect.Effect<void, GitCommandError>;
     readonly resolveRemoteTrackingCommit: (
       input: GitResolveRemoteTrackingCommitInput,
     ) => Effect.Effect<GitResolveRemoteTrackingCommitResult, GitCommandError>;
-    readonly fetchRemoteBranch: (
-      input: GitFetchRemoteBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
-    readonly fetchRemoteTrackingBranch: (
-      input: GitFetchRemoteTrackingBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
-    readonly setBranchUpstream: (
-      input: GitSetBranchUpstreamInput,
-    ) => Effect.Effect<void, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 export const SourceControlProviderKind = Schema.Literals([
@@ -17,24 +17,6 @@ export const SourceControlProviderInfo = Schema.Struct({
   baseUrl: Schema.String,
 });
 export type SourceControlProviderInfo = typeof SourceControlProviderInfo.Type;
-
-export const ChangeRequestState = Schema.Literals(["open", "closed", "merged"]);
-export type ChangeRequestState = typeof ChangeRequestState.Type;
-
-export const ChangeRequest = Schema.Struct({
-  provider: SourceControlProviderKind,
-  number: PositiveInt,
-  title: TrimmedNonEmptyString,
-  url: Schema.String,
-  baseRefName: TrimmedNonEmptyString,
-  headRefName: TrimmedNonEmptyString,
-  state: ChangeRequestState,
-  updatedAt: Schema.Option(Schema.DateTimeUtc),
-  isCrossRepository: Schema.optional(Schema.Boolean),
-  headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  headRepositoryOwnerLogin: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-});
-export type ChangeRequest = typeof ChangeRequest.Type;
 
 export const SourceControlRepositoryCloneUrls = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,

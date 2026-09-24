@@ -2,7 +2,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   NonNegativeInt,
@@ -12,12 +11,6 @@ import {
 } from "@upcomputer/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import {
-  decodeAzureDevOpsPullRequestJson,
-  decodeAzureDevOpsPullRequestListJson,
-  type NormalizedAzureDevOpsPullRequestRecord,
-} from "./azureDevOpsPullRequests.ts";
-import * as SourceControlProvider from "./SourceControlProvider.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -48,19 +41,6 @@ export class AzureDevOpsCliAuthenticationError extends Schema.TaggedErrorClass<A
 ) {
   get detail(): string {
     return "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export class AzureDevOpsPullRequestNotFoundError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestNotFoundError>()(
-  "AzureDevOpsPullRequestNotFoundError",
-  azureDevOpsCommandErrorFields,
-) {
-  get detail(): string {
-    return "Pull request not found. Check the PR number or URL and try again.";
   }
 
   override get message(): string {
@@ -105,9 +85,6 @@ export class AzureDevOpsCommandFailedError extends Schema.TaggedErrorClass<Azure
       if (cause.failureKind === "authentication") {
         return new AzureDevOpsCliAuthenticationError(fields);
       }
-      if (cause.failureKind === "not-found") {
-        return new AzureDevOpsPullRequestNotFoundError(fields);
-      }
     }
 
     return new AzureDevOpsCommandFailedError(fields);
@@ -121,41 +98,8 @@ const azureDevOpsDecodeErrorFields = {
   cause: Schema.Defect(),
 };
 
-export class AzureDevOpsPullRequestListDecodeError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestListDecodeError>()(
-  "AzureDevOpsPullRequestListDecodeError",
-  {
-    operation: Schema.Literal("listPullRequests"),
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
-  get detail(): string {
-    return "Azure DevOps CLI returned invalid PR list JSON.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export class AzureDevOpsPullRequestDecodeError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestDecodeError>()(
-  "AzureDevOpsPullRequestDecodeError",
-  {
-    operation: Schema.Literal("getPullRequest"),
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
-  get detail(): string {
-    return "Azure DevOps CLI returned invalid pull request JSON.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
 const AzureDevOpsRepositoryDecodeOperation = Schema.Literals([
   "getRepositoryCloneUrls",
-  "getDefaultBranch",
   "createRepository",
 ]);
 
@@ -178,10 +122,7 @@ export class AzureDevOpsRepositoryDecodeError extends Schema.TaggedErrorClass<Az
 export const AzureDevOpsCliError = Schema.Union([
   AzureDevOpsCliUnavailableError,
   AzureDevOpsCliAuthenticationError,
-  AzureDevOpsPullRequestNotFoundError,
   AzureDevOpsCommandFailedError,
-  AzureDevOpsPullRequestListDecodeError,
-  AzureDevOpsPullRequestDecodeError,
   AzureDevOpsRepositoryDecodeError,
 ]);
 export type AzureDevOpsCliError = typeof AzureDevOpsCliError.Type;
@@ -203,19 +144,6 @@ export class AzureDevOpsCli extends Context.Service<
       readonly timeoutMs?: number;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, AzureDevOpsCliError>;
 
-    readonly listPullRequests: (input: {
-      readonly cwd: string;
-      readonly headSelector: string;
-      readonly source?: SourceControlProvider.SourceControlRefSelector;
-      readonly state: "open" | "closed" | "merged" | "all";
-      readonly limit?: number;
-    }) => Effect.Effect<ReadonlyArray<NormalizedAzureDevOpsPullRequestRecord>, AzureDevOpsCliError>;
-
-    readonly getPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-    }) => Effect.Effect<NormalizedAzureDevOpsPullRequestRecord, AzureDevOpsCliError>;
-
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -226,47 +154,8 @@ export class AzureDevOpsCli extends Context.Service<
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
-
-    readonly createPullRequest: (input: {
-      readonly cwd: string;
-      readonly baseBranch: string;
-      readonly headSelector: string;
-      readonly source?: SourceControlProvider.SourceControlRefSelector;
-      readonly target?: SourceControlProvider.SourceControlRefSelector;
-      readonly title: string;
-      readonly bodyFile: string;
-    }) => Effect.Effect<void, AzureDevOpsCliError>;
-
-    readonly getDefaultBranch: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<string | null, AzureDevOpsCliError>;
-
-    readonly checkoutPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-      readonly remoteName?: string;
-    }) => Effect.Effect<void, AzureDevOpsCliError>;
   }
 >()("@upcomputer/server/sourceControl/AzureDevOpsCli") {}
-
-function normalizeChangeRequestId(reference: string): string {
-  const trimmed = reference.trim().replace(/^#/, "");
-  const urlMatch = /(?:pullrequest|pull-request|pull|_pulls?)\/(\d+)(?:\D.*)?$/i.exec(trimmed);
-  return urlMatch?.[1] ?? trimmed;
-}
-
-function toAzureStatus(state: "open" | "closed" | "merged" | "all"): string {
-  switch (state) {
-    case "open":
-      return "active";
-    case "closed":
-      return "abandoned";
-    case "merged":
-      return "completed";
-    case "all":
-      return "all";
-  }
-}
 
 const RawAzureDevOpsRepositorySchema = Schema.Struct({
   name: TrimmedNonEmptyString,
@@ -278,13 +167,7 @@ const RawAzureDevOpsRepositorySchema = Schema.Struct({
       name: TrimmedNonEmptyString,
     }),
   ),
-  defaultBranch: Schema.optional(Schema.NullOr(Schema.String)),
 });
-
-function normalizeDefaultBranch(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().replace(/^refs\/heads\//, "") ?? "";
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 function normalizeRepositoryCloneUrls(
   raw: Schema.Schema.Type<typeof RawAzureDevOpsRepositorySchema>,
@@ -368,80 +251,6 @@ export const make = Effect.gen(function* () {
 
   return AzureDevOpsCli.of({
     execute,
-    listPullRequests: (input) =>
-      executeJson({
-        cwd: input.cwd,
-        args: [
-          "repos",
-          "pr",
-          "list",
-          "--detect",
-          "true",
-          "--source-branch",
-          SourceControlProvider.sourceBranch(input),
-          "--status",
-          toAzureStatus(input.state),
-          "--top",
-          String(input.limit ?? 20),
-        ],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          raw.length === 0
-            ? Effect.succeed([])
-            : Effect.sync(() => decodeAzureDevOpsPullRequestListJson(raw)).pipe(
-                Effect.flatMap((decoded) => {
-                  if (!Result.isSuccess(decoded)) {
-                    return Effect.fail(
-                      new AzureDevOpsPullRequestListDecodeError({
-                        operation: "listPullRequests",
-                        command: "az",
-                        cwd: input.cwd,
-                        outputLength: raw.length,
-                        cause: decoded.failure,
-                      }),
-                    );
-                  }
-
-                  return Effect.succeed(decoded.success);
-                }),
-              ),
-        ),
-      ),
-    getPullRequest: (input) =>
-      executeJson({
-        cwd: input.cwd,
-        args: [
-          "repos",
-          "pr",
-          "show",
-          "--detect",
-          "true",
-          "--id",
-          normalizeChangeRequestId(input.reference),
-        ],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          Effect.sync(() => decodeAzureDevOpsPullRequestJson(raw)).pipe(
-            Effect.flatMap((decoded) => {
-              if (!Result.isSuccess(decoded)) {
-                return Effect.fail(
-                  new AzureDevOpsPullRequestDecodeError({
-                    operation: "getPullRequest",
-                    command: "az",
-                    cwd: input.cwd,
-                    outputLength: raw.length,
-                    cause: decoded.failure,
-                  }),
-                );
-              }
-
-              return Effect.succeed(decoded.success);
-            }),
-          ),
-        ),
-      ),
     getRepositoryCloneUrls: (input) =>
       executeJson({
         cwd: input.cwd,
@@ -483,53 +292,6 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       );
     },
-    createPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "repos",
-          "pr",
-          "create",
-          "--only-show-errors",
-          "--detect",
-          "true",
-          "--target-branch",
-          input.target?.refName ?? input.baseBranch,
-          "--source-branch",
-          SourceControlProvider.sourceBranch(input),
-          "--title",
-          input.title,
-          "--description",
-          `@${input.bodyFile}`,
-        ],
-      }).pipe(Effect.asVoid),
-    getDefaultBranch: (input) =>
-      executeJson({
-        cwd: input.cwd,
-        args: ["repos", "show", "--detect", "true"],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          decodeAzureDevOpsJson(raw, RawAzureDevOpsRepositorySchema, "getDefaultBranch", input.cwd),
-        ),
-        Effect.map((repo) => normalizeDefaultBranch(repo.defaultBranch)),
-      ),
-    checkoutPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "repos",
-          "pr",
-          "checkout",
-          "--only-show-errors",
-          "--detect",
-          "true",
-          "--id",
-          normalizeChangeRequestId(input.reference),
-          "--remote-name",
-          input.remoteName ?? "origin",
-        ],
-      }).pipe(Effect.asVoid),
   });
 });
 

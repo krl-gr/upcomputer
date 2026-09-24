@@ -66,29 +66,6 @@ function unsupportedProvider(
 ): SourceControlProvider.SourceControlProvider["Service"] {
   return SourceControlProvider.SourceControlProvider.of({
     kind,
-    listChangeRequests: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "listChangeRequests",
-        cwd: input.cwd,
-        detail: `No ${kind} source control provider is registered.`,
-      }),
-    getChangeRequest: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "getChangeRequest",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
-        detail: `No ${kind} source control provider is registered.`,
-      }),
-    createChangeRequest: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "createChangeRequest",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.headSelector),
-        detail: `No ${kind} source control provider is registered.`,
-      }),
     getRepositoryCloneUrls: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -103,21 +80,6 @@ function unsupportedProvider(
         operation: "createRepository",
         cwd: input.cwd,
         repository: SourceControlProvider.transportSafeSourceControlErrorValue(input.repository),
-        detail: `No ${kind} source control provider is registered.`,
-      }),
-    getDefaultBranch: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "getDefaultBranch",
-        cwd: input.cwd,
-        detail: `No ${kind} source control provider is registered.`,
-      }),
-    checkoutChangeRequest: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "checkoutChangeRequest",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: `No ${kind} source control provider is registered.`,
       }),
   });
@@ -159,37 +121,12 @@ function bindProviderContext(
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: provider.kind,
-    listChangeRequests: (input) =>
-      provider.listChangeRequests({
-        ...input,
-        context: input.context ?? context,
-      }),
-    getChangeRequest: (input) =>
-      provider.getChangeRequest({
-        ...input,
-        context: input.context ?? context,
-      }),
-    createChangeRequest: (input) =>
-      provider.createChangeRequest({
-        ...input,
-        context: input.context ?? context,
-      }),
     getRepositoryCloneUrls: (input) =>
       provider.getRepositoryCloneUrls({
         ...input,
         context: input.context ?? context,
       }),
     createRepository: (input) => provider.createRepository(input),
-    getDefaultBranch: (input) =>
-      provider.getDefaultBranch({
-        ...input,
-        context: input.context ?? context,
-      }),
-    checkoutChangeRequest: (input) =>
-      provider.checkoutChangeRequest({
-        ...input,
-        context: input.context ?? context,
-      }),
   });
 }
 

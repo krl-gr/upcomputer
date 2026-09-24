@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
-  buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import { normalizeCliError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
@@ -48,27 +47,6 @@ describe("buildCommitMessagePrompt", () => {
     });
 
     expect(result.prompt).toContain("Branch: (detached)");
-  });
-});
-
-describe("buildPrContentPrompt", () => {
-  it("includes branch names, commits, and diff in the prompt", () => {
-    const result = buildPrContentPrompt({
-      baseBranch: "main",
-      headBranch: "feature/auth",
-      commitSummary: "feat: add login page",
-      diffSummary: "3 files changed",
-      diffPatch: "diff --git a/auth.ts b/auth.ts\n+export function login()",
-    });
-
-    expect(result.prompt).toContain("Base branch: main");
-    expect(result.prompt).toContain("Head branch: feature/auth");
-    expect(result.prompt).toContain("Commits:");
-    expect(result.prompt).toContain("feat: add login page");
-    expect(result.prompt).toContain("Diff stat:");
-    expect(result.prompt).toContain("3 files changed");
-    expect(result.prompt).toContain("Diff patch:");
-    expect(result.prompt).toContain("export function login()");
   });
 });
 
@@ -175,11 +153,11 @@ describe("normalizeCliError", () => {
 
   it("returns the error as-is if it is already a TextGenerationError", () => {
     const existing = new TextGenerationError({
-      operation: "generatePrContent",
+      operation: "generateCommitMessage",
       detail: "Already wrapped",
     });
 
-    const result = normalizeCliError("claude", "generatePrContent", existing, "fallback");
+    const result = normalizeCliError("claude", "generateCommitMessage", existing, "fallback");
 
     expect(result).toBe(existing);
   });

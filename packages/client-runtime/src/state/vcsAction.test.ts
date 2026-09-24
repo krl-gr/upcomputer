@@ -48,9 +48,6 @@ const result: GitRunStackedActionResult = {
     status: "pushed",
     branch: "feature",
   },
-  pr: {
-    status: "skipped_not_requested",
-  },
   toast: {
     title: "Changes pushed",
     cta: {

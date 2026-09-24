@@ -135,11 +135,7 @@ export class VcsProcessExitError extends Schema.TaggedErrorClass<VcsProcessExitE
       failureKind === "authentication"
         ? "Authentication failed."
         : failureKind === "not-found"
-          ? context.command === "glab"
-            ? "Merge request not found."
-            : context.command === "gh" || context.command === "az"
-              ? "Pull request not found."
-              : "VCS resource not found."
+          ? "VCS resource not found."
           : "Process exited with a non-zero status.";
 
     return new VcsProcessExitError({

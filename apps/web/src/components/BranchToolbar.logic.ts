@@ -205,19 +205,14 @@ export function shouldIncludeBranchPickerItem(input: {
   itemValue: string;
   normalizedQuery: string;
   createBranchItemValue: string | null;
-  checkoutPullRequestItemValue: string | null;
 }): boolean {
-  const { itemValue, normalizedQuery, createBranchItemValue, checkoutPullRequestItemValue } = input;
+  const { itemValue, normalizedQuery, createBranchItemValue } = input;
 
   if (normalizedQuery.length === 0) {
     return true;
   }
 
   if (createBranchItemValue && itemValue === createBranchItemValue) {
-    return true;
-  }
-
-  if (checkoutPullRequestItemValue && itemValue === checkoutPullRequestItemValue) {
     return true;
   }
 

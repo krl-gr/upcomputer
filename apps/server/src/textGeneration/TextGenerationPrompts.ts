@@ -76,51 +76,6 @@ export function buildCommitMessagePrompt(input: CommitMessagePromptInput) {
 }
 
 // ---------------------------------------------------------------------------
-// PR content
-// ---------------------------------------------------------------------------
-
-export interface PrContentPromptInput {
-  baseBranch: string;
-  headBranch: string;
-  commitSummary: string;
-  diffSummary: string;
-  diffPatch: string;
-  policy?: TextGenerationPolicy | undefined;
-}
-
-export function buildPrContentPrompt(input: PrContentPromptInput) {
-  const prompt = [
-    "You write GitHub pull request content.",
-    "Return a JSON object with keys: title, body.",
-    "Rules:",
-    "- title should be concise and specific",
-    "- body must be markdown and include headings '## Summary' and '## Testing'",
-    "- under Summary, provide short bullet points",
-    "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
-    ...policyInstruction(input.policy?.changeRequestInstructions),
-    "",
-    `Base branch: ${input.baseBranch}`,
-    `Head branch: ${input.headBranch}`,
-    "",
-    "Commits:",
-    limitSection(input.commitSummary, 12_000),
-    "",
-    "Diff stat:",
-    limitSection(input.diffSummary, 12_000),
-    "",
-    "Diff patch:",
-    limitSection(input.diffPatch, 40_000),
-  ].join("\n");
-
-  const outputSchema = Schema.Struct({
-    title: Schema.String,
-    body: Schema.String,
-  });
-
-  return { prompt, outputSchema };
-}
-
-// ---------------------------------------------------------------------------
 // Branch name
 // ---------------------------------------------------------------------------
 
