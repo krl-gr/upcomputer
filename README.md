@@ -97,7 +97,6 @@ vp run dev:marketing
   web app.
 - `apps/web`: React/Vite application for the main product UI.
 - `apps/marketing`: Astro marketing and download site.
-- `apps/mobile`: Experimental Expo/React Native app.
 - `packages/contracts`: Shared Effect Schema contracts for provider events,
   WebSocket protocol, settings, and session types.
 - `packages/shared`: Shared runtime utilities consumed by server and clients.

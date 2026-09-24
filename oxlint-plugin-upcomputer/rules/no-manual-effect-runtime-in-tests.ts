@@ -22,9 +22,6 @@ const EFFECT_RUNTIME_METHODS = new Set([
 // Existing manual runners are tracked as debt. The rule permits no net-new
 // occurrences in these files, while unlisted test files must have zero.
 const LEGACY_BASELINE = new Map<string, number>([
-  ["apps/mobile/src/features/agent-awareness/liveActivityPreferences.test.ts", 1],
-  ["apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts", 2],
-  ["apps/mobile/src/state/use-remote-environment-registry.test.ts", 2],
   ["apps/server/src/orchestration/commandInvariants.test.ts", 6],
   ["apps/server/src/orchestration/Layers/CheckpointReactor.test.ts", 42],
   ["apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts", 5],

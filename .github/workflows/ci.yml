@@ -61,27 +61,6 @@ jobs:
       - name: Test
         run: vp run test
 
-  mobile_native_static_analysis:
-    name: Mobile Native Static Analysis
-    runs-on: blacksmith-12vcpu-macos-26
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-
-      - name: Install mobile native static analysis tools
-        run: brew bundle install --file apps/mobile/Brewfile
-
-      - name: Lint mobile native sources
-        run: vp run lint:mobile
-
   release_smoke:
     name: Release Smoke
     runs-on: blacksmith-8vcpu-ubuntu-2404

@@ -31,6 +31,7 @@ commits. Merge commit `5eb641413`.
 | `apps/marketing`                              | `git checkout --ours`. Their marketing site is not wanted in any form.                                                                                      |
 | `assets/prod`, `assets/nightly`, `assets/dev` | Ours. Their `black-*` / `t3-black-*` / `nightly-*` families stay in the tree **unused** — deleting them turns the next branding refresh into modify/delete. |
 | `apps/web/public/favicon*`                    | Ours.                                                                                                                                                       |
+| `apps/mobile`                                 | Removed from the fork on 2026-09-24. Keep it deleted (`git rm`); upstream mobile changes are not synced.                                                    |
 | `apps/web/src/index.css`                      | Theirs, byte for byte. Our divergence lives in `theme.upcomputer.css`, imported at the end. Never edit `index.css`.                                         |
 
 Upstream marketing files that become **live Astro routes** are dropped, not
@@ -64,7 +65,7 @@ t3code's terms of service on up.computer next to ours.
 | 20  | Changed files card            | Their `ChangedFilesCard` extraction and expand API, our surface (`bg-card/40`, glass sticky header).                                                                                                                                                                                                                                                                                                                                                     |
 | 21  | Index route                   | Opens a draft in the most recently active project, then renders `null`. Upstream's draft hero and view transitions are not taken: here the draft surface belongs to `ChatWorkspace`, not to the route.                                                                                                                                                                                                                                                   |
 | 24  | Draft hero (#4055)            | **Parked** in `ChatView` (`DRAFT_HERO_ENABLED`). An empty draft keeps the composer docked at the bottom and the timeline's "Send a message to start the conversation" placeholder, as before the sync. The layout underneath is fixed, so flipping the flag gives a correct centred stack — what is missing is content, not CSS: `chat/DraftHeroHeadline` is unused, and the glass shell and context strip it centres around are both declined (see 17). |
-| 22  | `apps/mobile`                 | Taken as is, zero divergence. Keep it that way — it merges free.                                                                                                                                                                                                                                                                                                                                                                                         |
+| 22  | `apps/mobile`                 | Removed on 2026-09-24; see "Always ours" above.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 23  | T3 Connect sidebar sign-in    | Taken. It self-gates on `hasCloudPublicConfig()`, which reads _our_ build-time Clerk and relay config, so it is the client half of the cloud we intend to run ourselves.                                                                                                                                                                                                                                                                                 |
 
 ## Silent auto-merges — check these every sync
@@ -127,8 +128,6 @@ time: grep for the symbol, do not trust the absence of markers.
 - **Pre-existing lint error.** `apps/server/src/provider/Layers/CodexSessionRuntime.test.ts`
   uses `Effect.runSync` under `t3code/no-manual-effect-runtime-in-tests`. Ours,
   predates this merge.
-- **`apps/mobile` doc comment** still refers to the removed `sidebarV2Enabled`.
-  Left alone on purpose: mobile currently has zero divergence.
 
 ## Targeted backend OOM backport (2026-09-21)
 
