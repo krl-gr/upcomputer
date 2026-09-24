@@ -9,6 +9,7 @@ import * as Struct from "effect/Struct";
 import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
 
 import {
+  CountOpenProjectionThreadTasksInput,
   DeleteProjectionThreadActivitiesInput,
   ListProjectionThreadActivitiesInput,
   ProjectionThreadActivity,
@@ -97,6 +98,27 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       `,
   });
 
+  const countOpenProjectionThreadTaskRows = SqlSchema.findOne({
+    Request: CountOpenProjectionThreadTasksInput,
+    Result: Schema.Struct({ count: NonNegativeInt }),
+    execute: ({ threadId, startedAfter }) =>
+      sql`
+        SELECT COUNT(*) AS "count"
+        FROM projection_thread_activities AS started
+        WHERE started.thread_id = ${threadId}
+          AND started.kind = 'task.started'
+          AND started.created_at > ${startedAfter}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM projection_thread_activities AS completed
+            WHERE completed.thread_id = started.thread_id
+              AND completed.kind = 'task.completed'
+              AND json_extract(completed.payload_json, '$.taskId') =
+                json_extract(started.payload_json, '$.taskId')
+          )
+      `,
+  });
+
   const deleteProjectionThreadActivityRows = SqlSchema.void({
     Request: DeleteProjectionThreadActivitiesInput,
     execute: ({ threadId }) =>
@@ -139,6 +161,17 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       ),
     );
 
+  const countOpenTasks: ProjectionThreadActivityRepositoryShape["countOpenTasks"] = (input) =>
+    countOpenProjectionThreadTaskRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionThreadActivityRepository.countOpenTasks:query",
+          "ProjectionThreadActivityRepository.countOpenTasks:decodeRow",
+        ),
+      ),
+      Effect.map((row) => row.count),
+    );
+
   const deleteByThreadId: ProjectionThreadActivityRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProjectionThreadActivityRows(input).pipe(
       Effect.mapError(
@@ -149,6 +182,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
   return {
     upsert,
     listByThreadId,
+    countOpenTasks,
     deleteByThreadId,
   } satisfies ProjectionThreadActivityRepositoryShape;
 });

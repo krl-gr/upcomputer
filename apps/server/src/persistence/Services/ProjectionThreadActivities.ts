@@ -38,6 +38,12 @@ export const ListProjectionThreadActivitiesInput = Schema.Struct({
 });
 export type ListProjectionThreadActivitiesInput = typeof ListProjectionThreadActivitiesInput.Type;
 
+export const CountOpenProjectionThreadTasksInput = Schema.Struct({
+  threadId: ThreadId,
+  startedAfter: IsoDateTime,
+});
+export type CountOpenProjectionThreadTasksInput = typeof CountOpenProjectionThreadTasksInput.Type;
+
 export const DeleteProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -66,6 +72,14 @@ export interface ProjectionThreadActivityRepositoryShape {
   readonly listByThreadId: (
     input: ListProjectionThreadActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  /**
+   * Count `task.started` rows created after `startedAfter` that have no
+   * `task.completed` row for the same task id.
+   */
+  readonly countOpenTasks: (
+    input: CountOpenProjectionThreadTasksInput,
+  ) => Effect.Effect<number, ProjectionRepositoryError>;
 
   /**
    * Delete projected thread activity rows by thread.

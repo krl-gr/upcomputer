@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EventId,
   ProjectId,
   ThreadId,
   TurnId,
@@ -18,7 +19,9 @@ import * as Stream from "effect/Stream";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderValidationError } from "../Errors.ts";
 import { ProviderSessionReaper } from "../Services/ProviderSessionReaper.ts";
@@ -117,7 +120,9 @@ function makeReadModel(
 
 describe("ProviderSessionReaper", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    ProviderSessionReaper | ProviderSessionRuntime.ProviderSessionRuntimeRepository,
+    | ProviderSessionReaper
+    | ProviderSessionRuntime.ProviderSessionRuntimeRepository
+    | ProjectionThreadActivityRepository,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -187,6 +192,9 @@ describe("ProviderSessionReaper", () => {
     }).pipe(
       Layer.provideMerge(providerSessionDirectoryLayer),
       Layer.provideMerge(runtimeRepositoryLayer),
+      Layer.provideMerge(
+        ProjectionThreadActivityRepositoryLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+      ),
       Layer.provideMerge(Layer.succeed(ProviderService, providerService)),
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
@@ -317,6 +325,101 @@ describe("ProviderSessionReaper", () => {
     expect(harness.stopSession).not.toHaveBeenCalled();
     const remaining = await runtime!.runPromise(repository.getByThreadId({ threadId }));
     expect(Option.isSome(remaining)).toBe(true);
+  });
+
+  async function runStaleSessionWithTaskActivities(
+    activities: ReadonlyArray<{
+      readonly kind: "task.started" | "task.completed";
+      readonly taskId: string;
+      readonly ageHours: number;
+    }>,
+  ) {
+    const threadId = ThreadId.make("thread-reaper-background-task");
+    const harness = await createHarness({
+      readModel: makeReadModel([
+        {
+          id: threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "claudeAgent",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      ]),
+    });
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+    const activityRepository = await runtime!.runPromise(
+      Effect.service(ProjectionThreadActivityRepository),
+    );
+
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "claudeAgent",
+        providerInstanceId: null,
+        adapterKey: "claudeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+        resumeCursor: { opaque: "resume-background-task" },
+        runtimePayload: null,
+      }),
+    );
+    const now = await runtime!.runPromise(DateTime.now);
+    for (const [index, activity] of activities.entries()) {
+      await runtime!.runPromise(
+        activityRepository.upsert({
+          activityId: EventId.make(`activity-background-task-${index}`),
+          threadId,
+          turnId: null,
+          tone: "info",
+          kind: activity.kind,
+          summary: activity.kind,
+          payload: { taskId: activity.taskId },
+          createdAt: DateTime.formatIso(DateTime.subtract(now, { hours: activity.ageHours })),
+        }),
+      );
+    }
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await runtime!.runPromise(drainFibers);
+
+    return harness;
+  }
+
+  it("skips stale sessions while the thread has an unfinished background task", async () => {
+    const harness = await runStaleSessionWithTaskActivities([
+      { kind: "task.started", taskId: "task-done", ageHours: 1 },
+      { kind: "task.completed", taskId: "task-done", ageHours: 1 },
+      { kind: "task.started", taskId: "task-open", ageHours: 1 },
+    ]);
+
+    expect(harness.stopSession).not.toHaveBeenCalled();
+  });
+
+  it("reaps stale sessions once their background tasks have completed", async () => {
+    const harness = await runStaleSessionWithTaskActivities([
+      { kind: "task.started", taskId: "task-done", ageHours: 1 },
+      { kind: "task.completed", taskId: "task-done", ageHours: 1 },
+    ]);
+
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
+  });
+
+  it("ignores unfinished background tasks older than the cap", async () => {
+    const harness = await runStaleSessionWithTaskActivities([
+      { kind: "task.started", taskId: "task-abandoned", ageHours: 25 },
+    ]);
+
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
   });
 
   it("does not reap sessions that are still within the inactivity threshold", async () => {
