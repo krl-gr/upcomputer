@@ -5,6 +5,8 @@ import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 
 import {
+  VcsProcessTimeoutError,
+  VcsProcessSpawnError,
   ProviderDriverKind,
   ProviderRuntimeEvent,
   ProviderSession,
@@ -274,6 +276,9 @@ describe("CheckpointReactor", () => {
   });
 
   async function createHarness(options?: {
+    readonly checkpointLookupFailure?: (
+      cwd: string,
+    ) => VcsProcessTimeoutError | VcsProcessSpawnError | undefined;
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
     readonly projectWorkspaceRoot?: string;
@@ -331,7 +336,20 @@ describe("CheckpointReactor", () => {
       Layer.provideMerge(RuntimeReceiptBusLive),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(vcsStatusBroadcasterLayer),
-      Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+      Layer.provideMerge(
+        Layer.effect(
+          CheckpointStore.CheckpointStore,
+          CheckpointStore.make.pipe(
+            Effect.map((store) => ({
+              ...store,
+              hasCheckpointRef: (input) => {
+                const failure = options?.checkpointLookupFailure?.(input.cwd);
+                return failure ? Effect.fail(failure) : store.hasCheckpointRef(input);
+              },
+            })),
+          ),
+        ).pipe(Layer.provide(VcsDriverRegistry.layer)),
+      ),
       Layer.provideMerge(
         WorkspaceEntries.layer.pipe(
           Layer.provide(WorkspacePaths.layer),
@@ -580,6 +598,87 @@ describe("CheckpointReactor", () => {
       expect(harness.provider.rollbackConversation).toHaveBeenCalledWith({ threadId, numTurns: 1 });
       expect(gitRefExists(repositoryRoot, checkpointRefForThreadTurn(threadId, 1))).toBe(false);
     }),
+  );
+
+  effectIt.effect.each(["timeout", "spawn"] as const)(
+    "captures and finalizes a turn when previous checkpoint lookup fails (%s)",
+    (failureKind) =>
+      Effect.gen(function* () {
+        let failLookup = false;
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            seedFilesystemCheckpoints: false,
+            checkpointLookupFailure: (cwd) =>
+              !failLookup
+                ? undefined
+                : failureKind === "timeout"
+                  ? new VcsProcessTimeoutError({
+                      operation: "test.refLookup",
+                      command: "git",
+                      cwd,
+                      timeoutMs: 30000,
+                    })
+                  : new VcsProcessSpawnError({
+                      operation: "test.refLookup",
+                      command: "git",
+                      cwd,
+                      cause: new Error("transient lookup spawn failure"),
+                    }),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const turnId = asTurnId("turn-ref-timeout");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-ref-lookup"),
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+          createdAt,
+        });
+        harness.provider.emit({
+          type: "turn.started",
+          eventId: EventId.make("evt-ref-start"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt,
+          threadId,
+          turnId,
+        });
+        yield* Effect.promise(() =>
+          waitForGitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, 0)),
+        );
+        NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "new snapshot\n");
+        failLookup = true;
+        harness.provider.emit({
+          type: "turn.completed",
+          eventId: EventId.make("evt-ref-complete"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:01.000Z",
+          threadId,
+          turnId,
+          payload: { state: "completed" },
+        });
+        const thread = yield* Effect.promise(() =>
+          waitForThread(harness.readModel, (entry) => entry.checkpoints.length === 1),
+        );
+        yield* Effect.promise(harness.drain);
+        const ref = checkpointRefForThreadTurn(threadId, 1);
+        expect(gitShowFileAtRef(harness.cwd, ref, "README.md")).toBe("new snapshot\n");
+        expect(thread.checkpoints[0]).toMatchObject({
+          checkpointRef: ref,
+          status: "ready",
+          files: [{ path: "README.md", additions: 1, deletions: 1 }],
+        });
+        expect(thread.activities.some((a) => a.kind === "checkpoint.capture.failed")).toBe(false);
+      }),
   );
 
   it("refreshes local git status state on turn completion using the session cwd", async () => {
