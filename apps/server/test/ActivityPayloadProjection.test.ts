@@ -331,6 +331,34 @@ describe("projectActivityPayload", () => {
     }
   });
 
+  it("preserves failed stored tool outcomes for web clients", () => {
+    const activities = [
+      makeActivity("failed-command", "command_execution", {
+        item: {
+          command: "vp test run",
+          exitCode: 1,
+          status: "failed",
+        },
+      }),
+      makeActivity("failed-mcp", "mcp_tool_call", {
+        item: {
+          server: "simulator",
+          tool: "build",
+          arguments: {},
+          status: "failed",
+        },
+      }),
+    ];
+
+    for (const activity of activities) {
+      const projected = projectActivityPayload(activity);
+      expect(projected.payload).toMatchObject({ status: "failed" });
+
+      const [webEntry] = deriveWorkLogEntries([projected]);
+      expect(webEntry?.toolLifecycleStatus).toBe("failed");
+    }
+  });
+
   it("projects snapshot and event transports without mutating their sources", () => {
     const activity = fixtures[0]!;
     const thread = makeThread([activity]);

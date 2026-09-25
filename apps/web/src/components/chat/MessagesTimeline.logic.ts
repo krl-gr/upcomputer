@@ -487,7 +487,13 @@ export function deriveMessagesTimelineRows(input: {
         const isActiveGroup =
           unsettledTurnId !== null &&
           visibleGroupedEntries.some((entry) => entry.turnId === unsettledTurnId);
-        const hasFailure = visibleGroupedEntries.some(workEntryIndicatesToolFailure);
+        const onlyToolEntries = visibleGroupedEntries.every(
+          (entry) => workLogEntryIsToolLike(entry) && entry.tone !== "error",
+        );
+        // A tool-only run that recovered is not failed; only its final call decides.
+        const hasFailure = onlyToolEntries
+          ? workEntryIndicatesToolFailure(visibleGroupedEntries.at(-1)!)
+          : visibleGroupedEntries.some(workEntryIndicatesToolFailure);
         const expanded =
           isActiveGroup || hasFailure || (input.expandedWorkGroupIds?.has(groupId) ?? false);
 
