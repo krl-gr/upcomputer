@@ -274,6 +274,7 @@ const calculateRestartDelay = (attempt: number): Duration.Duration =>
 
 const closeRun = (
   run: ActiveBackendRun,
+  parentScope: Scope.Scope,
   options?: { readonly timeout?: Duration.Duration },
 ): Effect.Effect<void> => {
   const waitForFiber = Option.match(run.fiber, {
@@ -281,10 +282,19 @@ const closeRun = (
     onSome: (fiber) => Fiber.await(fiber).pipe(Effect.asVoid),
   });
   const close = Scope.close(run.scope, Exit.void).pipe(Effect.andThen(waitForFiber));
+  const timeout = options?.timeout;
 
-  return (
-    options?.timeout ? close.pipe(Effect.timeoutOption(options.timeout), Effect.asVoid) : close
-  ).pipe(Effect.ignore);
+  if (!timeout) {
+    return close;
+  }
+
+  // Scope finalizers are uninterruptible, so a timeout applied to `close`
+  // directly would still wait for a hung teardown. Fork the close into the
+  // parent scope and only bound the wait; the close keeps running.
+  return Effect.forkIn(close, parentScope).pipe(
+    Effect.flatMap((closeFiber) => Fiber.await(closeFiber).pipe(Effect.timeoutOption(timeout))),
+    Effect.asVoid,
+  );
 };
 
 const waitForHttpReady = (
@@ -796,7 +806,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
     yield* Option.match(active, {
       onNone: () => Effect.void,
-      onSome: (run) => closeRun(run, options),
+      onSome: (run) => closeRun(run, parentScope, options),
     });
   });
 
