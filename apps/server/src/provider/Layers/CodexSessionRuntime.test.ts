@@ -605,6 +605,18 @@ describe("isRecoverableThreadResumeError", () => {
     );
   });
 
+  it("matches a missing rollout for a known thread id", () => {
+    NodeAssert.equal(
+      isRecoverableThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32603,
+          errorMessage: "no rollout found for thread id 019fdf74-aaa9-7950-b252-7cc7a8650470",
+        }),
+      ),
+      true,
+    );
+  });
+
   it("keeps thread/model misalignment errors visible instead of silently restarting", () => {
     NodeAssert.equal(
       isRecoverableThreadResumeError(
