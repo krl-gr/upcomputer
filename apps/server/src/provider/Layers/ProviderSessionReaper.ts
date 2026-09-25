@@ -19,7 +19,7 @@ const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 // Background tasks that never reported completion (e.g. a crashed session)
 // stop blocking reaping after this long.
-const OPEN_BACKGROUND_TASK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export const OPEN_BACKGROUND_TASK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export interface ProviderSessionReaperLiveOptions {
   readonly inactivityThresholdMs?: number;
