@@ -28,6 +28,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
@@ -495,6 +496,91 @@ describe("CheckpointReactor", () => {
       ),
     ).toBe("v2\n");
   });
+
+  effectIt.effect("captures and reverts checkpoints from a nested Git workspace", () =>
+    Effect.gen(function* () {
+      const repositoryRoot = createGitRepository();
+      tempDirs.push(repositoryRoot);
+      const workspaceRoot = NodePath.join(repositoryRoot, "apps", "server");
+      NodeFS.mkdirSync(workspaceRoot, { recursive: true });
+      const filePath = NodePath.join(workspaceRoot, "index.ts");
+      NodeFS.writeFileSync(filePath, "export const value = 1;\n");
+      runGit(repositoryRoot, ["add", "."]);
+      runGit(repositoryRoot, ["commit", "-m", "Add nested workspace"]);
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          seedFilesystemCheckpoints: false,
+          projectWorkspaceRoot: workspaceRoot,
+          threadWorktreePath: workspaceRoot,
+          providerSessionCwd: workspaceRoot,
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const turnId = asTurnId("turn-nested");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-nested"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      });
+      harness.provider.emit({
+        type: "turn.started",
+        eventId: EventId.make("evt-nested-start"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId,
+      });
+      yield* Effect.promise(() =>
+        waitForGitRefExists(repositoryRoot, checkpointRefForThreadTurn(threadId, 0)),
+      );
+
+      NodeFS.writeFileSync(filePath, "export const value = 2;\n");
+      harness.provider.emit({
+        type: "turn.completed",
+        eventId: EventId.make("evt-nested-complete"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId,
+        payload: { state: "completed" },
+      });
+      const thread = yield* Effect.promise(() =>
+        waitForThread(harness.readModel, (entry) => entry.checkpoints.length === 1),
+      );
+      expect(thread.checkpoints[0]).toMatchObject({
+        status: "ready",
+        files: [{ path: "apps/server/index.ts", additions: 1, deletions: 1 }],
+      });
+
+      yield* harness.engine.dispatch({
+        type: "thread.checkpoint.revert",
+        commandId: CommandId.make("cmd-nested-revert"),
+        threadId,
+        turnCount: 0,
+        createdAt,
+      });
+      const reverted = yield* Effect.promise(() =>
+        waitForThread(harness.readModel, (entry) => entry.checkpoints.length === 0),
+      );
+      expect(reverted.checkpoints).toEqual([]);
+      yield* Effect.promise(harness.drain);
+      expect(NodeFS.readFileSync(filePath, "utf8")).toBe("export const value = 1;\n");
+      expect(harness.provider.rollbackConversation).toHaveBeenCalledWith({ threadId, numTurns: 1 });
+      expect(gitRefExists(repositoryRoot, checkpointRefForThreadTurn(threadId, 1))).toBe(false);
+    }),
+  );
 
   it("refreshes local git status state on turn completion using the session cwd", async () => {
     const gitStatusRefreshCalls: string[] = [];

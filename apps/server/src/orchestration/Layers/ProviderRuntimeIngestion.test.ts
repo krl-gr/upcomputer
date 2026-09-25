@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeChildProcess from "node:child_process";
 
 import {
   OrchestrationReadModel,
@@ -42,6 +43,9 @@ import {
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
+import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
+import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
@@ -222,9 +226,15 @@ describe("ProviderRuntimeIngestion", () => {
   async function createHarness(options?: {
     serverSettings?: Partial<ServerSettings>;
     sidebarVisible?: boolean;
+    workspaceSubdirectory?: string;
   }) {
-    const workspaceRoot = makeTempDir("t3-provider-project-");
-    NodeFS.mkdirSync(NodePath.join(workspaceRoot, ".git"));
+    const repositoryRoot = makeTempDir("t3-provider-project-");
+    NodeChildProcess.execFileSync("git", ["init", "--initial-branch=main"], {
+      cwd: repositoryRoot,
+      stdio: "ignore",
+    });
+    const workspaceRoot = NodePath.join(repositoryRoot, options?.workspaceSubdirectory ?? "");
+    NodeFS.mkdirSync(workspaceRoot, { recursive: true });
     const provider = createProviderServiceHarness();
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
@@ -244,6 +254,8 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
+      Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+      Layer.provideMerge(VcsProcess.layer),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -2833,6 +2845,26 @@ describe("ProviderRuntimeIngestion", () => {
         (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.started",
       ),
     ).toBe(true);
+  });
+
+  it("tracks provider diff updates from a nested Git workspace", async () => {
+    const harness = await createHarness({ workspaceSubdirectory: "apps/server" });
+    harness.emit({
+      type: "turn.diff.updated",
+      eventId: asEventId("evt-nested-diff"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("nested-turn"),
+      payload: {
+        unifiedDiff: "diff --git a/apps/server/file.ts b/apps/server/file.ts\n+new\n",
+      },
+    });
+    await harness.drain();
+    const snapshot = await harness.readModel();
+    expect(snapshot.threads[0]?.checkpoints).toEqual([
+      expect.objectContaining({ turnId: "nested-turn", status: "missing" }),
+    ]);
   });
 
   it("consumes P1 runtime events into thread metadata, diff checkpoints, and activities", async () => {
