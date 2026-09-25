@@ -309,6 +309,64 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("re-probes readiness after the first budget expires while the backend is alive", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let healthy = false;
+        let requestCount = 0;
+        let readyCount = 0;
+        const firstRequest = yield* Deferred.make<void>();
+        const ready = yield* Deferred.make<void>();
+        const exited = yield* Queue.unbounded<void>();
+
+        const spawnerLayer = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              makeProcess({
+                exitCode: Deferred.await(ready).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+              }),
+            ),
+          ),
+        );
+
+        const instance = yield* makeTestInstance({
+          spawnerLayer,
+          httpClientLayer: httpClientLayer((request) =>
+            Effect.gen(function* () {
+              requestCount += 1;
+              yield* Deferred.succeed(firstRequest, void 0);
+              return responseForRequest(request, healthy ? 200 : 503);
+            }),
+          ),
+          onReady: Effect.sync(() => {
+            readyCount += 1;
+          }).pipe(Effect.andThen(Deferred.succeed(ready, void 0)), Effect.asVoid),
+          backendOutputLog: {
+            writeSessionBoundary: ({ phase }) =>
+              phase === "END" ? Queue.offer(exited, void 0).pipe(Effect.asVoid) : Effect.void,
+          },
+        });
+
+        yield* instance.start;
+        yield* Deferred.await(firstRequest);
+
+        // The first one-minute readiness budget expires while the backend
+        // still answers 503. The child is alive, so probing must continue.
+        yield* TestClock.adjust(Duration.minutes(1));
+        assert.equal(readyCount, 0);
+        const requestsAfterFirstBudget = requestCount;
+
+        healthy = true;
+        yield* TestClock.adjust(Duration.millis(100));
+        yield* Queue.take(exited);
+
+        assert.equal(readyCount, 1);
+        assert.isAbove(requestCount, requestsAfterFirstBudget);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -386,14 +386,25 @@ const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     yield* drainBackendOutput("stdout", handle.stdout, onOutput).pipe(Effect.forkScoped);
     yield* drainBackendOutput("stderr", handle.stderr, onOutput).pipe(Effect.forkScoped);
   }
-  yield* waitForHttpReady(
+  // Probe readiness in a loop while the backend process is still alive
+  // instead of giving up after the first budget. A slow cold boot (the
+  // WSL bundle loading across /mnt/c, or a first launch right after an
+  // update) can exceed the initial readiness budget while the backend is
+  // about to come up moments later; a one-shot probe left the app stuck
+  // on "Connecting to WSL…" forever even though the backend kept running
+  // and became healthy. Each round gets a fresh budget, and the forked
+  // loop is torn down with the run scope once the child exits.
+  const probeReadiness = waitForHttpReady(
     options.httpBaseUrl,
     options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
   ).pipe(
-    Effect.tap(() => options.onReady?.() ?? Effect.void),
-    Effect.catch((error) => options.onReadinessFailure?.(error) ?? Effect.void),
-    Effect.forkScoped,
+    Effect.flatMap(() => options.onReady?.() ?? Effect.void),
+    Effect.as(true),
+    Effect.catch((error) =>
+      (options.onReadinessFailure?.(error) ?? Effect.void).pipe(Effect.as(false)),
+    ),
   );
+  yield* probeReadiness.pipe(Effect.repeat({ while: (ready) => !ready }), Effect.forkScoped);
 
   return describeProcessExit(yield* Effect.result(handle.exitCode));
 });
