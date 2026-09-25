@@ -188,7 +188,7 @@ export class AcpSessionRuntime extends Context.Service<
     readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
     /** Stream of parsed ACP session events emitted after startup. */
     readonly getEvents: () => Stream.Stream<AcpSessionRuntimeEvent, never>;
-    /** Waits until the current event consumer has processed every queued event. */
+    /** Waits until the current event consumer has processed every queued event, or for the runtime scope to close. */
     readonly drainEvents: Effect.Effect<void>;
     /** Latest mode state observed from session setup and `session/update` notifications. */
     readonly getModeState: Effect.Effect<AcpSessionModeState | undefined>;
@@ -300,6 +300,8 @@ export const make = (
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
+    const runtimeClosed = yield* Deferred.make<void>();
+    yield* Scope.addFinalizer(runtimeScope, Deferred.succeed(runtimeClosed, undefined));
     const activePromptFiberRef = yield* Ref.make<
       Option.Option<Fiber.Fiber<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>>
     >(Option.none());
@@ -719,7 +721,7 @@ export const make = (
           _tag: "EventStreamBarrier",
           acknowledge,
         });
-        yield* Deferred.await(acknowledge);
+        yield* Effect.raceFirst(Deferred.await(acknowledge), Deferred.await(runtimeClosed));
       }),
       getModeState: Ref.get(modeStateRef),
       getConfigOptions: Ref.get(configOptionsRef),
