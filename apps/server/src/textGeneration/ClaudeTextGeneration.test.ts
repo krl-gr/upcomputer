@@ -37,6 +37,23 @@ function makeFakeClaudeBinary(dir: string) {
       [
         "#!/bin/sh",
         'args="$*"',
+        'tools_empty=""',
+        'settings=""',
+        'prev=""',
+        'for arg in "$@"; do',
+        '  if [ "$prev" = "--tools" ] && [ -z "$arg" ]; then tools_empty=1; fi',
+        '  if [ "$prev" = "--settings" ]; then settings="$arg"; fi',
+        '  prev="$arg"',
+        "done",
+        'fail() { printf "%s\\n" "$1" >&2; exit "$2"; }',
+        '[ -n "$tools_empty" ] || fail "text generation must receive an explicit empty tool set" 6',
+        'case " $args " in *" --dangerously-skip-permissions "*) fail "text generation must not bypass permissions" 7 ;; esac',
+        'case " $args " in *" --disable-slash-commands "*) ;; *) fail "text generation must disable skills" 8 ;; esac',
+        'case " $args " in *" --strict-mcp-config "*) ;; *) fail "text generation must not load configured MCP servers" 9 ;; esac',
+        'case "$settings" in *\'"disableAllHooks":true\'*) ;; *) fail "text generation must disable hooks" 10 ;; esac',
+        'if [ -n "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" ] && [ "$(pwd -P)" = "$(cd "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" && pwd -P)" ]; then',
+        '  fail "text generation ran in the project directory" 11',
+        "fi",
         'stdin_content="$(cat)"',
         'if [ -n "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" ]; then',
         '  printf "%s" "$args" | grep -F -- "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" >/dev/null || {',
@@ -82,6 +99,7 @@ function withFakeClaudeEnv<A, E, R>(
     argsMustNotContain?: string;
     stdinMustContain?: string;
     configDirMustBe?: string;
+    cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
     catalog?: ClaudeModelCatalog;
   },
@@ -99,6 +117,7 @@ function withFakeClaudeEnv<A, E, R>(
     const previousArgsMustNotContain = process.env.T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN;
     const previousStdinMustContain = process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
     const previousConfigDirMustBe = process.env.T3_FAKE_CLAUDE_CONFIG_DIR_MUST_BE;
+    const previousCwdMustNotBe = process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
 
     yield* Effect.acquireRelease(
       Effect.sync(() => {
@@ -133,6 +152,12 @@ function withFakeClaudeEnv<A, E, R>(
           process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN = input.stdinMustContain;
         } else {
           delete process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
+        }
+
+        if (input.cwdMustNotBe !== undefined) {
+          process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE = input.cwdMustNotBe;
+        } else {
+          delete process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
         }
 
         if (input.configDirMustBe !== undefined) {
@@ -179,6 +204,12 @@ function withFakeClaudeEnv<A, E, R>(
             delete process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
           } else {
             process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN = previousStdinMustContain;
+          }
+
+          if (previousCwdMustNotBe === undefined) {
+            delete process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
+          } else {
+            process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE = previousCwdMustNotBe;
           }
 
           if (previousConfigDirMustBe === undefined) {
@@ -231,7 +262,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             body: "",
           },
         }),
-        argsMustContain: '--settings {"alwaysThinkingEnabled":false}',
+        argsMustContain: '--settings {"disableAllHooks":true,"alwaysThinkingEnabled":false}',
         argsMustNotContain: "--effort",
       },
       (textGeneration) =>
@@ -262,7 +293,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             title: "Improve orchestration flow",
           },
         }),
-        argsMustContain: '--effort max --settings {"fastMode":true}',
+        argsMustContain: '--effort max --settings {"disableAllHooks":true,"fastMode":true}',
       },
       (textGeneration) =>
         Effect.gen(function* () {
@@ -282,33 +313,58 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates thread titles through the Claude provider", () =>
+  it.effect(
+    "generates thread titles outside the project with tools, skills, and hooks disabled",
+    () =>
+      withFakeClaudeEnv(
+        {
+          output: JSON.stringify({
+            structured_output: {
+              title:
+                '  "Reconnect failures after restart because the session state does not recover"  ',
+            },
+          }),
+          cwdMustNotBe: process.cwd(),
+          stdinMustContain: "/call-script",
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const generated = yield* textGeneration.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "/call-script",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: "claude-sonnet-4-6",
+              },
+            });
+
+            expect(generated.title).toBe(
+              sanitizeThreadTitle(
+                '"Reconnect failures after restart because the session state does not recover"',
+              ),
+            );
+          }),
+      ),
+  );
+
+  it.effect("generates branch names from skill prompts without executable capabilities", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            title:
-              '  "Reconnect failures after restart because the session state does not recover"  ',
-          },
-        }),
-        stdinMustContain: "You write concise thread titles for coding conversations.",
+        output: JSON.stringify({ structured_output: { branch: "call-script" } }),
+        stdinMustContain: "/call-script",
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateThreadTitle({
+          const generated = yield* textGeneration.generateBranchName({
             cwd: process.cwd(),
-            message: "Please investigate reconnect failures after restarting the session.",
+            message: "/call-script",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
               model: "claude-sonnet-4-6",
             },
           });
 
-          expect(generated.title).toBe(
-            sanitizeThreadTitle(
-              '"Reconnect failures after restart because the session state does not recover"',
-            ),
-          );
+          expect(generated.branch).toBe("call-script");
         }),
     ),
   );
