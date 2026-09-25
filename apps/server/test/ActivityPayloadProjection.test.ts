@@ -221,6 +221,50 @@ describe("projectActivityPayload", () => {
     expect(JSON.stringify(acp.payload).length).toBeLessThan(500);
   });
 
+  it("normalizes Claude and OpenCode command inputs before slimming provider data", () => {
+    const withToolCallId = (
+      activity: OrchestrationThreadActivity,
+      toolCallId: string,
+    ): OrchestrationThreadActivity => ({
+      ...activity,
+      payload: { ...(activity.payload as Record<string, unknown>), toolCallId },
+    });
+    const claude = projectActivityPayload(
+      withToolCallId(
+        makeActivity("claude-input", "command_execution", {
+          toolName: "Bash",
+          input: { command: "vp test run" },
+          result: { content: "x".repeat(5_000) },
+        }),
+        "claude-call-1",
+      ),
+    );
+    const openCode = projectActivityPayload(
+      withToolCallId(
+        makeActivity("opencode-input", "command_execution", {
+          tool: "bash",
+          state: {
+            status: "running",
+            input: { command: "vp lint" },
+            output: "x".repeat(5_000),
+          },
+        }),
+        "opencode-call-1",
+      ),
+    );
+
+    expect(claude.payload).toMatchObject({
+      toolCallId: "claude-call-1",
+      data: { command: "vp test run" },
+    });
+    expect(openCode.payload).toMatchObject({
+      toolCallId: "opencode-call-1",
+      data: { command: "vp lint" },
+    });
+    expect(JSON.stringify(claude.payload).length).toBeLessThan(400);
+    expect(JSON.stringify(openCode.payload).length).toBeLessThan(400);
+  });
+
   it("slims Codex-shaped mcp_tool_call items to rendered fields plus a result summary", () => {
     const projected = projectActivityPayload(
       makeActivity("mcp-codex", "mcp_tool_call", {
