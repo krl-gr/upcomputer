@@ -1,5 +1,5 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@upcomputer/contracts";
-import { ClipboardList, FileDiff, Files, Globe2, Plus, X } from "lucide-react";
+import { FileDiff, Files, Globe2, Plus, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -184,8 +184,6 @@ function surfaceTitle(
       return "Files";
     case "file":
       return surface.relativePath.slice(surface.relativePath.lastIndexOf("/") + 1);
-    case "plan":
-      return "Plan";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -243,8 +241,6 @@ function SurfaceIcon({
           className="size-3.5"
         />
       );
-    case "plan":
-      return <ClipboardList className="size-3.5 shrink-0" />;
   }
 }
 

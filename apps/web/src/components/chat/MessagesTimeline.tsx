@@ -132,6 +132,8 @@ interface TimelineRowActivityState {
   isRevertingCheckpoint: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
+  /** Current plan step label for the working row, when the turn has a plan. */
+  workingStepLabel: string | null;
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
@@ -147,6 +149,7 @@ const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "d
 
 interface MessagesTimelineProps {
   isWorking: boolean;
+  workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
@@ -185,6 +188,7 @@ interface MessagesTimelineProps {
 
 export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
+  workingStepLabel = null,
   activeTurnInProgress,
   activeTurnStartedAt,
   listRef,
@@ -434,8 +438,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isRevertingCheckpoint,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
+      workingStepLabel,
     }),
-    [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+    [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId, workingStepLabel],
   );
 
   // Stable renderItem — no closure deps. Row components read shared state
@@ -819,7 +824,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         // they sit closer to the work that follows them.
         (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
           row.kind === "work" ||
-          row.kind === "work-toggle"
+          row.kind === "work-toggle" ||
+          row.kind === "turn-plan"
           ? "pb-2"
           : "pb-4",
         row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
@@ -837,6 +843,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         <AssistantTimelineRow row={row} />
       ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
     </div>
   );
@@ -1118,16 +1125,91 @@ function ProposedPlanTimelineRow({
   );
 }
 
+/**
+ * Inline plan for one turn: a work-log style toggle with the current step and
+ * n/m progress that expands in place to the step list. Replaces the old plan
+ * sidebar.
+ */
+const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "turn-plan" }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { steps } = row.turnPlan.plan;
+  const completedCount = steps.filter((step) => step.status === "completed").length;
+  // Label priority: the in-progress step, else the next pending step (plan
+  // just created), else the last step (plan finished).
+  const label =
+    steps.find((step) => step.status === "inProgress")?.step ??
+    steps.find((step) => step.status === "pending")?.step ??
+    steps.at(-1)?.step ??
+    "Plan";
+
+  return (
+    <>
+      <button
+        type="button"
+        className="flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-muted-foreground/60 transition-colors duration-150 hover:text-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="min-w-0 truncate text-sm leading-relaxed">{label}</span>
+        {steps.length > 1 ? (
+          <span className="shrink-0 text-sm leading-relaxed tabular-nums">
+            {completedCount}/{steps.length}
+          </span>
+        ) : null}
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+          />
+        </span>
+      </button>
+      {expanded ? (
+        <section className="space-y-px px-1 py-0.5" aria-label="Plan steps">
+          {steps.map((step) => (
+            <div key={step.step} className="flex items-center gap-1.5 rounded-md px-0.5 py-0.5">
+              <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground/55">
+                {step.status === "completed" ? (
+                  <CheckIcon className="block size-3.5 shrink-0" aria-label="Completed" />
+                ) : step.status === "inProgress" ? (
+                  <span
+                    className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse"
+                    aria-label="In progress"
+                  />
+                ) : null}
+              </span>
+              <p
+                className={cn(
+                  "min-w-0 flex-1 truncate text-sm leading-5",
+                  step.status === "inProgress" ? workToneClass("tool") : "text-muted-foreground/55",
+                )}
+              >
+                {step.step}
+              </p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+    </>
+  );
+});
+
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const { workingStepLabel } = use(TimelineRowActivityCtx);
   return (
     <div className="py-0.5 pl-1">
-      <div className="flex items-center gap-2 pt-1 text-sm text-muted-foreground/70 tabular-nums">
+      <div className="flex min-w-0 items-center gap-2 pt-1 text-sm text-muted-foreground/70 tabular-nums">
         <span className="inline-flex items-center gap-[3px]">
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:200ms]" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:400ms]" />
         </span>
-        <span>
+        <span className="shrink-0">
           {row.createdAt ? (
             <>
               Working for <WorkingTimer createdAt={row.createdAt} />
@@ -1136,6 +1218,9 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
             "Working..."
           )}
         </span>
+        {workingStepLabel ? (
+          <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
+        ) : null}
       </div>
     </div>
   );

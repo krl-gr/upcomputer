@@ -76,6 +76,15 @@ describe("ClientSettings retired auto-settle setting", () => {
   });
 });
 
+describe("ClientSettings retired plan sidebar setting", () => {
+  it("still decodes stored settings that carry autoOpenPlanSidebar, ignoring it", () => {
+    const decoded = decodeClientSettings({ autoOpenPlanSidebar: true, glassOpacity: 60 });
+    expect(decoded.glassOpacity).toBe(60);
+    expect(decoded).not.toHaveProperty("autoOpenPlanSidebar");
+    expect(decodeClientSettingsPatch({ autoOpenPlanSidebar: true })).toEqual({});
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
