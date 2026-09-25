@@ -389,11 +389,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     };
   }, [timelineViewportElement, rows.length]);
 
+  const threadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       timestampFormat,
       routeThreadKey,
-      threadRef: parseScopedThreadKey(routeThreadKey),
+      // Must be referentially stable: ChatMarkdown keys its react-markdown
+      // component map on threadRef, and a fresh object here remounts every
+      // rendered markdown node whenever this memo recomputes (e.g. on each
+      // activity delta while the thread is working).
+      threadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -409,6 +414,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [
       timestampFormat,
       routeThreadKey,
+      threadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
