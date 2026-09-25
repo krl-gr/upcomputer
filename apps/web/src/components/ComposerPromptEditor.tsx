@@ -95,6 +95,7 @@ const BACKTICK_SURROUND_CLOSE_SYMBOL = SURROUND_SYMBOLS_MAP.get("`") ?? null;
 type SerializedComposerMentionNode = Spread<
   {
     path: string;
+    source?: string;
     type: "composer-mention";
     version: 1;
   },
@@ -137,28 +138,33 @@ function ComposerMentionDecorator(props: { path: string }) {
 
 class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   __path: string;
+  __source: string;
 
   static override getType(): string {
     return "composer-mention";
   }
 
   static override clone(node: ComposerMentionNode): ComposerMentionNode {
-    return new ComposerMentionNode(node.__path, node.__key);
+    return new ComposerMentionNode(node.__path, node.__source, node.__key);
   }
 
   static override importJSON(serializedNode: SerializedComposerMentionNode): ComposerMentionNode {
-    return $createComposerMentionNode(serializedNode.path).updateFromJSON(serializedNode);
+    return $createComposerMentionNode(serializedNode.path, serializedNode.source).updateFromJSON(
+      serializedNode,
+    );
   }
 
-  constructor(path: string, key?: NodeKey) {
+  constructor(path: string, source = serializeComposerFileLink(path), key?: NodeKey) {
     super(key);
     this.__path = path;
+    this.__source = source;
   }
 
   override exportJSON(): SerializedComposerMentionNode {
     return {
       ...super.exportJSON(),
       path: this.__path,
+      source: this.__source,
       type: "composer-mention",
       version: 1,
     };
@@ -175,7 +181,7 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 
   override getTextContent(): string {
-    return serializeComposerFileLink(this.__path);
+    return this.__source;
   }
 
   override isInline(): true {
@@ -187,8 +193,8 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 }
 
-function $createComposerMentionNode(path: string): ComposerMentionNode {
-  return $applyNodeReplacement(new ComposerMentionNode(path));
+function $createComposerMentionNode(path: string, source?: string): ComposerMentionNode {
+  return $applyNodeReplacement(new ComposerMentionNode(path, source));
 }
 
 function resolveSkillDescription(
@@ -719,7 +725,7 @@ function $setComposerEditorPrompt(
   const segments = splitPromptIntoComposerSegments(prompt);
   for (const segment of segments) {
     if (segment.type === "mention") {
-      paragraph.append($createComposerMentionNode(segment.path));
+      paragraph.append($createComposerMentionNode(segment.path, segment.source));
       continue;
     }
     if (segment.type === "skill") {
