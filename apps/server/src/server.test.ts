@@ -4507,6 +4507,29 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("serves config on reconnect without starting provider probes", () =>
+    Effect.gen(function* () {
+      const refresh = vi.fn(() => Effect.never);
+      yield* buildAppUnderTest({
+        layers: { providerRegistry: { refresh } },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      for (let connection = 0; connection < 2; connection += 1) {
+        const event = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.subscribeServerConfig]({}).pipe(
+              Stream.runHead,
+              Effect.map(Option.getOrThrow),
+            ),
+          ),
+        );
+        assert.equal(event.type, "snapshot");
+      }
+      assert.equal(refresh.mock.calls.length, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "routes websocket rpc subscribeServerLifecycle replays snapshot and streams updates",
     () =>
