@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -90,7 +91,7 @@ function runShellEnvironment(input: {
   }).pipe(
     Effect.provide(
       DesktopShellEnvironment.layer.pipe(
-        Layer.provide(Layer.mergeAll(environmentLayer, spawnerLayer)),
+        Layer.provide(Layer.mergeAll(environmentLayer, NodeServices.layer, spawnerLayer)),
       ),
     ),
   );
@@ -242,6 +243,49 @@ describe("DesktopShellEnvironment", () => {
         env.FNM_MULTISHELL_PATH,
         "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
       );
+    }),
+  );
+
+  it.effect("overrides stale dbus session addresses from the login shell", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        SHELL: "/bin/zsh",
+        PATH: "/usr/bin",
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/tmp/stale-bus",
+      };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "linux",
+        handler: () =>
+          envOutput({
+            PATH: "/usr/bin",
+            DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+          }),
+      });
+
+      assert.equal(env.DBUS_SESSION_BUS_ADDRESS, "unix:path=/run/user/1000/bus");
+    }),
+  );
+
+  it.effect("does not import linux session variables on macOS", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        SHELL: "/bin/zsh",
+        PATH: "/usr/bin",
+      };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () =>
+          envOutput({
+            PATH: "/usr/bin",
+            DBUS_SESSION_BUS_ADDRESS: "unix:path=/tmp/bus",
+          }),
+      });
+
+      assert.isUndefined(env.DBUS_SESSION_BUS_ADDRESS);
     }),
   );
 

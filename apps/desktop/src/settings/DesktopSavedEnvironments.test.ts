@@ -86,6 +86,7 @@ function makeSafeStorageLayer(input: {
       }
       return Effect.succeed(decoded.slice("enc:".length));
     },
+    selectedStorageBackend: Effect.succeedNone,
   } satisfies ElectronSafeStorage.ElectronSafeStorage["Service"]);
 }
 

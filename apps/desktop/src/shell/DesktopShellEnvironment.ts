@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -74,6 +75,14 @@ const LOGIN_SHELL_ENV_NAMES = [
   "HOMEBREW_REPOSITORY",
   "XDG_CONFIG_HOME",
   "XDG_DATA_HOME",
+] as const;
+// Session variables libsecret needs to reach the keyring over D-Bus when the app is launched
+// without the graphical session environment (for example from some Niri/Hyprland launchers).
+const LINUX_SESSION_ENV_NAMES = [
+  "DBUS_SESSION_BUS_ADDRESS",
+  "DISPLAY",
+  "XDG_RUNTIME_DIR",
+  "WAYLAND_DISPLAY",
 ] as const;
 const WINDOWS_PROFILE_ENV_NAMES = ["PATH", "FNM_DIR", "FNM_MULTISHELL_PATH"] as const;
 const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
@@ -367,14 +376,19 @@ const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWin
 const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosixEnvironment")(
   function* (
     config: ShellEnvironmentConfig,
-  ): Effect.fn.Return<void, never, ChildProcessSpawner.ChildProcessSpawner> {
+  ): Effect.fn.Return<
+    void,
+    never,
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+  > {
     const shellEnvironment: EnvironmentPatch = {};
+    const loginShellEnvNames =
+      config.platform === "linux"
+        ? [...LOGIN_SHELL_ENV_NAMES, ...LINUX_SESSION_ENV_NAMES]
+        : LOGIN_SHELL_ENV_NAMES;
 
     for (const shell of listLoginShellCandidates(config)) {
-      Object.assign(
-        shellEnvironment,
-        yield* readLoginShellEnvironment(shell, LOGIN_SHELL_ENV_NAMES),
-      );
+      Object.assign(shellEnvironment, yield* readLoginShellEnvironment(shell, loginShellEnvNames));
       if (shellEnvironment.PATH) break;
     }
 
@@ -405,12 +419,51 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
         config.env[name] = shellEnvironment[name];
       }
     }
+
+    if (config.platform === "linux") {
+      yield* installLinuxSessionEnvironment(config, shellEnvironment);
+    }
   },
 );
 
+const installLinuxSessionEnvironment = Effect.fn(
+  "desktop.shellEnvironment.installLinuxSessionEnvironment",
+)(function* (
+  config: ShellEnvironmentConfig,
+  shellEnvironment: EnvironmentPatch,
+): Effect.fn.Return<void, never, FileSystem.FileSystem> {
+  // The login shell's bus address wins over an inherited one, which may be stale.
+  if (shellEnvironment.DBUS_SESSION_BUS_ADDRESS) {
+    config.env.DBUS_SESSION_BUS_ADDRESS = shellEnvironment.DBUS_SESSION_BUS_ADDRESS;
+  }
+  for (const name of ["DISPLAY", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY"] as const) {
+    if (!config.env[name] && shellEnvironment[name]) {
+      config.env[name] = shellEnvironment[name];
+    }
+  }
+
+  if (Option.isSome(trimNonEmpty(config.env.DBUS_SESSION_BUS_ADDRESS))) {
+    return;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const runtimeDirs = [
+    ...Option.toArray(
+      trimNonEmpty(config.env.XDG_RUNTIME_DIR).pipe(Option.map((dir) => dir.replace(/\/+$/u, ""))),
+    ),
+    ...(process.getuid === undefined ? [] : [`/run/user/${process.getuid()}`]),
+  ].filter((dir) => dir.length > 0);
+  for (const runtimeDir of runtimeDirs) {
+    const busPath = `${runtimeDir}/bus`;
+    if (yield* fileSystem.exists(busPath).pipe(Effect.orElseSucceed(() => false))) {
+      config.env.DBUS_SESSION_BUS_ADDRESS = `unix:path=${busPath}`;
+      return;
+    }
+  }
+});
+
 const installShellEnvironment = (
   config: ShellEnvironmentConfig,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner> => {
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> => {
   if (config.platform === "win32") {
     return installWindowsEnvironment(config);
   }
@@ -422,6 +475,7 @@ const installShellEnvironment = (
 
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const fileSystem = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const installIntoProcess: DesktopShellEnvironment["Service"]["installIntoProcess"] =
     installShellEnvironment({
@@ -429,6 +483,7 @@ export const make = Effect.gen(function* () {
       platform: environment.platform,
       userShell: Option.none(),
     }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.withSpan("desktop.shellEnvironment.installIntoProcess"),
     );

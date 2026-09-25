@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as Electron from "electron";
@@ -60,6 +61,8 @@ export class ElectronSafeStorage extends Context.Service<
     readonly decryptString: (
       value: Uint8Array,
     ) => Effect.Effect<string, ElectronSafeStorageDecryptError>;
+    /** Linux only; the backend Chromium selected once the app is ready. */
+    readonly selectedStorageBackend: Effect.Effect<Option.Option<string>>;
   }
 >()("@upcomputer/desktop/electron/ElectronSafeStorage") {}
 
@@ -78,6 +81,13 @@ export const make = ElectronSafeStorage.of({
       try: () => Electron.safeStorage.decryptString(Buffer.from(value)),
       catch: (cause) => new ElectronSafeStorageDecryptError({ cause }),
     }),
+  selectedStorageBackend: Effect.sync(() => {
+    try {
+      return Option.fromNullishOr(Electron.safeStorage.getSelectedStorageBackend());
+    } catch {
+      return Option.none();
+    }
+  }),
 });
 
 export const layer = Layer.succeed(ElectronSafeStorage, make);

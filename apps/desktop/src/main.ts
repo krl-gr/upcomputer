@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - Clerk's Electron scheme must be registered synchronously before app readiness, outside the Effect runtime.
+// @effect-diagnostics nodeBuiltinImport:off - Clerk's Electron scheme and the Linux password-store switch must be set synchronously before app readiness, outside the Effect runtime.
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code !== "EPIPE") throw err;
@@ -8,6 +8,7 @@ for (const stream of [process.stdout, process.stderr]) {
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
@@ -57,6 +58,10 @@ import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import { isLocalTestVersion, LOCAL_TEST_HOME_NAME } from "./app/localTestProfile.ts";
+import {
+  readEarlyLinuxPasswordStorePreference,
+  resolveLinuxPasswordStoreSwitch,
+} from "./linuxSecretStorage.ts";
 
 // Apply before Clerk/config initialization, including Finder launches with no env.
 if (isLocalTestVersion(Electron.app.getVersion())) {
@@ -71,6 +76,30 @@ const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL?.trim());
 const configuredBaseDir = process.env.UPCOMPUTER_HOME?.trim() || undefined;
 const preferredBaseDir = NodePath.join(NodeOS.homedir(), ".upcomputer");
 const baseDir = configuredBaseDir ?? preferredBaseDir;
+
+// Chromium picks the safeStorage backend at app ready and falls back to basic text on desktops it
+// does not recognize (Niri, Hyprland, LXQt...). An explicit --password-store always wins.
+if (
+  Effect.runSync(HostProcessPlatform) === "linux" &&
+  !Electron.app.commandLine.hasSwitch("password-store")
+) {
+  // Same state dir rule as DesktopEnvironment.
+  const settingsPath = NodePath.join(
+    baseDir,
+    isDevelopment && configuredBaseDir === undefined ? "dev" : "userdata",
+    "desktop-settings.json",
+  );
+  const passwordStore = resolveLinuxPasswordStoreSwitch({
+    preference: readEarlyLinuxPasswordStorePreference(() =>
+      NodeFS.readFileSync(settingsPath, "utf8"),
+    ),
+    env: process.env,
+  });
+  if (passwordStore !== null) {
+    Electron.app.commandLine.appendSwitch("password-store", passwordStore);
+  }
+}
+
 const desktopClerkBridge = DesktopClerk.createDesktopClerkBridge(
   NodePath.join(baseDir, isDevelopment ? "dev" : "userdata"),
   isDevelopment,
