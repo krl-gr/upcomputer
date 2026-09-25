@@ -91,6 +91,18 @@ describe("buildThreadTitlePrompt", () => {
     expect(result.prompt).toContain("User message:");
     expect(result.prompt).toContain("Investigate reconnect regressions after session restore");
     expect(result.prompt).not.toContain("Attachment metadata:");
+    expect(result.prompt).toContain(
+      "Generate a title that will help the user recognize this UpComputer thread weeks later.",
+    );
+    expect(result.prompt).toContain(
+      "Title the subject and outcome. Discard incidental instructions.",
+    );
+    expect(result.prompt).toContain(
+      "Name the product change, not the mock, plan, report, branch, or PR used to produce it.",
+    );
+    expect(result.prompt).not.toContain(
+      "Title should summarize the user's request, not restate it verbatim.",
+    );
   });
 
   it("includes attachment metadata when attachments are provided", () => {
