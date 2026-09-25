@@ -416,16 +416,35 @@ function eventPathContainsSelector(event: Event, selector: string): boolean {
   return path.some((target) => target instanceof Element && target.closest(selector));
 }
 
-function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
-  if (event.defaultPrevented || event.isComposing) return false;
-  if (event.metaKey || event.ctrlKey || event.altKey) return false;
-  if (event.key.length !== 1) return false;
-
+/**
+ * Whether input that landed outside any editable or interactive element
+ * should be redirected into the composer. Shared by type-to-focus and
+ * paste-to-focus so both honour the same surfaces.
+ */
+function shouldRedirectInputToComposer(event: Event): boolean {
+  if (event.defaultPrevented) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
   if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;
-
   return true;
+}
+
+function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
+  if (event.isComposing) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  if (event.key.length !== 1) return false;
+  return shouldRedirectInputToComposer(event);
+}
+
+/**
+ * Plain text pasted with nothing editable focused. Files are left to the
+ * composer's own paste handler.
+ */
+function pasteTextToFocusComposer(event: ClipboardEvent): string | null {
+  if (!event.clipboardData || event.clipboardData.files.length > 0) return null;
+  if (!shouldRedirectInputToComposer(event)) return null;
+  const text = event.clipboardData.getData("text/plain");
+  return text.length > 0 ? text : null;
 }
 
 function formatOutgoingPrompt(params: {
@@ -2976,6 +2995,24 @@ function ChatViewContent(props: ChatViewProps) {
     toggleRightPanel,
     composerRef,
   ]);
+
+  // Paste-to-focus: a paste with no editable target would be dropped, so route
+  // it to the composer like a typed key.
+  useEffect(() => {
+    if (!isWorkspacePanelActive) return;
+    const handler = (event: ClipboardEvent) => {
+      if (!activeThreadId || isCommandPaletteOpen()) return;
+      if (composerRef.current?.isModelPickerOpen()) return;
+      const text = pasteTextToFocusComposer(event);
+      if (text === null) return;
+      if (composerRef.current?.insertTextAtEnd(text)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("paste", handler, true);
+    return () => window.removeEventListener("paste", handler, true);
+  }, [isWorkspacePanelActive, activeThreadId, composerRef]);
 
   const onRevertToTurnCount = useCallback(
     async (turnCount: number) => {
