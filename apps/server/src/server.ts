@@ -12,6 +12,7 @@ import {
   serverEnvironmentHttpApiLayer,
   staticAndDevRouteLayer,
   browserApiCorsLayer,
+  httpCompressionLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -407,6 +408,7 @@ export const makeRoutesLayerForProduct = <
     Layer.provide(PreviewAutomationBroker.layer),
     Layer.provide(ServerSelfUpdate.layer),
     Layer.provide(browserApiCorsLayer),
+    Layer.provide(httpCompressionLayer),
   );
 
 export const makeRoutesLayer = makeRoutesLayerForProduct(CORE_SERVER_PRODUCT_ENTRY.composition);
