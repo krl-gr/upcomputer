@@ -649,6 +649,24 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     );
   }
 
+  it.effect("skips a disabled provider instance when picking the text generation fallback", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      // The Providers UI writes providerInstances only, so the legacy providers
+      // map decodes to defaults where codex is enabled and listed first.
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"providerInstances":{"codex":{"driver":"codex","enabled":false,"config":{}}}}',
+      );
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.equal(settings.textGenerationModelSelection.instanceId, "claudeAgent");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
