@@ -21,6 +21,7 @@ import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
 } from "@upcomputer/client-runtime/connection";
+import { wasBootstrapThreadDeleted } from "@upcomputer/client-runtime/errors";
 import { effectiveSnoozed } from "@upcomputer/client-runtime/state/thread-settled";
 import {
   scopedThreadKey,
@@ -3448,6 +3449,21 @@ function ChatViewContent(props: ChatViewProps) {
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
+        if (isLocalDraftThread && draftId && wasBootstrapThreadDeleted(error)) {
+          const draftStore = useComposerDraftStore.getState();
+          const failedDraftSession = draftStore.getDraftSession(draftId);
+          if (failedDraftSession?.threadId === threadIdForSend) {
+            draftStore.setLogicalProjectDraftThreadId(
+              failedDraftSession.logicalProjectKey,
+              scopeProjectRef(failedDraftSession.environmentId, failedDraftSession.projectId),
+              draftId,
+              {
+                threadId: newThreadId(),
+                createdAt: new Date().toISOString(),
+              },
+            );
+          }
+        }
         setThreadError(
           threadIdForSend,
           error instanceof Error ? error.message : "Failed to send message.",
