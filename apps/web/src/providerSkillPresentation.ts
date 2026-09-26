@@ -1,4 +1,4 @@
-import type { ServerProviderSkill } from "@upcomputer/contracts";
+import type { ServerProvider, ServerProviderSkill } from "@upcomputer/contracts";
 
 function titleCaseWords(value: string): string {
   const words: string[] = [];
@@ -50,4 +50,26 @@ export function formatProviderSkillInstallSource(
   }
 
   return null;
+}
+
+function resolveProviderWorkspaceSnapshot(
+  provider: ServerProvider,
+  cwd: string | null | undefined,
+) {
+  if (!cwd) return undefined;
+  return provider.workspaceSnapshots?.find((snapshot) => snapshot.cwd === cwd);
+}
+
+export function resolveProviderSkillsForCwd(
+  provider: ServerProvider,
+  cwd: string | null | undefined,
+): ServerProvider["skills"] {
+  return resolveProviderWorkspaceSnapshot(provider, cwd)?.skills ?? provider.skills;
+}
+
+export function resolveProviderSlashCommandsForCwd(
+  provider: ServerProvider,
+  cwd: string | null | undefined,
+): ServerProvider["slashCommands"] {
+  return resolveProviderWorkspaceSnapshot(provider, cwd)?.slashCommands ?? provider.slashCommands;
 }
