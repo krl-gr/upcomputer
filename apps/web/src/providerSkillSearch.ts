@@ -71,7 +71,11 @@ export function searchProviderSkills(
   query: string,
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
-  const enabledSkills = skills.filter((skill) => skill.enabled);
+  // A skill switched off in the provider's settings will not run, and one the
+  // provider reserves for the agent (Claude Code's `user-invocable: false`)
+  // rejects a user invocation. User-only skills stay: the server dispatches
+  // the pick in the provider's native form.
+  const enabledSkills = skills.filter((skill) => skill.enabled && skill.userInvocable !== false);
   const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\$+/ });
 
   if (!normalizedQuery) {
