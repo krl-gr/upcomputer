@@ -16855,6 +16855,7 @@ export type V2ThreadReadResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "other"
+  | "rateLimitExceeded"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamDisconnected: { readonly httpStatusCode?: number | null } }
@@ -16878,6 +16879,7 @@ export const V2ThreadReadResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "other",
+      "rateLimitExceeded",
     ]),
     Schema.Struct({
       httpConnectionFailed: Schema.Struct({
@@ -17208,6 +17210,7 @@ export type V2ThreadResumeResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "other"
+  | "rateLimitExceeded"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamDisconnected: { readonly httpStatusCode?: number | null } }
@@ -17231,6 +17234,7 @@ export const V2ThreadResumeResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "other",
+      "rateLimitExceeded",
     ]),
     Schema.Struct({
       httpConnectionFailed: Schema.Struct({
@@ -17486,6 +17490,7 @@ export type V2ThreadRollbackResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "other"
+  | "rateLimitExceeded"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamDisconnected: { readonly httpStatusCode?: number | null } }
@@ -17509,6 +17514,7 @@ export const V2ThreadRollbackResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "other",
+      "rateLimitExceeded",
     ]),
     Schema.Struct({
       httpConnectionFailed: Schema.Struct({
