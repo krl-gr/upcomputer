@@ -1735,6 +1735,69 @@ export const makeCodexSessionRuntime = (
       }),
     );
 
+    yield* client.handleServerRequest("item/permissions/requestApproval", (payload) =>
+      Effect.gen(function* () {
+        const requestId = ApprovalRequestId.make(
+          yield* randomUUIDv4("app-permission-approval-request"),
+        );
+        const turnId = TurnId.make(payload.turnId);
+        const itemId = ProviderItemId.make(payload.itemId);
+        const decision = yield* Deferred.make<ProviderApprovalDecision>();
+
+        yield* Ref.update(pendingApprovalsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            requestId,
+            jsonRpcId: payload.itemId,
+            requestKind: "permission",
+            turnId,
+            itemId,
+            decision,
+          });
+          return next;
+        });
+        yield* Ref.update(approvalCorrelationsRef, (current) => {
+          const next = new Map(current);
+          next.set(payload.itemId, {
+            requestId,
+            requestKind: "permission",
+            turnId,
+            itemId,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "item/permissions/requestApproval",
+          requestId,
+          requestKind: "permission",
+          ...(turnId ? { turnId } : {}),
+          ...(itemId ? { itemId } : {}),
+          payload,
+        });
+
+        const resolved = yield* Deferred.await(decision).pipe(
+          Effect.ensuring(
+            Ref.update(pendingApprovalsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+        // Approving grants the requested profile; denying answers with an
+        // empty grant so the app-server treats the permission as withheld.
+        const granted =
+          resolved === "accept" || resolved === "acceptForSession" || resolved === "acceptAlways";
+        return {
+          permissions: granted ? payload.permissions : {},
+          ...(granted && resolved !== "accept" ? { scope: "session" as const } : {}),
+        } satisfies EffectCodexSchema.PermissionsRequestApprovalResponse;
+      }),
+    );
+
     yield* client.handleServerRequest("item/tool/requestUserInput", (payload) =>
       Effect.gen(function* () {
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4("user-input-request"));
@@ -2079,6 +2142,10 @@ export const makeCodexSessionRuntime = (
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
           const session = yield* Ref.get(sessionRef);
+          // Stop settles parked approval and user-input prompts so their
+          // handlers answer the peer now instead of waiting for session close.
+          yield* settlePendingApprovals("cancel");
+          yield* settlePendingUserInputs({});
           const effectiveTurnId = turnId ?? session.activeTurnId;
           if (!effectiveTurnId) {
             return;

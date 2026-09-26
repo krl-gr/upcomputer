@@ -21,7 +21,9 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
           ? "File-change approval requested"
           : approval.requestKind === "mcp-elicitation"
             ? "App access approval requested"
-            : "Approval requested";
+            : approval.requestKind === "permission"
+              ? "App permission approval requested"
+              : "Approval requested";
   const approvalDetail = approval.detail?.trim();
   const detailLabel =
     approval.requestKind === "command"
@@ -30,7 +32,9 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         ? "File to read"
         : approval.requestKind === "mcp-elicitation"
           ? "App access request"
-          : "File change";
+          : approval.requestKind === "permission"
+            ? "Permission request"
+            : "File change";
 
   return (
     <div className="px-5 py-4 sm:px-6">
