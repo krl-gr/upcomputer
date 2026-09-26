@@ -24,6 +24,7 @@ import {
 } from "@upcomputer/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -285,6 +286,7 @@ describe("CheckpointReactor", () => {
     readonly checkpointLookupFailure?: (
       cwd: string,
     ) => VcsProcessTimeoutError | VcsProcessSpawnError | undefined;
+    readonly workspaceRefresh?: (cwd: string) => Effect.Effect<void>;
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
     readonly initializeGit?: boolean;
@@ -361,10 +363,10 @@ describe("CheckpointReactor", () => {
         ).pipe(Layer.provide(VcsDriverRegistry.layer)),
       ),
       Layer.provideMerge(
-        WorkspaceEntries.layer.pipe(
-          Layer.provide(WorkspacePaths.layer),
-          Layer.provideMerge(VcsDriverRegistry.layer),
-        ),
+        (options?.workspaceRefresh
+          ? Layer.mock(WorkspaceEntries.WorkspaceEntries)({ refresh: options.workspaceRefresh })
+          : WorkspaceEntries.layer
+        ).pipe(Layer.provide(WorkspacePaths.layer), Layer.provideMerge(VcsDriverRegistry.layer)),
       ),
       Layer.provideMerge(WorkspacePaths.layer),
       Layer.provideMerge(VcsProcess.layer),
@@ -688,6 +690,81 @@ describe("CheckpointReactor", () => {
           files: [],
         });
         expect(thread.activities.some((a) => a.kind === "checkpoint.capture.failed")).toBe(false);
+      }),
+  );
+
+  effectIt.effect(
+    "finalizes checkpoints while entry refresh is blocked and coalesces later scans",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const refreshCalls: string[] = [];
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            seedFilesystemCheckpoints: false,
+            workspaceRefresh: (cwd) =>
+              Effect.gen(function* () {
+                refreshCalls.push(cwd);
+                if (refreshCalls.length === 1) {
+                  yield* Deferred.succeed(entered, undefined);
+                  yield* Deferred.await(release);
+                }
+              }),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-refresh"),
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+          createdAt,
+        });
+        for (const index of [0, 1, 2]) {
+          const turnId = asTurnId(`turn-refresh-${index}`);
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make(`evt-refresh-start-${index}`),
+            provider: ProviderDriverKind.make("codex"),
+            createdAt,
+            threadId,
+            turnId,
+          });
+          yield* Effect.promise(() =>
+            waitForGitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, index)),
+          );
+          NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), `snapshot ${index}\n`);
+          harness.provider.emit({
+            type: "turn.completed",
+            eventId: EventId.make(`evt-refresh-complete-${index}`),
+            provider: ProviderDriverKind.make("codex"),
+            createdAt: "2026-01-01T00:00:01.000Z",
+            threadId,
+            turnId,
+            payload: { state: "completed" },
+          });
+          yield* Effect.promise(() =>
+            waitForThread(harness.readModel, (entry) => entry.checkpoints.length === index + 1),
+          );
+          if (index === 0) yield* Deferred.await(entered);
+        }
+        expect(refreshCalls).toEqual([harness.cwd]);
+        expect(
+          gitShowFileAtRef(harness.cwd, checkpointRefForThreadTurn(threadId, 3), "README.md"),
+        ).toBe("snapshot 2\n");
+        yield* Deferred.succeed(release, undefined);
+        yield* Effect.promise(harness.drain);
+        expect(refreshCalls).toEqual([harness.cwd, harness.cwd]);
       }),
   );
 
