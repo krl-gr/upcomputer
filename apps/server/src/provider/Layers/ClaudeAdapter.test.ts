@@ -3594,6 +3594,130 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  const syntheticTurnToolContext = (dispatchedMode: "default" | "plan" | undefined) => {
+    const calls: Array<ExperimentalDynamicToolInvocationContext> = [];
+    const dynamicToolRegistry = createExperimentalDynamicToolRegistry([
+      {
+        ownerId: "test.claude-tasks",
+        version: 1,
+        tools: [
+          {
+            spec: {
+              type: "function",
+              namespace: "upcomputer_tasks",
+              name: "task_get",
+              description: "Read a task.",
+              mutation: "read",
+              inputSchema: { type: "object", properties: {} },
+            },
+            execute: (_args, context) => {
+              calls.push(context);
+              return Effect.succeed({ isError: false, text: "task" });
+            },
+          },
+        ],
+      },
+    ]);
+    const harness = makeHarness({ dynamicToolRegistry });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
+        yield* observeUsageLimitEvents(adapter, harness.query);
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const server = harness.getLastCreateQueryInput()?.options.mcpServers?.upcomputer_tasks;
+      if (!server || server.type !== "sdk" || !("instance" in server)) {
+        return assert.fail("expected the dynamic tool MCP server");
+      }
+
+      if (dispatchedMode) {
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "Work on it",
+          interactionMode: dispatchedMode,
+          resolvedInteractionMode: BUILT_IN_INTERACTION_MODE_REGISTRY.resolveOrThrow(
+            dispatchedMode,
+            "claudeAgent",
+          ),
+          attachments: [],
+        });
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: "sdk-session-synthetic-tools",
+          uuid: "result-dispatched",
+        } as unknown as SDKMessage);
+        yield* drainSdkMessages;
+      }
+
+      // A background task finishing auto-starts a synthetic turn.
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-synthetic-tools",
+        uuid: "assistant-synthetic-tools",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-synthetic-tools",
+          content: [{ type: "text", text: "Background task finished" }],
+        },
+      } as unknown as SDKMessage);
+      yield* drainSdkMessages;
+
+      yield* Effect.tryPromise(async () => {
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "test", version: "1" });
+        await Promise.all([
+          server.instance.connect(serverTransport),
+          client.connect(clientTransport),
+        ]);
+        await client.callTool({ name: "task_get", arguments: {} });
+        await client.close();
+      });
+      runtimeEventsFiber.interruptUnsafe();
+
+      const turnIds = runtimeEvents.flatMap((event) =>
+        event.type === "turn.started" ? [event.turnId] : [],
+      );
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0]?.turnId, turnIds.at(-1));
+      assert.equal(new Set(turnIds).size, turnIds.length);
+      return calls[0]!;
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  };
+
+  it.effect("gives a synthetic turn the tool policy of the last dispatched turn", () =>
+    Effect.gen(function* () {
+      const context = yield* syntheticTurnToolContext("default");
+      assert.equal(context.mutationPolicy, "allow");
+      assert.equal(context.interactionMode, "default");
+      assert.equal(context.runtimeMode, "full-access");
+    }),
+  );
+
+  it.effect("keeps a synthetic turn read-only without a dispatched turn", () =>
+    Effect.gen(function* () {
+      const context = yield* syntheticTurnToolContext(undefined);
+      assert.equal(context.mutationPolicy, "deny");
+      assert.equal(context.interactionMode, undefined);
+    }),
+  );
+
+  it.effect("keeps a synthetic turn read-only after a read-only dispatched turn", () =>
+    Effect.gen(function* () {
+      const context = yield* syntheticTurnToolContext("plan");
+      assert.equal(context.mutationPolicy, "deny");
+      assert.equal(context.interactionMode, "plan");
+    }),
+  );
+
   it.effect("drops an unusable Claude reset time, not the row or the session", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

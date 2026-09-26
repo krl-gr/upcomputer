@@ -277,6 +277,8 @@ interface ClaudeSessionContext {
   lastThreadStartedId: string | undefined;
   /** Limits already announced for the running turn, keyed `window:resetsAt`. */
   announcedUsageLimits: { turnId: string; keys: Set<string> } | undefined;
+  /** Tool context of the latest sendTurn-started turn; reused by synthetic turns. */
+  lastDispatchedDynamicToolContext: ExperimentalDynamicToolInvocationContext | undefined;
   stopped: boolean;
 }
 
@@ -2649,13 +2651,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.turnState = {
         turnId,
         startedAt,
+        // Provider-started turns continue the run, so they keep the policy of
+        // the latest dispatched turn; without one they stay read-only.
         dynamicToolContext: {
           source: "provider",
           mutationPolicy: "deny",
           threadId: context.session.threadId,
-          turnId,
           providerInstanceId: boundInstanceId,
           runtimeMode: context.session.runtimeMode,
+          ...context.lastDispatchedDynamicToolContext,
+          turnId,
         },
         synthetic: true,
         items: [],
@@ -3997,6 +4002,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
         announcedUsageLimits: undefined,
+        lastDispatchedDynamicToolContext: undefined,
         stopped: false,
       };
       yield* Ref.set(contextRef, context);
@@ -4153,6 +4159,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const updatedAt = yield* nowIso;
       context.turnState = turnState;
+      context.lastDispatchedDynamicToolContext = turnState.dynamicToolContext;
       context.session = {
         ...context.session,
         status: "running",
