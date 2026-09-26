@@ -97,6 +97,28 @@ it("surfaces Astra only when advertised and preserves future power choices", () 
   );
 });
 
+it("defaults Astra reasoning to medium regardless of the catalog default", () => {
+  const capabilities = mapCodexModelCapabilities({
+    additionalSpeedTiers: [],
+    defaultReasoningEffort: "high",
+    defaultServiceTier: null,
+    description: "Astra",
+    displayName: "GPT-6 Astra",
+    hidden: false,
+    id: "openai.gpt-6-astra",
+    isDefault: false,
+    model: "openai.gpt-6-astra",
+    serviceTiers: [],
+    supportedReasoningEfforts: [
+      { description: "Medium", reasoningEffort: "medium" },
+      { description: "High", reasoningEffort: "high" },
+    ],
+  });
+
+  const reasoning = capabilities.optionDescriptors?.[0];
+  assert.equal(reasoning?.type === "select" ? reasoning.currentValue : undefined, "medium");
+});
+
 it("uses standard routing when the catalog has no default service tier", () => {
   const capabilities = mapCodexModelCapabilities({
     additionalSpeedTiers: ["fast"],
@@ -149,6 +171,15 @@ it("marks the most preferred available model as default", () => {
       { slug: "gpt-5.4", isDefault: undefined },
     ],
   );
+});
+
+it("prefers astra over sol when both are available", () => {
+  const models = applyPreferredCodexDefaultModel([
+    { slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", isCustom: false, capabilities: null },
+    { slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false, capabilities: null },
+  ]);
+
+  assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-6-astra");
 });
 
 it("prefers sol over terra when both are available", () => {
