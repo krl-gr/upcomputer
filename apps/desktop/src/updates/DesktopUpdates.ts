@@ -596,6 +596,7 @@ export const make = Effect.gen(function* () {
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
             info.releaseNotes,
             info.version,
+            state.channel,
           );
           yield* setState(
             reduceDesktopUpdateStateOnUpdateAvailable(
