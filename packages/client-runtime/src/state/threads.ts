@@ -224,6 +224,44 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
   });
 
+  // Replays and streaming bursts arrive in chunks. Reduce a chunk of plain
+  // events into one thread update so subscribers render once per chunk.
+  const applyItems = Effect.fn("EnvironmentThreadState.applyItems")(function* (
+    items: ReadonlyArray<OrchestrationThreadStreamItem>,
+  ) {
+    const current = yield* SubscriptionRef.get(state);
+    if (
+      Option.isNone(current.data) ||
+      items.some(
+        (item) =>
+          item.kind === "snapshot" ||
+          (item.kind === "event" &&
+            (item.event.type === "thread.reverted" || item.event.type === "thread.deleted")),
+      )
+    ) {
+      for (const item of items) {
+        yield* applyItem(item);
+      }
+      return;
+    }
+
+    let thread = current.data.value;
+    let sequence = yield* SubscriptionRef.get(lastSequence);
+    let synchronized = false;
+    for (const item of items) {
+      if (item.kind === "synchronized") {
+        synchronized = true;
+      } else if (item.kind === "event" && item.event.sequence > sequence) {
+        sequence = item.event.sequence;
+        const result = applyThreadDetailEvent(thread, item.event);
+        if (result.kind === "updated") thread = result.thread;
+      }
+    }
+    yield* SubscriptionRef.set(lastSequence, sequence);
+    if (thread !== current.data.value) yield* setThread(thread);
+    if (synchronized) yield* applyItem({ kind: "synchronized" });
+  });
+
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
@@ -307,7 +345,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         retryExpectedFailureAfter: "250 millis",
         resubscribe: foregroundResubscriptions,
       },
-    ).pipe(Stream.runForEach(applyItem)),
+    ).pipe(
+      Stream.runForEachArray((items) =>
+        items.length === 1 ? applyItem(items[0]!) : applyItems(items),
+      ),
+    ),
   );
 
   yield* Effect.addFinalizer(() =>

@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   EventId,
+  MessageId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ProviderInstanceId,
@@ -854,5 +855,74 @@ describe("EnvironmentThreads", () => {
         );
         expect(final.status).toBe("cached");
       }),
+  );
+  it.effect.each([1, 16, 500])("publishes each replay batch once (batch size: %i)", (batchSize) =>
+    Effect.gen(function* () {
+      const stream = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        completionMarker: true,
+        stream: Stream.fromQueue(stream),
+      });
+      yield* awaitSubscriptionCount(harness, 1);
+      const published = new Set<unknown>();
+      const awaitRecorded = (predicate: (state: EnvironmentThreadState) => boolean) =>
+        Queue.take(harness.observed).pipe(
+          Effect.tap((state) =>
+            Effect.sync(() => {
+              const messages = Option.getOrNull(state.data)?.messages;
+              if (messages !== undefined && messages !== BASE_THREAD.messages) {
+                published.add(messages);
+              }
+            }),
+          ),
+          Effect.repeat({ until: predicate }),
+        );
+      const events: OrchestrationThreadStreamItem[] = Array.from({ length: 500 }, (_, index) => ({
+        kind: "event",
+        event: {
+          type: "thread.message-sent",
+          sequence: CACHED_SNAPSHOT_SEQUENCE + 1 + index,
+          eventId: EventId.make(`replay-${index}`),
+          aggregateKind: "thread",
+          aggregateId: THREAD_ID,
+          occurredAt: BASE_THREAD.createdAt,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId: THREAD_ID,
+            messageId: MessageId.make("replayed-message"),
+            role: "assistant",
+            text: `${index},`,
+            turnId: null,
+            streaming: true,
+            createdAt: BASE_THREAD.createdAt,
+            updatedAt: BASE_THREAD.createdAt,
+          },
+        },
+      }));
+      for (let offset = 0; offset < events.length; offset += batchSize) {
+        yield* Queue.offerAll(stream, events.slice(offset, offset + batchSize));
+        const last = Math.min(offset + batchSize, events.length) - 1;
+        yield* awaitRecorded(
+          (state) => Option.getOrNull(state.data)?.messages[0]?.text.endsWith(`${last},`) === true,
+        );
+      }
+      yield* Queue.offerAll(stream, [events[499]!, events[0]!]);
+      yield* Queue.offer(stream, synchronized());
+      const live = yield* awaitRecorded((state) => state.status === "live");
+      expect(Option.getOrThrow(live.data).messages[0]?.text).toBe(
+        Array.from({ length: 500 }, (_, index) => `${index},`).join(""),
+      );
+      expect(published.size).toBe(Math.ceil(500 / batchSize));
+
+      yield* harness.replaceSession;
+      yield* awaitSubscriptionCount(harness, 2);
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(
+        CACHED_SNAPSHOT_SEQUENCE + 500,
+      );
+    }),
   );
 });
