@@ -80,7 +80,7 @@ import type {
   ExperimentalDynamicToolInvocationContext,
 } from "../../product/DynamicToolRegistry.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import {
@@ -152,6 +152,8 @@ interface ClaudeTurnState {
   latestAssistantUsage: unknown | undefined;
   compactedSinceLatestAssistantUsage: boolean;
   nextSyntheticAssistantBlockIndex: number;
+  authenticationFailureMessage: string | undefined;
+  rejectedRateLimitTypes: Set<string>;
 }
 
 interface AssistantTextBlockState {
@@ -359,11 +361,19 @@ function resultErrorsText(result: SDKResultMessage): string {
  * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
  * so they must never become the error banner.
  */
-function resultUserFacingError(result: SDKResultMessage): string | undefined {
-  if (result.subtype === "success" || !Array.isArray(result.errors)) {
+function resultUserFacingError(
+  result: SDKResultMessage,
+  options?: { readonly includeSuccess?: boolean },
+): string | undefined {
+  // Success results carry no typed error list, but a success-tagged failure may still list one.
+  if (result.subtype === "success" && options?.includeSuccess !== true) {
     return undefined;
   }
-  return result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
+  const errors: ReadonlyArray<unknown> =
+    "errors" in result && Array.isArray(result.errors) ? result.errors : [];
+  return errors.find(
+    (error): error is string => typeof error === "string" && !error.startsWith("[ede_diagnostic]"),
+  );
 }
 
 const CLAUDE_USAGE_LIMIT_WINDOWS = {
@@ -2619,6 +2629,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationFailureMessage: undefined,
+        rejectedRateLimitTypes: new Set(),
       };
       context.session = {
         ...context.session,
@@ -2677,6 +2689,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      // The CLI can report authentication failure before ending the turn as a
+      // generic success-tagged error, so retain that evidence for the result.
+      // Subagent-owned snapshots must not poison the parent turn.
+      if (message.error === "authentication_failed" && message.parent_tool_use_id === null) {
+        context.turnState.authenticationFailureMessage = claudeSignedOutMessage({
+          configDir: claudeEnvironment.CLAUDE_CONFIG_DIR,
+          cwd: path.resolve(context.session.cwd ?? "."),
+        });
+      }
       context.turnState.items.push(message.message);
       if (
         normalizeClaudeActiveTokenUsage(
@@ -2703,8 +2724,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    const status = turnStatusFromResult(message);
-    const errorMessage = resultUserFacingError(message);
+    const turn = context.turnState;
+    const failureHint =
+      turn?.authenticationFailureMessage ??
+      (turn && turn.rejectedRateLimitTypes.size > 0
+        ? "Claude usage limit reached. Send the message again once the limit resets."
+        : undefined);
+    // A success result flagged is_error only fails when the turn already
+    // reported its cause (expired login, rejected usage window).
+    const successTaggedFailure =
+      message.subtype === "success" && message.is_error === true && failureHint !== undefined;
+    const status = successTaggedFailure ? "failed" : turnStatusFromResult(message);
+    const errorMessage = successTaggedFailure
+      ? (resultUserFacingError(message, { includeSuccess: true }) ?? failureHint)
+      : resultUserFacingError(message);
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
@@ -3086,14 +3119,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // account spending provisioned overage keeps running despite the reject,
       // and between turns there is no turn to report as paused.
       const rateLimitInfo = message.rate_limit_info;
-      if (
-        rateLimitInfo?.status === "rejected" &&
-        rateLimitInfo.overageStatus !== "allowed" &&
-        rateLimitInfo.overageStatus !== "allowed_warning" &&
-        rateLimitInfo.isUsingOverage !== true &&
-        rateLimitInfo.overageInUse !== true &&
-        context.turnState !== undefined
-      ) {
+      if (!rateLimitInfo) return;
+      const overageAllowed =
+        rateLimitInfo.overageStatus === "allowed" ||
+        rateLimitInfo.overageStatus === "allowed_warning" ||
+        rateLimitInfo.isUsingOverage === true ||
+        rateLimitInfo.overageInUse === true;
+      const blocked = rateLimitInfo.status === "rejected" && !overageAllowed;
+      const limitType = rateLimitInfo.rateLimitType ?? "unknown";
+      const limitKey = `${limitType}:${rateLimitInfo.resetsAt ?? "unknown"}`;
+      if (context.turnState) {
+        // Current blocking evidence is independent of whether its warning has
+        // already been shown. A recovery can omit or advance the reset time;
+        // its window type remains stable without clearing another window.
+        if (blocked) context.turnState.rejectedRateLimitTypes.add(limitType);
+        else if (
+          rateLimitInfo.status === "allowed" ||
+          rateLimitInfo.status === "allowed_warning" ||
+          overageAllowed
+        ) {
+          context.turnState.rejectedRateLimitTypes.delete(limitType);
+        }
+      }
+      if (blocked && context.turnState !== undefined) {
         // Tracked per turn as a set of limit identities, not as the rendered
         // row: a parked window re-fires while the remaining wait shrinks, and a
         // turn can park on more than one window, so a single slot would let an
@@ -3103,7 +3151,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         if (context.announcedUsageLimits?.turnId !== turnId) {
           context.announcedUsageLimits = { turnId, keys: new Set() };
         }
-        const limitKey = `${rateLimitInfo.rateLimitType ?? "unknown"}:${rateLimitInfo.resetsAt ?? "unknown"}`;
         if (!context.announcedUsageLimits.keys.has(limitKey)) {
           context.announcedUsageLimits.keys.add(limitKey);
           const notice = describeClaudeUsageLimit(rateLimitInfo, Date.parse(stamp.createdAt));
@@ -4035,6 +4082,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationFailureMessage: undefined,
+        rejectedRateLimitTypes: new Set(),
       };
 
       const updatedAt = yield* nowIso;

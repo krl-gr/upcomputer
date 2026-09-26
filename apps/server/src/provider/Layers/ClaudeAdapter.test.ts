@@ -170,6 +170,7 @@ function makeHarness(config?: {
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
   readonly dynamicToolRegistry?: ExperimentalDynamicToolRegistry<never, never>;
+  readonly environment?: ClaudeAdapterLiveOptions["environment"];
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -180,6 +181,7 @@ function makeHarness(config?: {
     | undefined;
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
+    ...(config?.environment ? { environment: config.environment } : {}),
     ...(config?.modelCatalog ? { modelCatalog: config.modelCatalog } : {}),
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
     ...(config?.dynamicToolRegistry ? { dynamicToolRegistry: config.dynamicToolRegistry } : {}),
@@ -2720,6 +2722,309 @@ describe("ClaudeAdapterLive", () => {
       });
       return { runtimeEvents, runtimeEventsFiber, drainSdkMessages };
     });
+
+  const encodeJsonString = Schema.encodeSync(Schema.UnknownFromJsonString);
+
+  const AUTH_FAILURE_ASSISTANT = {
+    type: "assistant",
+    session_id: "sdk-session-auth",
+    uuid: "assistant-auth",
+    parent_tool_use_id: null,
+    error: "authentication_failed",
+    is_api_error_message: true,
+    message: {
+      id: "assistant-message-auth",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "Not logged in · Please run /login" }],
+    },
+  } as unknown as SDKMessage;
+
+  // The pinned SDK has no "api_error" terminal reason: the CLI ends these
+  // turns with a success result flagged is_error.
+  const SUCCESS_TAGGED_FAILURE = { subtype: "success", is_error: true, errors: [] };
+
+  const runTurnToCompletion = (
+    harness: ReturnType<typeof makeHarness>,
+    emit: Effect.Effect<void>,
+    cwd?: string,
+  ) =>
+    Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        ...(cwd ? { cwd } : {}),
+      });
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "hello", attachments: [] });
+      yield* emit;
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const completed = events.at(-1);
+      assert(completed?.type === "turn.completed");
+      return { events, payload: completed.payload };
+    });
+
+  it.effect.each([
+    {
+      name: "an is_error success",
+      result: SUCCESS_TAGGED_FAILURE,
+      state: "failed",
+      errorMessage: /claude auth login/,
+    },
+    // Every other outcome names its own cause, and the latch must not speak over it.
+    {
+      name: "a listed error on an is_error success",
+      result: { subtype: "success", is_error: true, errors: ["Tool execution failed: EACCES"] },
+      state: "failed",
+      errorMessage: /EACCES/,
+    },
+    {
+      name: "a listed tool failure",
+      result: {
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["Tool execution failed: EACCES"],
+      },
+      state: "failed",
+      errorMessage: /EACCES/,
+    },
+    {
+      name: "a user interrupt",
+      result: {
+        subtype: "error_during_execution",
+        is_error: true,
+        terminal_reason: "aborted_tools",
+        errors: [],
+      },
+      state: "interrupted",
+      errorMessage: undefined,
+    },
+    {
+      name: "a cancellation",
+      result: { subtype: "error_during_execution", is_error: true, errors: ["cancelled"] },
+      state: "cancelled",
+      errorMessage: /cancelled/,
+    },
+  ])(
+    "reports the real cause when an expired login is followed by $name",
+    ({ result, state, errorMessage }) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const { payload } = yield* runTurnToCompletion(
+          harness,
+          Effect.sync(() => {
+            harness.query.emit(AUTH_FAILURE_ASSISTANT);
+            harness.query.emit({
+              type: "result",
+              ...result,
+              session_id: "sdk-session-auth",
+              uuid: "result-auth",
+            } as unknown as SDKMessage);
+          }),
+        );
+        assert.equal(payload.state, state);
+        if (errorMessage === undefined) {
+          assert.equal(payload.errorMessage, undefined);
+        } else {
+          assert.match(payload.errorMessage ?? "", errorMessage);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("keeps a subagent's expired login out of the parent turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const { payload } = yield* runTurnToCompletion(
+        harness,
+        Effect.sync(() => {
+          harness.query.emit({
+            ...(AUTH_FAILURE_ASSISTANT as object),
+            parent_tool_use_id: "synthetic-parent-tool",
+          } as unknown as SDKMessage);
+          harness.query.emit({
+            type: "result",
+            ...SUCCESS_TAGGED_FAILURE,
+            session_id: "sdk-session-auth",
+            uuid: "result-auth",
+          } as unknown as SDKMessage);
+        }),
+      );
+      assert.equal(payload.state, "completed");
+      assert.equal(payload.errorMessage, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect.each([
+    { evidence: "rejected", state: "failed", errorMessage: /usage limit reached/ },
+    { evidence: "two-windows-one-recovered", state: "failed", errorMessage: /usage limit reached/ },
+    { evidence: "rejected-again", state: "failed", errorMessage: /usage limit reached/ },
+    { evidence: "recovered", state: "completed", errorMessage: undefined },
+    { evidence: "recovered-missing-reset", state: "completed", errorMessage: undefined },
+    { evidence: "recovered-next-reset", state: "completed", errorMessage: undefined },
+    { evidence: "recovered-warning", state: "completed", errorMessage: undefined },
+    { evidence: "two-windows-recovered", state: "completed", errorMessage: undefined },
+  ])(
+    "tracks the usage limit a turn parked on after $evidence",
+    ({ evidence, state, errorMessage }) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const nowMs = yield* Clock.currentTimeMillis;
+        const resetsAt = Math.floor(nowMs / 1000) + 7200;
+        const emitLimit = (uuid: string, info: Record<string, unknown>) =>
+          harness.query.emit({
+            type: "rate_limit_event",
+            rate_limit_info: info,
+            session_id: "sdk-audit",
+            uuid,
+          } as unknown as SDKMessage);
+        const { events, payload } = yield* runTurnToCompletion(
+          harness,
+          Effect.sync(() => {
+            emitLimit("limit-rejected", {
+              status: "rejected",
+              rateLimitType: "five_hour",
+              resetsAt,
+            });
+            if (evidence.startsWith("two-windows")) {
+              emitLimit("weekly-rejected", {
+                status: "rejected",
+                rateLimitType: "seven_day",
+                resetsAt,
+              });
+            }
+            if (evidence !== "rejected") {
+              emitLimit("limit-allowed", {
+                status: evidence === "recovered-warning" ? "allowed_warning" : "allowed",
+                rateLimitType: "five_hour",
+                ...(evidence === "recovered-missing-reset"
+                  ? {}
+                  : {
+                      resetsAt: evidence === "recovered-next-reset" ? resetsAt + 18000 : resetsAt,
+                    }),
+              });
+            }
+            if (evidence === "two-windows-recovered" || evidence === "rejected-again") {
+              emitLimit("final-quota-update", {
+                status: evidence === "rejected-again" ? "rejected" : "allowed",
+                rateLimitType: evidence === "rejected-again" ? "five_hour" : "seven_day",
+                resetsAt,
+              });
+            }
+            harness.query.emit({
+              type: "result",
+              ...SUCCESS_TAGGED_FAILURE,
+              session_id: "sdk-audit",
+              uuid: "audit-result",
+            } as unknown as SDKMessage);
+          }),
+        );
+        assert.equal(payload.state, state);
+        if (errorMessage === undefined) {
+          assert.equal(payload.errorMessage, undefined);
+        } else {
+          assert.equal(
+            payload.errorMessage,
+            "Claude usage limit reached. Send the message again once the limit resets.",
+          );
+        }
+        if (evidence === "rejected-again") {
+          assert.equal(events.filter((event) => event.type === "runtime.warning").length, 1);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("keeps a successful turn successful after a recovered usage limit", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const nowMs = yield* Clock.currentTimeMillis;
+      const resetsAt = Math.floor(nowMs / 1000) + 7200;
+      const { payload } = yield* runTurnToCompletion(
+        harness,
+        Effect.sync(() => {
+          harness.query.emit({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", rateLimitType: "five_hour", resetsAt },
+            session_id: "sdk-audit",
+            uuid: "limit-rejected",
+          } as unknown as SDKMessage);
+          harness.query.emit({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            errors: [],
+            session_id: "sdk-audit",
+            uuid: "audit-result",
+          } as unknown as SDKMessage);
+        }),
+      );
+      assert.equal(payload.state, "completed");
+      assert.equal(payload.errorMessage, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect.each([
+    { homePath: "./synthetic config's $literal", inherited: undefined },
+    { homePath: "", inherited: ".synthetic config's $literal" },
+    { homePath: "", inherited: " /synthetic/path with edge spaces " },
+  ])(
+    "reports the same Claude config and cwd used by the spawned query ($homePath, $inherited)",
+    ({ homePath, inherited }) => {
+      const harness = makeHarness({
+        claudeConfig: { homePath },
+        environment: { ...process.env, CLAUDE_CONFIG_DIR: inherited },
+      });
+      return Effect.gen(function* () {
+        const cwd = NodePath.resolve("/tmp/synthetic-audit-project");
+        const { payload } = yield* runTurnToCompletion(
+          harness,
+          Effect.sync(() => {
+            harness.query.emit(AUTH_FAILURE_ASSISTANT);
+            harness.query.emit({
+              type: "result",
+              ...SUCCESS_TAGGED_FAILURE,
+              session_id: "sdk-session-auth",
+              uuid: "result-auth",
+            } as unknown as SDKMessage);
+          }),
+          cwd,
+        );
+        const actualQuery = harness.getLastCreateQueryInput();
+        assert(actualQuery !== undefined);
+        const expectedConfigDir = homePath ? NodePath.resolve(homePath) : inherited;
+        assert.equal(actualQuery.options.env?.CLAUDE_CONFIG_DIR, expectedConfigDir);
+        assert.equal(actualQuery.options.cwd, cwd);
+        assert(
+          payload.errorMessage?.includes(
+            `CLAUDE_CONFIG_DIR set to ${encodeJsonString(expectedConfigDir)}`,
+          ),
+        );
+        assert(payload.errorMessage?.includes(`from ${encodeJsonString(cwd)}`));
+        assert(!payload.errorMessage?.includes("CLAUDE_CONFIG_DIR="));
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("surfaces a rejected Claude usage limit once per turn", () => {
     const harness = makeHarness();
