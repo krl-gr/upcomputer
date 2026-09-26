@@ -39,7 +39,7 @@ const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
   agent: "Agent",
   effort: "Effort",
   reasoningEffort: "Reasoning effort",
-  variant: "Variant",
+  variant: "Reasoning",
 };
 
 function savedOptionLabel(id: string): string {
