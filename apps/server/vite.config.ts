@@ -32,7 +32,7 @@ export default mergeConfig(
       },
     },
     pack: {
-      entry: ["src/bin.ts"],
+      entry: ["src/bin.ts", "src/claudeHistoryWorker.ts"],
       outDir: "dist",
       sourcemap: true,
       clean: true,

@@ -31,6 +31,8 @@ export interface ProviderAdapterCapabilities {
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /** False when native conversation history cannot be rewound. */
+  readonly supportsConversationRollback?: boolean;
 }
 
 export interface ProviderAdapterSendTurnInput extends ProviderSendTurnInput {

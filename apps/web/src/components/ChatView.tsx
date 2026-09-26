@@ -8,6 +8,7 @@ import {
   type ProjectId,
   type ProviderApprovalDecision,
   ProviderInstanceId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ServerProvider,
   type ScopedThreadRef,
   type ThreadId,
@@ -146,7 +147,7 @@ import {
   TriangleAlertIcon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { newMessageId, newThreadId } from "~/lib/utils";
@@ -226,14 +227,17 @@ import {
   type LocalDispatchSnapshot,
   cloneComposerImageForRetry,
   deriveLockedProvider,
+  prepareRevertedMessageAttachments,
   readFileAsDataUrl,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  rewindComposerPrompt,
   threadHasStarted,
   waitForServerThreadShell,
   waitForStartedServerThread,
+  waitForRevertedMessage,
 } from "./ChatView.logic";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
@@ -569,6 +573,13 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  const currentRouteThreadKeyRef = useRef<string | null>(routeThreadKey);
+  useLayoutEffect(() => {
+    currentRouteThreadKeyRef.current = routeThreadKey;
+    return () => {
+      currentRouteThreadKeyRef.current = null;
+    };
+  }, [routeThreadKey]);
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const forkThreadContext = useAtomCommand(threadEnvironment.forkContext, {
     reportFailure: false,
@@ -675,7 +686,9 @@ function ChatViewContent(props: ChatViewProps) {
     Record<string, LocalThreadErrorEntry>
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
-  const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const isRevertingCheckpoint = useComposerDraftStore((store) =>
+    store.rewindingThreadKeys.has(routeThreadKey),
+  );
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -2486,10 +2499,6 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   useEffect(() => {
-    setIsRevertingCheckpoint(false);
-  }, [activeThread?.id]);
-
-  useEffect(() => {
     if (!activeThread?.id) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
@@ -2915,9 +2924,11 @@ function ChatViewContent(props: ChatViewProps) {
   }, [isWorkspacePanelActive, activeThreadId, composerRef]);
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, messageId: MessageId) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      const message = displayServerMessages.find((message) => message.id === messageId);
+      if (!message || message.role !== "user") return;
 
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
@@ -2932,50 +2943,105 @@ function ChatViewContent(props: ChatViewProps) {
       }
       const confirmed = await localApi.dialogs.confirm(
         [
-          `Revert this thread to checkpoint ${turnCount}?`,
-          "This will discard newer messages and turn diffs in this thread.",
-          "This action cannot be undone.",
+          "Edit from here?",
+          "Rewind files and chat to before this message.",
+          "Your prompt and images return to the composer.",
         ].join("\n"),
       );
       if (!confirmed) {
         return;
       }
 
-      setIsRevertingCheckpoint(true);
+      useComposerDraftStore.setState((store) => ({
+        rewindingThreadKeys: new Set(store.rewindingThreadKeys).add(routeThreadKey),
+      }));
       setThreadError(activeThread.id, null);
-      const result = await revertThreadCheckpoint({
-        environmentId,
-        input: {
-          threadId: activeThread.id,
-          turnCount,
-        },
-      });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+      try {
+        const files = await prepareRevertedMessageAttachments(message);
+        const store = useComposerDraftStore.getState();
+        const draft = store.getComposerDraft(composerDraftTarget);
+        if ((draft?.images.length ?? 0) + files.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+          throw new Error("Make room for this message's images in the composer before rewinding.");
+        }
+        await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
+          const result = await revertThreadCheckpoint({
+            environmentId,
+            input: { threadId: activeThread.id, turnCount },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        });
+        const currentPrompt = store.getComposerDraft(composerDraftTarget)?.prompt ?? "";
+        const restoredPrompt = rewindComposerPrompt(message.text);
+        const nextPrompt =
+          restoredPrompt.length === 0
+            ? currentPrompt
+            : currentPrompt.length > 0
+              ? `${currentPrompt}\n\n${restoredPrompt}`
+              : restoredPrompt;
+        store.setPrompt(composerDraftTarget, nextPrompt);
+        store.addImages(
+          composerDraftTarget,
+          files.map((file) => ({
+            type: "image",
+            id: randomUUID(),
+            name: file.name,
+            mimeType: file.type,
+            sizeBytes: file.size,
+            previewUrl: URL.createObjectURL(file),
+            file,
+          })),
+          { allowDuplicates: true },
+        );
+        if (currentRouteThreadKeyRef.current === routeThreadKey) {
+          promptRef.current = nextPrompt;
+          composerRef.current?.resetCursorState({ prompt: nextPrompt, cursor: nextPrompt.length });
+          requestAnimationFrame(() => {
+            if (currentRouteThreadKeyRef.current === routeThreadKey)
+              composerRef.current?.focusAtEnd();
+          });
+        }
+      } catch (error) {
         setThreadError(
           activeThread.id,
           error instanceof Error ? error.message : "Failed to revert thread state.",
         );
+      } finally {
+        useComposerDraftStore.setState((store) => {
+          const remaining = new Set(store.rewindingThreadKeys);
+          remaining.delete(routeThreadKey);
+          return { rewindingThreadKeys: remaining };
+        });
       }
-      setIsRevertingCheckpoint(false);
     },
     [
       activeThread,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
+      composerDraftTarget,
+      composerRef,
+      displayServerMessages,
       environmentId,
       isConnecting,
       isRevertingCheckpoint,
       isSendBusy,
       phase,
       revertThreadCheckpoint,
+      routeThreadKey,
+      routeThreadRef,
       setThreadError,
     ],
   );
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
-    if (!activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (
+      !activeThread ||
+      isSendBusy ||
+      isConnecting ||
+      isRevertingCheckpoint ||
+      sendInFlightRef.current
+    )
+      return;
     if (activeEnvironmentUnavailable) {
       toastManager.add(
         stackedThreadToast({
@@ -4039,7 +4105,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (typeof targetTurnCount !== "number") {
       return;
     }
-    void onRevertToTurnCountRef.current(targetTurnCount);
+    void onRevertToTurnCountRef.current(targetTurnCount, messageId);
   }, []);
   const onForkAssistantMessage = useCallback(
     async (sourceMessageId: MessageId) => {
@@ -4334,6 +4400,7 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
             <div
               ref={setComposerOverlayElement}
+              inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState

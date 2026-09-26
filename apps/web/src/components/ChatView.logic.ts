@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type MessageId,
   isProviderDriverKind,
   type ModelSelection,
   type ProviderDriverKind,
@@ -10,6 +11,8 @@ import {
 } from "@upcomputer/contracts";
 import { type ChatMessage, type SessionPhase, type Thread } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import { extractTrailingElementContexts } from "../lib/elementContext";
+import { extractTrailingPreviewAnnotation } from "../lib/previewAnnotation";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails, environmentThreadShells } from "../state/threads";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
@@ -426,6 +429,114 @@ export async function waitForStartedServerThread(
     timeoutId = globalThis.setTimeout(() => {
       finish(false);
     }, timeoutMs);
+  });
+}
+
+/** Reduce a sent message to the text the user typed, without send-time context blocks. */
+export function rewindComposerPrompt(messageText: string): string {
+  let prompt = messageText.trim();
+  while (prompt.length > 0) {
+    const previewAnnotation = extractTrailingPreviewAnnotation(prompt);
+    if (previewAnnotation.annotation) {
+      prompt = previewAnnotation.promptText.trim();
+      continue;
+    }
+    const elementContexts = extractTrailingElementContexts(prompt);
+    if (elementContexts.contextCount > 0) {
+      prompt = elementContexts.promptText.trim();
+      continue;
+    }
+    break;
+  }
+  return prompt;
+}
+
+// Copies attachment bytes before the rewind removes the message and its preview URLs.
+export async function prepareRevertedMessageAttachments(message: ChatMessage): Promise<File[]> {
+  return Promise.all(
+    (message.attachments ?? []).map(async (attachment) => {
+      if (!attachment.previewUrl) {
+        throw new Error(`Could not restore attachment: ${attachment.name}`);
+      }
+      const response = await fetch(attachment.previewUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) throw new Error(`Could not restore attachment: ${attachment.name}`);
+      return new File([await response.blob()], attachment.name, { type: attachment.mimeType });
+    }),
+  );
+}
+
+export async function waitForRevertedMessage(
+  threadRef: ScopedThreadRef,
+  messageId: MessageId,
+  turnCount: number,
+  revert: () => Promise<void>,
+  timeoutMs = 120_000,
+): Promise<void> {
+  const threadAtom = environmentThreadDetails.detailAtom(threadRef);
+  const initial = appAtomRegistry.get(threadAtom);
+  if (!initial?.messages.some((message) => message.id === messageId)) {
+    throw new Error("The message to rewind is no longer available.");
+  }
+  const previousFailures = new Set(
+    initial.activities
+      .filter((activity) => activity.kind === "checkpoint.revert.failed")
+      .map((activity) => activity.id),
+  );
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let accepted = false;
+    let unsubscribe = () => {};
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== undefined) globalThis.clearTimeout(timeout);
+      unsubscribe();
+      if (error !== undefined) reject(error);
+      else resolve();
+    };
+    const inspect = () => {
+      const thread = appAtomRegistry.get(threadAtom);
+      if (!thread) return;
+      const failure = thread.activities.findLast(
+        (activity) =>
+          activity.kind === "checkpoint.revert.failed" && !previousFailures.has(activity.id),
+      );
+      if (failure) {
+        const payload = failure.payload;
+        finish(
+          new Error(
+            typeof payload === "object" &&
+              payload !== null &&
+              "detail" in payload &&
+              typeof payload.detail === "string"
+              ? payload.detail
+              : failure.summary,
+          ),
+        );
+      } else if (
+        accepted &&
+        !thread.messages.some((message) => message.id === messageId) &&
+        thread.checkpoints.every((checkpoint) => checkpoint.checkpointTurnCount <= turnCount) &&
+        (turnCount === 0
+          ? thread.latestTurn === null
+          : thread.checkpoints.some(
+              (checkpoint) => checkpoint.turnId === thread.latestTurn?.turnId,
+            ))
+      ) {
+        finish();
+      }
+    };
+    unsubscribe = appAtomRegistry.subscribe(threadAtom, inspect);
+    timeout = globalThis.setTimeout(() => {
+      finish(new Error("Timed out waiting for the thread to rewind."));
+    }, timeoutMs);
+    Promise.resolve()
+      .then(revert)
+      .then(() => {
+        accepted = true;
+        inspect();
+      }, finish);
   });
 }
 

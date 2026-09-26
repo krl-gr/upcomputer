@@ -970,8 +970,8 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
       disabled={activity.isRevertingCheckpoint || activity.isWorking}
       className="shadow-none before:hidden"
       onClick={() => ctx.onRevertUserMessage(messageId)}
-      aria-label="Revert to this message"
-      title="Revert to this message"
+      aria-label="Edit from here"
+      title="Edit from here"
     >
       <Undo2Icon className="size-4" />
     </Button>

@@ -136,6 +136,7 @@ function createProviderServiceHarness() {
         },
       });
     },
+    assertConversationRollbackSupported: () => unsupported(),
     rollbackConversation: () => unsupported(),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub).pipe(

@@ -89,6 +89,9 @@ function createProviderServiceHarness(
   const rollbackConversation = vi.fn(
     (_input: { readonly threadId: ThreadId; readonly numTurns: number }) => Effect.void,
   );
+  const assertConversationRollbackSupported = vi.fn<
+    ProviderServiceShape["assertConversationRollbackSupported"]
+  >(() => Effect.void);
 
   const unsupported = <A>() =>
     Effect.die(new Error("Unsupported provider call in test")) as Effect.Effect<A, never>;
@@ -115,6 +118,7 @@ function createProviderServiceHarness(
     stopSession: () => unsupported(),
     listSessions,
     getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
+    assertConversationRollbackSupported,
     getInstanceInfo: (instanceId) =>
       Effect.succeed({
         instanceId,
@@ -138,6 +142,7 @@ function createProviderServiceHarness(
 
   return {
     service,
+    assertConversationRollbackSupported,
     rollbackConversation,
     emit,
   };
@@ -1552,27 +1557,45 @@ describe("CheckpointReactor", () => {
     });
   });
 
-  it("appends an error activity when revert is requested without an active session", async () => {
-    const harness = await createHarness({ hasSession: false });
-    const createdAt = "2026-01-01T00:00:00.000Z";
+  it.each([false, true])(
+    "reverts without an active session using project cwd fallback: %s",
+    async (useProjectCwd) => {
+      const harness = await createHarness({
+        hasSession: false,
+        ...(useProjectCwd ? { threadWorktreePath: null } : {}),
+      });
+      const createdAt = "2026-01-01T00:00:00.000Z";
 
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.checkpoint.revert",
-        commandId: CommandId.make("cmd-revert-no-session"),
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.diff.complete",
+          commandId: CommandId.make("cmd-diff-before-session-recovery"),
+          threadId: ThreadId.make("thread-1"),
+          turnId: asTurnId("turn-1"),
+          completedAt: createdAt,
+          checkpointRef: checkpointRefForThreadTurn(ThreadId.make("thread-1"), 1),
+          status: "ready",
+          files: [],
+          checkpointTurnCount: 1,
+          createdAt,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.checkpoint.revert",
+          commandId: CommandId.make("cmd-revert-no-session"),
+          threadId: ThreadId.make("thread-1"),
+          turnCount: 0,
+          createdAt,
+        }),
+      );
+
+      await waitForEvent(harness.engine, (event) => event.type === "thread.reverted");
+      expect(harness.provider.rollbackConversation).toHaveBeenCalledWith({
         threadId: ThreadId.make("thread-1"),
-        turnCount: 1,
-        createdAt,
-      }),
-    );
-
-    const thread = await waitForThread(harness.readModel, (entry) =>
-      entry.activities.some((activity) => activity.kind === "checkpoint.revert.failed"),
-    );
-
-    expect(thread.activities.some((activity) => activity.kind === "checkpoint.revert.failed")).toBe(
-      true,
-    );
-    expect(harness.provider.rollbackConversation).not.toHaveBeenCalled();
-  });
+        numTurns: 1,
+      });
+      expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe("v1\n");
+    },
+  );
 });

@@ -189,6 +189,28 @@ describe("composerDraftStore addImages", () => {
     expect(revokeSpy).toHaveBeenCalledWith("blob:duplicate");
   });
 
+  it("restores images with matching metadata without replacing unsent bytes", () => {
+    const store = useComposerDraftStore.getState();
+    const unsent = makeImage({ id: "unsent", previewUrl: "blob:unsent" });
+    const restored = {
+      ...unsent,
+      id: "restored",
+      previewUrl: "blob:restored",
+      file: new File([new Uint8Array(unsent.sizeBytes).fill(2)], unsent.name, {
+        type: unsent.mimeType,
+        lastModified: unsent.file.lastModified,
+      }),
+    };
+    store.addImages(threadRef, [unsent]);
+    store.addImages(threadRef, [restored, restored], { allowDuplicates: true });
+
+    const images = store.getComposerDraft(threadRef)?.images;
+    expect(images?.map((image) => image.id)).toEqual(["unsent", "restored"]);
+    expect(images?.[0]?.file).toBe(unsent.file);
+    expect(images?.[1]?.file).toBe(restored.file);
+    expect(revokeSpy).not.toHaveBeenCalled();
+  });
+
   it("deduplicates against existing images across calls by file signature", () => {
     const first = makeImage({
       id: "img-a",

@@ -756,6 +756,40 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
     });
 
+  // Background Claude turns have no sendTurn response to persist their new
+  // native boundary. Save it before clients can checkpoint the turn.
+  const persistClaudeTurnResumeState = (
+    source: {
+      readonly instanceId: ProviderInstanceId;
+      readonly provider: ProviderDriverKind;
+    },
+    event: ProviderRuntimeEvent,
+  ): Effect.Effect<void> =>
+    source.provider !== "claudeAgent" ||
+    (event.type !== "turn.completed" && event.type !== "turn.aborted")
+      ? Effect.void
+      : Effect.gen(function* () {
+          const adapter = yield* registry.getByInstance(source.instanceId);
+          const session = (yield* adapter.listSessions()).find(
+            (session) => session.threadId === event.threadId,
+          );
+          if (session?.resumeCursor === undefined) return;
+          const binding = yield* directory.getBinding(session.threadId);
+          if (Option.isNone(binding) || binding.value.providerInstanceId !== source.instanceId) {
+            return;
+          }
+          yield* directory.upsert({
+            threadId: session.threadId,
+            provider: source.provider,
+            providerInstanceId: source.instanceId,
+            resumeCursor: session.resumeCursor,
+          });
+        }).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("failed to persist Claude turn resume state", { cause }),
+          ),
+        );
+
   const processRuntimeEvent = (
     source: {
       readonly instanceId: ProviderInstanceId;
@@ -765,7 +799,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   ): Effect.Effect<void> =>
     Effect.sync(() => correlateRuntimeEventWithInstance(source, event)).pipe(
       Effect.flatMap((canonicalEvent) =>
-        publishCanonicalRuntimeEvent(canonicalEvent).pipe(
+        persistClaudeTurnResumeState(source, canonicalEvent).pipe(
+          Effect.andThen(publishCanonicalRuntimeEvent(canonicalEvent)),
           Effect.andThen(processInteractionModeOutput(canonicalEvent)),
           Effect.andThen(processTurnAnalytics(canonicalEvent)),
         ),
@@ -1444,6 +1479,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.thread_id": input.threadId,
         });
         if (routed.isActive) {
+          const session = (yield* routed.adapter.listSessions()).find(
+            (session) => session.threadId === routed.threadId,
+          );
+          if (session) {
+            yield* upsertSessionBinding(
+              { ...session, providerInstanceId: routed.instanceId },
+              input.threadId,
+            );
+          }
           yield* routed.adapter.stopSession(routed.threadId);
         }
         yield* terminateTrackedTurnsForThread({
@@ -1570,6 +1614,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getInstanceInfo: ProviderServiceMethod<"getInstanceInfo"> = (instanceId) =>
     registry.getInstanceInfo(instanceId);
 
+  const assertConversationRollbackSupported: ProviderServiceMethod<"assertConversationRollbackSupported"> =
+    Effect.fn("assertConversationRollbackSupported")(function* (threadId) {
+      const routed = yield* resolveRoutableSession({
+        threadId,
+        operation: "ProviderService.assertConversationRollbackSupported",
+        allowRecovery: false,
+      });
+      if (routed.adapter.capabilities.supportsConversationRollback === false) {
+        return yield* toValidationError(
+          "ProviderService.assertConversationRollbackSupported",
+          `Provider '${routed.adapter.provider}' does not support conversation rewind.`,
+        );
+      }
+    });
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1583,6 +1642,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     }
     let metricProvider = "unknown";
     return yield* Effect.gen(function* () {
+      yield* assertConversationRollbackSupported(input.threadId);
       const routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.rollbackConversation",
@@ -1596,6 +1656,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.rollback_turns": input.numTurns,
       });
       yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      const session = (yield* routed.adapter.listSessions()).find(
+        (session) => session.threadId === routed.threadId,
+      );
+      if (session) {
+        yield* upsertSessionBinding(
+          { ...session, providerInstanceId: routed.instanceId },
+          input.threadId,
+        );
+      }
       yield* analytics.record("provider.conversation.rolled_back", {
         provider: routed.adapter.provider,
         turns: input.numTurns,
@@ -1702,6 +1771,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    assertConversationRollbackSupported,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
