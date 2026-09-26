@@ -37,23 +37,39 @@ function SidebarUpdateReleaseNotesTooltip({
         <div className="text-sm leading-5 font-medium">{tooltip}</div>
       </div>
       <div className="pointer-events-auto max-h-[min(28rem,calc(100vh-6rem))] overflow-y-auto px-1 pt-4 pb-1">
-        {state.releaseNotes.map((releaseNote, index) => (
-          <div key={releaseNote.version}>
-            {index > 0 && <Separator className="my-3 bg-border/60" />}
-            <section>
-              <h3 className="text-muted-foreground text-xs leading-4 font-semibold">
-                {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
-              </h3>
-              <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
-                {releaseNote.items.map((item) => (
-                  <li className="list-disc break-words" key={`${releaseNote.version}-${item}`}>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </section>
+        {state.releaseNotes.map((releaseNote, index) => {
+          const omittedItemCount = Math.max(0, releaseNote.totalItems - releaseNote.items.length);
+          return (
+            <div key={releaseNote.version}>
+              {index > 0 && <Separator className="my-3 bg-border/60" />}
+              <section>
+                <h3 className="text-muted-foreground text-xs leading-4 font-semibold">
+                  {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
+                </h3>
+                <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
+                  {releaseNote.items.map((item) => (
+                    <li className="list-disc break-words" key={`${releaseNote.version}-${item}`}>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                {omittedItemCount > 0 && (
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {`${omittedItemCount} more ${omittedItemCount === 1 ? "change" : "changes"}`}
+                  </div>
+                )}
+              </section>
+            </div>
+          );
+        })}
+        {state.omittedReleaseCount > 0 && (
+          <div>
+            <Separator className="my-3 bg-border/60" />
+            <div className="text-xs leading-5 text-muted-foreground">
+              {`${state.omittedReleaseCount} older ${state.omittedReleaseCount === 1 ? "release" : "releases"}`}
+            </div>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
