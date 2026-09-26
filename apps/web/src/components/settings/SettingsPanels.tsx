@@ -10,6 +10,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
+  resolveProviderInstanceEnabled,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@upcomputer/contracts";
@@ -1235,13 +1236,22 @@ export function ProviderSettingsPanel() {
     const explicitInstance = settings.providerInstances?.[defaultInstanceId];
     const legacyConfig = legacyProviders[providerSettings.provider];
     const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider];
-    const effectiveInstance: ProviderInstanceConfig =
-      explicitInstance ??
-      ({
+    // The envelope is the single enabled flag: keep the legacy in-config
+    // flag out of the synthesized blob, or an explicit `enabled: false`
+    // would keep winning over the envelope and the Switch could never
+    // turn a default-off provider on.
+    const synthesizedInstance = (): ProviderInstanceConfig => {
+      if (legacyConfig === undefined) {
+        return { driver };
+      }
+      const { enabled: legacyEnabled, ...legacyConfigRest } = legacyConfig;
+      return {
         driver,
-        enabled: legacyConfig?.enabled ?? true,
-        ...(legacyConfig === undefined ? {} : { config: legacyConfig }),
-      } satisfies ProviderInstanceConfig);
+        enabled: legacyEnabled,
+        config: legacyConfigRest,
+      } satisfies ProviderInstanceConfig;
+    };
+    const effectiveInstance: ProviderInstanceConfig = explicitInstance ?? synthesizedInstance();
     const isDirty =
       explicitInstance !== undefined ||
       (legacyConfig !== undefined && !Equal.equals(legacyConfig, defaultLegacyConfig));
@@ -1470,7 +1480,7 @@ export function ProviderSettingsPanel() {
                 }))
               }
               onUpdate={(next) => {
-                const wasEnabled = row.instance.enabled ?? true;
+                const wasEnabled = resolveProviderInstanceEnabled(row.instance);
                 const isDisabling = next.enabled === false && wasEnabled;
                 const shouldClearTextGen = isDisabling && textGenInstanceId === row.instanceId;
                 if (shouldClearTextGen) {

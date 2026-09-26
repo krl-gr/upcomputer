@@ -3,6 +3,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
 } from "@upcomputer/contracts";
@@ -14,8 +15,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";
+import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import * as ServerSettingsModule from "./serverSettings.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
@@ -24,6 +27,7 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const makeServerSettingsLayer = () =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),
+    Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
     Layer.provideMerge(
       Layer.fresh(
         ServerConfig.layerTest(process.cwd(), {
@@ -45,6 +49,27 @@ const makeFailingSecretStoreLayer = (cause: ServerSecretStore.SecretStoreError) 
     }),
   );
 
+const recordProviderUsage = (provider: string, instanceId: string | null = provider) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      INSERT INTO projection_thread_sessions (
+        thread_id,
+        status,
+        provider_name,
+        provider_instance_id,
+        updated_at
+      )
+      VALUES (
+        ${`thread-${instanceId ?? provider}`},
+        ${"ready"},
+        ${provider},
+        ${instanceId},
+        ${"2026-08-25T00:00:00.000Z"}
+      )
+    `;
+  });
+
 it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
@@ -65,6 +90,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     );
     const settingsLayer = ServerSettingsModule.layer.pipe(
       Layer.provide(makeFailingSecretStoreLayer(cause)),
+      Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
       Layer.provideMerge(configLayer),
     );
 
@@ -395,6 +421,65 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("folds a legacy in-config enabled flag into the envelope on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      // Old settings files can carry both flags with conflicting values.
+      // The explicit false must win so a user's disable sticks.
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"providerInstances":{"grok":{"driver":"grok","enabled":true,"config":{"enabled":false}},"codex_work":{"driver":"codex","config":{"enabled":true,"homePath":"~/.codex"}},"cursor":{"driver":"cursor","config":{"enabled":"nope"}}}}',
+      );
+
+      const settings = yield* serverSettings.getSettings;
+
+      const grokId = ProviderInstanceId.make("grok");
+      const codexWorkId = ProviderInstanceId.make("codex_work");
+      assert.deepEqual(settings.providerInstances[grokId], {
+        driver: ProviderDriverKind.make("grok"),
+        enabled: false,
+        config: {},
+      });
+      // A lone in-config flag is lifted to the envelope and stripped.
+      assert.deepEqual(settings.providerInstances[codexWorkId], {
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        config: { homePath: "~/.codex" },
+      });
+      // A malformed flag is left alone so driver schema validation can
+      // surface it instead of the fold silently repairing the config.
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("cursor")], {
+        driver: ProviderDriverKind.make("cursor"),
+        config: { enabled: "nope" },
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("folds in-config enabled flags arriving through updates", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const grokId = ProviderInstanceId.make("grok");
+
+      const next = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [grokId]: {
+            driver: ProviderDriverKind.make("grok"),
+            enabled: true,
+            config: { enabled: false, binaryPath: "/opt/grok" },
+          },
+        },
+      });
+
+      assert.deepEqual(next.providerInstances[grokId], {
+        driver: ProviderDriverKind.make("grok"),
+        enabled: false,
+        config: { binaryPath: "/opt/grok" },
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("trims provider path settings when updates are applied", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -432,7 +517,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         launchArgs: "",
       });
       assert.deepEqual(next.providers.opencode, {
-        enabled: true,
+        // OpenCode is disabled by default; this update only touches paths.
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/opencode",
         serverUrl: "http://127.0.0.1:4096",
         serverPassword: "secret-password",
@@ -481,7 +567,120 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("writes only non-default server settings to disk", () =>
+  it.effect("enables previously used providers from sparse settings files", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"providers":{"opencode":{"serverUrl":"http://127.0.0.1:4096"}}}',
+      );
+      yield* recordProviderUsage("opencode");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isFalse(settings.providers.grok.enabled);
+      assert.isTrue(settings.providers.opencode.enabled);
+      assert.equal(settings.providers.opencode.serverUrl, "http://127.0.0.1:4096");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("preserves existing provider instances without explicit enabled flags", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"providerInstances":{"grok":{"driver":"grok","config":{}},"opencode_work":{"driver":"opencode","config":{"serverUrl":"http://127.0.0.1:4096"}},"opencode_unused":{"driver":"opencode","config":{}}}}',
+      );
+      yield* recordProviderUsage("grok", null);
+      yield* recordProviderUsage("opencode", "opencode_work");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("opencode_work")]?.enabled);
+      const unused = settings.providerInstances[ProviderInstanceId.make("opencode_unused")];
+      assert.isDefined(unused);
+      assert.isFalse(resolveProviderInstanceEnabled(unused));
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("preserves explicit provider disables in existing settings files", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"providers":{"grok":{"enabled":false},"opencode":{"enabled":false}},"providerInstances":{"grok":{"driver":"grok","enabled":false,"config":{}},"opencode":{"driver":"opencode","config":{"enabled":false}}}}',
+      );
+      yield* recordProviderUsage("grok");
+      yield* recordProviderUsage("opencode");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isFalse(settings.providers.grok.enabled);
+      assert.isFalse(settings.providers.opencode.enabled);
+      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
+      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("opencode")]?.enabled);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("restores providers from persisted runtime sessions without a settings file", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO provider_session_runtime (
+          thread_id,
+          provider_name,
+          provider_instance_id,
+          adapter_key,
+          status,
+          last_seen_at
+        )
+        VALUES (
+          ${"thread-grok-runtime"},
+          ${"grok"},
+          ${"grok"},
+          ${"grok"},
+          ${"ready"},
+          ${"2026-08-25T00:00:00.000Z"}
+        )
+      `;
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isTrue(settings.providers.grok.enabled);
+      assert.isFalse(settings.providers.opencode.enabled);
+      assert.isFalse(settings.providers.cursor.enabled);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists explicit disables after a provider has been used", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* recordProviderUsage("grok");
+
+      assert.isTrue((yield* serverSettings.getSettings).providers.grok.enabled);
+
+      const settings = yield* serverSettings.updateSettings({
+        providers: { grok: { enabled: false } },
+      });
+      assert.isFalse(settings.providers.grok.enabled);
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.isFalse(JSON.parse(raw).providers.grok.enabled);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("writes non-default settings and explicit optional provider defaults to disk", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -518,7 +717,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
           },
+          grok: {
+            enabled: false,
+          },
           opencode: {
+            enabled: false,
             serverUrl: "http://127.0.0.1:4096",
             serverPassword: "secret-password",
           },
@@ -542,6 +745,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Layer.provide(ServerSecretStore.layer));
     const settingsLayer = ServerSettingsModule.layer.pipe(
       Layer.provide(secretLayer),
+      Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
       Layer.provideMerge(
         Layer.fresh(
           ServerConfig.layerTest(process.cwd(), {

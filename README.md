@@ -44,6 +44,9 @@ runtime you want to use:
 - OpenCode: install [OpenCode](https://opencode.ai) and run
   `opencode auth login`.
 
+Codex and Claude are on by default. Cursor, Grok, and OpenCode are off by default; turn them on in
+**Settings** → the provider's card when you want to use them.
+
 Package-manager installs such as Homebrew, winget, and AUR are not an official
 install path yet.
 

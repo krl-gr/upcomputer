@@ -342,7 +342,12 @@ const makeRuntimeCoreDependenciesLive = <const ProductEntry extends Experimental
   );
 
   return runtimeFoundation.pipe(
-    Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    Layer.provideMerge(
+      ServerSettings.layer.pipe(
+        Layer.provide(ServerSecretStore.layer),
+        Layer.provide(persistenceLayer),
+      ),
+    ),
     Layer.provideMerge(WorkspaceLayerLive),
     Layer.provideMerge(ProjectFaviconResolverLayerLive),
     Layer.provideMerge(RepositoryIdentityResolver.layer),
