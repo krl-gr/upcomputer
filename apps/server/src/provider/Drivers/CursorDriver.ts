@@ -63,6 +63,7 @@ const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
       updateExecutable: options?.binaryPath?.trim() || "cursor-agent",
       updateArgs: ["update"],
       updateLockKey: "cursor-agent",
+      ...(options?.platform ? { platform: options.platform } : {}),
     }),
 };
 
