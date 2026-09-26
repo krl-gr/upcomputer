@@ -12,6 +12,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
@@ -295,10 +296,66 @@ export const assetRouteLayer = HttpRouter.add(
   }),
 );
 
-export const staticAndDevRouteLayer = HttpRouter.add(
-  "GET",
-  "*",
-  Effect.gen(function* () {
+const decodeBuildManifest = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        file: Schema.String,
+        css: Schema.optional(Schema.Array(Schema.String)),
+        assets: Schema.optional(Schema.Array(Schema.String)),
+      }),
+    ),
+  ),
+);
+
+const loadImmutableBuildAssets = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  const staticDir =
+    config.staticDir ?? (config.devUrl ? yield* ServerConfig.resolveStaticDir() : undefined);
+  if (!staticDir) return new Set<string>();
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return yield* fileSystem.readFileString(path.join(staticDir, ".vite", "manifest.json")).pipe(
+    Effect.flatMap(decodeBuildManifest),
+    Effect.map(
+      (manifest) =>
+        new Set(
+          Object.values(manifest).flatMap((entry) => [
+            entry.file,
+            ...(entry.css ?? []),
+            ...(entry.assets ?? []),
+          ]),
+        ),
+    ),
+    Effect.orElseSucceed(() => new Set<string>()),
+  );
+});
+
+const openStaticFile = Effect.fn("openStaticFile")(function* (filePath: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  // Reject directories and special files before opening. Response metadata comes from the handle.
+  const pathInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
+  if (pathInfo?.type !== "File") return null;
+  const file = yield* fileSystem.open(filePath, { flag: "r" });
+  const info = yield* file.stat;
+  return info.type === "File" ? { file, info } : null;
+});
+
+const streamStaticFile = (file: FileSystem.File, size: bigint) =>
+  Stream.unfold(
+    0n,
+    Effect.fnUntraced(function* (offset: bigint) {
+      if (offset >= size) return;
+      const remaining = size - offset;
+      const bytes = yield* file.readAlloc(remaining < 65_536n ? remaining : 65_536n);
+      if (Option.isNone(bytes)) return;
+      return [bytes.value, offset + BigInt(bytes.value.byteLength)] as const;
+    }),
+  );
+
+const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
+  function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
 
@@ -325,7 +382,6 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       });
     }
 
-    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const staticRoot = path.resolve(staticDir);
     const staticRequestPath = url.value.pathname === "/" ? "/index.html" : url.value.pathname;
@@ -359,30 +415,71 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       }
     }
 
-    const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!fileInfo || fileInfo.type !== "File") {
-      const indexPath = path.resolve(staticRoot, "index.html");
-      const indexData = yield* fileSystem
-        .readFile(indexPath)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (!indexData) {
+    let opened = yield* openStaticFile(filePath);
+    if (!opened) {
+      filePath = path.resolve(staticRoot, "index.html");
+      opened = yield* openStaticFile(filePath);
+      if (!opened) {
         return HttpServerResponse.text("Not Found", { status: 404 });
       }
-      return HttpServerResponse.uint8Array(indexData, {
-        status: 200,
-        contentType: "text/html; charset=utf-8",
-      });
+    }
+    const fileInfo = opened.info;
+
+    // A hash-like name is not enough: custom static files can use the same naming pattern.
+    const relativePath = path.relative(staticRoot, filePath).replaceAll("\\", "/");
+    const immutable =
+      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) && immutableBuildAssets.has(relativePath);
+    const headers: Record<string, string> = {
+      "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    };
+    const modifiedAt = Option.getOrUndefined(fileInfo.mtime);
+    const etag = modifiedAt
+      ? `W/"${fileInfo.size.toString(16)}-${modifiedAt.getTime().toString(16)}"`
+      : undefined;
+    if (etag !== undefined && modifiedAt !== undefined) {
+      headers.ETag = etag;
+      headers["Last-Modified"] = modifiedAt.toUTCString();
     }
 
-    const contentType = Mime.getType(filePath) ?? "application/octet-stream";
-    const data = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!data) {
-      return HttpServerResponse.text("Internal Server Error", { status: 500 });
+    // If-None-Match takes precedence over dates and uses weak comparison for GET/HEAD.
+    const ifNoneMatch = request.headers["if-none-match"];
+    const ifModifiedSince = request.headers["if-modified-since"];
+    const unchanged =
+      ifNoneMatch !== undefined
+        ? ifNoneMatch.split(",").some((value) => {
+            const candidate = value.trim();
+            return (
+              candidate === "*" ||
+              (etag !== undefined && candidate.replace(/^W\//i, "") === etag.slice(2))
+            );
+          })
+        : ifModifiedSince !== undefined &&
+          modifiedAt !== undefined &&
+          Date.parse(modifiedAt.toUTCString()) <= Date.parse(ifModifiedSince);
+    if (unchanged) {
+      return HttpServerResponse.empty({ status: 304, headers });
     }
 
-    return HttpServerResponse.uint8Array(data, {
-      status: 200,
+    const contentType =
+      path.extname(filePath) === ".html"
+        ? "text/html; charset=utf-8"
+        : (Mime.getType(filePath) ?? "application/octet-stream");
+    // The request scope closes the handle for GET, HEAD, 304, errors, and cancellation.
+    return HttpServerResponse.stream(streamStaticFile(opened.file, fileInfo.size), {
+      headers,
       contentType,
+      contentLength: Number(fileInfo.size),
     });
+  },
+  Effect.catchTags({
+    PlatformError: () =>
+      Effect.succeed(HttpServerResponse.text("Internal Server Error", { status: 500 })),
   }),
+);
+
+// Read the installed build's manifest once. Unknown files use revalidation.
+export const staticAndDevRouteLayer = Layer.unwrap(
+  loadImmutableBuildAssets.pipe(
+    Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
+  ),
 );

@@ -297,6 +297,7 @@ export function createWebViteConfig(options: WebViteConfigOptions = {}): ViteUse
     build: {
       outDir: options.outDir ?? "dist",
       emptyOutDir: true,
+      manifest: true,
       sourcemap: options.sourcemap ?? buildSourcemap,
     },
     test: {
