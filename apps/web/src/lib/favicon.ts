@@ -1,18 +1,22 @@
+import { isPublicFaviconHost } from "@upcomputer/shared/hostClassification";
+
 /**
- * Favicon helpers for the preview tab strip.
+ * Favicon helpers for the preview tab strip and chat links.
  *
  * Uses Google's s2 favicon endpoint (same approach as ami's tab strip).
  * Callers should always render a `<Globe />` fallback when the returned URL
- * fails to load via an `onError` handler.
+ * is null or fails to load via an `onError` handler.
  */
 const FAVICON_PROVIDER = "https://www.google.com/s2/favicons";
 
+/** Return a public favicon URL without disclosing private or reserved hosts. */
 export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32): string | null {
   if (!rawUrl) return null;
   try {
     const url = new URL(rawUrl);
     if (!url.host) return null;
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!isPublicFaviconHost(url.hostname)) return null;
     return `${FAVICON_PROVIDER}?domain=${encodeURIComponent(url.host)}&sz=${size}`;
   } catch {
     return null;

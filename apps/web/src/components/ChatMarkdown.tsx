@@ -54,6 +54,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
+import { faviconUrlForOrigin } from "../lib/favicon";
 import { LRUCache } from "../lib/lruCache";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings } from "../hooks/useSettings";
@@ -779,13 +780,14 @@ const failedFaviconHosts = new Set<string>();
 
 const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
+  const faviconUrl = faviconUrlForOrigin(`https://${host}`);
   return (
     <span className="chat-markdown-link-favicon" aria-hidden>
-      {failedHost === host || failedFaviconHosts.has(host) ? (
+      {faviconUrl === null || failedHost === host || failedFaviconHosts.has(host) ? (
         <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
       ) : (
         <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`}
+          src={faviconUrl}
           alt=""
           loading="lazy"
           draggable={false}
