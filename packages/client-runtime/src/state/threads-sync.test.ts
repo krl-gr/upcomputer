@@ -11,6 +11,8 @@ import {
   type OrchestrationThreadStreamItem,
 } from "@upcomputer/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -18,6 +20,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { RpcClientError } from "effect/unstable/rpc";
 
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
@@ -97,7 +100,7 @@ const ACTIVE_THREAD: OrchestrationThread = {
   },
 };
 
-type TestThreadInput = OrchestrationThreadStreamItem | Error;
+type TestThreadInput = OrchestrationThreadStreamItem | Error | Cause.Cause<Error>;
 
 function testSession(
   client: WsRpcProtocolClient,
@@ -131,6 +134,8 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly cached?: OrchestrationThread;
   readonly httpSnapshot?: Option.Option<OrchestrationThreadDetailSnapshot>;
   readonly completionMarker?: boolean;
+  readonly snapshotLoad?: Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
+  readonly stream?: Stream.Stream<OrchestrationThreadStreamItem, Error>;
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
   const observed = yield* Queue.unbounded<EnvironmentThreadState>();
@@ -149,7 +154,11 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const streamFrom = (queue: Queue.Queue<TestThreadInput>) =>
     Stream.fromQueue(queue).pipe(
       Stream.mapEffect((input) =>
-        input instanceof Error ? Effect.fail(input) : Effect.succeed(input),
+        Cause.isCause(input)
+          ? Effect.failCause(input)
+          : input instanceof Error
+            ? Effect.fail(input)
+            : Effect.succeed(input),
       ),
     );
   const client = {
@@ -161,7 +170,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
         Ref.updateAndGet(subscriptionCount, (count) => count + 1).pipe(
           Effect.andThen(Ref.set(lastSubscribeAfterSequence, input.afterSequence)),
           Effect.andThen(Ref.set(lastRequestCompletionMarker, input.requestCompletionMarker)),
-          Effect.as(streamFrom(inputs)),
+          Effect.as(options?.stream ?? streamFrom(inputs)),
         ),
       ),
   } as unknown as WsRpcProtocolClient;
@@ -179,10 +188,13 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const snapshotLoader = ThreadSnapshotLoader.of({
     load: (_prepared, threadId) =>
       Ref.update(loaderCalls, (count) => count + 1).pipe(
-        Effect.as(
-          threadId === THREAD_ID
-            ? (options?.httpSnapshot ?? Option.none<OrchestrationThreadDetailSnapshot>())
-            : Option.none<OrchestrationThreadDetailSnapshot>(),
+        Effect.andThen(
+          options?.snapshotLoad ??
+            Effect.succeed(
+              threadId === THREAD_ID
+                ? (options?.httpSnapshot ?? Option.none<OrchestrationThreadDetailSnapshot>())
+                : Option.none<OrchestrationThreadDetailSnapshot>(),
+            ),
         ),
       ),
   });
@@ -268,6 +280,43 @@ const snapshot = (thread: OrchestrationThread): OrchestrationThreadStreamItem =>
 });
 
 const synchronized = (): OrchestrationThreadStreamItem => ({ kind: "synchronized" });
+
+const SYNC_FAILURE_MESSAGE = "Could not synchronize the thread.";
+
+const protocolDefect = (message: string): Cause.Cause<Error> =>
+  Cause.fail(
+    new RpcClientError.RpcClientError({
+      reason: new RpcClientError.RpcClientDefect({ message, cause: new Error(message) }),
+    }) as unknown as Error,
+  );
+
+const CONNECTING_STATE: SupervisorConnectionState = {
+  desired: true,
+  network: "online",
+  phase: "connecting",
+  stage: "synchronizing",
+  attempt: 1,
+  generation: 0,
+  lastFailure: null,
+  retryAt: null,
+};
+const CONNECTED_STATE: SupervisorConnectionState = {
+  ...CONNECTING_STATE,
+  phase: "connected",
+  stage: null,
+  generation: 1,
+};
+
+const awaitSubscriptionCount = (
+  harness: { readonly subscriptionCount: Ref.Ref<number> },
+  count: number,
+) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((yield* Ref.get(harness.subscriptionCount)) >= count) return;
+      yield* Effect.yieldNow;
+    }
+  });
 
 const titleUpdated = (title: string, sequence = 2): OrchestrationThreadStreamItem => ({
   kind: "event",
@@ -693,5 +742,117 @@ describe("EnvironmentThreads", () => {
       );
       expect(Option.getOrThrow(live.data).title).toBe("Latest title");
     }),
+  );
+  it.effect("exposes snapshot loader defects before the RPC subscription starts", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        snapshotLoad: Effect.die(new Error("SYNTHETIC_RAW_SNAPSHOT_DEFECT")),
+      });
+      const failed = yield* awaitThreadState(harness.observed, (value) =>
+        Option.isSome(value.error),
+      );
+
+      expect(failed.status).toBe("empty");
+      expect(failed.error).toEqual(Option.some(SYNC_FAILURE_MESSAGE));
+      expect(failed.data).toEqual(Option.none());
+      yield* TestClock.adjust("1 second");
+      expect(yield* Ref.get(harness.latest)).toEqual(failed);
+      expect(yield* Ref.get(harness.loaderCalls)).toBe(1);
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(0);
+    }),
+  );
+
+  it.effect.each([
+    { kind: "protocol", cached: false },
+    { kind: "protocol", cached: true },
+    { kind: "fatal", cached: false },
+    { kind: "fatal", cached: true },
+  ] as const)(
+    "retains a terminated $kind load diagnostic across connection updates (cached: $cached)",
+    ({ kind, cached }) =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(cached ? { cached: BASE_THREAD } : undefined);
+        const message = "SYNTHETIC_RAW_DEFECT";
+        yield* Queue.offer(
+          harness.inputs,
+          kind === "fatal" ? Cause.die(new Error(message)) : protocolDefect(message),
+        );
+        const failed = yield* awaitThreadState(harness.observed, (value) =>
+          Option.isSome(value.error),
+        );
+        // A defect must not enter the domain retry loop.
+        yield* TestClock.adjust("1 second");
+        expect(yield* Ref.get(harness.latest)).toEqual(failed);
+        expect(failed.status).toBe(cached ? "cached" : "empty");
+        expect(failed.error).toEqual(Option.some(SYNC_FAILURE_MESSAGE));
+        expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
+
+        for (const connection of [AVAILABLE_CONNECTION_STATE, CONNECTING_STATE, CONNECTED_STATE]) {
+          yield* SubscriptionRef.set(harness.supervisorState, connection);
+          yield* TestClock.adjust("0 millis");
+          expect(yield* Ref.get(harness.latest)).toEqual(failed);
+        }
+
+        yield* harness.replaceSession;
+        yield* awaitSubscriptionCount(harness, 2);
+        if (kind === "fatal") {
+          // A fatal child cannot restart just because its supervisor reconnects.
+          expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
+          expect(yield* Ref.get(harness.latest)).toEqual(failed);
+          return;
+        }
+        expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
+        yield* Queue.offer(harness.inputs, snapshot(BASE_THREAD));
+        const recovered = yield* awaitThreadState(
+          harness.observed,
+          (value) => value.status === "live",
+        );
+        expect(recovered.error).toEqual(Option.none());
+      }),
+  );
+
+  it.effect.each(["protocol", "fatal", "domain"] as const)(
+    "keeps buffered outcomes after a %s failure",
+    (kind) =>
+      Effect.gen(function* () {
+        const error = new Error(
+          kind === "domain" ? "buffered thread failure" : "SYNTHETIC_BUFFERED_DEFECT",
+        );
+        const drained = yield* Deferred.make<void>();
+        const harness = yield* makeHarness({
+          stream: Stream.fromIterable([
+            snapshot(BASE_THREAD),
+            synchronized(),
+            titleUpdated("Buffer drained"),
+          ]).pipe(
+            Stream.concat(
+              Stream.failCause(
+                kind === "fatal"
+                  ? Cause.die(error)
+                  : kind === "domain"
+                    ? Cause.fail(error)
+                    : protocolDefect(error.message),
+              ),
+            ),
+          ),
+        });
+        yield* Stream.fromQueue(harness.observed).pipe(
+          Stream.runForEach((value) =>
+            Option.getOrNull(value.data)?.title === "Buffer drained" && Option.isSome(value.error)
+              ? Deferred.succeed(drained, undefined)
+              : Effect.void,
+          ),
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(drained);
+        yield* TestClock.adjust("0 millis");
+
+        const final = yield* Ref.get(harness.latest);
+        expect(Option.getOrThrow(final.data).title).toBe("Buffer drained");
+        expect(final.error).toEqual(
+          Option.some(kind === "domain" ? error.message : SYNC_FAILURE_MESSAGE),
+        );
+        expect(final.status).toBe("cached");
+      }),
   );
 });
