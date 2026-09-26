@@ -13,7 +13,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom, type AtomRegistry } from "effect/unstable/reactivity";
 
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
@@ -50,6 +50,7 @@ function shouldPersistThread(thread: OrchestrationThread): boolean {
 
 export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make")(function* (
   threadId: ThreadIdType,
+  options?: { readonly reloadSnapshot?: boolean },
 ) {
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
@@ -80,6 +81,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
   const awaitingCompletion = yield* Ref.make(false);
+  // Replaces cached data with a fresh HTTP snapshot on the first subscription.
+  let reloadSnapshot = options?.reloadSnapshot === true;
   const persistence = yield* Queue.sliding<OrchestrationThreadDetailSnapshot>(1);
 
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
@@ -301,7 +304,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         );
 
         let current = yield* SubscriptionRef.get(state);
-        if (Option.isNone(current.data) && current.status !== "deleted") {
+        if ((Option.isNone(current.data) || reloadSnapshot) && current.status !== "deleted") {
+          reloadSnapshot = false;
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -367,10 +371,18 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   return state;
 });
 
-export function threadStateChanges(environmentId: EnvironmentIdType, threadId: ThreadIdType) {
+export function threadStateChanges(
+  environmentId: EnvironmentIdType,
+  threadId: ThreadIdType,
+  consumeSnapshotReload: () => boolean = () => false,
+) {
   return followStreamInEnvironment(
     environmentId,
-    Stream.unwrap(makeEnvironmentThreadState(threadId).pipe(Effect.map(SubscriptionRef.changes))),
+    Stream.unwrap(
+      Effect.suspend(() =>
+        makeEnvironmentThreadState(threadId, { reloadSnapshot: consumeSnapshotReload() }),
+      ).pipe(Effect.map(SubscriptionRef.changes)),
+    ),
   );
 }
 
@@ -380,12 +392,16 @@ export function createEnvironmentThreadStateAtoms<R, E>(
     E
   >,
 ) {
+  const snapshotReloads = new Set<string>();
   const family = Atom.family((key: string) => {
     const { environmentId, threadId } = parseThreadKey(key);
     return runtime
-      .atom(threadStateChanges(environmentId, threadId), {
-        initialValue: EMPTY_ENVIRONMENT_THREAD_STATE,
-      })
+      .atom(
+        threadStateChanges(environmentId, threadId, () => snapshotReloads.delete(key)),
+        {
+          initialValue: EMPTY_ENVIRONMENT_THREAD_STATE,
+        },
+      )
       .pipe(
         Atom.setIdleTTL(THREAD_STATE_IDLE_TTL_MS),
         Atom.withLabel(`environment-thread-state:${key}`),
@@ -395,6 +411,16 @@ export function createEnvironmentThreadStateAtoms<R, E>(
   return {
     stateAtom: (environmentId: EnvironmentIdType, threadId: ThreadIdType) =>
       family(threadKey({ environmentId, threadId })),
+    /** Rebuilds the thread state from a fresh server snapshot instead of the local cache. */
+    reloadSnapshot: (
+      registry: AtomRegistry.AtomRegistry,
+      environmentId: EnvironmentIdType,
+      threadId: ThreadIdType,
+    ) => {
+      const key = threadKey({ environmentId, threadId });
+      snapshotReloads.add(key);
+      registry.refresh(family(key));
+    },
   };
 }
 

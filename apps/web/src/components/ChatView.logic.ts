@@ -14,7 +14,11 @@ import { type ComposerImageAttachment, type DraftThreadState } from "../composer
 import { extractTrailingElementContexts } from "../lib/elementContext";
 import { extractTrailingPreviewAnnotation } from "../lib/previewAnnotation";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentThreadDetails, environmentThreadShells } from "../state/threads";
+import {
+  environmentThreadDetails,
+  environmentThreads,
+  environmentThreadShells,
+} from "../state/threads";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
@@ -530,6 +534,12 @@ export async function waitForRevertedMessage(
     unsubscribe = appAtomRegistry.subscribe(threadAtom, inspect);
     timeout = globalThis.setTimeout(() => {
       finish(new Error("Timed out waiting for the thread to rewind."));
+      // Replace the possibly half-rewound local thread with the server's state.
+      environmentThreads.reloadSnapshot(
+        appAtomRegistry,
+        threadRef.environmentId,
+        threadRef.threadId,
+      );
     }, timeoutMs);
     Promise.resolve()
       .then(revert)

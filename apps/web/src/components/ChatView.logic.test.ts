@@ -8,10 +8,11 @@ import {
   ThreadId,
   TurnId,
 } from "@upcomputer/contracts";
+import { applyThreadDetailEvent } from "@upcomputer/client-runtime/state/threads";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { Atom } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentThreadDetails } from "../state/threads";
+import { environmentThreadDetails, environmentThreads } from "../state/threads";
 
 import type { Thread } from "../types";
 import {
@@ -659,6 +660,55 @@ describe("rewind draft recovery", () => {
     await result;
   });
 
+  it("resolves once the reverted thread event drops the turn-less user message", async () => {
+    const turn1 = TurnId.make("turn-1");
+    const turn2 = TurnId.make("turn-2");
+    const userMessage = (id: string, createdAt: string) => ({
+      id: MessageId.make(id),
+      role: "user" as const,
+      text: id,
+      turnId: null,
+      createdAt,
+      updatedAt: createdAt,
+      streaming: false,
+    });
+    const checkpoint = (turnId: TurnId, checkpointTurnCount: number) => ({
+      turnId,
+      checkpointTurnCount,
+      checkpointRef: CheckpointRef.make(`refs/t3/checkpoints/${checkpointTurnCount}`),
+      status: "ready" as const,
+      files: [],
+      assistantMessageId: null,
+      completedAt: now,
+    });
+    const secondUser = userMessage("user-2", "2026-03-29T00:00:20.000Z");
+    const thread = makeThread({
+      messages: [userMessage("user-1", "2026-03-29T00:00:00.000Z"), secondUser],
+      checkpoints: [checkpoint(turn1, 1), checkpoint(turn2, 2)],
+      latestTurn: { ...completedTurn, turnId: turn2 },
+    });
+    const atom = Atom.make<Thread | null>(thread);
+    vi.spyOn(environmentThreadDetails, "detailAtom").mockReturnValue(atom);
+    await waitForRevertedMessage({ environmentId, threadId }, secondUser.id, 1, async () => {
+      const result = applyThreadDetailEvent(thread, {
+        sequence: 5,
+        eventId: EventId.make("reverted"),
+        occurredAt: now,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        type: "thread.reverted",
+        payload: { threadId, turnCount: 1 },
+      });
+      if (result.kind !== "updated") throw new Error("expected an updated thread");
+      appAtomRegistry.set(atom, { ...thread, ...result.thread });
+    });
+    expect(appAtomRegistry.get(atom)?.messages.map((message) => message.id)).toEqual(["user-1"]);
+  });
+
   it("rejects a new provider rewind failure without restoring a draft", async () => {
     const atom = Atom.make<Thread | null>(makeThread({ messages: [message] }));
     vi.spyOn(environmentThreadDetails, "detailAtom").mockReturnValue(atom);
@@ -690,6 +740,9 @@ describe("rewind draft recovery", () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
     const atom = Atom.make<Thread | null>(makeThread({ messages: [message] }));
     vi.spyOn(environmentThreadDetails, "detailAtom").mockReturnValue(atom);
+    const reloadSnapshot = vi
+      .spyOn(environmentThreads, "reloadSnapshot")
+      .mockImplementation(() => {});
     const result = waitForRevertedMessage(
       { environmentId, threadId },
       message.id,
@@ -704,6 +757,7 @@ describe("rewind draft recovery", () => {
     await vi.advanceTimersByTimeAsync(20);
     await rejection;
     expect(clearTimeoutSpy).toHaveBeenCalledWith(rewindTimeout);
+    expect(reloadSnapshot).toHaveBeenCalledWith(appAtomRegistry, environmentId, threadId);
   });
 
   it("copies image bytes before rewind into a fresh file", async () => {
