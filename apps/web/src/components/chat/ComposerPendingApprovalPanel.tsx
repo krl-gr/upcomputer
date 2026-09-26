@@ -19,22 +19,31 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         ? "File-read approval requested"
         : approval.requestKind === "file-change"
           ? "File-change approval requested"
-          : "Approval requested";
+          : approval.requestKind === "mcp-elicitation"
+            ? "App access approval requested"
+            : "Approval requested";
   const approvalDetail = approval.detail?.trim();
   const detailLabel =
     approval.requestKind === "command"
       ? "Command"
       : approval.requestKind === "file-read"
         ? "File to read"
-        : "File change";
+        : approval.requestKind === "mcp-elicitation"
+          ? "App access request"
+          : "File change";
 
   return (
     <div className="px-5 py-4 sm:px-6">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-base leading-6 sm:text-sm sm:leading-5">
         <span className="font-medium text-foreground">
           {approvalSummary}
-          {approvalDetail ? ":" : ""}
+          {approvalDetail || approval.appName ? ":" : ""}
         </span>
+        {approval.appName ? (
+          <span className="max-w-32 shrink truncate font-medium text-foreground">
+            {approval.appName}
+          </span>
+        ) : null}
         {approvalDetail ? (
           <span className={cn("min-w-0 break-words", SIDEBAR_MUTED_TEXT_CLASS)}>
             {approvalDetail}

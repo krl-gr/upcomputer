@@ -84,3 +84,84 @@ describe("ComposerPendingApprovalPanel", () => {
     expect(markup).not.toContain("line-clamp");
   });
 });
+
+describe("ComposerPendingApprovalActions options", () => {
+  it("shows only the approval choices advertised by an MCP server", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalActions
+        requestId={ApprovalRequestId.make("approval-safari")}
+        isResponding={false}
+        options={[
+          { decision: "decline", label: "Decline" },
+          { decision: "acceptAlways", label: "Always allow Safari" },
+          { decision: "accept", label: "Approve" },
+        ]}
+        onRespondToApproval={async () => undefined}
+      />,
+    );
+
+    expect(markup).toContain("Always allow Safari");
+    expect(markup).toContain(">Approve<");
+    expect(markup).not.toContain("Always allow this session");
+    expect(markup).not.toContain("Cancel turn");
+  });
+
+  it("limits provider-supplied approval labels so narrow rows can wrap", () => {
+    const label = "Allow ".repeat(40).trim();
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalActions
+        requestId={ApprovalRequestId.make("approval-long-label")}
+        isResponding={false}
+        options={[{ decision: "acceptAlways", label }]}
+        onRespondToApproval={async () => undefined}
+      />,
+    );
+
+    expect(markup).toContain('class="max-w-40 truncate"');
+    expect(markup).toContain(label);
+  });
+});
+
+describe("ComposerPendingApprovalPanel app access", () => {
+  it("shows the app name and message for an MCP access request", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalPanel
+        approval={{
+          requestId: ApprovalRequestId.make("approval-safari"),
+          requestKind: "mcp-elicitation",
+          createdAt: "2026-08-24T00:00:00.000Z",
+          appName: "Safari",
+          detail: "Allow ChatGPT to use Safari?",
+        }}
+        pendingCount={1}
+      />,
+    );
+
+    expect(markup).toContain("App access approval requested");
+    expect(markup).toContain('aria-label="App access request"');
+    expect(markup).toContain(">Safari<");
+    expect(markup).toContain("Allow ChatGPT to use Safari?");
+  });
+
+  it("limits long app names so the complete approval message stays readable", () => {
+    const appName = "A".repeat(200);
+    const detail = "Allow ChatGPT to access the selected application?";
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalPanel
+        approval={{
+          requestId: ApprovalRequestId.make("approval-long-app-name"),
+          requestKind: "mcp-elicitation",
+          createdAt: "2026-08-24T00:00:00.000Z",
+          appName,
+          detail,
+        }}
+        pendingCount={1}
+      />,
+    );
+
+    expect(markup).toContain("max-w-32 shrink truncate");
+    expect(markup).toContain(appName);
+    expect(markup).toContain('data-approval-detail="complete"');
+    expect(markup).toContain(detail);
+  });
+});
