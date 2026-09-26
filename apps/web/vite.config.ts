@@ -7,7 +7,7 @@ import babel from "@rolldown/plugin-babel";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
-import { defineConfig, type ViteUserConfig } from "vite-plus";
+import { defineConfig, type Plugin, type ViteUserConfig } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
 import { DEV_PROXIED_PATH_PREFIXES } from "@upcomputer/shared/devProxy";
@@ -158,6 +158,27 @@ export interface WebViteConfigOptions {
   readonly sourcemap?: boolean | "inline" | "hidden";
   readonly aliases?: Readonly<Record<string, string>>;
   readonly additionalFsAllow?: ReadonlyArray<string>;
+  /**
+   * Absolute directories whose class names Tailwind must also scan. A product
+   * entry can't declare `@source` in its own CSS: only the host's
+   * `src/index.css` imports Tailwind, so it is the single root that generates
+   * utilities.
+   */
+  readonly tailwindSources?: ReadonlyArray<string>;
+}
+
+const publicTailwindRoot = NodeURL.fileURLToPath(new URL("./src/index.css", import.meta.url));
+
+function tailwindProductSources(sources: ReadonlyArray<string>): Plugin {
+  return {
+    name: "upcomputer:tailwind-product-sources",
+    enforce: "pre",
+    transform(code, id) {
+      if (sources.length === 0 || id.split("?")[0] !== publicTailwindRoot) return null;
+      const directives = sources.map((source) => `@source ${JSON.stringify(source)};`).join("\n");
+      return { code: `${code}\n${directives}\n`, map: null };
+    },
+  };
 }
 
 function createReactCompilerPreset() {
@@ -186,6 +207,7 @@ export function createWebViteConfig(options: WebViteConfigOptions = {}): ViteUse
         parserOpts: { plugins: ["typescript", "jsx"] },
         presets: [createReactCompilerPreset()],
       }),
+      tailwindProductSources(options.tailwindSources ?? []),
       tailwindcss(),
     ],
     optimizeDeps: {
