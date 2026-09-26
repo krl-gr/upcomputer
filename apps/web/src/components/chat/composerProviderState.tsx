@@ -10,6 +10,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
+  normalizeModelSlug,
 } from "@upcomputer/shared/model";
 import type { ReactNode } from "react";
 
@@ -55,6 +56,17 @@ export function getComposerPromptInjectionState(prompt: string): ComposerPromptI
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
   const { provider, model, models, modelOptions, promptInjectionState = "none" } = input;
+  if (provider === "opencode") {
+    const normalizedModel = normalizeModelSlug(model, provider);
+    const modelIsInCatalog = models.some((candidate) => candidate.slug === normalizedModel);
+    if (!modelIsInCatalog) {
+      return {
+        provider,
+        promptEffort: null,
+        modelOptionsForDispatch: modelOptions && modelOptions.length > 0 ? modelOptions : undefined,
+      };
+    }
+  }
   const caps = getProviderModelCapabilities(models, model, provider);
   const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
   const primarySelectDescriptor = descriptors.find(
