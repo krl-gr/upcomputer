@@ -61,6 +61,13 @@ const OrchestrationEventPersistedRowSchema = Schema.Struct({
   metadata: EventMetadataFromJsonString,
 });
 
+const HasEventAfterRequestSchema = Schema.Struct({
+  aggregateKind: Schema.String,
+  aggregateId: Schema.String,
+  type: Schema.String,
+  sequenceExclusive: NonNegativeInt,
+});
+
 const ReadFromSequenceRequestSchema = Schema.Struct({
   sequenceExclusive: NonNegativeInt,
   limit: Schema.Number,
@@ -380,12 +387,39 @@ const makeEventStore = Effect.gen(function* () {
       Effect.map((row) => ({ ...row, hasCreateEvent: row.hasCreateEvent !== 0 })),
     );
 
+  const findEventAfter = SqlSchema.findOneOption({
+    Request: HasEventAfterRequestSchema,
+    Result: Schema.Struct({ sequence: Schema.Number }),
+    execute: (request) =>
+      sql`
+        SELECT sequence
+        FROM orchestration_events
+        WHERE aggregate_kind = ${request.aggregateKind}
+          AND stream_id = ${request.aggregateId}
+          AND event_type = ${request.type}
+          AND sequence > ${request.sequenceExclusive}
+        LIMIT 1
+      `,
+  });
+
+  const hasEventAfter: OrchestrationEventStoreShape["hasEventAfter"] = (input) =>
+    findEventAfter(input).pipe(
+      Effect.map(Option.isSome),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "OrchestrationEventStore.hasEventAfter:query",
+          "OrchestrationEventStore.hasEventAfter:decodeRow",
+        ),
+      ),
+    );
+
   return {
     append,
     readFromSequence,
     readAggregateRange,
     getAggregateReplayStats,
     readAll: () => readFromSequence(0, Number.MAX_SAFE_INTEGER),
+    hasEventAfter,
   } satisfies OrchestrationEventStoreShape;
 });
 

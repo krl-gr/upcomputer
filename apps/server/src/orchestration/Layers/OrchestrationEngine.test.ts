@@ -111,6 +111,7 @@ describe("OrchestrationEngine", () => {
         ),
       readAggregateRange: () => Stream.die("unused aggregate replay"),
       getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
+      hasEventAfter: () => Effect.succeed(false),
     };
 
     const projectionSnapshot = {
@@ -782,6 +783,7 @@ describe("OrchestrationEngine", () => {
       },
       readAggregateRange: () => Stream.die("unused aggregate replay"),
       getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
+      hasEventAfter: () => Effect.succeed(false),
     };
 
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -1016,6 +1018,7 @@ describe("OrchestrationEngine", () => {
       },
       readAggregateRange: () => Stream.die("unused aggregate replay"),
       getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
+      hasEventAfter: () => Effect.succeed(false),
     };
 
     let shouldFailProjection = true;
