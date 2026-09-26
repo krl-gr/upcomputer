@@ -6,8 +6,11 @@
  *
  * @module ProjectFaviconResolver
  */
+import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -17,6 +20,13 @@ import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectConfigFileLoader from "./ProjectConfigFileLoader.ts";
+
+// Resolution walks up to 21 well-known paths plus 7 source files, so a miss
+// costs ~30 filesystem probes. AssetAccess resolves on every project-favicon
+// asset URL, and a project's icon does not move, so the answer is cached.
+const FAVICON_CACHE_CAPACITY = 512;
+const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
+const FAVICON_NEGATIVE_CACHE_TTL = Duration.minutes(1);
 
 // Well-known favicon paths checked in order.
 const FAVICON_CANDIDATES = [
@@ -174,9 +184,9 @@ export const make = Effect.gen(function* () {
     return null;
   });
 
-  const resolvePath: ProjectFaviconResolver["Service"]["resolvePath"] = Effect.fn(
-    "ProjectFaviconResolver.resolvePath",
-  )(function* (cwd) {
+  const resolvePathUncached = Effect.fn("ProjectFaviconResolver.resolvePathUncached")(function* (
+    cwd: string,
+  ): Effect.fn.Return<string | null, ProjectFaviconResolutionError> {
     const projectCwd = yield* workspacePaths.normalizeWorkspaceRoot(cwd).pipe(
       Effect.mapError(
         (cause) =>
@@ -248,6 +258,48 @@ export const make = Effect.gen(function* () {
     }
 
     return null;
+  });
+
+  const faviconCache = yield* Cache.makeWith<string, string | null, ProjectFaviconResolutionError>(
+    resolvePathUncached,
+    {
+      capacity: FAVICON_CACHE_CAPACITY,
+      timeToLive: Exit.match({
+        onSuccess: (value: string | null) =>
+          value === null ? FAVICON_NEGATIVE_CACHE_TTL : FAVICON_POSITIVE_CACHE_TTL,
+        onFailure: () => Duration.zero,
+      }),
+    },
+  );
+
+  const resolvePath: ProjectFaviconResolver["Service"]["resolvePath"] = Effect.fn(
+    "ProjectFaviconResolver.resolvePath",
+  )(function* (cwd) {
+    const cached = yield* Cache.get(faviconCache, cwd);
+    if (cached === null) {
+      return null;
+    }
+
+    // A hit still confirms the file with one stat rather than the ~30 probes a
+    // full walk costs, so a deleted icon falls back at once instead of after
+    // the TTL.
+    const stats = yield* optionOnNotFound(fileSystem.stat(cached)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectFaviconResolutionError({
+            operation: "stat-candidate",
+            workspaceRoot: cwd,
+            absolutePath: cached,
+            cause,
+          }),
+      ),
+    );
+    if (Option.isSome(stats) && stats.value.type === "File") {
+      return cached;
+    }
+
+    yield* Cache.invalidate(faviconCache, cwd);
+    return yield* Cache.get(faviconCache, cwd);
   });
 
   return ProjectFaviconResolver.of({ resolvePath });
