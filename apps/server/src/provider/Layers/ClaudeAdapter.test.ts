@@ -2949,6 +2949,172 @@ describe("ClaudeAdapterLive", () => {
     },
   );
 
+  const USAGE_LIMIT_MESSAGE =
+    "Claude usage limit reached. Send the message again once the limit resets.";
+  const RATE_LIMIT_ASSISTANT = {
+    type: "assistant",
+    session_id: "sdk-session-limit",
+    uuid: "assistant-limit",
+    parent_tool_use_id: null,
+    error: "rate_limit",
+    message: {
+      id: "assistant-message-limit",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "You've hit your session limit" }],
+    },
+  };
+
+  it.effect.each([
+    { name: "an assistant-only rate limit", messages: [RATE_LIMIT_ASSISTANT], limited: true },
+    {
+      name: "a normal parent response after a rate limit",
+      messages: [RATE_LIMIT_ASSISTANT, { ...RATE_LIMIT_ASSISTANT, error: undefined }],
+      limited: false,
+    },
+    {
+      name: "a server error after a rate limit",
+      messages: [RATE_LIMIT_ASSISTANT, { ...RATE_LIMIT_ASSISTANT, error: "server_error" }],
+      limited: false,
+    },
+    {
+      name: "a subagent rate limit",
+      messages: [{ ...RATE_LIMIT_ASSISTANT, parent_tool_use_id: "nested-tool" }],
+      limited: false,
+    },
+    {
+      name: "a subagent response after a parent rate limit",
+      messages: [
+        RATE_LIMIT_ASSISTANT,
+        { ...RATE_LIMIT_ASSISTANT, error: undefined, parent_tool_use_id: "nested-tool" },
+      ],
+      limited: true,
+    },
+  ])("classifies the success-tagged failure after $name", ({ messages, limited }) => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const { events, payload } = yield* runTurnToCompletion(
+        harness,
+        Effect.sync(() => {
+          for (const [index, message] of messages.entries()) {
+            harness.query.emit({ ...message, uuid: `assistant-${index}` } as unknown as SDKMessage);
+          }
+          harness.query.emit({
+            type: "result",
+            ...SUCCESS_TAGGED_FAILURE,
+            session_id: "sdk-session-limit",
+            uuid: "result-limit",
+          } as unknown as SDKMessage);
+        }),
+      );
+      const errors = events.filter((event) => event.type === "runtime.error");
+      assert.equal(errors.length, limited ? 1 : 0);
+      assert.equal(payload.state, limited ? "failed" : "completed");
+      assert.equal(payload.errorMessage, limited ? USAGE_LIMIT_MESSAGE : undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect.each([
+    {
+      name: "a listed error",
+      result: { subtype: "success", is_error: true, errors: ["Tool execution failed: EACCES"] },
+      state: "failed",
+      errorMessage: /EACCES/,
+    },
+    {
+      name: "an interrupt",
+      result: {
+        subtype: "error_during_execution",
+        is_error: true,
+        terminal_reason: "aborted_tools",
+        errors: [],
+      },
+      state: "interrupted",
+      errorMessage: undefined,
+    },
+  ])(
+    "reports the real cause when an assistant rate limit is followed by $name",
+    ({ result, state, errorMessage }) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const { payload } = yield* runTurnToCompletion(
+          harness,
+          Effect.sync(() => {
+            harness.query.emit(RATE_LIMIT_ASSISTANT as unknown as SDKMessage);
+            harness.query.emit({
+              type: "result",
+              ...result,
+              session_id: "sdk-session-limit",
+              uuid: "result-limit",
+            } as unknown as SDKMessage);
+          }),
+        );
+        assert.equal(payload.state, state);
+        if (errorMessage === undefined) {
+          assert.equal(payload.errorMessage, undefined);
+        } else {
+          assert.match(payload.errorMessage ?? "", errorMessage);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("names repeated usage limits without carrying them into a later turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      for (const [index, expected] of [
+        USAGE_LIMIT_MESSAGE,
+        USAGE_LIMIT_MESSAGE,
+        undefined,
+      ].entries()) {
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil((event) => event.type === "turn.completed"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* adapter.sendTurn({ threadId: session.threadId, input: "again", attachments: [] });
+        if (index === 0) {
+          harness.query.emit({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
+            session_id: "sdk-session-limit",
+            uuid: "limit-rejected",
+          } as unknown as SDKMessage);
+        }
+        if (index < 2) {
+          harness.query.emit({
+            ...RATE_LIMIT_ASSISTANT,
+            uuid: `assistant-limit-${index}`,
+          } as unknown as SDKMessage);
+        }
+        harness.query.emit({
+          type: "result",
+          ...SUCCESS_TAGGED_FAILURE,
+          session_id: "sdk-session-limit",
+          uuid: `result-limit-${index}`,
+        } as unknown as SDKMessage);
+        const completed = Array.from(yield* Fiber.join(eventsFiber)).at(-1);
+        assert(completed?.type === "turn.completed");
+        assert.equal(completed.payload.state, expected ? "failed" : "completed");
+        assert.equal(completed.payload.errorMessage, expected);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps a successful turn successful after a recovered usage limit", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
