@@ -69,6 +69,7 @@ const threadActivitiesWithOpenTasks = (openTaskThreadIds: ReadonlyArray<ThreadId
     upsert: () => Effect.die("unused"),
     listByThreadId: () => Effect.die("unused"),
     listUserInputLifecycleByThreadId: () => Effect.die("unused"),
+    getLatestTaskActivity: () => Effect.die("unused"),
     countOpenTasks: ({ threadId }) => Effect.succeed(openTaskThreadIds.includes(threadId) ? 1 : 0),
     deleteByThreadId: () => Effect.die("unused"),
   }) satisfies ProjectionThreadActivities.ProjectionThreadActivityRepository["Service"];

@@ -17,6 +17,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Option from "effect/Option";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
@@ -37,6 +38,13 @@ export const ListProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
 });
 export type ListProjectionThreadActivitiesInput = typeof ListProjectionThreadActivitiesInput.Type;
+
+export const GetLatestProjectionThreadTaskActivityInput = Schema.Struct({
+  threadId: ThreadId,
+  taskId: Schema.String,
+});
+export type GetLatestProjectionThreadTaskActivityInput =
+  typeof GetLatestProjectionThreadTaskActivityInput.Type;
 
 export const CountOpenProjectionThreadTasksInput = Schema.Struct({
   threadId: ThreadId,
@@ -81,6 +89,13 @@ export interface ProjectionThreadActivityRepositoryShape {
   readonly listUserInputLifecycleByThreadId: (
     input: ListProjectionThreadActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  /**
+   * Read the latest task-start or task-progress activity with a usable title.
+   */
+  readonly getLatestTaskActivity: (
+    input: GetLatestProjectionThreadTaskActivityInput,
+  ) => Effect.Effect<Option.Option<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
   /**
    * Count `task.started` rows created after `startedAfter` that have no
