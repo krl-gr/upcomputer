@@ -52,9 +52,6 @@ import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
-const decodeV2ThreadResumeResponse = Schema.decodeUnknownEffect(
-  EffectCodexSchema.V2ThreadResumeResponse,
-);
 const decodeV2ThreadStartResponse = Schema.decodeUnknownEffect(
   EffectCodexSchema.V2ThreadStartResponse,
 );
@@ -835,21 +832,27 @@ export function isRecoverableThreadResumeError(error: unknown): boolean {
   return RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS.some((snippet) => message.includes(snippet));
 }
 
-type CodexThreadOpenResponse =
-  | CodexRpc.ClientRequestResponsesByMethod["thread/start"]
-  | CodexRpc.ClientRequestResponsesByMethod["thread/resume"];
-
-type CodexThreadOpenMethod = "thread/start" | "thread/resume";
+const CodexThreadResumeMetadata = Schema.Struct({
+  cwd: Schema.String,
+  model: Schema.String,
+  thread: Schema.Struct({ id: Schema.String }),
+});
+const decodeCodexThreadResumeMetadata = Schema.decodeUnknownEffect(CodexThreadResumeMetadata);
 
 interface CodexThreadOpenClient {
-  readonly request: <M extends CodexThreadOpenMethod>(
-    method: M,
-    payload: CodexRpc.ClientRequestParamsByMethod[M],
-  ) => Effect.Effect<CodexRpc.ClientRequestResponsesByMethod[M], CodexErrors.CodexAppServerError>;
-  readonly raw?: {
+  readonly request: (
+    method: "thread/start",
+    payload: CodexRpc.ClientRequestParamsByMethod["thread/start"],
+  ) => Effect.Effect<
+    CodexRpc.ClientRequestResponsesByMethod["thread/start"],
+    CodexErrors.CodexAppServerError
+  >;
+  readonly raw: {
     readonly request: (
-      method: CodexThreadOpenMethod,
-      payload: CodexThreadStartParamsWithDynamicTools | CodexThreadResumeParamsWithDynamicTools,
+      method: "thread/start" | "thread/resume",
+      payload:
+        | CodexThreadStartParamsWithDynamicTools
+        | (CodexThreadResumeParamsWithDynamicTools & { readonly excludeTurns?: boolean }),
     ) => Effect.Effect<unknown, CodexErrors.CodexAppServerError>;
   };
 }
@@ -863,7 +866,7 @@ export const openCodexThread = (input: {
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
   readonly dynamicTools?: ReadonlyArray<CodexDynamicToolSpec>;
-}): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
+}): Effect.Effect<typeof CodexThreadResumeMetadata.Type, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
   const hasDynamicTools = input.dynamicTools !== undefined && input.dynamicTools.length > 0;
   const startParams = buildThreadStartParams({
@@ -883,54 +886,48 @@ export const openCodexThread = (input: {
         ),
       ),
     );
-  const decodeThreadResume = (raw: unknown) =>
-    decodeV2ThreadResumeResponse(raw).pipe(
-      Effect.mapError((error) =>
-        CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
-          "decode-response-payload",
-          error,
-          { method: "thread/resume" },
-        ),
-      ),
-    );
-
-  if (resumeThreadId === undefined) {
-    if (hasDynamicTools && input.client.raw !== undefined) {
-      return input.client.raw
-        .request("thread/start", startParams)
-        .pipe(Effect.flatMap(decodeThreadStart));
-    }
-    return input.client.request("thread/start", startParams);
-  }
-
-  const resumeParams = {
-    threadId: resumeThreadId,
-    ...startParams,
-  } satisfies CodexThreadResumeParamsWithDynamicTools;
-  const resume =
-    hasDynamicTools && input.client.raw !== undefined
-      ? input.client.raw
-          .request("thread/resume", resumeParams)
-          .pipe(Effect.flatMap(decodeThreadResume))
-      : input.client.request("thread/resume", resumeParams);
-  const restart =
-    hasDynamicTools && input.client.raw !== undefined
+  const startThread = () =>
+    hasDynamicTools
       ? input.client.raw
           .request("thread/start", startParams)
           .pipe(Effect.flatMap(decodeThreadStart))
       : input.client.request("thread/start", startParams);
 
-  return resume.pipe(
-    Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-      Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-        threadId: input.threadId,
-        requestedRuntimeMode: input.runtimeMode,
-        resumeThreadId,
-        recoverable: true,
-        cause: error,
-      }).pipe(Effect.andThen(restart)),
-    ),
-  );
+  if (resumeThreadId === undefined) {
+    return startThread();
+  }
+
+  // Older providers may still return history despite excludeTurns. Only the
+  // session metadata is needed here, so unrelated historical items cannot
+  // prevent resuming a valid provider thread.
+  return input.client.raw
+    .request("thread/resume", {
+      threadId: resumeThreadId,
+      ...startParams,
+      excludeTurns: true,
+    })
+    .pipe(
+      Effect.flatMap((response) =>
+        decodeCodexThreadResumeMetadata(response).pipe(
+          Effect.mapError((error) =>
+            CodexErrors.CodexAppServerRequestError.invalidPayload(
+              "thread/resume",
+              "decode-payload",
+              error,
+            ),
+          ),
+        ),
+      ),
+      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
+        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+          threadId: input.threadId,
+          requestedRuntimeMode: input.runtimeMode,
+          resumeThreadId,
+          recoverable: true,
+          cause: error,
+        }).pipe(Effect.andThen(startThread)),
+      ),
+    );
 };
 
 function readNotificationThreadId(notification: CodexServerNotification): string | undefined {
