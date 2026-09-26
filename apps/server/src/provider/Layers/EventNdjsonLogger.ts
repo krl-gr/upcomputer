@@ -24,6 +24,9 @@ import { toSafeThreadAttachmentSegment } from "../../attachmentStore.ts";
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 10;
 const DEFAULT_BATCH_WINDOW_MS = 200;
+const MAX_RECORD_CHARACTERS = 64 * 1024;
+const MAX_RECORD_FIELDS = 1_024;
+const MAX_RECORD_DEPTH = 16;
 const GLOBAL_THREAD_SEGMENT = "_global";
 const LOG_SCOPE = "provider-observability";
 const encodeUnknownJsonString = Schema.encodeUnknownEffect(Schema.UnknownFromJsonString);
@@ -85,6 +88,110 @@ function resolveStreamLabel(stream: EventNdjsonStream): string {
     default:
       return "CANON";
   }
+}
+
+const summaryFields = [
+  "provider",
+  "protocol",
+  "kind",
+  "providerSessionId",
+  "direction",
+  "stage",
+  "type",
+  "subtype",
+  "method",
+  "id",
+  "threadId",
+  "turnId",
+  "requestId",
+  "session_id",
+  "status",
+  "is_error",
+  "api_error_status",
+  "terminal_reason",
+  "stop_reason",
+  "operation",
+  "code",
+  "willRetry",
+  "message",
+  "event",
+  "payload",
+  "params",
+  "result",
+  "thread",
+  "turn",
+  "error",
+  "turns",
+  "items",
+  "content",
+] as const;
+
+function summarizeProviderEvent(event: unknown): unknown {
+  let remainingFields = 128;
+  let remainingCharacters = 8 * 1024;
+  const summarize = (value: unknown, depth: number): unknown => {
+    if (typeof value === "string") {
+      if (value.length > Math.min(1_024, remainingCharacters)) {
+        return { omittedCharacters: value.length };
+      }
+      remainingCharacters -= value.length;
+      return value;
+    }
+    if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+    if (typeof value !== "object") return undefined;
+    if (Array.isArray(value)) return { itemCount: value.length };
+    const summary: Record<string, unknown> = { truncated: true };
+    if (depth >= 6) return summary;
+    for (const key of summaryFields) {
+      if (remainingFields <= 0) break;
+      const nested = Reflect.get(value, key);
+      if (nested === undefined) continue;
+      remainingFields -= 1;
+      summary[key] = summarize(nested, depth + 1);
+    }
+    return summary;
+  };
+  try {
+    return summarize(event, 0);
+  } catch {
+    return { truncated: true };
+  }
+}
+
+/** Bounds traversal before the logger encodes payloads. */
+function boundProviderEventForLogging(event: unknown): unknown {
+  let remainingCharacters = MAX_RECORD_CHARACTERS;
+  let remainingFields = MAX_RECORD_FIELDS;
+  const ancestors = new WeakSet<object>();
+  const fits = (value: unknown, depth: number): boolean => {
+    if (typeof value === "string") {
+      remainingCharacters -= value.length;
+      return remainingCharacters >= 0;
+    }
+    if (typeof value !== "object" || value === null) return true;
+    if (depth > MAX_RECORD_DEPTH || ancestors.has(value)) return false;
+    if (Array.isArray(value) && value.length > remainingFields) return false;
+    ancestors.add(value);
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      remainingFields -= 1;
+      remainingCharacters -= key.length;
+      if (
+        remainingFields < 0 ||
+        remainingCharacters < 0 ||
+        !fits(Reflect.get(value, key), depth + 1)
+      )
+        return false;
+    }
+    ancestors.delete(value);
+    return true;
+  };
+  try {
+    if (fits(event, 0)) return event;
+  } catch {
+    // A failing accessor must not escape into provider processing.
+  }
+  return summarizeProviderEvent(event);
 }
 
 const toLogMessage = Effect.fn("toLogMessage")(function* (
@@ -247,9 +354,17 @@ export const makeEventNdjsonLogger = Effect.fn("makeEventNdjsonLogger")(function
 
   const write = Effect.fn("write")(function* (event: unknown, threadId: ThreadId | null) {
     const threadSegment = resolveThreadSegment(threadId);
-    const message = yield* toLogMessage(event);
+    let message = yield* toLogMessage(boundProviderEventForLogging(event));
     if (!message) {
       return;
+    }
+    // Escaping can expand strings beyond their input size. Keep that bounded
+    // serialization out of the file too, while retaining routing/error fields.
+    if (Buffer.byteLength(message) > MAX_RECORD_CHARACTERS) {
+      message = yield* toLogMessage(summarizeProviderEvent(event));
+      if (!message) {
+        return;
+      }
     }
 
     const writer = yield* resolveThreadWriter(threadSegment);
