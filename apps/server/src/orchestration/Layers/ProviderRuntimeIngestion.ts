@@ -3,6 +3,7 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  EventId,
   MessageId,
   type OrchestrationEvent,
   OrchestrationProposedPlanId,
@@ -1595,6 +1596,42 @@ const make = Effect.gen(function* () {
       if (isTerminalTurn) {
         const turnId = toTurnId(event.turnId);
         if (turnId) {
+          const userInputActivities =
+            yield* projectionThreadActivityRepository.listUserInputLifecycleByThreadId({
+              threadId: thread.id,
+            });
+          const pendingRequestIds = new Set<string>();
+          for (const activity of userInputActivities) {
+            const payload =
+              typeof activity.payload === "object" && activity.payload !== null
+                ? (activity.payload as Record<string, unknown>)
+                : null;
+            const requestId = payload?.requestId;
+            if (typeof requestId !== "string") continue;
+            if (activity.kind === "user-input.requested" && activity.turnId === turnId) {
+              pendingRequestIds.add(requestId);
+            } else if (activity.kind === "user-input.resolved") {
+              pendingRequestIds.delete(requestId);
+            }
+          }
+          // A terminal turn cannot accept native callback answers.
+          for (const requestId of pendingRequestIds) {
+            yield* orchestrationEngine.dispatch({
+              type: "thread.activity.append",
+              commandId: yield* providerCommandId(event, "terminal-user-input-resolved"),
+              threadId: thread.id,
+              activity: {
+                id: EventId.make(`${event.eventId}:user-input-resolved:${requestId}`),
+                createdAt: now,
+                tone: "info",
+                kind: "user-input.resolved",
+                summary: "User input dismissed",
+                payload: { requestId },
+                turnId,
+              },
+              createdAt: now,
+            });
+          }
           const assistantMessageIds = yield* getAssistantMessageIdsForTurn(thread.id, turnId);
           yield* Effect.forEach(
             assistantMessageIds,
