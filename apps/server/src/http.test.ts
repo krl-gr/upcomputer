@@ -5,7 +5,12 @@ import * as Stream from "effect/Stream";
 import { HttpServerResponse } from "effect/unstable/http";
 import { describe } from "vite-plus/test";
 
-import { compressHttpResponse, isLoopbackHostname, resolveDevRedirectUrl } from "./http.ts";
+import {
+  assetResponseHeaders,
+  compressHttpResponse,
+  isLoopbackHostname,
+  resolveDevRedirectUrl,
+} from "./http.ts";
 
 describe("http dev routing", () => {
   it("treats localhost and loopback addresses as local", () => {
@@ -74,5 +79,24 @@ describe("http compression", () => {
 
     expect(makeResponse("*").headers.vary).toBe("*");
     expect(makeResponse("Origin, accept-encoding").headers.vary).toBe("Origin, accept-encoding");
+  });
+});
+
+describe("assetResponseHeaders", () => {
+  it("sandboxes SVG assets", () => {
+    expect(assetResponseHeaders("/attachments/user-image.svg")).toMatchObject({
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "X-Content-Type-Options": "nosniff",
+    });
+    expect(assetResponseHeaders("/attachments/user-image.SVG")).toHaveProperty(
+      "Content-Security-Policy",
+    );
+  });
+
+  it("does not apply document policy to raster images", () => {
+    expect(assetResponseHeaders("/attachments/user-image.png")).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    });
   });
 });
