@@ -80,6 +80,7 @@ export function resolveOpenCodeServerPassword(
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
+const OPENCODE_SERVER_STARTUP_MAX_OUTPUT_CHARS = 64 * 1024;
 export interface OpenCodeServerProcess {
   readonly url: string;
   readonly serverPassword?: string;
@@ -432,8 +433,19 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
   // approval-required behavior for that mode.
   const editAction = runtimeMode === "auto-accept-edits" ? "allow" : "ask";
 
+  // Session rules override OpenCode's agent defaults. Allow reads and task
+  // updates, but keep its default approval rules for environment files.
   return [
     { permission: "*", pattern: "*", action: "ask" },
+    { permission: "read", pattern: "*", action: "allow" },
+    { permission: "read", pattern: "*.env", action: "ask" },
+    { permission: "read", pattern: "*.env.*", action: "ask" },
+    { permission: "read", pattern: "*.env.example", action: "allow" },
+    { permission: "glob", pattern: "*", action: "allow" },
+    { permission: "grep", pattern: "*", action: "allow" },
+    { permission: "lsp", pattern: "*", action: "allow" },
+    { permission: "skill", pattern: "*", action: "allow" },
+    { permission: "todowrite", pattern: "*", action: "allow" },
     { permission: "bash", pattern: "*", action: "ask" },
     { permission: "edit", pattern: "*", action: editAction },
     { permission: "webfetch", pattern: "*", action: "ask" },
@@ -452,6 +464,7 @@ export function toOpenCodePermissionReply(
     case "accept":
       return "once";
     case "acceptForSession":
+    case "acceptAlways":
       return "always";
     case "decline":
     case "cancel":
@@ -638,18 +651,24 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       );
       yield* Scope.addFinalizer(runtimeScope, terminateChild);
 
-      const stdoutRef = yield* Ref.make("");
-      const stderrRef = yield* Ref.make("");
+      const stdoutRef = yield* Ref.make<string | null>("");
+      const stderrRef = yield* Ref.make<string | null>("");
       const readyDeferred = yield* Deferred.make<string, OpenCodeRuntimeError>();
 
       const setReadyFromStdoutChunk = (chunk: string) =>
-        Ref.updateAndGet(stdoutRef, (stdout) => `${stdout}${chunk}`).pipe(
-          Effect.flatMap((nextStdout) => {
-            const parsed = parseServerUrlFromOutput(nextStdout);
-            return parsed
-              ? Deferred.succeed(readyDeferred, parsed).pipe(Effect.ignore)
-              : Effect.void;
-          }),
+        Ref.modify(stdoutRef, (stdout) => {
+          if (stdout === null) {
+            return [null, null] as const;
+          }
+          const nextStdout = `${stdout}${chunk}`;
+          return [
+            parseServerUrlFromOutput(nextStdout),
+            nextStdout.slice(-OPENCODE_SERVER_STARTUP_MAX_OUTPUT_CHARS),
+          ] as const;
+        }).pipe(
+          Effect.flatMap((parsed) =>
+            parsed ? Deferred.succeed(readyDeferred, parsed).pipe(Effect.ignore) : Effect.void,
+          ),
         );
 
       const stdoutFiber = yield* child.stdout.pipe(
@@ -660,7 +679,13 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       );
       const stderrFiber = yield* child.stderr.pipe(
         Stream.decodeText(),
-        Stream.runForEach((chunk) => Ref.update(stderrRef, (stderr) => `${stderr}${chunk}`)),
+        Stream.runForEach((chunk) =>
+          Ref.update(stderrRef, (stderr) =>
+            stderr === null
+              ? null
+              : `${stderr}${chunk}`.slice(-OPENCODE_SERVER_STARTUP_MAX_OUTPUT_CHARS),
+          ),
+        ),
         Effect.ignore,
         Effect.forkIn(runtimeScope),
       );
@@ -668,8 +693,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const exitFiber = yield* child.exitCode.pipe(
         Effect.flatMap((code) =>
           Effect.gen(function* () {
-            const stdout = yield* Ref.get(stdoutRef);
-            const stderr = yield* Ref.get(stderrRef);
+            const stdout = (yield* Ref.get(stdoutRef)) ?? "";
+            const stderr = (yield* Ref.get(stderrRef)) ?? "";
             const exitCode = Number(code);
             yield* Deferred.fail(
               readyDeferred,
@@ -695,14 +720,11 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         Deferred.await(readyDeferred).pipe(Effect.timeoutOption(timeoutMs)),
       );
 
-      // Startup-time fibers are no longer needed once ready has resolved (either
-      // way). The exit fiber is only interrupted on failure; on success it keeps
-      // the caller's `exitCode` effect observable until the scope closes.
-      yield* Fiber.interrupt(stdoutFiber).pipe(Effect.ignore);
-      yield* Fiber.interrupt(stderrFiber).pipe(Effect.ignore);
+      if (Exit.isFailure(readyExit) || Option.isNone(readyExit.value)) {
+        yield* Fiber.interruptAll([stdoutFiber, stderrFiber, exitFiber]).pipe(Effect.ignore);
+      }
 
       if (Exit.isFailure(readyExit)) {
-        yield* Fiber.interrupt(exitFiber).pipe(Effect.ignore);
         const squashed = Cause.squash(readyExit.cause);
         return yield* ensureRuntimeError(
           "startOpenCodeServerProcess",
@@ -713,12 +735,17 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
       const readyOption = readyExit.value;
       if (Option.isNone(readyOption)) {
-        yield* Fiber.interrupt(exitFiber).pipe(Effect.ignore);
         return yield* new OpenCodeRuntimeError({
           operation: "startOpenCodeServerProcess",
           detail: `Timed out waiting for OpenCode server start after ${timeoutMs}ms.`,
         });
       }
+
+      // Keep draining both pipes until the process scope closes. Stopping the
+      // readers can block OpenCode when its output buffers fill. Startup output
+      // is no longer needed, so discard later output instead of retaining it.
+      yield* Ref.set(stdoutRef, null);
+      yield* Ref.set(stderrRef, null);
 
       const url = readyOption.value;
       const version = yield* verifyOpenCodeServerVersion(
@@ -785,7 +812,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   };
 
   const loadProviders = (client: OpencodeClient) =>
-    runOpenCodeSdk("provider.list", () => client.provider.list()).pipe(
+    runOpenCodeSdk("provider.list", (signal) => client.provider.list(undefined, { signal })).pipe(
       Effect.filterMapOrFail(
         (list) =>
           list.data
@@ -801,7 +828,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     );
 
   const loadAgents = (client: OpencodeClient) =>
-    runOpenCodeSdk("app.agents", () => client.app.agents()).pipe(
+    runOpenCodeSdk("app.agents", (signal) => client.app.agents(undefined, { signal })).pipe(
       Effect.map((result) => result.data ?? []),
       Effect.orElseSucceed((): ReadonlyArray<Agent> => []),
     );

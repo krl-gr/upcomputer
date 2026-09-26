@@ -2920,6 +2920,24 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       });
 
       yield* appendAndProject({
+        type: "thread.approval-response-requested",
+        eventId: EventId.make("evt-nonstale-approval-response"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-nonstale-approval"),
+        occurredAt: "2026-02-26T12:45:02.500Z",
+        commandId: CommandId.make("cmd-nonstale-approval-response"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-nonstale-approval-response"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-nonstale-approval"),
+          requestId: ApprovalRequestId.make("approval-request-nonstale-existing"),
+          decision: "accept",
+          createdAt: "2026-02-26T12:45:02.500Z",
+        },
+      });
+
+      yield* appendAndProject({
         type: "thread.activity-appended",
         eventId: EventId.make("evt-nonstale-approval-4"),
         aggregateKind: "thread",
