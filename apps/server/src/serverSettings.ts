@@ -561,14 +561,21 @@ const make = Effect.gen(function* () {
       Stream.map(resolveTextGenerationProvider),
     );
 
-  const persistProviderEnvironmentSecrets = (
-    current: ServerSettings,
-    next: ServerSettings,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    Effect.gen(function* () {
+  type SecretChange = {
+    readonly secretName: string;
+    readonly providerInstanceId: string;
+    readonly environmentVariable: string;
+  } & (
+    | { readonly kind: "write"; readonly value: Uint8Array }
+    | { readonly kind: "remove"; readonly operation: "remove-secret" | "remove-stale-secret" }
+  );
+
+  const persistProviderEnvironmentSecrets = (current: ServerSettings, next: ServerSettings) =>
+    Effect.sync(() => {
       const providerInstances: Record<string, ProviderInstanceConfig> = {
         ...next.providerInstances,
       };
+      const changes: SecretChange[] = [];
 
       const nextSecretKeys = new Set<string>();
       for (const [instanceId, instance] of Object.entries(next.providerInstances)) {
@@ -577,18 +584,13 @@ const make = Effect.gen(function* () {
         for (const variable of instance.environment) {
           const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
           if (!variable.sensitive) {
-            yield* secretStore.remove(secretName).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ServerSettingsError({
-                    settingsPath,
-                    operation: "remove-secret",
-                    providerInstanceId: instanceId,
-                    environmentVariable: variable.name,
-                    cause,
-                  }),
-              ),
-            );
+            changes.push({
+              kind: "remove",
+              secretName,
+              operation: "remove-secret",
+              providerInstanceId: instanceId,
+              environmentVariable: variable.name,
+            });
             environment.push(redactProviderEnvironmentVariable(variable));
             continue;
           }
@@ -607,32 +609,22 @@ const make = Effect.gen(function* () {
           const value = inlineValue ?? variable.value;
           if (!variable.valueRedacted || inlineValue !== undefined) {
             if (value.length > 0) {
-              yield* secretStore.set(secretName, textEncoder.encode(value)).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ServerSettingsError({
-                      settingsPath,
-                      operation: "write-secret",
-                      providerInstanceId: instanceId,
-                      environmentVariable: variable.name,
-                      cause,
-                    }),
-                ),
-              );
+              changes.push({
+                kind: "write",
+                secretName,
+                value: textEncoder.encode(value),
+                providerInstanceId: instanceId,
+                environmentVariable: variable.name,
+              });
               environment.push({ ...variable, value: "", valueRedacted: true });
             } else {
-              yield* secretStore.remove(secretName).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ServerSettingsError({
-                      settingsPath,
-                      operation: "remove-secret",
-                      providerInstanceId: instanceId,
-                      environmentVariable: variable.name,
-                      cause,
-                    }),
-                ),
-              );
+              changes.push({
+                kind: "remove",
+                secretName,
+                operation: "remove-secret",
+                providerInstanceId: instanceId,
+                environmentVariable: variable.name,
+              });
               const { valueRedacted: _omit, ...rest } = variable;
               environment.push(rest);
             }
@@ -652,24 +644,22 @@ const make = Effect.gen(function* () {
           if (!variable.sensitive) continue;
           const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
           if (nextSecretKeys.has(secretName)) continue;
-          yield* secretStore.remove(secretName).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ServerSettingsError({
-                  settingsPath,
-                  operation: "remove-stale-secret",
-                  providerInstanceId: instanceId,
-                  environmentVariable: variable.name,
-                  cause,
-                }),
-            ),
-          );
+          changes.push({
+            kind: "remove",
+            secretName,
+            operation: "remove-stale-secret",
+            providerInstanceId: instanceId,
+            environmentVariable: variable.name,
+          });
         }
       }
 
       return {
-        ...next,
-        providerInstances: providerInstances as ServerSettings["providerInstances"],
+        settings: {
+          ...next,
+          providerInstances: providerInstances as ServerSettings["providerInstances"],
+        },
+        changes,
       };
     });
 
@@ -696,6 +686,112 @@ const make = Effect.gen(function* () {
         }),
     ),
   );
+
+  type AppliedSecretChange = {
+    readonly secretName: string;
+    readonly previousValue: Option.Option<Uint8Array>;
+    readonly providerInstanceId: string;
+    readonly environmentVariable: string;
+  };
+
+  const rollbackProviderEnvironmentSecretWrites = (writes: ReadonlyArray<AppliedSecretChange>) =>
+    Effect.forEach(
+      writes.toReversed(),
+      (write) =>
+        (Option.isSome(write.previousValue)
+          ? secretStore.set(write.secretName, write.previousValue.value)
+          : secretStore.remove(write.secretName)
+        ).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("failed to roll back provider environment secret", {
+              providerInstanceId: write.providerInstanceId,
+              environmentVariable: write.environmentVariable,
+              cause,
+            }),
+          ),
+        ),
+      { discard: true },
+    );
+
+  const applyProviderEnvironmentSecretChanges = (changes: ReadonlyArray<SecretChange>) => {
+    const applied: AppliedSecretChange[] = [];
+    const rollback = Effect.suspend(() => rollbackProviderEnvironmentSecretWrites(applied));
+    return Effect.forEach(
+      changes,
+      (change) =>
+        Effect.gen(function* () {
+          const previousValue = yield* secretStore.get(change.secretName).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: "read-secret",
+                  providerInstanceId: change.providerInstanceId,
+                  environmentVariable: change.environmentVariable,
+                  cause,
+                }),
+            ),
+          );
+          // A store operation may mutate before reporting an error (for example chmod after rename).
+          applied.push({ ...change, previousValue });
+          yield* (
+            change.kind === "write"
+              ? secretStore.set(change.secretName, change.value)
+              : secretStore.remove(change.secretName)
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: change.kind === "write" ? "write-secret" : change.operation,
+                  providerInstanceId: change.providerInstanceId,
+                  environmentVariable: change.environmentVariable,
+                  cause,
+                }),
+            ),
+          );
+        }),
+      { discard: true },
+    ).pipe(
+      Effect.tapError(() => rollback),
+      Effect.as(rollback),
+    );
+  };
+
+  const updateSettings = (
+    patch: ServerSettingsPatch,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    writeSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* getSettingsFromCache;
+        const updated = applyServerSettingsPatch(current, patch);
+        const persisted = yield* persistProviderEnvironmentSecrets(current, updated);
+        const next = yield* normalizeServerSettings(persisted.settings);
+        const materialized = yield* Effect.uninterruptibleMask(() =>
+          Effect.gen(function* () {
+            const rollbackSecretChanges = yield* applyProviderEnvironmentSecretChanges(
+              persisted.changes,
+            );
+            const materializedExit = yield* Effect.exit(
+              materializeProviderEnvironmentSecrets(next),
+            );
+            if (Exit.isFailure(materializedExit)) {
+              yield* rollbackSecretChanges;
+              return yield* Effect.failCause(materializedExit.cause);
+            }
+            const writeExit = yield* Effect.exit(writeSettingsAtomically(next));
+            if (Exit.isFailure(writeExit)) {
+              yield* rollbackSecretChanges;
+              return yield* Effect.failCause(writeExit.cause);
+            }
+            return materializedExit.value;
+          }),
+        );
+        yield* Cache.set(settingsCache, cacheKey, next);
+        yield* emitChange(next);
+        return resolveTextGenerationProvider(materialized);
+      }),
+    );
 
   const revalidateAndEmit = writeSemaphore.withPermits(1)(
     Effect.gen(function* () {
@@ -772,22 +868,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap(materializeProviderEnvironmentSecrets),
       Effect.map(resolveTextGenerationProvider),
     ),
-    updateSettings: (patch) =>
-      writeSemaphore.withPermits(1)(
-        Effect.gen(function* () {
-          const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
-            current,
-            applyServerSettingsPatch(current, patch),
-          );
-          const next = yield* normalizeServerSettings(nextPersisted);
-          yield* writeSettingsAtomically(next);
-          yield* Cache.set(settingsCache, cacheKey, next);
-          yield* emitChange(next);
-          const materialized = yield* materializeProviderEnvironmentSecrets(next);
-          return resolveTextGenerationProvider(materialized);
-        }),
-      ),
+    updateSettings,
     get streamChanges() {
       return materializeChanges(Stream.fromPubSub(changesPubSub));
     },
