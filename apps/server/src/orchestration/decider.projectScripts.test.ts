@@ -6,6 +6,7 @@ import {
   ProjectId,
   ThreadId,
   ProviderInstanceId,
+  type ModelSelection,
 } from "@upcomputer/contracts";
 import { createModelSelection } from "@upcomputer/shared/model";
 import { expect, it } from "@effect/vitest";
@@ -39,6 +40,54 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
       const event = Array.isArray(result) ? result[0] : result;
       expect(event.type).toBe("project.created");
       expect((event.payload as { scripts: unknown[] }).scripts).toEqual([]);
+    }),
+  );
+
+  it.effect("only treats metadata updates as explicit model defaults", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = asProjectId("project-model-default");
+      const selection: ModelSelection = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      };
+      const created = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.create",
+          commandId: CommandId.make("cmd-project-model-create"),
+          projectId,
+          title: "Model default",
+          workspaceRoot: "/tmp/model-default",
+          defaultModelSelection: selection,
+          createdAt: now,
+        },
+        readModel: createEmptyReadModel(now),
+      });
+      const createdEvent = Array.isArray(created) ? created[0] : created;
+      expect(createdEvent.type).toBe("project.created");
+      expect(
+        (createdEvent.payload as { defaultModelSelection?: unknown }).defaultModelSelection,
+      ).toBeNull();
+
+      const withProject = yield* projectEvent(createEmptyReadModel(now), {
+        ...createdEvent,
+        sequence: 1,
+      });
+      const updated = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-model-update"),
+          projectId,
+          defaultModelSelection: selection,
+        },
+        readModel: withProject,
+      });
+      const updatedEvent = Array.isArray(updated) ? updated[0] : updated;
+      expect(updatedEvent.type).toBe("project.meta-updated");
+      expect(
+        (updatedEvent.payload as { defaultModelSelection?: unknown }).defaultModelSelection,
+      ).toEqual(selection);
     }),
   );
 
