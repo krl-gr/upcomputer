@@ -47,7 +47,9 @@ function addDays(base: Date, days: number): Date {
 /**
  * Presets for "snooze until", computed against local time. "This evening"
  * only appears while it is still meaningfully before evening; after that
- * the list starts at "Tomorrow".
+ * the list starts at "Tomorrow". Presets that land on the same instant
+ * collapse: on Sundays "Tomorrow" and "Next week" are both Monday morning,
+ * so only "Tomorrow" is offered.
  */
 export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   const inAnHour = new Date(now.getTime() + HOUR_MS);
@@ -83,12 +85,14 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   // Next Monday 9:00 (a week out when today is Monday).
   const daysUntilMonday = (1 - now.getDay() + 7) % 7 || 7;
   const nextWeek = atHour(addDays(now, daysUntilMonday), MORNING_HOUR);
-  presets.push({
-    id: "next-week",
-    label: "Next week",
-    whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${timeOfDayLabel(nextWeek)}`,
-    snoozedUntil: nextWeek.toISOString(),
-  });
+  if (nextWeek.getTime() !== tomorrow.getTime()) {
+    presets.push({
+      id: "next-week",
+      label: "Next week",
+      whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${timeOfDayLabel(nextWeek)}`,
+      snoozedUntil: nextWeek.toISOString(),
+    });
+  }
 
   return presets;
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   archiveSelectedThreadEntries,
   buildMultiSelectThreadContextMenuItems,
+  buildThreadContextMenuItems,
   createThreadJumpHintVisibilityController,
   formatSidebarThreadTimestamp,
   getSidebarThreadIdsToPrewarm,
@@ -14,17 +15,21 @@ import {
   isContextMenuPointerDown,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
+  partitionSnoozedThreads,
   resolveProjectStatusIndicator,
   resolveSidebarStageBadgeLabel,
   resolveThreadCompletionTimestamp,
   resolveThreadRowClassName,
+  resolveThreadSnoozeMenuState,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
+  snoozedUntilFromMenuAction,
   sortLogicalProjectsForSidebar,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
+import { resolveSnoozePresets } from "./Sidebar.snooze";
 import {
   EnvironmentId,
   OrchestrationLatestTurn,
@@ -117,17 +122,185 @@ describe("archiveSelectedThreadEntries", () => {
   });
 });
 
+// Wednesday 2026-04-08 10:00 local: every snooze preset is offered.
+const menuNow = new Date(2026, 3, 8, 10, 0, 0, 0);
+
 describe("buildMultiSelectThreadContextMenuItems", () => {
   it("offers bulk archive with the selected count", () => {
     expect(
-      buildMultiSelectThreadContextMenuItems({ count: 3, hasRunningThread: false }),
+      buildMultiSelectThreadContextMenuItems({
+        count: 3,
+        hasRunningThread: false,
+        canSnooze: false,
+        now: menuNow,
+      }),
     ).toContainEqual({ id: "archive", label: "Archive (3)", disabled: false });
   });
 
   it("disables bulk archive when a selected thread is running", () => {
     expect(
-      buildMultiSelectThreadContextMenuItems({ count: 2, hasRunningThread: true }),
+      buildMultiSelectThreadContextMenuItems({
+        count: 2,
+        hasRunningThread: true,
+        canSnooze: false,
+        now: menuNow,
+      }),
     ).toContainEqual({ id: "archive", label: "Archive (2)", disabled: true });
+  });
+
+  it("offers bulk snooze presets before archive when the selection can snooze", () => {
+    const items = buildMultiSelectThreadContextMenuItems({
+      count: 2,
+      hasRunningThread: false,
+      canSnooze: true,
+      now: menuNow,
+    });
+    expect(items.map((item) => item.id)).toEqual(["mark-unread", "snooze", "archive", "delete"]);
+    const snooze = items.find((item) => item.id === "snooze")!;
+    expect(snooze.label).toBe("Snooze (2)");
+    expect(snooze.children?.map((child) => snoozedUntilFromMenuAction(child.id))).toEqual(
+      resolveSnoozePresets(menuNow).map((preset) => preset.snoozedUntil),
+    );
+  });
+
+  it("omits bulk snooze when the selection cannot snooze", () => {
+    expect(
+      buildMultiSelectThreadContextMenuItems({
+        count: 2,
+        hasRunningThread: false,
+        canSnooze: false,
+        now: menuNow,
+      }).map((item) => item.id),
+    ).toEqual(["mark-unread", "archive", "delete"]);
+  });
+});
+
+describe("buildThreadContextMenuItems", () => {
+  it("puts snooze and archive first and delete last for an idle thread", () => {
+    const items = buildThreadContextMenuItems({
+      branch: "feature/menu",
+      isRunning: false,
+      snoozeState: "snoozable",
+      now: menuNow,
+    });
+    expect(items.map((item) => item.id)).toEqual([
+      "snooze",
+      "archive",
+      "fork-thread",
+      "new-thread-on-branch",
+      "rename",
+      "mark-unread",
+      "copy-path",
+      "copy-thread-id",
+      "delete",
+    ]);
+    expect(items[0]!.children?.map((child) => child.label)).toEqual(
+      resolveSnoozePresets(menuNow).map((preset) => `${preset.label} · ${preset.whenLabel}`),
+    );
+    expect(items[1]).toEqual({ id: "archive", label: "Archive", disabled: false });
+    expect(items.at(-1)).toMatchObject({ id: "delete", destructive: true });
+  });
+
+  it("offers wake now instead of snooze for a snoozed thread", () => {
+    const items = buildThreadContextMenuItems({
+      branch: null,
+      isRunning: false,
+      snoozeState: "snoozed",
+      now: menuNow,
+    });
+    expect(items[0]).toEqual({ id: "wake", label: "Wake now" });
+    expect(items.some((item) => item.id === "snooze")).toBe(false);
+    expect(items.some((item) => item.id === "new-thread-on-branch")).toBe(false);
+  });
+
+  it("keeps snooze but disables archive for a running thread", () => {
+    const items = buildThreadContextMenuItems({
+      branch: null,
+      isRunning: true,
+      snoozeState: "snoozable",
+      now: menuNow,
+    });
+    expect(items[0]!.id).toBe("snooze");
+    expect(items).toContainEqual({ id: "archive", label: "Archive", disabled: true });
+  });
+
+  it("omits snooze when it is unavailable", () => {
+    const items = buildThreadContextMenuItems({
+      branch: null,
+      isRunning: false,
+      snoozeState: "unavailable",
+      now: menuNow,
+    });
+    expect(items[0]!.id).toBe("archive");
+    expect(items.some((item) => item.id === "snooze" || item.id === "wake")).toBe(false);
+  });
+});
+
+describe("resolveThreadSnoozeMenuState", () => {
+  const now = new Date("2026-03-09T12:00:00.000Z");
+  const idleThread = {
+    snoozedUntil: null,
+    snoozedAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    latestUserMessageAt: "2026-03-09T09:59:00.000Z",
+    latestTurn: makeLatestTurn(),
+    session: makeReadySession(),
+  };
+
+  it("is unavailable when the server does not support snooze", () => {
+    expect(resolveThreadSnoozeMenuState({ thread: idleThread, supportsSnooze: false, now })).toBe(
+      "unavailable",
+    );
+  });
+
+  it("is snoozable for an idle thread", () => {
+    expect(resolveThreadSnoozeMenuState({ thread: idleThread, supportsSnooze: true, now })).toBe(
+      "snoozable",
+    );
+  });
+
+  it("is snoozed while the wake time is ahead", () => {
+    const thread = {
+      ...idleThread,
+      snoozedAt: "2026-03-09T11:00:00.000Z",
+      snoozedUntil: "2026-03-09T13:00:00.000Z",
+    };
+    expect(resolveThreadSnoozeMenuState({ thread, supportsSnooze: true, now })).toBe("snoozed");
+    expect(
+      resolveThreadSnoozeMenuState({
+        thread,
+        supportsSnooze: true,
+        now: new Date("2026-03-09T13:00:01.000Z"),
+      }),
+    ).toBe("snoozable");
+  });
+
+  it("is unavailable while the thread waits on the user", () => {
+    expect(
+      resolveThreadSnoozeMenuState({
+        thread: { ...idleThread, hasPendingApprovals: true },
+        supportsSnooze: true,
+        now,
+      }),
+    ).toBe("unavailable");
+  });
+});
+
+describe("partitionSnoozedThreads", () => {
+  it("moves snoozed threads out of the list, soonest wake first", () => {
+    const threads = [
+      { id: "a", snoozedUntil: null },
+      { id: "b", snoozedUntil: "2026-03-10T09:00:00.000Z" },
+      { id: "c", snoozedUntil: undefined },
+      { id: "d", snoozedUntil: "2026-03-09T13:00:00.000Z" },
+    ];
+    const { active, snoozed } = partitionSnoozedThreads(
+      threads,
+      (thread) => thread.snoozedUntil != null,
+    );
+    expect(active.map((thread) => thread.id)).toEqual(["a", "c"]);
+    expect(snoozed.map((thread) => thread.id)).toEqual(["d", "b"]);
   });
 });
 

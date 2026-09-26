@@ -1,5 +1,10 @@
 import * as React from "react";
 import type { ContextMenuItem } from "@upcomputer/contracts";
+import {
+  canSnooze,
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@upcomputer/client-runtime/state/thread-settled";
 import type {
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
@@ -15,6 +20,7 @@ import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { resolveSnoozePresets } from "./Sidebar.snooze";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -92,12 +98,84 @@ export async function archiveSelectedThreadEntries<
   return { archivedThreadKeys, mutationFailure: null, followupFailures };
 }
 
+/** Snooze preset menu ids carry the ISO wake time: `snooze:<snoozedUntil>`. */
+type ThreadSnoozeAction = "snooze" | `snooze:${string}`;
+
+export function snoozedUntilFromMenuAction(action: string | null): string | null {
+  return action?.startsWith("snooze:") ? action.slice("snooze:".length) : null;
+}
+
+function buildSnoozeMenuItem(label: string, now: Date): ContextMenuItem<ThreadSnoozeAction> {
+  return {
+    id: "snooze",
+    label,
+    children: resolveSnoozePresets(now).map((preset) => ({
+      id: `snooze:${preset.snoozedUntil}`,
+      label: `${preset.label} · ${preset.whenLabel}`,
+    })),
+  };
+}
+
+export type ThreadSnoozeMenuState = "unavailable" | "snoozable" | "snoozed";
+
+export function resolveThreadSnoozeMenuState(input: {
+  thread: ThreadSnoozeShell & Parameters<typeof canSnooze>[0];
+  supportsSnooze: boolean;
+  now: Date;
+}): ThreadSnoozeMenuState {
+  if (!input.supportsSnooze) return "unavailable";
+  const now = input.now.toISOString();
+  if (effectiveSnoozed(input.thread, { now })) return "snoozed";
+  return canSnooze(input.thread, { now }) ? "snoozable" : "unavailable";
+}
+
+export type ThreadContextMenuAction =
+  | ThreadSnoozeAction
+  | "wake"
+  | "archive"
+  | "fork-thread"
+  | "new-thread-on-branch"
+  | "rename"
+  | "mark-unread"
+  | "copy-path"
+  | "copy-thread-id"
+  | "delete";
+
+/** Items for a single thread's menu, shared by right-click and the row's "…" button. */
+export function buildThreadContextMenuItems(input: {
+  branch: string | null;
+  isRunning: boolean;
+  snoozeState: ThreadSnoozeMenuState;
+  now: Date;
+}): readonly ContextMenuItem<ThreadContextMenuAction>[] {
+  return [
+    ...(input.snoozeState === "snoozed"
+      ? [{ id: "wake" as const, label: "Wake now" }]
+      : input.snoozeState === "snoozable"
+        ? [buildSnoozeMenuItem("Snooze", input.now)]
+        : []),
+    { id: "archive", label: "Archive", disabled: input.isRunning },
+    { id: "fork-thread", label: "Fork thread" },
+    ...(input.branch
+      ? [{ id: "new-thread-on-branch" as const, label: `New thread on ${input.branch}` }]
+      : []),
+    { id: "rename", label: "Rename thread" },
+    { id: "mark-unread", label: "Mark unread" },
+    { id: "copy-path", label: "Copy Path" },
+    { id: "copy-thread-id", label: "Copy Thread ID" },
+    { id: "delete", label: "Delete", destructive: true, icon: "trash" },
+  ];
+}
+
 export function buildMultiSelectThreadContextMenuItems(input: {
   count: number;
   hasRunningThread: boolean;
-}): readonly ContextMenuItem<"mark-unread" | "archive" | "delete">[] {
+  canSnooze: boolean;
+  now: Date;
+}): readonly ContextMenuItem<"mark-unread" | ThreadSnoozeAction | "archive" | "delete">[] {
   return [
     { id: "mark-unread", label: `Mark unread (${input.count})` },
+    ...(input.canSnooze ? [buildSnoozeMenuItem(`Snooze (${input.count})`, input.now)] : []),
     {
       id: "archive",
       label: `Archive (${input.count})`,
@@ -105,6 +183,24 @@ export function buildMultiSelectThreadContextMenuItems(input: {
     },
     { id: "delete", label: `Delete (${input.count})`, destructive: true },
   ];
+}
+
+/**
+ * Splits threads into the normal list and the "Snoozed" group, soonest
+ * wake first so the group reads as "what comes back next".
+ */
+export function partitionSnoozedThreads<
+  T extends { readonly snoozedUntil?: string | null | undefined },
+>(threads: readonly T[], isSnoozed: (thread: T) => boolean): { active: T[]; snoozed: T[] } {
+  const active: T[] = [];
+  const snoozed: T[] = [];
+  for (const thread of threads) {
+    (isSnoozed(thread) ? snoozed : active).push(thread);
+  }
+  snoozed.sort(
+    (left, right) => Date.parse(left.snoozedUntil ?? "") - Date.parse(right.snoozedUntil ?? ""),
+  );
+  return { active, snoozed };
 }
 
 export interface ThreadStatusPill {

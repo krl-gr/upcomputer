@@ -35,6 +35,19 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings archive confirmation", () => {
+  it("ignores the removed archive confirmation preference", () => {
+    const decoded = decodeClientSettings({
+      confirmThreadArchive: true,
+      confirmThreadDelete: false,
+    });
+
+    expect(decoded).not.toHaveProperty("confirmThreadArchive");
+    expect(decoded.confirmThreadDelete).toBe(false);
+    expect(decodeClientSettingsPatch({ confirmThreadArchive: true })).toEqual({});
+  });
+});
+
 describe("ClientSettings sidebar view", () => {
   it("defaults to classic nested view", () => {
     expect(decodeClientSettings({}).sidebarViewMode).toBe("nested");
