@@ -74,6 +74,15 @@ export interface ProjectionThreadActivityRepositoryShape {
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
   /**
+   * List activity rows used to derive pending user-input state.
+   *
+   * Filters in SQLite so unrelated payloads do not enter server memory.
+   */
+  readonly listUserInputLifecycleByThreadId: (
+    input: ListProjectionThreadActivitiesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  /**
    * Count `task.started` rows created after `startedAfter` that have no
    * `task.completed` row for the same task id.
    */
