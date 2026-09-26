@@ -1,4 +1,5 @@
 import {
+  ChatAttachment,
   CheckpointRef,
   EventId,
   MessageId,
@@ -11,6 +12,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -27,6 +29,9 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeChatAttachments = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Array(ChatAttachment)),
+);
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -552,6 +557,103 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.equal(changedContext.value.session?.lastError, "Starting another session");
       }
     }),
+  );
+
+  it.effect("reads one turn-start message without decoding unrelated history", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-turn-start-read");
+      const messageId = MessageId.make("message-turn-start-read");
+      const createdAt = "2026-09-05T00:00:00.000Z";
+      const attachments = [
+        {
+          type: "image" as const,
+          id: "screenshot",
+          name: "screenshot.png",
+          mimeType: "image/png",
+          sizeBytes: 8,
+        },
+      ];
+      const attachmentsJson = yield* encodeChatAttachments(attachments);
+      yield* sql`
+        WITH RECURSIVE history(n) AS (
+          VALUES (1) UNION ALL SELECT n + 1 FROM history WHERE n < 2000
+        )
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, attachments_json,
+          is_streaming, created_at, updated_at
+        )
+        SELECT 'turn-start-history:' || n, ${threadId}, 'old-turn:' || n, 'assistant',
+          'Unrelated assistant output', 'not-json', 0, ${createdAt}, ${createdAt}
+        FROM history
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at
+        ) VALUES (${messageId}, ${threadId}, 'user', 'Read these notes',
+          ${attachmentsJson}, 0, ${createdAt}, ${createdAt})
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at
+        ) VALUES ('turn-start-unrelated-user', 'thread-turn-start-unrelated', 'user', 'Unrelated prompt',
+          'not-json', 0, ${createdAt}, ${createdAt})
+      `;
+
+      const counter = makeSqlStatementCounter();
+      const context = yield* query
+        .getTurnStartMessage({ threadId, messageId })
+        .pipe(Effect.withTracer(counter.tracer));
+      assert.equal(counter.count(), 1);
+      assert.deepEqual(
+        context,
+        Option.some({
+          message: {
+            id: messageId,
+            role: "user",
+            text: "Read these notes",
+            turnId: null,
+            streaming: false,
+            createdAt,
+            updatedAt: createdAt,
+            attachments,
+          },
+          hasOtherUserMessages: false,
+        }),
+      );
+      assert.equal(
+        (yield* query.getTurnStartMessage({
+          threadId: ThreadId.make("thread-turn-start-unrelated"),
+          messageId,
+        }))._tag,
+        "None",
+      );
+      assert.equal(
+        (yield* query.getTurnStartMessage({ threadId, messageId: MessageId.make("missing") }))._tag,
+        "None",
+      );
+
+      // A newer queued user message still makes this a non-first turn.
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES ('turn-start-queued-user', ${threadId}, 'user', 'Queued prompt', 0,
+          '2026-09-05T00:00:01.000Z', '2026-09-05T00:00:01.000Z')
+      `;
+      const queued = yield* query.getTurnStartMessage({ threadId, messageId });
+      assert.equal(Option.getOrThrow(queued).hasOtherUserMessages, true);
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            DELETE FROM projection_thread_messages
+            WHERE thread_id IN ('thread-turn-start-read', 'thread-turn-start-unrelated')
+          `;
+        }).pipe(Effect.orDie),
+      ),
+    ),
   );
 
   it.effect("keeps archived threads out of the main shell snapshot", () =>

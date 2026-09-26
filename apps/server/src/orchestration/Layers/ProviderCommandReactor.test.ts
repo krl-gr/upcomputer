@@ -1250,6 +1250,47 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  effectIt.effect("starts a first turn and generates its title from the turn-start message", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const titleGenerated = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) =>
+            Deferred.succeed(started, undefined).pipe(Effect.as(session)),
+        }),
+      );
+      harness.generateThreadTitle.mockReturnValue(
+        Deferred.succeed(titleGenerated, undefined).pipe(Effect.as({ title: "Generated title" })),
+      );
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-old-history"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: MessageId.make("message-turn-start-with-old-history"),
+          role: "user",
+          text: "Use the current message",
+          attachments: [],
+        },
+        titleSeed: "Thread",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      });
+      yield* Deferred.await(started);
+      yield* Deferred.await(titleGenerated);
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.sendTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ input: "Use the current message" }),
+      );
+      expect(harness.generateThreadTitle).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Use the current message" }),
+      );
+    }),
+  );
+
   effectIt.effect("allows same-instance model changes when the provider supports it", () =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() => createHarness());

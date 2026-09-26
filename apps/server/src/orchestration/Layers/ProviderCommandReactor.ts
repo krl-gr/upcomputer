@@ -347,12 +347,6 @@ const make = Effect.gen(function* () {
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
-  const resolveThreadDetail = Effect.fnUntraced(function* (threadId: ThreadId) {
-    return yield* projectionSnapshotQuery
-      .getThreadDetailById(threadId, { activityKinds: [] })
-      .pipe(Effect.map(Option.getOrUndefined));
-  });
-
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly currentModelSelection: ModelSelection;
@@ -850,13 +844,16 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const thread = yield* resolveThreadDetail(event.payload.threadId);
+    const thread = yield* resolveThreadShell(event.payload.threadId);
     if (!thread) {
       return;
     }
 
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
-    if (!message || message.role !== "user") {
+    const turnStart = yield* projectionSnapshotQuery.getTurnStartMessage({
+      threadId: thread.id,
+      messageId: event.payload.messageId,
+    });
+    if (Option.isNone(turnStart) || turnStart.value.message.role !== "user") {
       yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.start.failed",
@@ -868,9 +865,8 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const isFirstUserMessageTurn =
-      thread.messages.filter((entry) => entry.role === "user").length === 1;
-    if (isFirstUserMessageTurn) {
+    const { message, hasOtherUserMessages } = turnStart.value;
+    if (!hasOtherUserMessages) {
       const project = yield* resolveProject(thread.projectId);
       const generationCwd =
         resolveThreadWorkspaceCwd({
