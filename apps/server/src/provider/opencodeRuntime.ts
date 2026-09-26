@@ -853,9 +853,10 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           Effect.exit,
         );
 
-      // First attempt — run both in parallel
+      // Every OpenCode CLI command opens the same shared SQLite database. Running them
+      // concurrently causes "database is locked" failures, so run them one at a time.
       let [modelsResult, agentsResult] = yield* Effect.all([runModelsCli(), runAgentsCli()], {
-        concurrency: "unbounded",
+        concurrency: 1,
       });
 
       // Retry once after 1s on transient failures (e.g. SQLite "database is locked")
@@ -868,7 +869,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             needsModelsRetry ? runModelsCli() : Effect.succeed(modelsResult),
             needsAgentsRetry ? runAgentsCli() : Effect.succeed(agentsResult),
           ],
-          { concurrency: "unbounded" },
+          { concurrency: 1 },
         );
         modelsResult = m2;
         agentsResult = a2;
