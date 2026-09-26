@@ -538,6 +538,34 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("attaches child stderr when the ACP process exits before initialize", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      const error = yield* runtime.start().pipe(Effect.flip);
+      expect(error._tag).toBe("AcpProcessExitedError");
+      expect(error.message).toContain("cli.json");
+      expect(error.message).toContain("Unrecognized key");
+      expect(error.message).not.toContain("ACP process exited with code 1\nACP process exited");
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: process.execPath,
+            args: [
+              "-e",
+              "process.stderr.write(\"Invalid project config at /tmp/project/.cursor/cli.json: schema validation failed. Unrecognized key(s): 'approvalMode', 'sandbox'\\n\"); process.exit(1);",
+            ],
+          },
+          cwd: process.cwd(),
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+  );
+
   it.effect("ignores session/update replay notifications during session/load", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;

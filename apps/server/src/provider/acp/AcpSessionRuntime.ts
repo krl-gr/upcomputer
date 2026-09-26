@@ -21,6 +21,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@upcomputer/shared/shell";
 
+import { appendAcpStderrTail, sanitizeAcpStderrExcerpt } from "./AcpStderr.ts";
 import {
   collectSessionConfigOptionValues,
   decideToolCallUpdateEmission,
@@ -315,12 +316,36 @@ export const make = (
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
+    const stderrTailRef = yield* Ref.make("");
+    const stderrDrained = yield* Deferred.make<void>();
     const runtimeClosed = yield* Deferred.make<void>();
     yield* Scope.addFinalizer(runtimeScope, Deferred.succeed(runtimeClosed, undefined));
     const activePromptFiberRef = yield* Ref.make<
       Option.Option<Fiber.Fiber<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>>
     >(Option.none());
     const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
+
+    const enrichProcessExitWithStderr = (
+      error: EffectAcpErrors.AcpError,
+    ): Effect.Effect<EffectAcpErrors.AcpError> =>
+      error._tag !== "AcpProcessExitedError" || (error.stderr?.trim().length ?? 0) > 0
+        ? Effect.succeed(error)
+        : Deferred.await(stderrDrained).pipe(
+            Effect.timeout("250 millis"),
+            Effect.ignore,
+            Effect.andThen(Ref.get(stderrTailRef)),
+            Effect.map((tail) => {
+              const stderr = sanitizeAcpStderrExcerpt(tail);
+              return stderr.length === 0
+                ? error
+                : new EffectAcpErrors.AcpProcessExitedError({
+                    ...(error.code !== undefined ? { code: error.code } : {}),
+                    ...(error.pid !== undefined ? { pid: error.pid } : {}),
+                    stderr,
+                    ...(error.cause !== undefined ? { cause: error.cause } : {}),
+                  });
+            }),
+          );
 
     const logRequest = (event: AcpSessionRequestLogEvent) =>
       options.requestLogger ? options.requestLogger(event) : Effect.void;
@@ -333,6 +358,9 @@ export const make = (
       logRequest({ method, payload, status: "started" }).pipe(
         Effect.flatMap(() =>
           effect.pipe(
+            Effect.catch((error) =>
+              enrichProcessExitWithStderr(error).pipe(Effect.flatMap(Effect.fail)),
+            ),
             Effect.tap((result) =>
               logRequest({
                 method,
@@ -376,6 +404,16 @@ export const make = (
             }),
         ),
       );
+
+    yield* child.stderr.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) =>
+        Ref.update(stderrTailRef, (current) => appendAcpStderrTail(current, chunk)),
+      ),
+      Effect.ensuring(Deferred.succeed(stderrDrained, undefined)),
+      Effect.ignore,
+      Effect.forkIn(runtimeScope),
+    );
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {

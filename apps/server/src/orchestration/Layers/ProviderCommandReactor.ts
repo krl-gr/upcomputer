@@ -31,6 +31,7 @@ import { makeDrainableWorker } from "@upcomputer/shared/DrainableWorker";
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import {
+  ProviderAdapterProcessError,
   ProviderAdapterRequestError,
   ProviderWorkspaceMissingError,
 } from "../../provider/Errors.ts";
@@ -49,6 +50,7 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { prependThreadContextBlocksToPrompt } from "../threadContext.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
+const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderWorkspaceMissingError = Schema.is(ProviderWorkspaceMissingError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -283,6 +285,9 @@ const make = Effect.gen(function* () {
       : undefined;
     if (providerError) {
       return providerError.detail;
+    }
+    if (isProviderAdapterProcessError(failReason?.error)) {
+      return failReason.error.detail;
     }
     if (isProviderWorkspaceMissingError(failReason?.error)) {
       return failReason.error.message;
