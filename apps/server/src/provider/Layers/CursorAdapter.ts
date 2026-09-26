@@ -639,6 +639,7 @@ export function makeCursorAdapter(
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
+            runtimeMode: input.runtimeMode,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "upcomputer", version: "0.0.0" },
             ...(mcpSession
