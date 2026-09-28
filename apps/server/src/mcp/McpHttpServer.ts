@@ -13,6 +13,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { registerToolkit } from "./registerToolkit.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -22,6 +23,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { WorkspaceToolkitHandlersLive } from "./toolkits/workspace/handlers.ts";
+import { WorkspaceToolkit } from "./toolkits/workspace/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -208,10 +211,18 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+/** Project and thread tools: project_*, thread_link/unlink_project, thread_search/read. */
+export const WorkspaceToolkitRegistrationLive = Layer.effectDiscard(
+  registerToolkit(WorkspaceToolkit),
+).pipe(Layer.provide(WorkspaceToolkitHandlersLive));
+
 const McpTransportLive = McpServer.layerHttp({
   name: "Up.computer",
   version: packageJson.version,
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  WorkspaceToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

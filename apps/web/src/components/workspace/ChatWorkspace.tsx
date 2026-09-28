@@ -33,6 +33,8 @@ import {
 } from "../../hooks/useHandleNewThread";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { resolveThreadActionProjectRef } from "../../lib/chatThreadActions";
+import { useScratchProject } from "../../hooks/useScratchProject";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 import { cn, isMacPlatform } from "../../lib/utils";
 import { useThread } from "../../state/entities";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../../threadRoutes";
@@ -498,6 +500,8 @@ export function ChatWorkspace({ children, routeTarget = null }: ChatWorkspacePro
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { activeDraftThread, activeThread, defaultProjectRef } = useHandleNewThread();
   const createDraftThread = useCreateDraftThreadState();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const apiRef = useRef<DockviewApi | null>(null);
   const panelsRef = useRef<Record<ChatWorkspacePanelId, ChatWorkspacePanelState>>({});
   const activePanelRef = useRef<ChatWorkspacePanelId | null>(null);
@@ -697,6 +701,19 @@ export function ChatWorkspace({ children, routeTarget = null }: ChatWorkspacePro
 
   const createDraftPanel = useCallback(
     (referenceGroupId?: string) => {
+      // A new tab is a new chat, which starts without a project when the
+      // environment offers that (like the `chat.new` shortcut).
+      const scratchTargetEnvironmentId = scratchEnvironmentId(
+        activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+      );
+      if (scratchTargetEnvironmentId !== null) {
+        void startScratchThread({
+          environmentId: scratchTargetEnvironmentId,
+          inNewPanel: true,
+          ...(referenceGroupId ? { referenceGroupId } : {}),
+        });
+        return;
+      }
       const projectRef = resolveThreadActionProjectRef({
         activeDraftThread,
         activeThread: activeThread ?? undefined,
@@ -710,7 +727,15 @@ export function ChatWorkspace({ children, routeTarget = null }: ChatWorkspacePro
         ...(referenceGroupId ? { referenceGroupId } : {}),
       });
     },
-    [activeDraftThread, activeThread, createDraftThreadPanel, defaultProjectRef],
+    [
+      activeDraftThread,
+      activeThread,
+      createDraftThreadPanel,
+      defaultProjectRef,
+      primaryEnvironmentId,
+      scratchEnvironmentId,
+      startScratchThread,
+    ],
   );
 
   useEffect(

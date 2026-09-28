@@ -3870,6 +3870,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           issue: "Dynamic-tool namespace 'upcomputer' conflicts with the app MCP session.",
         });
       }
+      // Linked projects' roots follow the cwd so the agent may use them too.
+      const additionalDirectories = [
+        ...new Set([...(input.cwd ? [input.cwd] : []), ...(input.additionalDirectories ?? [])]),
+      ];
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -3893,7 +3897,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         includePartialMessages: true,
         canUseTool,
         env: claudeEnvironment,
-        ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
+        ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(Object.keys(dynamicToolMcpServers).length > 0 || mcpSession
           ? {

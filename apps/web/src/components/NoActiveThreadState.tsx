@@ -1,3 +1,8 @@
+import { MessageSquareDashedIcon } from "lucide-react";
+
+import { useScratchProject } from "../hooks/useScratchProject";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { isElectron } from "../env";
@@ -5,6 +10,9 @@ import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 export function NoActiveThreadContent() {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
       <header
@@ -34,6 +42,20 @@ export function NoActiveThreadContent() {
             <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
               Select an existing thread or create a new one to get started.
             </EmptyDescription>
+            {scratchTargetEnvironmentId === null ? null : (
+              <div className="mt-5 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void startScratchThread({ environmentId: scratchTargetEnvironmentId })
+                  }
+                >
+                  <MessageSquareDashedIcon className="size-4" />
+                  Start without a project
+                </Button>
+              </div>
+            )}
           </EmptyHeader>
         </div>
       </Empty>

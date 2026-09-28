@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   isExplicitRelativePath,
+  isPathWithinRoot,
   isUncPath,
   isWindowsAbsolutePath,
   isWindowsDrivePath,
@@ -42,5 +43,18 @@ describe("path helpers", () => {
     expect(normalizeProjectPathForComparison("C:")).toBe(normalizeProjectPathForComparison("C:/"));
     // Non-root drive paths keep their trailing separator trimmed as before.
     expect(normalizeProjectPathForDispatch("C:\\repo\\")).toBe("C:\\repo");
+  });
+
+  it("checks root containment by whole path segments", () => {
+    expect(isPathWithinRoot("/a/foo", "/a/foo")).toBe(true);
+    expect(isPathWithinRoot("/a/foo/x.ts", "/a/foo")).toBe(true);
+    expect(isPathWithinRoot("/a/foo/x.ts", "/a/foo/")).toBe(true);
+    expect(isPathWithinRoot("/a/foobar/x.ts", "/a/foo")).toBe(false);
+    expect(isPathWithinRoot("/a", "/a/foo")).toBe(false);
+    expect(isPathWithinRoot("/a/x.ts", "/")).toBe(true);
+    expect(isPathWithinRoot("C:/Repo/src/x.ts", "c:\\repo")).toBe(true);
+    expect(isPathWithinRoot("C:\\Repo2\\x.ts", "C:\\Repo")).toBe(false);
+    expect(isPathWithinRoot("D:\\x.ts", "D:\\")).toBe(true);
+    expect(isPathWithinRoot("", "/a")).toBe(false);
   });
 });

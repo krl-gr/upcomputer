@@ -58,7 +58,7 @@ Rules for the removed built-in terminal (`terminal.*` commands) are dropped sile
 - `preview.zoomOut`: zoom the preview viewport out one step (in focused preview context by default)
 - `preview.resetZoom`: reset the preview zoom to 100% (in focused preview context by default)
 - `commandPalette.toggle`: open or close the global command palette
-- `chat.new`: create a new chat thread preserving the active thread's branch/worktree state
+- `chat.new`: start a new chat without a project (pick a project later from the composer's context bar or with `@project`); when the environment can't host chats without a project, create a new chat thread preserving the active thread's branch/worktree state
 - `chat.newLocal`: create a new chat thread for the active project in a new environment (local/worktree determined by app settings (default `local`))
 - `editor.openFavorite`: open current project/worktree in the last-used editor
 

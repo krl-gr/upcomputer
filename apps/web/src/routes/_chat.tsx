@@ -12,6 +12,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { resolveAvailableSidebarViewMode } from "../components/sidebar/sidebarViewMode";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
 import {
   startNewLocalThreadInWorkspacePanelFromContext,
   startNewThreadInWorkspacePanelFromContext,
@@ -45,6 +46,7 @@ function ChatRouteGlobalShortcuts() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
@@ -98,6 +100,16 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
+        // A new chat starts without a project; the user picks one (or none)
+        // from the composer. Environments that cannot host chats without a
+        // project keep the project-based flow below.
+        const scratchTargetEnvironmentId = scratchEnvironmentId(
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+        );
+        if (scratchTargetEnvironmentId !== null) {
+          void startScratchThread({ environmentId: scratchTargetEnvironmentId, inNewPanel: true });
+          return;
+        }
         // Sidebar v2 routes creation through the command palette whenever
         // there is a real choice to make; nested/focused (and single-project
         // setups) keep the immediate contextual create.
@@ -170,10 +182,13 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     previewOpen,
+    primaryEnvironmentId,
     projectGroupCount,
     routeThreadRef,
+    scratchEnvironmentId,
     selectedThreadKeysSize,
     sidebarViewMode,
+    startScratchThread,
   ]);
 
   return null;

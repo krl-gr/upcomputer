@@ -1,4 +1,3 @@
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, HistoryIcon } from "lucide-react";
 import { type ComponentProps, memo, useMemo } from "react";
 
 import { cn } from "../lib/utils";
@@ -12,7 +11,6 @@ import {
 import {
   Select,
   SelectGroup,
-  SelectGroupLabel,
   SelectItem,
   SelectPopup,
   SelectTrigger,
@@ -66,7 +64,6 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   if (envLocked) {
     return (
       <span className={cn(CONTEXT_BAR_TEXT_TRIGGER_CLASS, "inline-flex items-center")}>
-        <FolderIcon className="size-3.5 shrink-0" />
         {resolveLockedWorkspaceLabel(activeWorktreePath)}
       </span>
     );
@@ -86,35 +83,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       items={envModeItems}
     >
       <ContextBarSelectTrigger variant="ghost" size="xs" aria-label="Workspace">
-        <FolderIcon className="size-3.5 shrink-0" />
         <SelectValue />
       </ContextBarSelectTrigger>
-      <SelectPopup>
+      <SelectPopup alignItemWithTrigger={false} side="top">
         <SelectGroup>
-          <SelectGroupLabel>Workspace</SelectGroupLabel>
-          <SelectItem value="local">
-            <span className="inline-flex items-center gap-1.5">
-              {activeWorktreePath ? (
-                <FolderGitIcon className="size-3" />
-              ) : (
-                <FolderIcon className="size-3" />
-              )}
-              {resolveCurrentWorkspaceLabel(activeWorktreePath)}
-            </span>
-          </SelectItem>
-          <SelectItem value="worktree">
-            <span className="inline-flex items-center gap-1.5">
-              <FolderGit2Icon className="size-3" />
-              {resolveEnvModeLabel("worktree")}
-            </span>
-          </SelectItem>
+          <SelectItem value="local">{resolveCurrentWorkspaceLabel(activeWorktreePath)}</SelectItem>
+          <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
           {showPreviousWorktree && previousWorktreeLabel ? (
-            <SelectItem value={PREVIOUS_WORKTREE_SELECT_VALUE}>
-              <span className="inline-flex items-center gap-1.5">
-                <HistoryIcon className="size-3" />
-                {previousWorktreeLabel}
-              </span>
-            </SelectItem>
+            <SelectItem value={PREVIOUS_WORKTREE_SELECT_VALUE}>{previousWorktreeLabel}</SelectItem>
           ) : null}
         </SelectGroup>
       </SelectPopup>

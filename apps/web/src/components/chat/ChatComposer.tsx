@@ -221,6 +221,16 @@ import {
 } from "../../interactionModes";
 import { useInteractionModePresentations } from "../../product/interactionModePresentation";
 import { useProjects, useThreadShells } from "../../state/entities";
+import { scopeThreadRef } from "@upcomputer/client-runtime/environment";
+import { useIsScratchProject } from "../../hooks/useScratchProject";
+import { useChooseProjectForChat } from "../../hooks/useThreadProjectChoice";
+import {
+  formatProjectMentionText,
+  matchProjectMentions,
+  resolveProjectChoiceEffect,
+  selectLinkableProjects,
+} from "../../lib/threadProjectLinks";
+import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
@@ -1224,6 +1234,53 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const isPathTrigger = composerTriggerKind === "path";
+
+  // `@` also offers projects: picking one moves a chat without a project into
+  // it (before the first send) or links it to the chat.
+  const isScratchProjectFn = useIsScratchProject();
+  const composerProject = activeThread
+    ? (chatContextProjectById.get(activeThread.projectId) ?? null)
+    : null;
+  const isScratchComposerProject = composerProject !== null && isScratchProjectFn(composerProject);
+  const composerThreadRef = useMemo(
+    () =>
+      activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : routeThreadRef,
+    [activeThread, routeThreadRef],
+  );
+  const chooseProjectForChat = useChooseProjectForChat({
+    threadRef: composerThreadRef,
+    draftId,
+    isServerThread,
+    isScratchProject: isScratchComposerProject,
+  });
+  const projectMentionChoiceEffect = resolveProjectChoiceEffect({
+    isServerThread,
+    isScratchProject: isScratchComposerProject,
+  });
+  const activeThreadProjectId = activeThread?.projectId ?? null;
+  const projectMentionCandidates = useMemo(
+    () =>
+      isPathTrigger
+        ? sortScopedProjectsForSidebar(
+            selectLinkableProjects({
+              projects: allProjects,
+              environmentId: composerEnvironmentId,
+              isScratchProject: isScratchProjectFn,
+              excludedProjectIds: activeThreadProjectId ? [activeThreadProjectId] : [],
+            }),
+            allThreadShells,
+            "updated_at",
+          )
+        : [],
+    [
+      activeThreadProjectId,
+      allProjects,
+      allThreadShells,
+      composerEnvironmentId,
+      isPathTrigger,
+      isScratchProjectFn,
+    ],
+  );
   const workspaceEntries = useComposerPathSearch({
     environmentId,
     cwd: isPathTrigger ? gitCwd : null,
@@ -1233,14 +1290,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
-      return workspaceEntries.entries.map((entry) => ({
-        id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
-        path: entry.path,
-        pathKind: entry.kind,
-        label: basenameOfPath(entry.path),
-        description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
-      }));
+      const linkedProjectIds = new Set(activeThread?.linkedProjectIds ?? []);
+      const projectItems = matchProjectMentions(
+        projectMentionCandidates,
+        composerTrigger.query,
+      ).map(
+        (project): ComposerCommandItem => ({
+          id: `project:${project.environmentId}:${project.id}`,
+          type: "project",
+          project,
+          label: project.title,
+          description:
+            projectMentionChoiceEffect === "retarget"
+              ? "Work in this project"
+              : linkedProjectIds.has(project.id)
+                ? "Linked"
+                : "Link to this chat",
+        }),
+      );
+      const fileItems = workspaceEntries.entries.map(
+        (entry): ComposerCommandItem => ({
+          id: `path:${entry.kind}:${entry.path}`,
+          type: "path",
+          path: entry.path,
+          pathKind: entry.kind,
+          label: basenameOfPath(entry.path),
+          description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+        }),
+      );
+      return [...projectItems, ...fileItems];
     }
     if (composerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [
@@ -1296,7 +1374,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    activeThread?.linkedProjectIds,
     composerTrigger,
+    projectMentionCandidates,
+    projectMentionChoiceEffect,
     selectedProvider,
     selectedProviderSkills,
     selectedProviderSlashCommands,
@@ -1906,6 +1987,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "project") {
+        const replacement = formatProjectMentionText(item.project.title);
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          if (!activeThread?.linkedProjectIds?.includes(item.project.id)) {
+            chooseProjectForChat(item.project);
+          }
+        }
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -1982,7 +2084,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      activeThread?.linkedProjectIds,
+      applyPromptReplacement,
+      chooseProjectForChat,
+      handleInteractionModeChange,
+      resolveActiveComposerTrigger,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(

@@ -1,10 +1,5 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
-import {
-  sanitizeContextQuickActionIds,
-  setContextQuickActionPinned as updateContextQuickActionPinned,
-  type ContextQuickActionId,
-} from "./contextQuickActions";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "upcomputer:ui-state:v1";
@@ -14,13 +9,14 @@ export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
+  threadMarkedUnreadById?: Record<string, boolean>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
-  contextQuickActionIds?: string[];
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  sidebarProjectFilterKey?: string | null;
 }
 
 export interface UiProjectState {
@@ -30,6 +26,13 @@ export interface UiProjectState {
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
+  /**
+   * Threads the user explicitly marked unread. Honored by the sidebar unread
+   * indicator regardless of completion timestamps, and cleared only by a real
+   * visit (`clearThreadMarkedUnread`), never by background `updatedAt` bumps
+   * recorded through `markThreadVisited`.
+   */
+  threadMarkedUnreadById: Record<string, true>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
 }
 
@@ -37,20 +40,25 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiContextBarState {
-  contextQuickActionIds: ContextQuickActionId[];
+export interface UiSidebarState {
+  /**
+   * Logical project key the sidebar chat list is filtered to; null means
+   * "All projects". A key that no longer resolves reads as null but is kept,
+   * so a selection survives projects loading after a reload.
+   */
+  sidebarProjectFilterKey: string | null;
 }
 
-export interface UiState
-  extends UiProjectState, UiThreadState, UiEndpointState, UiContextBarState {}
+export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiSidebarState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   threadLastVisitedAtById: {},
+  threadMarkedUnreadById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
-  contextQuickActionIds: sanitizeContextQuickActionIds(undefined),
+  sidebarProjectFilterKey: null,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -79,6 +87,17 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
   return Object.fromEntries(
     Object.entries(value).filter(
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
+    ),
+  );
+}
+
+function sanitizeTrueRecord(value: unknown): Record<string, true> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, true] => entry[0].length > 0 && entry[1] === true,
     ),
   );
 }
@@ -126,6 +145,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
+    threadMarkedUnreadById: sanitizeTrueRecord(parsed.threadMarkedUnreadById),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
@@ -135,7 +155,11 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
-    contextQuickActionIds: sanitizeContextQuickActionIds(parsed.contextQuickActionIds),
+    sidebarProjectFilterKey:
+      typeof parsed.sidebarProjectFilterKey === "string" &&
+      parsed.sidebarProjectFilterKey.length > 0
+        ? parsed.sidebarProjectFilterKey
+        : null,
   };
 }
 
@@ -196,10 +220,11 @@ export function persistState(state: UiState): void {
         projectExpandedById,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
+        threadMarkedUnreadById: state.threadMarkedUnreadById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
-        contextQuickActionIds: state.contextQuickActionIds,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        sidebarProjectFilterKey: state.sidebarProjectFilterKey,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -235,28 +260,34 @@ export function markThreadVisited(state: UiState, threadId: string, visitedAt: s
   };
 }
 
-export function markThreadUnread(
-  state: UiState,
-  threadId: string,
-  latestTurnCompletedAt: string | null | undefined,
-): UiState {
-  if (!latestTurnCompletedAt) {
-    return state;
-  }
-  const latestTurnCompletedAtMs = Date.parse(latestTurnCompletedAt);
-  if (Number.isNaN(latestTurnCompletedAtMs)) {
-    return state;
-  }
-  const unreadVisitedAt = new Date(latestTurnCompletedAtMs - 1).toISOString();
-  if (state.threadLastVisitedAtById[threadId] === unreadVisitedAt) {
+/**
+ * Explicit "Mark unread". Sets a flag instead of rewinding
+ * `threadLastVisitedAtById`: a rewound timestamp was immediately overwritten
+ * by ChatView's visit tracking when the thread was open, and could not be
+ * expressed at all for threads without a completion timestamp.
+ */
+export function markThreadUnread(state: UiState, threadId: string): UiState {
+  if (threadId.length === 0 || state.threadMarkedUnreadById[threadId] === true) {
     return state;
   }
   return {
     ...state,
-    threadLastVisitedAtById: {
-      ...state.threadLastVisitedAtById,
-      [threadId]: unreadVisitedAt,
+    threadMarkedUnreadById: {
+      ...state.threadMarkedUnreadById,
+      [threadId]: true,
     },
+  };
+}
+
+/** Clears an explicit "Mark unread" once the user really visits the thread. */
+export function clearThreadMarkedUnread(state: UiState, threadId: string): UiState {
+  if (state.threadMarkedUnreadById[threadId] !== true) {
+    return state;
+  }
+  const { [threadId]: _cleared, ...threadMarkedUnreadById } = state.threadMarkedUnreadById;
+  return {
+    ...state,
+    threadMarkedUnreadById,
   };
 }
 
@@ -294,23 +325,15 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
   };
 }
 
-export function setContextQuickActionPinned(
-  state: UiState,
-  actionId: ContextQuickActionId,
-  pinned: boolean,
-): UiState {
-  const contextQuickActionIds = updateContextQuickActionPinned(
-    state.contextQuickActionIds,
-    actionId,
-    pinned,
-  );
-  if (
-    contextQuickActionIds.length === state.contextQuickActionIds.length &&
-    contextQuickActionIds.every((id, index) => id === state.contextQuickActionIds[index])
-  ) {
+export function setSidebarProjectFilterKey(state: UiState, key: string | null): UiState {
+  const nextKey = key && key.length > 0 ? key : null;
+  if (state.sidebarProjectFilterKey === nextKey) {
     return state;
   }
-  return { ...state, contextQuickActionIds };
+  return {
+    ...state,
+    sidebarProjectFilterKey: nextKey,
+  };
 }
 
 export function resolveProjectExpanded(
@@ -392,10 +415,11 @@ export function reorderProjects(
 
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
-  markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
+  markThreadUnread: (threadId: string) => void;
+  clearThreadMarkedUnread: (threadId: string) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
-  setContextQuickActionPinned: (actionId: ContextQuickActionId, pinned: boolean) => void;
+  setSidebarProjectFilterKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -408,14 +432,13 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   ...readPersistedState(),
   markThreadVisited: (threadId, visitedAt) =>
     set((state) => markThreadVisited(state, threadId, visitedAt)),
-  markThreadUnread: (threadId, latestTurnCompletedAt) =>
-    set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
+  markThreadUnread: (threadId) => set((state) => markThreadUnread(state, threadId)),
+  clearThreadMarkedUnread: (threadId) => set((state) => clearThreadMarkedUnread(state, threadId)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
-  setContextQuickActionPinned: (actionId, pinned) =>
-    set((state) => setContextQuickActionPinned(state, actionId, pinned)),
+  setSidebarProjectFilterKey: (key) => set((state) => setSidebarProjectFilterKey(state, key)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

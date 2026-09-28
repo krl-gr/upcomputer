@@ -2006,6 +2006,41 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("recovers stale sessions with the persisted additional directories", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const additionalDirectories = [fixtureCwd("linked-docs"), fixtureCwd("linked-api")];
+
+      const initial = yield* provider.startSession(asThreadId("thread-linked-dirs"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-linked-dirs"),
+        cwd: fixtureCwd("project-linked-dirs"),
+        additionalDirectories,
+        runtimeMode: "auto-accept-edits",
+      });
+      assert.deepEqual(
+        routing.codex.startSession.mock.calls.at(-1)?.[0]?.additionalDirectories,
+        additionalDirectories,
+      );
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+
+      yield* provider.sendTurn({
+        threadId: initial.threadId,
+        input: "resume",
+        attachments: [],
+      });
+
+      assert.equal(routing.codex.startSession.mock.calls.length, 1);
+      assert.deepEqual(
+        routing.codex.startSession.mock.calls[0]?.[0]?.additionalDirectories,
+        additionalDirectories,
+      );
+    }),
+  );
+
   it.effect("records readiness failure when a stale session cannot be recovered", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

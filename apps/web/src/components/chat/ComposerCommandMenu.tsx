@@ -1,6 +1,9 @@
 import {
+  type EnvironmentId,
   type ProjectEntry,
+  type ProjectId,
   type ProviderDriverKind,
+  type RepositoryIdentity,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@upcomputer/contracts";
@@ -18,6 +21,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "../ui/command";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 
 export type ComposerCommandItem =
@@ -26,6 +30,19 @@ export type ComposerCommandItem =
       type: "path";
       path: string;
       pathKind: ProjectEntry["kind"];
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "project";
+      project: {
+        readonly id: ProjectId;
+        readonly environmentId: EnvironmentId;
+        readonly title: string;
+        readonly workspaceRoot: string;
+        readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+      };
       label: string;
       description: string;
     }
@@ -78,13 +95,26 @@ function SkillGlyph(props: { className?: string }) {
   );
 }
 
-function groupCommandItems(
+export function groupCommandItems(
   items: ComposerCommandItem[],
   triggerKind: ComposerTriggerKind | null,
   groupSlashCommandSections: boolean,
 ): ComposerCommandGroup[] {
   if (triggerKind === "skill") {
     return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
+  }
+  if (triggerKind === "path") {
+    // `@` offers projects (to link) above files; files stay unlabeled when
+    // no project matches so the plain file search looks as before.
+    const projectItems = items.filter((item) => item.type === "project");
+    if (projectItems.length === 0) {
+      return [{ id: "default", label: null, items }];
+    }
+    const fileItems = items.filter((item) => item.type !== "project");
+    return [
+      { id: "projects", label: "Projects", items: projectItems },
+      ...(fileItems.length > 0 ? [{ id: "files", label: "Files", items: fileItems }] : []),
+    ];
   }
   if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
     return [{ id: "default", label: null, items }];
@@ -229,6 +259,14 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           pathValue={props.item.path}
           kind={props.item.pathKind}
           theme={props.resolvedTheme}
+        />
+      ) : null}
+      {props.item.type === "project" ? (
+        <ProjectFavicon
+          environmentId={props.item.project.environmentId}
+          cwd={props.item.project.workspaceRoot}
+          repositoryIdentity={props.item.project.repositoryIdentity}
+          className="size-4"
         />
       ) : null}
       {props.item.type === "slash-command" ? (

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
@@ -200,6 +200,12 @@ export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
+
+/** The environment's "No project" (scratch) project, created on first request. */
+export const ProjectEnsureScratchResult = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
 
 export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
   "ProjectWriteFileError",

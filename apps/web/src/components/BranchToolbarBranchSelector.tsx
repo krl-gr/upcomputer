@@ -5,7 +5,6 @@ import {
 } from "@upcomputer/client-runtime/state/runtime";
 import type { ContextMenuItem, EnvironmentId, VcsRef, ThreadId } from "@upcomputer/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { GitBranchIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import {
   useCallback,
   useDeferredValue,
@@ -44,7 +43,7 @@ import { Switch } from "./ui/switch";
 import {
   Combobox,
   ComboboxEmpty,
-  ComboboxInput,
+  ComboboxSearchInput,
   ComboboxItem,
   ComboboxListVirtualized,
   ComboboxPopup,
@@ -605,7 +604,7 @@ export function BranchToolbarBranchSelector({
       >
         <div className="flex w-full min-w-0 items-center justify-between gap-2">
           <span className="min-w-0 flex-1 truncate">{itemValue}</span>
-          {badge && <span className="shrink-0 text-[10px] text-muted-foreground/45">{badge}</span>}
+          {badge && <span className="shrink-0 text-muted-foreground/60 text-xs">{badge}</span>}
         </div>
       </ComboboxItem>
     );
@@ -643,32 +642,18 @@ export function BranchToolbarBranchSelector({
             className={CONTEXT_BAR_BRANCH_TRIGGER_CLASS}
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
-            <GitBranchIcon className="size-3 shrink-0 opacity-70" />
             <span className="min-w-0 truncate">{triggerLabel}</span>
           </ComboboxTrigger>
         </span>
       </div>
       <ComboboxPopup align="end" side="top" className="flex w-80 flex-col">
-        <div className="shrink-0 px-3 pt-2.5">
-          <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
-            <SearchIcon
-              aria-hidden="true"
-              className="pointer-events-none absolute top-1.5 left-0 size-4 shrink-0 text-muted-foreground/55"
-            />
-            <ComboboxInput
-              className="[&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5"
-              inputClassName="rounded-none bg-transparent text-sm"
-              placeholder="Search refs..."
-              showTrigger={false}
-              size="sm"
-              unstyled
-              value={branchQuery}
-              onChange={(event) => setBranchQuery(event.target.value)}
-            />
-          </div>
-        </div>
+        <ComboboxSearchInput
+          placeholder="Search refs"
+          value={branchQuery}
+          onChange={(event) => setBranchQuery(event.target.value)}
+        />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ComboboxEmpty>No refs found.</ComboboxEmpty>
+          <ComboboxEmpty className="not-empty:px-3 text-left">No refs found.</ComboboxEmpty>
           <div className="relative min-h-0 w-full max-h-56 flex-1 overflow-hidden">
             <ComboboxListVirtualized className="size-full min-w-0 p-0">
               <LegendList<string>
@@ -695,7 +680,7 @@ export function BranchToolbarBranchSelector({
                   maybeFetchNextBranchPage();
                 }}
                 className={cn(
-                  "scrollbar-gutter-stable overflow-x-hidden overscroll-y-contain ps-1 pe-0 pt-2 pb-1 [--fade-size:1.5rem]",
+                  "scrollbar-gutter-stable overflow-x-hidden overscroll-y-contain py-1 [--fade-size:1.5rem]",
                   showTopBranchScrollFade && "mask-t-from-[calc(100%-var(--fade-size))]",
                   showBottomBranchScrollFade && "mask-b-from-[calc(100%-var(--fade-size))]",
                 )}
@@ -709,12 +694,9 @@ export function BranchToolbarBranchSelector({
                 render={
                   <label
                     htmlFor={startFromOriginSwitchId}
-                    className="flex cursor-pointer items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-xs"
+                    className="flex h-9 cursor-pointer items-center justify-between gap-3 border-t border-border/60 px-3 text-muted-foreground text-sm"
                   >
-                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground">
-                      <RefreshCwIcon aria-hidden="true" className="size-3 shrink-0 opacity-70" />
-                      <span className="truncate">Start from origin</span>
-                    </span>
+                    <span className="min-w-0 truncate">Start from origin</span>
                     <Switch
                       id={startFromOriginSwitchId}
                       checked={startFromOrigin}
@@ -731,7 +713,11 @@ export function BranchToolbarBranchSelector({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          {branchStatusText ? <ComboboxStatus>{branchStatusText}</ComboboxStatus> : null}
+          {branchStatusText ? (
+            <ComboboxStatus className="border-t border-border/60 font-normal text-sm">
+              {branchStatusText}
+            </ComboboxStatus>
+          ) : null}
         </div>
       </ComboboxPopup>
     </Combobox>

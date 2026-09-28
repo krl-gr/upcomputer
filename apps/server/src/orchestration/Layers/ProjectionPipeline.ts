@@ -516,6 +516,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ? { defaultModelSelection: event.payload.defaultModelSelection }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            ...(event.payload.linkedProjectIds !== undefined
+              ? { linkedProjectIds: event.payload.linkedProjectIds }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -680,6 +683,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
+              : {}),
+            ...(event.payload.linkedProjectIds !== undefined
+              ? { linkedProjectIds: event.payload.linkedProjectIds }
               : {}),
             updatedAt: event.payload.updatedAt,
           });

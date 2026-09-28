@@ -205,6 +205,11 @@ export interface CodexSessionRuntimeOptions {
   readonly launchArgs?: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
+  /**
+   * Extra roots (linked projects) writable under the workspace-write sandbox.
+   * Codex already treats `cwd` as writable; other sandbox modes ignore these.
+   */
+  readonly writableRoots?: ReadonlyArray<string>;
   readonly runtimeMode: RuntimeMode;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
@@ -644,6 +649,7 @@ function buildThreadStartParams(input: {
 
 function runtimeModeToTurnSandboxPolicy(
   input: RuntimeMode,
+  writableRoots: ReadonlyArray<string> | undefined,
 ): EffectCodexSchema.V2TurnStartParams__SandboxPolicy {
   switch (input) {
     case "approval-required":
@@ -654,6 +660,7 @@ function runtimeModeToTurnSandboxPolicy(
     case "auto":
       return {
         type: "workspaceWrite",
+        ...(writableRoots && writableRoots.length > 0 ? { writableRoots } : {}),
       };
     case "full-access":
     default:
@@ -737,6 +744,7 @@ function buildCodexInteractionModeAdditionalContext(
 export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
+  readonly writableRoots?: ReadonlyArray<string>;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "localImage";
@@ -778,7 +786,7 @@ export function buildTurnStartParams(input: {
   const sandboxPolicy =
     input.interactionModeSandbox === "read-only"
       ? ({ type: "readOnly" } satisfies EffectCodexSchema.V2TurnStartParams__SandboxPolicy)
-      : runtimeModeToTurnSandboxPolicy(input.runtimeMode);
+      : runtimeModeToTurnSandboxPolicy(input.runtimeMode, input.writableRoots);
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
     threadId: input.threadId,
@@ -2090,6 +2098,7 @@ export const makeCodexSessionRuntime = (
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
+            ...(options.writableRoots ? { writableRoots: options.writableRoots } : {}),
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),
             ...(normalizedModel ? { model: normalizedModel } : {}),

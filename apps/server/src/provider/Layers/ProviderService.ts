@@ -172,6 +172,7 @@ function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
     readonly modelSelection?: unknown;
+    readonly additionalDirectories?: ReadonlyArray<string>;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
   },
@@ -182,6 +183,9 @@ function toRuntimePayloadFromSession(
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
     ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
+    ...(extra?.additionalDirectories !== undefined
+      ? { additionalDirectories: extra.additionalDirectories }
+      : {}),
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
       ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
@@ -209,6 +213,21 @@ function readPersistedCwd(
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedAdditionalDirectories(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): ReadonlyArray<string> | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const raw =
+    "additionalDirectories" in runtimePayload ? runtimePayload.additionalDirectories : undefined;
+  if (!Array.isArray(raw)) return undefined;
+  const directories = raw.flatMap((entry) =>
+    typeof entry === "string" && entry.trim().length > 0 ? [entry.trim()] : [],
+  );
+  return directories.length > 0 ? directories : undefined;
 }
 
 const dieOnMissingBindingInstanceId = (
@@ -681,6 +700,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     extra?: {
       readonly modelSelection?: unknown;
+      readonly additionalDirectories?: ReadonlyArray<string>;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
     },
@@ -906,6 +926,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
+      const persistedAdditionalDirectories = readPersistedAdditionalDirectories(
+        input.binding.runtimePayload,
+      );
 
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
@@ -914,6 +937,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           provider: input.binding.provider,
           providerInstanceId: bindingInstanceId,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
+          ...(persistedAdditionalDirectories
+            ? { additionalDirectories: persistedAdditionalDirectories }
+            : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
@@ -1172,6 +1198,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          // Always written (even empty) so recovery never resurrects links
+          // removed since an earlier start.
+          additionalDirectories: input.additionalDirectories ?? [],
         });
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,

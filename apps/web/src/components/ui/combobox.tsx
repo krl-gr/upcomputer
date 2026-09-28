@@ -130,6 +130,30 @@ function ComboboxInput({
   );
 }
 
+/**
+ * Search field at the top of a combobox popup: plain text aligned with the
+ * items below it, separated from them by a hairline.
+ */
+function ComboboxSearchInput(
+  props: Omit<
+    React.ComponentProps<typeof ComboboxInput>,
+    "className" | "inputClassName" | "showTrigger" | "size" | "unstyled"
+  >,
+) {
+  return (
+    <div className="shrink-0 border-b border-border/60 px-3" data-slot="combobox-search">
+      <ComboboxInput
+        {...props}
+        className="[&_input]:h-9 [&_input]:px-0 [&_input]:font-sans [&_input]:leading-9"
+        inputClassName="rounded-none bg-transparent text-sm"
+        showTrigger={false}
+        size="sm"
+        unstyled
+      />
+    </div>
+  );
+}
+
 function ComboboxTrigger({ className, children, ...props }: ComboboxPrimitive.Trigger.Props) {
   return (
     <ComboboxPrimitive.Trigger className={className} data-slot="combobox-trigger" {...props}>
@@ -393,6 +417,7 @@ export {
   Combobox,
   ComboboxChipsInput,
   ComboboxInput,
+  ComboboxSearchInput,
   ComboboxTrigger,
   ComboboxPopup,
   ComboboxItem,

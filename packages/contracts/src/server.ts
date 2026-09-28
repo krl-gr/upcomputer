@@ -454,6 +454,12 @@ export const ServerConfig = Schema.Struct({
   shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Folder behind this environment's "No project" project, for threads that
+   * need no repository. Present only on servers that answer
+   * projects.ensureScratch and whose data dir is outside a Git checkout.
+   */
+  scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

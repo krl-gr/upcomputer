@@ -26,6 +26,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   LinkIcon,
+  MessageSquareDashedIcon,
   MessageSquareIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -47,6 +48,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useIsScratchProject, useScratchProject } from "../hooks/useScratchProject";
 import { useClientSettings } from "../hooks/useSettings";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -477,6 +479,14 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
+  const isScratchProjectFn = useIsScratchProject();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  // The hidden "No project" home never shows as a project; chats without a
+  // project start from the "New chat without a project" action instead.
+  const visibleProjects = useMemo(
+    () => projects.filter((project) => !isScratchProjectFn(project)),
+    [isScratchProjectFn, projects],
+  );
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -505,7 +515,7 @@ function OpenCommandPaletteDialog(props: {
   const orderedProjects = useMemo(
     () =>
       orderItemsByPreferredIds({
-        items: projects,
+        items: visibleProjects,
         preferredIds: projectOrder,
         getId: getProjectOrderKey,
         getPreferenceIds: (project) => [
@@ -513,12 +523,13 @@ function OpenCommandPaletteDialog(props: {
           legacyProjectCwdPreferenceKey(project.workspaceRoot),
         ],
       }),
-    [projectOrder, projects],
+    [projectOrder, visibleProjects],
   );
   const unsortedProjectGroups = useMemo(
     () =>
       buildSidebarProjectSnapshots({
-        projects: clientSettings.sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
+        projects:
+          clientSettings.sidebarProjectSortOrder === "manual" ? orderedProjects : visibleProjects,
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
@@ -529,7 +540,7 @@ function OpenCommandPaletteDialog(props: {
       orderedProjects,
       primaryEnvironmentId,
       projectGroupingSettings,
-      projects,
+      visibleProjects,
     ],
   );
   const projectGroups = useMemo(
@@ -1138,10 +1149,39 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
-    const activeProjectTitle =
-      projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
-      (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
+  // Where a new chat without a project starts: the current environment when it
+  // offers them, otherwise the one connected environment that does.
+  const scratchTargetEnvironmentId = scratchEnvironmentId(
+    currentProjectEnvironmentId ?? primaryEnvironmentId,
+  );
+  if (scratchTargetEnvironmentId !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-chat-without-project",
+      searchTerms: ["new chat", "new thread", "no project", "without project", "scratch", "draft"],
+      title: "New chat without a project",
+      icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.new",
+      run: async () => {
+        await startScratchThread({ environmentId: scratchTargetEnvironmentId, inNewPanel: true });
+      },
+    });
+  }
+
+  if (visibleProjects.length > 0) {
+    const activeProjectIsScratch =
+      currentProjectEnvironmentId !== null &&
+      currentProjectId !== null &&
+      projects.some(
+        (project) =>
+          project.environmentId === currentProjectEnvironmentId &&
+          project.id === currentProjectId &&
+          isScratchProjectFn(project),
+      );
+    const activeProjectTitle = activeProjectIsScratch
+      ? null
+      : (projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
+        (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null));
 
     if (activeProjectTitle) {
       actionItems.push({
@@ -1154,7 +1194,7 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        ...(scratchTargetEnvironmentId === null ? { shortcutCommand: "chat.new" as const } : {}),
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,

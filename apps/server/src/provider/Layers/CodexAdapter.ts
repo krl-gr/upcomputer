@@ -1535,6 +1535,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
+          ...(input.additionalDirectories && input.additionalDirectories.length > 0
+            ? { writableRoots: input.additionalDirectories }
+            : {}),
           binaryPath: codexConfig.binaryPath,
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
           ...(options?.environment ? { environment: options.environment } : {}),

@@ -8,23 +8,8 @@ import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../key
 import { usePreferredEditor } from "../../editorPreferences";
 import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
 import { Button } from "../ui/button";
-import { ContextActionMenuItem } from "../ContextActionMenuItem";
 import { Group, GroupSeparator } from "../ui/group";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuShortcut,
-  MenuTrigger,
-} from "../ui/menu";
-import { CONTEXT_BAR_TEXT_TRIGGER_CLASS } from "../BranchToolbar.styles";
-import {
-  CONTEXT_PREFERRED_OPEN_QUICK_ACTION_ID,
-  contextOpenEditorActionId,
-  type ContextQuickActionId,
-} from "~/contextQuickActions";
+import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import {
   AntigravityIcon,
   CursorIcon,
@@ -209,10 +194,6 @@ export const OpenInPicker = memo(function OpenInPicker({
   openInCwd,
   compact = false,
   enableShortcut = true,
-  presentation = "header",
-  contextEditorId,
-  pinnedContextActionIds,
-  onContextActionPinnedChange,
 }: {
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
@@ -220,10 +201,6 @@ export const OpenInPicker = memo(function OpenInPicker({
   openInCwd: string | null;
   compact?: boolean;
   enableShortcut?: boolean;
-  presentation?: "header" | "context-bar" | "context-menu";
-  contextEditorId?: EditorId;
-  pinnedContextActionIds?: ReadonlySet<ContextQuickActionId>;
-  onContextActionPinnedChange?: (actionId: ContextQuickActionId, pinned: boolean) => void;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableEditors);
@@ -282,65 +259,6 @@ export const OpenInPicker = memo(function OpenInPicker({
     openInEditorMutation,
     preferredEditor,
   ]);
-
-  if (presentation === "context-bar") {
-    const editorId = contextEditorId ?? preferredEditor;
-    const option = options.find(({ value }) => value === editorId) ?? null;
-    return (
-      <Button
-        className={`${CONTEXT_BAR_TEXT_TRIGGER_CLASS} max-w-36 truncate`}
-        disabled={!editorId || !openInCwd || !option}
-        onClick={() => openInEditor(editorId)}
-        size="xs"
-        variant="ghost"
-      >
-        <span className="truncate">{option ? `Open in ${option.label}` : "Open in editor"}</span>
-      </Button>
-    );
-  }
-
-  if (presentation === "context-menu") {
-    const PreferredEditorIcon = primaryOption?.Icon ?? FolderClosedIcon;
-    return (
-      <MenuGroup>
-        <MenuGroupLabel>Open project</MenuGroupLabel>
-        {options.length === 0 ? (
-          <MenuItem disabled>No installed editors found</MenuItem>
-        ) : (
-          <>
-            <ContextActionMenuItem
-              actionId={CONTEXT_PREFERRED_OPEN_QUICK_ACTION_ID}
-              checked={pinnedContextActionIds?.has(CONTEXT_PREFERRED_OPEN_QUICK_ACTION_ID)}
-              disabled={!preferredEditor || !openInCwd}
-              icon={<PreferredEditorIcon aria-hidden="true" className="size-4" />}
-              shortcutLabel={openFavoriteEditorShortcutLabel}
-              onCheckedChange={onContextActionPinnedChange}
-              onSelect={() => openInEditor(preferredEditor)}
-            >
-              Open in preferred editor
-            </ContextActionMenuItem>
-            {options.map(({ label, Icon, value }) => {
-              const actionId = contextOpenEditorActionId(value);
-              return (
-                <ContextActionMenuItem
-                  key={value}
-                  actionId={actionId}
-                  checked={pinnedContextActionIds?.has(actionId)}
-                  disabled={!openInCwd}
-                  icon={<Icon aria-hidden="true" className="size-4" />}
-                  shortcutLabel={value === preferredEditor ? openFavoriteEditorShortcutLabel : null}
-                  onCheckedChange={onContextActionPinnedChange}
-                  onSelect={() => openInEditor(value)}
-                >
-                  {`Open in ${label}`}
-                </ContextActionMenuItem>
-              );
-            })}
-          </>
-        )}
-      </MenuGroup>
-    );
-  }
 
   return (
     <Group aria-label="Open in editor">

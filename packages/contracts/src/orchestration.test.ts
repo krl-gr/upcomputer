@@ -13,6 +13,7 @@ import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationProjectShell,
   OrchestrationThread,
   OrchestrationThreadShell,
   ProjectCreatedPayload,
@@ -519,6 +520,96 @@ it.effect("decodes thread data from servers that still send settled fields", () 
 
     assert.notProperty(thread, "settledOverride");
     assert.notProperty(shell, "settledAt");
+  }),
+);
+
+const decodeOrchestrationProjectShell = Schema.decodeUnknownEffect(OrchestrationProjectShell);
+
+it.effect("defaults linkedProjectIds to [] for payloads from servers without links", () =>
+  Effect.gen(function* () {
+    const common = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Older thread",
+      modelSelection: { provider: "codex", model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      archivedAt: null,
+      session: null,
+    };
+    const thread = yield* decodeOrchestrationThread({
+      ...common,
+      deletedAt: null,
+      messages: [],
+      activities: [],
+      checkpoints: [],
+    });
+    const shell = yield* decodeOrchestrationThreadShell({
+      ...common,
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    });
+    const project = yield* decodeOrchestrationProjectShell({
+      id: "project-1",
+      title: "Project",
+      workspaceRoot: "/tmp/project",
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.deepEqual(thread.linkedProjectIds, []);
+    assert.deepEqual(shell.linkedProjectIds, []);
+    assert.deepEqual(project.linkedProjectIds, []);
+  }),
+);
+
+it.effect("decodes thread project link commands and rejects empty project lists", () =>
+  Effect.gen(function* () {
+    const link = yield* decodeOrchestrationCommand({
+      type: "thread.project.link",
+      commandId: "cmd-link-1",
+      threadId: "thread-1",
+      projectIds: ["project-2"],
+    });
+    assert.strictEqual(link.type, "thread.project.link");
+    const unlink = yield* decodeOrchestrationCommand({
+      type: "thread.project.unlink",
+      commandId: "cmd-unlink-1",
+      threadId: "thread-1",
+      projectIds: ["project-2"],
+    });
+    assert.strictEqual(unlink.type, "thread.project.unlink");
+    const empty = yield* decodeOrchestrationCommand({
+      type: "thread.project.link",
+      commandId: "cmd-link-2",
+      threadId: "thread-1",
+      projectIds: [],
+    }).pipe(Effect.flip);
+    assert.ok(empty);
+
+    const meta = yield* decodeThreadMetaUpdatedPayload({
+      threadId: "thread-1",
+      linkedProjectIds: ["project-2"],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.deepEqual<ReadonlyArray<string> | undefined>(meta.linkedProjectIds, ["project-2"]);
+    const projectMeta = yield* decodeProjectMetaUpdatedPayload({
+      projectId: "project-1",
+      linkedProjectIds: ["project-2"],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.deepEqual<ReadonlyArray<string> | undefined>(projectMeta.linkedProjectIds, [
+      "project-2",
+    ]);
   }),
 );
 

@@ -2191,13 +2191,32 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               options,
             );
             const hasSameLogicalMapping = previousThreadKeyForLogicalProject === draftId;
-            if (hasSameLogicalMapping && draftThreadsEqual(existingThread, nextDraftThread)) {
+            const hasStaleMappingForDraft = Object.entries(
+              state.logicalProjectDraftThreadKeyByLogicalProjectKey,
+            ).some(
+              ([logicalKey, mappedDraftId]) =>
+                mappedDraftId === draftId && logicalKey !== normalizedLogicalProjectKey,
+            );
+            if (
+              hasSameLogicalMapping &&
+              !hasStaleMappingForDraft &&
+              draftThreadsEqual(existingThread, nextDraftThread)
+            ) {
               return state;
             }
-            const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> = {
-              ...state.logicalProjectDraftThreadKeyByLogicalProjectKey,
-              [normalizedLogicalProjectKey]: draftId,
-            };
+            // A draft belongs to one logical project at a time. When an open
+            // draft is moved to another project in place (e.g. a chat without
+            // a project picks one), drop its old mapping so starting a new
+            // chat in the previous project cannot pull this draft back.
+            const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> =
+              Object.fromEntries(
+                Object.entries(state.logicalProjectDraftThreadKeyByLogicalProjectKey).filter(
+                  ([logicalKey, mappedDraftId]) =>
+                    mappedDraftId !== draftId || logicalKey === normalizedLogicalProjectKey,
+                ),
+              );
+            nextLogicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey] =
+              draftId;
             const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
               ...state.draftThreadsByThreadKey,
               [draftId]: nextDraftThread,

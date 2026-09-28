@@ -1,11 +1,21 @@
 import type { OrchestrationEvent } from "@upcomputer/contracts";
 import { makeDrainableWorker } from "@upcomputer/shared/DrainableWorker";
+// `rmdir` removes only an empty directory, which FileSystem cannot express.
+// @effect-diagnostics-next-line nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
+
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import * as ServerConfig from "../../config.ts";
+import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { scratchWorkspaceRootFor } from "../../project/scratchWorkspace.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
@@ -47,11 +57,60 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const threadRepository = yield* ProjectionThreadRepository;
+  const scratchRoot = scratchWorkspaceRootFor(path, (yield* ServerConfig.ServerConfig).baseDir);
+
+  // A scratch thread's folder is named for it alone, so once the thread is gone
+  // an empty folder is litter. Only a direct child of the scratch root is ever
+  // touched, only while no other live thread points at it, and only if it is
+  // empty; `rmdir` refuses a folder that gained a file after the check.
+  const removeEmptyScratchFolder = Effect.fn("removeEmptyScratchFolder")(function* (
+    threadId: ThreadDeletedEvent["payload"]["threadId"],
+  ) {
+    const thread = yield* threadRepository.getById({ threadId });
+    // A missing row, or one a later create already reused, is not ours to clean.
+    if (Option.isNone(thread) || thread.value.deletedAt === null) return;
+    const worktreePath = thread.value.worktreePath;
+    if (
+      worktreePath === null ||
+      !path.isAbsolute(worktreePath) ||
+      worktreePath.split(/[\\/]/).includes("..")
+    ) {
+      return;
+    }
+    const folder = path.resolve(worktreePath);
+    if (path.dirname(folder) !== scratchRoot) return;
+    const siblings = yield* threadRepository.listByProjectId({
+      projectId: thread.value.projectId,
+    });
+    if (
+      siblings.some(
+        (sibling) =>
+          sibling.threadId !== threadId &&
+          sibling.deletedAt === null &&
+          sibling.worktreePath !== null &&
+          path.resolve(sibling.worktreePath) === folder,
+      )
+    ) {
+      return;
+    }
+    if (!(yield* fileSystem.exists(folder))) return;
+    if ((yield* fileSystem.readDirectory(folder)).length > 0) return;
+    yield* Effect.tryPromise(() => NodeFSP.rmdir(folder));
+  });
+
   const processThreadDeleted = Effect.fn("processThreadDeleted")(function* (
     event: ThreadDeletedEvent,
   ) {
     const { threadId } = event.payload;
     yield* stopProviderSession(threadId);
+    yield* logCleanupCauseUnlessInterrupted({
+      effect: removeEmptyScratchFolder(threadId),
+      message: "thread deletion cleanup skipped scratch folder removal",
+      threadId,
+    });
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>

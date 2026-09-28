@@ -2,6 +2,7 @@ import { ProjectId, ThreadId } from "@upcomputer/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  clearThreadMarkedUnread,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
   markThreadVisited,
@@ -12,7 +13,7 @@ import {
   reorderProjects,
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
-  setContextQuickActionPinned,
+  setSidebarProjectFilterKey,
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   type UiState,
@@ -23,29 +24,15 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     threadLastVisitedAtById: {},
+    threadMarkedUnreadById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
-    contextQuickActionIds: [],
+    sidebarProjectFilterKey: null,
     ...overrides,
   };
 }
 
 describe("uiStateStore pure functions", () => {
-  it("parses and updates persisted context-bar quick actions", () => {
-    const parsed = parsePersistedState({
-      contextQuickActionIds: ["git.push", "invalid", "rightPanel.toggle"],
-    });
-
-    expect(parsed.contextQuickActionIds).toEqual(["git.push", "rightPanel.toggle"]);
-
-    const withDiff = setContextQuickActionPinned(parsed, "diff.toggle", true);
-    expect(withDiff.contextQuickActionIds).toEqual([
-      "git.push",
-      "rightPanel.toggle",
-      "diff.toggle",
-    ]);
-  });
-
   it("stores server timestamps without moving visit state backwards", () => {
     const threadId = ThreadId.make("thread-1");
     const initialState = makeUiState();
@@ -56,7 +43,7 @@ describe("uiStateStore pure functions", () => {
     expect(markThreadVisited(visited, threadId, "not-a-date")).toBe(visited);
   });
 
-  it("marks a completed thread unread using the server completion timestamp", () => {
+  it("marks a thread unread with an explicit flag, without needing a completion timestamp", () => {
     const threadId = ThreadId.make("thread-1");
     const initialState = makeUiState({
       threadLastVisitedAtById: {
@@ -64,10 +51,36 @@ describe("uiStateStore pure functions", () => {
       },
     });
 
-    const next = markThreadUnread(initialState, threadId, "2026-02-25T12:30:00.000Z");
+    const next = markThreadUnread(initialState, threadId);
 
-    expect(next.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:29:59.999Z");
-    expect(markThreadUnread(next, threadId, null)).toBe(next);
+    expect(next.threadMarkedUnreadById).toEqual({ [threadId]: true });
+    // The visit marker is left alone so clearing the flag restores "read".
+    expect(next.threadLastVisitedAtById).toBe(initialState.threadLastVisitedAtById);
+    expect(markThreadUnread(next, threadId)).toBe(next);
+  });
+
+  it("keeps the unread flag through background visit bumps of the open thread", () => {
+    // Reproduces the open-thread bug: ChatView records `serverThread.updatedAt`
+    // through markThreadVisited while the thread is open. That must not undo
+    // an explicit "Mark unread".
+    const threadId = ThreadId.make("thread-1");
+    const marked = markThreadUnread(makeUiState(), threadId);
+
+    const bumped = markThreadVisited(marked, threadId, "2026-02-25T12:40:00.000Z");
+
+    expect(bumped.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:40:00.000Z");
+    expect(bumped.threadMarkedUnreadById[threadId]).toBe(true);
+  });
+
+  it("clears the unread flag only for the visited thread", () => {
+    const threadA = ThreadId.make("thread-a");
+    const threadB = ThreadId.make("thread-b");
+    const marked = markThreadUnread(markThreadUnread(makeUiState(), threadA), threadB);
+
+    const cleared = clearThreadMarkedUnread(marked, threadA);
+
+    expect(cleared.threadMarkedUnreadById).toEqual({ [threadB]: true });
+    expect(clearThreadMarkedUnread(cleared, threadA)).toBe(cleared);
   });
 
   it("resolves project expansion from logical, physical, and legacy preference keys", () => {
@@ -163,6 +176,30 @@ describe("uiStateStore pure functions", () => {
   });
 });
 
+describe("sidebar project filter", () => {
+  it("sets, normalizes and clears the filter key", () => {
+    const initial = makeUiState();
+    const selected = setSidebarProjectFilterKey(initial, "logical-a");
+    expect(selected.sidebarProjectFilterKey).toBe("logical-a");
+    expect(setSidebarProjectFilterKey(selected, "logical-a")).toBe(selected);
+    expect(setSidebarProjectFilterKey(selected, "").sidebarProjectFilterKey).toBeNull();
+    expect(setSidebarProjectFilterKey(selected, null).sidebarProjectFilterKey).toBeNull();
+    expect(setSidebarProjectFilterKey(initial, null)).toBe(initial);
+  });
+
+  it("hydrates missing or invalid persisted keys as All projects", () => {
+    expect(parsePersistedState({}).sidebarProjectFilterKey).toBeNull();
+    expect(
+      parsePersistedState({ sidebarProjectFilterKey: 42 as unknown as string })
+        .sidebarProjectFilterKey,
+    ).toBeNull();
+    expect(parsePersistedState({ sidebarProjectFilterKey: "" }).sidebarProjectFilterKey).toBeNull();
+    expect(
+      parsePersistedState({ sidebarProjectFilterKey: "logical-a" }).sidebarProjectFilterKey,
+    ).toBe("logical-a");
+  });
+});
+
 describe("parsePersistedState", () => {
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
@@ -193,8 +230,9 @@ describe("parsePersistedState", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      threadMarkedUnreadById: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      contextQuickActionIds: ["git.quick", "rightPanel.toggle"],
+      sidebarProjectFilterKey: null,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -214,6 +252,24 @@ describe("parsePersistedState", () => {
     });
 
     expect(parsed.threadChangedFilesExpandedById).toEqual({});
+  });
+
+  it("hydrates explicit unread flags and drops malformed entries", () => {
+    const parsed = parsePersistedState({
+      threadMarkedUnreadById: {
+        "environment:thread-1": true,
+        "environment:thread-2": false,
+        "environment:thread-3": "yes" as unknown as boolean,
+        "": true,
+      },
+    });
+
+    expect(parsed.threadMarkedUnreadById).toEqual({ "environment:thread-1": true });
+    expect(
+      parsePersistedState({
+        threadMarkedUnreadById: "corrupt" as unknown as Record<string, boolean>,
+      }).threadMarkedUnreadById,
+    ).toEqual({});
   });
 
   it("migrates legacy CWD project preferences into local alias keys", () => {
@@ -291,6 +347,9 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      threadMarkedUnreadById: {
+        "environment:thread-2": true,
+      },
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -298,6 +357,7 @@ describe("uiStateStore persistence", () => {
         },
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
+      sidebarProjectFilterKey: "logical-project",
     });
 
     persistState(state);
@@ -313,8 +373,10 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      threadMarkedUnreadById: {
+        "environment:thread-2": true,
+      },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      contextQuickActionIds: [],
       threadChangedFilesExpansionVersion: 1,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -322,6 +384,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      sidebarProjectFilterKey: "logical-project",
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

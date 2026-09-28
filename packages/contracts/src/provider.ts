@@ -62,6 +62,11 @@ export const ProviderSessionStartInput = Schema.Struct({
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
+  /**
+   * Extra folders (linked projects' workspace roots) the agent may read and
+   * write besides `cwd`. Adapters that cannot grant access ignore it.
+   */
+  additionalDirectories: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 

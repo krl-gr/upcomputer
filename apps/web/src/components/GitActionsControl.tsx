@@ -63,14 +63,7 @@ import {
 } from "~/components/ui/dialog";
 import { Group, GroupSeparator } from "~/components/ui/group";
 import { Input } from "~/components/ui/input";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuTrigger,
-} from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Textarea } from "~/components/ui/textarea";
@@ -95,22 +88,11 @@ import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
-import { ContextActionMenuItem } from "~/components/ContextActionMenuItem";
-import { CONTEXT_BAR_TEXT_TRIGGER_CLASS } from "~/components/BranchToolbar.styles";
-import type { ContextQuickActionId } from "~/contextQuickActions";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
-  presentation?: "header" | "context-bar" | "context-menu";
-  contextActionId?: "quick" | GitActionMenuItem["id"];
-  pinnedContextActionIds?: ReadonlySet<ContextQuickActionId>;
-  onContextActionPinnedChange?: (actionId: ContextQuickActionId, pinned: boolean) => void;
-}
-
-function pinnedContextActionIdForGitItem(itemId: GitActionMenuItem["id"]): ContextQuickActionId {
-  return itemId === "commit" ? "git.commit" : "git.push";
 }
 
 interface PendingDefaultBranchAction {
@@ -945,10 +927,6 @@ export default function GitActionsControl({
   gitCwd,
   activeThreadRef,
   draftId,
-  presentation = "header",
-  contextActionId = "quick",
-  pinnedContextActionIds,
-  onContextActionPinnedChange,
 }: GitActionsControlProps) {
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -1559,101 +1537,9 @@ export default function GitActionsControl({
 
   if (!gitCwd) return null;
 
-  const contextBarItem =
-    contextActionId === "quick"
-      ? null
-      : (gitActionMenuItems.find((item) => item.id === contextActionId) ?? null);
-
   return (
     <>
-      {presentation === "context-menu" ? (
-        <MenuGroup>
-          <MenuGroupLabel>Git</MenuGroupLabel>
-          <ContextActionMenuItem
-            actionId="git.quick"
-            checked={pinnedContextActionIds?.has("git.quick")}
-            disabled={isRepo ? quickAction.disabled : initAction.isPending}
-            icon={
-              isRepo ? (
-                <GitQuickActionIcon quickAction={quickAction} />
-              ) : (
-                <GitBranchPlusIcon className="size-4" />
-              )
-            }
-            keepMenuOpenOnSelect={isRepo && quickAction.kind === "open_publish"}
-            onCheckedChange={onContextActionPinnedChange}
-            onSelect={() => {
-              if (isRepo) runQuickAction();
-              else void initAction.run();
-            }}
-          >
-            {isRepo
-              ? quickAction.label
-              : initAction.isPending
-                ? "Initializing..."
-                : "Initialize Git"}
-          </ContextActionMenuItem>
-          {isRepo
-            ? gitActionMenuItems.map((item) => {
-                const actionId = pinnedContextActionIdForGitItem(item.id);
-                return (
-                  <ContextActionMenuItem
-                    key={`${item.id}-${item.label}`}
-                    actionId={actionId}
-                    checked={pinnedContextActionIds?.has(actionId)}
-                    disabled={item.disabled}
-                    icon={<GitActionItemIcon icon={item.icon} />}
-                    keepMenuOpenOnSelect={item.dialogAction === "commit"}
-                    onCheckedChange={onContextActionPinnedChange}
-                    onSelect={() => openDialogForMenuItem(item)}
-                  >
-                    {item.label}
-                  </ContextActionMenuItem>
-                );
-              })
-            : null}
-          {canPublishRepository ? (
-            <ContextActionMenuItem
-              icon={<CloudUploadIcon className="size-4" />}
-              keepMenuOpenOnSelect
-              onSelect={() => setIsPublishDialogOpen(true)}
-            >
-              Publish repository...
-            </ContextActionMenuItem>
-          ) : null}
-        </MenuGroup>
-      ) : presentation === "context-bar" ? (
-        contextBarItem ? (
-          <Button
-            className={`${CONTEXT_BAR_TEXT_TRIGGER_CLASS} max-w-36`}
-            disabled={contextBarItem.disabled}
-            onClick={() => openDialogForMenuItem(contextBarItem)}
-            size="xs"
-            variant="ghost"
-          >
-            <span className="min-w-0 truncate">{contextBarItem.label}</span>
-          </Button>
-        ) : (
-          <Button
-            className={`${CONTEXT_BAR_TEXT_TRIGGER_CLASS} max-w-36`}
-            disabled={isRepo ? isGitActionRunning || quickAction.disabled : initAction.isPending}
-            onClick={() => {
-              if (isRepo) runQuickAction();
-              else void initAction.run();
-            }}
-            size="xs"
-            variant="ghost"
-          >
-            <span className="min-w-0 truncate">
-              {isRepo
-                ? quickAction.label
-                : initAction.isPending
-                  ? "Initializing..."
-                  : "Initialize Git"}
-            </span>
-          </Button>
-        )
-      ) : !isRepo ? (
+      {!isRepo ? (
         <Button
           variant="outline"
           size="xs"

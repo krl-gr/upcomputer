@@ -510,6 +510,93 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("starts sessions with linked project roots as additional directories", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    for (const [id, workspaceRoot] of [
+      ["project-docs", "/tmp/linked-docs"],
+      ["project-api", "/tmp/linked-api"],
+      ["project-deleted", "/tmp/linked-deleted"],
+      ["project-worktree", "/tmp/linked-worktree"],
+    ] as const) {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make(`cmd-create-${id}`),
+          projectId: asProjectId(id),
+          title: id,
+          workspaceRoot,
+          createdAt: now,
+        }),
+      );
+    }
+    // Thread links come first, then the project's tags; the thread's own
+    // project is never linked.
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.project.link",
+        commandId: CommandId.make("cmd-link-thread"),
+        threadId: ThreadId.make("thread-1"),
+        projectIds: [
+          asProjectId("project-docs"),
+          asProjectId("project-deleted"),
+          asProjectId("project-1"),
+        ],
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-tag-project"),
+        projectId: asProjectId("project-1"),
+        linkedProjectIds: [
+          asProjectId("project-api"),
+          asProjectId("project-docs"),
+          asProjectId("project-worktree"),
+        ],
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.delete",
+        commandId: CommandId.make("cmd-delete-project-deleted"),
+        projectId: asProjectId("project-deleted"),
+      }),
+    );
+    // The session cwd is itself a linked project's root; it is not repeated.
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-worktree"),
+        threadId: ThreadId.make("thread-1"),
+        worktreePath: "/tmp/linked-worktree",
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-linked"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-linked"),
+          role: "user",
+          text: "hello links",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      cwd: "/tmp/linked-worktree",
+      additionalDirectories: ["/tmp/linked-docs", "/tmp/linked-api"],
+    });
+  });
+
   it("injects snapshot context attached to an active session exactly once", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

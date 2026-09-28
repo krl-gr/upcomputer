@@ -56,6 +56,44 @@ export function requireProject(input: {
   );
 }
 
+/**
+ * Validates link targets: every id must name an existing, non-deleted
+ * project. Duplicates and `exceptProjectId` (the linking thread's or
+ * project's own id) are dropped, first occurrence wins.
+ */
+export function requireActiveLinkTargets(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly projectIds: ReadonlyArray<ProjectId>;
+  readonly exceptProjectId: ProjectId;
+}): Effect.Effect<ReadonlyArray<ProjectId>, OrchestrationCommandInvariantError> {
+  const targets: ProjectId[] = [];
+  for (const projectId of input.projectIds) {
+    if (projectId === input.exceptProjectId || targets.includes(projectId)) continue;
+    const project = findProjectById(input.readModel, projectId);
+    if (project === undefined || project.deletedAt !== null) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Project '${projectId}' does not exist or is deleted and cannot be linked.`,
+        ),
+      );
+    }
+    targets.push(projectId);
+  }
+  return Effect.succeed(targets);
+}
+
+/** Drops links whose project was deleted since they were made. */
+export function activeLinkedProjectIds(
+  readModel: OrchestrationReadModel,
+  projectIds: ReadonlyArray<ProjectId> | undefined,
+): ReadonlyArray<ProjectId> {
+  return (projectIds ?? []).filter(
+    (projectId) => findProjectById(readModel, projectId)?.deletedAt === null,
+  );
+}
+
 export function requireProjectAbsent(input: {
   readonly readModel: OrchestrationReadModel;
   readonly command: OrchestrationCommand;

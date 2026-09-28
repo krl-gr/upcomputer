@@ -50,6 +50,7 @@ import Migration0034 from "./Migrations/034_ProjectionThreadsSettled.ts";
 import Migration0035 from "./Migrations/035_ProjectionThreadsSnoozed.ts";
 import Migration0036 from "./Migrations/036_ProjectionThreadsSidebarVisibility.ts";
 import Migration0037 from "./Migrations/037_ClearAutomaticProjectModelDefaults.ts";
+import Migration0038 from "./Migrations/038_ProjectionLinkedProjects.ts";
 import { applyOldPublicMigrationCompatibility } from "./OldPublicMigrationCompatibility.ts";
 
 /**
@@ -102,6 +103,7 @@ export const migrationEntries = [
   [35, "ProjectionThreadsSnoozed", Migration0035],
   [36, "ProjectionThreadsSidebarVisibility", Migration0036],
   [37, "ClearAutomaticProjectModelDefaults", Migration0037],
+  [38, "ProjectionLinkedProjects", Migration0038],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

@@ -3,8 +3,10 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -122,6 +124,8 @@ import {
   type RpcsOfContribution,
 } from "./product/RpcContribution.ts";
 import * as RelayClient from "@upcomputer/shared/relayClient";
+import { normalizeProjectPathForComparison } from "@upcomputer/shared/path";
+import { scratchWorkspaceRootFor } from "./project/scratchWorkspace.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -348,6 +352,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.projectsReadFile, AuthOrchestrationReadScope],
   [WS_METHODS.projectsSearchEntries, AuthOrchestrationReadScope],
   [WS_METHODS.projectsWriteFile, AuthOrchestrationOperateScope],
+  [WS_METHODS.projectsEnsureScratch, AuthOrchestrationOperateScope],
   [WS_METHODS.shellOpenInEditor, AuthOrchestrationOperateScope],
   [WS_METHODS.filesystemBrowse, AuthOrchestrationReadScope],
   [WS_METHODS.assetsCreateUrl, AuthOrchestrationReadScope],
@@ -434,6 +439,7 @@ const makeWsRpcLayer = (
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      const vcsDriverRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -1122,7 +1128,146 @@ const makeWsRpcLayer = (
           );
         });
 
-      const dispatchNormalizedCommand = (
+      const path = yield* Path.Path;
+      // Scratch threads run in a plain folder under the data dir. Inside a
+      // checkout (a dev worktree's .upcomputer, a dotfiles home) that folder
+      // would inherit the repo's VCS status and checkpoints, so it is only
+      // offered when the data dir is outside any work tree. Detection failures
+      // and defects fail closed and hide the folder, never the config.
+      // Probed once per connection: a negative VCS detection is not cached.
+      // An interrupt stays an interrupt, so a config load cancelled mid-probe
+      // invalidates the cache and the next load probes again.
+      const [cachedScratchWorkspaceRoot, invalidateScratchWorkspaceRoot] =
+        yield* Effect.cachedInvalidateWithTTL(
+          vcsDriverRegistry.detect({ cwd: config.baseDir }).pipe(
+            Effect.map((handle) =>
+              handle === null ? scratchWorkspaceRootFor(path, config.baseDir) : undefined,
+            ),
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(undefined),
+            ),
+          ),
+          Duration.infinity,
+        );
+      const resolveScratchWorkspaceRoot = cachedScratchWorkspaceRoot.pipe(
+        Effect.onInterrupt(() => invalidateScratchWorkspaceRoot),
+      );
+
+      const fileSystem = yield* FileSystem.FileSystem;
+      // Each scratch thread gets its own folder under the scratch root, named
+      // from its date, first words, and id. It rides in worktreePath like any
+      // thread that runs outside its project root, so the provider, terminal,
+      // and file tree all use it. Threads that already name a folder keep it.
+      const scratchThreadFolder = (input: {
+        readonly threadId: ThreadId;
+        readonly projectId: ProjectId;
+        readonly worktreePath: string | null;
+        readonly createdAt: string;
+        readonly text: string;
+      }): Effect.Effect<string | null, OrchestrationDispatchCommandError> =>
+        Effect.gen(function* () {
+          if (input.worktreePath !== null) return null;
+          const scratchRoot = yield* resolveScratchWorkspaceRoot;
+          if (scratchRoot === undefined) return null;
+          const project = yield* projectionSnapshotQuery.getProjectShellById(input.projectId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Failed to look up the thread's project.",
+                  cause,
+                }),
+            ),
+          );
+          if (
+            Option.isNone(project) ||
+            normalizeProjectPathForComparison(project.value.workspaceRoot) !==
+              normalizeProjectPathForComparison(scratchRoot)
+          ) {
+            return null;
+          }
+          // Only [a-z0-9] reaches the name, so it stays one path segment inside
+          // the scratch root, and the words are capped so pasted data cannot
+          // outgrow a file name. Each leaf is created without `recursive`, so
+          // the create itself claims it: a taken short name falls back to the
+          // full id, which only the same thread can already hold.
+          const words = input.text
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+            .slice(0, 5)
+            .join("-")
+            .slice(0, 48)
+            .replace(/-+$/, "");
+          const id = input.threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const folderFor = (idPart: string) =>
+            path.join(
+              scratchRoot,
+              [input.createdAt.slice(0, 10), words, idPart].filter(Boolean).join("-"),
+            );
+          yield* fileSystem.makeDirectory(scratchRoot, { recursive: true }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Failed to create the folder for threads without a project.",
+                  cause,
+                }),
+            ),
+          );
+          const claim = (folder: string) =>
+            fileSystem.makeDirectory(folder).pipe(
+              Effect.as(true),
+              Effect.catchIf(
+                (error) => error.reason._tag === "AlreadyExists",
+                () => Effect.succeed(false),
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message: "Failed to create the thread's folder.",
+                    cause,
+                  }),
+              ),
+            );
+          const shortFolder = folderFor(id.slice(0, 8));
+          if (yield* claim(shortFolder)) return shortFolder;
+          const fullFolder = folderFor(id);
+          yield* claim(fullFolder);
+          return fullFolder;
+        });
+      // Applied ahead of the bootstrap split in dispatchNormalizedCommand, so a
+      // plain thread.create and a bootstrap turn start's createThread both get
+      // their folder before anything is dispatched.
+      const withScratchThreadFolder = (
+        command: OrchestrationCommand,
+      ): Effect.Effect<OrchestrationCommand, OrchestrationDispatchCommandError> => {
+        if (command.type === "thread.create") {
+          return scratchThreadFolder({ ...command, text: command.title }).pipe(
+            Effect.map((worktreePath) =>
+              worktreePath === null ? command : { ...command, worktreePath },
+            ),
+          );
+        }
+        if (command.type !== "thread.turn.start") return Effect.succeed(command);
+        const bootstrap = command.bootstrap;
+        const createThread = bootstrap?.createThread;
+        if (bootstrap === undefined || createThread === undefined) return Effect.succeed(command);
+        return scratchThreadFolder({
+          ...createThread,
+          threadId: command.threadId,
+          text: command.message.text,
+        }).pipe(
+          Effect.map((worktreePath) =>
+            worktreePath === null
+              ? command
+              : {
+                  ...command,
+                  bootstrap: { ...bootstrap, createThread: { ...createThread, worktreePath } },
+                },
+          ),
+        );
+      };
+
+      const dispatchPreparedCommand = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
         const dispatchEffect =
@@ -1151,6 +1296,73 @@ const makeWsRpcLayer = (
           );
       };
 
+      const dispatchNormalizedCommand = (
+        command: OrchestrationCommand,
+      ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
+        withScratchThreadFolder(command).pipe(Effect.flatMap(dispatchPreparedCommand));
+
+      // One scratch project per environment, created the first time a client
+      // asks. Two clients racing the create both reach dispatch; the loser's
+      // duplicate-root rejection resolves to the project the winner made.
+      // The folder is (re)made on every call so a deleted scratch still runs.
+      const ensureScratchProject = Effect.gen(function* () {
+        const workspaceRoot = yield* resolveScratchWorkspaceRoot;
+        if (workspaceRoot === undefined) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: "Threads without a project are not available on this environment.",
+          });
+        }
+        yield* fileSystem.makeDirectory(workspaceRoot, { recursive: true }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to create the folder for threads without a project.",
+                cause,
+              }),
+          ),
+        );
+        const findScratchProjectId = projectionSnapshotQuery
+          .getActiveProjectByWorkspaceRoot(workspaceRoot)
+          .pipe(
+            Effect.map(Option.map((project) => project.id)),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Failed to look up the home for threads without a project.",
+                  cause,
+                }),
+            ),
+          );
+        const existingProjectId = yield* findScratchProjectId;
+        if (Option.isSome(existingProjectId)) {
+          return { projectId: existingProjectId.value };
+        }
+        const projectId = ProjectId.make(yield* randomUUID);
+        return yield* Effect.gen(function* () {
+          const command = yield* normalizeDispatchCommand({
+            type: "project.create",
+            commandId: yield* serverCommandId("scratch-project-create"),
+            projectId,
+            title: "No project",
+            workspaceRoot,
+            createdAt: yield* nowIso,
+          });
+          yield* dispatchNormalizedCommand(command);
+          return { projectId };
+        }).pipe(
+          Effect.catch((error) =>
+            findScratchProjectId.pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => Effect.fail(error),
+                  onSome: (racedProjectId) => Effect.succeed({ projectId: racedProjectId }),
+                }),
+              ),
+            ),
+          ),
+        );
+      });
+
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
@@ -1159,6 +1371,7 @@ const makeWsRpcLayer = (
         );
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
+        const scratchWorkspaceRoot = yield* resolveScratchWorkspaceRoot;
 
         return {
           environment,
@@ -1184,6 +1397,7 @@ const makeWsRpcLayer = (
           settings,
           shellResumeCompletionMarker: true,
           threadResumeCompletionMarker: true,
+          ...(scratchWorkspaceRoot === undefined ? {} : { scratchWorkspaceRoot }),
         };
       });
 
@@ -1845,6 +2059,10 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectsEnsureScratch]: () =>
+          observeRpcEffect(WS_METHODS.projectsEnsureScratch, ensureScratchProject, {
+            "rpc.aggregate": "orchestration",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

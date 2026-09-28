@@ -5,6 +5,7 @@ import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { useIsScratchProject } from "~/hooks/useScratchProject";
 import { useClientSettings } from "~/hooks/useSettings";
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
@@ -33,7 +34,21 @@ export function DraftHeroHeadline({
   activeProjectRef,
   activeProjectTitle,
 }: DraftHeroHeadlineProps) {
-  const projects = useProjects();
+  const allProjects = useProjects();
+  const isScratchProjectFn = useIsScratchProject();
+  // The hidden "No project" home is not a project to pick here.
+  const projects = useMemo(
+    () => allProjects.filter((project) => !isScratchProjectFn(project)),
+    [allProjects, isScratchProjectFn],
+  );
+  const isScratchDraft =
+    activeProjectRef !== null &&
+    allProjects.some(
+      (project) =>
+        project.environmentId === activeProjectRef.environmentId &&
+        project.id === activeProjectRef.projectId &&
+        isScratchProjectFn(project),
+    );
   const threads = useThreadShells();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -143,6 +158,16 @@ export function DraftHeroHeadline({
       {activeProjectTitle ?? "Add a project"}
     </button>
   );
+
+  // A chat without a project picks one from the context bar under the
+  // composer ("Select Project"), so the headline carries no picker.
+  if (isScratchDraft) {
+    return (
+      <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+        What should we work on?
+      </h1>
+    );
+  }
 
   return (
     <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">

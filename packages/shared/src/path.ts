@@ -53,3 +53,25 @@ export function normalizeProjectPathForComparison(value: string): string {
   }
   return normalized;
 }
+
+/**
+ * Whether `candidate` is `root` itself or sits inside it, compared by whole
+ * path segments (`/a/foo` does not contain `/a/foobar`). Both paths should
+ * already be absolute and resolved; only trailing separators, Windows
+ * separators, and Windows case are normalized here.
+ */
+export function isPathWithinRoot(candidate: string, root: string): boolean {
+  const normalizedCandidate = normalizeProjectPathForComparison(candidate);
+  const normalizedRoot = normalizeProjectPathForComparison(root);
+  if (normalizedCandidate.length === 0 || normalizedRoot.length === 0) {
+    return false;
+  }
+  if (normalizedCandidate === normalizedRoot) {
+    return true;
+  }
+  const separator = isWindowsAbsolutePath(normalizedRoot) ? "\\" : "/";
+  const prefix = normalizedRoot.endsWith(separator)
+    ? normalizedRoot
+    : `${normalizedRoot}${separator}`;
+  return normalizedCandidate.startsWith(prefix);
+}

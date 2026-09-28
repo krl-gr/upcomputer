@@ -363,6 +363,23 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }),
   );
 
+  it.effect("passes linked project directories to the runtime as writable roots", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-linked-dirs"),
+        runtimeMode: "auto-accept-edits",
+        cwd: "/repo/home",
+        additionalDirectories: ["/repo/docs", "/repo/api"],
+      });
+
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.deepStrictEqual(runtime.options.writableRoots, ["/repo/docs", "/repo/api"]);
+    }),
+  );
+
   it.effect("maps resolved ask mode to Codex collaboration mode", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;

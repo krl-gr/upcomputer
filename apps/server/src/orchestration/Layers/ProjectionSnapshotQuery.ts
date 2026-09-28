@@ -72,6 +72,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    linkedProjectIds: Schema.fromJsonString(Schema.Array(ProjectId)),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -88,6 +89,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    linkedProjectIds: Schema.fromJsonString(Schema.Array(ProjectId)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -272,6 +274,7 @@ function mapProjectShellRow(
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     scripts: row.scripts,
+    linkedProjectIds: row.linkedProjectIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -377,6 +380,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_projects.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -409,6 +422,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_threads.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -439,6 +462,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_threads.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE sidebar_visible = 1
@@ -472,6 +505,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_threads.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE sidebar_visible = 1
@@ -806,6 +849,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_projects.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -828,6 +881,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_projects.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -899,6 +962,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           sidebar_visible AS "sidebarVisible",
+          (
+            SELECT json_group_array(linked.value)
+            FROM json_each(projection_threads.linked_project_ids_json) AS linked
+            WHERE EXISTS (
+              SELECT 1
+              FROM projection_projects AS linked_projects
+              WHERE linked_projects.project_id = linked.value
+                AND linked_projects.deleted_at IS NULL
+            )
+          ) AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -1549,6 +1622,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 scripts: row.scripts,
+                linkedProjectIds: row.linkedProjectIds,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 deletedAt: row.deletedAt,
@@ -1557,6 +1631,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               const threads: ReadonlyArray<OrchestrationThread> = threadRows.map((row) => ({
                 id: row.threadId,
                 projectId: row.projectId,
+                linkedProjectIds: row.linkedProjectIds,
                 title: row.title,
                 modelSelection: row.modelSelection,
                 runtimeMode: row.runtimeMode,
@@ -1691,6 +1766,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   workspaceRoot: row.workspaceRoot,
                   defaultModelSelection: row.defaultModelSelection,
                   scripts: row.scripts,
+                  linkedProjectIds: row.linkedProjectIds,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   deletedAt: row.deletedAt,
@@ -1785,6 +1861,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 threads.push({
                   id: row.threadId,
                   projectId: row.projectId,
+                  linkedProjectIds: row.linkedProjectIds,
                   title: row.title,
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
@@ -1942,6 +2019,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     ? Result.succeed({
                         id: row.threadId,
                         projectId: row.projectId,
+                        linkedProjectIds: row.linkedProjectIds,
                         title: row.title,
                         modelSelection: row.modelSelection,
                         runtimeMode: row.runtimeMode,
@@ -2103,6 +2181,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   (row): OrchestrationThreadShell => ({
                     id: row.threadId,
                     projectId: row.projectId,
+                    linkedProjectIds: row.linkedProjectIds,
                     title: row.title,
                     modelSelection: row.modelSelection,
                     runtimeMode: row.runtimeMode,
@@ -2384,6 +2463,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       return Option.some({
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
+        linkedProjectIds: threadRow.value.linkedProjectIds,
         title: threadRow.value.title,
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
@@ -2574,6 +2654,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       const thread = {
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
+        linkedProjectIds: threadRow.value.linkedProjectIds,
         title: threadRow.value.title,
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,

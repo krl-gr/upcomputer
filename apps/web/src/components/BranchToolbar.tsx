@@ -1,20 +1,27 @@
 import { scopeProjectRef, scopeThreadRef } from "@upcomputer/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@upcomputer/contracts";
-import {
-  ChevronDownIcon,
-  CloudIcon,
-  FolderGit2Icon,
-  FolderGitIcon,
-  FolderIcon,
-  HistoryIcon,
-  MonitorIcon,
-} from "lucide-react";
+import type { EnvironmentId, ProjectId, ThreadId } from "@upcomputer/contracts";
 import { memo, useCallback, useMemo, type ReactNode } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { cn } from "../lib/utils";
-import { useProject, useThread, useThreadShellsForProjectRefs } from "../state/entities";
+import { selectLinkableProjects } from "../lib/threadProjectLinks";
+import {
+  selectPendingProjectLinks,
+  usePendingProjectLinksStore,
+} from "../pendingProjectLinksStore";
+import {
+  useProject,
+  useProjects,
+  useThread,
+  useThreadShell,
+  useThreadShellsForProjectRefs,
+} from "../state/entities";
 import { useIsMobile } from "../hooks/useMediaQuery";
+import { useIsScratchProject } from "../hooks/useScratchProject";
+import {
+  useChooseProjectForChat,
+  useThreadProjectLinkCommands,
+} from "../hooks/useThreadProjectChoice";
 import {
   type EnvMode,
   type EnvironmentOption,
@@ -29,14 +36,10 @@ import {
 import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
-import {
-  CONTEXT_BAR_ICON_TRIGGER_CLASS,
-  CONTEXT_BAR_SEPARATOR_CLASS,
-  CONTEXT_BAR_TEXT_CLASS,
-} from "./BranchToolbar.styles";
+import { BranchToolbarProjectPicker, LinkedProjectChip } from "./BranchToolbarProjectPicker";
+import { CONTEXT_BAR_SEPARATOR_CLASS, CONTEXT_BAR_TEXT_CLASS } from "./BranchToolbar.styles";
 import { Button } from "./ui/button";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { SIDEBAR_MUTED_TEXT_CLASS } from "./sidebar/sidebarTextStyles";
 import {
   Menu,
   MenuGroup,
@@ -81,6 +84,8 @@ interface MobileRunContextSelectorProps {
   onUsePreviousWorktree: () => void;
 }
 
+const EMPTY_PROJECT_IDS: ReadonlyArray<ProjectId> = [];
+
 function ContextBarSeparator() {
   return <div aria-hidden="true" className={CONTEXT_BAR_SEPARATOR_CLASS} />;
 }
@@ -116,36 +121,16 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
     () => availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
     [availableEnvironments, environmentId],
   );
-  const WorkspaceIcon =
-    effectiveEnvMode === "worktree"
-      ? FolderGit2Icon
-      : activeWorktreePath
-        ? FolderGitIcon
-        : FolderIcon;
   const workspaceLabel = envModeLocked
     ? resolveLockedWorkspaceLabel(activeWorktreePath)
     : effectiveEnvMode === "worktree"
       ? resolveEnvModeLabel("worktree")
       : resolveCurrentWorkspaceLabel(activeWorktreePath);
   const isLocked = envLocked || envModeLocked;
-  const EnvironmentIcon = activeEnvironment?.isPrimary ? MonitorIcon : CloudIcon;
-  const icon = showEnvironmentIndicator ? (
-    // Button's base styles apply `-mx-0.5` to descendant SVGs, which eats 4px
-    // out of whatever gap we set. mx-0! cancels that so gap-0.5 reads as 2px.
-    <span className="inline-flex shrink-0 items-center gap-0.5">
-      <EnvironmentIcon className="size-3 shrink-0 mx-0!" />
-      <WorkspaceIcon className="size-3 shrink-0 mx-0!" />
-    </span>
-  ) : (
-    <WorkspaceIcon className="size-3 shrink-0" />
-  );
   const triggerContent = (
-    <>
-      {icon}
-      <span className="min-w-0 truncate">
-        {showEnvironmentIndicator ? (activeEnvironment?.label ?? "Run on") : workspaceLabel}
-      </span>
-    </>
+    <span className="min-w-0 truncate">
+      {showEnvironmentIndicator ? (activeEnvironment?.label ?? "Run on") : workspaceLabel}
+    </span>
   );
 
   if (isLocked) {
@@ -171,7 +156,6 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
         )}
       >
         {triggerContent}
-        <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
       </MenuTrigger>
       <MenuPopup align="start" side="top" className="w-64">
         {showEnvironmentPicker && availableEnvironments && onEnvironmentChange ? (
@@ -182,21 +166,15 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                 value={environmentId}
                 onValueChange={(value) => onEnvironmentChange(value as EnvironmentId)}
               >
-                {availableEnvironments.map((env) => {
-                  const Icon = env.isPrimary ? MonitorIcon : CloudIcon;
-                  return (
-                    <MenuRadioItem
-                      key={env.environmentId}
-                      disabled={envLocked}
-                      value={env.environmentId}
-                    >
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <Icon className="size-3" />
-                        <span className="min-w-0 truncate">{env.label}</span>
-                      </span>
-                    </MenuRadioItem>
-                  );
-                })}
+                {availableEnvironments.map((env) => (
+                  <MenuRadioItem
+                    key={env.environmentId}
+                    disabled={envLocked}
+                    value={env.environmentId}
+                  >
+                    <span className="min-w-0 truncate">{env.label}</span>
+                  </MenuRadioItem>
+                ))}
               </MenuRadioGroup>
             </MenuGroup>
             <MenuSeparator />
@@ -215,29 +193,16 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
             }}
           >
             <MenuRadioItem disabled={envModeLocked} value="local">
-              <span className="flex min-w-0 items-center gap-1.5">
-                {activeWorktreePath ? (
-                  <FolderGitIcon className="size-3" />
-                ) : (
-                  <FolderIcon className="size-3" />
-                )}
-                <span className="min-w-0 truncate">
-                  {resolveCurrentWorkspaceLabel(activeWorktreePath)}
-                </span>
+              <span className="min-w-0 truncate">
+                {resolveCurrentWorkspaceLabel(activeWorktreePath)}
               </span>
             </MenuRadioItem>
             <MenuRadioItem disabled={envModeLocked} value="worktree">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <FolderGit2Icon className="size-3" />
-                <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
-              </span>
+              <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
             </MenuRadioItem>
             {previousWorktreeLabel ? (
               <MenuRadioItem disabled={envModeLocked} value="previous-worktree">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <HistoryIcon className="size-3" />
-                  <span className="min-w-0 truncate">{previousWorktreeLabel}</span>
-                </span>
+                <span className="min-w-0 truncate">{previousWorktreeLabel}</span>
               </MenuRadioItem>
             ) : null}
           </MenuRadioGroup>
@@ -280,6 +245,69 @@ export const BranchToolbar = memo(function BranchToolbar({
       : null;
   const activeProject = useProject(activeProjectRef);
   const hasActiveThread = serverThread !== null || draftThread !== null;
+  // The shell carries links as soon as the thread exists, before its detail loads.
+  const serverThreadShell = useThreadShell(threadRef);
+  const isServerThread = serverThread !== null || serverThreadShell !== null;
+  const isScratchProjectFn = useIsScratchProject();
+  const isScratch = activeProject !== null && isScratchProjectFn(activeProject);
+  const pendingLinkDraftId = !isServerThread && draftId ? draftId : null;
+  const pendingLinks = usePendingProjectLinksStore((store) =>
+    selectPendingProjectLinks(store, pendingLinkDraftId),
+  );
+  const removePendingLink = usePendingProjectLinksStore((store) => store.removeLink);
+  const linkedProjectIds = isServerThread
+    ? (serverThreadShell?.linkedProjectIds ?? serverThread?.linkedProjectIds ?? EMPTY_PROJECT_IDS)
+    : EMPTY_PROJECT_IDS;
+  const allProjects = useProjects();
+  const projectById = useMemo(
+    () =>
+      new Map(
+        allProjects
+          .filter((project) => project.environmentId === environmentId)
+          .map((project) => [project.id, project] as const),
+      ),
+    [allProjects, environmentId],
+  );
+  // Linked projects (started threads) or projects waiting to be linked on
+  // the first send (drafts). Unknown ids (deleted projects) are skipped.
+  const chipProjects = useMemo(() => {
+    const ids = isServerThread
+      ? linkedProjectIds
+      : pendingLinks
+          .filter((link) => link.environmentId === environmentId)
+          .map((link) => link.projectId);
+    return ids.flatMap((id) => {
+      const project = projectById.get(id);
+      return project && project.id !== activeProject?.id ? [project] : [];
+    });
+  }, [
+    activeProject?.id,
+    environmentId,
+    isServerThread,
+    linkedProjectIds,
+    pendingLinks,
+    projectById,
+  ]);
+  const menuProjects = useMemo(
+    () =>
+      selectLinkableProjects({
+        projects: allProjects,
+        environmentId,
+        isScratchProject: isScratchProjectFn,
+        excludedProjectIds: [
+          ...(activeProject && !isScratch ? [activeProject.id] : []),
+          ...chipProjects.map((project) => project.id),
+        ],
+      }),
+    [activeProject, allProjects, chipProjects, environmentId, isScratch, isScratchProjectFn],
+  );
+  const chooseProject = useChooseProjectForChat({
+    threadRef,
+    draftId: draftId ?? null,
+    isServerThread,
+    isScratchProject: isScratch,
+  });
+  const { unlink } = useThreadProjectLinkCommands();
   const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
@@ -338,31 +366,89 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   if (!hasActiveThread || !activeProject) return null;
 
+  // Projects linked to the chat (or waiting to be linked on the first send).
+  const linkedProjectChips =
+    chipProjects.length > 0 ? (
+      <div className="flex min-w-0 shrink items-center gap-1 overflow-hidden ps-1">
+        {chipProjects.map((project) => (
+          <LinkedProjectChip
+            key={project.id}
+            project={project}
+            pending={!isServerThread}
+            onRemove={() => {
+              if (isServerThread) {
+                void unlink(threadRef, project.id);
+              } else if (draftId) {
+                removePendingLink(draftId, {
+                  environmentId: project.environmentId,
+                  projectId: project.id,
+                });
+              }
+            }}
+          />
+        ))}
+      </div>
+    ) : null;
+  // The project's favicon opens the menu to link another project.
+  const projectFaviconPicker = (
+    <BranchToolbarProjectPicker
+      projects={menuProjects}
+      onSelect={chooseProject}
+      trigger="icon"
+      ariaLabel="Link another project to this chat"
+    >
+      <ProjectFavicon
+        environmentId={activeProject.environmentId}
+        cwd={activeProject.workspaceRoot}
+        repositoryIdentity={activeProject.repositoryIdentity}
+        className="size-4"
+      />
+    </BranchToolbarProjectPicker>
+  );
+
   return (
     <div
       className="mx-auto flex w-full max-w-208 min-w-0 items-center justify-between gap-2 pb-1 pl-3 pr-4 pt-1 dark:drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]"
       data-chat-context-bar="true"
     >
       <div className="flex min-w-0 flex-1 items-center gap-0 overflow-hidden">
-        {!isGitRepo ? (
-          <div
-            className="flex h-8 min-w-0 shrink-0 items-center gap-2 px-2 text-left"
-            title={activeProject.workspaceRoot}
-          >
-            <ProjectFavicon
-              environmentId={activeProject.environmentId}
-              cwd={activeProject.workspaceRoot}
-              repositoryIdentity={activeProject.repositoryIdentity}
-              className="size-4 dark:text-white/[0.175]"
-            />
-            <span
-              className={cn("min-w-0 truncate", SIDEBAR_MUTED_TEXT_CLASS, CONTEXT_BAR_TEXT_CLASS)}
+        {isScratch ? (
+          // A chat without a project runs in its own plain folder: no
+          // workspace mode, branch or environment controls.
+          <>
+            <BranchToolbarProjectPicker
+              projects={menuProjects}
+              onSelect={chooseProject}
+              trigger="text"
+              ariaLabel={
+                isServerThread ? "Link a project to this chat" : "Select a project for this chat"
+              }
             >
-              {activeProject.title}
-            </span>
-          </div>
+              {chipProjects.length === 0 ? "Select project" : "Add project"}
+            </BranchToolbarProjectPicker>
+            {linkedProjectChips}
+          </>
+        ) : !isGitRepo ? (
+          <>
+            <BranchToolbarProjectPicker
+              projects={menuProjects}
+              onSelect={chooseProject}
+              trigger="text"
+              ariaLabel="Link another project to this chat"
+            >
+              <ProjectFavicon
+                environmentId={activeProject.environmentId}
+                cwd={activeProject.workspaceRoot}
+                repositoryIdentity={activeProject.repositoryIdentity}
+                className="size-4"
+              />
+              <span className="min-w-0 truncate">{activeProject.title}</span>
+            </BranchToolbarProjectPicker>
+            {linkedProjectChips}
+          </>
         ) : isMobile ? (
           <>
+            {projectFaviconPicker}
             <MobileRunContextSelector
               envLocked={envLocked}
               envModeLocked={envModeLocked}
@@ -379,7 +465,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             />
             <ContextBarSeparator />
             <BranchToolbarBranchSelector
-              className="min-w-0 flex-1 justify-start"
+              className="min-w-0 flex-initial justify-start"
               environmentId={environmentId}
               threadId={threadId}
               {...(draftId ? { draftId } : {})}
@@ -393,18 +479,12 @@ export const BranchToolbar = memo(function BranchToolbar({
               onStartFromOriginChange={onStartFromOriginChange}
               {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
             />
+            {linkedProjectChips}
           </>
         ) : (
           <>
             <div className="flex min-w-0 shrink-0 items-center gap-0">
-              <span className={CONTEXT_BAR_ICON_TRIGGER_CLASS} aria-hidden="true">
-                <ProjectFavicon
-                  environmentId={activeProject.environmentId}
-                  cwd={activeProject.workspaceRoot}
-                  repositoryIdentity={activeProject.repositoryIdentity}
-                  className="size-4"
-                />
-              </span>
+              {projectFaviconPicker}
               <ContextBarSlash />
               {showEnvironmentPicker && availableEnvironments && onEnvironmentChange ? (
                 <>
@@ -426,7 +506,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             </div>
             <ContextBarSeparator />
             <BranchToolbarBranchSelector
-              className="min-w-0 flex-1 justify-start"
+              className="min-w-0 flex-initial justify-start"
               environmentId={environmentId}
               threadId={threadId}
               {...(draftId ? { draftId } : {})}
@@ -440,6 +520,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onStartFromOriginChange={onStartFromOriginChange}
               {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
             />
+            {linkedProjectChips}
           </>
         )}
       </div>

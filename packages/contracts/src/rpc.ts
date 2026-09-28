@@ -72,6 +72,7 @@ import {
   ProjectWriteFileError,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
+  ProjectEnsureScratchResult,
 } from "./project.ts";
 import {
   DiscoveredLocalServerList,
@@ -137,6 +138,7 @@ export const WS_METHODS = {
   projectsReadFile: "projects.readFile",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsEnsureScratch: "projects.ensureScratch",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -362,6 +364,13 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
+});
+
+// Finds or creates the "No project" project rooted at ServerConfig.scratchWorkspaceRoot.
+export const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
+  payload: Schema.Struct({}),
+  success: ProjectEnsureScratchResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
@@ -619,6 +628,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,
+  WsProjectsEnsureScratchRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,

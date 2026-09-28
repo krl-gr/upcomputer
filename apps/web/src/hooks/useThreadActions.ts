@@ -3,6 +3,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@upcomputer/client-runtime/environment";
+import { isScratchProject } from "@upcomputer/client-runtime/state/projects";
 import { settlePromise, squashAtomCommandFailure } from "@upcomputer/client-runtime/state/runtime";
 import { canSnooze } from "@upcomputer/client-runtime/state/thread-settled";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@upcomputer/contracts";
@@ -18,6 +19,8 @@ import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "../state/server";
 import { readLocalApi } from "../localApi";
 import {
   readEnvironmentSupportsSnooze,
@@ -222,7 +225,15 @@ export function useThreadActions() {
       const displayWorktreePath = orphanedWorktreePath
         ? formatWorktreePathForDisplay(orphanedWorktreePath)
         : null;
-      const canDeleteWorktree = orphanedWorktreePath !== null && threadProject !== null;
+      // A chat without a project runs in its own plain folder, not a git
+      // worktree; the server removes that folder when the thread is deleted.
+      const scratchWorkspaceRoot = appAtomRegistry
+        .get(environmentServerConfigsAtom)
+        .get(threadRef.environmentId)?.scratchWorkspaceRoot;
+      const canDeleteWorktree =
+        orphanedWorktreePath !== null &&
+        threadProject !== null &&
+        !isScratchProject(threadProject, scratchWorkspaceRoot);
       const localApi = readLocalApi();
       let shouldDeleteWorktree = false;
       if (canDeleteWorktree && localApi) {

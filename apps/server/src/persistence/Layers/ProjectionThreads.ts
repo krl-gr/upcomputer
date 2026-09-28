@@ -14,11 +14,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection } from "@upcomputer/contracts";
+import { ModelSelection, ProjectId } from "@upcomputer/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    linkedProjectIds: Schema.fromJsonString(Schema.Array(ProjectId)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -50,6 +51,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count,
           has_actionable_proposed_plan,
           sidebar_visible,
+          linked_project_ids_json,
           deleted_at
         )
         VALUES (
@@ -72,6 +74,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pendingUserInputCount},
           ${row.hasActionableProposedPlan},
           ${row.sidebarVisible ?? 1},
+          ${JSON.stringify(row.linkedProjectIds ?? [])},
           ${row.deletedAt}
         )
         ON CONFLICT (thread_id)
@@ -94,6 +97,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count = excluded.pending_user_input_count,
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
           sidebar_visible = excluded.sidebar_visible,
+          linked_project_ids_json = excluded.linked_project_ids_json,
           deleted_at = excluded.deleted_at
       `,
   });
@@ -123,6 +127,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           sidebar_visible AS "sidebarVisible",
+          linked_project_ids_json AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -154,6 +159,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           sidebar_visible AS "sidebarVisible",
+          linked_project_ids_json AS "linkedProjectIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}

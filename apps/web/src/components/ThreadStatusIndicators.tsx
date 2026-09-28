@@ -93,13 +93,14 @@ export function ThreadStatusLabel({
  */
 export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummary }) {
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const lastVisitedAt = useUiStateStore(
-    (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
-  );
+  const threadKey = scopedThreadKey(threadRef);
+  const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
+  const markedUnread = useUiStateStore((state) => state.threadMarkedUnreadById[threadKey] === true);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,
       lastVisitedAt,
+      markedUnread,
     },
   });
 

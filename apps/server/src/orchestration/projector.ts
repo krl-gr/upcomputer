@@ -213,6 +213,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             scripts: payload.scripts,
+            linkedProjectIds: [],
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             deletedAt: null,
@@ -245,6 +246,9 @@ export function projectEvent(
                     ? { defaultModelSelection: payload.defaultModelSelection }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
+                  ...(payload.linkedProjectIds !== undefined
+                    ? { linkedProjectIds: payload.linkedProjectIds }
+                    : {}),
                   updatedAt: payload.updatedAt,
                 }
               : project,
@@ -381,6 +385,9 @@ export function projectEvent(
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.linkedProjectIds !== undefined
+              ? { linkedProjectIds: payload.linkedProjectIds }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

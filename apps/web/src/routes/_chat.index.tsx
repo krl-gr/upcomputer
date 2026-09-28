@@ -8,12 +8,13 @@ import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
@@ -31,8 +32,9 @@ function ChatIndexRouteView() {
 }
 
 /**
- * Landing on the index route opens a draft in the most recently active project
- * instead of leaving an empty screen.
+ * Landing on the index route opens a new chat instead of leaving an empty
+ * screen: a chat without a project when the environment offers one, else a
+ * draft in the most recently active project.
  *
  * Deliberately renders nothing: unlike upstream, the draft surface here belongs
  * to the workspace (`_chat.tsx` wraps the outlet in `ChatWorkspace`), so this
@@ -45,6 +47,11 @@ function IndexDraftAutoStart() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = bootstrapped
+    ? scratchEnvironmentId(primaryEnvironmentId)
+    : null;
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -57,7 +64,21 @@ function IndexDraftAutoStart() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (startingRef.current) {
+      return;
+    }
+    if (scratchTargetEnvironmentId !== null) {
+      startingRef.current = true;
+      void startScratchThread({ environmentId: scratchTargetEnvironmentId, replace: true }).then(
+        (started) => {
+          if (started) return;
+          startingRef.current = false;
+          setStartState((state) => ({ ...state, failed: true }));
+        },
+      );
+      return;
+    }
+    if (mostRecentProject === null) {
       return;
     }
     startingRef.current = true;
@@ -67,7 +88,13 @@ function IndexDraftAutoStart() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [
+    handleNewThread,
+    mostRecentProject,
+    scratchTargetEnvironmentId,
+    startScratchThread,
+    startState.retryRequest,
+  ]);
 
   if (!startState.failed) {
     return null;

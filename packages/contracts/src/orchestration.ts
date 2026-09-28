@@ -225,6 +225,17 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
+/**
+ * Other projects a thread or project is linked to. A thread's own `projectId`
+ * stays its home (cwd); links add sidebar placement and agent directory access.
+ * Ids may point at deleted projects on older snapshots; clients ignore those.
+ * Decodes to [] when absent so payloads from servers without links still
+ * decode; optional in the type (like contextBindings) so producers may omit it.
+ */
+const LinkedProjectIds = Schema.optional(Schema.Array(ProjectId)).pipe(
+  Schema.withDecodingDefault(Effect.succeed([])),
+);
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -232,6 +243,8 @@ export const OrchestrationProject = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  /** Project "tags": this project's threads also show under, and can access, these projects. */
+  linkedProjectIds: LinkedProjectIds,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -394,6 +407,8 @@ export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  /** Extra projects this thread shows under and whose folders its agent may use. */
+  linkedProjectIds: LinkedProjectIds,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -441,6 +456,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  linkedProjectIds: LinkedProjectIds,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -449,6 +465,7 @@ export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  linkedProjectIds: LinkedProjectIds,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -583,6 +600,8 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  /** Full replacement of the project's linked projects. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -657,6 +676,23 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+});
+
+// Links add to / remove from the thread's linkedProjectIds; the thread's own
+// projectId is never linked. Both resolve to a thread.meta-updated event
+// carrying the full resulting set.
+const ThreadProjectLinkCommand = Schema.Struct({
+  type: Schema.Literal("thread.project.link"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  projectIds: Schema.NonEmptyArray(ProjectId),
+});
+
+const ThreadProjectUnlinkCommand = Schema.Struct({
+  type: Schema.Literal("thread.project.unlink"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  projectIds: Schema.NonEmptyArray(ProjectId),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -837,6 +873,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
   ThreadMetaUpdateCommand,
+  ThreadProjectLinkCommand,
+  ThreadProjectUnlinkCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadContextBindingAddCommand,
@@ -863,6 +901,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
   ThreadMetaUpdateCommand,
+  ThreadProjectLinkCommand,
+  ThreadProjectUnlinkCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadContextBindingAddCommand,
@@ -1013,6 +1053,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   updatedAt: IsoDateTime,
 });
 
@@ -1090,6 +1131,8 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Full resulting set after thread.project.link / thread.project.unlink. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   updatedAt: IsoDateTime,
 });
 

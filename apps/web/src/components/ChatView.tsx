@@ -114,6 +114,10 @@ import {
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { useIsScratchProject } from "../hooks/useScratchProject";
+import { useThreadProjectLinkCommands } from "../hooks/useThreadProjectChoice";
+import { resolvePendingProjectLinks } from "../lib/threadProjectLinks";
+import { usePendingProjectLinksStore } from "../pendingProjectLinksStore";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@upcomputer/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -888,6 +892,8 @@ function ChatViewContent(props: ChatViewProps) {
     ? scopeProjectRef(activeThread.environmentId, activeThread.projectId)
     : null;
   const activeProject = useProject(activeProjectRef);
+  const isScratchProjectFn = useIsScratchProject();
+  const { link: linkThreadProjects } = useThreadProjectLinkCommands();
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -1021,6 +1027,16 @@ function ChatViewContent(props: ChatViewProps) {
     serverThread?.id,
     serverThread?.updatedAt,
   ]);
+
+  // An explicit "Mark unread" survives background `updatedAt` bumps (handled
+  // above) and is cleared only by a real visit: opening/navigating to the
+  // thread or focusing its workspace panel. Read the store imperatively so
+  // marking the already-open thread unread does not re-run this effect and
+  // clear the flag instantly; it stays until the user leaves and comes back.
+  useEffect(() => {
+    if (routeKind !== "server" || !isWorkspacePanelActive) return;
+    useUiStateStore.getState().clearThreadMarkedUnread(routeThreadKey);
+  }, [isWorkspacePanelActive, routeKind, routeThreadKey]);
 
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
@@ -1548,12 +1564,18 @@ function ChatViewContent(props: ChatViewProps) {
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
-  const gitCwd = activeProject
-    ? projectScriptCwd({
-        project: { cwd: activeProject.workspaceRoot },
-        worktreePath: activeThread?.worktreePath ?? null,
-      })
-    : null;
+  // A chat without a project gets its own folder when its first message
+  // creates the thread; until then there is no folder to search or open (the
+  // scratch root holds every other such chat's folder).
+  const isScratchProjectChat = activeProject !== null && isScratchProjectFn(activeProject);
+  const scratchFolderPending = isScratchProjectChat && !activeThread?.worktreePath;
+  const gitCwd =
+    activeProject && !scratchFolderPending
+      ? projectScriptCwd({
+          project: { cwd: activeProject.workspaceRoot },
+          worktreePath: activeThread?.worktreePath ?? null,
+        })
+      : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
@@ -1605,9 +1627,11 @@ function ChatViewContent(props: ChatViewProps) {
   const hasTimelineTopBanner = Boolean(threadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
-  const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
-  // Default true while loading to avoid toolbar flicker.
-  const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const activeWorkspaceRoot =
+    activeThreadWorktreePath ?? (scratchFolderPending ? null : activeProjectCwd) ?? undefined;
+  // Default true while loading to avoid toolbar flicker. A chat without a
+  // project starts in a plain folder, so it defaults to not-a-repo instead.
+  const isGitRepo = gitStatusQuery.data?.isRepo ?? !isScratchProjectChat;
   const initialDiffPanelGitScope =
     gitStatusQuery.data?.hasWorkingTreeChanges === true ? "unstaged" : "branch";
   const diffPanelGitStatusResolutionKey = gitStatusQuery.data ? "resolved" : "pending";
@@ -3058,6 +3082,8 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx?.providerAvailable) return;
+    // Sending a message is interaction with the thread: drop "Mark unread".
+    useUiStateStore.getState().clearThreadMarkedUnread(routeThreadKey);
     const {
       images: composerImages,
       elementContexts: composerElementContexts,
@@ -3373,6 +3399,32 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        // Projects picked on the draft (`@project` or "+ Project") are linked
+        // once the send has created the thread.
+        const pendingLinksStore = usePendingProjectLinksStore.getState();
+        const pendingLinks = draftId ? (pendingLinksStore.byDraftId[draftId] ?? []) : [];
+        if (isLocalDraftThread && draftId && pendingLinks.length > 0) {
+          pendingLinksStore.clearDraft(draftId);
+          const projectIdsToLink = resolvePendingProjectLinks({
+            pending: pendingLinks,
+            environmentId,
+            threadProjectId: activeProject.id,
+            availableProjectIds: new Set(
+              allProjects
+                .filter(
+                  (project) =>
+                    project.environmentId === environmentId && !isScratchProjectFn(project),
+                )
+                .map((project) => project.id),
+            ),
+          });
+          if (projectIdsToLink.length > 0) {
+            void linkThreadProjects(
+              scopeThreadRef(environmentId, threadIdForSend),
+              projectIdsToLink,
+            );
+          }
+        }
       }
     }
 
@@ -4303,7 +4355,8 @@ function ChatViewContent(props: ChatViewProps) {
               activeProjectRepositoryIdentity={activeProject?.repositoryIdentity}
               {...(routeKind === "draft" && draftId ? { draftId } : {})}
               activeThreadTitle={activeThread.title}
-              activeProjectName={activeProject?.title}
+              // "No project" in the header would only be noise.
+              activeProjectName={isScratchProjectChat ? undefined : activeProject?.title}
               openInCwd={gitCwd}
               keybindings={keybindings}
               availableEditors={availableEditors}
@@ -4529,18 +4582,7 @@ function ChatViewContent(props: ChatViewProps) {
                       isGitRepo={isGitRepo}
                       actions={
                         <ChatContextActions
-                          environmentId={activeThread.environmentId}
-                          threadId={activeThread.id}
-                          {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                          projectName={activeProject.title}
-                          availableEditors={availableEditors}
-                          keybindings={keybindings}
-                          gitCwd={gitCwd}
-                          diffAvailable={isServerThread && isGitRepo}
-                          diffOpen={diffOpen}
-                          rightPanelAvailable
                           rightPanelOpen={rightPanelOpen}
-                          onToggleDiff={onToggleDiff}
                           onToggleRightPanel={toggleRightPanel}
                         />
                       }

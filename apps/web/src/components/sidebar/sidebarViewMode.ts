@@ -1,11 +1,13 @@
 import type { SidebarViewMode } from "@upcomputer/contracts/settings";
 
-/** Flat view remains decoded for persisted-state compatibility but is not shipping yet. */
-export const FLAT_SIDEBAR_VIEW_ENABLED = false;
+/**
+ * The sidebar ships a single unified view (Projects filter + one Chats list).
+ * The persisted setting still decodes "nested" / "focused" / "v2" for
+ * compatibility, but every stored value resolves to the unified view, which
+ * reuses the "focused" literal.
+ */
+export const UNIFIED_SIDEBAR_VIEW_MODE: SidebarViewMode = "focused";
 
-export function resolveAvailableSidebarViewMode(
-  viewMode: SidebarViewMode,
-  flatViewEnabled = FLAT_SIDEBAR_VIEW_ENABLED,
-): SidebarViewMode {
-  return viewMode === "v2" && !flatViewEnabled ? "nested" : viewMode;
+export function resolveAvailableSidebarViewMode(_viewMode: SidebarViewMode): SidebarViewMode {
+  return UNIFIED_SIDEBAR_VIEW_MODE;
 }

@@ -38,6 +38,8 @@ export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
 export type SnoozeThreadInput = CommandInput<"thread.snooze">;
 export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
+export type LinkThreadProjectsInput = CommandInput<"thread.project.link">;
+export type UnlinkThreadProjectsInput = CommandInput<"thread.project.unlink">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
 export type AttachThreadContextInput = CommandInput<"thread.context-binding.add">;
@@ -184,6 +186,26 @@ export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => Command
   return yield* dispatch({
     ...input,
     type: "thread.meta.update",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const linkThreadProjects: (input: LinkThreadProjectsInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.linkThreadProjects",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "thread.project.link",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const unlinkThreadProjects: (input: UnlinkThreadProjectsInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.unlinkThreadProjects",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "thread.project.unlink",
     commandId: yield* commandId(input),
   });
 });

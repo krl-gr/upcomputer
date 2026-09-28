@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveAvailableSidebarViewMode } from "./sidebarViewMode";
+import { resolveAvailableSidebarViewMode, UNIFIED_SIDEBAR_VIEW_MODE } from "./sidebarViewMode";
 
 describe("resolveAvailableSidebarViewMode", () => {
-  it("maps a persisted Flat view to Classic while Flat view is parked", () => {
-    expect(resolveAvailableSidebarViewMode("v2")).toBe("nested");
-  });
-
-  it("preserves shipping modes and allows Flat view when it is re-enabled", () => {
-    expect(resolveAvailableSidebarViewMode("nested")).toBe("nested");
-    expect(resolveAvailableSidebarViewMode("focused")).toBe("focused");
-    expect(resolveAvailableSidebarViewMode("v2", true)).toBe("v2");
+  it("resolves every stored mode to the unified view", () => {
+    expect(resolveAvailableSidebarViewMode("nested")).toBe(UNIFIED_SIDEBAR_VIEW_MODE);
+    expect(resolveAvailableSidebarViewMode("focused")).toBe(UNIFIED_SIDEBAR_VIEW_MODE);
+    expect(resolveAvailableSidebarViewMode("v2")).toBe(UNIFIED_SIDEBAR_VIEW_MODE);
   });
 });

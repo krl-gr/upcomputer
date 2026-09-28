@@ -4221,4 +4221,64 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("runtime still processed");
   });
+
+  it("links the thread to another project when the agent writes into it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const otherRoot = makeTempDir("t3-provider-other-project-");
+    await harness.dispatch({
+      type: "project.create",
+      commandId: CommandId.make("cmd-other-project-create"),
+      projectId: asProjectId("project-2"),
+      title: "Other Project",
+      workspaceRoot: otherRoot,
+      createdAt: now,
+    });
+    const toolCompleted = (
+      id: string,
+      itemType: "file_change" | "dynamic_tool_call",
+      toolName: string,
+      filePath: string,
+    ): LegacyProviderRuntimeEvent => ({
+      type: "item.completed",
+      eventId: asEventId(id),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      itemId: asItemId(id),
+      payload: {
+        itemType,
+        status: "completed",
+        title: "Tool",
+        data: { toolName, input: { file_path: filePath } },
+      },
+    });
+
+    await harness.emitAndDrain([
+      toolCompleted("evt-write-own", "file_change", "Write", "src/own.ts"),
+      toolCompleted(
+        "evt-read-other",
+        "dynamic_tool_call",
+        "Read",
+        NodePath.join(otherRoot, "a.ts"),
+      ),
+    ]);
+    expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+
+    await harness.emitAndDrain([
+      toolCompleted("evt-edit-other", "file_change", "Edit", NodePath.join(otherRoot, "a.ts")),
+      toolCompleted(
+        "evt-edit-other-again",
+        "file_change",
+        "Edit",
+        NodePath.join(otherRoot, "b.ts"),
+      ),
+    ]);
+    expect((await harness.readThreadShell()).linkedProjectIds).toEqual([asProjectId("project-2")]);
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
+    expect(
+      thread?.activities.filter((activity) => activity.kind === "tool.completed"),
+    ).toHaveLength(4);
+  });
 });

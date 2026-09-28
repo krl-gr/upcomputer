@@ -89,6 +89,7 @@ export function applyThreadDetailEvent(
         thread: {
           id: event.payload.threadId,
           projectId: event.payload.projectId,
+          linkedProjectIds: [],
           title: event.payload.title,
           modelSelection: event.payload.modelSelection,
           runtimeMode: event.payload.runtimeMode,
@@ -165,6 +166,9 @@ export function applyThreadDetailEvent(
           ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
           ...(event.payload.worktreePath !== undefined
             ? { worktreePath: event.payload.worktreePath }
+            : {}),
+          ...(event.payload.linkedProjectIds !== undefined
+            ? { linkedProjectIds: event.payload.linkedProjectIds }
             : {}),
           updatedAt: event.payload.updatedAt,
         },

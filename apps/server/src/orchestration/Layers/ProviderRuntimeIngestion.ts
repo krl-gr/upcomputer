@@ -8,6 +8,7 @@ import {
   type OrchestrationEvent,
   OrchestrationProposedPlanId,
   CheckpointRef,
+  type ProjectId,
   isToolLifecycleItemType,
   ThreadId,
   type ThreadTokenUsageSnapshot,
@@ -24,10 +25,16 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@upcomputer/shared/DrainableWorker";
 
+import * as ServerConfig from "../../config.ts";
+import { scratchWorkspaceRootFor } from "../../project/scratchWorkspace.ts";
+
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
+import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -46,6 +53,7 @@ import {
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
+import { extractWrittenPaths, resolveAutoLinkProjectIds } from "../autoLinkProjects.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -99,6 +107,8 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
+const AUTO_LINK_ATTEMPT_CACHE_CAPACITY = 10_000;
+const AUTO_LINK_ATTEMPT_TTL = Duration.minutes(10);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD =
   readUpcomputerEnvironment(process.env, "UPCOMPUTER_STRICT_PROVIDER_LIFECYCLE_GUARD") !== "0";
@@ -679,6 +689,9 @@ const make = Effect.gen(function* () {
   const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
   const serverSettingsService = yield* ServerSettingsService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
+  const projectionProjects = yield* ProjectionProjectRepository;
+  const path = yield* Path.Path;
+  const scratchRoot = scratchWorkspaceRootFor(path, (yield* ServerConfig.ServerConfig).baseDir);
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -717,6 +730,15 @@ const make = Effect.gen(function* () {
     capacity: TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY,
     timeToLive: TASK_DESCRIPTION_BY_TASK_TTL,
     lookup: () => Effect.succeed(""),
+  });
+
+  // Thread/project pairs recently auto-linked. The read model already reflects
+  // a successful link once dispatch returns; this keeps a rejected link (or a
+  // user's unlink) from being re-dispatched on every following write.
+  const autoLinkAttemptByKey = yield* Cache.make<string, true>({
+    capacity: AUTO_LINK_ATTEMPT_CACHE_CAPACITY,
+    timeToLive: AUTO_LINK_ATTEMPT_TTL,
+    lookup: () => Effect.succeed(true),
   });
 
   const rememberTaskDescription = (threadId: ThreadId, taskId: string, description: string) =>
@@ -1241,6 +1263,62 @@ const make = Effect.gen(function* () {
         createdAt: implementedAt,
       });
     },
+  );
+
+  // Best effort: a write into another registered project's folder links the
+  // thread to it. Failures are logged and never fail the event.
+  const autoLinkWrittenProjects = Effect.fn("autoLinkWrittenProjects")(
+    function* (event: ProviderRuntimeEvent, threadId: ThreadId) {
+      const writtenPaths = extractWrittenPaths(event);
+      if (writtenPaths.length === 0) {
+        return;
+      }
+      const thread = yield* projectionSnapshotQuery
+        .getThreadShellById(threadId)
+        .pipe(Effect.map(Option.getOrUndefined));
+      if (!thread) {
+        return;
+      }
+      const projects = yield* projectionProjects.listAll();
+      const candidateIds = resolveAutoLinkProjectIds({
+        writtenPaths,
+        thread,
+        projects: projects.map((project) => ({
+          id: project.projectId,
+          workspaceRoot: project.workspaceRoot,
+          deletedAt: project.deletedAt,
+          linkedProjectIds: project.linkedProjectIds,
+        })),
+        scratchRoot,
+        path,
+      });
+      const projectIds: ProjectId[] = [];
+      for (const projectId of candidateIds) {
+        const key = `${threadId}:${projectId}`;
+        if (Option.isSome(yield* Cache.getOption(autoLinkAttemptByKey, key))) {
+          continue;
+        }
+        yield* Cache.set(autoLinkAttemptByKey, key, true);
+        projectIds.push(projectId);
+      }
+      const [firstProjectId, ...restProjectIds] = projectIds;
+      if (firstProjectId === undefined) {
+        return;
+      }
+      yield* orchestrationEngine.dispatch({
+        type: "thread.project.link",
+        commandId: yield* providerCommandId(event, "thread-project-link"),
+        threadId,
+        projectIds: [firstProjectId, ...restProjectIds],
+      });
+    },
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause)
+        : Effect.logWarning("provider runtime ingestion failed to auto-link projects", {
+            cause: Cause.pretty(cause),
+          }),
+    ),
   );
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
@@ -1794,6 +1872,8 @@ const make = Effect.gen(function* () {
           ),
         ),
       ).pipe(Effect.asVoid);
+
+      yield* autoLinkWrittenProjects(event, thread.id);
     });
 
   const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;
@@ -1845,6 +1925,7 @@ export const ProviderRuntimeIngestionLive = Layer.effect(
   ProviderRuntimeIngestionService,
   make,
 ).pipe(
+  Layer.provide(ProjectionProjectRepositoryLive),
   Layer.provide(ProjectionThreadActivityRepositoryLive),
   Layer.provide(ProjectionThreadMessageRepositoryLive),
   Layer.provide(ProjectionThreadProposedPlanRepositoryLive),

@@ -129,8 +129,36 @@ export function resolveThreadSnoozeMenuState(input: {
   return canSnooze(input.thread, { now }) ? "snoozable" : "unavailable";
 }
 
+/** "Open project" menu ids carry the scoped project key: `open-project:<key>`. */
+type ThreadOpenProjectAction = "open-project" | `open-project:${string}`;
+
+export function projectKeyFromOpenProjectMenuAction(action: string | null): string | null {
+  return action?.startsWith("open-project:") ? action.slice("open-project:".length) : null;
+}
+
+function buildOpenProjectMenuItems(
+  projects: ReadonlyArray<{ readonly key: string; readonly label: string }>,
+): ContextMenuItem<ThreadOpenProjectAction>[] {
+  if (projects.length === 0) return [];
+  if (projects.length === 1) {
+    const [project] = projects;
+    return [{ id: `open-project:${project!.key}`, label: `Open project: ${project!.label}` }];
+  }
+  return [
+    {
+      id: "open-project",
+      label: "Open project",
+      children: projects.map((project) => ({
+        id: `open-project:${project.key}`,
+        label: project.label,
+      })),
+    },
+  ];
+}
+
 export type ThreadContextMenuAction =
   | ThreadSnoozeAction
+  | ThreadOpenProjectAction
   | "wake"
   | "archive"
   | "fork-thread"
@@ -147,6 +175,8 @@ export function buildThreadContextMenuItems(input: {
   isRunning: boolean;
   snoozeState: ThreadSnoozeMenuState;
   now: Date;
+  /** Projects the thread shows under; each becomes an "Open project" entry. */
+  openProjects?: ReadonlyArray<{ readonly key: string; readonly label: string }>;
 }): readonly ContextMenuItem<ThreadContextMenuAction>[] {
   return [
     ...(input.snoozeState === "snoozed"
@@ -159,6 +189,7 @@ export function buildThreadContextMenuItems(input: {
     ...(input.branch
       ? [{ id: "new-thread-on-branch" as const, label: `New thread on ${input.branch}` }]
       : []),
+    ...buildOpenProjectMenuItems(input.openProjects ?? []),
     { id: "rename", label: "Rename thread" },
     { id: "mark-unread", label: "Mark unread" },
     { id: "copy-path", label: "Copy Path" },
@@ -235,6 +266,8 @@ type ThreadStatusInput = Pick<
   | "session"
 > & {
   lastVisitedAt?: string | undefined;
+  /** Explicit "Mark unread" flag from the UI state store. */
+  markedUnread?: boolean | undefined;
 };
 
 export interface ThreadJumpHintVisibilityController {
@@ -405,6 +438,7 @@ export function resolveThreadCompletionTimestamp(
 }
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
+  if (thread.markedUnread === true) return true;
   const completionTimestamp = resolveThreadCompletionTimestamp(thread);
   if (!completionTimestamp) return false;
   const completedAt = Date.parse(completionTimestamp);

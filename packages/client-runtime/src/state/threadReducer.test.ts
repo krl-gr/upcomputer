@@ -272,6 +272,42 @@ describe("applyThreadDetailEvent", () => {
         expect(result.thread.modelSelection).toEqual(baseThread.modelSelection);
       }
     });
+
+    it("replaces linked projects with the full set and keeps them otherwise", () => {
+      const linked = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 5,
+        occurredAt: "2026-04-01T05:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          linkedProjectIds: [ProjectId.make("project-docs")],
+          updatedAt: "2026-04-01T05:00:00.000Z",
+        },
+      });
+      expect(linked.kind).toBe("updated");
+      if (linked.kind !== "updated") return;
+      expect(linked.thread.linkedProjectIds).toEqual([ProjectId.make("project-docs")]);
+
+      const renamed = applyThreadDetailEvent(linked.thread, {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-04-01T05:00:01.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          title: "Renamed",
+          updatedAt: "2026-04-01T05:00:01.000Z",
+        },
+      });
+      expect(renamed.kind === "updated" && renamed.thread.linkedProjectIds).toEqual([
+        ProjectId.make("project-docs"),
+      ]);
+    });
   });
 
   describe("thread.message-sent", () => {

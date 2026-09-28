@@ -290,6 +290,32 @@ describe("buildTurnStartParams", () => {
     });
   });
 
+  it("adds writable roots only to workspace-write sandbox policies", () => {
+    const writableRoots = ["/repo/docs", "/repo/api"];
+    const policyFor = (
+      runtimeMode: "approval-required" | "auto-accept-edits" | "auto" | "full-access",
+      interactionModeSandbox?: "read-only",
+    ) =>
+      Effect.runSync(
+        buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode,
+          writableRoots,
+          prompt: "Go",
+          ...(interactionModeSandbox ? { interactionModeSandbox } : {}),
+        }),
+      ).sandboxPolicy;
+
+    NodeAssert.deepStrictEqual(policyFor("auto-accept-edits"), {
+      type: "workspaceWrite",
+      writableRoots,
+    });
+    NodeAssert.deepStrictEqual(policyFor("auto"), { type: "workspaceWrite", writableRoots });
+    NodeAssert.deepStrictEqual(policyFor("approval-required"), { type: "readOnly" });
+    NodeAssert.deepStrictEqual(policyFor("full-access"), { type: "dangerFullAccess" });
+    NodeAssert.deepStrictEqual(policyFor("auto-accept-edits", "read-only"), { type: "readOnly" });
+  });
+
   it("reports the same fallback model and effort in settings and instructions", () => {
     const params = Effect.runSync(
       buildTurnStartParams({

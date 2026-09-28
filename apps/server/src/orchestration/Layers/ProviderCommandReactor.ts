@@ -49,6 +49,10 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { prependThreadContextBlocksToPrompt } from "../threadContext.ts";
+import {
+  collectLinkedProjectIds,
+  resolveLinkedProjectDirectories,
+} from "../linkedProjectDirectories.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
 const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
@@ -528,22 +532,40 @@ const make = Effect.gen(function* () {
           .pipe(Effect.forkDetach)
       : Effect.void;
 
+    // Resolved only when a session starts: link changes apply to the next
+    // session start and deliberately do not restart a live session.
+    const resolveAdditionalDirectories = Effect.gen(function* () {
+      const linkedProjects = yield* Effect.forEach(
+        collectLinkedProjectIds({ thread, threadProject: project }),
+        resolveProject,
+        { concurrency: "unbounded" },
+      );
+      return resolveLinkedProjectDirectories({
+        thread,
+        threadProject: project,
+        projects: linkedProjects.filter((linked) => linked !== undefined),
+        cwd: effectiveCwd,
+      });
+    });
+
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
     }) =>
-      providerService
-        .startSession(threadId, {
+      Effect.gen(function* () {
+        const additionalDirectories = yield* resolveAdditionalDirectories;
+        return yield* providerService.startSession(threadId, {
           threadId,
           ...(preferredProvider ? { provider: preferredProvider } : {}),
           providerInstanceId: desiredInstanceId,
           ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+          ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
           ...(thread.title ? { title: thread.title } : {}),
           modelSelection: desiredModelSelection,
           ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
           runtimeMode: desiredRuntimeMode,
-        })
-        .pipe(Effect.tap(() => refreshWorkspaceSnapshot));
+        });
+      }).pipe(Effect.tap(() => refreshWorkspaceSnapshot));
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {

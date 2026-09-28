@@ -14,7 +14,9 @@ import type * as PlatformError from "effect/PlatformError";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
+  activeLinkedProjectIds,
   listThreadsByProjectId,
+  requireActiveLinkTargets,
   requireActiveProjectWorkspaceRootAbsent,
   requireProject,
   requireProjectAbsent,
@@ -31,6 +33,14 @@ import {
 } from "./threadContext.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+function sameProjectIds(
+  left: ReadonlyArray<string> | undefined,
+  right: ReadonlyArray<string>,
+): boolean {
+  const current = left ?? [];
+  return current.length === right.length && current.every((id, index) => id === right[index]);
+}
 
 // Session adoption takes seconds; a user message still unadopted after this
 // window is a failed/stale start, not pending work. Mirrors the client's
@@ -340,6 +350,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           exceptProjectId: command.projectId,
         });
       }
+      const linkedProjectIds =
+        command.linkedProjectIds === undefined
+          ? undefined
+          : yield* requireActiveLinkTargets({
+              readModel,
+              command,
+              projectIds: command.linkedProjectIds,
+              exceptProjectId: command.projectId,
+            });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -357,6 +376,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { defaultModelSelection: command.defaultModelSelection }
             : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
+          ...(linkedProjectIds !== undefined ? { linkedProjectIds } : {}),
           updatedAt: occurredAt,
         },
       };
@@ -650,6 +670,54 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.project.link":
+    case "thread.project.unlink": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      // Links to projects deleted since are dropped on every write, so the
+      // stored set heals lazily; readers filter them out meanwhile.
+      const currentLinks = activeLinkedProjectIds(readModel, thread.linkedProjectIds);
+      let linkedProjectIds: ReadonlyArray<typeof thread.projectId>;
+      if (command.type === "thread.project.link") {
+        const targets = yield* requireActiveLinkTargets({
+          readModel,
+          command,
+          projectIds: command.projectIds,
+          exceptProjectId: thread.projectId,
+        });
+        linkedProjectIds = [
+          ...currentLinks,
+          ...targets.filter((projectId) => !currentLinks.includes(projectId)),
+        ];
+      } else {
+        linkedProjectIds = currentLinks.filter(
+          (projectId) => !command.projectIds.includes(projectId),
+        );
+      }
+      // Idempotent by re-emission (the engine rejects commands with no
+      // events): an unchanged set lands on the same state without churning
+      // updatedAt.
+      const unchanged = sameProjectIds(thread.linkedProjectIds, linkedProjectIds);
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: command.threadId,
+          linkedProjectIds,
+          updatedAt: unchanged ? thread.updatedAt : occurredAt,
         },
       };
     }

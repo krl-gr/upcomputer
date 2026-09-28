@@ -228,3 +228,25 @@ export function findThreadRef(threadId: ThreadId): ScopedThreadRef | null {
       .find((ref) => ref.threadId === threadId) ?? null
   );
 }
+
+/** Resolves once the project reaches this client's store, or rejects after `timeoutMs`. */
+export function waitForProject(
+  ref: ScopedProjectRef,
+  timeoutMs = 10_000,
+): Promise<EnvironmentProject> {
+  const atom = environmentProjects.projectAtom(ref);
+  const existing = appAtomRegistry.get(atom);
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("The project did not arrive in time."));
+    }, timeoutMs);
+    const unsubscribe = appAtomRegistry.subscribe(atom, (project) => {
+      if (!project) return;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(project);
+    });
+  });
+}

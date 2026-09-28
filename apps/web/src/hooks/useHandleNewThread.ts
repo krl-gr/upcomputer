@@ -3,6 +3,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@upcomputer/client-runtime/environment";
+import { isScratchProject } from "@upcomputer/client-runtime/state/projects";
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
@@ -244,9 +245,17 @@ export function useHandleNewThread() {
       : null,
   );
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
-      items: projects,
+      // The hidden "No project" home is never a default project target.
+      items: projects.filter(
+        (project) =>
+          !isScratchProject(
+            project,
+            serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot,
+          ),
+      ),
       preferredIds: projectOrder,
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
@@ -254,7 +263,7 @@ export function useHandleNewThread() {
         legacyProjectCwdPreferenceKey(project.workspaceRoot),
       ],
     });
-  }, [projectOrder, projects]);
+  }, [projectOrder, projects, serverConfigs]);
   const handleNewThread = useNewThreadHandler();
 
   return {

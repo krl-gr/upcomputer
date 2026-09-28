@@ -513,6 +513,30 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("appends linked project directories after the cwd", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        cwd: "/repo/home",
+        additionalDirectories: ["/repo/docs", "/repo/home", "/repo/api"],
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.deepEqual(createInput?.options.additionalDirectories, [
+        "/repo/home",
+        "/repo/docs",
+        "/repo/api",
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("loads Claude filesystem settings sources for SDK sessions", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

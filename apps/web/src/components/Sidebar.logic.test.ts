@@ -16,6 +16,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   partitionSnoozedThreads,
+  projectKeyFromOpenProjectMenuAction,
   resolveProjectStatusIndicator,
   resolveSidebarStageBadgeLabel,
   resolveThreadCompletionTimestamp,
@@ -234,6 +235,42 @@ describe("buildThreadContextMenuItems", () => {
     expect(items[0]!.id).toBe("archive");
     expect(items.some((item) => item.id === "snooze" || item.id === "wake")).toBe(false);
   });
+
+  it("adds one Open project entry for a single project", () => {
+    const items = buildThreadContextMenuItems({
+      branch: null,
+      isRunning: false,
+      snoozeState: "unavailable",
+      now: menuNow,
+      openProjects: [{ key: "env:api", label: "API" }],
+    });
+    expect(items).toContainEqual({ id: "open-project:env:api", label: "Open project: API" });
+    expect(items.findIndex((item) => item.id === "open-project:env:api")).toBe(
+      items.findIndex((item) => item.id === "rename") - 1,
+    );
+  });
+
+  it("groups several Open project entries into a submenu", () => {
+    const items = buildThreadContextMenuItems({
+      branch: null,
+      isRunning: false,
+      snoozeState: "unavailable",
+      now: menuNow,
+      openProjects: [
+        { key: "env:api", label: "API" },
+        { key: "env:web", label: "Web" },
+      ],
+    });
+    const submenu = items.find((item) => item.id === "open-project");
+    expect(submenu?.label).toBe("Open project");
+    expect(submenu?.children).toEqual([
+      { id: "open-project:env:api", label: "API" },
+      { id: "open-project:env:web", label: "Web" },
+    ]);
+    expect(projectKeyFromOpenProjectMenuAction("open-project:env:web")).toBe("env:web");
+    expect(projectKeyFromOpenProjectMenuAction("open-project")).toBeNull();
+    expect(projectKeyFromOpenProjectMenuAction(null)).toBeNull();
+  });
 });
 
 describe("resolveThreadSnoozeMenuState", () => {
@@ -419,6 +456,40 @@ describe("hasUnseenCompletion", () => {
   it("does not treat an active session as a completed thread", () => {
     const session = { ...makeReadySession(), status: "running" as const };
     expect(resolveThreadCompletionTimestamp({ latestTurn: null, session })).toBeNull();
+  });
+
+  it("honors an explicit unread flag even after the thread was visited", () => {
+    expect(
+      hasUnseenCompletion({
+        hasActionableProposedPlan: false,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        interactionMode: "default",
+        latestTurn: makeLatestTurn(),
+        lastVisitedAt: "2026-03-09T10:06:00.000Z",
+        markedUnread: true,
+        session: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("honors an explicit unread flag when no completion timestamp exists", () => {
+    const session = { ...makeReadySession(), status: "stopped" as const };
+    expect(resolveThreadCompletionTimestamp({ latestTurn: null, session })).toBeNull();
+    const thread = {
+      hasActionableProposedPlan: false,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      interactionMode: "default" as const,
+      latestTurn: null,
+      lastVisitedAt: undefined,
+      session,
+    };
+    expect(hasUnseenCompletion(thread)).toBe(false);
+    expect(hasUnseenCompletion({ ...thread, markedUnread: true })).toBe(true);
+    expect(resolveThreadStatusPill({ thread: { ...thread, markedUnread: true } })).toMatchObject({
+      label: "Completed",
+    });
   });
 });
 
