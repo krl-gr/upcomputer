@@ -1,136 +1,48 @@
 import {
-  DEFAULT_PRODUCTS,
   cellKey,
   flattenTree,
-  readViewState,
-  revealNode,
+  readSelectedTools,
   surfaceTag,
-  viewSearch,
-  visibleTree,
+  toolsSearch,
   type AtlasData,
 } from "../lib/atlas";
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const data = JSON.parse(byId("atlas-data").textContent ?? "{}") as AtlasData;
-const flat = flattenTree(data.nodes);
-const nodes = new Map(flat.map((n) => [n.id, n]));
+const nodes = new Map(flattenTree(data.nodes).map((n) => [n.id, n]));
 const cells = new Map(data.cells.map((c) => [cellKey(c.capability_id, c.product_id), c]));
 const products = new Map(data.products.map((p) => [p.id, p]));
-let state = readViewState(location.search, data.products, data.nodes);
-
-const query = byId<HTMLInputElement>("tree-query");
-const mode = byId<HTMLSelectElement>("tree-view");
-const checkboxes = [
-  ...document.querySelectorAll<HTMLInputElement>('input[name="compare-product"]'),
-];
-const rows = [...document.querySelectorAll<HTMLElement>("[data-node]")];
+const chips = [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")];
 const columns = [...document.querySelectorAll<HTMLElement>("[data-product-column]")];
-const groupFills = [...document.querySelectorAll<HTMLTableCellElement>(".group-fill")];
-const toggles = [...document.querySelectorAll<HTMLButtonElement>("[data-toggle]")];
-const result = byId("tree-result");
+const groupCells = [...document.querySelectorAll<HTMLTableCellElement>("[data-group-cell]")];
 const dialog = byId<HTMLDialogElement>("cell-dialog");
-const picker = document.querySelector<HTMLDetailsElement>(".product-picker")!;
+
+let selected = readSelectedTools(location.search, data.products);
 
 function render(writeUrl = true) {
-  const view = visibleTree(flat, data.cells, state);
-  const selected = new Set(state.selected);
-  query.value = state.query;
-  mode.value = state.mode;
-  checkboxes.forEach((input) => {
-    input.checked = selected.has(input.value);
-  });
+  const shown = new Set(selected.length ? selected : data.products.map((p) => p.id));
+  chips.forEach((chip) =>
+    chip.setAttribute("aria-pressed", String(selected.includes(chip.dataset.tool ?? ""))),
+  );
   columns.forEach((el) => {
-    el.hidden = !selected.has(el.dataset.productColumn ?? "");
+    el.hidden = !shown.has(el.dataset.productColumn ?? "");
   });
-  groupFills.forEach((el) => {
-    el.colSpan = state.selected.length;
+  groupCells.forEach((el) => {
+    el.colSpan = shown.size + 1;
   });
-  rows.forEach((el) => {
-    el.hidden = !view.visible.has(el.dataset.node ?? "");
-  });
-  toggles.forEach((button) => {
-    button.setAttribute(
-      "aria-expanded",
-      String(view.filtering || state.open.has(button.dataset.toggle ?? "")),
-    );
-    button.disabled = view.filtering;
-    button.title = view.filtering ? "Clear the search to collapse sections." : "";
-  });
-  byId("selected-count").textContent = String(state.selected.length);
-  const shownFeatures = flat.filter(
-    (n) => n.kind === "capability" && view.visible.has(n.id),
-  ).length;
-  result.textContent = `${state.selected.length} tools · ${shownFeatures} features shown${
-    view.filtering ? ` · ${view.matches.size} matches` : ""
-  }`;
-  byId("tree-empty").hidden = !view.filtering || view.matches.size > 0;
-  byId("reset-search").hidden = !view.filtering;
   if (writeUrl)
-    history.replaceState(null, "", location.pathname + viewSearch(state) + location.hash);
+    history.replaceState(null, "", location.pathname + toolsSearch(selected) + location.hash);
 }
 
-function resetSearch() {
-  state.query = "";
-  state.mode = "all";
-  render();
-}
-
-query.addEventListener("input", () => {
-  state.query = query.value;
-  render();
-});
-mode.addEventListener("change", () => {
-  state.mode = mode.value as typeof state.mode;
-  render();
-});
-for (const checkbox of checkboxes) {
-  checkbox.addEventListener("change", () => {
-    const selected = checkboxes.filter((c) => c.checked).map((c) => c.value);
-    if (!selected.length) {
-      checkbox.checked = true;
-      result.textContent = "Keep at least one tool selected.";
-      return;
-    }
-    state.selected = selected;
+// No chip pressed means every tool; pressing chips narrows the table to them.
+for (const chip of chips) {
+  chip.addEventListener("click", () => {
+    const id = chip.dataset.tool ?? "";
+    selected = selected.includes(id) ? selected.filter((t) => t !== id) : [...selected, id];
     render();
   });
 }
-for (const toggle of toggles) {
-  toggle.addEventListener("click", () => {
-    const id = toggle.dataset.toggle ?? "";
-    if (state.open.has(id)) state.open.delete(id);
-    else state.open.add(id);
-    render();
-  });
-}
-byId("reset-search").addEventListener("click", resetSearch);
-byId("empty-reset").addEventListener("click", resetSearch);
-byId("expand-tree").addEventListener("click", () => {
-  state.open = new Set(flat.filter((n) => n.kind === "group").map((n) => n.id));
-  resetSearch();
-});
-byId("collapse-tree").addEventListener("click", () => {
-  state.open.clear();
-  resetSearch();
-});
-byId("select-inventories").addEventListener("click", () => {
-  state.selected = data.products.map((p) => p.id);
-  render();
-});
-byId("reset-products").addEventListener("click", () => {
-  state.selected = [...DEFAULT_PRODUCTS];
-  render();
-});
-document.addEventListener("click", (event) => {
-  if (!picker.contains(event.target as Node)) picker.open = false;
-});
-picker.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  picker.open = false;
-  picker.querySelector("summary")?.focus();
-  event.stopPropagation();
-});
 
 // Details are built from text nodes only: documentation quotes and URLs are never rendered as HTML.
 function element(tag: string, text?: string, className?: string) {
@@ -246,25 +158,8 @@ dialog.addEventListener("click", (event) => {
   if (event.target === dialog && outside) dialog.close();
 });
 
-function revealHash() {
-  let hash: string;
-  try {
-    hash = decodeURIComponent(location.hash.slice(1));
-  } catch {
-    return;
-  }
-  if (!hash.startsWith("cap-") || !revealNode(state, flat, hash.slice(4))) return;
-  render();
-  requestAnimationFrame(() =>
-    document.getElementById(hash)?.scrollIntoView({ block: "nearest", inline: "nearest" }),
-  );
-}
-
-window.addEventListener("hashchange", revealHash);
 window.addEventListener("popstate", () => {
-  state = readViewState(location.search, data.products, data.nodes);
+  selected = readSelectedTools(location.search, data.products);
   render(false);
-  revealHash();
 });
 render(false);
-revealHash();

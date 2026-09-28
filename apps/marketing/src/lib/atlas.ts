@@ -46,29 +46,21 @@ export interface FlatNode extends AtlasNode {
   depth: number;
 }
 
-export type ViewMode = "all" | "differs" | "mapped" | "gaps";
+/** Logo per tool; tools without one get a monogram. */
+export const TOOL_ICONS: Record<string, string> = {
+  "codex-cli": "/harnesses/openai_dark.svg",
+  "claude-code-cli": "/harnesses/claude-ai-icon.svg",
+  "cursor-cli": "/harnesses/cursor_light.svg",
+  "opencode-cli": "/harnesses/opencode-dark.svg",
+  "pi-cli": "/harnesses/pi.svg",
+};
 
-export interface ViewState {
-  selected: string[];
-  open: Set<string>;
-  query: string;
-  mode: ViewMode;
-}
+export const STATUS_HINTS = {
+  documented: "In the docs. Click for how it works.",
+  unresolved: "Something close is documented, but not this exact feature.",
+  not_found: "Not in the docs.",
+} as const;
 
-export const DEFAULT_PRODUCTS = ["claude-code-cli", "codex-cli", "pi-cli", "hermes-agent"];
-export const DEFAULT_OPEN = [
-  "interaction",
-  "interaction-input",
-  "interaction-suggestions",
-  "interaction-running",
-  "interaction-queues",
-  "interaction-side",
-  "interaction-background",
-  "interaction-terminal",
-];
-const VIEW_MODES: ViewMode[] = ["all", "differs", "mapped", "gaps"];
-// Older shared links used finer-grained gap filters; both now mean "missing somewhere".
-const LEGACY_MODES: Record<string, ViewMode> = { unmapped: "gaps", unresolved: "gaps" };
 const ROUTE_NAMES: Record<string, string> = {
   cli: "CLI",
   extension: "Extension",
@@ -106,92 +98,13 @@ export function flattenTree(nodes: AtlasNode[]): FlatNode[] {
   return result;
 }
 
-export function readViewState(
-  search: string,
-  products: AtlasProduct[],
-  nodes: AtlasNode[],
-): ViewState {
-  const params = new URLSearchParams(search);
+/** Tools picked with the chips; an empty selection shows every tool. */
+export function readSelectedTools(search: string, products: AtlasProduct[]): string[] {
   const allowed = new Set(products.map((p) => p.id));
-  const groups = new Set(nodes.filter((n) => n.kind === "group").map((n) => n.id));
-  let selected = [
-    ...new Set(
-      (params.get("products") ?? DEFAULT_PRODUCTS.join(","))
-        .split(",")
-        .filter((id) => allowed.has(id)),
-    ),
-  ];
-  if (!selected.length) selected = DEFAULT_PRODUCTS.filter((id) => allowed.has(id));
-  const open = new Set(
-    (params.get("open") ?? DEFAULT_OPEN.join(",")).split(",").filter((id) => groups.has(id)),
-  );
-  const rawMode = params.get("view") ?? "all";
-  const mode = LEGACY_MODES[rawMode] ?? rawMode;
-  return {
-    selected,
-    open,
-    query: params.get("q") ?? "",
-    mode: VIEW_MODES.includes(mode as ViewMode) ? (mode as ViewMode) : "all",
-  };
+  const raw = new URLSearchParams(search).get("tools") ?? "";
+  return [...new Set(raw.split(",").filter((id) => allowed.has(id)))];
 }
 
-export function viewSearch(state: ViewState): string {
-  const params = new URLSearchParams();
-  params.set("products", state.selected.join(","));
-  params.set("open", [...state.open].join(","));
-  if (state.query) params.set("q", state.query);
-  if (state.mode !== "all") params.set("view", state.mode);
-  return `?${params.toString()}`;
-}
-
-export function visibleTree(flat: FlatNode[], cells: AtlasCell[], state: ViewState) {
-  const index = new Map(cells.map((c) => [cellKey(c.capability_id, c.product_id), c]));
-  const labels = new Map(flat.map((n) => [n.id, n.label]));
-  const tokens = state.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const matches = new Set<string>();
-  for (const node of flat) {
-    if (node.kind !== "capability") continue;
-    const nodeCells = state.selected
-      .map((p) => index.get(cellKey(node.id, p)))
-      .filter((c): c is AtlasCell => c !== undefined);
-    const text = [
-      node.label,
-      node.summary ?? "",
-      ...node.ancestors.map((a) => labels.get(a) ?? ""),
-      ...nodeCells.flatMap((c) => c.names),
-    ]
-      .join(" ")
-      .toLocaleLowerCase();
-    const found = nodeCells.filter((c) => c.status === "documented").length;
-    const missing = state.selected.length - found;
-    const modeMatches =
-      state.mode === "all" ||
-      (state.mode === "mapped" && found > 0) ||
-      (state.mode === "gaps" && missing > 0) ||
-      (state.mode === "differs" && found > 0 && missing > 0);
-    if (modeMatches && tokens.every((t) => text.includes(t))) matches.add(node.id);
-  }
-  const filtering = tokens.length > 0 || state.mode !== "all";
-  const visible = new Set<string>();
-  for (const node of flat) {
-    if (filtering) {
-      if (!matches.has(node.id)) continue;
-      visible.add(node.id);
-      node.ancestors.forEach((id) => visible.add(id));
-    } else if (node.ancestors.every((id) => state.open.has(id))) {
-      visible.add(node.id);
-    }
-  }
-  return { visible, matches, filtering };
-}
-
-/** Clears filters and opens the path to a row, for `#cap-…` links. */
-export function revealNode(state: ViewState, flat: FlatNode[], id: string): boolean {
-  const node = flat.find((n) => n.id === id);
-  if (!node) return false;
-  state.query = "";
-  state.mode = "all";
-  node.ancestors.forEach((a) => state.open.add(a));
-  if (node.kind === "group") state.open.add(node.id);
-  return true;
+export function toolsSearch(selected: string[]): string {
+  return selected.length ? `?tools=${selected.join(",")}` : "";
 }
