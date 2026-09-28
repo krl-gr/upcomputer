@@ -24,17 +24,15 @@ const groupCounts = new Map(
 ---
 
 <Layout
+  backdrop="full"
   title="CLI Atlas — what your coding agent can do"
   description="Compare what Claude Code, Codex, Cursor CLI, OpenCode, Pi and Hermes Agent can do, with the exact command or shortcut for each feature and a link to the official docs."
 >
   <section class="atlas">
     <header class="atlas-head">
-      <p class="atlas-eyebrow">CLI Atlas</p>
-      <h1>What your coding agent can do</h1>
-      <p>
-        Features on the left, the exact command or shortcut in each tool on the right. Open a cell for
-        the official page behind it.
-      </p>
+      <h1>
+        Keeping up with everything coding agents can do is hard.<br />So we mapped it for you.
+      </h1>
     </header>
 
     <div class="atlas-toolbar">
@@ -220,27 +218,21 @@ const groupCounts = new Map(
   }
 
   .atlas-head {
-    max-width: 640px;
-    margin-bottom: 36px;
-  }
-
-  .atlas-eyebrow {
-    margin-bottom: 14px;
-    color: var(--fg-dim);
-    font-size: 13px;
+    min-height: calc(34vh - 132px);
+    margin-bottom: 40px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: calc(19vh - 132px);
   }
 
   .atlas-head h1 {
-    margin-bottom: 12px;
-    font-size: clamp(28px, 3.4vw, 40px);
-    font-weight: 500;
-    letter-spacing: -0.03em;
-    line-height: 1.1;
-  }
-
-  .atlas-head p:last-child {
-    color: var(--fg-muted);
+    color: #fff;
     font-size: 15px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    text-align: center;
   }
 
   /* ── Controls ─────────────────────────────────────────────── */
@@ -261,9 +253,11 @@ const groupCounts = new Map(
     width: 100%;
     height: 40px;
     padding: 0 14px;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.025);
+    background: rgba(12, 12, 14, 0.55);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
     color: var(--fg);
     font: inherit;
     font-size: 14px;
@@ -272,7 +266,7 @@ const groupCounts = new Map(
   }
 
   .atlas-search input::placeholder {
-    color: var(--fg-faint);
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .atlas-search input:focus,
@@ -304,7 +298,7 @@ const groupCounts = new Map(
   }
 
   .product-picker summary span {
-    color: var(--fg-dim);
+    color: rgba(255, 255, 255, 0.55);
   }
 
   .product-popover {
@@ -358,7 +352,7 @@ const groupCounts = new Map(
   .tree-empty button {
     padding: 6px 10px;
     border-radius: 8px;
-    color: var(--fg-muted);
+    color: rgba(255, 255, 255, 0.8);
     font-size: 13px;
     transition: color 0.18s ease, background 0.18s ease;
   }
@@ -376,7 +370,7 @@ const groupCounts = new Map(
     justify-content: space-between;
     gap: 16px;
     margin: 14px 0 6px;
-    color: var(--fg-dim);
+    color: rgba(255, 255, 255, 0.72);
     font-size: 13px;
   }
 
@@ -391,7 +385,7 @@ const groupCounts = new Map(
     flex-wrap: wrap;
     gap: 20px;
     margin-bottom: 14px;
-    color: var(--fg-dim);
+    color: rgba(255, 255, 255, 0.72);
     font-size: 13px;
   }
 
@@ -765,6 +759,12 @@ const groupCounts = new Map(
     .atlas {
       width: calc(100% - 24px);
       padding-top: 104px;
+    }
+
+    .atlas-head {
+      min-height: 0;
+      padding-top: 24px;
+      margin-bottom: 48px;
     }
 
     .atlas-toolbar {
