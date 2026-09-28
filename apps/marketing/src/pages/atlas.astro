@@ -8,6 +8,16 @@ const flat = flattenTree(data.nodes);
 const cells = new Map(data.cells.map((c) => [cellKey(c.capability_id, c.product_id), c]));
 const columnCount = data.products.length + 1;
 const monogram = (name: string) => name.charAt(0).toUpperCase();
+
+// Coverage chart: how many Atlas features each tool's docs confirm.
+const featureIds = flat.filter((n) => n.kind === "capability").map((n) => n.id);
+const coverage = data.products
+  .map((p) => {
+    const statuses = featureIds.map((id) => cells.get(cellKey(id, p.id))?.status);
+    const count = (status: string) => statuses.filter((s) => s === status).length;
+    return { ...p, documented: count("documented"), close: count("unresolved"), missing: count("not_found") };
+  })
+  .sort((a, b) => b.documented - a.documented);
 ---
 
 <Layout
@@ -34,6 +44,44 @@ const monogram = (name: string) => name.charAt(0).toUpperCase();
         </button>
       ))}
     </div>
+
+    <figure class="coverage" aria-labelledby="coverage-title">
+      <figcaption id="coverage-title">
+        <strong>Features confirmed in the docs</strong>
+        <span>out of {featureIds.length} in the Atlas</span>
+      </figcaption>
+      <ul class="coverage-rows">
+        {coverage.map((p) => (
+          <li
+            class="coverage-row"
+            data-product-column={p.id}
+            tabindex="0"
+            aria-label={`${p.name}: ${p.documented} of ${featureIds.length} features confirmed, ${p.close} close, ${p.missing} not in the docs`}
+          >
+            <span class="coverage-name">
+              {TOOL_ICONS[p.id] ? (
+                <img src={TOOL_ICONS[p.id]} alt="" width="16" height="16" />
+              ) : (
+                <span class="tool-monogram" aria-hidden="true">{monogram(p.name)}</span>
+              )}
+              <span>{p.name}</span>
+            </span>
+            <span
+              class="coverage-track"
+              aria-hidden="true"
+              style={`--share: ${(p.documented / featureIds.length) * 100}%`}
+            >
+              <span class="coverage-bar"></span>
+              <span class="coverage-tip">
+                <strong>{p.documented} of {featureIds.length}</strong>
+                <span>{p.close} close · {p.missing} not in the docs</span>
+              </span>
+            </span>
+            <span class="coverage-value" aria-hidden="true">{p.documented}</span>
+          </li>
+        ))}
+      </ul>
+    </figure>
 
     <table class="capability-table">
       <caption class="sr-only">
@@ -207,6 +255,137 @@ const monogram = (name: string) => name.charAt(0).toUpperCase();
 
   .tool-chip[aria-pressed="true"] .tool-monogram {
     background: #0b0b0d;
+  }
+
+  /* ── Coverage chart (one series: no legend; bar ends carry values) ── */
+  .coverage {
+    margin: 0 0 16px;
+    padding: 20px 24px 18px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #0e0e10;
+  }
+
+  .coverage figcaption {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+
+  .coverage figcaption strong {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .coverage figcaption span {
+    color: var(--fg-dim);
+    font-size: 13px;
+  }
+
+  .coverage-rows {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .coverage-row {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 16px;
+    height: 32px;
+    border-radius: 6px;
+    outline: none;
+  }
+
+  .coverage-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .coverage-name img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  /* Track is the whole feature list; the bar grows from its left baseline. */
+  .coverage-track {
+    position: relative;
+    height: 10px;
+    border-radius: 0 4px 4px 0;
+    background: #1c1c1f;
+  }
+
+  .coverage-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--share);
+    border-radius: 0 4px 4px 0;
+    background: #d4d4d8;
+    transition: background 0.15s ease;
+  }
+
+  .coverage-value {
+    color: var(--fg);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .coverage-tip {
+    position: absolute;
+    z-index: 3;
+    bottom: calc(100% + 10px);
+    /* Right edge on the bar's end, so it opens over the track and never past the card. */
+    right: calc(100% - var(--share));
+    display: none;
+    flex-direction: column;
+    width: max-content;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #1a1a1d;
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+    box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.7);
+  }
+
+  .coverage-tip strong {
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .coverage-tip span {
+    color: var(--fg-muted);
+  }
+
+  .coverage-row:hover .coverage-bar,
+  .coverage-row:focus-visible .coverage-bar {
+    background: #fafafa;
+  }
+
+  .coverage-row:hover .coverage-name,
+  .coverage-row:focus-visible .coverage-name {
+    color: var(--fg);
+  }
+
+  .coverage-row:hover .coverage-tip,
+  .coverage-row:focus-visible .coverage-tip {
+    display: flex;
+  }
+
+  .coverage-row[hidden] {
+    display: none;
   }
 
   /* ── Table ────────────────────────────────────────────────── */
@@ -546,6 +725,20 @@ const monogram = (name: string) => name.charAt(0).toUpperCase();
     .capability-table .tool-col {
       width: 38px;
       min-width: 38px;
+    }
+
+    .coverage {
+      padding: 16px 14px 14px;
+    }
+
+    .coverage figcaption {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .coverage-row {
+      grid-template-columns: 118px minmax(0, 1fr) 32px;
+      gap: 10px;
     }
 
     .capability-table .feature-col {
