@@ -19,10 +19,7 @@ import {
   THREAD_CONTEXT_MAX_BINDINGS,
   ThreadContextBindingId,
 } from "@upcomputer/contracts";
-import {
-  connectionStatusText,
-  type EnvironmentConnectionPresentation,
-} from "@upcomputer/client-runtime/connection";
+import { type EnvironmentConnectionPresentation } from "@upcomputer/client-runtime/connection";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -2938,13 +2935,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           ? "Choose a project above to start a thread"
                           : noProviderAvailable
                             ? "Enable a provider in Settings to send a message"
-                            : environmentUnavailable
-                              ? `${environmentUnavailable.label}: ${connectionStatusText(
-                                  environmentUnavailable.connection,
-                                )}`
-                              : phase === "disconnected"
-                                ? "Ask for follow-up changes or attach images"
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                            : phase === "disconnected"
+                              ? "Ask for follow-up changes or attach images"
+                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
                 disabled={
                   isConnecting ||

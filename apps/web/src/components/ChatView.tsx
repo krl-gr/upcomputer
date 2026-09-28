@@ -18,10 +18,7 @@ import {
   ProviderDriverKind,
   RuntimeMode,
 } from "@upcomputer/contracts";
-import {
-  connectionStatusTitle,
-  type EnvironmentConnectionPresentation,
-} from "@upcomputer/client-runtime/connection";
+import { type EnvironmentConnectionPresentation } from "@upcomputer/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@upcomputer/client-runtime/errors";
 import { effectiveSnoozed } from "@upcomputer/client-runtime/state/thread-settled";
 import {
@@ -224,6 +221,8 @@ import {
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
+  hasEnvironmentReconnectWarningGraceElapsed,
+  scheduleEnvironmentReconnectWarning,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
@@ -946,6 +945,25 @@ function ChatViewContent(props: ChatViewProps) {
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
   const activeEnvironmentSshUnavailable =
     activeEnvironment?.entry.target._tag === "SshConnectionTarget";
+  const activeReconnectingEnvironmentId =
+    activeEnvironmentConnectionPhase === "connecting" ||
+    activeEnvironmentConnectionPhase === "reconnecting"
+      ? (activeEnvironment?.environmentId ?? null)
+      : null;
+  const [reconnectWarningGraceElapsedEnvironmentId, setReconnectWarningGraceElapsedEnvironmentId] =
+    useState<EnvironmentId | null>(null);
+  const reconnectWarningGraceElapsed = hasEnvironmentReconnectWarningGraceElapsed(
+    activeReconnectingEnvironmentId,
+    reconnectWarningGraceElapsedEnvironmentId,
+  );
+  // Short reconnects are routine; only warn once one outlasts the grace period.
+  useEffect(() => {
+    setReconnectWarningGraceElapsedEnvironmentId(null);
+    if (activeReconnectingEnvironmentId === null) return;
+    return scheduleEnvironmentReconnectWarning(() =>
+      setReconnectWarningGraceElapsedEnvironmentId(activeReconnectingEnvironmentId),
+    );
+  }, [activeReconnectingEnvironmentId]);
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
   const activeEnvironmentUnavailableState = useMemo<EnvironmentUnavailableState | null>(() => {
     if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
@@ -1076,37 +1094,42 @@ function ChatViewContent(props: ChatViewProps) {
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
   const systemComposerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const items: ComposerBannerStackItem[] = [];
-    if (activeEnvironmentUnavailableState) {
-      const connection = activeEnvironmentUnavailableState.connection;
-      const isReconnecting =
-        connection.phase === "connecting" || connection.phase === "reconnecting";
+    const unavailableConnection = activeEnvironmentUnavailableState?.connection ?? null;
+    const environmentReconnecting =
+      unavailableConnection !== null &&
+      (unavailableConnection.phase === "connecting" ||
+        unavailableConnection.phase === "reconnecting");
+    if (
+      activeEnvironmentUnavailableState &&
+      unavailableConnection &&
+      !(environmentReconnecting && !reconnectWarningGraceElapsed)
+    ) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
-        variant: connection.phase === "error" ? "error" : "warning",
+        variant: unavailableConnection.phase === "error" ? "error" : "warning",
         icon: <WifiOffIcon />,
-        title: `${activeEnvironmentUnavailableState.label}: ${connectionStatusTitle(connection)}`,
-        description: activeEnvironmentSshUnavailable
-          ? UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE
-          : (connection.error ??
-            "Reconnect this environment before sending messages or running actions."),
+        title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
+        ...(activeEnvironmentSshUnavailable
+          ? { description: UPCOMPUTER_REMOTE_SERVER_RELEASE_NOTICE }
+          : {}),
         actions: (
           <>
-            {!activeEnvironmentSshUnavailable ? (
+            {!activeEnvironmentSshUnavailable && !environmentReconnecting ? (
               <Button
                 size="xs"
-                disabled={isReconnecting}
+                variant="ghost"
                 onClick={() =>
                   void handleReconnectActiveEnvironment(
                     activeEnvironmentUnavailableState.environmentId,
                   )
                 }
               >
-                {isReconnecting ? "Reconnecting..." : "Reconnect"}
+                Reconnect
               </Button>
             ) : null}
             <Button
               size="xs"
-              variant="outline"
+              variant="ghost"
               onClick={() => void navigate({ to: "/settings/connections" })}
             >
               Connections
@@ -1147,6 +1170,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeEnvironmentSshUnavailable,
     activeEnvironmentUnavailableState,
+    reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
     navigate,
     setDismissedVersionMismatchKey,
