@@ -14,6 +14,12 @@ const LEGACY_UPCOMPUTER_MIGRATIONS = new Map<number, ReadonlySet<string>>([
   [38, new Set(["ProjectionThreadsSidebarVisibility"])],
 ]);
 
+// Fork-only migrations that once used core ids and now live in the
+// `upcomputer.core` feature namespace (see CoreFeatureMigrations.ts).
+const RETIRED_FORK_MIGRATIONS: ReadonlyArray<readonly [number, string]> = [
+  [38, "ProjectionLinkedProjects"],
+];
+
 export interface CurrentMigrationIdentity {
   readonly id: number;
   readonly name: string;
@@ -55,6 +61,15 @@ export const applyOldPublicMigrationCompatibility = Effect.fn(
           name VARCHAR(255) NOT NULL
         )
       `;
+
+      // Drop retired fork rows so upstream migrations reusing those ids still run.
+      for (const [id, name] of RETIRED_FORK_MIGRATIONS) {
+        if (currentMigrationNames.get(id) === name) continue;
+        yield* sql`
+          DELETE FROM effect_sql_migrations
+          WHERE migration_id = ${id} AND name = ${name}
+        `;
+      }
 
       const latestRows = yield* sql<{ readonly latest: number | null }>`
         SELECT MAX(migration_id) AS "latest"
