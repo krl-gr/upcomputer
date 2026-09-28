@@ -1,0 +1,1006 @@
+---
+/**
+ * Homepage hero: a static replica of the Up.computer window whose chats tell
+ * the product story. On desktop the window stays pinned while the page
+ * scrolls, and each scroll step opens the next chat in the sidebar. On small
+ * screens the chats render one after another as plain content.
+ */
+
+interface StoryChat {
+  id: string;
+  title: string;
+  meta: string;
+  status?: "Working";
+  project: { name: string; mark: string; tone: string } | null;
+  model: string;
+}
+
+const chats: StoryChat[] = [
+  {
+    id: "how",
+    title: "How does Up.computer work?",
+    meta: "now",
+    project: null,
+    model: "Claude · Claude Fable 5.1",
+  },
+  {
+    id: "overnight",
+    title: "What got done overnight?",
+    meta: "8h",
+    status: "Working",
+    project: { name: "Research", mark: "R", tone: "purple" },
+    model: "Codex · GPT-6 Astra",
+  },
+  {
+    id: "history",
+    title: "Where do my chats live?",
+    meta: "1d",
+    project: null,
+    model: "Grok Build · Grok 4.6",
+  },
+  {
+    id: "studio",
+    title: "Ableton template for mixing",
+    meta: "2d",
+    project: { name: "Studio", mark: "S", tone: "orange" },
+    model: "Pi · OpenAI · GPT-5.5",
+  },
+  {
+    id: "different",
+    title: "How is this different from Cowork?",
+    meta: "3d",
+    project: null,
+    model: "Claude · Claude Fable 5.1",
+  },
+  {
+    id: "cost",
+    title: "What does it cost?",
+    meta: "3d",
+    project: null,
+    model: "Codex · GPT-6 Astra",
+  },
+];
+
+const projects = [
+  { name: "Studio", mark: "S", tone: "orange" },
+  { name: "Research", mark: "R", tone: "purple" },
+  { name: "Website", mark: "W", tone: "mint" },
+];
+
+const icons = {
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  tasks:
+    '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  agents:
+    '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  automations:
+    '<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/>',
+  settings:
+    '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  compose:
+    '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  cursor: '<path d="m4 4 7 17 2.5-7.5L21 11Z"/>',
+  database:
+    '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  queue: '<path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/>',
+};
+
+const svg = (name: keyof typeof icons) =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
+
+const first = chats[0]!;
+---
+
+<section class="story" data-story style={`--steps: ${chats.length}`}>
+  <div class="story-stage">
+    <picture class="story-bg" aria-hidden="true">
+      <source media="(max-width: 899px)" srcset="/hero-horizon-1280.webp" />
+      <img src="/hero-horizon.webp" alt="" width="2560" height="1441" fetchpriority="high" />
+    </picture>
+
+    <h1 class="story-title">
+      Your agents, your data, any provider.<br />Nothing extra.
+    </h1>
+
+    <div class="demo-window" data-demo-window>
+      <aside class="demo-sidebar" aria-label="Chats in this demo">
+        <div class="demo-brand"><img src="/icon.webp" alt="" width="18" height="18" /></div>
+
+        <div class="sidebar-group">
+          <div class="sidebar-item"><Fragment set:html={svg("search")} /><span>Search</span><kbd>⌘K</kbd></div>
+          <div class="sidebar-item"><Fragment set:html={svg("tasks")} /><span>Tasks</span></div>
+          <div class="sidebar-item"><Fragment set:html={svg("agents")} /><span>Agents</span></div>
+          <div class="sidebar-item"><Fragment set:html={svg("automations")} /><span>Automations</span></div>
+        </div>
+
+        <div class="sidebar-label">Projects <Fragment set:html={svg("chevron")} /></div>
+        <div class="sidebar-item is-muted-active"><span class="project-mark all" aria-hidden="true"></span><span>All projects</span></div>
+        {projects.map((project) => (
+          <div class="sidebar-item">
+            <b class={`project-mark ${project.tone}`}>{project.mark}</b>
+            <span>{project.name}</span>
+          </div>
+        ))}
+
+        <div class="sidebar-label">Chats <Fragment set:html={svg("chevron")} /></div>
+        <nav class="chat-list">
+          {chats.map((chat, index) => (
+            <button
+              type="button"
+              class:list={["chat-row", { "is-active": index === 0 }]}
+              data-chat-target={index}
+              data-title={chat.title}
+              data-model={chat.model}
+              data-project={chat.project ? JSON.stringify(chat.project) : ""}
+              aria-current={index === 0 ? "true" : "false"}
+            >
+              {chat.project ? (
+                <b class={`project-mark ${chat.project.tone}`}>{chat.project.mark}</b>
+              ) : (
+                <span class="project-mark none" aria-hidden="true"></span>
+              )}
+              {chat.status && <em class="chat-status">{chat.status}</em>}
+              <span class="chat-name">{chat.title}</span>
+              <time>{chat.meta}</time>
+            </button>
+          ))}
+        </nav>
+
+        <div class="sidebar-foot sidebar-item"><Fragment set:html={svg("settings")} /><span>Settings</span></div>
+      </aside>
+
+      <div class="demo-main">
+        <header class="demo-header">
+          <span class="demo-header-title" data-chat-title>{first.title}</span>
+          <span class="demo-header-action"><Fragment set:html={svg("compose")} /></span>
+        </header>
+
+        <div class="demo-panes">
+          <article class="chat-pane is-revealed" data-chat="0">
+            <h2 class="pane-title">How does Up.computer work?</h2>
+            <div class="msg msg-user" style="--i:0"><p>How does Up.computer work?</p></div>
+            <div class="msg msg-agent" style="--i:1">
+              <p>It’s one home for the agent CLIs you already have. Install Claude Code, Codex, Grok Build, OpenCode or Cursor, and each one runs on your own subscription. No new plan, no lock-in.</p>
+              <div class="harness-row">
+                <span class="harness-chip"><img src="/harnesses/claude-ai-icon.svg" alt="" />Claude Code</span>
+                <span class="harness-chip"><img src="/harnesses/openai_dark.svg" alt="" />Codex</span>
+                <span class="harness-chip"><img src="/harnesses/grok-dark.svg" alt="" />Grok Build</span>
+                <span class="harness-chip"><img src="/harnesses/opencode-dark.svg" alt="" />OpenCode</span>
+                <span class="harness-chip"><img src="/harnesses/cursor_light.svg" alt="" />Cursor</span>
+              </div>
+            </div>
+            <div class="msg msg-agent" style="--i:2">
+              <p>On top sits a flexible orchestration layer. Talk a task through, drop it in the backlog, and agents pick it up in the background. When they need to see the screen, they use the browser or your computer.</p>
+            </div>
+          </article>
+
+          <article class="chat-pane" data-chat="1" hidden>
+            <h2 class="pane-title">What got done overnight?</h2>
+            <div class="msg msg-user" style="--i:0"><p>What got done overnight?</p></div>
+            <div class="msg msg-agent" style="--i:1">
+              <p>Three tasks finished while you were away:</p>
+              <ul class="result-list">
+                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
+                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
+                <li><span class="result-icon warn"><Fragment set:html={svg("alert")} /></span><span>Invoice export is blocked: it needs your login</span><small>Grok</small></li>
+              </ul>
+            </div>
+            <div class="msg msg-user" style="--i:2">
+              <p>I want one place that compares every agent CLI. Don’t burn my Claude Code plan: set up background tasks on GLM 5.3 Flash to collect the data. One at a time so we don’t hit limits. Low priority.</p>
+            </div>
+            <div class="msg msg-agent" style="--i:3">
+              <p>Done. One agent, five tasks in the backlog.</p>
+              <div class="card agent-card">
+                <span class="card-icon"><Fragment set:html={svg("agents")} /></span>
+                <span class="card-main"><strong>CLI researcher</strong><small>OpenCode · GLM 5.3 Flash · one task at a time</small></span>
+              </div>
+              <div class="card task-card">
+                <div class="task-row"><span>Collect Claude Code features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Collect Codex features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Collect Grok Build features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Collect OpenCode features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Merge everything into one comparison</span><em>Low</em></div>
+              </div>
+              <p class="msg-note">The next task starts when the previous one finishes. I’ll let you know when the comparison is ready.</p>
+            </div>
+          </article>
+
+          <article class="chat-pane" data-chat="2" hidden>
+            <h2 class="pane-title">Where do my chats live?</h2>
+            <div class="msg msg-user" style="--i:0"><p>Where do my chats live? Can other agents read them?</p></div>
+            <div class="msg msg-agent" style="--i:1">
+              <p>On your computer, in one local database: every chat with every agent, in one place. It isn’t tied to any provider, so any agent you connect can search it, summarize it, or turn it into something new.</p>
+            </div>
+            <div class="msg msg-user" style="--i:2"><p>Which projects took most of my time this month?</p></div>
+            <div class="msg msg-agent" style="--i:3">
+              <div class="work-row"><Fragment set:html={svg("database")} /><span>Read local history · 214 chats across 4 agents</span></div>
+              <ul class="share-list">
+                <li><span>Studio</span><i style="--share:41%"></i><small>41%</small></li>
+                <li><span>Website</span><i style="--share:27%"></i><small>27%</small></li>
+                <li><span>Research</span><i style="--share:18%"></i><small>18%</small></li>
+              </ul>
+              <p>Studio mostly went to mix prep. Want me to turn the repeated steps into a template?</p>
+            </div>
+          </article>
+
+          <article class="chat-pane" data-chat="3" hidden>
+            <h2 class="pane-title">Ableton template for mixing</h2>
+            <div class="msg msg-user" style="--i:0">
+              <p>Set up a new Ableton Live template: four audio tracks, a Drum Rack, and my usual chain on the master.</p>
+            </div>
+            <div class="msg msg-agent" style="--i:1">
+              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Computer use · opened Ableton Live</span></div>
+              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Created four audio tracks and a Drum Rack</span></div>
+              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Master: EQ Eight → Glue Compressor → Limiter</span></div>
+              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Saved the set as a template</span></div>
+            </div>
+            <div class="msg msg-agent" style="--i:2">
+              <p>Your template “Mix start” is ready. It opens with every new set from now on.</p>
+            </div>
+          </article>
+
+          <article class="chat-pane" data-chat="4" hidden>
+            <h2 class="pane-title">How is this different from Cowork?</h2>
+            <div class="msg msg-user" style="--i:0"><p>How is this different from Claude Cowork or the Codex app?</p></div>
+            <div class="msg msg-agent" style="--i:1">
+              <p>Those are great if you only ever use one provider. Up.computer stays neutral: bring any agent, switch per task, and keep one history that belongs to you.</p>
+            </div>
+            <div class="msg msg-agent" style="--i:2">
+              <p>It also stays small. No feed, no upsell: just your chats, your tasks and the agents you set up.</p>
+            </div>
+          </article>
+
+          <article class="chat-pane" data-chat="5" hidden>
+            <h2 class="pane-title">What does it cost?</h2>
+            <div class="msg msg-user" style="--i:0"><p>What does it cost?</p></div>
+            <div class="msg msg-agent" style="--i:1">
+              <p>The app is free. You keep paying your providers what you pay them today: Up.computer doesn’t resell models or add a markup.</p>
+              <a
+                class="card download-card"
+                href="/download"
+                data-analytics-event="marketing_download_cta_clicked"
+                data-analytics-placement="homepage_story"
+              >
+                <img src="/icon.webp" alt="" width="32" height="32" />
+                <span class="card-main"><strong>Download Up.computer</strong><small>macOS · Windows · Linux</small></span>
+              </a>
+            </div>
+          </article>
+        </div>
+
+        <div class="demo-composer" aria-hidden="true">
+          <div class="composer">
+            <div class="composer-placeholder">Ask anything, @tag files/folders, $use skills, or / for commands</div>
+            <div class="composer-toolbar">
+              <div class="composer-options">
+                <span class="composer-plus">＋</span><i></i><span>Build</span><i></i><span data-chat-model>{first.model}</span><i></i><span>Medium</span><i></i><span>Full access</span>
+              </div>
+              <span class="composer-send">
+                <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 11.5V2.5M7 2.5 3 6.5M7 2.5l4 4"></path></svg>
+              </span>
+            </div>
+          </div>
+          <div class="context-bar">
+            <span class="context-project" data-chat-project>Select project</span>
+            <span class="context-toggle">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="filled" d="M12.154 2.004C13.739 2.084 15 3.395 15 5v6c0 1.605-1.261 2.916-2.846 2.996L12 14H4c-1.657 0-3-1.343-3-3V5c0-1.657 1.343-3 3-3h8l.154.004ZM4 3.25c-.967 0-1.75.784-1.75 1.75v6c0 .967.783 1.75 1.75 1.75h8c.967 0 1.75-.783 1.75-1.75V5c0-.966-.783-1.75-1.75-1.75H4Zm8 1.125c.345 0 .625.28.625.625v6a.625.625 0 1 1-1.25 0V5c0-.345.28-.625.625-.625Z"></path></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="../scripts/story.ts"></script>
+
+<style>
+  .story {
+    --lift: 0;
+    --start-y: 30vh;
+    --start-scale: 0.82;
+    position: relative;
+    height: calc(100vh + var(--steps) * 72vh);
+  }
+
+  .story-stage {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .story-bg {
+    position: absolute;
+    inset: 0;
+  }
+
+  .story-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .story-bg::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 24vh;
+    background: linear-gradient(to bottom, transparent, var(--bg));
+  }
+
+  .story-title {
+    position: absolute;
+    top: 19vh;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    padding: 0 24px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    text-align: center;
+    opacity: calc(1 - var(--lift) * 1.8);
+  }
+
+  /* ── Window ───────────────────────────────────────────────── */
+  .demo-window {
+    --app-muted: rgba(255, 255, 255, 0.5);
+    --app-text: rgba(255, 255, 255, 0.86);
+    --app-border: rgba(255, 255, 255, 0.07);
+    position: absolute;
+    top: 84px;
+    left: 0;
+    right: 0;
+    width: min(1180px, calc(100vw - 64px));
+    height: min(760px, calc(100vh - 108px));
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 252px minmax(0, 1fr);
+    overflow: hidden;
+    border-radius: 12px;
+    background: #131313;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 40px 90px -30px rgba(0, 0, 0, 0.85);
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: left;
+    transform-origin: top center;
+    transform: translateY(calc(var(--start-y) * (1 - var(--lift))))
+      scale(calc(var(--start-scale) + (1 - var(--start-scale)) * var(--lift)));
+    will-change: transform;
+  }
+
+  .demo-window :global(svg) {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ── Sidebar ──────────────────────────────────────────────── */
+  .demo-sidebar {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 8px 10px;
+    border-right: 1px solid var(--app-border);
+    background:
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+      rgba(35, 28, 31, 0.9);
+  }
+
+  .demo-brand {
+    height: 44px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+  }
+
+  .demo-brand img {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+  }
+
+  .sidebar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 12px;
+  }
+
+  .sidebar-item {
+    height: 30px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.82);
+    white-space: nowrap;
+  }
+
+  .sidebar-item :global(svg) {
+    color: var(--app-muted);
+  }
+
+  .sidebar-item kbd {
+    margin-left: auto;
+    color: var(--app-muted);
+    font-family: inherit;
+    font-size: 12px;
+  }
+
+  .sidebar-item.is-muted-active {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .sidebar-label {
+    height: 30px;
+    margin-top: 6px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .sidebar-label :global(svg) {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* Global so the context bar's script-rendered project mark is styled too. */
+  .demo-window :global(.project-mark) {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    font-style: normal;
+  }
+
+  .demo-window :global(.project-mark.orange) { color: #ff9f43; background: rgba(255, 159, 67, 0.18); }
+  .demo-window :global(.project-mark.purple) { color: #ad85ff; background: rgba(173, 133, 255, 0.18); }
+  .demo-window :global(.project-mark.mint) { color: #72dfc2; background: rgba(114, 223, 194, 0.18); }
+  .demo-window :global(.project-mark.none) { background: rgba(255, 255, 255, 0.07); }
+  .demo-window :global(.project-mark.all) {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.25) 0 0) 2px 2px / 5px 5px no-repeat,
+      linear-gradient(rgba(255, 255, 255, 0.25) 0 0) 9px 2px / 5px 5px no-repeat,
+      linear-gradient(rgba(255, 255, 255, 0.25) 0 0) 2px 9px / 5px 5px no-repeat,
+      linear-gradient(rgba(255, 255, 255, 0.25) 0 0) 9px 9px / 5px 5px no-repeat;
+  }
+
+  .chat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+  }
+
+  .chat-row {
+    width: 100%;
+    height: 30px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 14px;
+    text-align: left;
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  .chat-row:hover {
+    background: rgba(255, 255, 255, 0.035);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .chat-row.is-active {
+    background: rgba(255, 255, 255, 0.07);
+    color: #fff;
+  }
+
+  .chat-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-status {
+    flex: none;
+    color: #60a5fa;
+    font-style: normal;
+  }
+
+  .chat-row time {
+    flex: none;
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .sidebar-foot {
+    margin-top: auto;
+  }
+
+  /* ── Main column ──────────────────────────────────────────── */
+  .demo-main {
+    position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .demo-header {
+    height: 44px;
+    flex: none;
+    padding: 0 16px 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .demo-header-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demo-header-action {
+    color: var(--app-muted);
+  }
+
+  .demo-panes {
+    position: relative;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .chat-pane {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    padding: 20px max(24px, calc((100% - 720px) / 2)) 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+
+  .chat-pane[hidden] {
+    display: none;
+  }
+
+  .pane-title {
+    display: none;
+  }
+
+  .msg {
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      opacity 0.45s ease,
+      transform 0.45s ease;
+    transition-delay: calc(var(--i) * 0.55s);
+  }
+
+  .chat-pane.is-revealed .msg {
+    opacity: 1;
+    transform: none;
+  }
+
+  .msg p + p,
+  .msg p + .harness-row,
+  .msg .harness-row + p {
+    margin-top: 10px;
+  }
+
+  .msg-user {
+    align-self: flex-end;
+    max-width: 80%;
+    padding: 10px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px 16px 4px 16px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .msg-agent {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .msg-note {
+    color: var(--app-muted);
+  }
+
+  .harness-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .harness-chip {
+    height: 28px;
+    padding: 0 10px 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--app-border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.025);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 13px;
+  }
+
+  .harness-chip img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+  }
+
+  .result-list,
+  .share-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .result-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .result-list li > span:nth-child(2) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .result-list small,
+  .share-list small {
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .result-icon {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 50%;
+  }
+
+  .result-icon :global(svg) {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2.4;
+  }
+
+  .result-icon.ok { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+  .result-icon.warn { color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
+
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .card-icon {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .card-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-main strong {
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 500;
+  }
+
+  .card-main small {
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .task-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 4px 14px;
+  }
+
+  .task-row {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .task-row + .task-row {
+    border-top: 1px solid var(--app-border);
+  }
+
+  .task-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .task-row em {
+    flex: none;
+    color: var(--app-muted);
+    font-size: 13px;
+    font-style: normal;
+  }
+
+  .work-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .work-row :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .share-list li {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr) 36px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .share-list i {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0.55) var(--share), rgba(255, 255, 255, 0.06) var(--share));
+  }
+
+  .download-card {
+    align-self: flex-start;
+    transition: border-color 0.18s ease, background 0.18s ease;
+  }
+
+  .download-card:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .download-card img {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  /* ── Composer (mirrors the app's composer and context bar) ─── */
+  .demo-composer {
+    flex: none;
+    width: min(100% - 40px, 832px);
+    margin: 0 auto 6px;
+  }
+
+  .composer {
+    height: 104px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 28px;
+    background: #1e1e1e;
+    box-shadow:
+      inset -1px -1px 1px rgba(255, 255, 255, 0.06),
+      inset 1px 1px 1px rgba(255, 255, 255, 0.12);
+  }
+
+  .composer-placeholder {
+    flex: 1;
+    padding: 20px 22px 0;
+    overflow: hidden;
+    color: var(--app-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer-toolbar {
+    height: 48px;
+    padding: 0 14px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--app-muted);
+  }
+
+  .composer-options {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .composer-options span {
+    padding: 0 8px;
+  }
+
+  .composer-options .composer-plus {
+    padding: 0 6px;
+    font-size: 16px;
+  }
+
+  .composer-options i {
+    width: 1px;
+    height: 12px;
+    flex: none;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .composer-send {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 50%;
+    background: #d4d4d4;
+    color: #171717;
+    opacity: 0.4;
+  }
+
+  .composer-send svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .context-bar {
+    height: 38px;
+    padding: 0 10px 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--app-muted);
+  }
+
+  .context-project {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .context-toggle {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+  }
+
+  .context-toggle .filled {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  /* ── Small screens: the chats read as a plain story ───────── */
+  @media (max-width: 899px) {
+    .story {
+      height: auto;
+    }
+
+    .story-stage {
+      position: relative;
+      height: auto;
+      overflow: visible;
+      padding: 132px 16px 56px;
+    }
+
+    .story-bg {
+      bottom: auto;
+      height: 620px;
+    }
+
+    .story-title {
+      position: relative;
+      top: auto;
+      margin-bottom: 56px;
+      opacity: 1;
+    }
+
+    .demo-window {
+      position: relative;
+      top: auto;
+      width: 100%;
+      height: auto;
+      display: block;
+      transform: none;
+    }
+
+    .demo-sidebar,
+    .demo-header,
+    .demo-composer {
+      display: none;
+    }
+
+    .demo-panes {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-pane,
+    .chat-pane[hidden] {
+      position: relative;
+      inset: auto;
+      display: flex;
+      padding: 20px 18px 24px;
+      mask-image: none;
+    }
+
+    .chat-pane + .chat-pane {
+      border-top: 1px solid var(--app-border);
+    }
+
+    .pane-title {
+      display: block;
+      color: var(--app-muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .msg {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .msg {
+      transition: none;
+    }
+  }
+</style>

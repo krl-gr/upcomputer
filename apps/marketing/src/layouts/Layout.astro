@@ -56,28 +56,19 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
           </a>
           <div class="nav-right">
             <a
-              class="nav-stars"
+              class="nav-link"
               href={GITHUB_REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Open Up.computer on GitHub"
               data-analytics-event="marketing_github_clicked"
               data-analytics-placement="header"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 2.3l2.9 5.88 6.49.94-4.7 4.58 1.11 6.47L12 17.12l-5.8 3.05 1.11-6.47-4.7-4.58 6.49-.94L12 2.3z"/>
-              </svg>
-              <span class="nav-github-label">GitHub</span>
-              <strong id="github-star-count" hidden></strong>
-            </a>
+            >GitHub</a>
             <a
-              class="btn btn-primary nav-download"
+              class="nav-link"
               href="/download"
               data-analytics-event="marketing_download_cta_clicked"
               data-analytics-placement="header"
-            >
-              Download
-            </a>
+            >Download</a>
           </div>
         </div>
       </nav>
@@ -159,7 +150,7 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
-    overflow-x: hidden;
+    overflow-x: clip;
     line-height: 1.5;
   }
 
@@ -311,7 +302,7 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .nav {
@@ -368,46 +359,19 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   .nav-right {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 28px;
   }
 
-  .nav-download {
-    min-height: 36px;
-    padding: 0 16px;
-    border-radius: 999px;
-    font-size: 13px;
+  .nav-link {
+    padding: 6px 2px;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 14px;
+    letter-spacing: -0.005em;
+    transition: color 0.18s ease;
   }
 
-  .nav-stars {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 36px;
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.02);
-    color: var(--fg-muted);
-    font-size: 13px;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
-    transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-  }
-
-  .nav-stars:hover {
-    color: var(--fg);
-    border-color: var(--border-strong);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .nav-stars strong {
-    color: var(--fg);
-    font-weight: 600;
-  }
-
-  .nav-stars svg {
-    color: var(--warn);
-    flex-shrink: 0;
+  .nav-link:hover {
+    color: #fff;
   }
 
   .main {
@@ -474,26 +438,4 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     }
   }
 
-  @media (max-width: 520px) {
-    .nav-inner {
-      gap: 12px;
-    }
-
-    .nav-stars {
-      height: 34px;
-      gap: 6px;
-      padding: 0 11px;
-      font-size: 12px;
-    }
-
-    .nav-github-label {
-      display: none;
-    }
-
-    .nav-download {
-      min-height: 34px;
-      padding: 0 13px;
-      font-size: 12px;
-    }
-  }
 </style>
