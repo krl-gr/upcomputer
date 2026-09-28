@@ -81,11 +81,11 @@ const MODE_ARGS = {
     "run",
     "--filter=@upcomputer/contracts",
     "--filter=@upcomputer/web",
-    "--filter=t3",
+    "--filter=@upcomputer/server",
     "--parallel",
     "dev",
   ],
-  "dev:server": ["run", "--filter=t3", "dev"],
+  "dev:server": ["run", "--filter=@upcomputer/server", "dev"],
   "dev:web": ["run", "--filter=@upcomputer/web", "dev"],
   "dev:desktop": ["run", "--filter=@upcomputer/desktop", "--filter=@upcomputer/web", "dev"],
 } as const satisfies Record<string, ReadonlyArray<string>>;

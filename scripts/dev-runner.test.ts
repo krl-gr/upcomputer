@@ -91,7 +91,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           "run",
           "--filter=@upcomputer/contracts",
           "--filter=@upcomputer/web",
-          "--filter=t3",
+          "--filter=@upcomputer/server",
           "--parallel",
           "dev",
         ]);
