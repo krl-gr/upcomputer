@@ -324,6 +324,10 @@ const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons(props:
   );
 });
 
+/** Fades a thread row's trailing label while the row actions are shown. */
+const THREAD_ROW_TRAILING_FADE_CLASS =
+  "transition-opacity duration-150 group-hover/menu-sub-item:opacity-0 group-focus-within/menu-sub-item:opacity-0";
+
 interface SidebarThreadRowProps {
   thread: SidebarThreadSummary;
   projectByKey: SidebarProjectIndex;
@@ -540,6 +544,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     [],
   );
   const rowButtonRender = useMemo(() => <div role="button" tabIndex={0} />, []);
+  const timeLabel = formatSidebarThreadTimestamp(
+    thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+  );
 
   return (
     <SidebarMenuSubItem className="w-full" data-thread-item>
@@ -621,7 +628,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 <MoreHorizontalIcon className="block size-4" />
               </button>
             </div>
-            <span className="pointer-events-none transition-opacity duration-150 max-sm:pr-6 group-hover/menu-sub-item:opacity-0 group-focus-within/menu-sub-item:opacity-0">
+            {/* Labels fade under the row actions. Accessory content stays visible,
+                so the block shifts left to make room instead. */}
+            <span className="pointer-events-none transition-[padding] duration-150 max-sm:pr-6 group-hover/menu-sub-item:not-has-[[data-sidebar-fading-label]]:pr-6 group-focus-within/menu-sub-item:not-has-[[data-sidebar-fading-label]]:pr-6 has-[[data-popup-open]]:pr-6">
               <span className="inline-flex items-center gap-1">
                 {isRemoteThread && !isDesktopLocalThread && (
                   <Tooltip>
@@ -629,7 +638,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                       render={
                         <span
                           aria-label={threadEnvironmentLabel ?? "Remote"}
-                          className="inline-flex items-center justify-center"
+                          className={cn(
+                            "inline-flex items-center justify-center",
+                            THREAD_ROW_TRAILING_FADE_CLASS,
+                          )}
                         />
                       }
                     >
@@ -644,7 +656,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                       render={
                         <span
                           aria-label={jumpLabel}
-                          className="inline-flex h-6 items-center rounded-full border border-border/80 bg-background/90 px-1.5 font-mono text-sm font-medium tracking-tight text-foreground shadow-sm"
+                          data-sidebar-fading-label
+                          className={cn(
+                            "inline-flex h-6 items-center rounded-full border border-border/80 bg-background/90 px-1.5 font-mono text-sm font-medium tracking-tight text-foreground shadow-sm",
+                            THREAD_ROW_TRAILING_FADE_CLASS,
+                          )}
                         />
                       }
                     >
@@ -653,7 +669,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     <TooltipPopup side="top">{jumpLabel}</TooltipPopup>
                   </Tooltip>
                 ) : wakeLabel !== undefined ? (
-                  <span className={cn(SIDEBAR_MUTED_TEXT_CLASS, SIDEBAR_LABEL_TEXT_CLASS)}>
+                  <span
+                    data-sidebar-fading-label
+                    className={cn(
+                      SIDEBAR_MUTED_TEXT_CLASS,
+                      SIDEBAR_LABEL_TEXT_CLASS,
+                      THREAD_ROW_TRAILING_FADE_CLASS,
+                    )}
+                  >
                     {wakeLabel}
                   </span>
                 ) : (
@@ -661,12 +684,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     <SidebarThreadAccessory
                       environmentId={thread.environmentId}
                       threadId={thread.id}
-                      timeLabel={formatSidebarThreadTimestamp(
-                        thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-                      )}
-                      fallback={formatSidebarThreadTimestamp(
-                        thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-                      )}
+                      timeLabel={timeLabel}
+                      fallback={
+                        <span data-sidebar-fading-label className={THREAD_ROW_TRAILING_FADE_CLASS}>
+                          {timeLabel}
+                        </span>
+                      }
                     />
                   </span>
                 )}
@@ -1983,13 +2006,13 @@ const SidebarProjectFilterRow = memo(function SidebarProjectFilterRow(
           </TooltipPopup>
         </Tooltip>
       )}
-      <div className="pointer-events-none absolute inset-y-0 right-1.5 my-auto flex h-5 items-center gap-0.5 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-row:pointer-events-auto group-hover/project-row:opacity-100 group-focus-within/project-row:pointer-events-auto group-focus-within/project-row:opacity-100">
+      <div className="pointer-events-none absolute inset-y-0 right-1.5 my-auto flex h-5 items-center gap-1 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-row:pointer-events-auto group-hover/project-row:opacity-100 group-focus-within/project-row:pointer-events-auto group-focus-within/project-row:opacity-100">
         <button
           type="button"
           data-testid={`sidebar-project-actions-${project.projectKey}`}
           aria-label={`Project actions for ${project.displayName}`}
           className={cn(
-            "flex size-5 cursor-pointer items-center justify-center rounded-md hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:hover:text-white/86",
+            "flex size-5 cursor-pointer items-center justify-center transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:hover:text-white/86",
             SIDEBAR_MUTED_TEXT_CLASS,
           )}
           onPointerDown={stopPropagationOnPointerDown}
@@ -2005,7 +2028,7 @@ const SidebarProjectFilterRow = memo(function SidebarProjectFilterRow(
                 aria-label={`New chat in ${project.displayName}`}
                 data-testid="new-thread-button"
                 className={cn(
-                  "flex size-5 cursor-pointer items-center justify-center rounded-md hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:hover:text-white/86",
+                  "flex size-5 cursor-pointer items-center justify-center transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:hover:text-white/86",
                   SIDEBAR_MUTED_TEXT_CLASS,
                 )}
                 onPointerDown={stopPropagationOnPointerDown}

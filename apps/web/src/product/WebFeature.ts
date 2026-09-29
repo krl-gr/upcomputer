@@ -118,6 +118,7 @@ export interface ExperimentalWebThreadAccessoryProps {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly timeLabel: string;
+  /** The host's timestamp label. It fades while the row actions are shown. */
   readonly fallback: ReactNode;
 }
 
@@ -137,7 +138,12 @@ export interface ExperimentalWebFeatureContribution {
   readonly navigation?: ReadonlyArray<ExperimentalWebNavigationContribution>;
   readonly settings?: ReadonlyArray<ExperimentalWebSettingsPageContribution>;
   readonly interactionModes?: ReadonlyArray<ExperimentalWebInteractionModePresentation>;
-  /** Replaces the row timestamp when available; the host retains layout and fallback. */
+  /**
+   * Replaces the row timestamp when available; the host retains layout and fallback.
+   * Other content stays visible while the row actions are shown: the host shifts it
+   * left to make room. The slot ignores pointer events, so interactive content opts
+   * in with `pointer-events-auto` and stops its events from reaching the row.
+   */
   readonly threadAccessory?: {
     readonly component: ComponentType<ExperimentalWebThreadAccessoryProps>;
     readonly capabilities?: ReadonlyArray<ExperimentalWebCapabilityRequirement>;

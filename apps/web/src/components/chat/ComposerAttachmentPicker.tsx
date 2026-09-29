@@ -1,5 +1,11 @@
 import type { ProjectId, ThreadId } from "@upcomputer/contracts";
-import { ArrowLeftIcon, FilesIcon, GitBranchIcon, ImagePlusIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  FilesIcon,
+  GitBranchIcon,
+  ImagePlusIcon,
+  PaperclipIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Project, ThreadShell } from "../../types";
@@ -105,7 +111,7 @@ export function ComposerAttachmentPicker({
             />
           }
         >
-          <PlusIcon className="size-4" />
+          <PaperclipIcon className="size-4" />
         </PopoverTrigger>
         <TooltipPopup side="top">{TRIGGER_LABEL}</TooltipPopup>
       </Tooltip>
