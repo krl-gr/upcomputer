@@ -19,21 +19,30 @@ import {
   type PreviewAutomationOperation,
   type PreviewAutomationHost,
   type PreviewAutomationHostFocus,
+  type PreviewAutomationRemoteError,
+  type PreviewAutomationRequest,
   type PreviewAutomationResponse,
   type PreviewAutomationStreamEvent,
 } from "@upcomputer/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+import type {
+  ExperimentalPreviewAutomationHost,
+  ExperimentalPreviewAutomationHostContribution,
+} from "../product/PreviewAutomationHostContribution.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
 export interface PreviewAutomationInvokeInput {
@@ -63,12 +72,19 @@ export class PreviewAutomationBroker extends Context.Service<
 interface ClientConnection {
   readonly clientId: string;
   readonly connectionId: string;
-  readonly environmentId: PreviewAutomationHost["environmentId"];
+  /** Null for a server host, which serves every environment of this server. */
+  readonly environmentId: PreviewAutomationHost["environmentId"] | null;
   readonly supportedOperations: ReadonlySet<PreviewAutomationOperation>;
   readonly focused: boolean;
   readonly focusOrder: number;
   readonly queue: Queue.Queue<PreviewAutomationStreamEvent>;
+  /** Set for a product-contributed host that the broker answers in-process. */
+  readonly serverHost?: ExperimentalPreviewAutomationHost;
 }
+
+type ServerHostContribution<R> = Pick<ExperimentalPreviewAutomationHostContribution, "id"> & {
+  readonly make: Effect.Effect<ExperimentalPreviewAutomationHost, never, R>;
+};
 
 interface PendingRequest {
   readonly queue: ClientConnection["queue"];
@@ -160,6 +176,39 @@ const supportsOperation = (
   connection: ClientConnection,
   operation: PreviewAutomationOperation,
 ): boolean => connection.supportedOperations.has(operation);
+
+const servesEnvironment = (
+  connection: ClientConnection,
+  environmentId: McpInvocationContext.McpInvocationScope["environmentId"],
+): boolean => connection.environmentId === null || connection.environmentId === environmentId;
+
+/** Desktop hosts win over server hosts; see ExperimentalPreviewAutomationHost for the order. */
+const selectHost = (
+  clients: ReadonlyMap<string, ClientConnection>,
+  environmentId: McpInvocationContext.McpInvocationScope["environmentId"],
+  operation: PreviewAutomationOperation,
+): ClientConnection | undefined => {
+  const candidates = Array.from(clients.values()).filter(
+    (host) => servesEnvironment(host, environmentId) && supportsOperation(host, operation),
+  );
+  const desktopHost = candidates
+    .filter((host) => host.serverHost === undefined)
+    .sort(
+      (left, right) =>
+        right.supportedOperations.size - left.supportedOperations.size ||
+        Number(right.focused) - Number(left.focused) ||
+        right.focusOrder - left.focusOrder,
+    )[0];
+  return desktopHost ?? candidates.find((host) => host.serverHost !== undefined);
+};
+
+const serverHostFailure = (
+  cause: Cause.Cause<PreviewAutomationRemoteError>,
+): PreviewAutomationRemoteError =>
+  Option.getOrElse(Cause.findErrorOption(cause), () => ({
+    _tag: "PreviewAutomationExecutionError",
+    message: "The server-side preview host failed unexpectedly.",
+  }));
 
 type RemoteDetailKind = "null" | "array" | "object" | "string" | "number" | "boolean";
 
@@ -304,7 +353,9 @@ const classifyResponseError = (
   }
 };
 
-export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
+export const makeWithServerHosts = Effect.fn("PreviewAutomationBroker.make")(function* <R = never>(
+  serverHostContributions: ReadonlyArray<ServerHostContribution<R>>,
+): Effect.fn.Return<PreviewAutomationBroker["Service"], never, Crypto.Crypto | Scope.Scope | R> {
   const crypto = yield* Crypto.Crypto;
   const state = yield* SynchronizedRef.make<BrokerState>({
     clients: new Map(),
@@ -442,12 +493,37 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     }
   });
 
+  // Filled once below, after `respond` exists; never changes afterwards.
+  const serverHosts: Array<{
+    readonly clientId: string;
+    readonly host: ExperimentalPreviewAutomationHost;
+  }> = [];
+
+  const preferredServerHost = Effect.fn("PreviewAutomationBroker.preferredServerHost")(function* (
+    operation: PreviewAutomationOperation,
+  ) {
+    for (const { clientId, host } of serverHosts) {
+      if (!host.supportedOperations.includes(operation)) continue;
+      const preferred = yield* host.preferred.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("preview automation host preference failed", { cause }).pipe(
+            Effect.as(false),
+          ),
+        ),
+      );
+      if (preferred) return clientId;
+    }
+    return undefined;
+  });
+
   const invoke = Effect.fn("PreviewAutomationBroker.invoke")(function* <A = unknown>(
     input: Parameters<PreviewAutomationBroker["Service"]["invoke"]>[0],
   ): Effect.fn.Return<A, PreviewAutomationError> {
     const timeoutMs = input.timeoutMs ?? 15_000;
     const deferred = yield* Deferred.make<unknown, PreviewAutomationError>();
     const now = yield* Clock.currentTimeMillis;
+    // Read before taking the state lock: a preference may come from disk.
+    const preferredServerHostId = yield* preferredServerHost(input.operation);
     const route = yield* SynchronizedRef.modify(state, (current) => {
       const assignments = new Map(
         Array.from(current.assignments).filter(([, assignment]) => {
@@ -462,30 +538,26 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       const assignmentKey = hostAssignmentKey(input.scope);
       const assigned = assignments.get(assignmentKey);
       const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
-      const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
-      // Keep one provider session on one physical desktop runtime so a
-      // multi-step browser interaction cannot jump between independent
-      // Electron cookie/DOM state. A live assignment that predates an
-      // operation is not silently moved to a newer client: the caller gets a
-      // capability failure and can deliberately start a fresh provider
-      // session. A dead lease is pruned above and may fail over.
+      const hasLiveAssignment =
+        assignedConnection !== undefined &&
+        servesEnvironment(assignedConnection, input.scope.environmentId);
+      // Keep one provider session on one host so a multi-step browser
+      // interaction cannot jump between independent cookie/DOM state. A live
+      // assignment that predates an operation is not silently moved to a newer
+      // client: the caller gets a capability failure and can deliberately
+      // start a fresh provider session. A dead lease is pruned above and may
+      // fail over. Only a user preference for a server host overrides this.
+      const preferredConnection =
+        preferredServerHostId === undefined
+          ? undefined
+          : current.clients.get(preferredServerHostId);
       const connection =
-        hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
+        preferredConnection ??
+        (hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
           ? assignedConnection
           : hasLiveAssignment
             ? undefined
-            : Array.from(current.clients.values())
-                .filter(
-                  (host) =>
-                    host.environmentId === input.scope.environmentId &&
-                    supportsOperation(host, input.operation),
-                )
-                .sort(
-                  (left, right) =>
-                    right.supportedOperations.size - left.supportedOperations.size ||
-                    Number(right.focused) - Number(left.focused) ||
-                    right.focusOrder - left.focusOrder,
-                )[0];
+            : selectHost(current.clients, input.scope.environmentId, input.operation));
       if (!connection) {
         if (!hasLiveAssignment) assignments.delete(assignmentKey);
         return [undefined, { ...current, assignments }] as const;
@@ -604,7 +676,79 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     return result;
   });
 
+  // A server host is registered like a desktop client, so routing, tab
+  // tracking, timeouts and error classification stay the same; the broker
+  // answers its requests in-process instead of streaming them to a socket.
+  const scope = yield* Scope.Scope;
+  for (const contribution of serverHostContributions) {
+    const host = yield* contribution.make;
+    const connectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+    // The random suffix keeps a WebSocket client from claiming this id.
+    const clientId = `${contribution.id}-host-${connectionId}`;
+    const queue = yield* Queue.unbounded<PreviewAutomationStreamEvent>();
+    yield* SynchronizedRef.update(state, (current) => {
+      const clients = new Map(current.clients);
+      clients.set(clientId, {
+        clientId,
+        connectionId,
+        environmentId: null,
+        supportedOperations: new Set(host.supportedOperations),
+        focused: false,
+        focusOrder: 0,
+        queue,
+        serverHost: host,
+      });
+      return { ...current, clients };
+    });
+    const answer = (request: PreviewAutomationRequest) =>
+      Effect.exit(host.execute(request)).pipe(
+        Effect.flatMap((exit) => {
+          if (Exit.isSuccess(exit)) {
+            return respond({
+              clientId,
+              connectionId,
+              requestId: request.requestId,
+              ok: true,
+              ...(exit.value === undefined ? {} : { result: exit.value }),
+            });
+          }
+          if (Cause.hasInterruptsOnly(exit.cause)) return Effect.void;
+          return Effect.logWarning("preview automation server host failed", {
+            hostId: contribution.id,
+            operation: request.operation,
+            cause: exit.cause,
+          }).pipe(
+            Effect.andThen(
+              respond({
+                clientId,
+                connectionId,
+                requestId: request.requestId,
+                ok: false,
+                error: serverHostFailure(exit.cause),
+              }),
+            ),
+          );
+        }),
+        Effect.ignore,
+      );
+    yield* Queue.take(queue).pipe(
+      Effect.flatMap((event) =>
+        event.type === "request" ? Effect.forkIn(answer(event.request), scope) : Effect.void,
+      ),
+      Effect.forever,
+      Effect.forkIn(scope),
+    );
+    serverHosts.push({ clientId, host });
+  }
+
   return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke });
-}).pipe(Effect.withSpan("PreviewAutomationBroker.make"));
+});
+
+export const make = makeWithServerHosts([]);
 
 export const layer = Layer.effect(PreviewAutomationBroker, make);
+
+/** Broker with product-contributed server-side hosts; see ExperimentalPreviewAutomationHost. */
+export const layerWithServerHosts = (
+  contributions: ReadonlyArray<ExperimentalPreviewAutomationHostContribution>,
+) => Layer.effect(PreviewAutomationBroker, makeWithServerHosts(contributions));

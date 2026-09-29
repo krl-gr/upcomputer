@@ -410,7 +410,7 @@ export const makeRoutesLayerForProduct = <
     ),
     McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
   ).pipe(
-    Layer.provide(PreviewAutomationBroker.layer),
+    Layer.provide(PreviewAutomationBroker.layerWithServerHosts(composition.previewAutomationHosts)),
     Layer.provide(ServerSelfUpdate.layer),
     Layer.provide(browserApiCorsLayer),
     Layer.provide(httpCompressionLayer),

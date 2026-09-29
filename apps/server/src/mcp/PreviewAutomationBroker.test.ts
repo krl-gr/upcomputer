@@ -2,7 +2,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  PREVIEW_AUTOMATION_OPERATIONS,
   PreviewAutomationClientDisconnectedError,
+  PreviewAutomationExecutionError,
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationMalformedResponseError,
   PreviewAutomationNoAvailableHostError,
@@ -13,6 +15,8 @@ import {
   ProviderInstanceId,
   ThreadId,
   type PreviewAutomationHost,
+  type PreviewAutomationOperation,
+  type PreviewAutomationRemoteError,
   type PreviewAutomationRequest,
   type PreviewAutomationStreamEvent,
 } from "@upcomputer/contracts";
@@ -1125,4 +1129,189 @@ it.effect("accepts responses only from the host that received the request", () =
       expect(result).toBe("owner");
     }),
   ),
+);
+
+interface ServerHostOptions {
+  readonly isPreferred?: () => boolean;
+  readonly supportedOperations?: ReadonlyArray<PreviewAutomationOperation>;
+  readonly execute?: (
+    request: PreviewAutomationRequest,
+  ) => Effect.Effect<unknown, PreviewAutomationRemoteError>;
+}
+
+const makeServerHost = (options: ServerHostOptions = {}) => ({
+  id: "chrome",
+  make: Effect.succeed({
+    supportedOperations: options.supportedOperations ?? PREVIEW_AUTOMATION_OPERATIONS,
+    preferred: Effect.sync(() => options.isPreferred?.() ?? false),
+    execute:
+      options.execute ??
+      ((request: PreviewAutomationRequest) => Effect.succeed(`server:${request.operation}`)),
+  }),
+});
+
+const makeBrokerWithServerHost = (options?: ServerHostOptions) =>
+  PreviewAutomationBroker.makeWithServerHosts([makeServerHost(options)]).pipe(
+    Effect.provide(NodeServices.layer),
+  );
+
+const connectDesktop = Effect.fn("test.connectDesktop")(function* (
+  broker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  clientId = "client-1",
+) {
+  const requests = requestsFrom(yield* broker.connect(makeHost({ clientId })));
+  const consumer = yield* Stream.runForEach(requests, (request) =>
+    broker.respond({
+      clientId,
+      connectionId: request.connectionId,
+      requestId: request.requestId,
+      ok: true,
+      result: `desktop:${request.operation}`,
+    }),
+  ).pipe(Effect.forkScoped);
+  yield* Effect.yieldNow;
+  return consumer;
+});
+
+const otherSessionScope = { ...scope, providerSessionId: "provider-session-2" };
+
+it.effect("falls back to a server host when no desktop host serves the environment", () =>
+  Effect.gen(function* () {
+    const routed: PreviewAutomationRequest[] = [];
+    const broker = yield* makeBrokerWithServerHost({
+      execute: (request) => {
+        routed.push(request);
+        return Effect.succeed("server");
+      },
+    });
+
+    const result = yield* broker.invoke<string>({ scope, operation: "status", input: {} });
+
+    expect(result).toBe("server");
+    expect(routed).toMatchObject([{ threadId: scope.threadId, operation: "status", input: {} }]);
+  }),
+);
+
+it.effect("prefers a connected desktop host over a server host", () =>
+  Effect.gen(function* () {
+    const broker = yield* makeBrokerWithServerHost();
+    yield* connectDesktop(broker);
+
+    expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+      "desktop:status",
+    );
+  }),
+);
+
+it.effect("routes to a preferred server host while a desktop host is connected", () =>
+  Effect.gen(function* () {
+    let preferred = false;
+    const broker = yield* makeBrokerWithServerHost({ isPreferred: () => preferred });
+    yield* connectDesktop(broker);
+
+    expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+      "desktop:status",
+    );
+    preferred = true;
+    expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+      "server:status",
+    );
+    preferred = false;
+    expect(
+      yield* broker.invoke<string>({ scope: otherSessionScope, operation: "status", input: {} }),
+    ).toBe("desktop:status");
+  }),
+);
+
+it.effect("keeps a session on the server host after a desktop host connects", () =>
+  Effect.gen(function* () {
+    const broker = yield* makeBrokerWithServerHost();
+    expect(yield* broker.invoke<string>({ scope, operation: "open", input: {} })).toBe(
+      "server:open",
+    );
+
+    yield* connectDesktop(broker);
+
+    expect(yield* broker.invoke<string>({ scope, operation: "snapshot", input: {} })).toBe(
+      "server:snapshot",
+    );
+    expect(
+      yield* broker.invoke<string>({ scope: otherSessionScope, operation: "open", input: {} }),
+    ).toBe("desktop:open");
+  }),
+);
+
+it.effect("fails a desktop session over to the server host after the desktop disconnects", () =>
+  Effect.gen(function* () {
+    const broker = yield* makeBrokerWithServerHost();
+    const desktop = yield* connectDesktop(broker);
+    expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+      "desktop:status",
+    );
+
+    yield* Fiber.interrupt(desktop);
+    yield* Effect.yieldNow;
+
+    expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+      "server:status",
+    );
+  }),
+);
+
+it.effect("skips a server host that does not support the operation", () =>
+  Effect.gen(function* () {
+    const broker = yield* makeBrokerWithServerHost({
+      isPreferred: () => true,
+      supportedOperations: ["status"],
+    });
+
+    const error = yield* broker
+      .invoke<void>({ scope, operation: "recordingStart", input: {} })
+      .pipe(Effect.flip);
+
+    expect(error).toBeInstanceOf(PreviewAutomationNoAvailableHostError);
+  }),
+);
+
+it.effect("tracks the server host's tab for the provider session", () =>
+  Effect.gen(function* () {
+    const chromeTabId = PreviewTabId.make("chrome-tab-1");
+    const routed: PreviewAutomationRequest[] = [];
+    const broker = yield* makeBrokerWithServerHost({
+      execute: (request) => {
+        routed.push(request);
+        return Effect.succeed(request.operation === "open" ? { tabId: chromeTabId } : null);
+      },
+    });
+
+    yield* broker.invoke({ scope, operation: "open", input: {} });
+    yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+    expect(routed[0]?.tabId).toBeUndefined();
+    expect(routed[1]).toMatchObject({ tabId: chromeTabId, tabIdExplicit: false });
+  }),
+);
+
+it.effect("classifies server host failures like desktop host failures", () =>
+  Effect.gen(function* () {
+    let fail: () => Effect.Effect<never, PreviewAutomationRemoteError> = () =>
+      Effect.fail({
+        _tag: "PreviewAutomationTargetNotFoundError",
+        message: "The click target was not found.",
+        detail: { selectorKind: "locator", selectorLength: 17 },
+      });
+    const broker = yield* makeBrokerWithServerHost({ execute: () => fail() });
+
+    const notFound = yield* broker
+      .invoke<void>({ scope, operation: "click", input: { locator: "text=Missing one" } })
+      .pipe(Effect.flip);
+    expect(notFound).toBeInstanceOf(PreviewAutomationTargetNotFoundError);
+    expect(notFound).toMatchObject({ selectorKind: "locator", selectorLength: 17 });
+
+    fail = () => Effect.die(new Error("playwright crashed"));
+    const defect = yield* broker
+      .invoke<void>({ scope, operation: "click", input: {} })
+      .pipe(Effect.flip);
+    expect(defect).toBeInstanceOf(PreviewAutomationExecutionError);
+  }),
 );

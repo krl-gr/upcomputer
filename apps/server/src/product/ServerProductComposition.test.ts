@@ -23,6 +23,16 @@ const CompositionTestRpc = Rpc.make("upcomputer.tasks.ping", {
   success: Schema.String,
 });
 const CompositionTestRpcGroup = RpcGroup.make(CompositionTestRpc);
+const TEST_PREVIEW_AUTOMATION_HOST = {
+  id: "chrome",
+  ownerId: "upcomputer.tasks",
+  version: 1,
+  make: Effect.succeed({
+    supportedOperations: ["status"] as const,
+    preferred: Effect.succeed(false),
+    execute: () => Effect.succeed(null),
+  }),
+};
 const TEST_PROVIDER_DRIVER = {
   driverKind: ProviderDriverKind.make("upcomputerAgent"),
   metadata: { displayName: "UpComputer Agent", supportsMultipleInstances: false },
@@ -37,6 +47,7 @@ describe("server product composition", () => {
     expect(CORE_SERVER_PRODUCT_COMPOSITION.diagnostics).toEqual([]);
     expect(CORE_SERVER_PRODUCT_COMPOSITION.migrations).toEqual([]);
     expect(CORE_SERVER_PRODUCT_COMPOSITION.providerDrivers).toEqual([]);
+    expect(CORE_SERVER_PRODUCT_COMPOSITION.previewAutomationHosts).toEqual([]);
     expect(
       CORE_SERVER_PRODUCT_COMPOSITION.interactionModeRegistry.snapshot().map((mode) => mode.id),
     ).toEqual(["ask", "default", "plan"]);
@@ -68,6 +79,7 @@ describe("server product composition", () => {
         interactionModes: 0,
         providerDrivers: 0,
         interactionModeProviders: 0,
+        previewAutomationHosts: 0,
       },
       {
         id: "upcomputer.tasks",
@@ -80,6 +92,7 @@ describe("server product composition", () => {
         interactionModes: 0,
         providerDrivers: 0,
         interactionModeProviders: 0,
+        previewAutomationHosts: 0,
       },
     ]);
   });
@@ -166,6 +179,7 @@ describe("server product composition", () => {
               },
             },
           ],
+          previewAutomationHosts: [TEST_PREVIEW_AUTOMATION_HOST],
         },
       ],
     });
@@ -182,11 +196,13 @@ describe("server product composition", () => {
         interactionModes: 1,
         providerDrivers: 1,
         interactionModeProviders: 1,
+        previewAutomationHosts: 1,
       },
     ]);
     expect(composition.migrations).toEqual([migration]);
     expect(composition.rpc).toEqual([rpc]);
     expect(composition.providerDrivers).toEqual([TEST_PROVIDER_DRIVER]);
+    expect(composition.previewAutomationHosts).toEqual([TEST_PREVIEW_AUTOMATION_HOST]);
     const resolvedMode = composition.interactionModeRegistry.resolveOrThrow("task-review", "codex");
     expect(resolvedMode.ownerId).toBe("upcomputer.tasks");
     expect(resolvedMode.provider.sandbox).toBe("read-only");
@@ -349,5 +365,18 @@ describe("server product composition", () => {
         ],
       }),
     ).toThrow(ServerProductCompositionInvariantError);
+
+    for (const previewAutomationHosts of [
+      [{ ...TEST_PREVIEW_AUTOMATION_HOST, ownerId: "upcomputer.other" }],
+      [TEST_PREVIEW_AUTOMATION_HOST, TEST_PREVIEW_AUTOMATION_HOST],
+      [{ ...TEST_PREVIEW_AUTOMATION_HOST, id: "Chrome" }],
+      [{ ...TEST_PREVIEW_AUTOMATION_HOST, version: 0 }],
+    ]) {
+      expect(() =>
+        createExperimentalServerProductComposition({
+          features: [{ id: "upcomputer.tasks", version: 1, previewAutomationHosts }],
+        }),
+      ).toThrow(ServerProductCompositionInvariantError);
+    }
   });
 });

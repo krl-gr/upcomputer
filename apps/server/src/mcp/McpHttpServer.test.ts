@@ -258,15 +258,33 @@ it.effect("registers annotated tools and preserves authenticated request context
         alternateTabId,
       );
 
-      const press = yield* server
-        .callTool({ name: "preview_press", arguments: { key: "Enter" } })
+      const actionRequests = [
+        { name: "preview_click", arguments: { x: 10, y: 10 } },
+        { name: "preview_type", arguments: { text: "Hello" } },
+        { name: "preview_press", arguments: { key: "Enter" } },
+        { name: "preview_scroll", arguments: { deltaY: 100 } },
+        { name: "preview_wait_for", arguments: { text: "Example" } },
+      ];
+      for (const request of actionRequests) {
+        const result = yield* server
+          .callTool(request)
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        expect(result.isError).toBe(false);
+        expect(result.structuredContent).toEqual({});
+        expect(result.content).toEqual([{ type: "text", text: "{}" }]);
+      }
+
+      const evaluated = yield* server
+        .callTool({ name: "preview_evaluate", arguments: { expression: "document.title" } })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),
         );
-      expect(press.isError).toBe(false);
-      expect(press.structuredContent).toBeNull();
-      expect(press.content).toEqual([{ type: "text", text: "null" }]);
+      expect(evaluated.isError).toBe(false);
+      expect(evaluated.structuredContent).toMatchObject({ value: { title: "Example" } });
     }),
   ).pipe(Effect.provide(TestLayer)),
 );

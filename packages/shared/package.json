@@ -175,6 +175,10 @@
       "types": "./src/hostClassification.ts",
       "import": "./src/hostClassification.ts"
     },
+    "./previewAutomationPage": {
+      "types": "./src/previewAutomationPage.ts",
+      "import": "./src/previewAutomationPage.ts"
+    },
     "./previewViewport": {
       "types": "./src/previewViewport.ts",
       "import": "./src/previewViewport.ts"

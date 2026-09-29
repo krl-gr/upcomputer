@@ -39,3 +39,26 @@ it("exports provider-compatible object schemas with described parameters", () =>
     }
   }
 });
+
+it("exports exact object result schemas for preview actions", () => {
+  const actionNames = [
+    "preview_click",
+    "preview_type",
+    "preview_press",
+    "preview_scroll",
+    "preview_wait_for",
+  ] as const;
+  for (const name of actionNames) {
+    expect(Tool.getJsonSchemaFromSchema(PreviewToolkit.tools[name].successSchema)).toEqual({
+      type: "object",
+      additionalProperties: false,
+      description: "The preview action completed successfully.",
+    });
+  }
+  expect(
+    Tool.getJsonSchemaFromSchema(PreviewToolkit.tools.preview_evaluate.successSchema),
+  ).toMatchObject({
+    type: "object",
+    required: ["value"],
+  });
+});

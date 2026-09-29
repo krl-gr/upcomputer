@@ -15,6 +15,7 @@ import {
   type AnyHttpRouteContribution,
 } from "./HttpRouteContribution.ts";
 import { BUILT_IN_INTERACTION_MODE_REGISTRATIONS } from "./BuiltInInteractionModes.ts";
+import type { ExperimentalPreviewAutomationHostContribution } from "./PreviewAutomationHostContribution.ts";
 import { createRpcContributionPlan, type AnyNamespacedRpcContribution } from "./RpcContribution.ts";
 import {
   createExperimentalInteractionModeRegistry,
@@ -78,6 +79,7 @@ export interface ExperimentalServerFeatureContribution<
   readonly interactionModes?: ReadonlyArray<ExperimentalInteractionModeRegistration>;
   readonly providerDrivers?: ReadonlyArray<ExperimentalProviderDriverContribution>;
   readonly interactionModeProviders?: ReadonlyArray<ExperimentalInteractionModeProviderContribution>;
+  readonly previewAutomationHosts?: ReadonlyArray<ExperimentalPreviewAutomationHostContribution>;
 }
 
 export type RpcContributionsOfFeature<Feature> = Feature extends {
@@ -103,6 +105,7 @@ export interface ExperimentalServerFeatureDiagnostic {
   readonly interactionModes: number;
   readonly providerDrivers: number;
   readonly interactionModeProviders: number;
+  readonly previewAutomationHosts: number;
 }
 
 export interface ExperimentalServerProductComposition<
@@ -118,6 +121,7 @@ export interface ExperimentalServerProductComposition<
   readonly dynamicToolRegistry: ExperimentalDynamicToolRegistry<never, never>;
   readonly interactionModeRegistry: ExperimentalInteractionModeRegistry;
   readonly providerDrivers: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>>;
+  readonly previewAutomationHosts: ReadonlyArray<ExperimentalPreviewAutomationHostContribution>;
 }
 
 export class ServerProductCompositionInvariantError extends Error {
@@ -136,7 +140,9 @@ export class ServerProductCompositionInvariantError extends Error {
     | "duplicate-provider-driver"
     | "reserved-provider-driver"
     | "invalid-interaction-mode-provider"
-    | "duplicate-interaction-mode-provider";
+    | "duplicate-interaction-mode-provider"
+    | "invalid-preview-automation-host"
+    | "duplicate-preview-automation-host";
 
   constructor(
     code:
@@ -153,7 +159,9 @@ export class ServerProductCompositionInvariantError extends Error {
       | "duplicate-provider-driver"
       | "reserved-provider-driver"
       | "invalid-interaction-mode-provider"
-      | "duplicate-interaction-mode-provider",
+      | "duplicate-interaction-mode-provider"
+      | "invalid-preview-automation-host"
+      | "duplicate-preview-automation-host",
     message: string,
   ) {
     super(message);
@@ -167,7 +175,8 @@ function assertStableId(
     | "invalid-feature-id"
     | "invalid-layer-id"
     | "invalid-provider-driver-id"
-    | "invalid-interaction-mode-provider",
+    | "invalid-interaction-mode-provider"
+    | "invalid-preview-automation-host",
   field: string,
 ): void {
   if (!STABLE_ID.test(value)) {
@@ -209,6 +218,23 @@ export function defineExperimentalInteractionModeProvider(
     throw new ServerProductCompositionInvariantError(
       "invalid-interaction-mode-provider",
       `Interaction-mode provider contribution '${contribution.id}' must have a positive safe-integer version.`,
+    );
+  }
+  return contribution;
+}
+
+export function defineExperimentalPreviewAutomationHost(
+  contribution: ExperimentalPreviewAutomationHostContribution,
+): ExperimentalPreviewAutomationHostContribution {
+  assertStableId(
+    contribution.id,
+    "invalid-preview-automation-host",
+    "Preview automation host contribution id",
+  );
+  if (!Number.isSafeInteger(contribution.version) || contribution.version < 1) {
+    throw new ServerProductCompositionInvariantError(
+      "invalid-preview-automation-host",
+      `Preview automation host contribution '${contribution.id}' must have a positive safe-integer version.`,
     );
   }
   return contribution;
@@ -284,6 +310,8 @@ export function createExperimentalServerProductComposition<
   const interactionModes: ExperimentalInteractionModeRegistration[] = [];
   const providerDrivers: ExperimentalProviderDriverContribution[] = [];
   const interactionModeProviders: ExperimentalInteractionModeProviderContribution[] = [];
+  const previewAutomationHosts: ExperimentalPreviewAutomationHostContribution[] = [];
+  const previewAutomationHostIds = new Set<string>();
   const providerDriverIds = new Set<string>();
   const providerDriverKinds = new Set(BUILT_IN_DRIVERS.map((driver) => driver.driverKind));
   const features = [...(input.features ?? [])]
@@ -369,6 +397,20 @@ export function createExperimentalServerProductComposition<
       assertOwner(feature.id, contribution.ownerId, "Interaction-mode provider contribution");
       interactionModeProviders.push(contribution);
     }
+
+    for (const rawContribution of feature.previewAutomationHosts ?? []) {
+      const contribution = defineExperimentalPreviewAutomationHost(rawContribution);
+      assertOwner(feature.id, contribution.ownerId, "Preview automation host contribution");
+      const hostKey = `${contribution.ownerId}:${contribution.id}`;
+      if (previewAutomationHostIds.has(hostKey)) {
+        throw new ServerProductCompositionInvariantError(
+          "duplicate-preview-automation-host",
+          `Preview automation host contribution '${hostKey}' is registered more than once.`,
+        );
+      }
+      previewAutomationHostIds.add(hostKey);
+      previewAutomationHosts.push(contribution);
+    }
   }
 
   const orderedLayers = layers.sort(
@@ -439,6 +481,7 @@ export function createExperimentalServerProductComposition<
           interactionModes,
           providerDrivers,
           interactionModeProviders,
+          previewAutomationHosts,
         }) => ({
           id,
           version,
@@ -450,6 +493,7 @@ export function createExperimentalServerProductComposition<
           interactionModes: interactionModes?.length ?? 0,
           providerDrivers: providerDrivers?.length ?? 0,
           interactionModeProviders: interactionModeProviders?.length ?? 0,
+          previewAutomationHosts: previewAutomationHosts?.length ?? 0,
         }),
       ),
     ),
@@ -460,6 +504,7 @@ export function createExperimentalServerProductComposition<
     dynamicToolRegistry,
     interactionModeRegistry,
     providerDrivers: Object.freeze(providerDrivers.map((contribution) => contribution.driver)),
+    previewAutomationHosts: Object.freeze(previewAutomationHosts),
   });
 }
 

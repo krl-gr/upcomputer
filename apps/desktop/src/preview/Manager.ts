@@ -29,6 +29,11 @@ import type {
 import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 import { normalizePreviewUrl } from "@upcomputer/shared/preview";
 import {
+  PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES,
+  PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH,
+  PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION,
+} from "@upcomputer/shared/previewAutomationPage";
+import {
   type BrowserWindow,
   type Session,
   clipboard,
@@ -97,10 +102,6 @@ const ZOOM_LEVELS: ReadonlyArray<number> = [
 
 const DEFAULT_ZOOM_FACTOR = 1.0;
 const ZOOM_EPSILON = 0.001;
-const MAX_EVALUATION_BYTES = 64_000;
-const MAX_VISIBLE_TEXT_LENGTH = 20_000;
-const MAX_INTERACTIVE_ELEMENTS = 200;
-const MAX_SCREENSHOT_WIDTH = 1280;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
@@ -1930,62 +1931,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         loading: boolean;
         visibleText: string;
         interactiveElements: PreviewAutomationSnapshot["interactiveElements"];
-      }>(
-        tabId,
-        send,
-        `(() => {
-          const selectorFor = (element) => {
-            if (element.id) return "#" + CSS.escape(element.id);
-            for (const attribute of ["data-testid", "name"]) {
-              const value = element.getAttribute(attribute);
-              if (value) return element.tagName.toLowerCase() + "[" + attribute + "=" + JSON.stringify(value) + "]";
-            }
-            const buildParts = (current, parts = []) => {
-              if (!current || current.nodeType !== Node.ELEMENT_NODE || parts.length >= 8) {
-                return parts;
-              }
-              const parent = current.parentElement;
-              const siblings = parent
-                ? Array.from(parent.children).filter((child) => child.tagName === current.tagName)
-                : [];
-              const base = current.tagName.toLowerCase();
-              const part = siblings.length > 1
-                ? base + ":nth-of-type(" + (siblings.indexOf(current) + 1) + ")"
-                : base;
-              return buildParts(parent, [part, ...parts]);
-            };
-            return buildParts(element).join(" > ");
-          };
-          const visible = (element) => {
-            const style = getComputedStyle(element);
-            const rect = element.getBoundingClientRect();
-            return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
-          };
-          const elements = Array.from(document.querySelectorAll(
-            "a[href],button,input,textarea,select,[role],[tabindex]"
-          )).filter(visible).slice(0, ${MAX_INTERACTIVE_ELEMENTS}).map((element) => {
-            const rect = element.getBoundingClientRect();
-            return {
-              tag: element.tagName.toLowerCase(),
-              role: element.getAttribute("role"),
-              name: element.getAttribute("aria-label") || element.innerText || element.getAttribute("name") || "",
-              selector: selectorFor(element),
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height
-            };
-          });
-          return {
-            url: location.href,
-            title: document.title,
-            loading: document.readyState !== "complete",
-            visibleText: (document.body?.innerText || "").slice(0, ${MAX_VISIBLE_TEXT_LENGTH}),
-            interactiveElements: elements
-          };
-        })()`,
-        true,
-      );
+      }>(tabId, send, PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION, true);
       const [accessibility, screenshotResult, diagnostics, timelines] = yield* Effect.all([
         send("Accessibility.getFullAXTree"),
         send("Page.captureScreenshot", {
@@ -2014,8 +1960,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       const sourceSize = sourceImage.getSize();
       const image =
-        sourceSize.width > MAX_SCREENSHOT_WIDTH
-          ? sourceImage.resize({ width: MAX_SCREENSHOT_WIDTH })
+        sourceSize.width > PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH
+          ? sourceImage.resize({ width: PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH })
           : sourceImage;
       const size = image.getSize();
       const browserDiagnostics = diagnostics.get(wc.id);
@@ -2437,11 +2383,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         value,
       );
       const actualBytes = Buffer.byteLength(serialized, "utf8");
-      if (actualBytes > MAX_EVALUATION_BYTES) {
+      if (actualBytes > PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES) {
         return yield* new PreviewAutomationResultTooLargeError({
           tabId,
           actualBytes,
-          maximumBytes: MAX_EVALUATION_BYTES,
+          maximumBytes: PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES,
         });
       }
       return value;
