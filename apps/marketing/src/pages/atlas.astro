@@ -1,7 +1,7 @@
 ---
 import rawData from "../data/atlas.json";
 import Layout from "../layouts/Layout.astro";
-import { STATUS_HINTS, TOOL_ICONS, cellKey, flattenTree, type AtlasData } from "../lib/atlas";
+import { TOOL_ICONS, cellKey, flattenTree, statusHint, type AtlasData } from "../lib/atlas";
 
 const data = rawData as AtlasData;
 const flat = flattenTree(data.nodes);
@@ -47,7 +47,7 @@ const coverage = data.products
 
     <figure class="coverage" aria-labelledby="coverage-title">
       <figcaption id="coverage-title">
-        <strong>Features confirmed in the docs</strong>
+        <strong>Features confirmed in official sources</strong>
         <span>out of {featureIds.length} in the Atlas</span>
       </figcaption>
       <ul class="coverage-rows">
@@ -56,7 +56,7 @@ const coverage = data.products
             class="coverage-row"
             data-product-column={p.id}
             tabindex="0"
-            aria-label={`${p.name}: ${p.documented} of ${featureIds.length} features confirmed, ${p.close} close, ${p.missing} not in the docs`}
+            aria-label={`${p.name}: ${p.documented} of ${featureIds.length} features confirmed, ${p.close} close, ${p.missing} not found`}
           >
             <span class="coverage-name">
               {TOOL_ICONS[p.id] ? (
@@ -74,7 +74,7 @@ const coverage = data.products
               <span class="coverage-bar"></span>
               <span class="coverage-tip">
                 <strong>{p.documented} of {featureIds.length}</strong>
-                <span>{p.close} close · {p.missing} not in the docs</span>
+                <span>{p.close} close · {p.missing} not found</span>
               </span>
             </span>
             <span class="coverage-value" aria-hidden="true">{p.documented}</span>
@@ -125,9 +125,9 @@ const coverage = data.products
                         type="button"
                         class={`cell is-${c.status}`}
                         data-cell={cellKey(n.id, p.id)}
-                        data-tip={c.status === "documented" ? undefined : STATUS_HINTS[c.status]}
+                        data-tip={c.status === "documented" ? undefined : statusHint(c)}
                         aria-haspopup="dialog"
-                        aria-label={`${p.name}: ${STATUS_HINTS[c.status]}`}
+                        aria-label={`${p.name}: ${statusHint(c)}`}
                       >
                         {c.status === "documented" ? (
                           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" /></svg>
@@ -677,6 +677,14 @@ const coverage = data.products
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  #cell-content :global(.source-kind) {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--fg-dim);
+    font-size: 11px;
+    letter-spacing: 0.02em;
   }
 
   #cell-content :global(li a) {

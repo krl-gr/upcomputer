@@ -1,7 +1,9 @@
 import {
   cellKey,
+  evidenceKind,
   flattenTree,
   readSelectedTools,
+  searched,
   surfaceTag,
   toolsSearch,
   type AtlasData,
@@ -87,14 +89,14 @@ function openCell(key: string) {
     content.append(
       element(
         "p",
-        `The ${product.name} docs describe something close, but don’t confirm this feature.`,
+        `The ${product.name} ${searched(cell, "and")} describe something close, but don’t confirm this feature.`,
       ),
     );
   } else if (cell.status === "not_found") {
     content.append(
       element(
         "p",
-        `Not found in the ${product.name} docs${cell.checked_at ? ` (checked ${cell.checked_at})` : ""}.`,
+        `Not found in the ${product.name} ${searched(cell)}${cell.checked_at ? ` (checked ${cell.checked_at})` : ""}.`,
       ),
     );
   } else {
@@ -127,19 +129,23 @@ function openCell(key: string) {
       if (seen.has(q.url)) continue;
       seen.add(q.url);
       const item = element("li");
-      item.append(link(q.title, q.url), element("blockquote", q.quote));
+      item.append(
+        element("span", evidenceKind(q.url), "source-kind"),
+        link(q.title, q.url),
+        element("blockquote", q.quote),
+      );
       list.append(item);
     }
     for (const s of sources) {
       if (seen.has(s.url)) continue;
       seen.add(s.url);
       const item = element("li");
-      item.append(link(s.title, s.url));
+      item.append(element("span", evidenceKind(s.url), "source-kind"), link(s.title, s.url));
       list.append(item);
     }
     content.append(list);
     if (cell.checked_at)
-      content.append(element("p", `Official docs, checked ${cell.checked_at}`, "record-dates"));
+      content.append(element("p", `Official sources, checked ${cell.checked_at}`, "record-dates"));
   }
   if (!dialog.open) dialog.showModal();
 }

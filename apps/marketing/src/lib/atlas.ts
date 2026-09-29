@@ -20,6 +20,8 @@ export interface AtlasCell {
   note?: string;
   freshness: "current" | "stale" | "superseded" | "unknown";
   checked_at?: string;
+  /** Sources searched beyond the docs: release notes, source code of the latest release. */
+  checked_sources?: ("release_notes" | "source_code")[];
   sources: string[];
   quotes: string[];
 }
@@ -55,11 +57,28 @@ export const TOOL_ICONS: Record<string, string> = {
   "pi-cli": "/harnesses/pi.svg",
 };
 
-export const STATUS_HINTS = {
-  documented: "In the docs. Click for how it works.",
-  unresolved: "Something close is documented, but not this exact feature.",
-  not_found: "Not in the docs.",
-} as const;
+const SEARCHED = { release_notes: "release notes", source_code: "source code" } as const;
+
+/** What was searched for a cell, as a reader phrase: "docs", "docs or release notes", ... */
+export function searched(cell: Pick<AtlasCell, "checked_sources">, joiner = "or"): string {
+  const parts = ["docs", ...(cell.checked_sources ?? []).map((s) => SEARCHED[s])];
+  return parts.length === 1
+    ? parts[0]!
+    : `${parts.slice(0, -1).join(", ")} ${joiner} ${parts.at(-1)}`;
+}
+
+export function statusHint(cell: Pick<AtlasCell, "status" | "checked_sources">): string {
+  if (cell.status === "documented") return "Confirmed. Click for how it works.";
+  if (cell.status === "unresolved") return "Something close exists, but not this exact feature.";
+  return `Not in the ${searched(cell)}.`;
+}
+
+/** Kind of official page behind a quote, from its URL. */
+export function evidenceKind(url: string): "Docs" | "Release notes" | "Source code" {
+  if (/raw\.githubusercontent\.com/.test(url)) return "Source code";
+  if (/\/releases\/tag\/|\/changelog(\/|$)|CHANGELOG\.md/i.test(url)) return "Release notes";
+  return "Docs";
+}
 
 const ROUTE_NAMES: Record<string, string> = {
   cli: "CLI",
