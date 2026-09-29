@@ -81,37 +81,21 @@ type ProjectFaviconInput = ProjectVisualIdentityInput &
 function ProjectAvatarFallback(input: Omit<ProjectFaviconInput, "environmentId">) {
   const fallback = resolveProjectAvatarFallback(input);
   const style = {
-    "--project-avatar-background": fallback.background,
-    "--project-avatar-text": fallback.text,
+    background: fallback.background,
+    color: fallback.text,
   } as CSSProperties;
 
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+    <span
       aria-hidden="true"
-      className={cn("size-3.5 shrink-0 text-muted-foreground/35", input.className)}
+      className={cn(
+        "inline-grid size-3.5 shrink-0 place-items-center rounded-[4px] text-[9px] leading-none font-semibold not-italic select-none",
+        input.className,
+      )}
       style={style}
     >
-      <path
-        d="M1 11.9474V3.05263C1 2.50824 1.20128 1.9863 1.5593 1.60136C1.91733 1.21641 2.40277 1 2.90909 1H5.4098C5.72582 1.00006 6.03705 1.08471 6.31525 1.24589C6.59346 1.40709 6.83061 1.63964 7.00444 1.92342L7.51589 2.73792L7.51962 2.74267C7.57815 2.81062 7.6581 2.86642 7.75204 2.90467C7.84591 2.94288 7.95083 2.96244 8.05717 2.96167H13.0909C13.5972 2.96167 14.0827 3.11554 14.4407 3.38923C14.7987 3.66291 15 4.034 15 4.42105V11.9474C15 12.4918 14.7987 13.0137 14.4407 13.3986C14.0827 13.7836 13.5972 14 13.0909 14H2.90909C2.40277 14 1.91733 13.7836 1.5593 13.3986C1.20128 13.0137 1 12.4918 1 11.9474Z"
-        fill="currentColor"
-      />
-      <text
-        x="8"
-        y="10.9"
-        textAnchor="middle"
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace"
-        fontSize="7.6"
-        fontWeight="600"
-        fill="var(--project-avatar-text)"
-      >
-        {fallback.letter}
-      </text>
-    </svg>
+      {fallback.letter}
+    </span>
   );
 }
 

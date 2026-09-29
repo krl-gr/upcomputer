@@ -17,12 +17,17 @@ const REMOTE = EnvironmentId.make("env-remote");
 
 function project(
   id: string,
-  options: { environmentId?: EnvironmentId; linkedProjectIds?: string[] } = {},
+  options: {
+    environmentId?: EnvironmentId;
+    linkedProjectIds?: string[];
+    workspaceRoot?: string;
+  } = {},
 ) {
   return {
     environmentId: options.environmentId ?? ENV,
     id: ProjectId.make(id),
     title: id,
+    ...(options.workspaceRoot ? { workspaceRoot: options.workspaceRoot } : {}),
     ...(options.linkedProjectIds
       ? { linkedProjectIds: options.linkedProjectIds.map((linked) => ProjectId.make(linked)) }
       : {}),
@@ -144,6 +149,20 @@ describe("resolveThreadProjectIconStack", () => {
     });
     expect(stack.visibleProjects.map((entry) => entry.id)).toEqual(["web", "api"]);
     expect(stack.allProjects.map((entry) => entry.id)).toEqual(["web", "api", "design"]);
+  });
+
+  it("shows only the outermost of nested linked projects", () => {
+    const stack = resolveThreadProjectIconStack({
+      thread: thread("t1", "scratch", { linkedProjectIds: ["repo", "workspace", "sibling"] }),
+      projectByKey: buildProjectIndex([
+        project("scratch"),
+        project("repo", { workspaceRoot: "/p/workspace/repo" }),
+        project("workspace", { workspaceRoot: "/p/workspace" }),
+        project("sibling", { workspaceRoot: "/p/workspace-two" }),
+      ]),
+      isScratchProject,
+    });
+    expect(stack.allProjects.map((entry) => entry.id)).toEqual(["workspace", "sibling"]);
   });
 
   it("draws nothing when the own project is not loaded", () => {

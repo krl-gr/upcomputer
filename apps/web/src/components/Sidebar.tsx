@@ -257,7 +257,7 @@ type SidebarProjectIndex = ReadonlyMap<string, Project>;
 type IsScratchProject = (project: Project) => boolean;
 
 /**
- * Leading project marker for a chat row: an overlapping stack of the
+ * Leading project marker for a chat row: a row of the
  * projects the thread shows under (own project unless it is the scratch
  * "No project", then linked ones), or a muted chat icon for an unlinked
  * scratch chat.
@@ -298,22 +298,21 @@ const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons(props:
         render={
           <span
             aria-label={projectNames}
-            className="flex shrink-0 items-center -space-x-1.5"
+            className="flex shrink-0 items-center gap-0.5"
             data-testid={`thread-project-icons-${thread.id}`}
           />
         }
       >
-        {stack.visibleProjects.map((project, index) => (
+        {stack.visibleProjects.map((project) => (
           <span
             key={scopedProjectKey(scopeProjectRef(project.environmentId, project.id))}
-            className="relative inline-flex size-4 shrink-0 items-center justify-center"
-            style={{ zIndex: stack.visibleProjects.length - index }}
+            className="inline-flex size-4 shrink-0 items-center justify-center"
           >
             <ProjectFavicon
               environmentId={project.environmentId}
               cwd={project.workspaceRoot}
               repositoryIdentity={project.repositoryIdentity}
-              className="size-4 dark:text-white/[0.175]"
+              className="size-4"
             />
           </span>
         ))}
@@ -329,6 +328,8 @@ interface SidebarThreadRowProps {
   thread: SidebarThreadSummary;
   projectByKey: SidebarProjectIndex;
   isScratchProject: IsScratchProject;
+  /** Filtered to one project: every row would repeat its icon, so drop them. */
+  hideProjectIcons: boolean;
   orderedProjectThreadKeys: readonly string[];
   isActive: boolean;
   jumpLabel: string | null;
@@ -384,6 +385,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     thread,
     projectByKey,
     isScratchProject,
+    hideProjectIcons,
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
@@ -556,11 +558,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         onContextMenu={handleRowContextMenu}
       >
         <div className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", contentClassName)}>
-          <SidebarThreadProjectIcons
-            thread={thread}
-            projectByKey={projectByKey}
-            isScratchProject={isScratchProject}
-          />
+          {hideProjectIcons ? null : (
+            <SidebarThreadProjectIcons
+              thread={thread}
+              projectByKey={projectByKey}
+              isScratchProject={isScratchProject}
+            />
+          )}
           {threadStatus && <ThreadStatusLabel status={threadStatus} showDot={false} />}
           {renamingThreadKey === threadKey ? (
             <input
@@ -680,6 +684,7 @@ interface SidebarProjectThreadListProps {
   projectExpanded: boolean;
   projectByKey: SidebarProjectIndex;
   isScratchProject: IsScratchProject;
+  hideProjectIcons: boolean;
   hasOverflowingThreads: boolean;
   orderedProjectThreadKeys: readonly string[];
   renderedThreads: readonly SidebarThreadSummary[];
@@ -729,6 +734,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     projectExpanded,
     projectByKey,
     isScratchProject,
+    hideProjectIcons,
     hasOverflowingThreads,
     orderedProjectThreadKeys,
     renderedThreads,
@@ -781,6 +787,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
         thread={thread}
         projectByKey={projectByKey}
         isScratchProject={isScratchProject}
+        hideProjectIcons={hideProjectIcons}
         orderedProjectThreadKeys={rowOrderedThreadKeys}
         isActive={activeRouteThreadKey === threadKey}
         jumpLabel={threadJumpLabelByKey.get(threadKey) ?? null}
@@ -921,6 +928,7 @@ interface SidebarChatListProps {
   activeRouteThreadKey: string | null;
   projectByKey: SidebarProjectIndex;
   isScratchProject: IsScratchProject;
+  hideProjectIcons: boolean;
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
@@ -946,6 +954,7 @@ const SidebarChatList = memo(function SidebarChatList(props: SidebarChatListProp
     activeRouteThreadKey,
     projectByKey,
     isScratchProject,
+    hideProjectIcons,
     handleNewThread,
     archiveThread,
     deleteThread,
@@ -1495,6 +1504,7 @@ const SidebarChatList = memo(function SidebarChatList(props: SidebarChatListProp
       projectExpanded
       projectByKey={projectByKey}
       isScratchProject={isScratchProject}
+      hideProjectIcons={hideProjectIcons}
       hasOverflowingThreads={hasOverflowingThreads}
       orderedProjectThreadKeys={orderedThreadKeys}
       renderedThreads={renderedThreads}
@@ -1936,7 +1946,7 @@ const SidebarProjectFilterRow = memo(function SidebarProjectFilterRow(
           cwd={project.workspaceRoot}
           repositoryIdentity={project.repositoryIdentity}
           visualIdentityKey={project.visualIdentityKey}
-          className="size-4 dark:text-white/[0.175]"
+          className="size-4"
         />
         <span className={cn("min-w-0 flex-1 truncate", SIDEBAR_LABEL_TEXT_CLASS)}>
           {project.displayName}
@@ -2393,6 +2403,7 @@ const UnifiedSidebarView = memo(function UnifiedSidebarView(props: UnifiedSideba
                 activeRouteThreadKey={routeThreadKey}
                 projectByKey={projectByKey}
                 isScratchProject={isScratchProject}
+                hideProjectIcons={activeFilter !== null}
                 handleNewThread={handleNewThread}
                 archiveThread={archiveThread}
                 deleteThread={deleteThread}

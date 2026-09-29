@@ -1,5 +1,6 @@
 import { scopedProjectKey, scopeProjectRef } from "@upcomputer/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@upcomputer/contracts";
+import { isPathWithinRoot } from "@upcomputer/shared/path";
 
 /**
  * Pure helpers behind the unified sidebar: which projects a thread "shows
@@ -16,6 +17,7 @@ export interface SidebarFilterProjectInput {
   readonly environmentId: EnvironmentId;
   readonly id: ProjectId;
   readonly linkedProjectIds?: ReadonlyArray<ProjectId> | undefined;
+  readonly workspaceRoot?: string | undefined;
 }
 
 export interface SidebarFilterThreadInput {
@@ -119,7 +121,7 @@ export function filterThreadsByProjectRefs<T extends SidebarFilterThreadInput>(
 export interface ThreadProjectIconStack<P> {
   /** Up to `limit` projects to draw, own project first. */
   readonly visibleProjects: P[];
-  /** Every project the thread shows under (tooltip). */
+  /** Every project the thread shows under (tooltip), nested ones folded into their parent. */
   readonly allProjects: P[];
   /** Scratch ("No project") chat without links: draw the muted chat icon instead. */
   readonly showScratchIcon: boolean;
@@ -127,14 +129,38 @@ export interface ThreadProjectIconStack<P> {
 
 export const THREAD_PROJECT_ICON_STACK_LIMIT = 3;
 
+/**
+ * Drops projects whose folder sits inside another listed project's folder in
+ * the same environment, so a thread linked to a repo and its parent workspace
+ * shows only the parent.
+ */
+export function collapseNestedProjects<P extends SidebarFilterProjectInput>(
+  projects: ReadonlyArray<P>,
+): P[] {
+  return projects.filter((project) => {
+    const root = project.workspaceRoot;
+    if (root === undefined) return true;
+    return !projects.some(
+      (other) =>
+        other !== project &&
+        other.environmentId === project.environmentId &&
+        other.workspaceRoot !== undefined &&
+        other.workspaceRoot !== root &&
+        isPathWithinRoot(root, other.workspaceRoot),
+    );
+  });
+}
+
 export function resolveThreadProjectIconStack<P extends SidebarFilterProjectInput>(input: {
   thread: SidebarFilterThreadInput;
   projectByKey: ReadonlyMap<string, P>;
   isScratchProject: (project: P) => boolean;
   limit?: number;
 }): ThreadProjectIconStack<P> {
-  const allProjects = resolveThreadDisplayProjects(input.thread, input.projectByKey).filter(
-    (project) => !input.isScratchProject(project),
+  const allProjects = collapseNestedProjects(
+    resolveThreadDisplayProjects(input.thread, input.projectByKey).filter(
+      (project) => !input.isScratchProject(project),
+    ),
   );
   const ownProject = input.projectByKey.get(
     scopedProjectKey(scopeProjectRef(input.thread.environmentId, input.thread.projectId)),
