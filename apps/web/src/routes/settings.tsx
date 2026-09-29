@@ -1,15 +1,9 @@
 import { RotateCcwIcon } from "lucide-react";
-import {
-  Outlet,
-  createFileRoute,
-  redirect,
-  useCanGoBack,
-  useLocation,
-  useNavigate,
-} from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
+import { useLeaveSettings } from "../components/settings/useLeaveSettings";
 import { SETTINGS_NAV_ITEMS } from "../components/settings/SettingsSidebarNav";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -36,8 +30,6 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 
 function SettingsContentLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
   const composition = useWebProductComposition();
   const [restoreSignal, setRestoreSignal] = useState(0);
   const showRestoreDefaults = location.pathname === "/settings/general";
@@ -47,13 +39,7 @@ function SettingsContentLayout() {
       ?.page.label ??
     (location.pathname === "/settings/diagnostics" ? "Diagnostics" : "Settings");
   const handleRestored = () => setRestoreSignal((value) => value + 1);
-  const navigateBackWithinApp = useCallback(() => {
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+  const navigateBackWithinApp = useLeaveSettings();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

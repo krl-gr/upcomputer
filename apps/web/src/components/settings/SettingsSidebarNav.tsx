@@ -26,6 +26,7 @@ import {
 } from "../clerk/UpcomputerConnectSidebarSignIn";
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "../sidebar/sidebarTextStyles";
 import { WebFeatureSettingsNavigationItems } from "../product/WebFeatureSettingsNavigation";
+import { useLeaveSettings } from "./useLeaveSettings";
 
 export type SettingsSectionPath =
   | "/settings/general"
@@ -62,12 +63,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [isMobile, navigate, setOpenMobile],
   );
+  const leaveSettings = useLeaveSettings();
   const handleBackClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
-    void navigate({ to: "/", replace: true });
-  }, [isMobile, navigate, setOpenMobile]);
+    leaveSettings();
+  }, [isMobile, leaveSettings, setOpenMobile]);
 
   return (
     <>

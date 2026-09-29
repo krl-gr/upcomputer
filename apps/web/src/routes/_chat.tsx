@@ -34,6 +34,7 @@ import { useThreadDetail, useThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 import { useEnvironments } from "../state/environments";
+import { rememberChatLocation } from "../lib/lastChatLocation";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -239,7 +240,11 @@ function ChatRouteLayout() {
   const routeTarget = useChatWorkspaceRouteTarget();
   const { authGateState } = Route.useRouteContext();
   const pathname = useLocation({ select: (location) => location.pathname });
+  const href = useLocation({ select: (location) => location.href });
   const { environments } = useEnvironments();
+  useEffect(() => {
+    rememberChatLocation(href);
+  }, [href]);
   const showHostedStaticOnboarding =
     authGateState.status === "hosted-static" && environments.length === 0 && pathname === "/";
 
