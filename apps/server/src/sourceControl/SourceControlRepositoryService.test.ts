@@ -184,6 +184,91 @@ it.effect("clones a looked-up repository into the requested destination", () =>
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("never prompts for credentials and returns a credential-free remote URL", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-parent-",
+    });
+    const remoteUrl = "https://octocat:ghp_secret@github.com/octocat/upcomputer.git?token=abc";
+    const envs: Array<NodeJS.ProcessEnv | undefined> = [];
+    const cloneArgs: Array<ReadonlyArray<string>> = [];
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        remoteUrl,
+        destinationPath: `${parent}/upcomputer`,
+      });
+
+      assert.strictEqual(result.remoteUrl, "https://github.com/octocat/upcomputer.git");
+      assert.deepStrictEqual(cloneArgs, [["clone", remoteUrl, "upcomputer"]]);
+      assert.strictEqual(envs[0]?.GIT_TERMINAL_PROMPT, "0");
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                cloneArgs.push(input.args);
+                envs.push(input.env);
+                return processOutput();
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("explains a failed clone with git's last messages, without credentials", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-parent-",
+    });
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* Effect.flip(
+        service.cloneRepository({
+          remoteUrl: "https://octocat:ghp_secret@github.com/octocat/missing.git",
+          destinationPath: `${parent}/missing`,
+        }),
+      );
+
+      assert.strictEqual(error.operation, "cloneRepository");
+      assert.strictEqual(
+        error.detail,
+        "remote: Repository not found. fatal: repository 'https://github.com/octocat/missing.git/' not found",
+      );
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          git: {
+            execute: (input) =>
+              Effect.gen(function* () {
+                for (const line of [
+                  "Cloning into 'missing'...",
+                  "remote: Repository not found.",
+                  "fatal: repository 'https://octocat:ghp_secret@github.com/octocat/missing.git/' not found",
+                ]) {
+                  yield* input.progress?.onStderrLine?.(line) ?? Effect.void;
+                }
+                return yield* new GitCommandError({
+                  operation: input.operation,
+                  command: "git clone",
+                  cwd: input.cwd,
+                  detail: "exit code 128",
+                });
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("preserves destination probe failures instead of treating them as missing paths", () => {
   const fileSystemCause = PlatformError.systemError({
     _tag: "PermissionDenied",

@@ -52,6 +52,42 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
   );
 }
 
+// No tty means a credential prompt would hang until the timeout, so git must
+// fail instead. LC_ALL keeps the stderr kept for the error detail in English.
+const CLONE_ENV = {
+  GIT_TERMINAL_PROMPT: "0",
+  LC_ALL: "C",
+} satisfies NodeJS.ProcessEnv;
+
+/**
+ * The remote URL returned to clients. A pasted `https://user:token@host/…`
+ * must not travel back to them; git still gets the original.
+ */
+function redactRemoteUrl(remoteUrl: string): string {
+  try {
+    const url = new URL(remoteUrl);
+    // Clone URLs have no legitimate query; when one is present it is a token.
+    if (url.username.length === 0 && url.password.length === 0 && url.search.length === 0) {
+      return remoteUrl;
+    }
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    return url.toString();
+  } catch {
+    return remoteUrl;
+  }
+}
+
+// Userinfo may itself contain `@`; everything up to the last one before the
+// host boundary goes.
+const URL_WITH_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/]+@/gi;
+
+/** Drops `user:token@` from any URL embedded in free text. */
+function redactUrlCredentials(text: string): string {
+  return text.replace(URL_WITH_USERINFO, "$1");
+}
+
 function toRepositoryInfo(
   provider: SourceControlProviderKind,
   urls: SourceControlRepositoryCloneUrls,
@@ -203,17 +239,46 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    yield* git.execute({
-      operation: "SourceControlRepositoryService.cloneRepository",
-      cwd: preparedDestination.parentPath,
-      args: ["clone", remoteUrl, preparedDestination.directoryName],
-      timeoutMs: 120_000,
-      maxOutputBytes: 256 * 1024,
-    });
+    // The last stderr lines explain a failure ("Repository not found",
+    // "Permission denied"), so keep them for the error detail.
+    const stderrTail: Array<string> = [];
+    yield* git
+      .execute({
+        operation: "SourceControlRepositoryService.cloneRepository",
+        cwd: preparedDestination.parentPath,
+        args: ["clone", remoteUrl, preparedDestination.directoryName],
+        timeoutMs: 120_000,
+        maxOutputBytes: 256 * 1024,
+        env: CLONE_ENV,
+        progress: {
+          onStderrLine: (line) =>
+            Effect.sync(() => {
+              const trimmed = line.trim();
+              if (trimmed.length === 0 || trimmed.startsWith("Cloning into")) return;
+              // Git echoes the remote in some failures; the tail becomes user-facing text.
+              stderrTail.push(redactUrlCredentials(trimmed));
+              if (stderrTail.length > 4) stderrTail.shift();
+            }),
+        },
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider,
+              detail:
+                stderrTail.length > 0
+                  ? stderrTail.join(" ")
+                  : "The repository could not be cloned.",
+              cause,
+            }),
+        ),
+      );
 
     return {
       cwd: preparedDestination.destinationPath,
-      remoteUrl,
+      remoteUrl: redactRemoteUrl(remoteUrl),
       repository,
     };
   });
