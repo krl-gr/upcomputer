@@ -36,6 +36,22 @@ describe("ElectronShell", () => {
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
+  it.effect("opens macOS Privacy & Security settings panes only", () =>
+    Effect.gen(function* () {
+      openExternalMock.mockResolvedValue(undefined);
+
+      const electronShell = yield* ElectronShell.ElectronShell;
+      const privacy =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+      assert.equal(yield* electronShell.openExternal(privacy), true);
+      assert.equal(
+        yield* electronShell.openExternal("x-apple.systempreferences:com.apple.Users-Groups"),
+        false,
+      );
+      assert.deepEqual(openExternalMock.mock.calls, [[privacy]]);
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
   it.effect("does not open unsafe external URLs", () =>
     Effect.gen(function* () {
       const electronShell = yield* ElectronShell.ElectronShell;

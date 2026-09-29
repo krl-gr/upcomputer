@@ -7,6 +7,16 @@ import * as Electron from "electron";
 
 const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 
+// System Settings › Privacy & Security panes, e.g. where Computer Use asks the
+// user to allow Accessibility or Screen Recording. No other settings URL opens.
+const MAC_PRIVACY_SETTINGS_PANE = "com.apple.preference.security";
+
+function isMacPrivacySettingsUrl(url: URL): boolean {
+  return (
+    url.protocol === "x-apple.systempreferences:" && url.pathname === MAC_PRIVACY_SETTINGS_PANE
+  );
+}
+
 export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
   if (typeof rawUrl !== "string") {
     return Option.none();
@@ -14,7 +24,9 @@ export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
 
   try {
     const url = new URL(rawUrl);
-    return SAFE_EXTERNAL_PROTOCOLS.has(url.protocol) ? Option.some(url.href) : Option.none();
+    return SAFE_EXTERNAL_PROTOCOLS.has(url.protocol) || isMacPrivacySettingsUrl(url)
+      ? Option.some(url.href)
+      : Option.none();
   } catch {
     return Option.none();
   }
