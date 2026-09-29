@@ -222,9 +222,9 @@ function requireRepositoryLocator(
 
 function parseBitbucketRemoteUrl(remoteUrl: string): BitbucketRepositoryLocator | null {
   const trimmed = remoteUrl.trim();
-  if (trimmed.startsWith("git@")) {
-    const pathStart = trimmed.indexOf(":");
-    return pathStart < 0 ? null : parseBitbucketRepositorySlug(trimmed.slice(pathStart + 1));
+  const scpMatch = /^[a-zA-Z0-9._-]+@[^:/]+:(.+)$/.exec(trimmed);
+  if (scpMatch?.[1]) {
+    return parseBitbucketRepositorySlug(scpMatch[1]);
   }
 
   try {
