@@ -64,6 +64,8 @@ export interface ExperimentalWebSettingsPageContribution {
   readonly path: `/settings/${string}`;
   readonly order?: number;
   readonly icon?: ComponentType<{ readonly className?: string }>;
+  /** Keeps the page reachable by path but leaves it out of the settings menu. */
+  readonly hideFromNavigation?: boolean;
   readonly load: () => Promise<ExperimentalWebRouteModule>;
 }
 

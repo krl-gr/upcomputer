@@ -49,7 +49,9 @@ function SettingsNavigationItem({
 export function WebFeatureSettingsNavigationItems() {
   const composition = useWebProductComposition();
   const pages = listExperimentalWebSettings(composition);
-  return pages.map(({ feature, page }) => (
-    <SettingsNavigationItem key={`${feature.id}:${page.id}`} page={page} />
-  ));
+  return pages
+    .filter(({ page }) => !page.hideFromNavigation)
+    .map(({ feature, page }) => (
+      <SettingsNavigationItem key={`${feature.id}:${page.id}`} page={page} />
+    ));
 }

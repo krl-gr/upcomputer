@@ -41,13 +41,16 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   label: string;
   to: SettingsSectionPath;
   icon: ComponentType<{ className?: string }>;
+  /** Reachable by path (and titled) but left out of the menu. */
+  hideFromNavigation?: boolean;
 }> = [
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Source Control", to: "/settings/source-control", icon: GitBranchIcon },
   { label: "Connections", to: "/settings/connections", icon: Link2Icon },
-  { label: "Beta", to: "/settings/beta", icon: FlaskConicalIcon },
+  // No experiments are running; the page stays for when one is.
+  { label: "Beta", to: "/settings/beta", icon: FlaskConicalIcon, hideFromNavigation: true },
   { label: "Archive", to: "/settings/archived", icon: ArchiveIcon },
 ];
 
@@ -104,33 +107,36 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               );
             })}
             <WebFeatureSettingsNavigationItems />
-            {SETTINGS_NAV_ITEMS.slice(1).map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.to;
-              return (
-                <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton
-                    size="sm"
-                    isActive={isActive}
-                    className={
-                      isActive
-                        ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
-                        : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
-                    }
-                    onClick={() => handleSectionClick(item.to)}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <span
+            {SETTINGS_NAV_ITEMS.slice(1)
+              .filter((item) => !item.hideFromNavigation)
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.to;
+                return (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      size="sm"
+                      isActive={isActive}
                       className={
-                        SIDEBAR_LABEL_TEXT_CLASS + " truncate text-foreground/72 dark:text-white/82"
+                        isActive
+                          ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
+                          : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
                       }
+                      onClick={() => handleSectionClick(item.to)}
                     >
-                      {item.label}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
+                      <Icon className="size-4 shrink-0" />
+                      <span
+                        className={
+                          SIDEBAR_LABEL_TEXT_CLASS +
+                          " truncate text-foreground/72 dark:text-white/82"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
