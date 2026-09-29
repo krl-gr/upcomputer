@@ -69,6 +69,27 @@ export const RemotePairingTargetError = Schema.Union([
 ]);
 export type RemotePairingTargetError = typeof RemotePairingTargetError.Type;
 
+const isIpLiteralHost = (host: string): boolean => {
+  try {
+    const hostname = new URL(`http://${host}`).hostname.replace(/^\[|\]$/g, "");
+    if (hostname.includes(":")) return true;
+    const octets = hostname.split(".");
+    return (
+      octets.length === 4 &&
+      octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Scheme for a backend address typed without one: a bare IP literal (a LAN
+ * or Tailscale 100.x address) is served over plain HTTP, a host name over HTTPS.
+ */
+export const defaultSchemeForBareHost = (host: string): "http" | "https" =>
+  isIpLiteralHost(host) ? "http" : "https";
+
 const hasSupportedRemoteBackendProtocol = (url: URL): boolean =>
   SUPPORTED_REMOTE_BACKEND_PROTOCOLS.has(url.protocol);
 
@@ -84,7 +105,7 @@ const normalizeRemoteBaseUrl = (
   const withoutLeadingSlashes = trimmed.replace(/^\/+/, "");
   const normalizedInput = /^[a-zA-Z][a-zA-Z\d+-]*:\/\//.test(withoutLeadingSlashes)
     ? withoutLeadingSlashes
-    : `https://${withoutLeadingSlashes}`;
+    : `${defaultSchemeForBareHost(withoutLeadingSlashes)}://${withoutLeadingSlashes}`;
   let url: URL;
   try {
     url = new URL(normalizedInput);

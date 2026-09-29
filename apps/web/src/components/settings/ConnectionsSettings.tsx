@@ -89,6 +89,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "..
 import { AnimatedHeight } from "../AnimatedHeight";
 import { Textarea } from "../ui/textarea";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
+import { defaultSchemeForBareHost } from "@upcomputer/shared/remote";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
   createServerPairingCredential,
@@ -319,7 +320,7 @@ function parsePairingUrlFields(
     const urlLikeInput =
       /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed) || trimmed.startsWith("//")
         ? trimmed
-        : `https://${trimmed}`;
+        : `${defaultSchemeForBareHost(trimmed)}://${trimmed}`;
     const url = new URL(urlLikeInput, window.location.origin);
     const hostedPairingRequest = readHostedPairingRequest(url);
     if (hostedPairingRequest) {

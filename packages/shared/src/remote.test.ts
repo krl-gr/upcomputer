@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  defaultSchemeForBareHost,
   RemoteBackendUrlInvalidError,
   RemoteBackendUrlMissingError,
   RemotePairingTokenMissingError,
@@ -57,6 +58,25 @@ describe("remote", () => {
       httpBaseUrl: "https://remote.example.com/",
       wsBaseUrl: "wss://remote.example.com/",
     });
+  });
+
+  it("defaults a bare IP address to http and a bare host name to https", () => {
+    expect(
+      resolveRemotePairingTarget({ host: "192.168.1.42:3773", pairingCode: "pairing-token" }),
+    ).toEqual({
+      credential: "pairing-token",
+      httpBaseUrl: "http://192.168.1.42:3773/",
+      wsBaseUrl: "ws://192.168.1.42:3773/",
+    });
+    expect(
+      resolveRemotePairingTarget({ host: "[fd7a:115c::1]:3773", pairingCode: "pairing-token" }),
+    ).toEqual({
+      credential: "pairing-token",
+      httpBaseUrl: "http://[fd7a:115c::1]:3773/",
+      wsBaseUrl: "ws://[fd7a:115c::1]:3773/",
+    });
+    expect(defaultSchemeForBareHost("desktop.tailnet.ts.net")).toBe("https");
+    expect(defaultSchemeForBareHost("300.1.1.1")).toBe("https");
   });
 
   it("treats a protocol-relative host as https", () => {
