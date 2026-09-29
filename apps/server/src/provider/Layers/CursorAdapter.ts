@@ -77,6 +77,7 @@ import {
   extractPlanMarkdown,
   extractTodosAsPlan,
 } from "../acp/CursorAcpExtension.ts";
+import { formatCustomInstructionsBlock } from "../CustomInstructions.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
@@ -142,6 +143,12 @@ interface CursorSessionContext {
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   cursorSkillNames: ReadonlySet<string> | undefined;
+  /**
+   * Custom instructions block not yet sent. ACP has no system-prompt channel,
+   * so it leads the first prompt after each session start or resume and then
+   * stays in the agent's conversation history.
+   */
+  pendingCustomInstructions: string | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
@@ -890,6 +897,7 @@ export function makeCursorAdapter(
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             cursorSkillNames: undefined,
+            pendingCustomInstructions: formatCustomInstructionsBlock(input.customInstructions),
             promptsInFlight: 0,
             assistantReply: new CursorTransportFailure(),
             stopped: false,
@@ -1147,6 +1155,10 @@ export function makeCursorAdapter(
               operation: "sendTurn",
               issue: "Turn requires non-empty text or attachments.",
             });
+          }
+          if (ctx.pendingCustomInstructions !== undefined) {
+            promptParts.unshift({ type: "text", text: ctx.pendingCustomInstructions });
+            ctx.pendingCustomInstructions = undefined;
           }
 
           const result = yield* ctx.acp

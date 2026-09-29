@@ -1879,6 +1879,48 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("leads only the first prompt of a session with custom instructions", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-custom-instructions");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        customInstructions: "Answer in Russian.",
+      });
+      yield* adapter.sendTurn({ threadId, input: "first", attachments: [] });
+      yield* adapter.sendTurn({ threadId, input: "second", attachments: [] });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      assert.deepStrictEqual(
+        requests
+          .filter((entry) => entry.method === "session/prompt")
+          .map((request) => (request.params as Record<string, unknown> | undefined)?.prompt),
+        [
+          [
+            {
+              type: "text",
+              text: "# User instructions (from Up.computer settings)\n\nAnswer in Russian.",
+            },
+            { type: "text", text: "first" },
+          ],
+          [{ type: "text", text: "second" }],
+        ],
+      );
+    }).pipe(TestClock.withLive),
+  );
+
   it.effect("responds to ACP approvals using provider-supplied option ids", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-custom-approval-option-id");

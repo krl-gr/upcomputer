@@ -68,6 +68,7 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { InteractionModeRegistryService } from "../../product/InteractionModeRegistryService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const MAX_INTERACTION_MODE_OUTPUT_SOURCE_CHARS = 120_000;
 
@@ -281,6 +282,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const interactionModeRegistryService = yield* InteractionModeRegistryService;
+  const serverSettings = yield* ServerSettingsService;
   const fileSystem = yield* FileSystem.FileSystem;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const interactionModeByTurn = yield* Ref.make(new Map<string, ResolvedInteractionMode>());
@@ -447,6 +449,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );
+  // Read on every start and recovery, so a session picks up the current text
+  // whenever it (re)starts. A settings read failure must not block the chat.
+  const readCustomInstructions = serverSettings.getSettings.pipe(
+    Effect.map((settings) =>
+      settings.customInstructions.length > 0
+        ? { customInstructions: settings.customInstructions }
+        : {},
+    ),
+    Effect.catch((cause) =>
+      Effect.logWarning("provider.session.custom-instructions-unavailable", { cause }).pipe(
+        Effect.as({}),
+      ),
+    ),
+  );
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
@@ -930,9 +946,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         input.binding.runtimePayload,
       );
 
+      const customInstructions = yield* readCustomInstructions;
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
         .startSession({
+          ...customInstructions,
           threadId: input.binding.threadId,
           provider: input.binding.provider,
           providerInstanceId: bindingInstanceId,
@@ -1161,10 +1179,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           }
         }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        const customInstructions = yield* readCustomInstructions;
         yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
           .startSession({
             ...input,
+            ...customInstructions,
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),

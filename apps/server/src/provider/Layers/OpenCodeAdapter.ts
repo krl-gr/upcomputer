@@ -46,6 +46,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
+import { formatCustomInstructionsBlock } from "../CustomInstructions.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
@@ -397,6 +398,11 @@ interface OpenCodeSessionContext {
   // OpenCode permits edits to completed parts. Keep text for snapshot comparison
   // until native removal or session teardown, but do not retain other part payloads.
   readonly textPartsByMessageId: Map<string, Map<string, OpenCodeTextPartState>>;
+  /**
+   * Custom instructions block, sent as each prompt's `system`. OpenCode
+   * appends a user message's `system` to the LLM system prompt of that turn.
+   */
+  readonly systemPrompt: string | undefined;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
   activeVariant: string | undefined;
@@ -2871,6 +2877,7 @@ export function makeOpenCodeAdapter(
           pendingQuestions: new Map(),
           textPartsByMessageId: new Map(),
           messageRoleById: new Map(),
+          systemPrompt: formatCustomInstructionsBlock(input.customInstructions),
           activeTurnId: undefined,
           activeAgent: undefined,
           activeVariant: undefined,
@@ -3097,6 +3104,7 @@ export function makeOpenCodeAdapter(
                 model: parsedModel,
                 ...(context.activeAgent ? { agent: context.activeAgent } : {}),
                 ...(context.activeVariant ? { variant: context.activeVariant } : {}),
+                ...(context.systemPrompt ? { system: context.systemPrompt } : {}),
                 parts: [
                   ...(promptText ? [{ type: "text" as const, text: promptText }] : []),
                   ...fileParts,

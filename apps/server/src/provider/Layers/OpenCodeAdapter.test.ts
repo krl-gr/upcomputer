@@ -5614,6 +5614,51 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("sends custom instructions as the OpenCode system prompt of every turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-custom-instructions-system");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        customInstructions: "Answer in Russian.",
+      });
+
+      for (const input of ["Implement the change", "And test it"]) {
+        yield* adapter.sendTurn({
+          threadId,
+          input,
+          interactionMode: "default",
+          resolvedInteractionMode: BUILT_IN_INTERACTION_MODE_REGISTRY.resolveOrThrow(
+            "default",
+            "opencode",
+          ),
+          modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+        });
+
+        const { messageID: _messageID, ...prompt } = runtimeMock.state.promptCalls.at(-1) as {
+          messageID: string;
+          [key: string]: unknown;
+        };
+        NodeAssert.deepEqual(prompt, {
+          sessionID: "http://127.0.0.1:9999/session",
+          model: {
+            providerID: "openai",
+            modelID: "gpt-5",
+          },
+          system: "# User instructions (from Up.computer settings)\n\nAnswer in Russian.",
+          parts: [
+            {
+              type: "text",
+              text: `${DEFAULT_MODE_PROMPT_PREFIX}\n\n${input}`,
+            },
+          ],
+        });
+      }
+    }),
+  );
+
   it.effect("uses the bound custom instance id for fallback sendTurn model selection", () => {
     const instanceId = ProviderInstanceId.make("opencode_zen");
     const adapterLayer = Layer.effect(

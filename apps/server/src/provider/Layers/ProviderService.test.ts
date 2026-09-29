@@ -53,6 +53,7 @@ import {
 import type {
   ProviderAdapterSendTurnInput,
   ProviderAdapterShape,
+  ProviderAdapterStartSessionInput,
 } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
@@ -1519,6 +1520,80 @@ it.effect(
 
       NodeFS.rmSync(tempDir, { recursive: true, force: true });
     }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("ProviderServiceLive passes custom instructions to session starts and recovery", () =>
+  Effect.gen(function* () {
+    const tempDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-provider-service-custom-instructions-"),
+    );
+    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      Layer.provide(makeSqlitePersistenceLive(NodePath.join(tempDir, "orchestration.sqlite"))),
+    );
+    const makeLayer = (
+      codex: ReturnType<typeof makeFakeCodexAdapter>,
+      serverSettingsLayer: typeof defaultServerSettingsLayer,
+    ) =>
+      makeProviderServiceTestLive().pipe(
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry.ProviderAdapterRegistry,
+            makeAdapterRegistryMock({ [CODEX_DRIVER]: codex.adapter }),
+          ),
+        ),
+        Layer.provide(ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer))),
+        Layer.provide(serverSettingsLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+    const startInputAt = (codex: ReturnType<typeof makeFakeCodexAdapter>, index: number) =>
+      codex.startSession.mock.calls[index]?.[0] as ProviderAdapterStartSessionInput | undefined;
+    const threadId = asThreadId("thread-custom-instructions");
+
+    const firstCodex = makeFakeCodexAdapter();
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        cwd: fixtureCwd("custom-instructions"),
+        runtimeMode: "full-access",
+        threadId,
+      });
+      firstCodex.updateSession(threadId, (existing) => ({
+        ...existing,
+        resumeCursor: { resume: "resume-custom-instructions" },
+      }));
+    }).pipe(Effect.provide(makeLayer(firstCodex, defaultServerSettingsLayer)));
+    // Empty settings leave the adapter input exactly as before.
+    assert.equal(Object.hasOwn(startInputAt(firstCodex, 0) ?? {}, "customInstructions"), false);
+
+    const secondCodex = makeFakeCodexAdapter();
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      yield* provider.rollbackConversation({ threadId, numTurns: 1 });
+    }).pipe(
+      Effect.provide(
+        makeLayer(
+          secondCodex,
+          ServerSettings.ServerSettingsService.layerTest({
+            customInstructions: "Answer in Russian.",
+          }),
+        ),
+      ),
+    );
+    assert.equal(startInputAt(secondCodex, 0)?.customInstructions, "Answer in Russian.");
+    assert.deepEqual(startInputAt(secondCodex, 0)?.resumeCursor, {
+      resume: "resume-custom-instructions",
+    });
+
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {

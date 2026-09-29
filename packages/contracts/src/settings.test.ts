@@ -5,6 +5,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
+  CUSTOM_INSTRUCTIONS_MAX_CHARS,
   DEFAULT_SERVER_SETTINGS,
   defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
@@ -305,5 +306,30 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("ServerSettings custom instructions", () => {
+  it("defaults to empty instructions", () => {
+    expect(DEFAULT_SERVER_SETTINGS.customInstructions).toBe("");
+    expect(decodeServerSettings({}).customInstructions).toBe("");
+  });
+
+  it("trims instructions in settings and patches", () => {
+    expect(
+      decodeServerSettings({ customInstructions: "  Answer in Russian.\n" }).customInstructions,
+    ).toBe("Answer in Russian.");
+    expect(
+      decodeServerSettingsPatch({ customInstructions: "\n  Never commit without asking.  " })
+        .customInstructions,
+    ).toBe("Never commit without asking.");
+  });
+
+  it("limits patched instructions to the maximum length", () => {
+    const longest = "a".repeat(CUSTOM_INSTRUCTIONS_MAX_CHARS);
+    expect(decodeServerSettingsPatch({ customInstructions: longest }).customInstructions).toBe(
+      longest,
+    );
+    expect(() => decodeServerSettingsPatch({ customInstructions: `${longest}a` })).toThrow();
   });
 });

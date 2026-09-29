@@ -35,6 +35,16 @@ export interface ProviderAdapterCapabilities {
   readonly supportsConversationRollback?: boolean;
 }
 
+export interface ProviderAdapterStartSessionInput extends ProviderSessionStartInput {
+  /**
+   * The user's custom instructions from Up.computer settings, trimmed.
+   * ProviderService reads them on every session start and recovery; public
+   * request payloads never carry them. Adapters add them to the model prompt
+   * only (see `CustomInstructions.ts`), never to user-visible messages.
+   */
+  readonly customInstructions?: string;
+}
+
 export interface ProviderAdapterSendTurnInput extends ProviderSendTurnInput {
   /**
    * Server-resolved interaction-mode metadata. Public request payloads only
@@ -65,7 +75,7 @@ export interface ProviderAdapterShape<TError> {
    * Start a provider-backed session.
    */
   readonly startSession: (
-    input: ProviderSessionStartInput,
+    input: ProviderAdapterStartSessionInput,
   ) => Effect.Effect<ProviderSession, TError>;
 
   /**

@@ -28,3 +28,17 @@ Provider runtime events flow through queue-based workers:
 3. **CheckpointReactor** — captures git checkpoints on turn start/complete, publishes runtime receipts
 
 All three use `DrainableWorker` internally and expose `drain()` for deterministic test synchronization.
+
+## Custom instructions
+
+`ServerSettings.customInstructions` holds text the user writes once and every agent follows (default empty, trimmed, patches limited to 20,000 characters). `ProviderService` reads it on every session start and recovery and passes it to the adapter as `ProviderAdapterStartSessionInput.customInstructions`; request payloads cannot set it. Adapters format it with `provider/CustomInstructions.ts` and add it to the model prompt only:
+
+| Harness      | Channel                                                                       |
+| ------------ | ----------------------------------------------------------------------------- |
+| Claude       | `systemPrompt: { preset: "claude_code", append }`                             |
+| Codex        | Appended to every turn's collaboration-mode developer instructions            |
+| OpenCode     | `system` on every `session.promptAsync`                                       |
+| Cursor, Grok | ACP has no system prompt: leading text block of the first prompt of a session |
+| Pi (pro)     | Appended system prompt of the Pi resource loader                              |
+
+A running session keeps the text it started with. A change applies to new sessions and to a session's next start or resume: after a restart, after the idle reaper (30 minutes) stops it, or when the provider session is replaced. With an empty value, adapter inputs and outputs are unchanged.

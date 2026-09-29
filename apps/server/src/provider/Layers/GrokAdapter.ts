@@ -78,6 +78,7 @@ import {
   XAiAskUserQuestionRequest,
   XAiExitPlanModeRequest,
 } from "../acp/XAiAcpExtension.ts";
+import { formatCustomInstructionsBlock } from "../CustomInstructions.ts";
 import { type GrokAdapterShape } from "../Services/GrokAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
@@ -149,6 +150,12 @@ interface GrokSessionContext {
   activeTurnId: TurnId | undefined;
   /** Turns already interrupted; late prompt RPCs must not resurrect them. */
   interruptedTurnIds: Set<TurnId>;
+  /**
+   * Custom instructions block not yet sent. ACP has no system-prompt channel,
+   * so it leads the first prompt after each session start or resume and then
+   * stays in the agent's conversation history.
+   */
+  pendingCustomInstructions: string | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * cancels the in-flight prompt and continues the same turn. Only the last
@@ -1285,6 +1292,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             planModeActive: false,
             activeTurnId: undefined,
             interruptedTurnIds: new Set(),
+            pendingCustomInstructions: formatCustomInstructionsBlock(input.customInstructions),
             promptsInFlight: 0,
             promptEpoch: 0,
             discardBeforeEpoch: 0,
@@ -1561,6 +1569,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   operation: "sendTurn",
                   issue: "Turn requires non-empty text or attachments.",
                 });
+              }
+              if (ctx.pendingCustomInstructions !== undefined) {
+                promptParts.unshift({ type: "text", text: ctx.pendingCustomInstructions });
+                ctx.pendingCustomInstructions = undefined;
               }
 
               const currentModelId = yield* applyGrokAcpModelSelection({

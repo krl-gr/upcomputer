@@ -871,6 +871,39 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("persists trimmed custom instructions to disk", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const next = yield* serverSettings.updateSettings({
+        customInstructions: "  Answer in Russian.\nNever commit without asking.\n",
+      });
+
+      assert.equal(next.customInstructions, "Answer in Russian.\nNever commit without asking.");
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.deepEqual(JSON.parse(raw).customInstructions, next.customInstructions);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("reads custom instructions from an existing settings file", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"customInstructions":"  Answer in Russian.  "}',
+      );
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.equal(settings.customInstructions, "Answer in Russian.");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("keeps the inline value on disk when secret migration fails", () => {
     const cause = new ServerSecretStore.SecretStorePersistError({
       resource: "provider environment secret",
