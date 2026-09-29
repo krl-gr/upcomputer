@@ -2,6 +2,7 @@ import {
   cellKey,
   evidenceKind,
   flattenTree,
+  readableQuote,
   readSelectedTools,
   searched,
   surfaceTag,
@@ -132,7 +133,7 @@ function openCell(key: string) {
       item.append(
         element("span", evidenceKind(q.url), "source-kind"),
         link(q.title, q.url),
-        element("blockquote", q.quote),
+        element("blockquote", readableQuote(q.quote)),
       );
       list.append(item);
     }

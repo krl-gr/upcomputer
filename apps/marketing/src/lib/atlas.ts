@@ -73,6 +73,15 @@ export function statusHint(cell: Pick<AtlasCell, "status" | "checked_sources">):
   return `Not in the ${searched(cell)}.`;
 }
 
+/** Release notes are markdown: show a quote as plain reading text (the stored quote stays verbatim). */
+export function readableQuote(quote: string): string {
+  return quote
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__/g, "")
+    .replace(/^\s*[-*]\s+/, "")
+    .trim();
+}
+
 /** Kind of official page behind a quote, from its URL. */
 export function evidenceKind(url: string): "Docs" | "Release notes" | "Source code" {
   if (/raw\.githubusercontent\.com/.test(url)) return "Source code";
