@@ -1,61 +1,44 @@
 # Source Control Integrations
 
-T3 Code connects directly to your Git hosting provider so you can create pull requests, review code, and manage repositories without leaving your editor. Work stays in flow—no more jumping between browser tabs and terminal windows.
+Up.computer uses your Git hosting provider's CLI or API to clone repositories and publish local
+projects. Pull request features are not included.
 
 ## Supported Providers
 
-T3 Code works with the platforms your team already uses:
-
-- **GitHub** – Pull requests, repository creation, and clone integration
-- **GitLab** – Merge requests, repository publishing, and hosted clones
-- **Bitbucket** – Pull request workflows (via API token authentication)
-- **Azure DevOps** – Pull request support for Microsoft-hosted repositories
+- **GitHub** – through the GitHub CLI (`gh`)
+- **GitLab** – through the GitLab CLI (`glab`)
+- **Bitbucket** – through an API token
+- **Azure DevOps** – through the Azure CLI (`az`) with the DevOps extension
 
 ## What You Can Do
 
-### Start Projects from Anywhere
-
-**Clone repositories directly**
+### Clone repositories
 
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
-- Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
+- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps
+  repository**, or paste any **Git URL**
+- Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or
+  `project/repository`) or a full Git URL, and pick a destination
 
-**Publish local projects to the cloud**
+Git never waits for a password prompt during a clone. If a clone fails, the error shows Git's own
+message, such as "Repository not found", with any credentials in the URL removed.
 
-- Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push—all in one flow
-- Perfect for turning a weekend prototype into a real project
+### Publish local projects
 
-### Manage Code Reviews Without Context Switching
+Have a local Git repository without a remote? Use **Publish repository** in the Git actions menu to create a hosted
+repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as the `origin` remote, and push.
 
-**Create pull requests while you work**
+### Check your setup
 
-- Push a branch and create a pull request from the Git panel
-- T3 Code can suggest titles and descriptions based on your commits
-- Supports GitHub Pull Requests, GitLab Merge Requests, and Bitbucket Pull Requests
-
-**Stay on top of open reviews**
-
-- See if your current branch already has an open PR/MR
-- Open the review directly in your browser with one click
-- Check out a teammate's branch to review code locally
-
-### Know Your Setup at a Glance
-
-The **Source Control settings** page shows you exactly what's connected:
-
-- ✅ Which providers are authenticated and ready
-- ⚠️ What's missing and how to fix it
-- 👤 Which account is signed in (when available)
-
-Run a quick **Rescan** after setting up a new machine or changing credentials.
+**Settings → Source Control** shows which Git version and provider tools the server has, whether
+each one is signed in, and which account is used. Run **Rescan** after installing a tool or
+changing credentials. The same page sets how often Up.computer fetches remotes in the background.
 
 ## Getting Started
 
-### For GitHub (Recommended for most users)
+### GitHub
 
-1. Install the GitHub CLI (version 2.81.0 or newer) on the machine running T3 Code:
+1. Install the GitHub CLI (version 2.81.0 or newer) on the machine running Up.computer:
    ```bash
    brew install gh
    ```
@@ -63,37 +46,45 @@ Run a quick **Rescan** after setting up a new machine or changing credentials.
    ```bash
    gh auth login
    ```
-3. Open **Settings → Source Control** in T3 Code and verify GitHub shows as authenticated
+3. Open **Settings → Source Control** and check that GitHub shows as authenticated.
 
-That's it—you can now clone, publish, and create pull requests.
-
-### For GitLab
+### GitLab
 
 1. Install the GitLab CLI:
    ```bash
    brew install glab
    ```
-2. Authenticate:
+2. Sign in:
    ```bash
    glab auth login
    ```
-3. Check **Settings → Source Control** to confirm the connection
+3. Check **Settings → Source Control** to confirm the connection.
 
-### For Bitbucket
+### Bitbucket
 
-Bitbucket uses API tokens instead of a CLI tool:
+Bitbucket uses a token instead of a CLI. Set one of these in the environment of the server running
+Up.computer.
 
-1. Create an API token in your Atlassian account with read/write access to pull requests and repositories
-2. Add these environment variables to the environment running T3 Code:
-   ```bash
-   export T3CODE_BITBUCKET_EMAIL="you@example.com"
-   export T3CODE_BITBUCKET_API_TOKEN="your-token"
-   ```
-3. Restart T3 Code and verify the connection in **Source Control settings**
+Recommended, a Bitbucket access token:
 
-### For Azure DevOps
+```bash
+export UPCOMPUTER_BITBUCKET_ACCESS_TOKEN="your-access-token"
+```
 
-1. Install Azure CLI:
+Or an Atlassian account email plus API token, with read/write access to repositories and read
+access to your user account (`read:user:bitbucket`, used to verify the connection):
+
+```bash
+export UPCOMPUTER_BITBUCKET_EMAIL="you@example.com"
+export UPCOMPUTER_BITBUCKET_API_TOKEN="your-token"
+```
+
+If both are set, the access token wins. Restart Up.computer and verify the connection in
+**Settings → Source Control**.
+
+### Azure DevOps
+
+1. Install the Azure CLI:
    ```bash
    brew install azure-cli
    ```
@@ -106,22 +97,30 @@ Bitbucket uses API tokens instead of a CLI tool:
    az login
    ```
 
+The Azure CLI is slow to start, so detecting it can take up to about 20 seconds.
+
 ---
 
 ## Requirements & Troubleshooting
 
-**Git is required** – T3 Code uses Git for all local operations. Ensure `git` is installed on your server.
+**Git is required.** Up.computer uses Git for all local operations.
 
-**Server-side setup** – Authentication happens on the machine running T3 Code (the server), not your local browser. If you're using a hosted or team instance, your administrator may have already configured providers.
+**Setup happens on the server.** Sign-in and credentials live on the machine running Up.computer,
+not on the device you are using to open it.
 
 **Common issues:**
 
-- **Provider shows "Not authenticated"** – Run the login command for that provider (e.g., `gh auth login`) in a terminal on the server, then rescan in Settings
-- **GitHub says it could not verify sign-in status** – T3 Code needs GitHub CLI 2.81.0 or newer to check sign-in status. Update `gh` (e.g., `brew upgrade gh`), then rescan
-- **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
-- **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
+- **Provider shows "Not authenticated"** – run the provider's login command (for example
+  `gh auth login`) in a terminal on the server, then rescan.
+- **GitHub says it could not verify sign-in status** – update `gh` to 2.81.0 or newer (for example
+  `brew upgrade gh`), then rescan.
+- **Bitbucket not connecting** – check that the variables are set for the process running
+  Up.computer and that it was restarted.
+- **Provider not detected for a remote** – SSH remotes with any user (`git@`, `gitlab@`,
+  `deploy@`) and Azure DevOps SSH remotes (`ssh.dev.azure.com`) are recognised. For self-hosted
+  instances, check that the remote's host matches the provider you signed in to.
 
-**Need more help?** Check your provider's CLI documentation:
+**Provider CLI documentation:**
 
 - [GitHub CLI](https://cli.github.com/)
 - [GitLab CLI](https://gitlab.com/gitlab-org/cli)

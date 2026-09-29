@@ -195,7 +195,7 @@ function itemSummary({
         <span>
           {item.label} is not authenticated on this server. Sign in or configure credentials using
           the <code className="rounded bg-muted px-1 py-px text-[11px]">{item.executable}</code>{" "}
-          tool on the server host to enable pull request features.
+          tool on the server host to clone and publish repositories.
         </span>
       );
     }
