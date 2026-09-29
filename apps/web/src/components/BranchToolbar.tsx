@@ -1,5 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ThreadId } from "@upcomputer/contracts";
+import { PlusIcon } from "lucide-react";
 import { memo, useCallback, useMemo, type ReactNode } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
@@ -36,7 +37,7 @@ import {
 import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
-import { BranchToolbarProjectPicker, LinkedProjectChip } from "./BranchToolbarProjectPicker";
+import { BranchToolbarProjectPicker, LinkedProjectIcon } from "./BranchToolbarProjectPicker";
 import { CONTEXT_BAR_SEPARATOR_CLASS, CONTEXT_BAR_TEXT_CLASS } from "./BranchToolbar.styles";
 import { Button } from "./ui/button";
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -366,12 +367,13 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   if (!hasActiveThread || !activeProject) return null;
 
-  // Projects linked to the chat (or waiting to be linked on the first send).
-  const linkedProjectChips =
+  // Projects linked to the chat (or waiting to be linked on the first send)
+  // as icons, followed by a `+` that links another one.
+  const linkedProjectIcons =
     chipProjects.length > 0 ? (
       <div className="flex min-w-0 shrink items-center gap-1 overflow-hidden ps-1">
         {chipProjects.map((project) => (
-          <LinkedProjectChip
+          <LinkedProjectIcon
             key={project.id}
             project={project}
             pending={!isServerThread}
@@ -387,6 +389,14 @@ export const BranchToolbar = memo(function BranchToolbar({
             }}
           />
         ))}
+        <BranchToolbarProjectPicker
+          projects={menuProjects}
+          onSelect={chooseProject}
+          trigger="icon"
+          ariaLabel="Add project"
+        >
+          <PlusIcon className="size-4" />
+        </BranchToolbarProjectPicker>
       </div>
     ) : null;
   // The project's favicon opens the menu to link another project.
@@ -415,19 +425,16 @@ export const BranchToolbar = memo(function BranchToolbar({
         {isScratch ? (
           // A chat without a project runs in its own plain folder: no
           // workspace mode, branch or environment controls.
-          <>
+          (linkedProjectIcons ?? (
             <BranchToolbarProjectPicker
               projects={menuProjects}
               onSelect={chooseProject}
               trigger="text"
-              ariaLabel={
-                isServerThread ? "Link a project to this chat" : "Select a project for this chat"
-              }
+              ariaLabel="Add project"
             >
-              {chipProjects.length === 0 ? "Select project" : "Add project"}
+              Add project
             </BranchToolbarProjectPicker>
-            {linkedProjectChips}
-          </>
+          ))
         ) : !isGitRepo ? (
           <>
             <BranchToolbarProjectPicker
@@ -444,7 +451,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               />
               <span className="min-w-0 truncate">{activeProject.title}</span>
             </BranchToolbarProjectPicker>
-            {linkedProjectChips}
+            {linkedProjectIcons}
           </>
         ) : isMobile ? (
           <>
@@ -479,7 +486,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onStartFromOriginChange={onStartFromOriginChange}
               {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
             />
-            {linkedProjectChips}
+            {linkedProjectIcons}
           </>
         ) : (
           <>
@@ -520,7 +527,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onStartFromOriginChange={onStartFromOriginChange}
               {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
             />
-            {linkedProjectChips}
+            {linkedProjectIcons}
           </>
         )}
       </div>

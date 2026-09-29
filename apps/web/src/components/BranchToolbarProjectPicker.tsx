@@ -13,6 +13,7 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { sortScopedProjectsForSidebar } from "./Sidebar.logic";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   Combobox,
   ComboboxEmpty,
@@ -40,7 +41,7 @@ interface BranchToolbarProjectPickerProps<T extends PickerProject> {
 
 /**
  * Searchable project menu under the composer, opened from the project's
- * favicon to link another project, or from "Select project" on a chat
+ * favicon to link another project, or from "Add project" / `+` on a chat
  * without a project.
  */
 function BranchToolbarProjectPickerInner<T extends PickerProject>({
@@ -163,43 +164,57 @@ export const BranchToolbarProjectPicker = memo(
 ) as typeof BranchToolbarProjectPickerInner;
 
 /**
- * A project linked to the chat (or waiting to be linked on first send):
- * favicon + name, with an `×` to remove it on hover.
+ * A project linked to the chat (or waiting to be linked on first send): its
+ * icon, turning into an `×` that unlinks it on hover or focus. The name lives
+ * in the tooltip. Touch screens keep the icon and show a small `×` badge.
  */
-export const LinkedProjectChip = memo(function LinkedProjectChip(props: {
+export const LinkedProjectIcon = memo(function LinkedProjectIcon(props: {
   readonly project: PickerProject;
   readonly pending?: boolean;
   readonly onRemove: () => void;
 }) {
   const { project, pending = false, onRemove } = props;
   return (
-    <span
-      className={cn(
-        "group/chip inline-flex h-6 min-w-0 max-w-40 shrink-0 items-center gap-1 rounded-md border px-1.5 text-muted-foreground text-xs",
-        pending ? "border-dashed border-border/80" : "border-border/60",
-      )}
-      title={
-        pending
-          ? `${project.title} will be linked when you send the first message`
-          : project.workspaceRoot
-      }
-      data-linked-project-chip=""
-    >
-      <ProjectFavicon
-        environmentId={project.environmentId}
-        cwd={project.workspaceRoot}
-        repositoryIdentity={project.repositoryIdentity}
-        className="size-3.5"
-      />
-      <span className="min-w-0 truncate">{project.title}</span>
-      <button
-        type="button"
-        aria-label={`Unlink ${project.title}`}
-        className="-me-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/chip:opacity-100 pointer-coarse:opacity-100"
-        onClick={onRemove}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Unlink ${project.title}`}
+            className={cn(
+              "group/linked relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
+              pending && "outline-1 -outline-offset-1 outline-dashed outline-border/80",
+            )}
+            onClick={onRemove}
+            data-linked-project-icon=""
+          />
+        }
       >
-        <XIcon className="size-3" />
-      </button>
-    </span>
+        <span
+          className={cn(
+            "inline-flex transition-opacity group-hover/linked:opacity-0 group-focus-visible/linked:opacity-0 pointer-coarse:opacity-100!",
+            pending && "opacity-60",
+          )}
+        >
+          <ProjectFavicon
+            environmentId={project.environmentId}
+            cwd={project.workspaceRoot}
+            repositoryIdentity={project.repositoryIdentity}
+            className="size-4"
+          />
+        </span>
+        <span
+          aria-hidden
+          className="absolute inset-0 inline-flex items-center justify-center opacity-0 transition-opacity group-hover/linked:opacity-100 group-focus-visible/linked:opacity-100 pointer-coarse:inset-auto pointer-coarse:-top-0.5 pointer-coarse:-right-0.5 pointer-coarse:size-3 pointer-coarse:rounded-full pointer-coarse:bg-muted pointer-coarse:opacity-100"
+        >
+          <XIcon className="size-3.5 pointer-coarse:size-2.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        {pending
+          ? `${project.title} · linked when you send the first message · Remove`
+          : `${project.title} · Remove`}
+      </TooltipPopup>
+    </Tooltip>
   );
 });
