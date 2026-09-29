@@ -35,10 +35,14 @@ it.layer(sqliteMemoryLayer)("core feature migrations", (it) => {
 
       assert.include(yield* columnNames("projection_threads"), "linked_project_ids_json");
       assert.include(yield* columnNames("projection_projects"), "linked_project_ids_json");
+      assert.include(yield* columnNames("projection_threads"), "project_links_pinned");
       const history = yield* sql<{ readonly namespace: string; readonly version: number }>`
-        SELECT namespace, version FROM feature_migration_history
+        SELECT namespace, version FROM feature_migration_history ORDER BY version
       `;
-      assert.deepStrictEqual(history, [{ namespace: "upcomputer.core", version: 1 }]);
+      assert.deepStrictEqual(history, [
+        { namespace: "upcomputer.core", version: 1 },
+        { namespace: "upcomputer.core", version: 2 },
+      ]);
       // The core list no longer claims id 38.
       assert.deepStrictEqual(
         (yield* coreMigrationRows()).map((row) => row.migration_id),

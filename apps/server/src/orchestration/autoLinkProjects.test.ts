@@ -15,6 +15,7 @@ import {
   type AutoLinkProject,
   type AutoLinkThread,
   extractWrittenPaths,
+  isAutoLinkOpen,
   matchProjectForPath,
   resolveAutoLinkProjectIds,
 } from "./autoLinkProjects.ts";
@@ -76,6 +77,16 @@ describe("matchProjectForPath", () => {
     ).toBeUndefined();
   });
 
+  it("skips projects nested inside an already linked project", () => {
+    expect(
+      match("/code/other/packages/nested/a.ts", {
+        projectId: scratch,
+        worktreePath: "/data/scratch/thread-1",
+        linkedProjectIds: [other],
+      }),
+    ).toBeUndefined();
+  });
+
   it("ignores the scratch project", () => {
     expect(match("/data/scratch/thread-2/a.ts")).toBeUndefined();
   });
@@ -104,6 +115,66 @@ describe("matchProjectForPath", () => {
       }),
     ).toBeUndefined();
     expect(match("/code/home/a.ts", { worktreePath: "/worktrees/home-1" })).toBeUndefined();
+  });
+});
+
+describe("isAutoLinkOpen", () => {
+  const scratchThread: AutoLinkThread = {
+    projectId: scratch,
+    worktreePath: "/data/scratch/thread-1",
+  };
+  const open = (
+    overrides: Partial<AutoLinkThread>,
+    turns: { turnId?: string; autoLinkTurnId?: string; projectLinksPinned?: boolean } = {},
+  ) =>
+    isAutoLinkOpen({
+      thread: { ...scratchThread, ...overrides },
+      projects,
+      scratchRoot,
+      projectLinksPinned: turns.projectLinksPinned ?? false,
+      turnId: turns.turnId,
+      autoLinkTurnId: turns.autoLinkTurnId,
+    });
+
+  it("opens for a scratch thread without links", () => {
+    expect(open({})).toBe(true);
+  });
+
+  it("never opens for a thread created in a project", () => {
+    expect(open({ projectId: home, worktreePath: null })).toBe(false);
+  });
+
+  it("stays open only for the rest of the turn that made the first links", () => {
+    expect(
+      open({ linkedProjectIds: [other] }, { turnId: "turn-1", autoLinkTurnId: "turn-1" }),
+    ).toBe(true);
+    expect(
+      open({ linkedProjectIds: [other] }, { turnId: "turn-2", autoLinkTurnId: "turn-1" }),
+    ).toBe(false);
+    expect(open({ linkedProjectIds: [other] }, { turnId: "turn-1" })).toBe(false);
+  });
+
+  it("stays closed once the user removed a link, even with none left", () => {
+    expect(open({}, { projectLinksPinned: true })).toBe(false);
+    expect(
+      open(
+        { linkedProjectIds: [other] },
+        { turnId: "turn-1", autoLinkTurnId: "turn-1", projectLinksPinned: true },
+      ),
+    ).toBe(false);
+  });
+
+  it("stays closed without a scratch root", () => {
+    expect(
+      isAutoLinkOpen({
+        thread: scratchThread,
+        projects,
+        scratchRoot: undefined,
+        projectLinksPinned: false,
+        turnId: undefined,
+        autoLinkTurnId: undefined,
+      }),
+    ).toBe(false);
   });
 });
 

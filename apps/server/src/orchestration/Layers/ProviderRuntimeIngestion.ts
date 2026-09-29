@@ -35,6 +35,8 @@ import { scratchWorkspaceRootFor } from "../../project/scratchWorkspace.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
+import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -53,7 +55,11 @@ import {
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
-import { extractWrittenPaths, resolveAutoLinkProjectIds } from "../autoLinkProjects.ts";
+import {
+  extractWrittenPaths,
+  isAutoLinkOpen,
+  resolveAutoLinkProjectIds,
+} from "../autoLinkProjects.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -690,6 +696,7 @@ const make = Effect.gen(function* () {
   const serverSettingsService = yield* ServerSettingsService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const projectionProjects = yield* ProjectionProjectRepository;
+  const projectionThreads = yield* ProjectionThreadRepository;
   const path = yield* Path.Path;
   const scratchRoot = scratchWorkspaceRootFor(path, (yield* ServerConfig.ServerConfig).baseDir);
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
@@ -739,6 +746,14 @@ const make = Effect.gen(function* () {
     capacity: AUTO_LINK_ATTEMPT_CACHE_CAPACITY,
     timeToLive: AUTO_LINK_ATTEMPT_TTL,
     lookup: () => Effect.succeed(true),
+  });
+
+  // Turn that made a thread's first auto-links; later writes in that turn may
+  // still link, later turns may not.
+  const autoLinkTurnByThreadId = yield* Cache.make<string, string>({
+    capacity: AUTO_LINK_ATTEMPT_CACHE_CAPACITY,
+    timeToLive: AUTO_LINK_ATTEMPT_TTL,
+    lookup: () => Effect.succeed(""),
   });
 
   const rememberTaskDescription = (threadId: ThreadId, taskId: string, description: string) =>
@@ -1279,16 +1294,36 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
-      const projects = yield* projectionProjects.listAll();
+      const projects = (yield* projectionProjects.listAll()).map((project) => ({
+        id: project.projectId,
+        workspaceRoot: project.workspaceRoot,
+        deletedAt: project.deletedAt,
+        linkedProjectIds: project.linkedProjectIds,
+      }));
+      const autoLinkTurnId = Option.getOrUndefined(
+        yield* Cache.getOption(autoLinkTurnByThreadId, threadId),
+      );
+      const threadRow = yield* projectionThreads.getById({ threadId });
+      const projectLinksPinned = Option.match(threadRow, {
+        onNone: () => false,
+        onSome: (row) => (row.projectLinksPinned ?? 0) > 0,
+      });
+      if (
+        !isAutoLinkOpen({
+          thread,
+          projects,
+          scratchRoot,
+          projectLinksPinned,
+          turnId: event.turnId,
+          autoLinkTurnId,
+        })
+      ) {
+        return;
+      }
       const candidateIds = resolveAutoLinkProjectIds({
         writtenPaths,
         thread,
-        projects: projects.map((project) => ({
-          id: project.projectId,
-          workspaceRoot: project.workspaceRoot,
-          deletedAt: project.deletedAt,
-          linkedProjectIds: project.linkedProjectIds,
-        })),
+        projects,
         scratchRoot,
         path,
       });
@@ -1304,6 +1339,9 @@ const make = Effect.gen(function* () {
       const [firstProjectId, ...restProjectIds] = projectIds;
       if (firstProjectId === undefined) {
         return;
+      }
+      if (autoLinkTurnId === undefined && event.turnId !== undefined) {
+        yield* Cache.set(autoLinkTurnByThreadId, threadId, event.turnId);
       }
       yield* orchestrationEngine.dispatch({
         type: "thread.project.link",
@@ -1926,6 +1964,7 @@ export const ProviderRuntimeIngestionLive = Layer.effect(
   make,
 ).pipe(
   Layer.provide(ProjectionProjectRepositoryLive),
+  Layer.provide(ProjectionThreadRepositoryLive),
   Layer.provide(ProjectionThreadActivityRepositoryLive),
   Layer.provide(ProjectionThreadMessageRepositoryLive),
   Layer.provide(ProjectionThreadProposedPlanRepositoryLive),

@@ -44,6 +44,8 @@ export const ProjectionThread = Schema.Struct({
   hasActionableProposedPlan: NonNegativeInt,
   sidebarVisible: Schema.optional(NonNegativeInt),
   linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  /** 1 once the user removed a project link; auto-linking then skips the thread. */
+  projectLinksPinned: Schema.optional(NonNegativeInt),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

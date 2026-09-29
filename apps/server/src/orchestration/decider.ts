@@ -717,6 +717,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           linkedProjectIds,
+          // Only people unlink; auto-linking never re-adds what they removed.
+          ...(command.type === "thread.project.unlink" ? { projectLinksPinned: true } : {}),
           updatedAt: unchanged ? thread.updatedAt : occurredAt,
         },
       };

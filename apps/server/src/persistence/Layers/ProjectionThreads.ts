@@ -52,6 +52,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           has_actionable_proposed_plan,
           sidebar_visible,
           linked_project_ids_json,
+          project_links_pinned,
           deleted_at
         )
         VALUES (
@@ -75,6 +76,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.hasActionableProposedPlan},
           ${row.sidebarVisible ?? 1},
           ${JSON.stringify(row.linkedProjectIds ?? [])},
+          ${row.projectLinksPinned ?? 0},
           ${row.deletedAt}
         )
         ON CONFLICT (thread_id)
@@ -98,6 +100,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
           sidebar_visible = excluded.sidebar_visible,
           linked_project_ids_json = excluded.linked_project_ids_json,
+          project_links_pinned = excluded.project_links_pinned,
           deleted_at = excluded.deleted_at
       `,
   });
@@ -128,6 +131,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           sidebar_visible AS "sidebarVisible",
           linked_project_ids_json AS "linkedProjectIds",
+          project_links_pinned AS "projectLinksPinned",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -160,6 +164,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           sidebar_visible AS "sidebarVisible",
           linked_project_ids_json AS "linkedProjectIds",
+          project_links_pinned AS "projectLinksPinned",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}

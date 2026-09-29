@@ -1133,6 +1133,8 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Full resulting set after thread.project.link / thread.project.unlink. */
   linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  /** Set once the user removed a link: auto-linking leaves the thread alone. */
+  projectLinksPinned: Schema.optional(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 

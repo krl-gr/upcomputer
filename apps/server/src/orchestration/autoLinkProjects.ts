@@ -7,6 +7,11 @@ import { isPathWithinRoot, normalizeProjectPathForComparison } from "@upcomputer
  * When a completed file-change tool call wrote inside another registered
  * project's folder, ingestion links the thread to that project. Only writes
  * count (reads never do), and writes inside the thread's own tree never do.
+ *
+ * Links are picked once: only scratch ("No project") threads auto-link, and
+ * only during the first turn that writes into other projects. After that the
+ * set belongs to the user, so icons do not shift while the agent works; once
+ * the user removed a link (even the last one) the thread is never auto-linked.
  */
 
 // Claude's classifier also files tools such as `mcp__fs__read_file` under
@@ -152,6 +157,8 @@ interface AutoLinkContext {
   readonly activeProjects: ReadonlyArray<AutoLinkProject>;
   readonly ownTreeRoots: ReadonlyArray<string>;
   readonly excludedProjectIds: ReadonlySet<ProjectId>;
+  /** Folders of projects the thread already reaches; nested projects add nothing. */
+  readonly linkedRoots: ReadonlyArray<string>;
   readonly scratchRootKey: string | undefined;
 }
 
@@ -174,11 +181,16 @@ function makeAutoLinkContext(input: {
     ...(input.thread.linkedProjectIds ?? []),
     ...(ownProject?.linkedProjectIds ?? []),
   ]);
+  const linkedRoots = activeProjects
+    .filter((project) => project.id !== input.thread.projectId)
+    .filter((project) => excludedProjectIds.has(project.id))
+    .map((project) => project.workspaceRoot);
   return {
     cwd,
     activeProjects,
     ownTreeRoots,
     excludedProjectIds,
+    linkedRoots,
     scratchRootKey:
       input.scratchRoot === undefined
         ? undefined
@@ -210,7 +222,43 @@ function matchWithContext(path: string, context: AutoLinkContext): ProjectId | u
   ) {
     return undefined;
   }
+  // A repo inside an already linked workspace is covered by that link.
+  const ownerRoot = owner.project.workspaceRoot;
+  if (context.linkedRoots.some((root) => isPathWithinRoot(ownerRoot, root))) {
+    return undefined;
+  }
   return owner.project.id;
+}
+
+/**
+ * Whether a write may still auto-link the thread: its own project is the
+ * scratch ("No project") project, the user has not pinned its links by
+ * removing one, and it either has no links yet or is still in the turn that
+ * made its first auto-links (`autoLinkTurnId`).
+ */
+export function isAutoLinkOpen(input: {
+  readonly thread: AutoLinkThread;
+  readonly projects: ReadonlyArray<AutoLinkProject>;
+  readonly scratchRoot: string | undefined;
+  readonly projectLinksPinned: boolean;
+  readonly turnId: string | undefined;
+  readonly autoLinkTurnId: string | undefined;
+}): boolean {
+  if (input.scratchRoot === undefined || input.projectLinksPinned) {
+    return false;
+  }
+  const ownProject = input.projects.find((project) => project.id === input.thread.projectId);
+  if (
+    ownProject === undefined ||
+    normalizeProjectPathForComparison(ownProject.workspaceRoot) !==
+      normalizeProjectPathForComparison(input.scratchRoot)
+  ) {
+    return false;
+  }
+  if ((input.thread.linkedProjectIds ?? []).length === 0) {
+    return true;
+  }
+  return input.turnId !== undefined && input.turnId === input.autoLinkTurnId;
 }
 
 /**

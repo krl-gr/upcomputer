@@ -687,6 +687,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.linkedProjectIds !== undefined
               ? { linkedProjectIds: event.payload.linkedProjectIds }
               : {}),
+            ...(event.payload.projectLinksPinned === true ? { projectLinksPinned: 1 } : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

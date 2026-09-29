@@ -261,6 +261,8 @@ describe("ProviderRuntimeIngestion", () => {
     sidebarVisible?: boolean;
     workspaceSubdirectory?: string;
     threadTitle?: string;
+    /** Registers project-1 at this folder instead of the temp repository. */
+    projectWorkspaceRoot?: string;
   }) {
     const repositoryRoot = makeTempDir("t3-provider-project-");
     NodeChildProcess.execFileSync("git", ["init", "--initial-branch=main"], {
@@ -327,7 +329,7 @@ describe("ProviderRuntimeIngestion", () => {
       commandId: CommandId.make("cmd-provider-project-create"),
       projectId: asProjectId("project-1"),
       title: "Provider Project",
-      workspaceRoot,
+      workspaceRoot: options?.projectWorkspaceRoot ?? workspaceRoot,
       defaultModelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5-codex",
@@ -4222,29 +4224,36 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("runtime still processed");
   });
 
-  it("links the thread to another project when the agent writes into it", async () => {
-    const harness = await createHarness();
+  describe("auto-linking written projects", () => {
     const now = "2026-01-01T00:00:00.000Z";
-    const otherRoot = makeTempDir("t3-provider-other-project-");
-    await harness.dispatch({
-      type: "project.create",
-      commandId: CommandId.make("cmd-other-project-create"),
-      projectId: asProjectId("project-2"),
-      title: "Other Project",
-      workspaceRoot: otherRoot,
-      createdAt: now,
-    });
+    const createOtherProject = async (
+      harness: Awaited<ReturnType<typeof createHarness>>,
+      id: string,
+    ) => {
+      const root = makeTempDir(`t3-provider-${id}-`);
+      await harness.dispatch({
+        type: "project.create",
+        commandId: CommandId.make(`cmd-${id}-create`),
+        projectId: asProjectId(id),
+        title: id,
+        workspaceRoot: root,
+        createdAt: now,
+      });
+      return root;
+    };
     const toolCompleted = (
       id: string,
       itemType: "file_change" | "dynamic_tool_call",
       toolName: string,
       filePath: string,
+      turnId = "turn-1",
     ): LegacyProviderRuntimeEvent => ({
       type: "item.completed",
       eventId: asEventId(id),
       provider: ProviderDriverKind.make("claudeAgent"),
       createdAt: now,
       threadId: asThreadId("thread-1"),
+      turnId: asTurnId(turnId),
       itemId: asItemId(id),
       payload: {
         itemType,
@@ -4253,32 +4262,95 @@ describe("ProviderRuntimeIngestion", () => {
         data: { toolName, input: { file_path: filePath } },
       },
     });
+    // The test ServerConfig uses the process cwd as its base dir.
+    const scratchRoot = NodePath.resolve(process.cwd(), "scratch");
 
-    await harness.emitAndDrain([
-      toolCompleted("evt-write-own", "file_change", "Write", "src/own.ts"),
-      toolCompleted(
-        "evt-read-other",
-        "dynamic_tool_call",
-        "Read",
-        NodePath.join(otherRoot, "a.ts"),
-      ),
-    ]);
-    expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+    it("links a scratch thread to the projects its first writing turn touches", async () => {
+      const harness = await createHarness({ projectWorkspaceRoot: scratchRoot });
+      const firstRoot = await createOtherProject(harness, "project-2");
+      const secondRoot = await createOtherProject(harness, "project-3");
+      const laterRoot = await createOtherProject(harness, "project-4");
 
-    await harness.emitAndDrain([
-      toolCompleted("evt-edit-other", "file_change", "Edit", NodePath.join(otherRoot, "a.ts")),
-      toolCompleted(
-        "evt-edit-other-again",
-        "file_change",
-        "Edit",
-        NodePath.join(otherRoot, "b.ts"),
-      ),
-    ]);
-    expect((await harness.readThreadShell()).linkedProjectIds).toEqual([asProjectId("project-2")]);
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
-    expect(
-      thread?.activities.filter((activity) => activity.kind === "tool.completed"),
-    ).toHaveLength(4);
+      await harness.emitAndDrain([
+        toolCompleted("evt-write-own", "file_change", "Write", "src/own.ts"),
+        toolCompleted(
+          "evt-read-other",
+          "dynamic_tool_call",
+          "Read",
+          NodePath.join(firstRoot, "a.ts"),
+        ),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+
+      await harness.emitAndDrain([
+        toolCompleted("evt-edit-first", "file_change", "Edit", NodePath.join(firstRoot, "a.ts")),
+        toolCompleted("evt-edit-second", "file_change", "Edit", NodePath.join(secondRoot, "b.ts")),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds).toEqual([
+        asProjectId("project-2"),
+        asProjectId("project-3"),
+      ]);
+
+      await harness.emitAndDrain([
+        toolCompleted(
+          "evt-edit-later",
+          "file_change",
+          "Edit",
+          NodePath.join(laterRoot, "c.ts"),
+          "turn-2",
+        ),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds).toEqual([
+        asProjectId("project-2"),
+        asProjectId("project-3"),
+      ]);
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
+      expect(
+        thread?.activities.filter((activity) => activity.kind === "tool.completed"),
+      ).toHaveLength(5);
+    });
+
+    it("keeps the user's choice after they remove every link", async () => {
+      const harness = await createHarness({ projectWorkspaceRoot: scratchRoot });
+      const firstRoot = await createOtherProject(harness, "project-2");
+      const laterRoot = await createOtherProject(harness, "project-3");
+
+      await harness.emitAndDrain([
+        toolCompleted("evt-edit-first", "file_change", "Edit", NodePath.join(firstRoot, "a.ts")),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds).toEqual([
+        asProjectId("project-2"),
+      ]);
+
+      await harness.dispatch({
+        type: "thread.project.unlink",
+        commandId: CommandId.make("cmd-user-unlink"),
+        threadId: asThreadId("thread-1"),
+        projectIds: [asProjectId("project-2")],
+      });
+      expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+
+      await harness.emitAndDrain([
+        toolCompleted(
+          "evt-edit-later",
+          "file_change",
+          "Edit",
+          NodePath.join(laterRoot, "c.ts"),
+          "turn-2",
+        ),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+    });
+
+    it("never auto-links a thread created in a project", async () => {
+      const harness = await createHarness();
+      const otherRoot = await createOtherProject(harness, "project-2");
+
+      await harness.emitAndDrain([
+        toolCompleted("evt-edit-other", "file_change", "Edit", NodePath.join(otherRoot, "a.ts")),
+      ]);
+      expect((await harness.readThreadShell()).linkedProjectIds ?? []).toEqual([]);
+    });
   });
 });
