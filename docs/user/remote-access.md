@@ -13,6 +13,13 @@ an official remote/headless server or an SSH/npm bootstrap flow.
 T3 Connect installs no npm server package. It links clients to the backend already bundled with the
 Desktop app.
 
+## Pairing links
+
+Pairing codes and share links are available only in the client that created them, while its
+Connections page remains open. After you leave the page or reload it, create a new link to share.
+Other clients can see the active link's name, scopes, and expiry, and can revoke it if they have
+access management permission.
+
 ## Existing saved environments
 
 Up.computer preserves existing remote and SSH environment records. They remain visible so you can
