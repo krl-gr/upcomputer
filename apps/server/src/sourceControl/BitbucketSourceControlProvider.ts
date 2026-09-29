@@ -56,7 +56,7 @@ export const makeDiscovery = Effect.gen(function* () {
     kind: "bitbucket",
     label: "Bitbucket",
     installHint:
-      "Set UPCOMPUTER_BITBUCKET_EMAIL and UPCOMPUTER_BITBUCKET_API_TOKEN on the server (use a Bitbucket API token with repository scopes).",
+      "Set UPCOMPUTER_BITBUCKET_EMAIL and UPCOMPUTER_BITBUCKET_API_TOKEN on the server (use a Bitbucket API token with repository and user read scopes).",
     probeAuth: bitbucket.probeAuth,
   } satisfies SourceControlApiDiscoverySpec;
 });
