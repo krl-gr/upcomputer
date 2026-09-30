@@ -1099,7 +1099,8 @@ export function ProviderSettingsPanel() {
     void (async () => {
       const result = await refreshServerProviders({
         environmentId: primaryEnvironment.environmentId,
-        input: {},
+        // An explicit refresh also bypasses the server's discovery caches.
+        input: { refreshModels: true },
       });
       refreshingRef.current = false;
       setIsRefreshingProviders(false);

@@ -243,6 +243,11 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      */
     instanceId: Schema.optional(ProviderInstanceId),
     cwd: Schema.optional(TrimmedNonEmptyString),
+    /**
+     * Explicit user request: bypass our own discovery caches and rediscover
+     * models. Background status refreshes omit it.
+     */
+    refreshModels: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
