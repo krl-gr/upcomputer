@@ -20,6 +20,22 @@ export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
 }
 
+/**
+ * An https endpoint another device can open: the only kind that works away
+ * from home over Tailscale and that a phone can install as an app, so sharing
+ * prefers it.
+ */
+export function isHttpsShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
+  if (!isQrShareableEndpoint(endpoint)) {
+    return false;
+  }
+  try {
+    return new URL(endpoint.httpBaseUrl).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export type QrEndpointOption = {
   /** Unique per endpoint instance (AdvertisedEndpoint.id); safe as a React key. */
   readonly id: string;
@@ -30,13 +46,16 @@ export type QrEndpointOption = {
   readonly preferenceKey: string;
   /** False for endpoints that stay copyable but must never render as a QR. */
   readonly qrShareable: boolean;
+  /** True for QR-shareable https endpoints (isHttpsShareableEndpoint). */
+  readonly httpsShareable: boolean;
 };
 
 /**
  * Resolves which endpoint the share panel shows: the user's explicit pick,
- * else the saved default endpoint, else the first QR-shareable option (so the
- * panel never opens on a loopback QR), else the first option. A stale
- * selectedId (endpoint disappeared) falls back rather than blanking the panel.
+ * else the first https endpoint, else the saved default endpoint, else the
+ * first QR-shareable option (so the panel never opens on a loopback QR), else
+ * the first option. A stale selectedId (endpoint disappeared) falls back
+ * rather than blanking the panel.
  */
 export function selectQrEndpointOption<T extends QrEndpointOption>(
   options: ReadonlyArray<T>,
@@ -45,6 +64,7 @@ export function selectQrEndpointOption<T extends QrEndpointOption>(
 ): T | null {
   return (
     (selectedId !== null ? options.find((option) => option.id === selectedId) : undefined) ??
+    options.find((option) => option.httpsShareable) ??
     (defaultPreferenceKey !== null
       ? options.find((option) => option.preferenceKey === defaultPreferenceKey)
       : undefined) ??

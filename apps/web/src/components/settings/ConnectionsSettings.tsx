@@ -50,6 +50,7 @@ import {
   applyWslEnableSelection,
   canConnectSavedEnvironment,
   canOfferSshEnvironmentOnboarding,
+  isHttpsShareableEndpoint,
   isQrShareableEndpoint,
   selectQrEndpointOption,
 } from "./ConnectionsSettings.logic";
@@ -546,7 +547,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     [endpointUrl, credential],
   );
   const endpointPairingUrl = useMemo(() => {
-    const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
+    const endpoint =
+      endpoints.find(isHttpsShareableEndpoint) ??
+      selectPairingEndpoint(endpoints, defaultEndpointKey);
     return endpoint && credential
       ? resolveAdvertisedEndpointPairingUrl(endpoint, credential)
       : null;
@@ -559,6 +562,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       readonly url: string;
       readonly detail: string;
       readonly qrShareable: boolean;
+      readonly httpsShareable: boolean;
     }> = [];
     if (!credential) return options;
     for (const endpoint of endpoints) {
@@ -573,6 +577,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
         url,
         detail: endpointShareHint(endpoint, url),
         qrShareable: isQrShareableEndpoint(endpoint),
+        httpsShareable: isHttpsShareableEndpoint(endpoint),
       });
     }
     return options;

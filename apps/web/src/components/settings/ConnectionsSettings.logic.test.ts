@@ -4,6 +4,7 @@ import {
   applyWslEnableSelection,
   canConnectSavedEnvironment,
   canOfferSshEnvironmentOnboarding,
+  isHttpsShareableEndpoint,
   isQrShareableEndpoint,
   selectQrEndpointOption,
 } from "./ConnectionsSettings.logic";
@@ -126,27 +127,49 @@ describe("isQrShareableEndpoint", () => {
   });
 });
 
+describe("isHttpsShareableEndpoint", () => {
+  it("accepts reachable https endpoints only", () => {
+    const tailscaleHttps = makeEndpoint({
+      id: "tailscale-magicdns:https://desktop.tail.ts.net/",
+      httpBaseUrl: "https://desktop.tail.ts.net/",
+      reachability: "private-network",
+    });
+    expect(isHttpsShareableEndpoint(tailscaleHttps)).toBe(true);
+    expect(isHttpsShareableEndpoint({ ...tailscaleHttps, status: "unavailable" })).toBe(false);
+    expect(isHttpsShareableEndpoint(makeEndpoint({}))).toBe(false);
+    expect(
+      isHttpsShareableEndpoint(
+        makeEndpoint({ httpBaseUrl: "https://localhost:4780", reachability: "loopback" }),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("selectQrEndpointOption", () => {
   const options = [
     {
       id: "desktop-loopback:4780",
       preferenceKey: "desktop-core:loopback:http",
       qrShareable: false,
+      httpsShareable: false,
     },
     {
       id: "tailscale-ip:http://100.84.12.7:4780",
       preferenceKey: "tailscale:ip:http",
       qrShareable: true,
+      httpsShareable: false,
     },
     {
       id: "tailscale-ip:http://100.84.12.8:4780",
       preferenceKey: "tailscale:ip:http",
       qrShareable: true,
+      httpsShareable: false,
     },
     {
       id: "desktop-lan:http://192.168.1.42:4780",
       preferenceKey: "desktop-core:lan:http",
       qrShareable: true,
+      httpsShareable: false,
     },
   ];
 
@@ -166,6 +189,24 @@ describe("selectQrEndpointOption", () => {
     expect(selectQrEndpointOption(options, "tailscale-ip:gone", "nope")?.id).toBe(
       "tailscale-ip:http://100.84.12.7:4780",
     );
+  });
+
+  it("prefers an https endpoint over the saved default, but not over an explicit pick", () => {
+    const withHttps = [
+      ...options,
+      {
+        id: "tailscale-magicdns:https://desktop.tail.ts.net/",
+        preferenceKey: "tailscale:magicdns:https",
+        qrShareable: true,
+        httpsShareable: true,
+      },
+    ];
+    expect(selectQrEndpointOption(withHttps, null, "desktop-core:lan:http")?.id).toBe(
+      "tailscale-magicdns:https://desktop.tail.ts.net/",
+    );
+    expect(
+      selectQrEndpointOption(withHttps, "desktop-lan:http://192.168.1.42:4780", null)?.id,
+    ).toBe("desktop-lan:http://192.168.1.42:4780");
   });
 
   it("returns the first option when nothing is QR-shareable, and null when empty", () => {
