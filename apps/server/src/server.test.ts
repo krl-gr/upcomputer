@@ -24,7 +24,9 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
+  type AuthEnvironmentScope,
   type PreviewEvent,
+  type ServerLifecycleStreamEvent,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -79,7 +81,7 @@ const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
 import * as ServerConfig from "./config.ts";
 import { makeRoutesLayer } from "./server.ts";
-import { resolveAvailableEditorsForConfig } from "./ws.ts";
+import { resolveAvailableEditorsForConfig, RPC_REQUIRED_SCOPE } from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -5198,6 +5200,84 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(second?.type, "ready");
         assert.equal(second?.sequence, 2);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  // A defect used to be sent as a connection-wide protocol defect, which failed
+  // every other request on the socket. Durable subscriptions then waited for a
+  // reconnect that never came, and a chat stayed "Working" until a reload.
+  it.effect.each(["handler defect", "missing authorization scope"] as const)(
+    "keeps other websocket rpc streams open after a %s in one request",
+    (failure) =>
+      Effect.gen(function* () {
+        if (failure === "missing authorization scope") {
+          const scopes = RPC_REQUIRED_SCOPE as Map<string, AuthEnvironmentScope>;
+          const scope = scopes.get(WS_METHODS.serverRemoveKeybinding)!;
+          yield* Effect.acquireRelease(
+            Effect.sync(() => scopes.delete(WS_METHODS.serverRemoveKeybinding)),
+            () => Effect.sync(() => scopes.set(WS_METHODS.serverRemoveKeybinding, scope)),
+          );
+        }
+        const liveEvents = yield* Queue.unbounded<ServerLifecycleStreamEvent>();
+        yield* buildAppUnderTest({
+          layers: {
+            keybindings: {
+              removeKeybindingRule: () => Effect.die(new Error("simulated keybinding defect")),
+            },
+            serverLifecycleEvents: {
+              snapshot: Effect.succeed({
+                sequence: 1,
+                events: [
+                  {
+                    version: 1 as const,
+                    sequence: 1,
+                    type: "welcome" as const,
+                    payload: {
+                      environment: testEnvironmentDescriptor,
+                      cwd: "/tmp/project",
+                      projectName: "project",
+                    },
+                  },
+                ],
+              }),
+              stream: Stream.fromQueue(liveEvents),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const { events, removal } = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const subscribed = yield* Deferred.make<void>();
+              const subscription = yield* client[WS_METHODS.subscribeServerLifecycle]({}).pipe(
+                Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+                Stream.take(2),
+                Stream.runCollect,
+                Effect.forkScoped,
+              );
+              yield* Deferred.await(subscribed);
+              const removal = yield* client[WS_METHODS.serverRemoveKeybinding]({
+                command: "sidebar.toggle",
+                key: "ctrl+k",
+              }).pipe(Effect.exit);
+              yield* Queue.offer(liveEvents, {
+                version: 1 as const,
+                sequence: 2,
+                type: "ready" as const,
+                payload: { at: "2026-01-01T00:00:00.000Z", environment: testEnvironmentDescriptor },
+              });
+              const events = yield* Fiber.join(subscription);
+              return { events, removal };
+            }),
+          ),
+        );
+
+        assertTrue(removal._tag === "Failure");
+        assert.deepEqual(
+          Array.from(events, (event) => event.type),
+          ["welcome", "ready"],
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("routes websocket rpc projects.searchEntries", () =>

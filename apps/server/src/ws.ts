@@ -579,7 +579,8 @@ const makeWsRpcLayer = (
       ) =>
         instrumentRpcEffect(
           method,
-          authorizeEffect(requiredScopeForMethod(method), effect),
+          // Suspended so a missing scope fails this request only, not the socket.
+          Effect.suspend(() => authorizeEffect(requiredScopeForMethod(method), effect)),
           traceAttributes,
         );
       const observeRpcStream = <A, E, R>(
@@ -589,7 +590,7 @@ const makeWsRpcLayer = (
       ) =>
         instrumentRpcStream(
           method,
-          authorizeStream(requiredScopeForMethod(method), stream),
+          Stream.suspend(() => authorizeStream(requiredScopeForMethod(method), stream)),
           traceAttributes,
         );
       const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
@@ -603,7 +604,7 @@ const makeWsRpcLayer = (
       ) =>
         instrumentRpcStreamEffect(
           method,
-          authorizeEffect(requiredScopeForMethod(method), effect),
+          Effect.suspend(() => authorizeEffect(requiredScopeForMethod(method), effect)),
           traceAttributes,
         );
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
@@ -2613,6 +2614,10 @@ export const websocketRpcRouteLayer = <
           );
           const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(rpcGroup, {
             disableTracing: true,
+            // A defect fails only its own request. As a protocol defect it would
+            // fail every request and subscription on this socket, and clients
+            // would keep showing stale state until they reconnect.
+            disableFatalDefects: true,
           }).pipe(
             Effect.provide(
               makeWsRouteHandlerLayer(session, previewAutomationBroker, contributions).pipe(
