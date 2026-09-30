@@ -3311,7 +3311,7 @@ describe("parseAgentSessionTranscript", () => {
     ]);
   });
 
-  it("preserves context markup in response-only Codex messages", () => {
+  it("skips response-only Codex messages made only of context blocks", () => {
     const context = "<environment_context>\n<cwd>/tmp/project</cwd>\n</environment_context>";
     const thread = AgentSessionScanner.parseAgentSessionTranscript({
       contents: [
@@ -3344,9 +3344,8 @@ describe("parseAgentSessionTranscript", () => {
       lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
     });
 
-    expect(thread?.title).toBe("<environment_context>");
+    expect(thread?.title).toBe("Initialize Git and add a README.");
     expect(thread?.messages.map((message) => message.text)).toEqual([
-      context,
       "Initialize Git and add a README.",
     ]);
   });
@@ -3418,6 +3417,140 @@ describe("parseAgentSessionTranscript", () => {
     expect(thread?.messages.map((message) => message.text)).toEqual([quoted]);
   });
 
+  it("takes the title from the first real prompt of a Codex 0.159 rollout", () => {
+    // Codex 0.159 writes no `user_message` events: the injected context and the
+    // prompt are both plain user response items of the same turn.
+    const turn = { turn_id: "turn-1" };
+    const developer = (text: string) =>
+      encodeTranscriptRecord({
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "developer",
+          internal_chat_message_metadata_passthrough: turn,
+          content: [{ type: "input_text", text }],
+        },
+      });
+    const thread = AgentSessionScanner.parseAgentSessionTranscript({
+      contents: [
+        encodeTranscriptRecord({
+          type: "session_meta",
+          payload: {
+            id: "codex-session",
+            cwd: "/tmp/project",
+            originator: "Codex Desktop",
+            cli_version: "0.159.1",
+            source: "vscode",
+          },
+        }),
+        developer(
+          "<permissions instructions>\nFilesystem sandboxing applies.\n</permissions instructions>",
+        ),
+        developer("<multi_agent_role>You are `/root`.</multi_agent_role>"),
+        encodeTranscriptRecord({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            internal_chat_message_metadata_passthrough: turn,
+            content: [
+              {
+                type: "input_text",
+                text: "<recommended_plugins>\nHere is a list of plugins.\n- github\n</recommended_plugins>",
+              },
+              {
+                type: "input_text",
+                text: "# AGENTS.md instructions for /tmp/project\n\n<INSTRUCTIONS>\nRun tests before committing.\n</INSTRUCTIONS>",
+              },
+              {
+                type: "input_text",
+                text: "<environment_context>\n  <cwd>/tmp/project</cwd>\n  <shell>zsh</shell>\n</environment_context>",
+              },
+            ],
+          },
+        }),
+        encodeTranscriptRecord({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            internal_chat_message_metadata_passthrough: turn,
+            content: [
+              {
+                type: "input_text",
+                text: "<upcomputer_interaction_mode><collaboration_mode># Collaboration Mode: Default</collaboration_mode></upcomputer_interaction_mode>\n\n<upcomputer_tools>## Browser</upcomputer_tools>",
+              },
+            ],
+          },
+        }),
+        encodeTranscriptRecord({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            internal_chat_message_metadata_passthrough: turn,
+            content: [{ type: "input_text", text: "Why does <App> render twice?" }],
+          },
+        }),
+        encodeTranscriptRecord({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "<App> mounts in StrictMode." }],
+          },
+        }),
+      ].join("\n"),
+      source: "codex",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      fallbackSessionId: "fallback",
+      lastActiveAtMs: Date.parse("2026-09-30T12:00:00.000Z"),
+    });
+
+    expect(thread?.title).toBe("Why does <App> render twice?");
+    expect(thread?.messages.map((message) => message.text)).toEqual([
+      "Why does <App> render twice?",
+      "<App> mounts in StrictMode.",
+    ]);
+  });
+
+  it("skips Claude Code command and reminder blocks before the first prompt", () => {
+    const user = (content: unknown) =>
+      encodeTranscriptRecord({
+        type: "user",
+        sessionId: "claude-session",
+        entrypoint: "cli",
+        message: { role: "user", content },
+      });
+    const thread = AgentSessionScanner.parseAgentSessionTranscript({
+      contents: [
+        user(
+          "<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args></command-args>",
+        ),
+        user("<local-command-stdout>Set model to opus</local-command-stdout>"),
+        user([{ type: "text", text: "<system-reminder>\nThe date changed.\n</system-reminder>" }]),
+        user([
+          { type: "text", text: "<system-reminder>Plan mode is on.</system-reminder>" },
+          { type: "text", text: "Refactor the <Sidebar> props" },
+        ]),
+        encodeTranscriptRecord({
+          type: "assistant",
+          message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+        }),
+      ].join("\n"),
+      source: "claudeAgent",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      fallbackSessionId: "claude-session",
+      lastActiveAtMs: Date.parse("2026-09-30T12:00:00.000Z"),
+    });
+
+    expect(thread?.title).toBe("Refactor the <Sidebar> props");
+    expect(thread?.messages.map((message) => message.text)).toEqual([
+      "Refactor the <Sidebar> props",
+      "Done",
+    ]);
+  });
+
   it("skips sessions without a visible user message", () => {
     const thread = AgentSessionScanner.parseAgentSessionTranscript({
       contents: JSON.stringify({
@@ -3459,5 +3592,32 @@ describe("parseAgentSessionTranscript", () => {
     expect(thread?.messages).toHaveLength(200);
     expect(thread?.messages[0]?.text).toBe("Keep this prompt");
     expect(thread?.messages.at(-1)?.text).toBe("Assistant update 249");
+  });
+});
+
+describe("isInjectedContextText", () => {
+  it.each([
+    "<environment_context>\n  <cwd>/tmp</cwd>\n</environment_context>",
+    "<a>one</a>\n\n<b>two</b>",
+    "<skill>outer <skill>inner</skill> tail</skill>",
+    "<permissions instructions>\nsandbox\n</permissions instructions>",
+    '<skill name="review">\nbody\n</skill>',
+    "<local-command-stdout></local-command-stdout>",
+    "# AGENTS.md instructions for /tmp/project\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>",
+  ])("treats %j as injected context", (text) => {
+    expect(AgentSessionScanner.isInjectedContextText(text)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "Fix the bug",
+    "<environment_context>\n<cwd>/tmp</cwd>\n</environment_context>\n\nCreate a project.",
+    "See <App> render twice",
+    "<unclosed>text",
+    "<a>one</a> and more",
+    "# Notes\n\n<INSTRUCTIONS>x</INSTRUCTIONS>",
+    "<br/>",
+  ])("keeps %j as user text", (text) => {
+    expect(AgentSessionScanner.isInjectedContextText(text)).toBe(false);
   });
 });

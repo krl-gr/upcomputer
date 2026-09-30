@@ -261,6 +261,53 @@ function extractText(
     .join("\n");
 }
 
+const OPENING_TAG = /^<([A-Za-z][\w.:-]*)[^<>]*>/;
+/** Codex puts this heading before the `<INSTRUCTIONS>` block that carries AGENTS.md. */
+const CODEX_AGENTS_HEADING = /^# AGENTS\.md instructions for [^\n]*\n/;
+
+/** End of the `<name …>` block opened before `from`, allowing nested blocks of the same name. */
+function findTagBlockEnd(text: string, from: number, name: string): number {
+  const tags = new RegExp(`<(/?)${name.replaceAll(".", "\\.")}(?=[\\s>])[^<>]*>`, "g");
+  tags.lastIndex = from;
+  let depth = 1;
+  for (let match = tags.exec(text); match !== null; match = tags.exec(text)) {
+    depth += match[1] === "/" ? -1 : 1;
+    if (depth === 0) return tags.lastIndex;
+  }
+  return -1;
+}
+
+/**
+ * Agents inject context as user-role text made only of tag blocks, such as
+ * Codex `<environment_context>` or `<recommended_plugins>` and Claude Code
+ * `<command-name>` or `<local-command-stdout>`. Match any complete
+ * `<tag>…</tag>` blocks separated by whitespace, plus Codex's AGENTS.md
+ * heading. Text with anything else around the blocks is the user's own.
+ */
+export function isInjectedContextText(text: string): boolean {
+  const body = text.trim().replace(CODEX_AGENTS_HEADING, "").trimStart();
+  let index = 0;
+  while (index < body.length) {
+    const opening = OPENING_TAG.exec(body.slice(index));
+    if (opening === null) return false;
+    const end = findTagBlockEnd(body, index + opening[0].length, opening[1]!);
+    if (end === -1) return false;
+    index = end;
+    while (index < body.length && /\s/.test(body[index]!)) index += 1;
+  }
+  return body.length > 0;
+}
+
+/** Visible user text without injected context blocks; empty when nothing remains. */
+function extractUserText(
+  content: string | ReadonlyArray<typeof TranscriptContentBlock.Type> | undefined,
+): string {
+  if (typeof content === "string") {
+    return isInjectedContextText(content) ? "" : content.trim();
+  }
+  return extractText(content?.filter((block) => !isInjectedContextText(block.text ?? "")));
+}
+
 function normalizeTimestamp(value: string | undefined, fallback: string): string {
   if (value === undefined) return fallback;
   const parsed = DateTime.make(value);
@@ -347,7 +394,7 @@ export function parseAgentSessionTranscript(
       }
       if (record.type === "event_msg" && record.payload?.type === "user_message") {
         const text = record.payload.message?.trim() ?? "";
-        if (text.length > 0) canonicalUserTextsInTurn.add(text);
+        if (text.length > 0 && !isInjectedContextText(text)) canonicalUserTextsInTurn.add(text);
         continue;
       }
       if (
@@ -356,7 +403,7 @@ export function parseAgentSessionTranscript(
         record.payload.role === "user"
       ) {
         const turnId = codexTurnId(record.payload.internal_chat_message_metadata_passthrough);
-        const text = extractText(record.payload.content);
+        const text = extractUserText(record.payload.content);
         if (turnId !== null && text.length > 0) {
           responseUsersInTurn.push({ index: recordIndex, turnId, text });
         }
@@ -412,7 +459,10 @@ export function parseAgentSessionTranscript(
         continue;
       }
 
-      const text = extractText(record.message?.content);
+      const text =
+        record.type === "user"
+          ? extractUserText(record.message?.content)
+          : extractText(record.message?.content);
       if (text.length === 0) continue;
       retainMessage({
         role: record.type,
@@ -437,7 +487,7 @@ export function parseAgentSessionTranscript(
     }
     if (record.type === "event_msg" && record.payload?.type === "user_message") {
       const text = record.payload.message ?? "";
-      if (text.trim().length === 0) continue;
+      if (text.trim().length === 0 || isInjectedContextText(text)) continue;
       // Codex can write the same prompt as both a response item and an event.
       // Remove only the matching response copy so mixed-format logs keep every
       // distinct user message.
@@ -466,7 +516,10 @@ export function parseAgentSessionTranscript(
       continue;
     }
 
-    const extractedText = extractText(record.payload.content);
+    const extractedText =
+      record.payload.role === "user"
+        ? extractUserText(record.payload.content)
+        : extractText(record.payload.content);
     if (extractedText.length === 0) continue;
     if (record.payload.role === "user" && canonicalCodexResponseUserIndices.has(recordIndex)) {
       continue;
