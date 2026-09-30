@@ -1,8 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { describe } from "vite-plus/test";
 import { DEFAULT_MODEL, ThreadId } from "@upcomputer/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
@@ -10,18 +17,23 @@ import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import {
+  buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
+  CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES,
   CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
+import { appendCustomInstructions } from "../CustomInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
+  buildCodexAdditionalContextItems,
   buildCodexDynamicTools,
   buildTurnStartParams,
   describeMcpElicitation,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
+  makeCodexSessionRuntime,
   makeMemoryConsolidationNotificationFilter,
   openCodexThread,
   readCodexThread,
@@ -223,12 +235,12 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("plan", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions("plan"),
         },
       },
+      additionalContext: buildCodexAdditionalContext({
+        runtime: { model: "gpt-5.3-codex", reasoningEffort: "medium" },
+      }),
     });
   });
 
@@ -272,20 +284,17 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("default", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions("default"),
         },
       },
       additionalContext: {
         upcomputer_interaction_mode: {
           kind: "application",
-          value: buildCodexDeveloperInstructions("default", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          value: buildCodexDeveloperInstructions("default"),
         },
+        ...buildCodexAdditionalContext({
+          runtime: { model: "gpt-5.3-codex", reasoningEffort: "medium" },
+        }),
       },
     });
   });
@@ -329,7 +338,11 @@ describe("buildTurnStartParams", () => {
     const settings = params.collaborationMode?.settings;
     NodeAssert.equal(settings?.model, DEFAULT_MODEL);
     NodeAssert.equal(settings?.reasoning_effort, "medium");
-    NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
+    NodeAssert.ok(
+      params.additionalContext?.upcomputer_runtime?.value.includes(
+        `as ${DEFAULT_MODEL} with medium`,
+      ),
+    );
   });
 
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
@@ -424,12 +437,46 @@ describe("buildTurnStartParams", () => {
             kind: "application",
             value: CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS,
           },
+          ...buildCodexAdditionalContext({
+            runtime: { model: "gpt-5.3-codex", reasoningEffort: "medium" },
+          }),
         },
       });
     }),
   );
 
-  it.effect("omits application interaction-mode context for older Codex versions", () =>
+  it.effect("keeps Up.computer context out of the mode prompt in every mode", () =>
+    Effect.gen(function* () {
+      for (const [mode, developerInstructions] of [
+        ["default", CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS],
+        ["default", CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS],
+        ["plan", CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS],
+      ] as const) {
+        const params = yield* buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Hello",
+          model: "gpt-5.3-codex",
+          effort: "high",
+          collaborationMode: { mode, developerInstructions },
+        });
+
+        // Newer models replace the mode prompt with their catalog text, so the
+        // context must arrive through additional context in plan mode too.
+        NodeAssert.equal(
+          params.collaborationMode?.settings.developer_instructions,
+          developerInstructions,
+        );
+        NodeAssert.match(
+          params.additionalContext?.upcomputer_runtime?.value ?? "",
+          /as gpt-5\.3-codex with high reasoning effort/,
+        );
+        NodeAssert.match(params.additionalContext?.upcomputer_tools?.value ?? "", /preview_open/);
+      }
+    }),
+  );
+
+  it.effect("puts all context in the developer instructions for older Codex versions", () =>
     Effect.gen(function* () {
       const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
@@ -444,10 +491,105 @@ describe("buildTurnStartParams", () => {
       });
 
       NodeAssert.equal(params.additionalContext, undefined);
-      NodeAssert.equal(
-        params.collaborationMode?.settings.developer_instructions,
-        CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS,
+      const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+      NodeAssert.ok(instructions.startsWith(`${CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS}\n\n`));
+      NodeAssert.match(instructions, /<runtime_info>/);
+      NodeAssert.match(instructions, /preview_open/);
+    }),
+  );
+
+  it.effect("sends custom instructions as additional context in every mode", () =>
+    Effect.gen(function* () {
+      const customBlock = "# User instructions (from Up.computer settings)\n\nAnswer in Russian.";
+      const turn = (input: Partial<Parameters<typeof buildTurnStartParams>[0]>) =>
+        buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Hello",
+          model: "gpt-5.3-codex",
+          customInstructions: "Answer in Russian.",
+          ...input,
+        });
+
+      for (const input of [
+        { interactionMode: "default" },
+        { interactionMode: "plan" },
+        { collaborationMode: { mode: "default", developerInstructions: "Custom default" } },
+        { collaborationMode: { mode: "plan", developerInstructions: "Custom plan" } },
+      ] as const) {
+        const params = yield* turn(input);
+        NodeAssert.deepStrictEqual(params.additionalContext?.upcomputer_custom_instructions, {
+          kind: "application",
+          value: customBlock,
+        });
+        NodeAssert.doesNotMatch(
+          params.collaborationMode?.settings.developer_instructions ?? "",
+          /User instructions/,
+        );
+      }
+
+      const older = yield* turn({
+        interactionMode: "plan",
+        supportsInteractionModeAdditionalContext: false,
+      });
+      NodeAssert.ok(
+        older.collaborationMode?.settings.developer_instructions?.endsWith(`\n\n${customBlock}`),
       );
+    }),
+  );
+
+  it.effect("splits long custom instructions under Codex's per-entry cap", () =>
+    Effect.gen(function* () {
+      const paragraph = `${Array.from({ length: 40 }, () => "Отвечай по-русски.").join(" ")}\n`;
+      const customInstructions = paragraph.repeat(20);
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Hello",
+        interactionMode: "default",
+        customInstructions,
+      });
+
+      const entries = Object.entries(params.additionalContext ?? {}).filter(([key]) =>
+        key.startsWith("upcomputer_custom_instructions"),
+      );
+      NodeAssert.ok(entries.length > 1);
+      NodeAssert.deepStrictEqual(
+        entries.map(([key]) => key),
+        entries.map((_, index) =>
+          index === 0
+            ? "upcomputer_custom_instructions"
+            : `upcomputer_custom_instructions_${index + 1}`,
+        ),
+      );
+      for (const [, entry] of Object.entries(params.additionalContext ?? {})) {
+        NodeAssert.ok(Buffer.byteLength(entry.value) <= CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES);
+      }
+      NodeAssert.equal(
+        entries.map(([, entry]) => entry.value).join("\n"),
+        `# User instructions (from Up.computer settings)\n\n${customInstructions.trim()}`,
+      );
+    }),
+  );
+
+  it.effect("keeps developer instructions unchanged without custom instructions", () =>
+    Effect.gen(function* () {
+      const withEmpty = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Hello",
+        interactionMode: "default",
+        customInstructions: "",
+      });
+      const without = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Hello",
+        interactionMode: "default",
+      });
+
+      NodeAssert.deepStrictEqual(withEmpty, without);
+      NodeAssert.equal(appendCustomInstructions("base", "   "), "base");
     }),
   );
 });
@@ -665,63 +807,111 @@ describe("Codex MCP elicitation approvals", () => {
 });
 
 describe("buildCodexDeveloperInstructions", () => {
-  it("appends runtime info after the mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "high",
-    });
-
-    NodeAssert.ok(instructions.startsWith(CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS));
-    NodeAssert.match(instructions, /UpComputer/);
-    NodeAssert.match(instructions, /Codex harness/);
-    NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
-  });
-
-  it("includes runtime info alongside plan mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("plan", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "medium",
-    });
-
-    NodeAssert.ok(instructions.startsWith(CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS));
-    NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
-  });
-
-  it("varies with the model and effort of each turn", () => {
-    const first = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "medium",
-    });
-    const second = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.4",
-      reasoningEffort: "high",
-    });
-
-    NodeAssert.notEqual(first, second);
-  });
-
-  it("flattens multiline metadata into single-line runtime info", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
-      model: "gpt\n5.3\ncodex",
-      reasoningEffort: " high\neffort ",
-    });
-
-    NodeAssert.match(instructions, /as gpt 5\.3 codex with high effort reasoning effort/);
-    NodeAssert.doesNotMatch(instructions, /<runtime_info>[^<]*\n/);
+  it("keeps Up.computer context out of the mode prompt, which the model catalog can replace", () => {
+    for (const instructions of [
+      buildCodexDeveloperInstructions("default"),
+      buildCodexDeveloperInstructions("plan"),
+      CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS,
+    ]) {
+      NodeAssert.match(instructions, /^<collaboration_mode>[\s\S]*<\/collaboration_mode>$/);
+      NodeAssert.doesNotMatch(instructions, /runtime_info|preview_|User instructions/);
+    }
   });
 });
 
-describe("T3 browser developer instructions", () => {
-  it("prefers the product-native preview tools in both collaboration modes", () => {
-    for (const instructions of [
-      CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
-      CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
-    ]) {
-      NodeAssert.match(instructions, /upcomputer/);
-      NodeAssert.match(instructions, /preview_status/);
-      NodeAssert.match(instructions, /preview_open/);
-      NodeAssert.match(instructions, /Do not switch to global browser skills/);
+describe("buildCodexAdditionalContext", () => {
+  const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+  const runtimeValue = (context: ReturnType<typeof buildCodexAdditionalContext>) =>
+    context.upcomputer_runtime?.value ?? "";
+
+  it("describes the harness, model and effort", () => {
+    const context = buildCodexAdditionalContext({ runtime });
+
+    NodeAssert.equal(context.upcomputer_runtime?.kind, "application");
+    NodeAssert.match(
+      runtimeValue(context),
+      /^<runtime_info>.*UpComputer through the Codex harness, as gpt-5\.3-codex with high reasoning effort.*<\/runtime_info>$/,
+    );
+  });
+
+  it("varies with the model and effort of each turn", () => {
+    NodeAssert.notEqual(
+      runtimeValue(
+        buildCodexAdditionalContext({
+          runtime: { model: "gpt-5.3-codex", reasoningEffort: "medium" },
+        }),
+      ),
+      runtimeValue(
+        buildCodexAdditionalContext({ runtime: { model: "gpt-5.4", reasoningEffort: "high" } }),
+      ),
+    );
+  });
+
+  it("flattens multiline metadata into single-line runtime info", () => {
+    const value = runtimeValue(
+      buildCodexAdditionalContext({
+        runtime: { model: "gpt\n5.3\ncodex", reasoningEffort: " high\neffort " },
+      }),
+    );
+
+    NodeAssert.match(value, /as gpt 5\.3 codex with high effort reasoning effort/);
+    NodeAssert.doesNotMatch(value, /<runtime_info>[^<]*\n/);
+  });
+
+  it("prefers the product-native preview tools", () => {
+    const tools = buildCodexAdditionalContext({ runtime }).upcomputer_tools?.value ?? "";
+    NodeAssert.match(tools, /upcomputer/);
+    NodeAssert.match(tools, /preview_status/);
+    NodeAssert.match(tools, /preview_open/);
+    NodeAssert.match(tools, /Do not switch to global browser skills/);
+  });
+
+  it("keeps every entry under Codex's per-entry cap", () => {
+    const context = buildCodexAdditionalContext({ runtime, customInstructions: "Be brief." });
+    NodeAssert.deepStrictEqual(Object.keys(context), [
+      "upcomputer_runtime",
+      "upcomputer_tools",
+      "upcomputer_custom_instructions",
+    ]);
+    for (const entry of Object.values(context)) {
+      NodeAssert.ok(Buffer.byteLength(entry.value) <= CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES);
     }
+    NodeAssert.ok(
+      Buffer.byteLength(CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS) <=
+        CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES,
+    );
+    NodeAssert.ok(
+      Buffer.byteLength(CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS) <=
+        CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES,
+    );
+  });
+});
+
+describe("buildCodexAdditionalContextItems", () => {
+  it("renders each entry as a developer message, as Codex does", () => {
+    NodeAssert.deepStrictEqual(
+      buildCodexAdditionalContextItems({
+        upcomputer_runtime: { kind: "application", value: "<runtime_info>x</runtime_info>" },
+        upcomputer_tools: { kind: "application", value: "tools" },
+      }),
+      [
+        {
+          type: "message",
+          role: "developer",
+          content: [
+            {
+              type: "input_text",
+              text: "<upcomputer_runtime><runtime_info>x</runtime_info></upcomputer_runtime>",
+            },
+          ],
+        },
+        {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: "<upcomputer_tools>tools</upcomputer_tools>" }],
+        },
+      ],
+    );
   });
 });
 
@@ -1278,5 +1468,115 @@ describe("openCodexThread", () => {
       NodeAssert.ok(isCodexAppServerRequestError(error));
       NodeAssert.equal(error.errorMessage, "timed out waiting for server");
     }),
+  );
+});
+
+describe("CodexSessionRuntime compaction", () => {
+  // A stdio stand-in for `codex app-server`: it compacts the root thread (and
+  // a child thread) during the first turn and records `thread/inject_items`.
+  const MOCK_PEER = `
+const fs = require("node:fs");
+const readline = require("node:readline");
+const { MOCK_THREAD_START: threadStart, MOCK_REQUESTS_PATH: requestsPath } = process.env;
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+const compacted = (threadId) => ({
+  method: "item/completed",
+  params: {
+    threadId,
+    turnId: "turn-1",
+    completedAtMs: 0,
+    item: { type: "contextCompaction", id: "compaction-" + threadId },
+  },
+});
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method, params } = JSON.parse(line);
+  if (method === "initialize") {
+    write({ id, result: { userAgent: "codex_cli_rs/0.159.1", codexHome: "/tmp", platformFamily: "unix", platformOs: "macos" } });
+  } else if (method === "thread/start") {
+    write({ id, result: JSON.parse(threadStart) });
+  } else if (method === "turn/start") {
+    write({ id, result: { turn: { id: "turn-1", items: [], status: "inProgress" } } });
+    write(compacted("child-thread"));
+    write(compacted("root-thread"));
+  } else if (method === "thread/inject_items") {
+    fs.appendFileSync(requestsPath, JSON.stringify({ method, params }) + "\\n");
+    write({ id, result: {} });
+    write({ method: "turn/completed", params: { threadId: "root-thread", turn: { id: "turn-1", items: [], status: "completed" } } });
+  } else if (id !== undefined) {
+    write({ id, result: {} });
+  }
+});
+`;
+
+  it.effect(
+    "restores the Up.computer context after the root thread compacts",
+    () =>
+      Effect.gen(function* () {
+        const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "codex-compaction-"));
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(dir, { recursive: true, force: true })),
+        );
+        const peerPath = NodePath.join(dir, "codex");
+        const requestsPath = NodePath.join(dir, "requests.jsonl");
+        NodeFS.writeFileSync(peerPath, `#!/usr/bin/env node\n${MOCK_PEER}`, { mode: 0o755 });
+
+        const runtime = yield* makeCodexSessionRuntime({
+          threadId: ThreadId.make("thread-compaction-context"),
+          binaryPath: peerPath,
+          cwd: dir,
+          runtimeMode: "full-access",
+          environment: {
+            ...process.env,
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            MOCK_THREAD_START: JSON.stringify(makeThreadOpenResponse("root-thread")),
+            MOCK_REQUESTS_PATH: requestsPath,
+          },
+          customInstructions: "Answer in Russian.",
+        });
+        const completed = yield* runtime.events.pipe(
+          Stream.filter((event) => event.method === "turn/completed"),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+
+        yield* runtime.start();
+        yield* runtime.sendTurn({ input: "keep going", interactionMode: "plan" });
+        yield* Fiber.join(completed);
+
+        // The restore is awaited before later notifications, so it has landed.
+        const requests = NodeFS.readFileSync(requestsPath, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+        NodeAssert.equal(requests.length, 1);
+        const [inject] = requests;
+        NodeAssert.ok(inject);
+        NodeAssert.equal(inject.params.threadId, "root-thread");
+        const items = inject.params.items as ReadonlyArray<{
+          role: string;
+          content: [{ text: string }];
+        }>;
+        const texts = items.map((item) => {
+          NodeAssert.equal(item.role, "developer");
+          return item.content[0].text;
+        });
+        NodeAssert.equal(texts.length, 3);
+        NodeAssert.match(
+          texts[0] ?? "",
+          /^<upcomputer_runtime><runtime_info>.*<\/upcomputer_runtime>$/s,
+        );
+        NodeAssert.match(
+          texts[1] ?? "",
+          /^<upcomputer_tools>.*preview_open.*<\/upcomputer_tools>$/s,
+        );
+        NodeAssert.match(
+          texts[2] ?? "",
+          /^<upcomputer_custom_instructions>.*Answer in Russian\.<\/upcomputer_custom_instructions>$/s,
+        );
+
+        yield* runtime.close;
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    15_000,
   );
 });

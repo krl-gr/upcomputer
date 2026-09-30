@@ -1,15 +1,15 @@
 import type { ProviderInteractionMode } from "@upcomputer/contracts";
+import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
 
-const UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS = `
+import { formatCustomInstructionsBlock } from "./CustomInstructions.ts";
 
-## Up.computer collaborative browser
+const UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS = `## Up.computer collaborative browser
 
 You are running inside Up.computer. The \`upcomputer\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
 
 For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 
-Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the UpComputer preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed UpComputer preview tool call should be inspected and retried with corrected arguments when the error is actionable.
-`;
+Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the UpComputer preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed UpComputer preview tool call should be inspected and retried with corrected arguments when the error is actionable.`;
 
 export const CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Plan Mode (Conversational)
 
@@ -139,7 +139,6 @@ Do not ask "should I proceed?" in the final output. The user can easily switch o
 Only produce at most one \`<proposed_plan>\` block per turn, and only when you are presenting a complete spec.
 
 If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement. If the user indicates that the prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a \`<proposed_plan>\` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior \`<proposed_plan>\` unchanged.
-${UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;
 
 export const CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Collaboration Mode: Default
@@ -153,7 +152,6 @@ Your active mode changes only when new developer instructions with a different \
 Use the \`request_user_input\` tool only when it is listed in the available tools for this turn.
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
-${UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;
 
 export const CODEX_ASK_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Collaboration Mode: Ask
@@ -173,7 +171,6 @@ Read-only inspection is allowed when needed to answer accurately. Prefer answeri
 Do not output \`<proposed_plan>\` or \`</proposed_plan>\` tags.
 
 The \`request_user_input\` tool is unavailable in Ask mode. Ask concise direct questions only when necessary to answer accurately.
-${UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;
 
 export interface CodexRuntimeInfo {
@@ -186,15 +183,88 @@ function toSingleLine(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
 }
 
-export function buildCodexDeveloperInstructions(
-  interactionMode: ProviderInteractionMode,
-  runtime: CodexRuntimeInfo,
-): string {
-  const base =
-    interactionMode === "plan"
-      ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
-      : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
-  return `${base}
+/** Mode prompt for `turn/start.collaborationMode.settings.developer_instructions`. */
+export function buildCodexDeveloperInstructions(interactionMode: ProviderInteractionMode): string {
+  return interactionMode === "plan"
+    ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
+    : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
+}
 
-<runtime_info>In case you're asked: you are running in UpComputer through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+export function buildCodexRuntimeInstructions(runtime: CodexRuntimeInfo): string {
+  return `<runtime_info>In case you're asked: you are running in UpComputer through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+}
+
+/**
+ * Codex caps each additional-context entry at about 1,000 tokens, estimated at
+ * 4 bytes per token, and truncates the middle of longer values.
+ */
+export const CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES = 3_600;
+
+const utf8ByteLength = (codePoint: number): number =>
+  codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
+
+/** Splits `text` at line breaks where possible, so each chunk fits in `maxBytes`. */
+function splitUtf8Chunks(text: string, maxBytes: number): ReadonlyArray<string> {
+  const chunks: Array<string> = [];
+  let chunk = "";
+  let chunkBytes = 0;
+  const flush = () => {
+    const trimmed = chunk.trimEnd();
+    if (trimmed.length > 0) chunks.push(trimmed);
+    chunk = "";
+    chunkBytes = 0;
+  };
+  for (const line of text.split(/(?<=\n)/)) {
+    const lineBytes = Buffer.byteLength(line);
+    if (chunkBytes + lineBytes > maxBytes) flush();
+    if (lineBytes <= maxBytes) {
+      chunk += line;
+      chunkBytes += lineBytes;
+      continue;
+    }
+    for (const char of line) {
+      const charBytes = utf8ByteLength(char.codePointAt(0) ?? 0);
+      if (chunkBytes + charBytes > maxBytes) flush();
+      chunk += char;
+      chunkBytes += charBytes;
+    }
+  }
+  flush();
+  return chunks;
+}
+
+/**
+ * Up.computer context for `turn/start.additionalContext`. Codex renders each
+ * entry as a `<key>value</key>` developer message and resends it only when the
+ * value changes.
+ *
+ * This must stay out of the collaboration mode: when the model catalog ships
+ * its own text for a mode, as newer models do, Codex uses that text and drops
+ * the client's `developer_instructions` entirely.
+ */
+export function buildCodexAdditionalContext(input: {
+  readonly runtime: CodexRuntimeInfo;
+  readonly customInstructions?: string | undefined;
+}): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  const context: Record<string, V2TurnStartParams__AdditionalContextEntry> = {
+    upcomputer_runtime: {
+      kind: "application",
+      value: buildCodexRuntimeInstructions(input.runtime),
+    },
+    upcomputer_tools: { kind: "application", value: UPCOMPUTER_BROWSER_TOOL_INSTRUCTIONS },
+  };
+  const customInstructions = formatCustomInstructionsBlock(input.customInstructions);
+  if (customInstructions !== undefined) {
+    // Separate keys keep each value under Codex's per-entry token cap.
+    splitUtf8Chunks(customInstructions, CODEX_ADDITIONAL_CONTEXT_ENTRY_MAX_BYTES).forEach(
+      (value, index) => {
+        const key =
+          index === 0
+            ? "upcomputer_custom_instructions"
+            : `upcomputer_custom_instructions_${index + 1}`;
+        context[key] = { kind: "application", value };
+      },
+    );
+  }
+  return context;
 }

@@ -48,6 +48,7 @@ import type {
   ExperimentalDynamicToolSpec,
 } from "../../product/DynamicToolRegistry.ts";
 import {
+  buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
@@ -216,6 +217,8 @@ export interface CodexSessionRuntimeOptions {
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly dynamicToolRegistry?: ExperimentalDynamicToolRegistry<never, never>;
+  /** Sent with every turn as additional context (or developer instructions on older Codex). */
+  readonly customInstructions?: string;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -670,25 +673,23 @@ function runtimeModeToTurnSandboxPolicy(
   }
 }
 
-function buildCodexCollaborationMode(input: {
+function resolveCodexTurnMode(input: {
   readonly interactionMode?: ProviderInteractionMode;
   readonly collaborationMode?: CodexSessionRuntimeCollaborationModeInput;
-  readonly model?: string;
-  readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
-}): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
+}):
+  | {
+      readonly mode: EffectCodexSchema.V2TurnStartParams__ModeKind;
+      readonly developerInstructions: string;
+    }
+  | undefined {
   if (input.collaborationMode !== undefined) {
-    const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
     return {
       mode: input.collaborationMode.mode,
-      settings: {
-        model,
-        reasoning_effort: input.effort ?? "medium",
-        developer_instructions:
-          input.collaborationMode.developerInstructions ??
-          (input.collaborationMode.mode === "plan"
-            ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
-            : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS),
-      },
+      developerInstructions:
+        input.collaborationMode.developerInstructions ??
+        (input.collaborationMode.mode === "plan"
+          ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
+          : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS),
     };
   }
   if (input.interactionMode === undefined) {
@@ -699,46 +700,89 @@ function buildCodexCollaborationMode(input: {
       `Codex interaction mode '${input.interactionMode}' requires registry resolution before provider dispatch.`,
     );
   }
-  const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
-  const reasoningEffort = input.effort ?? "medium";
   return {
     mode: input.interactionMode,
-    settings: {
-      model,
-      reasoning_effort: reasoningEffort,
-      developer_instructions: buildCodexDeveloperInstructions(input.interactionMode, {
-        model,
-        reasoningEffort,
-      }),
-    },
+    developerInstructions: buildCodexDeveloperInstructions(input.interactionMode),
   };
 }
 
 const CODEX_INTERACTION_MODE_CONTEXT_KEY = "upcomputer_interaction_mode";
 
-function buildCodexInteractionModeAdditionalContext(
-  collaborationMode: EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined,
-):
-  | Readonly<Record<string, EffectCodexSchema.V2TurnStartParams__AdditionalContextEntry>>
-  | undefined {
-  if (collaborationMode?.mode !== "default") {
-    return undefined;
+function buildCodexTurnInstructions(input: {
+  readonly interactionMode?: ProviderInteractionMode;
+  readonly collaborationMode?: CodexSessionRuntimeCollaborationModeInput;
+  readonly model?: string;
+  readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
+  readonly customInstructions?: string;
+  readonly supportsAdditionalContext: boolean;
+}): Pick<CodexTurnStartParamsWithCollaborationMode, "collaborationMode" | "additionalContext"> {
+  const turnMode = resolveCodexTurnMode(input);
+  if (turnMode === undefined) {
+    return {};
   }
-  const instructions = collaborationMode.settings.developer_instructions;
-  if (instructions === undefined || instructions === null || instructions.length === 0) {
-    return undefined;
+  const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
+  const reasoningEffort = input.effort ?? "medium";
+  const context = buildCodexAdditionalContext({
+    runtime: { model, reasoningEffort },
+    customInstructions: input.customInstructions,
+  });
+  if (!input.supportsAdditionalContext) {
+    // Without turn additional context, the collaboration mode is the only
+    // channel, so it carries the Up.computer context too.
+    return {
+      collaborationMode: {
+        mode: turnMode.mode,
+        settings: {
+          model,
+          reasoning_effort: reasoningEffort,
+          developer_instructions: [
+            turnMode.developerInstructions,
+            ...Object.values(context).map((entry) => entry.value),
+          ].join("\n\n"),
+        },
+      },
+    };
   }
-
-  // Codex snapshots collaboration-mode state by native mode. Ask and Build both
-  // use native Default, so a change between their developer instructions can be
-  // omitted. Application additional context is also developer-role, while its
-  // stable key makes Codex re-emit the block only when the instructions change.
   return {
-    [CODEX_INTERACTION_MODE_CONTEXT_KEY]: {
-      kind: "application",
-      value: instructions,
+    collaborationMode: {
+      mode: turnMode.mode,
+      settings: {
+        model,
+        reasoning_effort: reasoningEffort,
+        developer_instructions: turnMode.developerInstructions,
+      },
+    },
+    additionalContext: {
+      // Codex snapshots collaboration-mode state by native mode. Ask and Build
+      // both use native Default, so a change between their developer
+      // instructions can be omitted. Application additional context is also
+      // developer-role, while its stable key makes Codex re-emit the block only
+      // when the instructions change.
+      ...(turnMode.mode === "default"
+        ? {
+            [CODEX_INTERACTION_MODE_CONTEXT_KEY]: {
+              kind: "application",
+              value: turnMode.developerInstructions,
+            },
+          }
+        : {}),
+      ...context,
     },
   };
+}
+
+/**
+ * Developer messages that put a turn's additional context back into a
+ * thread's history, rendered the way Codex renders the entries.
+ */
+export function buildCodexAdditionalContextItems(
+  context: NonNullable<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>,
+): ReadonlyArray<unknown> {
+  return Object.entries(context).map(([key, entry]) => ({
+    type: "message",
+    role: "developer",
+    content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+  }));
 }
 
 export function buildTurnStartParams(input: {
@@ -757,6 +801,7 @@ export function buildTurnStartParams(input: {
   readonly interactionModeSandbox?: InteractionModeSandboxPolicy;
   readonly collaborationMode?: CodexSessionRuntimeCollaborationModeInput;
   readonly supportsInteractionModeAdditionalContext?: boolean;
+  readonly customInstructions?: string;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -773,16 +818,14 @@ export function buildTurnStartParams(input: {
   }
 
   const config = runtimeModeToThreadConfig(input.runtimeMode);
-  const collaborationMode = buildCodexCollaborationMode({
+  const turnInstructions = buildCodexTurnInstructions({
     ...(input.collaborationMode ? { collaborationMode: input.collaborationMode } : {}),
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
+    ...(input.customInstructions ? { customInstructions: input.customInstructions } : {}),
+    supportsAdditionalContext: input.supportsInteractionModeAdditionalContext !== false,
   });
-  const additionalContext =
-    input.supportsInteractionModeAdditionalContext === false
-      ? undefined
-      : buildCodexInteractionModeAdditionalContext(collaborationMode);
   const sandboxPolicy =
     input.interactionModeSandbox === "read-only"
       ? ({ type: "readOnly" } satisfies EffectCodexSchema.V2TurnStartParams__SandboxPolicy)
@@ -799,8 +842,7 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(collaborationMode ? { collaborationMode } : {}),
-    ...(additionalContext ? { additionalContext } : {}),
+    ...turnInstructions,
   }).pipe(
     Effect.mapError((cause) =>
       CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
@@ -1308,6 +1350,9 @@ export const makeCodexSessionRuntime = (
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const suppressMemoryConsolidationNotification = makeMemoryConsolidationNotificationFilter();
     const supportsInteractionModeAdditionalContextRef = yield* Ref.make(false);
+    /** The `additionalContext` of the latest `turn/start`, restored after compaction. */
+    const lastAdditionalContextRef =
+      yield* Ref.make<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>(undefined);
     const closedRef = yield* Ref.make(false);
 
     // `~` is not shell-expanded when env vars are set via
@@ -1424,6 +1469,31 @@ export const makeCodexSessionRuntime = (
         ),
       );
 
+    /**
+     * Compaction rebuilds history from user messages and Codex's own context,
+     * which drops our `additionalContext` messages. Codex only resends an
+     * entry when its value changes, so without this the Up.computer context
+     * would stay lost until the model or effort changed. Awaited so the
+     * context is back before later notifications from the same turn are
+     * handled.
+     */
+    const restoreAdditionalContext = (threadId: string) =>
+      Effect.gen(function* () {
+        const context = yield* Ref.get(lastAdditionalContextRef);
+        if (!context) return;
+        yield* client.request("thread/inject_items", {
+          threadId,
+          items: buildCodexAdditionalContextItems(context),
+        });
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to restore Codex additional context after compaction.", {
+            cause,
+          }),
+        ),
+      );
+
     const handleRawNotification = (notification: CodexServerNotification) =>
       Effect.gen(function* () {
         const isMemoryConsolidationNotification =
@@ -1447,6 +1517,14 @@ export const makeCodexSessionRuntime = (
 
         if (isMemoryConsolidationNotification) {
           return;
+        }
+
+        if (
+          notification.method === "item/completed" &&
+          notification.params.item.type === "contextCompaction" &&
+          notification.params.threadId === currentProviderThreadId(yield* Ref.get(sessionRef))
+        ) {
+          yield* restoreAdditionalContext(notification.params.threadId);
         }
 
         let requestId: ApprovalRequestId | undefined;
@@ -2110,7 +2188,11 @@ export const makeCodexSessionRuntime = (
               : {}),
             ...(input.collaborationMode ? { collaborationMode: input.collaborationMode } : {}),
             supportsInteractionModeAdditionalContext,
+            ...(options.customInstructions
+              ? { customInstructions: options.customInstructions }
+              : {}),
           });
+          yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
             Effect.mapError((error) =>

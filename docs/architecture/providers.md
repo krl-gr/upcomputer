@@ -36,7 +36,7 @@ All three use `DrainableWorker` internally and expose `drain()` for deterministi
 | Harness      | Channel                                                                       |
 | ------------ | ----------------------------------------------------------------------------- |
 | Claude       | `systemPrompt: { preset: "claude_code", append }`                             |
-| Codex        | Appended to every turn's collaboration-mode developer instructions            |
+| Codex        | Every turn's `additionalContext` (collaboration mode on Codex before 0.141)   |
 | OpenCode     | `system` on every `session.promptAsync`                                       |
 | Cursor, Grok | ACP has no system prompt: leading text block of the first prompt of a session |
 | Pi (pro)     | Appended system prompt of the Pi resource loader                              |

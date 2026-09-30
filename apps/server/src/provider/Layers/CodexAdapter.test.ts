@@ -380,6 +380,22 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }),
   );
 
+  it.effect("passes custom instructions to the runtime", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-custom-instructions"),
+        runtimeMode: "full-access",
+        customInstructions: "Answer in Russian.",
+      });
+
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.customInstructions, "Answer in Russian.");
+    }),
+  );
+
   it.effect("maps resolved ask mode to Codex collaboration mode", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
