@@ -298,6 +298,95 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  for (const taskType of ["monitor", "shell"] as const) {
+    it.effect(`emits the ${taskType} background lifecycle`, () =>
+      Effect.gen(function* () {
+        const threadId = ThreadId.make(`grok-background-${taskType}`);
+        const wrapperPath = yield* Effect.promise(() =>
+          makeMockGrokWrapper({
+            [taskType === "monitor"
+              ? "T3_ACP_EMIT_GROK_MONITOR_POST_TURN_POLL"
+              : "T3_ACP_EMIT_GROK_BACKGROUND_TASK_STARTED"]: "1",
+          }),
+        );
+        const adapter = yield* makeTestAdapter(wrapperPath);
+        const events: ProviderRuntimeEvent[] = [];
+        const finished = yield* Deferred.make<void>();
+        const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.gen(function* () {
+            events.push(event);
+            if (event.type === (taskType === "monitor" ? "task.completed" : "turn.completed")) {
+              yield* Deferred.succeed(finished, undefined);
+            }
+          }),
+        ).pipe(Effect.forkChild);
+        yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+        yield* adapter.sendTurn({ threadId, input: "watch the unit" });
+        yield* Deferred.await(finished).pipe(Effect.timeout("3 seconds"));
+
+        const started = events.find((event) => event.type === "task.started");
+        const taskId =
+          taskType === "monitor"
+            ? "01a05f41-5107-7550-821e-79e8d1cd7687"
+            : "call-fb9d0000-0000-0000-0000-000000000026";
+        assert.equal(started?.payload.taskType, taskType);
+        assert.equal(started?.payload.taskId, taskId);
+        if (taskType === "monitor") {
+          const completed = events.find((event) => event.type === "task.completed");
+          const turnEnd = events.findIndex((event) => event.type === "turn.completed");
+          assert.equal(completed?.payload.status, "completed");
+          assert.equal(completed?.payload.taskId, taskId);
+          assert.equal(completed?.turnId, undefined);
+          assert.isAtLeast(turnEnd, 0);
+          assert.isAbove(
+            events.findIndex((event) => event.type === "task.completed"),
+            turnEnd,
+          );
+          assert.deepEqual(
+            events
+              .slice(turnEnd + 1)
+              .filter((event) => event.type === "item.updated" || event.type === "item.completed"),
+            [],
+          );
+        } else {
+          assert.equal(started?.payload.description, "sleep 40; echo done-a");
+        }
+        yield* Fiber.interrupt(eventsFiber);
+        yield* adapter.stopSession(threadId);
+      }).pipe(TestClock.withLive),
+    );
+  }
+
+  it.effect("settles a live background shell as stopped when the session stops", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-background-stop");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_EMIT_GROK_BACKGROUND_TASK_STARTED: "1" }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const turnCompleted = yield* Deferred.make<void>();
+      const taskStopped =
+        yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "task.completed" }>>();
+      const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        event.type === "turn.completed"
+          ? Deferred.succeed(turnCompleted, undefined).pipe(Effect.ignore)
+          : event.type === "task.completed"
+            ? Deferred.succeed(taskStopped, event).pipe(Effect.ignore)
+            : Effect.void,
+      ).pipe(Effect.forkChild);
+      yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+      yield* adapter.sendTurn({ threadId, input: "run it in the background" });
+      yield* Deferred.await(turnCompleted).pipe(Effect.timeout("3 seconds"));
+
+      yield* adapter.stopSession(threadId);
+      const stopped = yield* Deferred.await(taskStopped).pipe(Effect.timeout("3 seconds"));
+
+      assert.equal(stopped.payload.taskId, "call-fb9d0000-0000-0000-0000-000000000026");
+      assert.equal(stopped.payload.status, "stopped");
+      yield* Fiber.interrupt(eventsFiber);
+    }).pipe(TestClock.withLive),
+  );
+
   it.effect("closes the ACP child process when a session stops", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-stop-session-close");
