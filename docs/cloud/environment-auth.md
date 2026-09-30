@@ -35,6 +35,15 @@ browser session cookie. The cookie is an HTTP transport adapter for the same
 scoped session model; the response never exposes the session secret to browser
 JavaScript.
 
+Cookies are scoped by host, not port, so every server picks an instance-scoped
+cookie name (`apps/server/src/auth/utils.ts`): desktop uses
+`upcomputer_session_<port>`, a remote-reachable web server
+`upcomputer_session_<hash of environmentId>`, and loopback or development
+servers `upcomputer_session_<port>_<hash of state dir>`. Web servers still
+accept their pre-upgrade name (`upcomputer_session`, or
+`upcomputer_session_<port>` in development) after bearer/DPoP credentials, and
+`GET /api/auth/session` re-issues such a session under the current name.
+
 ### Bearer Access Token
 
 Non-browser clients use `POST /oauth/token` with an

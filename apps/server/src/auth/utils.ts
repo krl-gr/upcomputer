@@ -16,23 +16,68 @@ const SESSION_COOKIE_NAME = "upcomputer_session";
  * clobbers the first's session and both sides see "Invalid session token
  * signature" until someone clears cookies by hand.
  *
- * Two populations qualify, for the same reason but from different causes:
- *
- * - **Dev servers** (`devUrl` set), which run several at a time across worktrees.
- * - **Desktop**, which scans upward from 3773 for a free port and binds
- *   127.0.0.1, so a second instance lands on a different port and the same host.
- *
- * Hosted deployments keep the stable production name: their public port can
- * change between releases, and scoping it would log every user out.
+ * - **Desktop** scans upward from 3773 for a free port and binds 127.0.0.1, so
+ *   a second instance lands on a different port and the same host.
+ * - **Remote web servers** use their persisted environment identity and omit
+ *   the port, so the name survives state-directory moves and public port
+ *   changes.
+ * - **Loopback and dev servers** combine port and state directory: several run
+ *   at once across worktrees, and a server that later reuses a port would
+ *   otherwise receive a token signed elsewhere.
  */
 export function resolveSessionCookieName(input: {
   readonly mode: "web" | "desktop";
   readonly port: number;
-  readonly devUrl: URL | undefined;
+  readonly host: string | undefined;
+  readonly instanceKey: string;
+  readonly environmentId: string;
+  readonly development: boolean;
 }): string {
-  return input.devUrl === undefined && input.mode !== "desktop"
-    ? SESSION_COOKIE_NAME
-    : `${SESSION_COOKIE_NAME}_${input.port}`;
+  if (input.mode === "desktop") {
+    return `${SESSION_COOKIE_NAME}_${input.port}`;
+  }
+
+  const remoteWeb = !input.development && isRemoteReachableHost(input.host);
+  const instanceHash = NodeCrypto.createHash("sha256")
+    .update(remoteWeb ? input.environmentId : input.instanceKey)
+    .digest("hex")
+    .slice(0, 12);
+
+  return remoteWeb
+    ? `${SESSION_COOKIE_NAME}_${instanceHash}`
+    : `${SESSION_COOKIE_NAME}_${input.port}_${instanceHash}`;
+}
+
+/**
+ * The name web servers used before instance scoping. Still accepted (after
+ * bearer/DPoP credentials) and re-issued under the current name, so browsers
+ * paired before the upgrade stay signed in.
+ */
+export function resolveLegacySessionCookieName(input: {
+  readonly mode: "web" | "desktop";
+  readonly port: number;
+  readonly development: boolean;
+}): string | undefined {
+  if (input.mode !== "web") {
+    return undefined;
+  }
+  return input.development ? `${SESSION_COOKIE_NAME}_${input.port}` : SESSION_COOKIE_NAME;
+}
+
+export function isRemoteReachableHost(host: string | undefined): boolean {
+  if (host === "0.0.0.0" || host === "::" || host === "[::]") {
+    return true;
+  }
+  if (!host || host.length === 0) {
+    return false;
+  }
+  return !(
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host.startsWith("127.")
+  );
 }
 
 export function base64UrlEncode(input: string | Uint8Array): string {

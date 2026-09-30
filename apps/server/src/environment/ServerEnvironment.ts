@@ -23,12 +23,15 @@ import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 export class ServerEnvironmentIdPersistenceError extends Schema.TaggedErrorClass<ServerEnvironmentIdPersistenceError>()(
   "ServerEnvironmentIdPersistenceError",
   {
-    operation: Schema.Literals(["check", "read", "write"]),
+    operation: Schema.Literals(["check", "read", "write", "initialize"]),
     environmentIdPath: Schema.String,
-    cause: Schema.Defect(),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
+    if (this.operation === "initialize") {
+      return `Server environment ID file is missing or empty after initialization at '${this.environmentIdPath}'.`;
+    }
     return `Server environment ID ${this.operation} failed at '${this.environmentIdPath}'.`;
   }
 }
@@ -40,6 +43,17 @@ export class ServerEnvironment extends Context.Service<
     readonly getDescriptor: Effect.Effect<ExecutionEnvironmentDescriptor>;
   }
 >()("@upcomputer/server/environment/ServerEnvironment") {}
+
+/**
+ * The persisted environment ID alone. Auth depends on it (remote session
+ * cookie names are keyed by it) without pulling in the full descriptor.
+ */
+export class ServerEnvironmentIdentity extends Context.Service<
+  ServerEnvironmentIdentity,
+  {
+    readonly getEnvironmentId: Effect.Effect<EnvironmentId>;
+  }
+>()("@upcomputer/server/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
 function platformOs(platform: NodeJS.Platform): ExecutionEnvironmentDescriptor["platform"]["os"] {
   switch (platform) {
@@ -67,69 +81,116 @@ function platformArch(
   }
 }
 
+const makeIdentity = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const crypto = yield* Crypto.Crypto;
+
+  const readPersistedEnvironmentId = Effect.gen(function* () {
+    const exists = yield* fileSystem.exists(serverConfig.environmentIdPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ServerEnvironmentIdPersistenceError({
+            operation: "check",
+            environmentIdPath: serverConfig.environmentIdPath,
+            cause,
+          }),
+      ),
+    );
+    if (!exists) {
+      return null;
+    }
+
+    const raw = yield* fileSystem.readFileString(serverConfig.environmentIdPath).pipe(
+      Effect.map((value) => value.trim()),
+      Effect.mapError(
+        (cause) =>
+          new ServerEnvironmentIdPersistenceError({
+            operation: "read",
+            environmentIdPath: serverConfig.environmentIdPath,
+            cause,
+          }),
+      ),
+    );
+
+    return raw.length > 0 ? raw : null;
+  });
+
+  const persistEnvironmentId = Effect.fn("ServerEnvironmentIdentity.persistEnvironmentId")(
+    function* (value: string, mode: "create" | "recover") {
+      const destinationPath =
+        mode === "recover"
+          ? `${serverConfig.environmentIdPath}.recovery`
+          : serverConfig.environmentIdPath;
+      const tempPath = yield* fileSystem.makeTempFileScoped({
+        directory: serverConfig.stateDir,
+        prefix: ".environment-id-",
+      });
+      yield* fileSystem.writeFileString(tempPath, `${value}\n`);
+      // Publish the completed file without replacing an ID created by another process.
+      yield* fileSystem
+        .link(tempPath, destinationPath)
+        .pipe(
+          Effect.catch((cause) =>
+            cause.reason._tag === "AlreadyExists" ? Effect.void : Effect.fail(cause),
+          ),
+        );
+      if (mode === "recover") {
+        // Keep the recovery ID so delayed initializers also publish the same winner.
+        yield* fileSystem.remove(tempPath);
+        yield* fileSystem.copyFile(destinationPath, tempPath);
+        yield* fileSystem.rename(tempPath, serverConfig.environmentIdPath);
+      }
+    },
+    Effect.scoped,
+    Effect.mapError(
+      (cause) =>
+        new ServerEnvironmentIdPersistenceError({
+          operation: "write",
+          environmentIdPath: serverConfig.environmentIdPath,
+          cause,
+        }),
+    ),
+  );
+
+  const environmentIdRaw = yield* Effect.gen(function* () {
+    const persisted = yield* readPersistedEnvironmentId;
+    if (persisted) {
+      return persisted;
+    }
+
+    const generated = yield* crypto.randomUUIDv4;
+    yield* persistEnvironmentId(generated, "create");
+    let winner = yield* readPersistedEnvironmentId;
+    if (winner === null) {
+      yield* persistEnvironmentId(generated, "recover");
+      winner = yield* readPersistedEnvironmentId;
+    }
+    if (winner === null) {
+      return yield* new ServerEnvironmentIdPersistenceError({
+        operation: "initialize",
+        environmentIdPath: serverConfig.environmentIdPath,
+      });
+    }
+    return winner;
+  });
+
+  const environmentId = EnvironmentId.make(environmentIdRaw);
+  return ServerEnvironmentIdentity.of({
+    getEnvironmentId: Effect.succeed(environmentId),
+  });
+});
+
+export const identityLayer = Layer.effect(ServerEnvironmentIdentity, makeIdentity);
+
 export const makeForProduct = (productManifest: ProductManifestSnapshot) =>
   Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig.ServerConfig;
-    const crypto = yield* Crypto.Crypto;
+    const identity = yield* ServerEnvironmentIdentity;
     const hostPlatform = yield* HostProcessPlatform;
     const hostArchitecture = yield* HostProcessArchitecture;
-
-    const readPersistedEnvironmentId = Effect.gen(function* () {
-      const exists = yield* fileSystem.exists(serverConfig.environmentIdPath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ServerEnvironmentIdPersistenceError({
-              operation: "check",
-              environmentIdPath: serverConfig.environmentIdPath,
-              cause,
-            }),
-        ),
-      );
-      if (!exists) {
-        return null;
-      }
-
-      const raw = yield* fileSystem.readFileString(serverConfig.environmentIdPath).pipe(
-        Effect.map((value) => value.trim()),
-        Effect.mapError(
-          (cause) =>
-            new ServerEnvironmentIdPersistenceError({
-              operation: "read",
-              environmentIdPath: serverConfig.environmentIdPath,
-              cause,
-            }),
-        ),
-      );
-
-      return raw.length > 0 ? raw : null;
-    });
-
-    const persistEnvironmentId = (value: string) =>
-      fileSystem.writeFileString(serverConfig.environmentIdPath, `${value}\n`).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ServerEnvironmentIdPersistenceError({
-              operation: "write",
-              environmentIdPath: serverConfig.environmentIdPath,
-              cause,
-            }),
-        ),
-      );
-
-    const environmentIdRaw = yield* Effect.gen(function* () {
-      const persisted = yield* readPersistedEnvironmentId;
-      if (persisted) {
-        return persisted;
-      }
-
-      const generated = yield* crypto.randomUUIDv4;
-      yield* persistEnvironmentId(generated);
-      return generated;
-    });
-
-    const environmentId = EnvironmentId.make(environmentIdRaw);
+    const environmentId = yield* identity.getEnvironmentId;
     const cwdBaseName = path.basename(serverConfig.cwd).trim();
     const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
     const serverSelfUpdate = yield* resolveServerSelfUpdateCapability({
@@ -165,10 +226,12 @@ export const make = makeForProduct(PRODUCT_MANIFEST);
 /**
  * ServerEnvironment is acquired from persisted filesystem and host-process
  * state. It intentionally has no fallback Layer.succeed value: callers must
- * provide the external platform services and a ServerConfig.
+ * provide the external platform services and a ServerConfig. The identity is
+ * merged into the output so auth layers share the same memoized instance.
  */
 export const layerForProduct = (productManifest: ProductManifestSnapshot) =>
   Layer.effect(ServerEnvironment, makeForProduct(productManifest)).pipe(
+    Layer.provideMerge(identityLayer),
     Layer.provide(ProcessRunner.layer),
   );
 

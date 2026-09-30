@@ -271,6 +271,7 @@ const ProjectFaviconResolverLayerLive = ProjectFaviconResolver.layer.pipe(
 const makeAuthLayerLive = (persistenceLayer: ReturnType<typeof makePersistenceLayerLive>) =>
   EnvironmentAuth.layer.pipe(
     Layer.provideMerge(persistenceLayer),
+    Layer.provide(ServerEnvironment.identityLayer),
     Layer.provide(ServerSecretStore.layer),
   );
 

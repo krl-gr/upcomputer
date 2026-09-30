@@ -80,6 +80,12 @@ It is the unit that owns:
 
 It is identified by a stable `environmentId`.
 
+The server persists it at `<stateDir>/environment-id` on first start
+(`apps/server/src/environment/ServerEnvironment.ts`). Initialization publishes a complete ID
+atomically. Empty or whitespace-only ID files are repaired using a retained
+`<stateDir>/environment-id.recovery` file so concurrent and delayed repairs choose the same ID.
+Existing nonempty ID files remain authoritative.
+
 This is the shared cross-client primitive. Desktop, mobile, and web should all reason about the same concept here.
 
 ### KnownEnvironment

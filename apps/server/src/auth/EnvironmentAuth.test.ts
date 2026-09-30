@@ -5,11 +5,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
-import { resolveSessionCookieName } from "./utils.ts";
 
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
@@ -24,11 +24,8 @@ const makeServerConfigLayer = (overrides?: Partial<ServerConfig.ServerConfig["Se
       return {
         ...config,
         ...overrides,
-        // Last, so the port cannot be overridden out from under
-        // makeCookieRequest — which builds the cookie name from this constant.
-        // An override that changed it would leave the server reading
-        // t3_session_<other> while every request still sent t3_session_13773,
-        // and the tests would fail for a reason unrelated to what they assert.
+        // Keep the test server deterministic even when the default test layer
+        // changes its development port.
         port: TEST_SERVER_PORT,
       } satisfies ServerConfig.ServerConfig["Service"];
     }),
@@ -38,19 +35,17 @@ const makeEnvironmentAuthLayer = (overrides?: Partial<ServerConfig.ServerConfig[
   EnvironmentAuth.layer.pipe(
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
+    Layer.provide(ServerEnvironment.identityLayer),
     Layer.provide(makeServerConfigLayer(overrides)),
   );
 
 const makeCookieRequest = (
+  cookieName: string,
   sessionToken: string,
 ): Parameters<EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]>[0] =>
   ({
     cookies: {
-      // Derived, not hardcoded: the name is port-scoped so concurrent servers
-      // on one hostname don't share a cookie. Mode and devUrl mirror
-      // ServerConfig.layerTest, so this resolves to whatever the server reads.
-      [resolveSessionCookieName({ mode: "web", port: TEST_SERVER_PORT, devUrl: undefined })]:
-        sessionToken,
+      [cookieName]: sessionToken,
     },
     headers: {},
   }) as unknown as Parameters<
@@ -112,7 +107,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         requestMetadata,
       );
       const verified = yield* serverAuth.authenticateHttpRequest(
-        makeCookieRequest(exchanged.sessionToken),
+        makeCookieRequest((yield* SessionStore.SessionStore).cookieName, exchanged.sessionToken),
       );
 
       expect(verified.sessionId.length).toBeGreaterThan(0);
@@ -170,7 +165,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         requestMetadata,
       );
       const browserSession = yield* serverAuth.authenticateHttpRequest(
-        makeCookieRequest(browser.sessionToken),
+        makeCookieRequest((yield* SessionStore.SessionStore).cookieName, browser.sessionToken),
       );
       const staleSessions = yield* Effect.forEach([1, 2, 3], () =>
         sessions.issue({ subject: "desktop-bootstrap", method: "bearer-access-token" }),
@@ -256,7 +251,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
 
       const exchanged = yield* serverAuth.createBrowserSession(token ?? "", requestMetadata);
       const verified = yield* serverAuth.authenticateHttpRequest(
-        makeCookieRequest(exchanged.sessionToken),
+        makeCookieRequest((yield* SessionStore.SessionStore).cookieName, exchanged.sessionToken),
       );
 
       expect(verified.scopes).toEqual([
@@ -284,7 +279,10 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
           requestMetadata,
         );
         const administrativeSession = yield* serverAuth.authenticateHttpRequest(
-          makeCookieRequest(administrativeExchange.sessionToken),
+          makeCookieRequest(
+            (yield* SessionStore.SessionStore).cookieName,
+            administrativeExchange.sessionToken,
+          ),
         );
         const pairingCredential = yield* serverAuth.issuePairingCredential({
           label: "Julius iPhone",
@@ -301,7 +299,10 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
           },
         );
         const clientSession = yield* serverAuth.authenticateHttpRequest(
-          makeCookieRequest(clientExchange.sessionToken),
+          makeCookieRequest(
+            (yield* SessionStore.SessionStore).cookieName,
+            clientExchange.sessionToken,
+          ),
         );
         const clientsBeforeRevoke = yield* serverAuth.listClientSessions(
           administrativeSession.sessionId,
@@ -343,5 +344,38 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
           }),
         ),
       ),
+  );
+
+  it.effect("accepts a pre-upgrade remote web cookie until it is re-issued", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const pairingCredential = yield* serverAuth.issuePairingCredential();
+      const exchanged = yield* serverAuth.createBrowserSession(
+        pairingCredential.credential,
+        requestMetadata,
+      );
+      const verified = yield* serverAuth.authenticateHttpRequest(
+        makeCookieRequest(sessions.legacyCookieName ?? "", exchanged.sessionToken),
+      );
+
+      expect(sessions.legacyCookieName).toBe("upcomputer_session");
+      expect(sessions.cookieName).toMatch(/^upcomputer_session_[a-f0-9]{12}$/);
+      expect(verified.sessionId.length).toBeGreaterThan(0);
+    }).pipe(Effect.provide(makeEnvironmentAuthLayer({ mode: "web", host: "192.168.1.50" }))),
+  );
+
+  it.effect("prefers a bearer token over a stale legacy cookie", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const bearer = yield* serverAuth.issueSession();
+      const verified = yield* serverAuth.authenticateHttpRequest({
+        cookies: { [sessions.legacyCookieName ?? "upcomputer_session"]: "stale" },
+        headers: { authorization: `Bearer ${bearer.token}` },
+      } as never);
+
+      expect(verified.sessionId).toBe(bearer.sessionId);
+    }).pipe(Effect.provide(makeEnvironmentAuthLayer({ mode: "web", host: "192.168.1.50" }))),
   );
 });
