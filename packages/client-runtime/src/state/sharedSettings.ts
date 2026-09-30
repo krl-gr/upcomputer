@@ -8,6 +8,7 @@
  * value so the user can push their current value out.
  */
 import type { EnvironmentId, ServerSettings, ServerSettingsPatch } from "@upcomputer/contracts";
+import { isModelSelectionProviderEnabled } from "@upcomputer/shared/serverSettings";
 import * as Equal from "effect/Equal";
 import * as Struct from "effect/Struct";
 
@@ -15,6 +16,7 @@ import * as Struct from "effect/Struct";
 export const SHARED_SERVER_SETTING_KEYS = [
   "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
+  "textGenerationModelSelection",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];
@@ -41,9 +43,41 @@ export function splitSharedServerPatch(patch: ServerSettingsPatch): {
   };
 }
 
+/**
+ * Drop the text generation model for a target that cannot run it: the
+ * instance is missing or disabled there, or the same instance id belongs to a
+ * different driver. Writes to the originating environment keep the server's
+ * own fallback behavior.
+ */
+export function filterSharedServerPatch(
+  patch: ServerSettingsPatch,
+  settings?: ServerSettings,
+  sourceSettings = settings,
+  targetIsSource = false,
+): ServerSettingsPatch {
+  const instanceId =
+    patch.textGenerationModelSelection?.instanceId ??
+    sourceSettings?.textGenerationModelSelection.instanceId;
+  if (
+    !targetIsSource &&
+    patch.textGenerationModelSelection &&
+    (!settings ||
+      (instanceId !== undefined &&
+        (sourceSettings?.providerInstances[instanceId]?.driver ?? instanceId) !==
+          (settings.providerInstances[instanceId]?.driver ?? instanceId)) ||
+      !isModelSelectionProviderEnabled(settings, {
+        ...settings.textGenerationModelSelection,
+        ...patch.textGenerationModelSelection,
+      }))
+  ) {
+    return Struct.omit(patch, ["textGenerationModelSelection"]);
+  }
+  return patch;
+}
+
 /** The shared subset of one environment's settings, as a patch that can be written elsewhere. */
 export function pickSharedServerSettings(settings: ServerSettings): ServerSettingsPatch {
-  return Struct.pick(settings, SHARED_SERVER_SETTING_KEYS);
+  return filterSharedServerPatch(Struct.pick(settings, SHARED_SERVER_SETTING_KEYS), settings);
 }
 
 export interface SharedSettingsEnvironment {
@@ -69,7 +103,8 @@ export function findSharedSettingsMismatches(input: {
   if (input.primaryEnvironmentId === null || input.primarySettings === null) {
     return [];
   }
-  const expected = pickSharedServerSettings(input.primarySettings);
+  const primarySettings = input.primarySettings;
+  const primaryShared = pickSharedServerSettings(primarySettings);
   return input.environments.flatMap((environment) => {
     if (
       environment.environmentId === input.primaryEnvironmentId ||
@@ -78,7 +113,12 @@ export function findSharedSettingsMismatches(input: {
     ) {
       return [];
     }
-    const actual = pickSharedServerSettings(environment.settings);
+    const expected = filterSharedServerPatch(primaryShared, environment.settings, primarySettings);
+    let actual = pickSharedServerSettings(environment.settings);
+    // A model the target cannot run is never pushed, so it is not a mismatch.
+    if (!expected.textGenerationModelSelection) {
+      actual = Struct.omit(actual, ["textGenerationModelSelection"]);
+    }
     return Equal.equals(actual, expected)
       ? []
       : [{ environmentId: environment.environmentId, label: environment.label }];

@@ -50,6 +50,7 @@ function makeFakeClaudeBinary(dir: string) {
         'case " $args " in *" --dangerously-skip-permissions "*) fail "text generation must not bypass permissions" 7 ;; esac',
         'case " $args " in *" --disable-slash-commands "*) ;; *) fail "text generation must disable skills" 8 ;; esac',
         'case " $args " in *" --strict-mcp-config "*) ;; *) fail "text generation must not load configured MCP servers" 9 ;; esac',
+        'case " $args " in *" --permission-mode dontAsk "*) ;; *) fail "text generation must deny permission prompts" 12 ;; esac',
         'case "$settings" in *\'"disableAllHooks":true\'*) ;; *) fail "text generation must disable hooks" 10 ;; esac',
         'if [ -n "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" ] && [ "$(pwd -P)" = "$(cd "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" && pwd -P)" ]; then',
         '  fail "text generation ran in the project directory" 11',

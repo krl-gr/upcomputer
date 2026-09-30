@@ -25,6 +25,7 @@ import {
 } from "@upcomputer/contracts/settings";
 import { safeErrorLogAttributes } from "@upcomputer/client-runtime/errors";
 import {
+  filterSharedServerPatch,
   findSharedSettingsMismatches,
   pickSharedServerSettings,
   splitSharedServerPatch,
@@ -256,16 +257,6 @@ function supportsSharedSettings(environment: EnvironmentPresentation): boolean {
   return environment.connection.phase === "connected" && environment.serverConfig !== null;
 }
 
-/** Environments that can receive a shared settings write right now. */
-function useConnectedEnvironmentIds(): ReadonlyArray<EnvironmentId> {
-  const { environments } = useEnvironments();
-  return useMemo(
-    () =>
-      environments.filter(supportsSharedSettings).map((environment) => environment.environmentId),
-    [environments],
-  );
-}
-
 /**
  * Returns an updater that routes each key to the correct backing store.
  *
@@ -280,7 +271,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     serverEnvironment.updateSettings,
     "server settings update",
   );
-  const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const { environments } = useEnvironments();
   const updateSettings = useCallback(
     (patch: Partial<UnifiedSettings>) => {
       const { serverPatch, clientPatch } = splitPatch(patch);
@@ -305,7 +296,12 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           }
         }
         if (Object.keys(sharedPatch).length > 0) {
-          const targets = new Set(connectedEnvironmentIds);
+          const sourceSettings = environments.find(
+            (target) => target.environmentId === environmentId,
+          )?.serverConfig?.settings;
+          const targets = new Set(
+            environments.filter(supportsSharedSettings).map((target) => target.environmentId),
+          );
           if (environmentId) {
             targets.add(environmentId);
           }
@@ -313,9 +309,17 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
             warnUnsaved();
           }
           for (const targetId of targets) {
+            const target = environments.find((candidate) => candidate.environmentId === targetId);
+            const targetPatch = filterSharedServerPatch(
+              sharedPatch,
+              target?.serverConfig?.settings,
+              sourceSettings,
+              targetId === environmentId,
+            );
+            if (Object.keys(targetPatch).length === 0) continue;
             void persistServerSettings({
               environmentId: targetId,
-              input: { patch: sharedPatch },
+              input: { patch: targetPatch },
             });
           }
         }
@@ -328,7 +332,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         });
       }
     },
-    [connectedEnvironmentIds, environmentId, persistServerSettings],
+    [environments, environmentId, persistServerSettings],
   );
 
   return updateSettings;
@@ -377,12 +381,17 @@ export function useSharedSettingsSync() {
     }
     const patch = pickSharedServerSettings(primarySettings);
     for (const mismatch of mismatches) {
+      const target = environments.find(
+        (candidate) => candidate.environmentId === mismatch.environmentId,
+      );
       void persistServerSettings({
         environmentId: mismatch.environmentId,
-        input: { patch },
+        input: {
+          patch: filterSharedServerPatch(patch, target?.serverConfig?.settings, primarySettings),
+        },
       });
     }
-  }, [mismatches, persistServerSettings, primarySettings]);
+  }, [environments, mismatches, persistServerSettings, primarySettings]);
 
   return { mismatches, applyToAll };
 }

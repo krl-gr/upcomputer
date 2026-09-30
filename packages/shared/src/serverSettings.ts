@@ -1,4 +1,11 @@
-import { ServerSettings, type ServerSettingsPatch } from "@upcomputer/contracts";
+import {
+  isProviderDriverKind,
+  resolveProviderInstanceEnabled,
+  type ModelSelection,
+  type ProviderDriverKind,
+  ServerSettings,
+  type ServerSettingsPatch,
+} from "@upcomputer/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
@@ -7,6 +14,30 @@ import { createModelSelection } from "./model.ts";
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
+
+type LegacyProviderSettings = ServerSettings["providers"][keyof ServerSettings["providers"]];
+
+const getLegacyProviderSettings = (
+  settings: ServerSettings,
+  provider: ProviderDriverKind,
+): LegacyProviderSettings | undefined =>
+  (settings.providers as Record<string, LegacyProviderSettings | undefined>)[provider];
+
+/** Whether a model selection points at a provider instance these settings enable. */
+export function isModelSelectionProviderEnabled(
+  settings: ServerSettings,
+  selection: ModelSelection,
+): boolean {
+  const instanceConfig = settings.providerInstances[selection.instanceId];
+  if (instanceConfig !== undefined) {
+    return resolveProviderInstanceEnabled(instanceConfig);
+  }
+
+  return (
+    isProviderDriverKind(selection.instanceId) &&
+    getLegacyProviderSettings(settings, selection.instanceId)?.enabled === true
+  );
+}
 
 export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
