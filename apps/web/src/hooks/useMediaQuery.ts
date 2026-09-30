@@ -82,8 +82,15 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
+// Match the sidebar's sm: visibility and the composer's compact layout.
+// A narrow desktop window must not enter a different shell at 768px.
+const MOBILE_SHELL_QUERY = "max-sm";
+
 export function useIsMobile(): boolean {
-  // Match the sidebar's sm: visibility and the composer's compact layout.
-  // A narrow desktop window must not enter a different shell at 768px.
-  return useMediaQuery("max-sm");
+  return useMediaQuery(MOBILE_SHELL_QUERY);
+}
+
+/** Non-reactive read of {@link useIsMobile}, for route guards outside React. */
+export function isMobileViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(parseQuery(MOBILE_SHELL_QUERY)).matches;
 }

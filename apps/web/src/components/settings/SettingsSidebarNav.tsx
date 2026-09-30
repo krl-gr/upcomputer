@@ -25,7 +25,14 @@ import {
   UpcomputerConnectSidebarSignIn,
 } from "../clerk/UpcomputerConnectSidebarSignIn";
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "../sidebar/sidebarTextStyles";
-import { WebFeatureSettingsNavigationItems } from "../product/WebFeatureSettingsNavigation";
+import {
+  listExperimentalWebSettings,
+  useWebProductComposition,
+} from "../../product/WebComposition";
+import {
+  resolveSettingsNavigationEntries,
+  type SettingsNavigationEntry,
+} from "./settingsNavigation";
 import { useLeaveSettings } from "./useLeaveSettings";
 
 export type SettingsSectionPath =
@@ -54,15 +61,25 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Archive", to: "/settings/archived", icon: ArchiveIcon },
 ];
 
+/** Core sections plus product-contributed settings pages, in menu order. */
+export function useSettingsNavigationEntries(): SettingsNavigationEntry[] {
+  const composition = useWebProductComposition();
+  return resolveSettingsNavigationEntries({
+    coreItems: SETTINGS_NAV_ITEMS,
+    featurePages: listExperimentalWebSettings(composition),
+  });
+}
+
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  const entries = useSettingsNavigationEntries();
   const handleSectionClick = useCallback(
-    (to: SettingsSectionPath) => {
+    (to: string) => {
       if (isMobile) {
         setOpenMobile(false);
       }
-      void navigate({ to, replace: true });
+      void navigate({ to: to as SettingsSectionPath, replace: true });
     },
     [isMobile, navigate, setOpenMobile],
   );
@@ -79,11 +96,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup className="px-2 pt-2 pb-2">
           <SidebarMenu className="gap-0.5">
-            {SETTINGS_NAV_ITEMS.slice(0, 1).map((item) => {
+            {entries.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.to;
               return (
-                <SidebarMenuItem key={item.to}>
+                <SidebarMenuItem key={item.key}>
                   <SidebarMenuButton
                     size="sm"
                     isActive={isActive}
@@ -94,7 +111,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     }
                     onClick={() => handleSectionClick(item.to)}
                   >
-                    <Icon className="size-4 shrink-0" />
+                    {Icon ? <Icon className="size-4 shrink-0" /> : null}
                     <span
                       className={
                         SIDEBAR_LABEL_TEXT_CLASS + " truncate text-foreground/72 dark:text-white/82"
@@ -106,37 +123,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 </SidebarMenuItem>
               );
             })}
-            <WebFeatureSettingsNavigationItems />
-            {SETTINGS_NAV_ITEMS.slice(1)
-              .filter((item) => !item.hideFromNavigation)
-              .map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.to;
-                return (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton
-                      size="sm"
-                      isActive={isActive}
-                      className={
-                        isActive
-                          ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
-                          : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
-                      }
-                      onClick={() => handleSectionClick(item.to)}
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      <span
-                        className={
-                          SIDEBAR_LABEL_TEXT_CLASS +
-                          " truncate text-foreground/72 dark:text-white/82"
-                        }
-                      >
-                        {item.label}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
