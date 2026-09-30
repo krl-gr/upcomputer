@@ -94,8 +94,15 @@ export class AgentSessionImportProjectChangedError extends Schema.TaggedErrorCla
 }
 
 export const AgentSessionImportResult = Schema.Struct({
+  /** Conversations of the project that are imported, including earlier attempts. */
   importedCount: NonNegativeInt,
+  /** Conversations that cannot be imported. */
   skippedCount: NonNegativeInt,
+  /**
+   * Conversations left for the next attempt because this one reached its read
+   * limit. Running the import again continues with them. Older servers omit it.
+   */
+  deferredCount: Schema.optional(NonNegativeInt),
 });
 export type AgentSessionImportResult = typeof AgentSessionImportResult.Type;
 

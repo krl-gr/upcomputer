@@ -241,7 +241,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           expectedWorkspaceRoot: `${WORKSPACE_ROOT}/`,
         });
 
-        expect(result).toEqual({ importedCount: 2, skippedCount: 0 });
+        expect(result).toEqual({ importedCount: 2, skippedCount: 0, deferredCount: 0 });
         expect(scannedRoot).toBe(WORKSPACE_ROOT);
         expect(commands.map((command) => command.type)).toEqual([
           "thread.create",
@@ -344,7 +344,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           snapshots: makeSnapshotsLayer({ project: makeProject() }),
         });
 
-        expect(result).toEqual({ importedCount: 0, skippedCount: 1 });
+        expect(result).toEqual({ importedCount: 0, skippedCount: 1, deferredCount: 0 });
       }),
     );
 
@@ -422,11 +422,27 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
         });
         const importOnce = () => runImport({ scanner, engine, directory, snapshots });
 
-        expect(yield* importOnce()).toEqual({ importedCount: 0, skippedCount: 1 });
-        expect(yield* importOnce()).toEqual({ importedCount: 0, skippedCount: 1 });
-        expect(yield* importOnce()).toEqual({ importedCount: 1, skippedCount: 0 });
+        expect(yield* importOnce()).toEqual({
+          importedCount: 0,
+          skippedCount: 1,
+          deferredCount: 0,
+        });
+        expect(yield* importOnce()).toEqual({
+          importedCount: 0,
+          skippedCount: 1,
+          deferredCount: 0,
+        });
+        expect(yield* importOnce()).toEqual({
+          importedCount: 1,
+          skippedCount: 0,
+          deferredCount: 0,
+        });
         const historyAttemptsAfterCompletion = historyAttemptCount;
-        expect(yield* importOnce()).toEqual({ importedCount: 1, skippedCount: 0 });
+        expect(yield* importOnce()).toEqual({
+          importedCount: 1,
+          skippedCount: 0,
+          deferredCount: 0,
+        });
         expect(historyAttemptCount).toBe(historyAttemptsAfterCompletion);
         expect(historyAttemptCount).toBe(2);
         expect(bindings).toHaveLength(1);
@@ -476,7 +492,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           }),
         });
 
-        expect(result).toEqual({ importedCount: 1, skippedCount: 0 });
+        expect(result).toEqual({ importedCount: 1, skippedCount: 0, deferredCount: 0 });
       }),
     );
 
@@ -526,7 +542,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           }),
         });
 
-        expect(result).toEqual({ importedCount: 0, skippedCount: 2 });
+        expect(result).toEqual({ importedCount: 0, skippedCount: 2, deferredCount: 0 });
         expect(commands).toHaveLength(0);
       }),
     );
@@ -608,7 +624,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
       const importedThread = yield* snapshots.getThreadDetailById(threadId);
       const binding = yield* directory.getBinding(threadId);
 
-      expect(result).toEqual({ importedCount: 1, skippedCount: 0 });
+      expect(result).toEqual({ importedCount: 1, skippedCount: 0, deferredCount: 0 });
       expect(Option.getOrThrow(importedThread).messages.map((message) => message.text)).toEqual(
         integrationThread.messages.map((message) => message.text),
       );
@@ -799,7 +815,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
         });
 
         const first = yield* runAttempt(new Set());
-        expect(first.result).toEqual({ importedCount: 99, skippedCount: 2 });
+        expect(first.result).toEqual({ importedCount: 99, skippedCount: 1, deferredCount: 1 });
         expect(failHistory).toBe(false);
         expect(first.fullReads).toEqual(transcripts.slice(0, 100).map((entry) => entry.filePath));
         expect(first.openCounts.get(remaining.filePath)).toBe(1);
@@ -820,7 +836,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
 
         const completedPaths = new Set(completedSources.map((entry) => entry.source.filePath));
         const second = yield* runAttempt(completedPaths);
-        expect(second.result).toEqual({ importedCount: 101, skippedCount: 0 });
+        expect(second.result).toEqual({ importedCount: 101, skippedCount: 0, deferredCount: 0 });
         expect(second.fullReads).toEqual([failed.filePath, remaining.filePath]);
         for (const transcript of transcripts) {
           expect(second.openCounts.get(transcript.filePath)).toBe(
@@ -929,6 +945,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
           expect(yield* importRecentAgentThreads({ projectId })).toEqual({
             importedCount: 1,
             skippedCount: 0,
+            deferredCount: 0,
           });
           yield* reactor.drain;
           expect(startSession).not.toHaveBeenCalled();
@@ -1065,7 +1082,11 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
       });
       yield* Deferred.succeed(releaseImporter, undefined);
 
-      expect(yield* Fiber.join(importFiber)).toEqual({ importedCount: 1, skippedCount: 0 });
+      expect(yield* Fiber.join(importFiber)).toEqual({
+        importedCount: 1,
+        skippedCount: 0,
+        deferredCount: 0,
+      });
       expect(
         Option.getOrThrow(yield* snapshots.getThreadDetailById(threadId)).messages.map(
           (message) => message.text,
@@ -1175,7 +1196,11 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
       });
       yield* Deferred.succeed(releaseImporter, undefined);
 
-      expect(yield* Fiber.join(importFiber)).toEqual({ importedCount: 0, skippedCount: 1 });
+      expect(yield* Fiber.join(importFiber)).toEqual({
+        importedCount: 0,
+        skippedCount: 1,
+        deferredCount: 0,
+      });
       expect(Option.getOrThrow(yield* directory.getBinding(threadId))).toMatchObject({
         status: "running",
         resumeCursor: { threadId: "active-client-session" },

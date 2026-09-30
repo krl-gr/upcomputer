@@ -27,9 +27,9 @@ remote share one group. Directories that are not git repositories sit under
 Each row shows which agent was used there, how many conversations it has, and
 when it was last active.
 
-The default selection includes git repositories active within the last 30 days
-with at least three conversations. Older projects stay in the list and can be
-selected. Use the checkboxes, or **Select all** and **Select none**, to change
+The default selection includes every project active within the last 30 days,
+whether it is a git repository or not. Older projects stay in the list and can
+be selected. Use the checkboxes, or **Select all** and **Select none**, to change
 the selection. Linked git worktrees, Up.computer's own worktrees, Codex scratch
 directories under `Documents/Codex`, and anything under `Downloads` are not
 offered.
@@ -55,10 +55,13 @@ Conversation import is best effort:
 ## Limits
 
 Each import reads up to 100 conversation files and 64 MiB per project, with up
-to 100,000 records. Run the import again to continue a large project: completed
+to 100,000 records. When a project has more, the import says how many
+conversations it imported so far, for example "Imported 54 of 867
+conversations. Run import again to continue", and stays open with **Continue
+import**. Each run continues where the last one stopped: completed
 conversations are not imported twice.
 
 A very large or unusual history can also reach the scan limit while listing
 projects. Up.computer keeps the projects it found and shows a note that older
-sessions were not checked. When some conversations could not be imported, a
-warning says how many.
+sessions were not checked. When some conversations cannot be imported at all,
+a warning says how many.

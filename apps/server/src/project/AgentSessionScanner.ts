@@ -151,7 +151,10 @@ export type AgentSessionRecentThread =
     }
   | { readonly _tag: "AlreadyImported"; readonly source: AgentSessionImportSource }
   | { readonly _tag: "Duplicate"; readonly source: AgentSessionImportSource }
-  | { readonly _tag: "Skipped" };
+  /** Cannot be imported; another attempt skips it again. */
+  | { readonly _tag: "Skipped" }
+  /** This attempt's read budget ran out; a later attempt continues with it. */
+  | { readonly _tag: "Deferred" };
 
 /** Service tag for agent session discovery. */
 export class AgentSessionScanner extends Context.Service<
@@ -1296,7 +1299,7 @@ export const make = Effect.gen(function* () {
             completed === undefined &&
             (transcriptsRemaining === 0 || bytesRemaining === 0 || recordsRemaining === 0)
           ) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return Option.some<AgentSessionRecentThread>({ _tag: "Deferred" });
           }
           const stats = yield* statOption(transcript.filePath);
           if (Option.isNone(stats) || stats.value.type !== "File") {
@@ -1316,13 +1319,17 @@ export const make = Effect.gen(function* () {
               source: completedSource,
             });
           }
+          if (identity.size > MAX_IMPORTED_TRANSCRIPT_BYTES) {
+            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+          }
+          // Any transcript within the per-file limit fits a fresh budget, and
+          // the next attempt reaches it first: imported ones are passed over.
           if (
             transcriptsRemaining === 0 ||
             recordsRemaining === 0 ||
-            identity.size > MAX_IMPORTED_TRANSCRIPT_BYTES ||
             identity.size > bytesRemaining
           ) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return Option.some<AgentSessionRecentThread>({ _tag: "Deferred" });
           }
           // Reserve the whole file even if its read or parse fails.
           transcriptsRemaining -= 1;
@@ -1333,7 +1340,9 @@ export const make = Effect.gen(function* () {
           }
           const lines = splitTranscriptRecords(contents, recordsRemaining + 1);
           if (lines.length > recordsRemaining) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return Option.some<AgentSessionRecentThread>({
+              _tag: recordsRemaining < MAX_IMPORT_RECORDS ? "Deferred" : "Skipped",
+            });
           }
           recordsRemaining -= lines.length;
 

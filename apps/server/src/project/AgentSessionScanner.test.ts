@@ -1406,7 +1406,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             workspaceRoot: workspace,
           });
           expect(outcomes.map((outcome) => outcome._tag)).toEqual(
-            overflow ? ["Skipped", "Importable"] : ["Importable", "Skipped"],
+            overflow ? ["Skipped", "Importable"] : ["Importable", "Deferred"],
           );
           expect(
             outcomes.flatMap((outcome) =>
@@ -1639,7 +1639,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("shares a 64 MiB full-read budget across providers without hiding projects", () =>
+    it.effect("shares a 64 MiB full-read budget across providers and defers the rest", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -1736,7 +1736,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           "Importable",
           "Importable",
           "Importable",
-          "Skipped",
+          "Deferred",
         ]);
         expect(fullReadBytes).toBe(64 * 1024 * 1024);
       }),
@@ -1784,6 +1784,50 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         });
         expect(outcomes.map((outcome) => outcome._tag)).toEqual(["Skipped", "Importable"]);
         expect(outcomes[1]).toMatchObject({ thread: { providerSessionId: "older" } });
+      }),
+    );
+
+    it.effect("defers a transcript that exceeds only the records left in this attempt", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-record-defer-claude-");
+        const codexHomePath = yield* makeTempDir("t3code-record-defer-codex-");
+        const workspace = yield* makeTempDir("t3code-record-defer-workspace-");
+        for (const [sessionId, mtimeMs] of [
+          ["newer", nowMs],
+          ["older", nowMs - 1_000],
+        ] as const) {
+          yield* writeTranscript({
+            filePath: path.join(
+              codexHomePath,
+              "sessions",
+              "2026",
+              "08",
+              "24",
+              `rollout-${sessionId}.jsonl`,
+            ),
+            contents:
+              [
+                encodeTranscriptRecord({
+                  type: "session_meta",
+                  payload: { id: sessionId, cwd: workspace },
+                }),
+                encodeTranscriptRecord({
+                  type: "event_msg",
+                  payload: { type: "user_message", message: "Imported prompt" },
+                }),
+              ].join("\n") + "\n".repeat(60_000),
+            mtimeMs,
+          });
+        }
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+        });
+        expect(outcomes.map((outcome) => outcome._tag)).toEqual(["Importable", "Deferred"]);
       }),
     );
 

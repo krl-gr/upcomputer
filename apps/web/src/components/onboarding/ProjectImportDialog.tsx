@@ -63,7 +63,8 @@ export function ProjectImportButton() {
                 onSkip={() => setOpen(false)}
                 onDone={(summary) => {
                   reportImport(summary);
-                  setOpen(false);
+                  // Stay open so the panel can continue a partial import.
+                  if (summary.remainingThreadCount === 0) setOpen(false);
                 }}
               />
             ) : null}

@@ -12,8 +12,10 @@ import { useMemo, useRef, useState } from "react";
 
 import { newProjectId, cn } from "../../lib/utils";
 import {
+  describeImportWarning,
   groupOnboardingProjects,
   onboardingProjectKey,
+  pluralize,
   partitionOnboardingProjects,
   resolveOnboardingProjectId,
   type OnboardingProjectGroup,
@@ -38,30 +40,14 @@ export interface ProjectImportSummary {
   readonly importedThreadCount: number;
   /** Set when some selected projects or conversations could not be imported. */
   readonly warning: string | null;
+  /**
+   * Conversations left for another run. The panel then stays usable to
+   * continue the import, and hosts keep it open.
+   */
+  readonly remainingThreadCount: number;
 }
 
 type ImportCandidate = AgentSessionProjectCandidate & { readonly key: string };
-
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function describeImportWarning(input: {
-  readonly importedThreadCount: number;
-  readonly skippedThreadCount: number;
-}): string {
-  const { importedThreadCount, skippedThreadCount } = input;
-  if (importedThreadCount > 0 && skippedThreadCount > 0) {
-    return `Imported ${pluralize(importedThreadCount, "conversation")}. ${pluralize(skippedThreadCount, "conversation")} could not be imported.`;
-  }
-  if (skippedThreadCount > 0) {
-    return `${pluralize(skippedThreadCount, "conversation")} could not be imported.`;
-  }
-  if (importedThreadCount > 0) {
-    return `Imported ${pluralize(importedThreadCount, "conversation")}. Some projects could not be imported.`;
-  }
-  return "Could not import conversation history.";
-}
 
 /**
  * Lists the projects Claude Code and Codex have run in on one computer and
@@ -91,6 +77,7 @@ export function ProjectImportPanel({
   projectsRef.current = projects;
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string> | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [continuation, setContinuation] = useState<string | null>(null);
   // Retries reuse the project id and command id of an earlier attempt, and
   // skip projects whose history already landed in this session.
   const projectAttemptsRef = useRef(
@@ -119,9 +106,11 @@ export function ProjectImportPanel({
   const runImport = async () => {
     if (isImporting || selected.length === 0) return;
     setIsImporting(true);
+    setContinuation(null);
     let completedProjects = 0;
     let importedThreadCount = 0;
     let skippedThreadCount = 0;
+    let deferredThreadCount = 0;
     let failedProjects = false;
     for (const candidate of selected) {
       if (completedKeysRef.current.has(candidate.key)) {
@@ -173,20 +162,20 @@ export function ProjectImportPanel({
       }
       importedThreadCount += imported.value.importedCount;
       skippedThreadCount += imported.value.skippedCount;
-      if (imported.value.skippedCount === 0) {
+      deferredThreadCount += imported.value.deferredCount ?? 0;
+      if (imported.value.skippedCount === 0 && (imported.value.deferredCount ?? 0) === 0) {
         completedProjects += 1;
         completedKeysRef.current.add(candidate.key);
       }
     }
     setIsImporting(false);
     if (failedProjects) scan.refresh();
-    onDone({
-      importedThreadCount,
-      warning:
-        completedProjects < selected.length
-          ? describeImportWarning({ importedThreadCount, skippedThreadCount })
-          : null,
-    });
+    const warning =
+      completedProjects < selected.length
+        ? describeImportWarning({ importedThreadCount, skippedThreadCount, deferredThreadCount })
+        : null;
+    if (deferredThreadCount > 0) setContinuation(warning);
+    onDone({ importedThreadCount, warning, remainingThreadCount: deferredThreadCount });
   };
 
   const setKeys = (keys: ReadonlyArray<string>, checked: boolean) => {
@@ -262,6 +251,11 @@ export function ProjectImportPanel({
           </p>
         ) : null}
       </div>
+      {continuation !== null ? (
+        <p className="pt-3 text-sm text-muted-foreground" role="status">
+          {continuation}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center justify-end gap-2 pt-4">
         <Button variant="ghost" disabled={isImporting} onClick={onSkip}>
           {skipLabel}
@@ -272,6 +266,8 @@ export function ProjectImportPanel({
               <Spinner className="size-4" />
               Importing…
             </>
+          ) : continuation !== null ? (
+            "Continue import"
           ) : (
             `Import ${pluralize(selected.length, "project")}`
           )}

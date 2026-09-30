@@ -2,15 +2,12 @@ import { findProjectByPath } from "@upcomputer/client-runtime/state/projects";
 import type { AgentSessionProjectCandidate, EnvironmentId, ProjectId } from "@upcomputer/contracts";
 
 const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-/** One or two threads in a directory is usually a one-off question, not a project. */
-const DEFAULT_SELECTION_MIN_THREADS = 3;
 
 /**
  * Existing projects still need their agent history imported, so every scan
- * candidate is offered. The default selection is narrower: git repositories
- * active in the last 30 days with enough threads to look like real work.
- * Servers that predate the git scan omit `git`; their candidates are treated
- * as repositories so old computers still get a useful default selection.
+ * candidate is offered. The default selection is every project active in the
+ * last 30 days, git repository or not, whatever its number of conversations.
+ * The scanner has already left out the directories it excludes.
  */
 export function partitionOnboardingProjects<T extends AgentSessionProjectCandidate>(
   candidates: ReadonlyArray<T>,
@@ -21,13 +18,46 @@ export function partitionOnboardingProjects<T extends AgentSessionProjectCandida
   return {
     available: candidates,
     recent: candidates.filter((candidate) => {
-      if (candidate.git === null) return false;
-      if (candidate.threadCount < DEFAULT_SELECTION_MIN_THREADS) return false;
       if (candidate.lastActiveAt === null) return false;
       const lastActiveAt = Date.parse(candidate.lastActiveAt);
       return lastActiveAt >= cutoff && lastActiveAt <= now;
     }),
   };
+}
+
+export function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * Summarizes an import that did not finish every selected project. Each
+ * attempt reads a bounded number of conversations; the rest are deferred and a
+ * later attempt continues with them, so that case asks to run import again.
+ */
+export function describeImportWarning(input: {
+  readonly importedThreadCount: number;
+  readonly skippedThreadCount: number;
+  readonly deferredThreadCount: number;
+}): string {
+  const { importedThreadCount, skippedThreadCount, deferredThreadCount } = input;
+  if (deferredThreadCount > 0) {
+    const total = importedThreadCount + skippedThreadCount + deferredThreadCount;
+    const skipped =
+      skippedThreadCount > 0
+        ? ` ${pluralize(skippedThreadCount, "conversation")} could not be imported.`
+        : "";
+    return `Imported ${importedThreadCount} of ${pluralize(total, "conversation")}.${skipped} Run import again to continue.`;
+  }
+  if (importedThreadCount > 0 && skippedThreadCount > 0) {
+    return `Imported ${pluralize(importedThreadCount, "conversation")}. ${pluralize(skippedThreadCount, "conversation")} could not be imported.`;
+  }
+  if (skippedThreadCount > 0) {
+    return `${pluralize(skippedThreadCount, "conversation")} could not be imported.`;
+  }
+  if (importedThreadCount > 0) {
+    return `Imported ${pluralize(importedThreadCount, "conversation")}. Some projects could not be imported.`;
+  }
+  return "Could not import conversation history.";
 }
 
 export interface OnboardingProjectGroup<T> {

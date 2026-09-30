@@ -2,6 +2,7 @@ import { EnvironmentId, ProjectId, type AgentSessionProjectCandidate } from "@up
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  describeImportWarning,
   groupOnboardingProjects,
   partitionOnboardingProjects,
   onboardingProjectKey,
@@ -67,18 +68,54 @@ describe("partitionOnboardingProjects", () => {
     });
   });
 
-  it("keeps non-git folders and thin histories out of the default selection", () => {
+  it("selects every recent project, git repository or not, with any number of conversations", () => {
     const repo = candidate("/projects/repo");
     const folder = candidate("/projects/folder", { git: null });
-    const thin = candidate("/projects/thin", { threadCount: 2 });
+    const single = candidate("/projects/single", { threadCount: 1 });
+    const undated = candidate("/projects/undated", { lastActiveAt: null });
 
-    expect(partitionOnboardingProjects([repo, folder, thin], now).recent).toEqual([repo]);
+    expect(partitionOnboardingProjects([repo, folder, single, undated], now).recent).toEqual([
+      repo,
+      folder,
+      single,
+    ]);
   });
 
   it("selects candidates from servers that do not report git identity", () => {
     const { git: _git, ...legacy } = candidate("/projects/legacy");
 
     expect(partitionOnboardingProjects([legacy], now).recent).toEqual([legacy]);
+  });
+});
+
+describe("describeImportWarning", () => {
+  it("asks to run import again while conversations are deferred", () => {
+    expect(
+      describeImportWarning({
+        importedThreadCount: 54,
+        skippedThreadCount: 0,
+        deferredThreadCount: 813,
+      }),
+    ).toBe("Imported 54 of 867 conversations. Run import again to continue.");
+    expect(
+      describeImportWarning({
+        importedThreadCount: 54,
+        skippedThreadCount: 2,
+        deferredThreadCount: 811,
+      }),
+    ).toBe(
+      "Imported 54 of 867 conversations. 2 conversations could not be imported. Run import again to continue.",
+    );
+  });
+
+  it("reports conversations that cannot be imported", () => {
+    expect(
+      describeImportWarning({
+        importedThreadCount: 3,
+        skippedThreadCount: 1,
+        deferredThreadCount: 0,
+      }),
+    ).toBe("Imported 3 conversations. 1 conversation could not be imported.");
   });
 });
 

@@ -578,7 +578,8 @@ export function ProviderOnboarding({
                         }),
                       );
                     }
-                    onFinished();
+                    // Stay on this step so the panel can continue a partial import.
+                    if (summary.remainingThreadCount === 0) onFinished();
                   }}
                 />
               ) : connectionRow && ConnectionDetails ? (
