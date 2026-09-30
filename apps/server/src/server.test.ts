@@ -9280,7 +9280,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             toolCallId: "call-build",
             status: "completed",
             title: "Build complete",
-            data: { item: { command: "build" } },
+            data: { item: { command: "build", aggregatedOutput: "Build complete" } },
           });
         } else {
           assertTrue(update?.kind === "thread-upserted");

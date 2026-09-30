@@ -240,6 +240,12 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
         readonly decision: ProviderApprovalDecision;
       }>
     >();
+    // Like the real adapters, answering an open request resolves it with a
+    // provider-side `request.resolved` event.
+    const openRequestsById = new Map<
+      string,
+      Extract<ProviderRuntimeEvent, { type: "request.opened" }>
+    >();
 
     const emit = (event: ProviderRuntimeEvent) => Queue.offer(runtimeEvents, event);
     const randomUUIDv4 = (threadId: ThreadId) =>
@@ -348,6 +354,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             deferredTurnCompletedEvents.push(runtimeEvent);
             continue;
           }
+          if (runtimeEvent.type === "request.opened" && runtimeEvent.requestId !== undefined) {
+            openRequestsById.set(String(runtimeEvent.requestId), runtimeEvent);
+          }
 
           yield* emit(runtimeEvent);
         }
@@ -418,7 +427,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       decision,
     ) =>
       sessions.has(threadId)
-        ? Effect.sync(() => {
+        ? Effect.gen(function* () {
             const existing = approvalResponsesBySession.get(threadId) ?? [];
             existing.push({
               threadId,
@@ -426,6 +435,23 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
               decision,
             });
             approvalResponsesBySession.set(threadId, existing);
+
+            const opened = openRequestsById.get(String(requestId));
+            if (opened === undefined) return;
+            openRequestsById.delete(String(requestId));
+            yield* emit({
+              type: "request.resolved",
+              eventId: EventId.make(yield* randomUUIDv4(threadId)),
+              provider,
+              createdAt: nowIso(),
+              threadId,
+              ...(opened.turnId !== undefined ? { turnId: opened.turnId } : {}),
+              requestId: opened.requestId,
+              payload: {
+                requestType: opened.payload.requestType,
+                decision,
+              },
+            });
           })
         : missingSessionEffect(provider, threadId);
 
