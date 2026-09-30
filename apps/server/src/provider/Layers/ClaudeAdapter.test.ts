@@ -578,11 +578,14 @@ describe("ClaudeAdapterLive", () => {
         additionalDirectories: ["/repo/docs", "/repo/home", "/repo/api"],
       });
 
+      const { attachmentsDir } = yield* ServerConfig;
       const createInput = harness.getLastCreateQueryInput();
+      // The attachments dir comes last so pasted images stay readable.
       assert.deepEqual(createInput?.options.additionalDirectories, [
         "/repo/home",
         "/repo/docs",
         "/repo/api",
+        attachmentsDir,
       ]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),

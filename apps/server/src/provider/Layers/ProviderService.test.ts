@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import type {
   ProviderApprovalDecision,
   ProviderRuntimeEvent,
+  ProviderSendTurnInput,
   ProviderSession,
   ProviderTurnStartResult,
 } from "@upcomputer/contracts";
@@ -69,6 +70,7 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import * as InteractionModeRegistryService from "../../product/InteractionModeRegistryService.ts";
 import { CORE_SERVER_PRODUCT_COMPOSITION } from "../../product/ServerProductComposition.ts";
+import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
@@ -79,6 +81,7 @@ function makeProviderServiceTestLive(
   interactionModeRegistry: ExperimentalInteractionModeRegistry = CORE_SERVER_PRODUCT_COMPOSITION.interactionModeRegistry,
 ) {
   return makeProviderServiceLive(options).pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "provider-service-config-" })),
     Layer.provide(NodeServices.layer),
     Layer.provide(InteractionModeRegistryService.layer(interactionModeRegistry)),
   );
@@ -1836,6 +1839,54 @@ routing.layer("ProviderServiceLive routing", (it) => {
       routing.codex.stopSession.mockClear();
       routing.claude.startSession.mockClear();
       routing.claude.stopSession.mockClear();
+    }),
+  );
+
+  it.effect("appends attachment file paths to the turn input text", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+
+      const session = yield* provider.startSession(asThreadId("thread-attach"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-attach"),
+        cwd: fixtureCwd("project"),
+        runtimeMode: "full-access",
+      });
+
+      const attachment = {
+        type: "image" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc",
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 123,
+      };
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "use this screenshot",
+        attachments: [attachment],
+      });
+
+      const turnInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.equal(typeof turnInput.input, "string");
+      const turnText = turnInput.input ?? "";
+      assert.equal(turnText.startsWith("use this screenshot"), true);
+      assert.include(turnText, '[Attached image "screenshot.png" is saved at: ');
+      assert.equal(turnText.endsWith(`${attachment.id}.png]`), true);
+
+      // An attachment-only turn stays valid and the injected line becomes the
+      // whole input text, so the agent still learns the path.
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        attachments: [attachment],
+      });
+      const imageOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.equal(imageOnlyInput.input?.startsWith('[Attached image "screenshot.png"'), true);
+
+      yield* provider.stopSession({ threadId: session.threadId });
     }),
   );
 

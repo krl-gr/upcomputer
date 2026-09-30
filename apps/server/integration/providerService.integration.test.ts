@@ -22,6 +22,7 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../src/provider/Services/ProviderService.ts";
+import { ServerConfig } from "../src/config.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { SqlitePersistenceMemory } from "../src/persistence/Layers/Sqlite.ts";
@@ -81,6 +82,7 @@ const makeIntegrationFixture = Effect.gen(function* () {
   ).pipe(Layer.provide(SqlitePersistenceMemory));
 
   const layer = makeProviderServiceLive().pipe(
+    Layer.provide(ServerConfig.layerTest(cwd, { prefix: "provider-service-integration-" })),
     Layer.provide(NodeServices.layer),
     Layer.provide(shared),
   );
