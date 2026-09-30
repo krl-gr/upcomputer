@@ -195,8 +195,7 @@ type CodexThreadResumeParamsWithDynamicTools = EffectCodexSchema.V2ThreadResumeP
   readonly dynamicTools?: ReadonlyArray<CodexDynamicToolSpec>;
 };
 type CodexThreadItem =
-  | EffectCodexSchema.V2ThreadReadResponse["thread"]["turns"][number]["items"][number]
-  | EffectCodexSchema.V2ThreadRollbackResponse["thread"]["turns"][number]["items"][number];
+  EffectCodexSchema.V2ThreadReadResponse["thread"]["turns"][number]["items"][number];
 
 export interface CodexSessionRuntimeOptions {
   readonly threadId: ThreadId;
@@ -1226,7 +1225,7 @@ function updateSession(
 }
 
 function parseThreadSnapshot(
-  response: EffectCodexSchema.V2ThreadReadResponse | EffectCodexSchema.V2ThreadRollbackResponse,
+  response: EffectCodexSchema.V2ThreadReadResponse,
 ): CodexThreadSnapshot {
   return {
     threadId: response.thread.id,
@@ -1314,11 +1313,8 @@ export const rollbackCodexThread = Effect.fn("rollbackCodexThread")(function* (
   threadId: string,
   numTurns: number,
 ): Effect.fn.Return<CodexThreadSnapshot, CodexErrors.CodexAppServerError> {
-  if ((yield* readCodexHistoryMode(client, threadId)) !== "paginated") {
-    return parseThreadSnapshot(yield* client.request("thread/rollback", { threadId, numTurns }));
-  }
-  // Paginated threads replace history at a turn boundary instead of supporting
-  // the legacy count-based rollback endpoint.
+  // Codex replaces history at a turn boundary. It rejects threads that still
+  // use legacy history, which have no rollback API since Codex 0.156.
   const snapshot = yield* readCodexThread(client, threadId);
   const retainedCount = Math.max(0, snapshot.turns.length - numTurns);
   const firstRemoved = snapshot.turns[retainedCount];

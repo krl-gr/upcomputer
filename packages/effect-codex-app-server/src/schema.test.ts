@@ -12,7 +12,6 @@ const isCompletedItem = Schema.is(CodexSchema.V2ItemCompletedNotification);
 const isAccount = Schema.is(CodexSchema.V2GetAccountResponse);
 const isThreadReadResponse = Schema.is(CodexSchema.V2ThreadReadResponse);
 const isThreadResumeResponse = Schema.is(CodexSchema.V2ThreadResumeResponse);
-const isThreadRollbackResponse = Schema.is(CodexSchema.V2ThreadRollbackResponse);
 const isThreadForkResponse = Schema.is(CodexSchema.V2ThreadForkResponse);
 const isTurnCompletedNotification = Schema.is(CodexSchema.V2TurnCompletedNotification);
 const decodeThreadResumeResponse = Schema.decodeUnknownSync(CodexSchema.V2ThreadResumeResponse);
@@ -81,6 +80,7 @@ it("accepts Codex rate limit errors for thread responses", () => {
     id: "thread-1",
     modelProvider: "openai",
     preview: "",
+    projectId: null,
     sessionId: "session-1",
     source: "cli",
     status: { type: "idle" },
@@ -110,7 +110,6 @@ it("accepts Codex rate limit errors for thread responses", () => {
     }),
     true,
   );
-  assert.equal(isThreadRollbackResponse({ thread: failedThread }), true);
 });
 
 it("accepts Codex misalignment policy errors for thread responses", () => {
@@ -122,6 +121,7 @@ it("accepts Codex misalignment policy errors for thread responses", () => {
     id: "thread-1",
     modelProvider: "openai",
     preview: "",
+    projectId: null,
     sessionId: "session-1",
     source: "cli",
     status: { type: "idle" },
@@ -149,7 +149,6 @@ it("accepts Codex misalignment policy errors for thread responses", () => {
   };
   assert.equal(isThreadReadResponse({ thread: failedThread }), true);
   assert.equal(isThreadResumeResponse(resumeLikeResponse), true);
-  assert.equal(isThreadRollbackResponse({ thread: failedThread }), true);
   assert.equal(isThreadForkResponse(resumeLikeResponse), true);
   const decodedResume = decodeThreadResumeResponse(resumeLikeResponse);
   assert.equal(decodedResume.thread.turns[0]?.error?.codexErrorInfo, "misalignmentPolicyViolation");

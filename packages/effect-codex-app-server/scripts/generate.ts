@@ -17,7 +17,7 @@ import {
 } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-const UPSTREAM_REF = "678157acaa819d5510adfe359abb5d0392cfe461";
+const UPSTREAM_REF = "687a119f0fcaace47e1f1abcc77cec6c813fd6da";
 const USER_AGENT = "effect-codex-app-server-generator";
 const GITHUB_API_BASE =
   "https://api.github.com/repos/openai/codex/contents/codex-rs/app-server-protocol";
@@ -145,94 +145,12 @@ const ManualSchemas: Record<string, Schema.Json> = {
   },
 };
 
-// Codex 0.150 expanded these enums before our next pinned protocol refresh.
-// Apply the compatibility definitions to every generated response namespace so
-// 0.147 remains accepted while current account and multi-agent events decode.
-const CODEX_COMPATIBILITY_DEFINITION_SCHEMAS: Record<string, Schema.Json> = {
-  CollabAgentTool: {
-    type: "string",
-    enum: [
-      "spawnAgent",
-      "sendInput",
-      "resumeAgent",
-      "wait",
-      "closeAgent",
-      "sendMessage",
-      "followupTask",
-      "interruptAgent",
-      "listAgents",
-    ],
-  },
-  CollabAgentToolCallStatus: {
-    type: "string",
-    enum: ["inProgress", "completed", "failed", "interrupted"],
-  },
-  // Codex adds plan slugs between our protocol refreshes (0.159 added `promax`).
-  // We only use the plan for labels, so an unknown slug must not fail the whole
-  // `account/read` decode and take the provider down with it.
+// Codex adds plan slugs between our protocol refreshes (0.159 added `promax`).
+// We only use the plan for labels, so an unknown slug must not fail the whole
+// `account/read` decode and take the provider down with it.
+const DefinitionOverrides: Record<string, Schema.Json> = {
   PlanType: { type: "string" },
-  SubAgentActivityKind: {
-    type: "string",
-    enum: ["started", "interacted", "interrupted", "completed"],
-  },
 };
-
-// Pinned protocol JSON omits later CodexErrorInfo variants. Keep historical
-// thread payloads decodable; do not fold unknown values into "other".
-const CodexErrorInfoCompatibilityValues = [
-  "rateLimitExceeded",
-  "misalignmentPolicyViolation",
-] as const;
-
-const CodexErrorInfoCompatibilityExports = new Set([
-  "V2ThreadReadResponse",
-  "V2ThreadResumeResponse",
-  "V2ThreadRollbackResponse",
-  "V2ThreadForkResponse",
-  "V2TurnCompletedNotification",
-]);
-
-function applyCodex0151DefinitionCompatibility(
-  exportName: string,
-  definitionName: string,
-  definitionSchema: Schema.Json,
-): Schema.Json {
-  if (
-    !CodexErrorInfoCompatibilityExports.has(exportName) ||
-    definitionName !== "CodexErrorInfo" ||
-    typeof definitionSchema !== "object"
-  ) {
-    return definitionSchema;
-  }
-
-  const schema = definitionSchema as {
-    readonly oneOf?: ReadonlyArray<{ readonly enum?: ReadonlyArray<string> }>;
-  };
-  const [firstVariant, ...remainingVariants] = schema.oneOf ?? [];
-  const currentEnum = firstVariant?.enum;
-  if (!currentEnum) {
-    return definitionSchema;
-  }
-
-  const missingValues = CodexErrorInfoCompatibilityValues.filter(
-    (value) => !currentEnum.includes(value),
-  );
-  if (missingValues.length === 0) {
-    return definitionSchema;
-  }
-
-  const enumValues = [...currentEnum];
-  const otherIndex = enumValues.indexOf("other");
-  const nextEnum =
-    otherIndex === -1
-      ? [...enumValues, ...missingValues]
-      : [...enumValues.slice(0, otherIndex), ...missingValues, ...enumValues.slice(otherIndex)];
-
-  return {
-    ...definitionSchema,
-    oneOf: [{ ...firstVariant, enum: nextEnum }, ...remainingVariants],
-  };
-}
 
 const getGeneratedPaths = Effect.fn("getGeneratedPaths")(function* () {
   const path = yield* Path.Path;
@@ -381,13 +299,14 @@ function toPascalCaseMethod(method: string) {
 }
 
 function parseRequestEntries(fileContents: string): ReadonlyArray<MethodEntry> {
-  const entryPattern = /\{\s*"method":\s*"([^"]+)",\s*id:\s*RequestId,\s*params:\s*([^,}]+)/g;
+  // Optional params render as `params?: Foo | undefined`; their JSON schema is `NullableFoo`.
+  const entryPattern = /\{\s*"method":\s*"([^"]+)",\s*id:\s*RequestId,\s*params(\??):\s*([^,}|]+)/g;
   const entries: Array<MethodEntry> = [];
   let match: RegExpExecArray | null;
   while ((match = entryPattern.exec(fileContents)) !== null) {
     entries.push({
       method: match[1]!,
-      paramsType: match[2]!.trim(),
+      paramsType: `${match[2] ? "Nullable" : ""}${match[3]!.trim()}`,
     });
   }
   return entries;
@@ -435,6 +354,9 @@ function resolveResponseTypeName(
   generatedSchemaNames: ReadonlySet<string>,
 ): string {
   const overrides: Record<string, string> = {
+    "account/gatewayOAuth/cancel": "GatewayOAuthCancelResponse",
+    "account/gatewayOAuth/login": "GatewayOAuthLoginResponse",
+    "account/gatewayOAuth/read": "GatewayOAuthReadResponse",
     "account/logout": "LogoutAccountResponse",
     "account/rateLimits/read": "GetAccountRateLimitsResponse",
     "account/usage/read": "GetAccountTokenUsageResponse",
@@ -645,13 +567,10 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
     );
 
     for (const [definitionName, definitionSchema] of Object.entries(parsed.definitions ?? {})) {
-      const compatibleDefinitionSchema =
-        CODEX_COMPATIBILITY_DEFINITION_SCHEMAS[definitionName] ??
-        applyCodex0151DefinitionCompatibility(file.exportName, definitionName, definitionSchema);
       aggregateSchemas[localDefinitionNames.get(definitionName)!] = stripNullDefaults(
         normalizeNullableTypes(
           rewriteExternalRefs(
-            compatibleDefinitionSchema,
+            DefinitionOverrides[definitionName] ?? definitionSchema,
             localDefinitionNames,
             file.namespace,
             exportNameByQualifiedName,

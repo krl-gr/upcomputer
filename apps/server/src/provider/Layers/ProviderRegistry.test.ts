@@ -385,6 +385,21 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      it.effect("warns when the Codex CLI predates the supported protocol", () =>
+        Effect.gen(function* () {
+          const status = yield* checkCodexProviderStatus(defaultCodexSettings, () =>
+            Effect.succeed(makeCodexProbeSnapshot({ version: "0.150.0" })),
+          );
+
+          assert.strictEqual(status.status, "warning");
+          assert.strictEqual(status.auth.status, "authenticated");
+          assert.strictEqual(
+            status.message,
+            "Codex CLI 0.150.0 is older than 0.156.0, which Up.computer requires. Update Codex and try again.",
+          );
+        }),
+      );
+
       it.effect("passes configured launch args to the Codex provider probe", () =>
         Effect.gen(function* () {
           let observedLaunchArgs: string | undefined;

@@ -25,6 +25,7 @@ import type {
 import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@upcomputer/contracts";
 
 import { codexModelFamily, createModelCapabilities } from "@upcomputer/shared/model";
+import { compareSemverVersions, parseSemver } from "@upcomputer/shared/semver";
 import { resolveSpawnCommand } from "@upcomputer/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import { codexVersionFromUserAgent } from "../codexVersion.ts";
@@ -63,6 +64,16 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
 };
 
 const DEFAULT_SERVICE_TIER_ID = "default";
+
+// Our protocol bindings follow Codex 0.159. Codex removed `thread/rollback` in
+// 0.156 and older releases omit fields the bindings now require.
+const CODEX_MINIMUM_SUPPORTED_VERSION = "0.156.0";
+
+function codexVersionWarning(version: string | undefined): string | undefined {
+  if (!version || !parseSemver(version)) return undefined;
+  if (compareSemverVersions(version, CODEX_MINIMUM_SUPPORTED_VERSION) >= 0) return undefined;
+  return `Codex CLI ${version} is older than ${CODEX_MINIMUM_SUPPORTED_VERSION}, which Up.computer requires. Update Codex and try again.`;
+}
 
 /** Shorter copy for tiers whose catalog description wraps in the traits menu. */
 const SERVICE_TIER_DESCRIPTIONS: Readonly<Record<string, string>> = {
@@ -651,6 +662,8 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
+  const versionWarning =
+    accountStatus.status === "ready" ? codexVersionWarning(snapshot.version) : undefined;
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
@@ -661,9 +674,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     probe: {
       installed: true,
       version: snapshot.version ?? null,
-      status: accountStatus.status,
+      status: versionWarning ? "warning" : accountStatus.status,
       auth: accountStatus.auth,
-      ...(accountStatus.message ? { message: accountStatus.message } : {}),
+      ...(versionWarning
+        ? { message: versionWarning }
+        : accountStatus.message
+          ? { message: accountStatus.message }
+          : {}),
     },
   });
 });
