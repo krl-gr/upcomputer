@@ -133,6 +133,14 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
         cause: null,
       }),
     ),
+  loadOpenCodeSkills: () =>
+    Effect.fail(
+      new OpenCodeRuntime.OpenCodeRuntimeError({
+        operation: "loadOpenCodeSkills",
+        detail: "OpenCodeRuntimeTestDouble.loadOpenCodeSkills not used in this test",
+        cause: null,
+      }),
+    ),
   loadInventoryFromCli: () =>
     Effect.fail(
       new OpenCodeRuntime.OpenCodeRuntimeError({

@@ -184,6 +184,14 @@ export interface OpenCodeCommandResult {
 export interface OpenCodeInventory {
   readonly providerList: ProviderListResponse;
   readonly agents: ReadonlyArray<Agent>;
+  readonly skills: ReadonlyArray<OpenCodeSkill>;
+}
+
+/** Skill metadata only: the SKILL.md body stays in OpenCode. */
+export interface OpenCodeSkill {
+  readonly name?: string | null;
+  readonly description?: string | null;
+  readonly location?: string | null;
 }
 
 export interface ParsedOpenCodeModelSlug {
@@ -235,6 +243,9 @@ export interface OpenCodeRuntimeShape {
   readonly loadOpenCodeInventory: (
     client: OpencodeClient,
   ) => Effect.Effect<OpenCodeInventory, OpenCodeRuntimeError>;
+  readonly loadOpenCodeSkills: (
+    client: OpencodeClient,
+  ) => Effect.Effect<ReadonlyArray<OpenCodeSkill>, OpenCodeRuntimeError>;
   readonly loadInventoryFromCli: (input: {
     readonly binaryPath: string;
     readonly environment?: NodeJS.ProcessEnv;
@@ -829,10 +840,24 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       Effect.orElseSucceed((): ReadonlyArray<Agent> => []),
     );
 
-  const loadOpenCodeInventory: OpenCodeRuntimeShape["loadOpenCodeInventory"] = (client) =>
-    Effect.all([loadProviders(client), loadAgents(client)], { concurrency: "unbounded" }).pipe(
-      Effect.map(([providerList, agents]) => ({ providerList, agents })),
+  const loadOpenCodeSkills: OpenCodeRuntimeShape["loadOpenCodeSkills"] = (client) =>
+    runOpenCodeSdk("app.skills", (signal) => client.app.skills(undefined, { signal })).pipe(
+      Effect.map((result) =>
+        (result.data ?? []).map((skill) => ({
+          name: skill.name,
+          ...(skill.description === undefined ? {} : { description: skill.description }),
+          location: skill.location,
+        })),
+      ),
     );
+  // Skills enrich the snapshot; a server without `/skill` keeps its inventory.
+  const loadSkills = (client: OpencodeClient) =>
+    loadOpenCodeSkills(client).pipe(Effect.orElseSucceed((): ReadonlyArray<OpenCodeSkill> => []));
+
+  const loadOpenCodeInventory: OpenCodeRuntimeShape["loadOpenCodeInventory"] = (client) =>
+    Effect.all([loadProviders(client), loadAgents(client), loadSkills(client)], {
+      concurrency: "unbounded",
+    }).pipe(Effect.map(([providerList, agents, skills]) => ({ providerList, agents, skills })));
 
   const loadInventoryFromCli: OpenCodeRuntimeShape["loadInventoryFromCli"] = (input) =>
     Effect.gen(function* () {
@@ -909,6 +934,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       return {
         providerList: { all: allProviders, default: {}, connected },
         agents,
+        // `opencode debug skill` pipes truncate at 64 KB; skills come from the SDK only.
+        skills: [],
       };
     });
 
@@ -918,6 +945,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     runOpenCodeCommand,
     createOpenCodeSdkClient,
     loadOpenCodeInventory,
+    loadOpenCodeSkills,
     loadInventoryFromCli,
   } satisfies OpenCodeRuntimeShape;
 });

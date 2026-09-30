@@ -2,6 +2,7 @@ import {
   type ModelCapabilities,
   type OpenCodeSettings,
   type ServerProviderModel,
+  type ServerProviderSkill,
 } from "@upcomputer/contracts";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
@@ -252,6 +253,34 @@ function openCodeCapabilitiesForModel(input: {
   });
 }
 
+function trimOptional(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function openCodeSkillsToServerProviderSkills(
+  input: OpenCodeInventory["skills"] | undefined,
+): ReadonlyArray<ServerProviderSkill> {
+  const skills: ServerProviderSkill[] = [];
+  for (const skill of input ?? []) {
+    const name = trimOptional(skill.name);
+    const path = trimOptional(skill.location);
+    if (!name || !path) {
+      continue;
+    }
+
+    const description = trimOptional(skill.description);
+    skills.push({
+      name,
+      path,
+      enabled: true,
+      ...(description ? { description, shortDescription: description } : {}),
+    });
+  }
+
+  return skills.toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
 function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerProviderModel> {
   const connected = new Set(input.providerList.connected);
   const models: Array<ServerProviderModel> = [];
@@ -494,6 +523,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     enabled: true,
     checkedAt,
     models,
+    skills: openCodeSkillsToServerProviderSkills(inventoryExit.value.inventory.skills),
     probe: {
       installed: true,
       version,

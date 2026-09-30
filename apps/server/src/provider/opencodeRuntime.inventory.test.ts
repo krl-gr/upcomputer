@@ -40,10 +40,14 @@ it.layer(testLayer)("OpenCodeRuntime inventory", (it) => {
       });
 
       const inventoryFiber = yield* runtime.loadOpenCodeInventory(client).pipe(Effect.forkChild);
-      yield* Queue.takeN(started, 2);
+      yield* Queue.takeN(started, 3);
       yield* Fiber.interrupt(inventoryFiber);
 
-      NodeAssert.deepEqual((yield* Queue.takeAll(aborted)).toSorted(), ["/agent", "/provider"]);
+      NodeAssert.deepEqual((yield* Queue.takeAll(aborted)).toSorted(), [
+        "/agent",
+        "/provider",
+        "/skill",
+      ]);
     }),
   );
 
@@ -70,6 +74,76 @@ it.layer(testLayer)("OpenCodeRuntime inventory", (it) => {
 
       NodeAssert.deepEqual(inventory.providerList.connected, ["openai"]);
       NodeAssert.deepEqual(inventory.agents, []);
+    }),
+  );
+
+  it.effect("keeps provider inventory when skill discovery fails", () =>
+    Effect.gen(function* () {
+      const runtime = yield* OpenCodeRuntime;
+      const client = {
+        provider: {
+          list: () =>
+            Promise.resolve({
+              data: {
+                connected: ["openai"],
+                all: [],
+                default: {},
+              },
+            }),
+        },
+        app: {
+          agents: () => Promise.resolve({ data: [] }),
+          skills: () => Promise.reject(new Error("skills endpoint unavailable")),
+        },
+      } as unknown as OpencodeClient;
+
+      const inventory = yield* runtime.loadOpenCodeInventory(client);
+
+      NodeAssert.deepEqual(inventory.providerList.connected, ["openai"]);
+      NodeAssert.deepEqual(inventory.agents, []);
+      NodeAssert.deepEqual(inventory.skills, []);
+    }),
+  );
+
+  it.effect("keeps only SDK skill metadata in inventory", () =>
+    Effect.gen(function* () {
+      const runtime = yield* OpenCodeRuntime;
+      const client = {
+        provider: {
+          list: () =>
+            Promise.resolve({
+              data: {
+                connected: ["openai"],
+                all: [],
+                default: {},
+              },
+            }),
+        },
+        app: {
+          agents: () => Promise.resolve({ data: [] }),
+          skills: () =>
+            Promise.resolve({
+              data: [
+                {
+                  name: "review",
+                  description: "Review code changes",
+                  location: "/skills/review/SKILL.md",
+                  content: "unused skill content",
+                },
+              ],
+            }),
+        },
+      } as unknown as OpencodeClient;
+
+      const inventory = yield* runtime.loadOpenCodeInventory(client);
+
+      NodeAssert.deepEqual(inventory.skills, [
+        {
+          name: "review",
+          description: "Review code changes",
+          location: "/skills/review/SKILL.md",
+        },
+      ]);
     }),
   );
 });
