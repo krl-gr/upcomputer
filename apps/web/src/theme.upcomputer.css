@@ -52,18 +52,16 @@
   --sidebar-row-selected: var(--sidebar-accent);
   --sidebar-control-surface: var(--sidebar-accent);
   --sidebar-muted-foreground: var(--sidebar-accent-foreground);
-  --project-avatar-background-pink: #feeef8;
-  --project-avatar-background-mint: #e1fbf4;
-  --project-avatar-background-orange: #fff1e7;
-  --project-avatar-background-purple: #f9f1fe;
-  --project-avatar-background-cyan: #e7f9fb;
-  --project-avatar-background-lime: #eefadc;
-  --project-avatar-text-pink: #cd1d8d;
-  --project-avatar-text-mint: #147d6f;
-  --project-avatar-text-orange: #ed5f00;
-  --project-avatar-text-purple: #8445bc;
-  --project-avatar-text-cyan: #0894b3;
-  --project-avatar-text-lime: #5d770d;
+  /* Project letter avatars share one translucent gray tile; only the letter
+   * carries the project's color, in the same muted tones as the task-run
+   * statuses (Tailwind -600 here, -300/-400 in dark). */
+  --project-avatar-background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --project-avatar-text-pink: oklch(59.2% 0.249 0.584);
+  --project-avatar-text-mint: oklch(59.6% 0.145 163.225);
+  --project-avatar-text-orange: oklch(66.6% 0.179 58.318);
+  --project-avatar-text-purple: oklch(54.1% 0.281 293.009);
+  --project-avatar-text-cyan: oklch(58.8% 0.158 241.966);
+  --project-avatar-text-lime: oklch(53.2% 0.157 131.589);
 
   @variant dark {
     /* Flat near-black instead of upstream's tinted neutral-950 mix.
@@ -81,18 +79,13 @@
     --sidebar-row-selected: var(--sidebar-accent);
     --sidebar-control-surface: var(--sidebar-accent);
     --sidebar-muted-foreground: var(--sidebar-accent-foreground);
-    --project-avatar-background-pink: #501b3f;
-    --project-avatar-background-mint: #033a34;
-    --project-avatar-background-orange: #5f2a06;
-    --project-avatar-background-purple: #432155;
-    --project-avatar-background-cyan: #0f3058;
-    --project-avatar-background-lime: #2b3711;
-    --project-avatar-text-pink: #e34ba9;
-    --project-avatar-text-mint: #95f3d9;
-    --project-avatar-text-orange: #ff802b;
-    --project-avatar-text-purple: #9d5bd2;
-    --project-avatar-text-cyan: #369eff;
-    --project-avatar-text-lime: #c4f042;
+    --project-avatar-background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    --project-avatar-text-pink: oklch(82.3% 0.12 346.018 / 0.85);
+    --project-avatar-text-mint: oklch(84.5% 0.143 164.978 / 0.9);
+    --project-avatar-text-orange: oklch(87.9% 0.169 91.605);
+    --project-avatar-text-purple: oklch(81.1% 0.111 293.571 / 0.85);
+    --project-avatar-text-cyan: oklch(74.6% 0.16 232.661);
+    --project-avatar-text-lime: oklch(89.7% 0.196 126.665 / 0.8);
   }
 }
 

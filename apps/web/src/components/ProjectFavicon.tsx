@@ -59,7 +59,7 @@ export function resolveProjectAvatarFallback(
     identityKey,
     colorKey,
     letter: resolveProjectAvatarLetter(identityKey),
-    background: `var(--project-avatar-background-${colorKey})`,
+    background: "var(--project-avatar-background)",
     text: `var(--project-avatar-text-${colorKey})`,
   } as const;
 }
