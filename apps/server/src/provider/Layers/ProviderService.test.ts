@@ -3326,6 +3326,7 @@ const boundedListing = makeProviderServiceLayer({
     getBinding,
     listThreadIds,
     listBindings: () => Effect.die("ProviderService.listSessions does not use listBindings"),
+    recordImportedTranscript: () => Effect.void,
   },
 });
 

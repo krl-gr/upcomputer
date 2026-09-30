@@ -137,7 +137,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     expect(AgentAwarenessRelay.eventThreadId(event)).toBe(threadId);
   });
 
-  it("does not publish start intents, streaming content, or non-awareness activity events", () => {
+  it("does not publish imported, start-intent, streaming, or non-awareness events", () => {
     const now = "2026-05-25T00:00:00.000Z";
     const base = {
       sequence: 1,
@@ -146,6 +146,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
       aggregateKind: "thread",
       aggregateId: "thread-1" as ThreadId,
       occurredAt: now,
+      metadata: {},
     };
 
     expect(
@@ -201,6 +202,21 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         },
       } as unknown as OrchestrationEvent),
     ).toBe(false);
+    expect(
+      AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({
+        ...base,
+        type: "thread.created",
+        metadata: { historyImport: true },
+        payload: { threadId: "thread-1" as ThreadId },
+      } as unknown as OrchestrationEvent),
+    ).toBe(false);
+    expect(
+      AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({
+        ...base,
+        type: "thread.created",
+        payload: { threadId: "thread-1" as ThreadId },
+      } as unknown as OrchestrationEvent),
+    ).toBe(true);
   });
 
   it("deduplicates awareness state updates whose only change is their event timestamp", () => {
@@ -535,6 +551,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
               },
             },
             occurredAt: now,
+            metadata: {},
           } as unknown as OrchestrationEvent);
 
           yield* Deferred.await(threadShellRequested).pipe(Effect.timeout("2 seconds"));
@@ -701,6 +718,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
               },
             },
             occurredAt: now,
+            metadata: {},
           } as unknown as OrchestrationEvent);
 
           const url = yield* Deferred.await(fetchSeen).pipe(Effect.timeout("2 seconds"));

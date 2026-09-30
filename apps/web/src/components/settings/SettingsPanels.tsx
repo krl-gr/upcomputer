@@ -67,6 +67,7 @@ import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel, getRelativeTimeState } from "../../timestampFormat";
 import { Button } from "../ui/button";
+import { ProjectImportButton } from "../onboarding/ProjectImportDialog";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -904,6 +905,12 @@ export function GeneralSettingsPanel() {
               aria-label="Add project base directory"
             />
           }
+        />
+
+        <SettingsRow
+          title="Import projects"
+          description="Add projects and recent conversations from Claude Code and Codex on this computer."
+          control={<ProjectImportButton />}
         />
 
         <SettingsRow

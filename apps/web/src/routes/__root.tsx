@@ -1,5 +1,6 @@
 import { type ServerLifecycleWelcomePayload } from "@upcomputer/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@upcomputer/client-runtime/environment";
+import { isScratchProject } from "@upcomputer/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@upcomputer/client-runtime/state/runtime";
 import {
   Outlet,
@@ -9,7 +10,7 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
 
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
@@ -20,8 +21,14 @@ import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDi
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
-import { ProviderOnboarding } from "../components/onboarding/ProviderOnboarding";
-import { shouldShowInitialProviderOnboarding } from "../components/onboarding/providerOnboarding.logic";
+import {
+  ProviderOnboarding,
+  type ProviderOnboardingStep,
+} from "../components/onboarding/ProviderOnboarding";
+import {
+  shouldOfferInitialProjectImport,
+  shouldShowInitialProviderOnboarding,
+} from "../components/onboarding/providerOnboarding.logic";
 import { readDevOnboardingScenario } from "../components/onboarding/providerOnboardingFixture";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -54,7 +61,15 @@ import {
   primaryServerProvidersAtom,
   primaryServerWelcomeAtom,
 } from "../state/server";
-import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
+import {
+  readProject,
+  setActiveEnvironmentId,
+  useActiveEnvironmentId,
+  useAllEnvironmentShellsBootstrapped,
+  useProjects,
+} from "../state/entities";
+import { agentSessionScan } from "../state/agentSessions";
+import { useEnvironmentQuery } from "../state/query";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -158,6 +173,9 @@ function InitialProviderSetupOnboarding() {
   const providers = useAtomValue(primaryServerProvidersAtom);
   const checkedInitialState = useRef(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [initialStep, setInitialStep] = useState<ProviderOnboardingStep>("agents");
+  // Agents already work: onboarding may still open on project import.
+  const [checkImportOffer, setCheckImportOffer] = useState(false);
   const [sessionClosed, setSessionClosed] = useState(false);
   const [probeWaitExpired, setProbeWaitExpired] = useState(false);
   const [dismissed, setDismissed] = useLocalStorage(
@@ -196,10 +214,26 @@ function InitialProviderSetupOnboarding() {
     if (checkedInitialState.current || decision === null) return;
     checkedInitialState.current = true;
     setShowOnboarding(decision);
+    setCheckImportOffer(!decision && !dismissed && !sessionClosed);
   }, [config, dismissed, probeWaitExpired, providers, sessionClosed]);
+
+  if (checkImportOffer) {
+    return (
+      <InitialProjectImportOffer
+        scratchWorkspaceRoot={config?.scratchWorkspaceRoot}
+        onDecision={(offer) => {
+          setCheckImportOffer(false);
+          if (!offer) return;
+          setInitialStep("import");
+          setShowOnboarding(true);
+        }}
+      />
+    );
+  }
 
   return showOnboarding ? (
     <ProviderOnboarding
+      initialStep={initialStep}
       onFinished={() => {
         if (readDevOnboardingScenario() === null) setDismissed(true);
         setShowOnboarding(false);
@@ -214,6 +248,47 @@ function InitialProviderSetupOnboarding() {
       }}
     />
   ) : null;
+}
+
+/**
+ * Decides once whether a fresh workspace should see project import: no
+ * projects yet on the primary environment, and Claude Code or Codex left
+ * projects to import. Renders nothing.
+ */
+function InitialProjectImportOffer({
+  scratchWorkspaceRoot,
+  onDecision,
+}: {
+  readonly scratchWorkspaceRoot: string | undefined;
+  readonly onDecision: (offer: boolean) => void;
+}) {
+  const environment = usePrimaryEnvironment();
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const projects = useProjects();
+  const environmentId = environment?.environmentId ?? null;
+  const projectCount = projects.filter(
+    (project) =>
+      project.environmentId === environmentId && !isScratchProject(project, scratchWorkspaceRoot),
+  ).length;
+  const shouldScan = environmentId !== null && bootstrapped && projectCount === 0;
+  const scanAtom = useMemo(
+    () => (shouldScan ? agentSessionScan({ environmentId, input: {} }) : null),
+    [environmentId, shouldScan],
+  );
+  const scan = useEnvironmentQuery(scanAtom);
+  const decide = useEffectEvent(onDecision);
+
+  useEffect(() => {
+    if (environmentId === null || !bootstrapped) return;
+    const offer = shouldOfferInitialProjectImport({
+      dismissed: false,
+      projectCount,
+      candidates: scan.error !== null ? [] : (scan.data?.candidates ?? null),
+    });
+    if (offer !== null) decide(offer);
+  }, [bootstrapped, environmentId, projectCount, scan.data, scan.error]);
+
+  return null;
 }
 
 function GlassAppearanceSync() {

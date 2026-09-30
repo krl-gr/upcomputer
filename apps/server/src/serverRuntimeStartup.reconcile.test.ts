@@ -148,6 +148,7 @@ it.effect("reconciles multiple active and archived orphans but skips live sessio
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.void,
     },
     dispatch: (command) =>
       Effect.sync(() => dispatched.push(command)).pipe(Effect.as({ sequence: dispatched.length })),
@@ -198,6 +199,7 @@ it.effect("does not treat a thread with open background tasks as orphaned", () =
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.void,
     },
     dispatch: (command) =>
       Effect.sync(() => dispatched.push(command)).pipe(Effect.as({ sequence: dispatched.length })),
@@ -249,6 +251,7 @@ it.effect(
         getProvider: () => Effect.die("unused"),
         listThreadIds: () => Effect.die("unused"),
         listBindings: () => Effect.die("unused"),
+        recordImportedTranscript: () => Effect.void,
       },
       dispatch: (command) =>
         Effect.sync(() => dispatched.push(command)).pipe(
@@ -286,6 +289,7 @@ it.effect("retries failed projections and continues after a persistent failure",
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.void,
     },
     dispatch: (command) => {
       if (command.type !== "thread.session.set") {
@@ -334,6 +338,7 @@ it.effect("does not fail startup when the live provider session inventory cannot
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.void,
     }),
     Effect.provideService(
       ProjectionThreadActivities.ProjectionThreadActivityRepository,

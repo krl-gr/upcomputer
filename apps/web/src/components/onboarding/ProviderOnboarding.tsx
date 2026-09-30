@@ -26,6 +26,7 @@ import {
   sortProviderClientDefinitionsForOnboarding,
   type DriverOption,
 } from "../settings/providerDriverMeta";
+import { ProjectImportPanel } from "./ProjectImportPanel";
 import {
   getProviderOnboardingRowState,
   type ProviderOnboardingRowState,
@@ -39,7 +40,11 @@ import {
   type DevOnboardingScenario,
 } from "./providerOnboardingFixture";
 
+export type ProviderOnboardingStep = "agents" | "import";
+
 interface ProviderOnboardingProps {
+  /** `import` opens straight on project import, for machines whose agents already work. */
+  readonly initialStep?: ProviderOnboardingStep;
   readonly onFinished: () => void;
   readonly onClose: () => void;
   readonly onSkip: () => void;
@@ -201,7 +206,12 @@ function InstallCell({
   );
 }
 
-export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnboardingProps) {
+export function ProviderOnboarding({
+  initialStep = "agents",
+  onFinished,
+  onClose,
+  onSkip,
+}: ProviderOnboardingProps) {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environment = usePrimaryEnvironment();
@@ -230,6 +240,7 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
   );
   const [connectionDetailStep, setConnectionDetailStep] = useState(false);
   const [onboardingBackRequest, setOnboardingBackRequest] = useState(0);
+  const [step, setStep] = useState<ProviderOnboardingStep>(initialStep);
   const fixtureEnabled = devScenario !== null;
 
   const resetDevScenario = (scenario: DevOnboardingScenario) => {
@@ -302,6 +313,17 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
     setConnectionDetailStep(false);
     refresh();
   }, [refresh]);
+
+  // Agents are set up: offer project import next. Without an environment
+  // there is nothing to scan, so finish directly.
+  const finishAgents = useCallback(() => {
+    setConnectionDriver(undefined);
+    if (environment === null) {
+      onFinished();
+      return;
+    }
+    setStep("import");
+  }, [environment, onFinished]);
 
   const handleOnboardingStepChange = useCallback(
     (title: string, detailStep: boolean, subtitle: string) => {
@@ -423,6 +445,8 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
   const connectionRow = rows.find((row) => row.driver === connectionDriver);
   const ConnectionDetails =
     connectionRow?.option.onboardingDetails ?? connectionRow?.option.connectionDetails;
+  const importEnvironmentId =
+    step === "import" && connectionRow === undefined ? environment?.environmentId : undefined;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-background/96 px-4 py-12 backdrop-blur-md sm:px-6">
@@ -504,22 +528,60 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
           >
             <header
               className={
-                connectionRow
+                connectionRow || importEnvironmentId
                   ? "shrink-0 px-16 pb-5"
                   : "flex grow shrink-0 basis-auto flex-col justify-center px-16 pb-5"
               }
             >
               <h1 className="truncate text-center text-2xl font-semibold tracking-tight text-foreground">
-                {connectionRow ? connectionTitle : "Set up agents"}
+                {importEnvironmentId
+                  ? "Import your projects"
+                  : connectionRow
+                    ? connectionTitle
+                    : "Set up agents"}
               </h1>
               <p className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-                {connectionRow
-                  ? connectionSubtitle
-                  : "UpComputer includes a built-in agent you can connect to your preferred subscription or API key. You can also install other agents and choose the setup that works best for you. Add or change providers anytime in Settings."}
+                {importEnvironmentId
+                  ? "Bring the projects you use with Claude Code and Codex into UpComputer, with their recent conversations. You can continue those conversations here. Your Claude Code and Codex files are only read, never changed."
+                  : connectionRow
+                    ? connectionSubtitle
+                    : "UpComputer includes a built-in agent you can connect to your preferred subscription or API key. You can also install other agents and choose the setup that works best for you. Add or change providers anytime in Settings."}
               </p>
             </header>
-            <div className="min-h-0 overflow-y-auto px-6 pt-4 pb-6">
-              {connectionRow && ConnectionDetails ? (
+            <div
+              className={
+                importEnvironmentId
+                  ? "flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2"
+                  : "min-h-0 overflow-y-auto px-6 pt-4 pb-6"
+              }
+            >
+              {importEnvironmentId ? (
+                <ProjectImportPanel
+                  className="flex-1"
+                  environmentId={importEnvironmentId}
+                  skipLabel="Skip"
+                  onSkip={onFinished}
+                  onDone={(summary) => {
+                    if (summary.warning !== null) {
+                      toastManager.add(
+                        stackedThreadToast({
+                          type: "warning",
+                          title: "Some history was not imported",
+                          description: summary.warning,
+                        }),
+                      );
+                    } else if (summary.importedThreadCount > 0) {
+                      toastManager.add(
+                        stackedThreadToast({
+                          type: "success",
+                          title: `Imported ${summary.importedThreadCount} ${summary.importedThreadCount === 1 ? "conversation" : "conversations"}`,
+                        }),
+                      );
+                    }
+                    onFinished();
+                  }}
+                />
+              ) : connectionRow && ConnectionDetails ? (
                 <div className="min-h-0">
                   <ConnectionDetails
                     key={connectionRow.instanceId}
@@ -546,7 +608,7 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
                             : "You're ready to start a conversation.",
                         }),
                       );
-                      onFinished();
+                      finishAgents();
                     }}
                     {...(fixtureEnabled ? { onboardingFixtureOutcome: devOutcome } : {})}
                   />
@@ -615,6 +677,11 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
                         );
                       })}
                     </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button disabled={!rows.some((row) => row.ready)} onClick={finishAgents}>
+                      Continue
+                    </Button>
                   </div>
                 </div>
               )}

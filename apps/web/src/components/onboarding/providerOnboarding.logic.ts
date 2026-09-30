@@ -81,3 +81,19 @@ export function shouldShowInitialProviderOnboarding(input: {
   }
   return true;
 }
+
+/**
+ * Onboarding stays closed when an agent already works, but a fresh workspace
+ * still gets the project import step when Claude Code or Codex left projects
+ * to import. `null` while the scan has not answered yet.
+ */
+export function shouldOfferInitialProjectImport(input: {
+  readonly dismissed: boolean;
+  /** Projects on the primary environment, not counting its scratch project. */
+  readonly projectCount: number;
+  readonly candidates: ReadonlyArray<{ readonly alreadyImported: boolean }> | null;
+}): boolean | null {
+  if (input.dismissed || input.projectCount > 0) return false;
+  if (input.candidates === null) return null;
+  return input.candidates.some((candidate) => !candidate.alreadyImported);
+}

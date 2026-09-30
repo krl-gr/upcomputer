@@ -8,6 +8,7 @@ import {
   hasUsableProvider,
   isProviderUsable,
   shouldShowInitialProviderOnboarding,
+  shouldOfferInitialProjectImport,
 } from "./providerOnboarding.logic";
 
 function provider(overrides: Partial<ServerProvider> = {}): ServerProvider {
@@ -150,5 +151,43 @@ describe("provider onboarding readiness", () => {
         provider({ probeStatus: "settled", availability: "unavailable" }),
       ),
     ).toBe("unavailable");
+  });
+});
+
+describe("initial project import offer", () => {
+  it("offers import on a fresh workspace with projects left to import", () => {
+    expect(
+      shouldOfferInitialProjectImport({
+        dismissed: false,
+        projectCount: 0,
+        candidates: [{ alreadyImported: true }, { alreadyImported: false }],
+      }),
+    ).toBe(true);
+  });
+
+  it("waits for the scan before deciding", () => {
+    expect(
+      shouldOfferInitialProjectImport({ dismissed: false, projectCount: 0, candidates: null }),
+    ).toBeNull();
+  });
+
+  it("stays closed after dismissal, once projects exist, or with nothing new to import", () => {
+    const candidates = [{ alreadyImported: false }];
+    expect(shouldOfferInitialProjectImport({ dismissed: true, projectCount: 0, candidates })).toBe(
+      false,
+    );
+    expect(shouldOfferInitialProjectImport({ dismissed: false, projectCount: 1, candidates })).toBe(
+      false,
+    );
+    expect(
+      shouldOfferInitialProjectImport({
+        dismissed: false,
+        projectCount: 0,
+        candidates: [{ alreadyImported: true }],
+      }),
+    ).toBe(false);
+    expect(
+      shouldOfferInitialProjectImport({ dismissed: false, projectCount: 0, candidates: [] }),
+    ).toBe(false);
   });
 });

@@ -114,6 +114,7 @@ import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectConfigFileLoader from "./project/ProjectConfigFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -750,6 +751,12 @@ const buildAppUnderTest = (options?: {
             scan: () => Effect.succeed([]),
             subscribe: () => Effect.void,
             retain: Effect.void,
+          }),
+          Layer.mock(ProviderSessionDirectory.ProviderSessionDirectory)({
+            upsert: () => Effect.void,
+            getBinding: () => Effect.succeedNone,
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
           }),
         ),
       ),
