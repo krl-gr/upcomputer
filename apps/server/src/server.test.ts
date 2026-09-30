@@ -136,6 +136,7 @@ import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
+import * as TailscaleServe from "./tailscaleServe.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as Data from "effect/Data";
@@ -419,6 +420,7 @@ const buildAppUnderTest = (options?: {
       CloudManagedEndpointRuntime.CloudManagedEndpointRuntime["Service"]
     >;
     relayClient?: Partial<RelayClient.RelayClient["Service"]>;
+    tailscaleServe?: Partial<TailscaleServe.TailscaleServe["Service"]>;
     cloudCliTokenManager?: Partial<CloudCliTokenManager.CloudCliTokenManager["Service"]>;
   };
 }) =>
@@ -900,6 +902,13 @@ const buildAppUnderTest = (options?: {
             ...options?.layers?.relayClient,
           }),
         ),
+      ),
+      Layer.provide(
+        Layer.mock(TailscaleServe.TailscaleServe)({
+          status: Effect.succeed({ status: "disabled" }),
+          retry: Effect.succeed({ status: "disabled" }),
+          ...options?.layers?.tailscaleServe,
+        }),
       ),
       Layer.provide(
         Layer.mock(CloudCliTokenManager.CloudCliTokenManager)({
@@ -2568,6 +2577,36 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           { type: "complete", status: installedRelayClient },
         ]);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("reports and retries Tailscale Serve over RPC", () =>
+    Effect.gen(function* () {
+      const approvalUrl = "https://login.tailscale.com/f/serve?node=nTest";
+      let retries = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          tailscaleServe: {
+            status: Effect.succeed({ status: "approval-required", approvalUrl }),
+            retry: Effect.sync(() => {
+              retries += 1;
+              return { status: "configured" } as const;
+            }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const status = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetTailscaleServeStatus]({})),
+      );
+      const retried = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverRetryTailscaleServe]({})),
+      );
+
+      assert.deepEqual(status, { status: "approval-required", approvalUrl });
+      assert.deepEqual(retried, { status: "configured" });
+      assert.equal(retries, 1);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("requires relay write scope to update agent activity publication", () =>

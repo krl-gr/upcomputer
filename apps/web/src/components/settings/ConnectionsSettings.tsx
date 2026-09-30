@@ -1,12 +1,13 @@
 import {
   ChevronsLeftRightEllipsisIcon,
+  ExternalLinkIcon,
   PlusIcon,
   QrCodeIcon,
   RefreshCwIcon,
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -52,6 +53,7 @@ import {
   canOfferSshEnvironmentOnboarding,
   isHttpsShareableEndpoint,
   isQrShareableEndpoint,
+  resolveTailscaleHttpsRowState,
   selectQrEndpointOption,
 } from "./ConnectionsSettings.logic";
 import {
@@ -116,6 +118,8 @@ import {
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
+import { serverEnvironment } from "~/state/server";
+import { ensureLocalApi } from "~/localApi";
 import { environmentCatalog } from "~/connection/catalog";
 import {
   connectPairing as connectPairingAtom,
@@ -1877,6 +1881,30 @@ export function ConnectionsSettings() {
   const desktopNetworkAccess = useEnvironmentQuery(
     canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
   );
+  const tailscaleServeEnabled =
+    desktopNetworkAccess.data?.serverExposureState.tailscaleServeEnabled === true;
+  // The backend's last `tailscale serve` outcome, which the desktop cannot see.
+  const tailscaleServeStatus = useEnvironmentQuery(
+    canManageLocalBackend && desktopBridge && tailscaleServeEnabled && primaryEnvironmentId !== null
+      ? serverEnvironment.tailscaleServeStatus({ environmentId: primaryEnvironmentId, input: {} })
+      : null,
+  );
+  const retryTailscaleServe = useAtomCommand(serverEnvironment.retryTailscaleServe, {
+    reportFailure: false,
+  });
+  const [isRetryingTailscaleServe, setIsRetryingTailscaleServe] = useState(false);
+  const refreshTailscaleServeStatus = tailscaleServeStatus.refresh;
+  // The backend configures Serve after it starts listening; follow along until
+  // it settles, then re-probe the HTTPS endpoint.
+  const tailscaleServeStatusKind = tailscaleServeStatus.data?.status ?? null;
+  useEffect(() => {
+    if (tailscaleServeStatusKind !== "pending") return;
+    const timer = window.setTimeout(() => {
+      refreshTailscaleServeStatus();
+      refreshDesktopNetworkAccessState();
+    }, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [refreshTailscaleServeStatus, tailscaleServeStatusKind]);
   const desktopSshHosts = useEnvironmentQuery(
     desktopBridge &&
       canOfferSshEnvironmentOnboarding() &&
@@ -2058,7 +2086,40 @@ export function ConnectionsSettings() {
     }
   }, [desktopBridge, desktopServerExposureState?.tailscaleServePort]);
 
-  const handleStartTailscaleServeDisable = useCallback((_endpoint: AdvertisedEndpoint) => {
+  const handleRetryTailscaleServe = useCallback(async () => {
+    if (primaryEnvironmentId === null) return;
+    setIsRetryingTailscaleServe(true);
+    const result = await retryTailscaleServe({ environmentId: primaryEnvironmentId, input: {} });
+    setIsRetryingTailscaleServe(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not retry Tailscale HTTPS",
+          description: error instanceof Error ? error.message : "The backend did not respond.",
+        }),
+      );
+    }
+    refreshTailscaleServeStatus();
+    refreshDesktopNetworkAccessState();
+  }, [primaryEnvironmentId, refreshTailscaleServeStatus, retryTailscaleServe]);
+
+  const handleOpenTailscaleApproval = useCallback(async (approvalUrl: string) => {
+    try {
+      await ensureLocalApi().shell.openExternal(approvalUrl);
+    } catch {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not open the approval page",
+          description: approvalUrl,
+        }),
+      );
+    }
+  }, []);
+
+  const handleStartTailscaleServeDisable = useCallback((_endpoint: AdvertisedEndpoint | null) => {
     setDisableTailscaleServeDialogOpen(true);
   }, []);
 
@@ -2889,36 +2950,118 @@ export function ConnectionsSettings() {
     );
   };
 
-  const renderTailscaleRow = () => (
-    <SettingsRow
-      title="Tailscale HTTPS"
-      description={
-        tailscaleHttpsEndpoint
-          ? tailscaleHttpsEndpoint.status === "available"
-            ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : desktopServerExposureState?.tailscaleCliUnreachable
-            ? "Tailscale is running, but Up.computer can't reach its command-line tool. Install the CLI from Tailscale's settings, then reopen this page."
-            : "Start Tailscale to set up HTTPS access through MagicDNS."
-      }
-      control={
-        tailscaleHttpsEndpoint ? (
-          <Switch
-            checked={tailscaleHttpsEndpoint.status === "available"}
-            disabled={isUpdatingTailscaleServe}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
-                return;
+  const renderTailscaleRow = () => {
+    const rowState = resolveTailscaleHttpsRowState({
+      endpoint: tailscaleHttpsEndpoint,
+      serveEnabled: tailscaleServeEnabled,
+      cliUnreachable: desktopServerExposureState?.tailscaleCliUnreachable === true,
+      serveStatus: tailscaleServeStatus.data,
+    });
+    const retryButton = (
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={isRetryingTailscaleServe || isUpdatingTailscaleServe}
+        onClick={() => void handleRetryTailscaleServe()}
+      >
+        <RefreshCwIcon aria-hidden />
+        {isRetryingTailscaleServe ? "Retrying…" : "Retry"}
+      </Button>
+    );
+    let description: ReactNode;
+    let status: ReactNode = null;
+    switch (rowState.kind) {
+      case "not-running":
+        description = "Start Tailscale to set up HTTPS access through MagicDNS.";
+        break;
+      case "cli-unreachable":
+        description =
+          "Tailscale is running, but Up.computer can't reach its command-line tool. Install the CLI from Tailscale's settings, then reopen this page.";
+        break;
+      case "off":
+        description = "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL.";
+        break;
+      case "pending":
+        description = "Setting up Tailscale Serve…";
+        break;
+      case "available":
+        description = rowState.url;
+        break;
+      case "approval-required":
+        description =
+          "Tailscale HTTPS is on, but your tailnet has not approved Tailscale Serve yet.";
+        status = (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-foreground">
+              Approve Tailscale Serve for your tailnet
+            </span>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => void handleOpenTailscaleApproval(rowState.approvalUrl)}
+            >
+              <ExternalLinkIcon aria-hidden />
+              Open
+            </Button>
+            {retryButton}
+          </div>
+        );
+        break;
+      case "failed":
+        description = "Tailscale HTTPS is on, but Tailscale Serve failed.";
+        status = (
+          <div className="space-y-2">
+            <p className="text-destructive">{rowState.message}</p>
+            {rowState.outputExcerpt ? (
+              <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/50 bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
+                {rowState.outputExcerpt}
+              </pre>
+            ) : null}
+            {retryButton}
+          </div>
+        );
+        break;
+      case "not-answering":
+        description = `Tailscale Serve is on, but ${rowState.url} doesn't answer yet.`;
+        status = (
+          <div className="space-y-2">
+            <p>
+              MagicDNS and HTTPS Certificates must be enabled on the DNS page of the Tailscale admin
+              console. The first certificate can take a minute.
+            </p>
+            {retryButton}
+          </div>
+        );
+        break;
+    }
+    return (
+      <SettingsRow
+        title="Tailscale HTTPS"
+        description={description}
+        status={status}
+        control={
+          tailscaleHttpsEndpoint || tailscaleServeEnabled ? (
+            <Switch
+              checked={tailscaleServeEnabled}
+              // Turning it on needs the MagicDNS name; turning it off does not.
+              disabled={
+                isUpdatingTailscaleServe || (!tailscaleServeEnabled && !tailscaleHttpsEndpoint)
               }
-              handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
-            }}
-            aria-label="Enable Tailscale HTTPS"
-          />
-        ) : null
-      }
-    />
-  );
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  if (tailscaleHttpsEndpoint)
+                    handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
+                  return;
+                }
+                handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
+              }}
+              aria-label="Enable Tailscale HTTPS"
+            />
+          ) : null
+        }
+      />
+    );
+  };
   const renderAuthorizedClients = (presentation: AccessSectionPresentation) => (
     <>
       {desktopAccessManagementError ? (

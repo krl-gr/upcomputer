@@ -1,4 +1,9 @@
-import type { AdvertisedEndpoint, DesktopBridge, DesktopWslState } from "@upcomputer/contracts";
+import type {
+  AdvertisedEndpoint,
+  DesktopBridge,
+  DesktopWslState,
+  ServerTailscaleServeStatus,
+} from "@upcomputer/contracts";
 import { UPCOMPUTER_RELEASE_CAPABILITIES } from "@upcomputer/shared/upcomputerReleasePolicy";
 
 export function canOfferSshEnvironmentOnboarding(): boolean {
@@ -72,6 +77,57 @@ export function selectQrEndpointOption<T extends QrEndpointOption>(
     options[0] ??
     null
   );
+}
+
+/** What the Tailscale HTTPS row shows. */
+export type TailscaleHttpsRowState =
+  | { readonly kind: "not-running" }
+  | { readonly kind: "cli-unreachable" }
+  | { readonly kind: "off" }
+  | { readonly kind: "pending" }
+  | { readonly kind: "available"; readonly url: string }
+  | { readonly kind: "approval-required"; readonly approvalUrl: string }
+  | { readonly kind: "failed"; readonly message: string; readonly outputExcerpt?: string }
+  /** Serve is configured, but the HTTPS address does not answer (certificates, MagicDNS). */
+  | { readonly kind: "not-answering"; readonly url: string };
+
+/**
+ * Combines the saved intent (serveEnabled), the backend's last `tailscale
+ * serve` outcome and the probed endpoint, so an enabled but failing setup
+ * shows as such instead of as off.
+ */
+export function resolveTailscaleHttpsRowState(input: {
+  readonly endpoint: AdvertisedEndpoint | null;
+  readonly serveEnabled: boolean;
+  readonly cliUnreachable: boolean;
+  readonly serveStatus: ServerTailscaleServeStatus | null;
+}): TailscaleHttpsRowState {
+  const { endpoint, serveStatus } = input;
+  const missingEndpointState: TailscaleHttpsRowState = input.cliUnreachable
+    ? { kind: "cli-unreachable" }
+    : { kind: "not-running" };
+  if (!input.serveEnabled) {
+    return endpoint ? { kind: "off" } : missingEndpointState;
+  }
+  if (serveStatus?.status === "approval-required") {
+    return { kind: "approval-required", approvalUrl: serveStatus.approvalUrl };
+  }
+  if (serveStatus?.status === "failed") {
+    return {
+      kind: "failed",
+      message: serveStatus.message,
+      ...(serveStatus.outputExcerpt === undefined
+        ? {}
+        : { outputExcerpt: serveStatus.outputExcerpt }),
+    };
+  }
+  if (endpoint?.status === "available") {
+    return { kind: "available", url: endpoint.httpBaseUrl };
+  }
+  if (serveStatus?.status === "pending") {
+    return { kind: "pending" };
+  }
+  return endpoint ? { kind: "not-answering", url: endpoint.httpBaseUrl } : missingEndpointState;
 }
 
 export async function applyWslEnableSelection(input: {

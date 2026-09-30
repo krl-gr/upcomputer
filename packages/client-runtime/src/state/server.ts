@@ -401,5 +401,17 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
     }),
+    tailscaleServeStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:tailscale-serve-status",
+      tag: WS_METHODS.serverGetTailscaleServeStatus,
+    }),
+    retryTailscaleServe: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:retry-tailscale-serve",
+      tag: WS_METHODS.serverRetryTailscaleServe,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
   };
 }

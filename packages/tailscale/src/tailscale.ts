@@ -1,7 +1,10 @@
 import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
@@ -106,6 +109,13 @@ export class TailscaleCommandOutputError extends Schema.TaggedErrorClass<Tailsca
   }
 }
 
+/**
+ * The tail of what `tailscale serve` printed, for showing the owner of this
+ * machine why it failed. Redacted, so logging the error prints `<redacted>`:
+ * the text can name nodes. Auth keys are masked even inside.
+ */
+const TailscaleOutputExcerpt = Schema.optional(Schema.Redacted(Schema.String));
+
 export class TailscaleCommandExitError extends Schema.TaggedErrorClass<TailscaleCommandExitError>()(
   "TailscaleCommandExitError",
   {
@@ -119,6 +129,7 @@ export class TailscaleCommandExitError extends Schema.TaggedErrorClass<Tailscale
     // set below. Callers that need to recognize a specific failure (e.g.
     // `serve off` on a port with no mapping) match on the label.
     stderrDiagnostic: Schema.optional(TailscaleStderrDiagnostic),
+    outputExcerpt: TailscaleOutputExcerpt,
   },
 ) {
   override get message(): string {
@@ -132,10 +143,29 @@ export class TailscaleCommandTimeoutError extends Schema.TaggedErrorClass<Tailsc
     ...TailscaleCommandContext,
     timeoutMs: Schema.Number,
     cause: Schema.Defect(),
+    outputExcerpt: TailscaleOutputExcerpt,
   },
 ) {
   override get message(): string {
     return `tailscale ${this.subcommand} timed out after ${this.timeoutMs}ms.`;
+  }
+}
+
+/**
+ * `tailscale serve` stopped to ask for approval: the tailnet has not enabled
+ * HTTPS for Serve yet. The command would otherwise block until someone opens
+ * the link and approves.
+ */
+export class TailscaleServeApprovalRequiredError extends Schema.TaggedErrorClass<TailscaleServeApprovalRequiredError>()(
+  "TailscaleServeApprovalRequiredError",
+  {
+    ...TailscaleCommandContext,
+    // The login.tailscale.com link names this node, so logs print it redacted.
+    approvalUrl: Schema.Redacted(Schema.String),
+  },
+) {
+  override get message(): string {
+    return "Tailscale Serve needs approval for this tailnet.";
   }
 }
 
@@ -146,6 +176,37 @@ export const TailscaleCommandError = Schema.Union([
   TailscaleCommandTimeoutError,
 ]);
 export type TailscaleCommandError = typeof TailscaleCommandError.Type;
+
+export type TailscaleServeError = TailscaleCommandError | TailscaleServeApprovalRequiredError;
+
+// When the tailnet has not enabled HTTPS, `tailscale serve` prints the control
+// server's explanation and a link on its own line to stdout, then waits for the
+// approval (cmd/tailscale/cli: enableFeatureInteractive). The lookahead only
+// accepts a link followed by whitespace, so a link split across output chunks
+// is not taken early.
+const TAILSCALE_APPROVAL_URL_PATTERN = /https:\/\/login\.tailscale\.com\/[^\s]+(?=\s)/u;
+
+/** The approval link in `tailscale serve` output, or null. */
+export const findTailscaleApprovalUrl = (output: string): string | null =>
+  TAILSCALE_APPROVAL_URL_PATTERN.exec(output)?.[0] ?? null;
+
+const OUTPUT_EXCERPT_MAX_LENGTH = 400;
+
+/** The tail of CLI output with auth keys masked, or undefined when empty. */
+export const excerptTailscaleOutput = (output: string): string | undefined => {
+  const text = output.replace(/tskey-[\w-]+/gu, "tskey-…").trim();
+  if (text.length === 0) {
+    return undefined;
+  }
+  return text.length > OUTPUT_EXCERPT_MAX_LENGTH
+    ? `…${text.slice(-OUTPUT_EXCERPT_MAX_LENGTH).trimStart()}`
+    : text;
+};
+
+const outputExcerptField = (output: string) => {
+  const excerpt = excerptTailscaleOutput(output);
+  return excerpt === undefined ? {} : { outputExcerpt: Redacted.make(excerpt) };
+};
 
 export class TailscaleStatusParseError extends Schema.TaggedErrorClass<TailscaleStatusParseError>()(
   "TailscaleStatusParseError",
@@ -350,22 +411,61 @@ export function buildTailscaleHttpsBaseUrl(input: {
   return url.toString();
 }
 
-const runTailscaleCommand = (
+const runTailscaleServeCommand = (
   args: readonly string[],
   timeoutInput: Duration.Input,
-): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const context = initialCommandContext("serve", args);
     const timeout = Duration.fromInputUnsafe(timeoutInput);
+    // Everything printed so far, in arrival order, for the approval link and
+    // for failure excerpts (including a timeout's).
+    const output = yield* Ref.make("");
     return yield* Effect.gen(function* () {
       const child = yield* spawnTailscale({ args, context });
       const commandContext = context.current;
-      const [stderr, exitCode] = yield* Effect.all(
-        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
+      const approvalUrl = yield* Deferred.make<string>();
+      // Collects one stream like collectStdout, also appending to `output`
+      // and resolving `approvalUrl` once the link shows up.
+      const record = <E>(stream: Stream.Stream<Uint8Array, E>) =>
+        stream.pipe(
+          Stream.decodeText(),
+          Stream.tap((chunk) =>
+            Ref.updateAndGet(output, (printed) => printed + chunk).pipe(
+              Effect.flatMap((printed) => {
+                const url = findTailscaleApprovalUrl(printed);
+                return url === null ? Effect.void : Deferred.succeed(approvalUrl, url);
+              }),
+            ),
+          ),
+          Stream.runFold(
+            () => "",
+            (acc, chunk) => acc + chunk,
+          ),
+        );
+      const approvalRequired = (url: string) =>
+        new TailscaleServeApprovalRequiredError({
+          ...commandContext,
+          approvalUrl: Redacted.make(url),
+        });
+
+      const [, stderr, exitCode] = yield* Effect.all(
+        [record(child.stdout), record(child.stderr), child.exitCode.pipe(Effect.map(Number))],
         { concurrency: "unbounded" },
       ).pipe(
         Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
+        // Stop waiting as soon as the link appears; leaving the scope kills
+        // the waiting CLI. It has changed nothing yet: serve asks for approval
+        // before it touches the serve config.
+        Effect.raceFirst(
+          Deferred.await(approvalUrl).pipe(Effect.flatMap((url) => approvalRequired(url))),
+        ),
       );
+      // Without a wait, serve prints the link and exits 0 unconfigured.
+      const approvalUrlAfterExit = findTailscaleApprovalUrl(`${yield* Ref.get(output)}\n`);
+      if (approvalUrlAfterExit !== null) {
+        return yield* approvalRequired(approvalUrlAfterExit);
+      }
       if (exitCode !== 0) {
         return yield* new TailscaleCommandExitError({
           ...commandContext,
@@ -374,6 +474,7 @@ const runTailscaleCommand = (
           ...(stderrDiagnosticOf(stderr) !== undefined
             ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
             : {}),
+          ...outputExcerptField(stderr.trim().length > 0 ? stderr : yield* Ref.get(output)),
         });
       }
     }).pipe(
@@ -381,12 +482,17 @@ const runTailscaleCommand = (
       Effect.timeout(timeout),
       Effect.catchTags({
         TimeoutError: (cause) =>
-          Effect.fail(
-            new TailscaleCommandTimeoutError({
-              ...context.current,
-              timeoutMs: Duration.toMillis(timeout),
-              cause,
-            }),
+          Ref.get(output).pipe(
+            Effect.flatMap((printed) =>
+              Effect.fail(
+                new TailscaleCommandTimeoutError({
+                  ...context.current,
+                  timeoutMs: Duration.toMillis(timeout),
+                  cause,
+                  ...outputExcerptField(printed),
+                }),
+              ),
+            ),
           ),
       }),
     );
@@ -396,11 +502,11 @@ export const ensureTailscaleServe = (input: {
   readonly localPort: number;
   readonly servePort?: number;
   readonly localHost?: string;
-}): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> => {
+}): Effect.Effect<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> => {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
   const args = ["serve", "--bg", `--https=${servePort}`, `http://${localHost}:${input.localPort}`];
-  return runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT);
+  return runTailscaleServeCommand(args, TAILSCALE_SERVE_TIMEOUT);
 };
 
 export const disableTailscaleServe = (
@@ -410,9 +516,12 @@ export const disableTailscaleServe = (
 ): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
-    return yield* runTailscaleCommand(
+    return yield* runTailscaleServeCommand(
       ["serve", `--https=${servePort}`, "off"],
       TAILSCALE_SERVE_TIMEOUT,
+    ).pipe(
+      // `serve ... off` skips the approval flow, so this cannot happen.
+      Effect.catchTag("TailscaleServeApprovalRequiredError", (error) => Effect.die(error)),
     );
   });
 

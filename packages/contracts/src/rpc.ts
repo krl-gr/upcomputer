@@ -131,6 +131,7 @@ import {
   ServerProcessResourceHistoryResult,
   ServerSignalProcessInput,
   ServerSignalProcessResult,
+  ServerTailscaleServeStatus,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -210,6 +211,8 @@ export const WS_METHODS = {
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
+  serverGetTailscaleServeStatus: "server.getTailscaleServeStatus",
+  serverRetryTailscaleServe: "server.retryTailscaleServe",
 
   // Provider setup methods
   providerAuthStart: "provider.auth.start",
@@ -396,6 +399,21 @@ export const WsServerGetProcessResourceHistoryRpc = Rpc.make(
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerGetTailscaleServeStatusRpc = Rpc.make(
+  WS_METHODS.serverGetTailscaleServeStatus,
+  {
+    payload: Schema.Struct({}),
+    success: ServerTailscaleServeStatus,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
+export const WsServerRetryTailscaleServeRpc = Rpc.make(WS_METHODS.serverRetryTailscaleServe, {
+  payload: Schema.Struct({}),
+  success: ServerTailscaleServeStatus,
   error: EnvironmentAuthorizationError,
 });
 
@@ -740,6 +758,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerSignalProcessRpc,
+  WsServerGetTailscaleServeStatusRpc,
+  WsServerRetryTailscaleServeRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,

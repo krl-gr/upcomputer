@@ -88,6 +88,7 @@ import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
+import * as TailscaleServe from "./tailscaleServe.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
@@ -106,7 +107,6 @@ import {
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import * as NetService from "@upcomputer/shared/Net";
 import * as RelayClient from "@upcomputer/shared/relayClient";
-import { disableTailscaleServe, ensureTailscaleServe } from "@upcomputer/tailscale";
 
 // Effect's default preemptive shutdown waits 20s before finalizing request scopes.
 // T3's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
@@ -414,6 +414,7 @@ const makeRuntimeDependenciesLive = <const ProductEntry extends ExperimentalServ
   return Layer.mergeAll(core, features).pipe(
     // Misc.
     Layer.provideMerge(ProcessDiagnostics.layer),
+    Layer.provideMerge(TailscaleServe.layer),
     Layer.provideMerge(ProcessResourceMonitor.layer),
     Layer.provideMerge(TraceDiagnostics.layer),
     Layer.provideMerge(AnalyticsService.layer),
@@ -501,49 +502,16 @@ export const makeServerLayerForProduct = <
             Effect.acquireRelease(
               Effect.gen(function* () {
                 const server = yield* HttpServer.HttpServer;
+                const tailscaleServe = yield* TailscaleServe.TailscaleServe;
                 const address = server.address;
                 if (typeof address === "string" || !("port" in address)) {
-                  return null;
+                  return tailscaleServe;
                 }
-
-                const localPort = address.port;
-                return yield* ensureTailscaleServe({
-                  localPort,
-                  servePort: config.tailscaleServePort,
-                  localHost: "127.0.0.1",
-                }).pipe(
-                  Effect.as({ localPort, servePort: config.tailscaleServePort }),
-                  Effect.tap(() =>
-                    Effect.logInfo("Tailscale Serve configured", {
-                      localPort,
-                      servePort: config.tailscaleServePort,
-                    }),
-                  ),
-                  Effect.catch((cause) =>
-                    Effect.logWarning("Failed to configure Tailscale Serve", {
-                      cause,
-                      localPort,
-                      servePort: config.tailscaleServePort,
-                    }).pipe(Effect.as(null)),
-                  ),
-                );
+                // Failures are kept as the service's status for clients to show.
+                yield* tailscaleServe.configure(address.port);
+                return tailscaleServe;
               }),
-              (configured) =>
-                configured
-                  ? disableTailscaleServe({ servePort: configured.servePort }).pipe(
-                      Effect.tap(() =>
-                        Effect.logInfo("Tailscale Serve disabled", {
-                          servePort: configured.servePort,
-                        }),
-                      ),
-                      Effect.catch((cause) =>
-                        Effect.logWarning("Failed to disable Tailscale Serve", {
-                          cause,
-                          servePort: configured.servePort,
-                        }),
-                      ),
-                    )
-                  : Effect.void,
+              (tailscaleServe) => tailscaleServe.disable,
             ),
           )
         : Layer.empty;

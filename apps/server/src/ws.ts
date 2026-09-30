@@ -18,6 +18,7 @@ import {
   AuthReviewWriteScope,
   AuthRelayWriteScope,
   AuthAccessReadScope,
+  AuthAccessWriteScope,
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   type AuthEnvironmentScope,
@@ -112,6 +113,7 @@ import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
+import * as TailscaleServe from "./tailscaleServe.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -364,6 +366,8 @@ export const RPC_REQUIRED_SCOPE: ReadonlyMap<string, AuthEnvironmentScope> = new
   [WS_METHODS.serverGetProcessDiagnostics, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetProcessResourceHistory, AuthOrchestrationReadScope],
   [WS_METHODS.serverSignalProcess, AuthOrchestrationOperateScope],
+  [WS_METHODS.serverGetTailscaleServeStatus, AuthAccessReadScope],
+  [WS_METHODS.serverRetryTailscaleServe, AuthAccessWriteScope],
   [WS_METHODS.cloudGetRelayClientStatus, AuthRelayWriteScope],
   [WS_METHODS.cloudInstallRelayClient, AuthRelayWriteScope],
   [WS_METHODS.sourceControlLookupRepository, AuthOrchestrationReadScope],
@@ -546,6 +550,7 @@ const makeWsRpcLayer = (
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const relayClient = yield* RelayClient.RelayClient;
+      const tailscaleServe = yield* TailscaleServe.TailscaleServe;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -2066,6 +2071,14 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.serverSignalProcess]: (input) =>
           observeRpcEffect(WS_METHODS.serverSignalProcess, processDiagnostics.signal(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverGetTailscaleServeStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetTailscaleServeStatus, tailscaleServe.status, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverRetryTailscaleServe]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverRetryTailscaleServe, tailscaleServe.retry, {
             "rpc.aggregate": "server",
           }),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>

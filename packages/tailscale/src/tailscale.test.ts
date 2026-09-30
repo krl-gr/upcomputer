@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Redacted from "effect/Redacted";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -14,15 +15,19 @@ import {
   buildTailscaleHttpsBaseUrl,
   disableTailscaleServe,
   ensureTailscaleServe,
+  excerptTailscaleOutput,
+  findTailscaleApprovalUrl,
   isTailscaleIpv4Address,
   MACOS_TAILSCALE_APP_EXECUTABLE,
   parseTailscaleMagicDnsName,
   parseTailscaleStatus,
   readTailscaleStatus,
+  TAILSCALE_SERVE_TIMEOUT,
   TAILSCALE_STATUS_TIMEOUT,
   TailscaleCommandExitError,
   TailscaleCommandSpawnError,
   TailscaleCommandTimeoutError,
+  TailscaleServeApprovalRequiredError,
   TailscaleStatusParseError,
 } from "./tailscale.ts";
 
@@ -98,6 +103,48 @@ function neverFinishingMockHandle() {
     getInputFd: () => Sink.drain,
     getOutputFd: () => Stream.empty,
   });
+}
+
+// What `tailscale serve` prints when the tailnet has not enabled HTTPS
+// (cmd/tailscale/cli: enableFeatureInteractive prints the control text, then
+// the link indented on its own line) before it blocks.
+const SERVE_APPROVAL_OUTPUT =
+  "\nServe is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/serve?node=nFluffyBadger1\n\n";
+const SERVE_APPROVAL_URL = "https://login.tailscale.com/f/serve?node=nFluffyBadger1";
+
+/**
+ * A serve process that prints `stdout` and then waits forever. Like the Node
+ * spawner, it kills the process when the spawn scope closes.
+ */
+function waitingServeLayer(stdout: string) {
+  let killed = false;
+  const layer = Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make(() =>
+      Effect.acquireRelease(
+        Effect.succeed(
+          ChildProcessSpawner.makeHandle({
+            pid: ChildProcessSpawner.ProcessId(1),
+            exitCode: Effect.never,
+            isRunning: Effect.succeed(true),
+            kill: () => Effect.void,
+            unref: Effect.succeed(Effect.void),
+            stdin: Sink.drain,
+            stdout: Stream.concat(Stream.make(encoder.encode(stdout)), Stream.never),
+            stderr: Stream.never,
+            all: Stream.empty,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.empty,
+          }),
+        ),
+        () =>
+          Effect.sync(() => {
+            killed = true;
+          }),
+      ),
+    ),
+  );
+  return { layer, wasKilled: () => killed };
 }
 
 function mockSpawnerLayer(
@@ -465,6 +512,117 @@ describe("tailscale", () => {
       // key cannot reach a log through it either.
       assert.equal(error.stderrDiagnostic, "permission-denied");
       assertCarriesNoSecret(error, "tskey-auth-secret-token-value");
+    });
+  });
+
+  describe("serve approval and failure output", () => {
+    it.effect("finds the approval link only once it is complete", () =>
+      Effect.sync(() => {
+        assert.equal(findTailscaleApprovalUrl(SERVE_APPROVAL_OUTPUT), SERVE_APPROVAL_URL);
+        // A chunk boundary inside the link must not yield a truncated URL.
+        assert.isNull(
+          findTailscaleApprovalUrl("To enable, visit:\n https://login.tailscale.com/f/se"),
+        );
+        // serve's success output names the node's own https URL, which is not
+        // an approval link.
+        assert.isNull(
+          findTailscaleApprovalUrl(
+            "Available within your tailnet:\n\nhttps://desktop.tail.ts.net/\n|-- proxy http://127.0.0.1:13773\n",
+          ),
+        );
+      }),
+    );
+
+    it.effect("masks auth keys and keeps the tail of long output", () =>
+      Effect.sync(() => {
+        assert.isUndefined(excerptTailscaleOutput("  \n "));
+        assert.equal(
+          excerptTailscaleOutput("  error: bad key tskey-auth-secret-token-value\n"),
+          "error: bad key tskey-…",
+        );
+        const long = excerptTailscaleOutput(`${"x".repeat(1_000)} last words`);
+        assert.isTrue(long?.startsWith("…"));
+        assert.isTrue(long?.endsWith("last words"));
+        assert.isAtMost(long?.length ?? 0, 401);
+      }),
+    );
+
+    it.effect("stops waiting for approval and returns the link, redacted in logs", () => {
+      const serve = waitingServeLayer(SERVE_APPROVAL_OUTPUT);
+
+      return Effect.gen(function* () {
+        const error = yield* ensureTailscaleServe({ localPort: 13773 }).pipe(
+          Effect.flip,
+          Effect.provide(serve.layer),
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+
+        assert.instanceOf(error, TailscaleServeApprovalRequiredError);
+        assert.equal(Redacted.value(error.approvalUrl), SERVE_APPROVAL_URL);
+        assert.equal(error.message, "Tailscale Serve needs approval for this tailnet.");
+        assert.isTrue(serve.wasKilled());
+        assertCarriesNoSecret(error, "nFluffyBadger1");
+      });
+    });
+
+    it.effect("treats a link printed before a clean exit as approval required", () => {
+      // Without a wait, serve prints the link and exits 0 with nothing served.
+      const layer = mockSpawnerLayer(() => ({ stdout: SERVE_APPROVAL_OUTPUT.trimEnd() }));
+
+      return Effect.gen(function* () {
+        const error = yield* ensureTailscaleServe({ localPort: 13773 }).pipe(
+          Effect.flip,
+          Effect.provide(layer),
+        );
+        assert.instanceOf(error, TailscaleServeApprovalRequiredError);
+        assert.equal(Redacted.value(error.approvalUrl), SERVE_APPROVAL_URL);
+      });
+    });
+
+    it.effect("keeps a masked, redacted stderr excerpt on serve exit failures", () => {
+      const layer = mockSpawnerLayer(() => ({
+        code: 1,
+        stderr: "error: failed to fetch cert for fluffy-badger tskey-auth-secret-token-value\n",
+      }));
+
+      return Effect.gen(function* () {
+        const error = yield* ensureTailscaleServe({ localPort: 13773 }).pipe(
+          Effect.flip,
+          Effect.provide(layer),
+        );
+
+        assert.instanceOf(error, TailscaleCommandExitError);
+        assert.equal(
+          error.outputExcerpt && Redacted.value(error.outputExcerpt),
+          "error: failed to fetch cert for fluffy-badger tskey-…",
+        );
+        assertCarriesNoSecret(error, "tskey-auth-secret-token-value");
+        assertCarriesNoSecret(error, "fluffy-badger");
+      });
+    });
+
+    it.effect("keeps what serve printed when it times out", () => {
+      const serve = waitingServeLayer("Waiting for tailscaled…\n");
+
+      return Effect.gen(function* () {
+        const fiber = yield* ensureTailscaleServe({ localPort: 13773 }).pipe(
+          Effect.flip,
+          Effect.forkScoped,
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust(TAILSCALE_SERVE_TIMEOUT);
+        const error = yield* Fiber.join(fiber);
+
+        assert.instanceOf(error, TailscaleCommandTimeoutError);
+        assert.equal(error.subcommand, "serve");
+        assert.equal(
+          error.outputExcerpt && Redacted.value(error.outputExcerpt),
+          "Waiting for tailscaled…",
+        );
+      }).pipe(
+        Effect.provide(Layer.merge(TestClock.layer(), serve.layer)),
+        Effect.provideService(HostProcessPlatform, "linux"),
+      );
     });
   });
 

@@ -19,6 +19,7 @@ import {
   ensureTailscaleServe,
   readTailscaleStatus,
   type TailscaleCommandError,
+  type TailscaleServeError,
   type TailscaleStderrDiagnostic,
 } from "@upcomputer/tailscale";
 import * as Effect from "effect/Effect";
@@ -41,10 +42,15 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
  * Our own wording for why a tailscale command failed, derived from the
  * classified diagnostic. Never the CLI's text — see `stderrDiagnosticOf`.
  */
-const explainCommandFailure = (error: TailscaleCommandError): string | undefined =>
-  error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
+const explainCommandFailure = (error: TailscaleServeError): string | undefined => {
+  if (error._tag === "TailscaleServeApprovalRequiredError") {
+    // The link names this node, so point at it rather than logging it.
+    return "this tailnet has not approved HTTPS for Serve — run `tailscale serve` by hand and open the link it prints";
+  }
+  return error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
     ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
     : undefined;
+};
 
 /**
  * Three distinct failures, three classes: each has its own caller-visible

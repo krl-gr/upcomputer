@@ -6,6 +6,7 @@ import {
   canOfferSshEnvironmentOnboarding,
   isHttpsShareableEndpoint,
   isQrShareableEndpoint,
+  resolveTailscaleHttpsRowState,
   selectQrEndpointOption,
 } from "./ConnectionsSettings.logic";
 
@@ -213,5 +214,72 @@ describe("selectQrEndpointOption", () => {
     const loopbackOnly = options.slice(0, 1);
     expect(selectQrEndpointOption(loopbackOnly, null, null)?.id).toBe("desktop-loopback:4780");
     expect(selectQrEndpointOption([], "anything", "anything")).toBeNull();
+  });
+});
+
+describe("resolveTailscaleHttpsRowState", () => {
+  const url = "https://desktop.tail.ts.net/";
+  const unreachableEndpoint = makeEndpoint({
+    id: `tailscale-magicdns:${url}`,
+    httpBaseUrl: url,
+    reachability: "private-network",
+    status: "unavailable",
+  });
+  const availableEndpoint = { ...unreachableEndpoint, status: "available" as const };
+  const base = {
+    endpoint: unreachableEndpoint,
+    serveEnabled: true,
+    cliUnreachable: false,
+    serveStatus: null,
+  };
+
+  it("keeps an enabled but failing setup visible instead of showing it as off", () => {
+    const approvalUrl = "https://login.tailscale.com/f/serve?node=nTest";
+    expect(
+      resolveTailscaleHttpsRowState({
+        ...base,
+        serveStatus: { status: "approval-required", approvalUrl },
+      }),
+    ).toEqual({ kind: "approval-required", approvalUrl });
+    expect(
+      resolveTailscaleHttpsRowState({
+        ...base,
+        serveStatus: { status: "failed", message: "tailscale serve failed.", outputExcerpt: "x" },
+      }),
+    ).toEqual({ kind: "failed", message: "tailscale serve failed.", outputExcerpt: "x" });
+    expect(resolveTailscaleHttpsRowState({ ...base, serveStatus: { status: "pending" } })).toEqual({
+      kind: "pending",
+    });
+    // Serve succeeded, yet the address does not answer: certificates or MagicDNS.
+    expect(
+      resolveTailscaleHttpsRowState({ ...base, serveStatus: { status: "configured" } }),
+    ).toEqual({ kind: "not-answering", url });
+  });
+
+  it("shows the address once it answers", () => {
+    expect(
+      resolveTailscaleHttpsRowState({
+        ...base,
+        endpoint: availableEndpoint,
+        serveStatus: { status: "configured" },
+      }),
+    ).toEqual({ kind: "available", url });
+  });
+
+  it("tells an unreachable CLI apart from Tailscale not running", () => {
+    expect(resolveTailscaleHttpsRowState({ ...base, endpoint: null, serveEnabled: false })).toEqual(
+      { kind: "not-running" },
+    );
+    expect(
+      resolveTailscaleHttpsRowState({
+        ...base,
+        endpoint: null,
+        serveEnabled: false,
+        cliUnreachable: true,
+      }),
+    ).toEqual({ kind: "cli-unreachable" });
+    expect(resolveTailscaleHttpsRowState({ ...base, serveEnabled: false })).toEqual({
+      kind: "off",
+    });
   });
 });

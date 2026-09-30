@@ -445,6 +445,28 @@ export const ServerSignalProcessResult = Schema.Struct({
 });
 export type ServerSignalProcessResult = typeof ServerSignalProcessResult.Type;
 
+/**
+ * Outcome of configuring Tailscale Serve for this server (`--tailscale-serve`).
+ * `pending` covers the time before the server listens and while serve runs.
+ */
+export const ServerTailscaleServeStatus = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literals(["disabled", "pending", "configured"]),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("approval-required"),
+    /** The login.tailscale.com link that enables HTTPS for Serve on the tailnet. */
+    approvalUrl: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("failed"),
+    message: TrimmedNonEmptyString,
+    /** The tail of the CLI's output, auth keys masked. */
+    outputExcerpt: Schema.optionalKey(TrimmedNonEmptyString),
+  }),
+]);
+export type ServerTailscaleServeStatus = typeof ServerTailscaleServeStatus.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
