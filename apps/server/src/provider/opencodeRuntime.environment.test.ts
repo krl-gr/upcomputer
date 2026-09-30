@@ -165,6 +165,75 @@ describe("verifyOpenCodeServerVersion", () => {
 
 describe("OpenCode server output", () => {
   effectIt.live(
+    "accepts the ready line of newer OpenCode servers",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const environment = yield* HostProcessEnvironment;
+        const executablePath = yield* HostProcessExecutablePath;
+        const platform = yield* HostProcessPlatform;
+        const tempDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "upcomputer-opencode-ready-",
+        });
+        const isWindows = platform === "win32";
+        const binaryPath = path.join(tempDir, isWindows ? "opencode.cmd" : "opencode");
+        const scriptPath = path.join(tempDir, "opencode.mjs");
+
+        // The v2 server logs other lines first and no longer starts the ready
+        // line with "opencode".
+        yield* fs.writeFileString(
+          scriptPath,
+          `import { createServer } from "node:http";
+const server = createServer((request, response) => {
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify({ healthy: true, version: "2.0.0" }));
+});
+server.listen(0, "127.0.0.1", () => {
+  process.stdout.write("Warning: OPENCODE_SERVER_PASSWORD is not set; server is unsecured.\\n");
+  process.stdout.write("INFO Server listening on http://127.0.0.1:" + server.address().port + "\\n");
+});
+`,
+        );
+        yield* fs.writeFileString(
+          binaryPath,
+          [
+            ...(isWindows ? ["@echo off"] : ["#!/bin/sh"]),
+            isWindows
+              ? '"%T3_TEST_NODE_BINARY%" "%T3_TEST_OPENCODE_SCRIPT%" %*'
+              : 'exec "$T3_TEST_NODE_BINARY" "$T3_TEST_OPENCODE_SCRIPT" "$@"',
+            "",
+          ].join("\n"),
+        );
+        if (!isWindows) {
+          yield* fs.chmod(binaryPath, 0o755);
+        }
+
+        const runtime = yield* OpenCodeRuntime;
+        const server = yield* runtime.startOpenCodeServerProcess({
+          binaryPath,
+          directory: tempDir,
+          port: 0,
+          environment: {
+            ...environment,
+            T3_TEST_NODE_BINARY: executablePath,
+            T3_TEST_OPENCODE_SCRIPT: scriptPath,
+          },
+        });
+
+        expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+        expect(yield* server.isRunning).toBe(true);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide([
+          OpenCodeRuntimeLive.pipe(Layer.provideMerge(NodeServices.layer)),
+          FetchHttpClient.layer,
+        ]),
+      ),
+    10_000,
+  );
+
+  effectIt.live(
     "drains stdout and stderr after startup so server requests can finish",
     () =>
       Effect.gen(function* () {
