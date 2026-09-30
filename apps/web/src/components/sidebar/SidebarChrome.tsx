@@ -66,8 +66,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </TooltipPopup>
         </Tooltip>
       )}
-      {/* Same top-right spot as the toggle in the chat tab bar, so one thumb
-          position opens and closes the mobile sidebar. */}
+      {/* The open mobile sidebar closes from its top-right corner. */}
       <SidebarTrigger className="ms-auto -me-2 shrink-0 sm:hidden" />
     </div>
   );

@@ -228,12 +228,10 @@ function DockviewPrefixHeaderActions(props: IDockviewHeaderActionsProps) {
         reserveMacTrafficLights && "pl-[90px] wco:pl-[calc(env(titlebar-area-x)+1em)]",
       )}
     >
-      {sidebar.isMobile ? null : (
-        <SidebarTrigger
-          className={DOCKVIEW_HEADER_ICON_BUTTON_CLASS}
-          onPointerDown={(event) => event.stopPropagation()}
-        />
-      )}
+      <SidebarTrigger
+        className={DOCKVIEW_HEADER_ICON_BUTTON_CLASS}
+        onPointerDown={(event) => event.stopPropagation()}
+      />
       <DockviewHeaderIconButton
         aria-label="Back to previous view"
         onClick={() => {
@@ -253,9 +251,8 @@ function DockviewPrefixHeaderActions(props: IDockviewHeaderActionsProps) {
 
 function DockviewRightHeaderActions(props: IDockviewHeaderActionsProps) {
   const { newThreadShortcutLabel, onCreateDraftPanel } = useChatWorkspaceContext();
-  const sidebar = useSidebar();
   const actionsRef = useRef<HTMLDivElement | null>(null);
-  const [isTopRightHeader, setIsTopRightHeader] = useState(false);
+  const [reserveWindowControlsInset, setReserveWindowControlsInset] = useState(false);
   const [overflowMenuItems, setOverflowMenuItems] = useState<
     Array<{ id: string; title: string; isActive: boolean }>
   >([]);
@@ -306,7 +303,7 @@ function DockviewRightHeaderActions(props: IDockviewHeaderActionsProps) {
       if (animationFrameId !== null) window.cancelAnimationFrame(animationFrameId);
       animationFrameId = window.requestAnimationFrame(() => {
         animationFrameId = null;
-        setIsTopRightHeader(isTopRightDockviewHeader(actionsRef.current));
+        setReserveWindowControlsInset(isTopRightDockviewHeader(actionsRef.current));
         updateOverflowMenuItems();
       });
     };
@@ -351,7 +348,7 @@ function DockviewRightHeaderActions(props: IDockviewHeaderActionsProps) {
       ref={actionsRef}
       className={cn(
         "flex h-full items-center gap-1 px-2",
-        isTopRightHeader &&
+        reserveWindowControlsInset &&
           "wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+8px)]",
       )}
     >
@@ -413,14 +410,6 @@ function DockviewRightHeaderActions(props: IDockviewHeaderActionsProps) {
         >
           <XIcon className="size-4" />
         </DockviewHeaderIconButton>
-      ) : null}
-      {/* On phones the sidebar toggle sits in the top-right corner, where the
-          open sidebar keeps its close button. */}
-      {sidebar.isMobile && isTopRightHeader ? (
-        <SidebarTrigger
-          className={DOCKVIEW_HEADER_ICON_BUTTON_CLASS}
-          onPointerDown={(event) => event.stopPropagation()}
-        />
       ) : null}
     </div>
   );
