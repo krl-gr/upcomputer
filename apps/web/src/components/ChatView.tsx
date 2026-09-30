@@ -4511,7 +4511,6 @@ function ChatViewContent(props: ChatViewProps) {
                   <div className="relative z-10">
                     <ChatComposer
                       composerRef={composerRef}
-                      forceExpandedOnMobile={false}
                       projectSelectionRequired={false}
                       composerDraftTarget={composerDraftTarget}
                       environmentId={environmentId}
