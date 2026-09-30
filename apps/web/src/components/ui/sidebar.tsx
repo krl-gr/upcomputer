@@ -1,7 +1,6 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
-import { PanelLeftCloseIcon } from "lucide-react";
 import * as React from "react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -25,7 +24,6 @@ import * as Schema from "effect/Schema";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 
@@ -246,7 +244,9 @@ function Sidebar({
           <SheetPopup
             {...props}
             className={cn(
-              "upcomputer-sidebar-glass w-(--sidebar-width) max-w-none p-0 text-sidebar-foreground",
+              // A class, not an inline --sidebar-width: the sheet popup replaces
+              // its style prop, which left the mobile sidebar content-sized.
+              "upcomputer-sidebar-glass w-[calc(100vw-(--spacing(3)))] max-w-none p-0 text-sidebar-foreground",
               className,
             )}
             data-mobile="true"
@@ -254,11 +254,6 @@ function Sidebar({
             data-slot="sidebar"
             showCloseButton={false}
             side={side}
-            style={
-              {
-                "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-              } as React.CSSProperties
-            }
           >
             <SheetHeader className="sr-only">
               <SheetTitle>Sidebar</SheetTitle>
@@ -329,7 +324,7 @@ function Sidebar({
 }
 
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { openMobile, toggleSidebar } = useSidebar();
+  const { toggleSidebar } = useSidebar();
   const isOpen = useSidebarVisibility();
 
   return (
@@ -349,7 +344,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       variant="ghost"
       {...props}
     >
-      {openMobile ? <PanelLeftCloseIcon /> : <SidebarLeftIcon />}
+      <SidebarLeftIcon />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );

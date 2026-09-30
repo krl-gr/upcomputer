@@ -48,7 +48,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   const layout = resolveSidebarChromeHeaderLayout({ isElectron, platform });
   const headerContent = (
     <div className="flex items-center gap-2">
-      <SidebarTrigger className="shrink-0 sm:hidden" />
       {layout.hideBrand ? null : (
         <Tooltip>
           <TooltipTrigger
@@ -67,6 +66,9 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </TooltipPopup>
         </Tooltip>
       )}
+      {/* Same top-right spot as the toggle in the chat tab bar, so one thumb
+          position opens and closes the mobile sidebar. */}
+      <SidebarTrigger className="ms-auto -me-2 shrink-0 sm:hidden" />
     </div>
   );
 
