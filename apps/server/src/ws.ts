@@ -331,7 +331,10 @@ const SHELL_RESUME_MAX_GAP = 1_000;
 const THREAD_RESUME_MAX_EVENTS = 1_000;
 const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 
-const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
+export const RPC_REQUIRED_SCOPE: ReadonlyMap<string, AuthEnvironmentScope> = new Map<
+  string,
+  AuthEnvironmentScope
+>([
   [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
   [ORCHESTRATION_WS_METHODS.getTurnDiff, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getFullThreadDiff, AuthOrchestrationReadScope],
@@ -342,6 +345,15 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.serverGetConfig, AuthOrchestrationReadScope],
   [WS_METHODS.serverRefreshProviders, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpdateProvider, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerAuthStart, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerAuthComplete, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerAuthCancel, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerAuthLogout, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerAuthSubscribe, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerInstallStart, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerInstallCancel, AuthOrchestrationOperateScope],
+  [WS_METHODS.providerInstallSubscribe, AuthOrchestrationReadScope],
+  [WS_METHODS.providerInstallRemove, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpdateServer, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpsertKeybinding, AuthOrchestrationOperateScope],
   [WS_METHODS.serverRemoveKeybinding, AuthOrchestrationOperateScope],
