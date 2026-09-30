@@ -717,6 +717,30 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.equal(yield* fileSystem.exists(worktreePath), false);
       }),
     );
+
+    it.effect("prunes a deleted worktree so its branch can be checked out there again", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "restored");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/restore",
+        });
+
+        // Deleted without `git worktree remove`: git still has the branch checked out there.
+        yield* fileSystem.remove(worktreePath, { recursive: true });
+        yield* driver.pruneWorktrees({ cwd });
+        yield* driver.createWorktree({ cwd, path: worktreePath, refName: "feature/restore" });
+
+        assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "feature/restore");
+      }),
+    );
   });
 
   describe("remote operations", () => {
