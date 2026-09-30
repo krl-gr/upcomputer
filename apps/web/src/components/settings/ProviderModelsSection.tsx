@@ -110,7 +110,11 @@ export function ProviderModelsSection({
     });
   }, [favoriteModelSet, modelOrder, models]);
 
+  // Antigravity only runs the models its agent reports, so it takes no custom slugs.
+  const acceptsCustomModels = driverKind !== "antigravity";
+
   const handleAdd = () => {
+    if (!acceptsCustomModels) return;
     const normalized = normalizeCustomModelSlug(input);
     if (!normalized) {
       setError("Enter a model slug.");
@@ -383,29 +387,33 @@ export function ProviderModelsSection({
         })}
       </div>
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <Input
-          id={`provider-instance-${instanceId}-custom-model`}
-          value={input}
-          onChange={(event) => {
-            setInput(event.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            handleAdd();
-          }}
-          placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
-          spellCheck={false}
-        />
-        <Button className="shrink-0" variant="outline" onClick={handleAdd}>
-          <PlusIcon className="size-3.5" />
-          Add
-        </Button>
-      </div>
+      {acceptsCustomModels ? (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <Input
+            id={`provider-instance-${instanceId}-custom-model`}
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              handleAdd();
+            }}
+            placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
+            spellCheck={false}
+          />
+          <Button className="shrink-0" variant="outline" onClick={handleAdd}>
+            <PlusIcon className="size-3.5" />
+            Add
+          </Button>
+        </div>
+      ) : null}
 
-      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+      {acceptsCustomModels && error ? (
+        <p className="mt-2 text-xs text-destructive">{error}</p>
+      ) : null}
     </div>
   );
 }

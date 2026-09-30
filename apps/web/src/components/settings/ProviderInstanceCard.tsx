@@ -447,7 +447,9 @@ export function ProviderInstanceCard({
     ? instance.driver
     : null;
 
-  const customModels = readConfigStringArray(instance.config, "customModels");
+  // Antigravity only runs the models its agent reports, so custom slugs are ignored.
+  const customModels =
+    instance.driver === "antigravity" ? [] : readConfigStringArray(instance.config, "customModels");
   // Server-returned models may lag behind settings writes. Treat probe
   // models as the source for built-ins only; custom rows come directly
   // from the current instance config so add/remove reflects immediately.

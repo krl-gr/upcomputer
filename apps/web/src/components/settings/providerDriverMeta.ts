@@ -1,4 +1,5 @@
 import {
+  AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
   CursorSettings,
@@ -13,7 +14,16 @@ import {
   type ExperimentalWebProductComposition,
 } from "../../product/WebComposition";
 import type { ExperimentalWebProviderDriverDetailsProps } from "../../product/WebFeature";
-import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  type Icon,
+  OpenAI,
+  OpenCodeIcon,
+} from "../Icons";
+import { ProviderSetupOnboarding, ProviderSetupSection } from "./ProviderSetupSection";
 
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
@@ -129,6 +139,19 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
         "Run this in a terminal on the machine running UpComputer and pick the model provider you want to authenticate.",
     },
     onboardingOrder: 50,
+  },
+  {
+    value: ProviderDriverKind.make("antigravity"),
+    label: "Antigravity",
+    icon: AntigravityIcon,
+    badgeLabel: "Early Access",
+    settingsSchema: AntigravitySettings,
+    onboardingDescription:
+      "Use your Google AI subscription with Gemini models through Google's official Antigravity agent.",
+    // No CLI sign-in: the runtime installs and signs in from inside the app.
+    onboardingOrder: 60,
+    onboardingDetails: ProviderSetupOnboarding,
+    details: ProviderSetupSection,
   },
 ];
 

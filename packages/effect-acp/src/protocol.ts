@@ -4,6 +4,7 @@ import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import type * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -42,13 +43,21 @@ export type AcpIncomingNotification =
       readonly params: unknown;
     };
 
+/** Standard I/O whose input can report provider-specific ACP failures. */
+export interface AcpStdio extends Omit<Stdio.Stdio, "stdin"> {
+  readonly stdin: Stream.Stream<Uint8Array, PlatformError.PlatformError | AcpError.AcpError>;
+}
+
 export interface AcpPatchedProtocolOptions {
-  readonly stdio: Stdio.Stdio;
+  readonly stdio: AcpStdio;
   readonly terminationError?: Effect.Effect<AcpError.AcpError>;
   readonly serverRequestMethods: ReadonlySet<string>;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
   readonly logger?: (event: AcpProtocolLogEvent) => Effect.Effect<void, never>;
+  readonly transformSessionUpdate?: (
+    notification: AcpSchema.SessionNotification,
+  ) => AcpSchema.SessionNotification;
   readonly onNotification?: (
     notification: AcpIncomingNotification,
   ) => Effect.Effect<void, AcpError.AcpError, never>;
@@ -287,7 +296,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
               ({
                 _tag: "SessionUpdate",
                 method: CLIENT_METHODS.session_update,
-                params,
+                params: options.transformSessionUpdate?.(params) ?? params,
               }) satisfies AcpIncomingNotification,
           ),
           Effect.mapError((cause) =>

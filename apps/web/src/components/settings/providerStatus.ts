@@ -88,6 +88,16 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
  */
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
+  // Antigravity reports a release tag such as `agy_acp_server_1.1.1` or
+  // `agy_acp_server_20260818_01_RC01`. Show the version, or the date and
+  // candidate, so the row title keeps room for the name.
+  const antigravityRelease = /^agy_acp_server_(\d+\.\d+\.\d+)$/.exec(version);
+  if (antigravityRelease) return `v${antigravityRelease[1]}`;
+  const antigravity = /^agy_acp_server_(\d{4})(\d{2})(\d{2})_\d+(?:_(\w+))?$/.exec(version);
+  if (antigravity) {
+    const [, year, month, day, candidate] = antigravity;
+    return `${year}-${month}-${day}${candidate ? ` ${candidate}` : ""}`;
+  }
   return version.startsWith("v") ? version : `v${version}`;
 }
 

@@ -40,6 +40,7 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
+import { ProviderAuthService } from "../../provider/Services/ProviderAuthService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -199,6 +200,7 @@ const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
+  const providerAuthService = yield* ProviderAuthService;
   const gitWorkflow = yield* GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
@@ -952,37 +954,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* ensureThreadWorktree(thread);
-
     const { message, hasOtherUserMessages } = turnStart.value;
-    if (!hasOtherUserMessages) {
-      const project = yield* resolveProject(thread.projectId);
-      const generationCwd =
-        resolveThreadWorkspaceCwd({
-          thread,
-          projects: project ? [project] : [],
-        }) ?? process.cwd();
-      const generationInput = {
-        messageText: message.text,
-        ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
-        ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
-      };
-
-      yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
-        threadId: event.payload.threadId,
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-        ...generationInput,
-      }).pipe(Effect.forkScoped);
-
-      if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
-        yield* maybeGenerateThreadTitleForFirstTurn({
-          threadId: event.payload.threadId,
-          cwd: generationCwd,
-          ...generationInput,
-        }).pipe(Effect.forkScoped);
-      }
-    }
 
     const handleTurnStartFailure = (cause: Cause.Cause<unknown>) => {
       if (Cause.hasInterruptsOnly(cause)) {
@@ -1019,6 +991,88 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
+
+    const authCommandHandled = yield* Effect.gen(function* () {
+      // Native account commands belong to the thread's existing provider session.
+      const instanceId =
+        thread.session?.providerInstanceId ??
+        event.payload.modelSelection?.instanceId ??
+        thread.modelSelection.instanceId;
+      const handled = yield* providerAuthService.tryHandlePromptCommand({
+        instanceId,
+        text: message.text,
+        hasAttachments: (message.attachments?.length ?? 0) > 0,
+      });
+      if (!handled) {
+        return false;
+      }
+
+      const instanceInfo = yield* providerService.getInstanceInfo(instanceId);
+      yield* setThreadSession({
+        threadId: thread.id,
+        session: {
+          threadId: thread.id,
+          status: "stopped",
+          providerName: instanceInfo.driverKind,
+          providerInstanceId: instanceId,
+          runtimeMode: thread.runtimeMode,
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: event.payload.createdAt,
+        },
+        createdAt: event.payload.createdAt,
+      });
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: yield* serverCommandId("provider-sign-out"),
+        threadId: thread.id,
+        activity: {
+          id: yield* serverEventId(),
+          tone: "info",
+          kind: "provider.auth.signed-out",
+          summary: "Provider signed out",
+          payload: { providerInstanceId: instanceId },
+          turnId: null,
+          createdAt: event.payload.createdAt,
+        },
+        createdAt: event.payload.createdAt,
+      });
+      return true;
+    }).pipe(Effect.catchCause((cause) => recoverTurnStartFailure(cause).pipe(Effect.as(true))));
+    if (authCommandHandled) {
+      return;
+    }
+
+    yield* ensureThreadWorktree(thread);
+
+    if (!hasOtherUserMessages) {
+      const project = yield* resolveProject(thread.projectId);
+      const generationCwd =
+        resolveThreadWorkspaceCwd({
+          thread,
+          projects: project ? [project] : [],
+        }) ?? process.cwd();
+      const generationInput = {
+        messageText: message.text,
+        ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+        ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
+      };
+
+      yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
+        threadId: event.payload.threadId,
+        branch: thread.branch,
+        worktreePath: thread.worktreePath,
+        ...generationInput,
+      }).pipe(Effect.forkScoped);
+
+      if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
+        yield* maybeGenerateThreadTitleForFirstTurn({
+          threadId: event.payload.threadId,
+          cwd: generationCwd,
+          ...generationInput,
+        }).pipe(Effect.forkScoped);
+      }
+    }
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,

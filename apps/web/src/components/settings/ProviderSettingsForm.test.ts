@@ -5,7 +5,9 @@ import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
 import {
   deriveProviderSettingsFields,
   nextProviderConfigWithFieldValue,
+  nextProviderConfigWithSelectValue,
   readProviderConfigBoolean,
+  readProviderConfigSelectValue,
   readProviderConfigString,
 } from "./ProviderSettingsForm";
 
@@ -35,6 +37,73 @@ describe("ProviderSettingsForm helpers", () => {
       description: "Stored in plain text on disk.",
       control: "password",
     });
+  });
+
+  it("derives a select control with its choices for the Antigravity sign-in method", () => {
+    const antigravity = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("antigravity")];
+    expect(antigravity).toBeDefined();
+
+    const fields = deriveProviderSettingsFields(antigravity!);
+    expect(fields.map((field) => field.key)).toEqual([
+      "authMethod",
+      "apiKey",
+      "gcpProject",
+      "gcpLocation",
+      "binaryPath",
+    ]);
+    const authMethod = fields.find((field) => field.key === "authMethod");
+    expect(authMethod).toMatchObject({
+      control: "select",
+      label: "Sign-in method",
+      clearWhenEmpty: "omit",
+    });
+    expect(authMethod?.options?.map((option) => option.value)).toEqual([
+      "oauth-personal",
+      "oauth-business",
+      "gemini-api-key",
+      "agent-platform",
+    ]);
+    expect(fields.find((field) => field.key === "apiKey")?.control).toBe("password");
+  });
+
+  it("reads a select value with the first option as the default", () => {
+    const antigravity = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("antigravity")];
+    const authMethod = deriveProviderSettingsFields(antigravity!).find(
+      (field) => field.key === "authMethod",
+    )!;
+
+    expect(readProviderConfigSelectValue(undefined, authMethod)).toBe("oauth-personal");
+    expect(readProviderConfigSelectValue({ authMethod: "retired" }, authMethod)).toBe(
+      "oauth-personal",
+    );
+    expect(readProviderConfigSelectValue({ authMethod: "gemini-api-key" }, authMethod)).toBe(
+      "gemini-api-key",
+    );
+  });
+
+  it("stores a non-default select choice and omits the default", () => {
+    const antigravity = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("antigravity")];
+    const authMethod = deriveProviderSettingsFields(antigravity!).find(
+      (field) => field.key === "authMethod",
+    )!;
+
+    expect(
+      nextProviderConfigWithSelectValue({ apiKey: "key" }, authMethod, "gemini-api-key"),
+    ).toEqual({ apiKey: "key", authMethod: "gemini-api-key" });
+    expect(
+      nextProviderConfigWithSelectValue(
+        { apiKey: "key", authMethod: "gemini-api-key" },
+        authMethod,
+        "oauth-personal",
+      ),
+    ).toEqual({ apiKey: "key" });
+    expect(
+      nextProviderConfigWithSelectValue(
+        { authMethod: "agent-platform" },
+        authMethod,
+        "oauth-personal",
+      ),
+    ).toBeUndefined();
   });
 
   it("preserves unknown config keys while omitting empty configurable fields", () => {

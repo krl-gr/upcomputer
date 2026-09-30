@@ -35,6 +35,7 @@ import type * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import type { ProviderAdapterError, ProviderDriverError } from "./Errors.ts";
 import type { ProviderAdapterShape } from "./Services/ProviderAdapter.ts";
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
+import type { ProviderAuthController } from "./Services/ProviderAuthService.ts";
 
 /**
  * Static metadata advertised by a driver. Used for default presentation
@@ -71,10 +72,17 @@ export interface ProviderInstance {
   readonly enabled: boolean;
   readonly snapshot: ServerProviderShape;
   readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, ProviderDriverError>;
+  /**
+   * Rediscover the model catalog on an explicit user refresh. For drivers
+   * whose health check cannot list models without starting a session.
+   */
+  readonly refreshModels?: () => Effect.Effect<void, ProviderDriverError>;
   /** Invalidate our own discovery caches before an explicit provider refresh. */
   readonly invalidateCaches?: Effect.Effect<void>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
+  /** In-app sign-in, served by the `provider.auth.*` RPCs. */
+  readonly auth?: ProviderAuthController;
 }
 
 export interface ProviderContinuationIdentity {

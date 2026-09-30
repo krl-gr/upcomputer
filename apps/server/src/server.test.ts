@@ -98,6 +98,8 @@ import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderAuthService } from "./provider/Services/ProviderAuthService.ts";
+import { AntigravityInstallation } from "./provider/AntigravityInstallation.ts";
 import type { ProviderInstance } from "./provider/ProviderDriver.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
@@ -378,6 +380,8 @@ const buildAppUnderTest = (options?: {
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     modelManifest?: Partial<ModelManifest.ModelManifest["Service"]>;
     providerInstanceRegistry?: Partial<ProviderInstanceRegistry["Service"]>;
+    providerAuth?: Partial<ProviderAuthService["Service"]>;
+    antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -608,6 +612,13 @@ const buildAppUnderTest = (options?: {
           Layer.mock(ProviderInstanceRegistry)({
             listInstances: Effect.succeed([]),
             ...options?.layers?.providerInstanceRegistry,
+          }),
+          Layer.mock(ProviderAuthService)({
+            ...options?.layers?.providerAuth,
+          }),
+          Layer.mock(AntigravityInstallation)({
+            managedDirectory: "unused-test-antigravity-runtime",
+            ...options?.layers?.antigravityInstallation,
           }),
         ),
       ),

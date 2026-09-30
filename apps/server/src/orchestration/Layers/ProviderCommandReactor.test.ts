@@ -50,6 +50,7 @@ import {
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
+import { ProviderAuthService } from "../../provider/Services/ProviderAuthService.ts";
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
@@ -161,6 +162,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderServiceError>;
+    readonly tryHandlePromptCommandEffect?: ProviderAuthService["Service"]["tryHandlePromptCommand"];
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -169,6 +171,9 @@ describe("ProviderCommandReactor", () => {
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+    const tryHandlePromptCommand = vi.fn<ProviderAuthService["Service"]["tryHandlePromptCommand"]>(
+      input?.tryHandlePromptCommandEffect ?? (() => Effect.succeed(false)),
+    );
     let nextSessionIndex = 1;
     const runtimeSessions: Array<ProviderSession> = [];
     const modelSelection = input?.threadModelSelection ?? {
@@ -336,7 +341,13 @@ describe("ProviderCommandReactor", () => {
       getInstanceInfo: (instanceId) => {
         const raw = String(instanceId);
         const driverKind = ProviderDriverKind.make(
-          raw.startsWith("claude") ? "claudeAgent" : raw.startsWith("codex") ? "codex" : raw,
+          raw.startsWith("claude")
+            ? "claudeAgent"
+            : raw.startsWith("codex")
+              ? "codex"
+              : raw.startsWith("antigravity")
+                ? "antigravity"
+                : raw,
         );
         return Effect.succeed({
           instanceId,
@@ -375,6 +386,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
+      Layer.provide(Layer.mock(ProviderAuthService, { tryHandlePromptCommand })),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -462,6 +474,7 @@ describe("ProviderCommandReactor", () => {
       snapshotQuery,
       runPromise: <A, E>(effect: Effect.Effect<A, E>) => activeRuntime.runPromise(effect),
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      tryHandlePromptCommand,
       startSession,
       sendTurn,
       interruptTurn,
@@ -479,6 +492,92 @@ describe("ProviderCommandReactor", () => {
       drain,
     };
   }
+
+  effectIt.effect(
+    "handles a provider sign-out command before worktree repair, text helpers, or startup",
+    () =>
+      Effect.gen(function* () {
+        const instanceId = ProviderInstanceId.make("antigravity-personal");
+        const handled = yield* Deferred.make<void>();
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            threadModelSelection: { instanceId, model: "gemini-3.1-pro" },
+            tryHandlePromptCommandEffect: () =>
+              Deferred.succeed(handled, undefined).pipe(Effect.as(true)),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-provider-sign-out"),
+          threadId,
+          message: {
+            messageId: asMessageId("message-provider-sign-out"),
+            role: "user",
+            text: "/logout",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+        yield* Deferred.await(handled);
+        yield* Effect.promise(() => harness.drain());
+
+        const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.session).toMatchObject({
+          status: "stopped",
+          providerName: "antigravity",
+          providerInstanceId: instanceId,
+          activeTurnId: null,
+          lastError: null,
+        });
+        expect(thread?.activities).toContainEqual(
+          expect.objectContaining({ kind: "provider.auth.signed-out", tone: "info", turnId: null }),
+        );
+        expect(harness.tryHandlePromptCommand).toHaveBeenCalledWith({
+          instanceId,
+          text: "/logout",
+          hasAttachments: false,
+        });
+        expect(harness.generateThreadTitle).not.toHaveBeenCalled();
+        expect(harness.generateBranchName).not.toHaveBeenCalled();
+        expect(harness.startSession).not.toHaveBeenCalled();
+        expect(harness.sendTurn).not.toHaveBeenCalled();
+      }),
+  );
+
+  effectIt.effect("sends a command the provider auth handler leaves unhandled", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-provider-command-unhandled"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("message-provider-command-unhandled"),
+          role: "user",
+          text: "/logout",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+      expect(harness.tryHandlePromptCommand).toHaveBeenCalledWith({
+        instanceId: ProviderInstanceId.make("codex"),
+        text: "/logout",
+        hasAttachments: false,
+      });
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "/logout" });
+    }),
+  );
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();

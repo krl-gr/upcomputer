@@ -13,6 +13,7 @@ import type * as AcpSchema from "effect-acp/schema";
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
+const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
@@ -66,8 +67,8 @@ const permissionRequestCount = Math.max(
 );
 const sessionId = "mock-session-1";
 
-let currentModeId = "ask";
-let currentModelId = "default";
+let currentModeId = antigravityProfile ? "default" : "ask";
+let currentModelId = antigravityProfile ? "gemini-test-low" : "default";
 let parameterizedModelPicker = false;
 let currentReasoning = "medium";
 let currentContext = "272k";
@@ -113,6 +114,26 @@ process.once("exit", (code) => {
 });
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  if (antigravityProfile) {
+    return [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: currentModelId,
+        options: antigravityModels.map((model) => ({ value: model.modelId, name: model.name })),
+      },
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: currentModeId,
+        options: availableModes.map((mode) => ({ value: mode.id, name: mode.name })),
+      },
+    ];
+  }
   if (parameterizedModelPicker) {
     const baseOptions: Array<AcpSchema.SessionConfigOption> = [
       {
@@ -272,23 +293,34 @@ function availableModels(): ReadonlyArray<{
   }));
 }
 
-const availableModes: ReadonlyArray<AcpSchema.SessionMode> = [
-  {
-    id: "ask",
-    name: "Ask",
-    description: "Request permission before making any changes",
-  },
-  {
-    id: "architect",
-    name: "Architect",
-    description: "Design and plan software systems without implementation",
-  },
-  {
-    id: "code",
-    name: "Code",
-    description: "Write and modify code with full tool access",
-  },
-];
+const antigravityModels = [
+  { modelId: "gemini-test-low", name: "Gemini Test Low" },
+  { modelId: "gemini-test-high", name: "Gemini Test High" },
+] satisfies ReadonlyArray<AcpSchema.ModelInfo>;
+
+const availableModes: ReadonlyArray<AcpSchema.SessionMode> = antigravityProfile
+  ? [
+      { id: "default", name: "Default" },
+      { id: "auto_edit", name: "Auto edit" },
+      { id: "yolo", name: "YOLO" },
+    ]
+  : [
+      {
+        id: "ask",
+        name: "Ask",
+        description: "Request permission before making any changes",
+      },
+      {
+        id: "architect",
+        name: "Architect",
+        description: "Design and plan software systems without implementation",
+      },
+      {
+        id: "code",
+        name: "Code",
+        description: "Write and modify code with full tool access",
+      },
+    ];
 
 function modeState(): AcpSchema.SessionModeState {
   return {
@@ -318,6 +350,9 @@ const grokAcpModels: ReadonlyArray<AcpSchema.ModelInfo> = [
 ];
 
 function modelState(): AcpSchema.SessionModelState {
+  if (antigravityProfile) {
+    return { currentModelId, availableModels: antigravityModels };
+  }
   const modelId = grokAcpModels.some((model) => model.modelId === currentModelId)
     ? currentModelId
     : "grok-4.6";
@@ -329,11 +364,35 @@ function modelState(): AcpSchema.SessionModelState {
 
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
+  const publishAntigravityCommands = (targetSessionId: string) =>
+    agent.client.sessionUpdate({
+      sessionId: targetSessionId,
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          { name: "plan", description: "Plan a task", input: { hint: "task" } },
+          { name: "logout", description: "Sign out" },
+        ],
+      },
+    });
 
   yield* agent.handleInitialize((request) =>
-    Effect.sync(() => {
+    Effect.sync((): AcpSchema.InitializeResponse => {
       parameterizedModelPicker =
         request.clientCapabilities?._meta?.parameterizedModelPicker === true;
+      if (antigravityProfile) {
+        return {
+          protocolVersion: 1,
+          agentInfo: { name: "antigravity-acp", version: "mock" },
+          agentCapabilities: {
+            loadSession: true,
+            sessionCapabilities: { resume: {} },
+            auth: { logout: {} },
+            promptCapabilities: { image: true, embeddedContext: true },
+          },
+          authMethods: [{ id: "oauth-personal", name: "Sign in with Google" }],
+        };
+      }
       return {
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
@@ -344,14 +403,55 @@ const program = Effect.gen(function* () {
     }),
   );
 
-  yield* agent.handleAuthenticate(() => Effect.succeed({}));
+  // Mirrors the real Antigravity agent: the API key method reads GEMINI_API_KEY
+  // from the process environment and rejects when it is missing.
+  yield* agent.handleAuthenticate((request) =>
+    !antigravityProfile || request.methodId === "oauth-personal"
+      ? Effect.succeed({})
+      : request.methodId === "gemini-api-key" && process.env.GEMINI_API_KEY
+        ? Effect.succeed({})
+        : Effect.fail(
+            AcpError.AcpRequestError.invalidParams(
+              `Mock Antigravity rejected auth method ${request.methodId}.`,
+            ),
+          ),
+  );
+  if (antigravityProfile) {
+    yield* agent.handleLogout(() => Effect.succeed({}));
+  }
 
   yield* agent.handleCreateSession(() =>
-    Effect.succeed({
-      sessionId,
-      modes: modeState(),
-      models: modelState(),
-      configOptions: configOptions(),
+    Effect.gen(function* () {
+      if (antigravityProfile) {
+        yield* publishAntigravityCommands(sessionId);
+      }
+      return {
+        sessionId,
+        modes: modeState(),
+        models: modelState(),
+        configOptions: configOptions(),
+      };
+    }),
+  );
+
+  // Only the Antigravity profile advertises session/resume.
+  yield* agent.handleResumeSession((request) =>
+    Effect.gen(function* () {
+      yield* agent.client.sessionUpdate({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "native-resume-started" },
+        },
+      });
+      if (antigravityProfile) {
+        yield* publishAntigravityCommands(request.sessionId);
+      }
+      return {
+        modes: modeState(),
+        models: modelState(),
+        configOptions: configOptions(),
+      };
     }),
   );
 
@@ -419,7 +519,7 @@ const program = Effect.gen(function* () {
 
   yield* agent.handleSetSessionModel((request) =>
     Effect.gen(function* () {
-      if (!grokAcpModels.some((model) => model.modelId === request.modelId)) {
+      if (!modelState().availableModels.some((model) => model.modelId === request.modelId)) {
         return yield* AcpError.AcpRequestError.invalidParams(
           `Unknown mock model id: ${request.modelId}`,
           {

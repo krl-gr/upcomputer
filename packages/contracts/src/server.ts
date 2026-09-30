@@ -190,6 +190,14 @@ export const ServerProvider = Schema.Struct({
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
+  // Present when the server can install the provider runtime or sign in to
+  // it from settings (the `provider.install.*` and `provider.auth.*` RPCs).
+  setup: Schema.optional(
+    Schema.Struct({
+      canAuthenticate: Schema.Boolean,
+      canInstall: Schema.Boolean,
+    }),
+  ),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
   version: Schema.NullOr(TrimmedNonEmptyString),

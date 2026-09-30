@@ -9,6 +9,7 @@ export * from "./ipc.ts";
 export * from "./provider.ts";
 export * from "./providerInstance.ts";
 export * from "./providerRuntime.ts";
+export * from "./providerSetup.ts";
 export * from "./model.ts";
 export * from "./product.ts";
 export * from "./keybindings.ts";

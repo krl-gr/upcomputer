@@ -362,6 +362,13 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
       return;
     }
 
+    // Drivers with in-app setup (Antigravity) install from their own panel,
+    // which shows download progress and continues straight into sign-in.
+    if (row.connectable && row.live?.setup?.canInstall) {
+      openConnection(row);
+      return;
+    }
+
     if (!environment || !row.live) {
       setError(row.driver, `${row.option.label} is not available in this environment.`);
       return;
@@ -402,6 +409,15 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
     );
     refresh();
   };
+
+  // Opening in-app setup is an explicit choice to use the agent, so a
+  // disabled-by-default driver (Antigravity) is enabled on the way in.
+  function openConnection(row: AgentRow) {
+    if (!fixtureEnabled && row.live?.setup !== undefined && !row.live.enabled) {
+      enableAgent(row);
+    }
+    setConnectionDriver(row.driver);
+  }
 
   const signInRow = rows.find((row) => row.driver === signInDriver);
   const connectionRow = rows.find((row) => row.driver === connectionDriver);
@@ -582,7 +598,7 @@ export function ProviderOnboarding({ onFinished, onClose, onSkip }: ProviderOnbo
                                   busy={busy}
                                   onConnect={() => {
                                     if (row.connectable) {
-                                      setConnectionDriver(row.driver);
+                                      openConnection(row);
                                       return;
                                     }
                                     setSignInDriver(row.driver);
