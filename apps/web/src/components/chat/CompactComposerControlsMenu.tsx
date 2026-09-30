@@ -10,12 +10,16 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
+import type { InteractionModePresentation } from "../../interactionModes";
 import { COMPOSER_CONTROL_ICON_TRIGGER_CLASS } from "./composerControlStyles";
 
+/** The "…" menu that holds the composer controls that no longer fit the footer. */
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
+  interactionModes: ReadonlyArray<InteractionModePresentation>;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
+  showRuntimeMode: boolean;
   traitsMenuContent?: ReactNode;
   onInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -35,14 +39,10 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <EllipsisIcon aria-hidden="true" className="size-4" />
       </MenuTrigger>
       <MenuPopup align="start">
-        {props.traitsMenuContent ? (
-          <>
-            {props.traitsMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
+        {props.traitsMenuContent ? <>{props.traitsMenuContent}</> : null}
         {props.showInteractionModeToggle ? (
           <>
+            {props.traitsMenuContent ? <MenuDivider /> : null}
             <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Mode</div>
             <MenuRadioGroup
               value={props.interactionMode}
@@ -51,26 +51,32 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 props.onInteractionModeChange(value as ProviderInteractionMode);
               }}
             >
-              <MenuRadioItem value="default">Build</MenuRadioItem>
-              <MenuRadioItem value="ask">Ask</MenuRadioItem>
-              <MenuRadioItem value="plan">Plan</MenuRadioItem>
+              {props.interactionModes.map((mode) => (
+                <MenuRadioItem key={mode.id} value={mode.id}>
+                  {mode.label}
+                </MenuRadioItem>
+              ))}
             </MenuRadioGroup>
-            <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
-        <MenuRadioGroup
-          value={props.runtimeMode}
-          onValueChange={(value) => {
-            if (!value || value === props.runtimeMode) return;
-            props.onRuntimeModeChange(value as RuntimeMode);
-          }}
-        >
-          <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-          <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-          <MenuRadioItem value="auto">Auto</MenuRadioItem>
-          <MenuRadioItem value="full-access">Full access</MenuRadioItem>
-        </MenuRadioGroup>
+        {props.showRuntimeMode ? (
+          <>
+            {props.traitsMenuContent || props.showInteractionModeToggle ? <MenuDivider /> : null}
+            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
+            <MenuRadioGroup
+              value={props.runtimeMode}
+              onValueChange={(value) => {
+                if (!value || value === props.runtimeMode) return;
+                props.onRuntimeModeChange(value as RuntimeMode);
+              }}
+            >
+              <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
+              <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
+              <MenuRadioItem value="auto">Auto</MenuRadioItem>
+              <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+            </MenuRadioGroup>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

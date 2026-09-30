@@ -1,7 +1,9 @@
 import { SIDEBAR_LABEL_TEXT_CLASS, SIDEBAR_MUTED_TEXT_CLASS } from "../sidebar/sidebarTextStyles";
 
+// The row clips instead of scrolling: hidden blocks and labels stay mounted out
+// of flow for measurement and must not make the row scrollable.
 export const COMPOSER_CONTROL_ROW_CLASS =
-  "flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+  "relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-clip";
 
 export const COMPOSER_CONTROL_SEPARATOR_CLASS = "h-3 w-px shrink-0 bg-foreground/35 dark:bg-border";
 

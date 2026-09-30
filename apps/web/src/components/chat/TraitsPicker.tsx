@@ -18,7 +18,7 @@ import {
 } from "@upcomputer/shared/model";
 import { memo, useCallback, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
-import { ChevronDownIcon, ZapIcon } from "lucide-react";
+import { ChevronDownIcon, GaugeIcon, ZapIcon } from "lucide-react";
 import { Button, buttonVariants } from "../ui/button";
 import {
   Menu,
@@ -607,6 +607,15 @@ export const TraitsPicker = memo(function TraitsPicker({
     presentation: triggerPresentation,
   });
   const usesStructuredContent = triggerPresentation === "detail-row" || provider === "codex";
+  // The composer footer may drop the label when space runs out; this icon then
+  // stands in for it. It stays mounted out of flow so its width is measurable.
+  const compactIcon =
+    fastModeIcon ??
+    (triggerPresentation === "composer" ? (
+      <span data-composer-control-compact-icon className="pointer-events-none invisible absolute">
+        <GaugeIcon aria-hidden="true" className="size-3.5 shrink-0" />
+      </span>
+    ) : null);
 
   return (
     <Menu
@@ -620,14 +629,17 @@ export const TraitsPicker = memo(function TraitsPicker({
           <Button
             size="sm"
             variant={triggerVariant ?? "ghost"}
+            aria-label={showFastModeIcon ? `${triggerLabel}, Fast mode on` : triggerLabel}
             className={cn(triggerPresentationContract.triggerClassName, triggerClassName)}
           />
         }
       >
         {usesStructuredContent ? (
           <span className={triggerPresentationContract.contentClassName ?? undefined}>
-            {fastModeIcon}
-            <span className="min-w-0 truncate">{triggerLabel}</span>
+            {compactIcon}
+            <span data-composer-control-label className="min-w-0 truncate">
+              {triggerLabel}
+            </span>
             {triggerPresentationContract.showChevron ? (
               <ChevronDownIcon
                 aria-hidden="true"
@@ -638,8 +650,8 @@ export const TraitsPicker = memo(function TraitsPicker({
           </span>
         ) : (
           <>
-            {fastModeIcon}
-            <span>{triggerLabel}</span>
+            {compactIcon}
+            <span data-composer-control-label>{triggerLabel}</span>
             <ChevronDownIcon
               aria-hidden="true"
               className="size-3 opacity-60"
