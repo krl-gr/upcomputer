@@ -2218,6 +2218,69 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("interruptTurn settles tasks Claude never reported as finished", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      const takeTaskCompleted = adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "task.completed"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const finishedFiber = yield* takeTaskCompleted;
+      for (const taskId of ["task-finished", "task-live"]) {
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: taskId,
+          description: `Agent ${taskId}`,
+          task_type: "local_agent",
+          session_id: "sdk-session",
+          uuid: `started-${taskId}`,
+        } as unknown as SDKMessage);
+      }
+      harness.query.emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "task-finished",
+        status: "completed",
+        output_file: "",
+        summary: "Done",
+        session_id: "sdk-session",
+        uuid: "notification-task-finished",
+      } as unknown as SDKMessage);
+      const [finished] = Array.from(yield* Fiber.join(finishedFiber));
+      assert.equal(finished?.type === "task.completed" && finished.payload.status, "completed");
+
+      const stoppedFiber = yield* takeTaskCompleted;
+      yield* adapter.interruptTurn(session.threadId);
+
+      const stoppedEvents = Array.from(yield* Fiber.join(stoppedFiber));
+      assert.equal(stoppedEvents.length, 1);
+      const [stopped] = stoppedEvents;
+      assert.equal(stopped?.type, "task.completed");
+      if (stopped?.type === "task.completed") {
+        assert.equal(String(stopped.payload.taskId), "task-live");
+        assert.equal(stopped.payload.status, "stopped");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("interruptTurn lets Claude abort the turn before closing the session", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
