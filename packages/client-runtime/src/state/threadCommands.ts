@@ -1,6 +1,9 @@
 import * as Crypto from "effect/Crypto";
 import { Atom } from "effect/unstable/reactivity";
+import type { EnvironmentId, OrchestrationShellSnapshot } from "@upcomputer/contracts";
 
+import { createOptimisticThreadLifecycle } from "./threadLifecycle.ts";
+import { canSnooze } from "./threadSettled.ts";
 import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
 import {
   type ArchiveThreadInput,
@@ -71,6 +74,7 @@ export type {
 
 export function createThreadEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Crypto.Crypto | R, E>,
+  snapshotAtom: (environmentId: EnvironmentId) => Atom.Atom<OrchestrationShellSnapshot | null>,
 ) {
   const scheduler = createAtomCommandScheduler();
   const concurrency = {
@@ -78,7 +82,7 @@ export function createThreadEnvironmentAtoms<R, E>(
     key: ({ environmentId, input }: { environmentId: string; input: { threadId: string } }) =>
       JSON.stringify([environmentId, input.threadId]),
   };
-  return {
+  const commands = {
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),
@@ -199,5 +203,27 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+  };
+  const optimistic = createOptimisticThreadLifecycle(snapshotAtom);
+  return {
+    ...commands,
+    snapshotAtom: optimistic.snapshotAtom,
+    snooze: optimistic.wrap(commands.snooze, (thread, input, now, accepted) =>
+      (!accepted && !canSnooze(thread, { now })) ||
+      !(Date.parse(input.snoozedUntil) > Date.parse(now))
+        ? thread
+        : {
+            ...thread,
+            hasPendingApprovals: false,
+            hasPendingUserInput: false,
+            snoozedUntil: input.snoozedUntil,
+            snoozedAt: thread.snoozedUntil === input.snoozedUntil ? (thread.snoozedAt ?? now) : now,
+          },
+    ),
+    unsnooze: optimistic.wrap(commands.unsnooze, (thread) => ({
+      ...thread,
+      snoozedUntil: null,
+      snoozedAt: null,
+    })),
   };
 }
