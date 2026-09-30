@@ -60,19 +60,16 @@ export function createDesktopNetworkAccessStateAtom(
     if (!bridge) {
       return yield* new DesktopNetworkAccessUnavailableError();
     }
-    const [serverExposureState, advertisedEndpoints] = yield* Effect.all(
-      [
-        Effect.tryPromise({
-          try: () => bridge.getServerExposureState(),
-          catch: (cause) => new DesktopServerExposureStateLoadError({ cause }),
-        }),
-        Effect.tryPromise({
-          try: () => bridge.getAdvertisedEndpoints(),
-          catch: (cause) => new DesktopAdvertisedEndpointsLoadError({ cause }),
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
+    // Endpoints first: resolving them reads `tailscale status`, which is what
+    // the state's tailscaleCliUnreachable reports on.
+    const advertisedEndpoints = yield* Effect.tryPromise({
+      try: () => bridge.getAdvertisedEndpoints(),
+      catch: (cause) => new DesktopAdvertisedEndpointsLoadError({ cause }),
+    });
+    const serverExposureState = yield* Effect.tryPromise({
+      try: () => bridge.getServerExposureState(),
+      catch: (cause) => new DesktopServerExposureStateLoadError({ cause }),
+    });
     return {
       advertisedEndpoints,
       serverExposureState,

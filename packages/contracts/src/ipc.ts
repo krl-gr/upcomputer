@@ -415,6 +415,11 @@ export interface DesktopServerExposureState {
   advertisedHost: string | null;
   tailscaleServeEnabled: boolean;
   tailscaleServePort: number;
+  /**
+   * Set when this machine has a tailnet address but the last `tailscale
+   * status` read failed: Tailscale runs, but its CLI can't be used.
+   */
+  tailscaleCliUnreachable?: boolean;
 }
 
 export const DesktopServerExposureStateSchema = Schema.Struct({
@@ -423,6 +428,7 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   advertisedHost: Schema.NullOr(Schema.String),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: Schema.Number,
+  tailscaleCliUnreachable: Schema.optionalKey(Schema.Boolean),
 });
 
 export interface PickFolderOptions {

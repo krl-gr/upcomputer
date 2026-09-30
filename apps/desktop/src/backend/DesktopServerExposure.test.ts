@@ -5,6 +5,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -352,6 +353,51 @@ describe("DesktopServerExposure", () => {
       }),
     ),
   );
+
+  it.effect("reports an unreachable Tailscale CLI only while a tailnet address exists", () => {
+    const failingSpawnerLayer = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make(() =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "NotFound",
+            module: "ChildProcess",
+            method: "spawn",
+            pathOrDescriptor: "tailscale",
+          }),
+        ),
+      ),
+    );
+    const readCliState = Effect.gen(function* () {
+      const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+      const settings = yield* DesktopAppSettings.DesktopAppSettings;
+      yield* settings.setServerExposureMode("network-accessible");
+      yield* serverExposure.configureFromSettings({ port: 4173 });
+      yield* serverExposure.getAdvertisedEndpoints;
+      return (yield* serverExposure.getState).tailscaleCliUnreachable;
+    });
+
+    return Effect.gen(function* () {
+      assert.equal(
+        yield* withHarness(tailnetNetworkInterfaces, readCliState, {}, failingSpawnerLayer),
+        true,
+      );
+      // Without a tailnet address the failure just means Tailscale is off.
+      assert.equal(
+        yield* withHarness(lanNetworkInterfaces, readCliState, {}, failingSpawnerLayer),
+        undefined,
+      );
+      assert.equal(
+        yield* withHarness(
+          tailnetNetworkInterfaces,
+          readCliState,
+          {},
+          mockSpawnerLayer(`{"Self":{"DNSName":"desktop.tail.ts.net."}}`),
+        ),
+        undefined,
+      );
+    });
+  });
 
   it.effect("does not spawn the tailscale CLI while server exposure is local-only", () =>
     withHarness(

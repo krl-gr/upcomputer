@@ -2897,7 +2897,9 @@ export function ConnectionsSettings() {
           ? tailscaleHttpsEndpoint.status === "available"
             ? tailscaleHttpsEndpoint.httpBaseUrl
             : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : "Start Tailscale to set up HTTPS access through MagicDNS."
+          : desktopServerExposureState?.tailscaleCliUnreachable
+            ? "Tailscale is running, but Up.computer can't reach its command-line tool. Install the CLI from Tailscale's settings, then reopen this page."
+            : "Start Tailscale to set up HTTPS access through MagicDNS."
       }
       control={
         tailscaleHttpsEndpoint ? (

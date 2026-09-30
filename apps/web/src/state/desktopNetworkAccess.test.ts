@@ -51,6 +51,30 @@ describe("desktopNetworkAccessState", () => {
     registry.dispose();
   });
 
+  it("reads the exposure state after the endpoints so the Tailscale CLI flag is current", async () => {
+    const calls: Array<string> = [];
+    const atom = createDesktopNetworkAccessStateAtom(() => ({
+      getAdvertisedEndpoints: async () => {
+        calls.push("endpoints");
+        return advertisedEndpoints;
+      },
+      getServerExposureState: async () => {
+        calls.push("state");
+        return { ...serverExposureState, tailscaleCliUnreachable: true };
+      },
+    }));
+    const registry = AtomRegistry.make();
+    registry.mount(atom);
+
+    await vi.waitFor(() => {
+      expect(AsyncResult.value(registry.get(atom))).toEqual(
+        expect.objectContaining({ _tag: "Some" }),
+      );
+    });
+    expect(calls).toEqual(["endpoints", "state"]);
+    registry.dispose();
+  });
+
   it.each([
     {
       cause: serverExposureLoadCause,

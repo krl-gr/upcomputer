@@ -319,13 +319,27 @@ const initialRuntimeState = (): RuntimeState =>
     port: 0,
   });
 
-const toContractState = (state: RuntimeState): DesktopServerExposureState => ({
+const toContractState = (
+  state: RuntimeState,
+  tailscaleCliUnreachable = false,
+): DesktopServerExposureState => ({
   mode: state.mode,
   endpointUrl: Option.getOrNull(state.endpointUrl),
   advertisedHost: Option.getOrNull(state.advertisedHost),
   tailscaleServeEnabled: state.tailscaleServeEnabled,
   tailscaleServePort: state.tailscaleServePort,
+  ...(tailscaleCliUnreachable ? { tailscaleCliUnreachable } : {}),
 });
+
+const hasTailnetIpv4Address = (
+  networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
+): boolean =>
+  Object.values(networkInterfaces).some((addresses) =>
+    addresses?.some(
+      (address) =>
+        !address.internal && address.family === "IPv4" && isTailscaleIpv4Address(address.address),
+    ),
+  );
 
 const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfig => ({
   port: state.port,
@@ -382,12 +396,7 @@ function resolveRuntimeState(input: {
   const unavailable =
     input.requestedMode === "network-accessible" &&
     requestedExposure.endpointUrl === null &&
-    !Object.values(input.networkInterfaces).some((addresses) =>
-      addresses?.some(
-        (address) =>
-          !address.internal && address.family === "IPv4" && isTailscaleIpv4Address(address.address),
-      ),
-    );
+    !hasTailnetIpv4Address(input.networkInterfaces);
   const exposure = unavailable
     ? resolveDesktopServerExposure({
         mode: "local-only",
@@ -420,6 +429,10 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const stateRef = yield* Ref.make(initialRuntimeState());
+  // Whether the last `tailscale status` read failed, and whether that means
+  // Tailscale runs without a usable CLI (see getAdvertisedEndpoints).
+  const tailscaleStatusFailedRef = yield* Ref.make(false);
+  const tailscaleCliUnreachableRef = yield* Ref.make(false);
 
   // Cache the `tailscale status` spawn for the TTL. On macOS, the Mac App
   // Store Tailscale CLI lives inside Tailscale's sandbox container, so each
@@ -427,6 +440,8 @@ export const make = Effect.gen(function* () {
   const cachedReadMagicDnsName = yield* Effect.cachedWithTTL(
     readTailscaleStatus.pipe(
       Effect.map((status) => status.magicDnsName),
+      Effect.tap(() => Ref.set(tailscaleStatusFailedRef, false)),
+      Effect.tapError(() => Ref.set(tailscaleStatusFailedRef, true)),
       Effect.orElseSucceed(() => null),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
     ),
@@ -435,7 +450,11 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
-  const getState = Ref.get(stateRef).pipe(Effect.map(toContractState));
+  const contractState = (state: RuntimeState) =>
+    Ref.get(tailscaleCliUnreachableRef).pipe(
+      Effect.map((tailscaleCliUnreachable) => toContractState(state, tailscaleCliUnreachable)),
+    );
+  const getState = Ref.get(stateRef).pipe(Effect.flatMap(contractState));
   const backendConfig = Ref.get(stateRef).pipe(Effect.map(toBackendConfig));
 
   const configureFromSettings = Effect.fn("desktop.serverExposure.configureFromSettings")(
@@ -451,7 +470,7 @@ export const make = Effect.gen(function* () {
         advertisedHostOverride: config.desktopLanHostOverride,
       });
       yield* Ref.set(stateRef, resolved.state);
-      return toContractState(resolved.state);
+      return yield* contractState(resolved.state);
     },
   );
 
@@ -490,7 +509,7 @@ export const make = Effect.gen(function* () {
 
     yield* Ref.set(stateRef, resolved.state);
     return {
-      state: toContractState(resolved.state),
+      state: yield* contractState(resolved.state),
       requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved.state),
     };
   });
@@ -524,7 +543,7 @@ export const make = Effect.gen(function* () {
       }));
 
       return {
-        state: toContractState(nextState),
+        state: yield* contractState(nextState),
         requiresRelaunch: result.changed,
       };
     },
@@ -543,6 +562,7 @@ export const make = Effect.gen(function* () {
     // network exposure. The spawn itself triggers a macOS "Other apps"
     // TCC prompt on Mac App Store Tailscale builds.
     if (state.mode !== "network-accessible" && !state.tailscaleServeEnabled) {
+      yield* Ref.set(tailscaleCliUnreachableRef, false);
       return coreEndpoints;
     }
 
@@ -555,6 +575,12 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
       Effect.provideService(HttpClient.HttpClient, httpClient),
+    );
+    // A tailnet address means Tailscale is running, so a failed status read
+    // points at the CLI (not found, or not answering) rather than at Tailscale.
+    yield* Ref.set(
+      tailscaleCliUnreachableRef,
+      (yield* Ref.get(tailscaleStatusFailedRef)) && hasTailnetIpv4Address(currentNetworkInterfaces),
     );
     return [...coreEndpoints, ...tailscaleEndpoints];
   }).pipe(Effect.withSpan("desktop.serverExposure.getAdvertisedEndpoints"));

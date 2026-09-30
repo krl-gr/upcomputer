@@ -8,12 +8,14 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import { HostProcessPlatform } from "@upcomputer/shared/hostProcess";
 
 import {
   buildTailscaleHttpsBaseUrl,
   disableTailscaleServe,
   ensureTailscaleServe,
   isTailscaleIpv4Address,
+  MACOS_TAILSCALE_APP_EXECUTABLE,
   parseTailscaleMagicDnsName,
   parseTailscaleStatus,
   readTailscaleStatus,
@@ -200,7 +202,11 @@ describe("tailscale", () => {
     );
 
     return Effect.gen(function* () {
-      const error = yield* readTailscaleStatus.pipe(Effect.flip, Effect.provide(layer));
+      const error = yield* readTailscaleStatus.pipe(
+        Effect.flip,
+        Effect.provide(layer),
+        Effect.provideService(HostProcessPlatform, "linux"),
+      );
 
       assert.instanceOf(error, TailscaleCommandSpawnError);
       assert.equal(error.executable, "tailscale");
@@ -248,6 +254,111 @@ describe("tailscale", () => {
         Effect.provide(layer),
       );
       assert.equal(degraded, null);
+    });
+  });
+
+  describe("executable lookup", () => {
+    const notFound = (command: string) =>
+      PlatformError.systemError({
+        _tag: "NotFound",
+        module: "ChildProcess",
+        method: "spawn",
+        pathOrDescriptor: command,
+      });
+
+    // Records every spawn and fails the ones not in `installed`, like a PATH
+    // without the command.
+    function recordingSpawnerLayer(installed: ReadonlyArray<string>) {
+      const spawned: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+      const layer = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) => {
+          const childProcess = command as unknown as {
+            readonly command: string;
+            readonly args: ReadonlyArray<string>;
+          };
+          spawned.push({ command: childProcess.command, args: childProcess.args });
+          return installed.includes(childProcess.command)
+            ? Effect.succeed(mockHandle({ stdout: tailscaleStatusWithSingleIpJson }))
+            : Effect.fail(notFound(childProcess.command));
+        }),
+      );
+      return { layer, spawned };
+    }
+
+    it.effect("falls back to the CLI inside Tailscale.app on macOS", () => {
+      const { layer, spawned } = recordingSpawnerLayer([MACOS_TAILSCALE_APP_EXECUTABLE]);
+
+      return Effect.gen(function* () {
+        const status = yield* readTailscaleStatus;
+        assert.equal(status.magicDnsName, "desktop.tail.ts.net");
+        yield* ensureTailscaleServe({ localPort: 13773 });
+
+        assert.deepEqual(spawned, [
+          { command: "tailscale", args: ["status", "--json"] },
+          { command: MACOS_TAILSCALE_APP_EXECUTABLE, args: ["status", "--json"] },
+          {
+            command: "tailscale",
+            args: ["serve", "--bg", "--https=443", "http://127.0.0.1:13773"],
+          },
+          {
+            command: MACOS_TAILSCALE_APP_EXECUTABLE,
+            args: ["serve", "--bg", "--https=443", "http://127.0.0.1:13773"],
+          },
+        ]);
+      }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+    });
+
+    it.effect("prefers tailscale on PATH when it is installed", () => {
+      const { layer, spawned } = recordingSpawnerLayer([
+        "tailscale",
+        MACOS_TAILSCALE_APP_EXECUTABLE,
+      ]);
+
+      return Effect.gen(function* () {
+        yield* readTailscaleStatus;
+        assert.deepEqual(
+          spawned.map((entry) => entry.command),
+          ["tailscale"],
+        );
+      }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+    });
+
+    it.effect("reports the last candidate when no CLI can be spawned on macOS", () => {
+      const { layer } = recordingSpawnerLayer([]);
+
+      return Effect.gen(function* () {
+        const error = yield* readTailscaleStatus.pipe(Effect.flip);
+        assert.instanceOf(error, TailscaleCommandSpawnError);
+        assert.equal(error.executable, MACOS_TAILSCALE_APP_EXECUTABLE);
+      }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+    });
+
+    it.effect("has no app bundle fallback on other platforms", () => {
+      const linux = recordingSpawnerLayer([MACOS_TAILSCALE_APP_EXECUTABLE]);
+      const windows = recordingSpawnerLayer(["tailscale.exe"]);
+
+      return Effect.gen(function* () {
+        const error = yield* readTailscaleStatus.pipe(
+          Effect.flip,
+          Effect.provide(linux.layer),
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+        assert.instanceOf(error, TailscaleCommandSpawnError);
+        assert.deepEqual(
+          linux.spawned.map((entry) => entry.command),
+          ["tailscale"],
+        );
+
+        yield* readTailscaleStatus.pipe(
+          Effect.provide(windows.layer),
+          Effect.provideService(HostProcessPlatform, "win32"),
+        );
+        assert.deepEqual(
+          windows.spawned.map((entry) => entry.command),
+          ["tailscale.exe"],
+        );
+      });
     });
   });
 
