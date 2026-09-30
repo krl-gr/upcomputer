@@ -2213,8 +2213,8 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
-        [WS_METHODS.agentSessionsScan]: () =>
-          observeRpcEffect(WS_METHODS.agentSessionsScan, agentSessionScanner.scan, {
+        [WS_METHODS.agentSessionsScan]: (input) =>
+          observeRpcEffect(WS_METHODS.agentSessionsScan, agentSessionScanner.scan(input), {
             "rpc.aggregate": "workspace",
           }),
         [WS_METHODS.agentSessionsImport]: (input) =>

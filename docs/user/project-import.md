@@ -27,8 +27,33 @@ remote share one group. Directories that are not git repositories sit under
 Each row shows which agent was used there, how many conversations it has, and
 when it was last active.
 
-The default selection includes every project active within the last 30 days,
-whether it is a git repository or not. Older projects stay in the list and can
+## Automated sessions
+
+By default Up.computer counts and imports only conversations you had
+yourself: Claude Code in the terminal or an IDE, and Codex in the terminal,
+an IDE, or the Codex app. It leaves out sessions that a script or another app
+started:
+
+- Claude Code sessions run through the Agent SDK (`sdk-ts`, `sdk-py`).
+- Codex sessions run with `codex exec` or as an MCP server, and subagents that
+  a Codex session spawned.
+- Sessions Up.computer or T3 Code started. They already live in the app that
+  created them, so they are never imported.
+
+This is decided from the origin each transcript records, not from its content.
+Transcripts without that information count as your own.
+
+Below the list, a note says how many sessions were left out, for example "849
+automated sessions (SDK, exec, Up.computer) skipped". Check **Include automated
+sessions** to list and import SDK, `codex exec`, and subagent sessions too.
+Up.computer includes Claude Code sessions it ran itself in that group, because
+their transcripts look like any other Agent SDK session.
+
+A project whose only sessions are automated stays in the list with no
+conversations and no date, and is not selected by default.
+
+The default selection includes every project with your own conversations
+within the last 30 days, whether it is a git repository or not. Older projects stay in the list and can
 be selected. Use the checkboxes, or **Select all** and **Select none**, to change
 the selection. Linked git worktrees, Up.computer's own worktrees, Codex scratch
 directories under `Documents/Codex`, and anything under `Downloads` are not

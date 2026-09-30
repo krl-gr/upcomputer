@@ -13,6 +13,7 @@ import { useMemo, useRef, useState } from "react";
 import { newProjectId, cn } from "../../lib/utils";
 import {
   describeImportWarning,
+  describeSkippedSessions,
   groupOnboardingProjects,
   onboardingProjectKey,
   pluralize,
@@ -68,7 +69,15 @@ export function ProjectImportPanel({
   readonly onDone: (summary: ProjectImportSummary) => void;
   readonly className?: string;
 }) {
-  const scanAtom = useMemo(() => agentSessionScan({ environmentId, input: {} }), [environmentId]);
+  const [includeAutomated, setIncludeAutomated] = useState(false);
+  const scanAtom = useMemo(
+    () =>
+      agentSessionScan({
+        environmentId,
+        input: includeAutomated ? { includeAutomated: true } : {},
+      }),
+    [environmentId, includeAutomated],
+  );
   const scan = useEnvironmentQuery(scanAtom);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
@@ -151,7 +160,11 @@ export function ProjectImportPanel({
 
       const imported = await importThreads({
         environmentId,
-        input: { projectId, expectedWorkspaceRoot: candidate.path },
+        input: {
+          projectId,
+          expectedWorkspaceRoot: candidate.path,
+          ...(includeAutomated ? { includeAutomated: true } : {}),
+        },
       });
       if (imported._tag !== "Success") {
         if (!isAtomCommandInterrupted(imported)) {
@@ -187,7 +200,16 @@ export function ProjectImportPanel({
     setSelectedKeys(next);
   };
 
+  const toggleAutomated = (checked: boolean) => {
+    setIncludeAutomated(checked);
+    // Projects finished without automated sessions have more to import now.
+    completedKeysRef.current.clear();
+    setContinuation(null);
+  };
+
   const loading = scan.data === null && scan.error === null;
+  const skippedSessions = scan.data?.skippedSessions;
+  const skippedNote = describeSkippedSessions(skippedSessions, includeAutomated);
 
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
@@ -251,6 +273,23 @@ export function ProjectImportPanel({
           </p>
         ) : null}
       </div>
+      {includeAutomated || (skippedSessions?.automated ?? 0) > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-2 text-xs text-muted-foreground">
+          <span role="status">{skippedNote}</span>
+          <label className="flex cursor-pointer items-center gap-1.5 has-disabled:cursor-default">
+            <Checkbox
+              checked={includeAutomated}
+              disabled={isImporting}
+              onCheckedChange={(checked) => toggleAutomated(checked === true)}
+            />
+            Include automated sessions
+          </label>
+        </div>
+      ) : skippedNote !== null ? (
+        <p className="pt-2 text-xs text-muted-foreground" role="status">
+          {skippedNote}
+        </p>
+      ) : null}
       {continuation !== null ? (
         <p className="pt-3 text-sm text-muted-foreground" role="status">
           {continuation}

@@ -26,10 +26,13 @@ export function isImportedAgentSessionMessageId(messageId: string): boolean {
 }
 
 /**
- * Empty for now. Kept as a struct so future scan options (source filters,
- * explicit roots) can be added without a new method.
+ * By default only interactive sessions count. `includeAutomated` also counts
+ * Agent SDK, `codex exec`, and subagent sessions. Sessions Up.computer or T3
+ * Code started are always left out.
  */
-export const AgentSessionScanInput = Schema.Struct({});
+export const AgentSessionScanInput = Schema.Struct({
+  includeAutomated: Schema.optional(Schema.Boolean),
+});
 export type AgentSessionScanInput = typeof AgentSessionScanInput.Type;
 
 /**
@@ -66,12 +69,22 @@ export const AgentSessionScanResult = Schema.Struct({
   candidates: Schema.Array(AgentSessionProjectCandidate),
   scannedAt: IsoDateTime,
   truncated: Schema.optional(Schema.Boolean),
+  /**
+   * Sessions in the listed projects that the counts leave out: `automated`
+   * ones (unless included) and `app` ones Up.computer or T3 Code started.
+   * Older servers omit it.
+   */
+  skippedSessions: Schema.optional(
+    Schema.Struct({ automated: NonNegativeInt, app: NonNegativeInt }),
+  ),
 });
 export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
 
 export const AgentSessionImportInput = Schema.Struct({
   projectId: ProjectId,
   expectedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  /** Import automated sessions too, as for `AgentSessionScanInput`. */
+  includeAutomated: Schema.optional(Schema.Boolean),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 

@@ -30,6 +30,27 @@ export function pluralize(count: number, singular: string, plural = `${singular}
 }
 
 /**
+ * Note for sessions the scan left out: automated ones (Agent SDK, `codex
+ * exec`, subagents) unless included, and those Up.computer or T3 Code started,
+ * which already live in the app that created them.
+ */
+export function describeSkippedSessions(
+  skipped: { readonly automated: number; readonly app: number } | undefined,
+  includeAutomated: boolean,
+): string | null {
+  if (skipped === undefined) return null;
+  if (includeAutomated) {
+    return skipped.app > 0
+      ? `${pluralize(skipped.app, "session")} from Up.computer or T3 Code skipped`
+      : null;
+  }
+  const total = skipped.automated + skipped.app;
+  return total > 0
+    ? `${pluralize(total, "automated session")} (SDK, exec, Up.computer) skipped`
+    : null;
+}
+
+/**
  * Summarizes an import that did not finish every selected project. Each
  * attempt reads a bounded number of conversations; the rest are deferred and a
  * later attempt continues with them, so that case asks to run import again.

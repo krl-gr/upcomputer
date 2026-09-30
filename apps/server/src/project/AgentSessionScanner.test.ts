@@ -98,22 +98,30 @@ const makeScannerTestLayer = (input: ScannerTestInput) =>
     ),
   );
 
-const runScan = (input: ScannerTestInput) =>
+const runScan = (input: ScannerTestInput & AgentSessionScanner.AgentSessionScanOptions) =>
   Effect.gen(function* () {
     const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-    return yield* scanner.scan;
+    return yield* scanner.scan({ includeAutomated: input.includeAutomated === true });
   }).pipe(Effect.provide(makeScannerTestLayer(input)));
 
-const runRecentThreadOutcomes = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreadOutcomes = (
+  input: ScannerTestInput &
+    AgentSessionScanner.AgentSessionScanOptions & { readonly workspaceRoot: string },
+) =>
   Effect.gen(function* () {
     const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-    return yield* scanner.recentThreads(input.workspaceRoot).pipe(
-      Stream.runCollect,
-      Effect.map((outcomes) => Array.from(outcomes)),
-    );
+    return yield* scanner
+      .recentThreads(input.workspaceRoot, [], { includeAutomated: input.includeAutomated === true })
+      .pipe(
+        Stream.runCollect,
+        Effect.map((outcomes) => Array.from(outcomes)),
+      );
   }).pipe(Effect.provide(makeScannerTestLayer(input)));
 
-const runRecentThreads = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreads = (
+  input: ScannerTestInput &
+    AgentSessionScanner.AgentSessionScanOptions & { readonly workspaceRoot: string },
+) =>
   runRecentThreadOutcomes(input).pipe(
     Effect.map((outcomes) =>
       outcomes.flatMap((outcome) => (outcome._tag === "Importable" ? [outcome.thread] : [])),
@@ -174,6 +182,98 @@ function makeRecordLimitTranscript(cwd: string, overflow: boolean): string {
         "\n"
     : records;
 }
+
+/** Real-shaped origin metadata: Claude `entrypoint`, Codex `originator` and `source`. */
+type SessionOriginFixture =
+  | { readonly source: "claudeAgent"; readonly entrypoint?: string }
+  | { readonly source: "codex"; readonly originator?: string; readonly codexSource?: unknown };
+
+const ORIGIN_FIXTURES = {
+  claudeCli: { source: "claudeAgent", entrypoint: "cli" },
+  claudeIde: { source: "claudeAgent", entrypoint: "claude-vscode" },
+  claudeSdk: { source: "claudeAgent", entrypoint: "sdk-ts" },
+  codexCli: { source: "codex", originator: "codex_cli_rs", codexSource: "cli" },
+  codexDesktop: { source: "codex", originator: "Codex Desktop", codexSource: "vscode" },
+  codexUnknown: { source: "codex" },
+  codexExec: { source: "codex", originator: "codex_exec", codexSource: "exec" },
+  codexSubagent: {
+    source: "codex",
+    originator: "codex_cli_rs",
+    codexSource: {
+      subagent: { thread_spawn: { parent_thread_id: "parent", depth: 1, agent_role: "worker" } },
+    },
+  },
+  upcomputer: { source: "codex", originator: "upcomputer_desktop", codexSource: "vscode" },
+  t3code: { source: "codex", originator: "t3code_desktop", codexSource: "vscode" },
+} as const satisfies Record<string, SessionOriginFixture>;
+
+const originTranscript = (
+  origin: SessionOriginFixture,
+  input: { readonly cwd: string; readonly sessionId: string; readonly prompt: string },
+) =>
+  origin.source === "claudeAgent"
+    ? [
+        encodeTranscriptRecord({
+          type: "user",
+          cwd: input.cwd,
+          sessionId: input.sessionId,
+          ...(origin.entrypoint === undefined ? {} : { entrypoint: origin.entrypoint }),
+          userType: "external",
+          timestamp: "2026-08-23T12:00:00.000Z",
+          message: { role: "user", content: input.prompt },
+        }),
+      ].join("\n")
+    : [
+        encodeTranscriptRecord({
+          timestamp: "2026-08-23T12:00:00.000Z",
+          type: "session_meta",
+          payload: {
+            id: input.sessionId,
+            timestamp: "2026-08-23T12:00:00.000Z",
+            cwd: input.cwd,
+            ...(origin.originator === undefined ? {} : { originator: origin.originator }),
+            cli_version: "0.159.1",
+            ...(origin.codexSource === undefined ? {} : { source: origin.codexSource }),
+          },
+        }),
+        encodeTranscriptRecord({
+          timestamp: "2026-08-23T12:00:01.000Z",
+          type: "event_msg",
+          payload: { type: "user_message", message: input.prompt },
+        }),
+      ].join("\n");
+
+const writeOriginTranscript = Effect.fn("AgentSessionScanner.test.writeOriginTranscript")(
+  function* (input: {
+    readonly claudeHomePath: string;
+    readonly codexHomePath: string;
+    readonly origin: SessionOriginFixture;
+    readonly cwd: string;
+    readonly name: string;
+    readonly mtimeMs: number;
+  }) {
+    const path = yield* Path.Path;
+    yield* writeTranscript({
+      filePath:
+        input.origin.source === "claudeAgent"
+          ? path.join(input.claudeHomePath, "projects", "-origin", `${input.name}.jsonl`)
+          : path.join(
+              input.codexHomePath,
+              "sessions",
+              "2026",
+              "08",
+              "23",
+              `rollout-2026-08-23T12-00-00-${input.name}.jsonl`,
+            ),
+      contents: originTranscript(input.origin, {
+        cwd: input.cwd,
+        sessionId: input.name,
+        prompt: `Prompt from ${input.name}`,
+      }),
+      mtimeMs: input.mtimeMs,
+    });
+  },
+);
 
 it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
   describe("scan", () => {
@@ -1367,9 +1467,124 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(result.scannedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       }),
     );
+
+    it.effect("counts only interactive sessions and reports the skipped ones", () =>
+      Effect.gen(function* () {
+        const claudeHomePath = yield* makeTempDir("t3code-origin-claude-");
+        const codexHomePath = yield* makeTempDir("t3code-origin-codex-");
+        const mixed = yield* makeTempDir("t3code-origin-mixed-");
+        const scripted = yield* makeTempDir("t3code-origin-scripted-");
+        const iso = (hour: number) => `2026-08-23T${String(hour).padStart(2, "0")}:00:00.000Z`;
+        const at = (hour: number) => Date.parse(iso(hour));
+        const sessions = [
+          { origin: ORIGIN_FIXTURES.claudeCli, cwd: mixed, name: "claude-cli", mtimeMs: at(1) },
+          { origin: ORIGIN_FIXTURES.claudeIde, cwd: mixed, name: "claude-ide", mtimeMs: at(2) },
+          { origin: ORIGIN_FIXTURES.codexCli, cwd: mixed, name: "codex-cli", mtimeMs: at(3) },
+          { origin: ORIGIN_FIXTURES.codexDesktop, cwd: mixed, name: "codex-app", mtimeMs: at(4) },
+          { origin: ORIGIN_FIXTURES.codexUnknown, cwd: mixed, name: "codex-old", mtimeMs: at(5) },
+          { origin: ORIGIN_FIXTURES.claudeSdk, cwd: mixed, name: "claude-sdk", mtimeMs: at(6) },
+          { origin: ORIGIN_FIXTURES.codexExec, cwd: mixed, name: "codex-exec", mtimeMs: at(7) },
+          { origin: ORIGIN_FIXTURES.codexSubagent, cwd: mixed, name: "codex-sub", mtimeMs: at(8) },
+          { origin: ORIGIN_FIXTURES.upcomputer, cwd: mixed, name: "upcomputer", mtimeMs: at(9) },
+          { origin: ORIGIN_FIXTURES.t3code, cwd: mixed, name: "t3code", mtimeMs: at(10) },
+          { origin: ORIGIN_FIXTURES.claudeSdk, cwd: scripted, name: "batch", mtimeMs: at(11) },
+        ];
+        for (const session of sessions) {
+          yield* writeOriginTranscript({ claudeHomePath, codexHomePath, ...session });
+        }
+
+        const interactive = yield* runScan({ claudeHomePath, codexHomePath });
+        expect(
+          interactive.candidates.map(({ path, sources, threadCount, lastActiveAt }) => ({
+            path,
+            sources,
+            threadCount,
+            lastActiveAt,
+          })),
+        ).toEqual([
+          {
+            path: mixed,
+            sources: ["claudeAgent", "codex"],
+            threadCount: 5,
+            lastActiveAt: iso(5),
+          },
+          // Listed so it stays selectable, but undated and therefore not preselected.
+          { path: scripted, sources: ["claudeAgent"], threadCount: 0, lastActiveAt: null },
+        ]);
+        expect(interactive.skippedSessions).toEqual({ automated: 4, app: 2 });
+
+        const withAutomated = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          includeAutomated: true,
+        });
+        expect(
+          withAutomated.candidates.map(({ path, threadCount, lastActiveAt }) => ({
+            path,
+            threadCount,
+            lastActiveAt,
+          })),
+        ).toEqual([
+          { path: scripted, threadCount: 1, lastActiveAt: iso(11) },
+          { path: mixed, threadCount: 8, lastActiveAt: iso(8) },
+        ]);
+        expect(withAutomated.skippedSessions).toEqual({ automated: 0, app: 2 });
+      }),
+    );
   });
 
   describe("recentThreads", () => {
+    it.effect("imports interactive sessions unless automated ones are included", () =>
+      Effect.gen(function* () {
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-origin-claude-");
+        const codexHomePath = yield* makeTempDir("t3code-origin-codex-");
+        const workspace = yield* makeTempDir("t3code-origin-project-");
+        const origins = [
+          ["claude-cli", ORIGIN_FIXTURES.claudeCli],
+          ["claude-sdk", ORIGIN_FIXTURES.claudeSdk],
+          ["codex-app", ORIGIN_FIXTURES.codexDesktop],
+          ["codex-exec", ORIGIN_FIXTURES.codexExec],
+          ["codex-sub", ORIGIN_FIXTURES.codexSubagent],
+          ["upcomputer", ORIGIN_FIXTURES.upcomputer],
+          ["t3code", ORIGIN_FIXTURES.t3code],
+        ] as const;
+        for (const [index, [name, origin]] of origins.entries()) {
+          yield* writeOriginTranscript({
+            claudeHomePath,
+            codexHomePath,
+            origin,
+            cwd: workspace,
+            name,
+            mtimeMs: nowMs - (index + 1) * 60_000,
+          });
+        }
+
+        const importedSessions = (includeAutomated: boolean) =>
+          runRecentThreadOutcomes({
+            claudeHomePath,
+            codexHomePath,
+            workspaceRoot: workspace,
+            includeAutomated,
+          }).pipe(
+            Effect.map((outcomes) =>
+              outcomes.flatMap((outcome) =>
+                outcome._tag === "Importable" ? [outcome.thread.providerSessionId] : [],
+              ),
+            ),
+          );
+
+        expect(yield* importedSessions(false)).toEqual(["claude-cli", "codex-app"]);
+        expect(yield* importedSessions(true)).toEqual([
+          "claude-cli",
+          "claude-sdk",
+          "codex-app",
+          "codex-exec",
+          "codex-sub",
+        ]);
+      }),
+    );
     it.effect.each([false, true])(
       "counts terminal newlines correctly with record overflow=%s",
       (overflow) =>
@@ -1723,7 +1938,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         });
         const outcomes = yield* Effect.gen(function* () {
           const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-          const scan = yield* scanner.scan;
+          const scan = yield* scanner.scan();
           expect(scan.candidates[0]?.threadCount).toBe(5);
           return yield* scanner.recentThreads(workspace).pipe(Stream.runCollect);
         }).pipe(
@@ -1888,7 +2103,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
             yield* Effect.gen(function* () {
               const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-              const scan = yield* scanner.scan;
+              const scan = yield* scanner.scan();
               expect(scan.candidates.map((candidate) => candidate.path)).toEqual([workspace]);
               const replacementCwd =
                 replacement === "symlink alias"
@@ -2621,7 +2836,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         };
         const threads = yield* Effect.gen(function* () {
           const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-          const scan = yield* scanner.scan;
+          const scan = yield* scanner.scan();
           expect(scan.truncated).toBe(true);
           return yield* scanner.recentThreads(recentWorkspace).pipe(Stream.runCollect);
         }).pipe(

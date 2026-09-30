@@ -120,6 +120,7 @@ export const importRecentAgentThreads = Effect.fn("importRecentAgentThreads")(fu
   const threads = scanner.recentThreads(
     workspaceRoot,
     completedSources.map((entry) => entry.source),
+    { includeAutomated: input.includeAutomated === true },
   );
   const importedThreadIds = new Set<ThreadId>();
   let importedCount = 0;

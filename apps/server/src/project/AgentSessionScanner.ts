@@ -166,26 +166,44 @@ export class AgentSessionScanner extends Context.Service<
      * which ones to import and how far back to look. Fails with the contract
      * error directly — there is no server-local context worth wrapping.
      */
-    readonly scan: Effect.Effect<AgentSessionScanResult, AgentSessionScanError>;
+    readonly scan: (
+      input?: AgentSessionScanOptions,
+    ) => Effect.Effect<AgentSessionScanResult, AgentSessionScanError>;
     readonly recentThreads: (
       workspaceRoot: string,
       completedSources?: ReadonlyArray<AgentSessionImportSource>,
+      options?: AgentSessionScanOptions,
     ) => Stream.Stream<AgentSessionRecentThread, AgentSessionScanError>;
   }
 >()("@upcomputer/server/project/AgentSessionScanner") {}
 
 type AgentSessionSource = AgentSessionProjectCandidate["sources"][number];
 
+export interface AgentSessionScanOptions {
+  /** Also count and import SDK, `codex exec`, and subagent sessions. */
+  readonly includeAutomated?: boolean | undefined;
+}
+
+/**
+ * Who started a session, read from explicit transcript metadata. `app`
+ * sessions belong to Up.computer or T3 Code, which already show them, so they
+ * are never imported. `automated` ones are skipped unless the user opts in.
+ */
+type AgentSessionOrigin = "interactive" | "automated" | "app";
+
+function isOriginIncluded(origin: AgentSessionOrigin, options: AgentSessionScanOptions): boolean {
+  return origin === "interactive" || (origin === "automated" && options.includeAutomated === true);
+}
+
 /** A single directory's worth of evidence from one source. */
 interface RawCandidate {
   readonly cwd: string;
   readonly source: AgentSessionSource;
   readonly providerInstanceId: ProviderInstanceId;
-  readonly threadCount: number;
-  readonly lastActiveAtMs: number | null;
   readonly transcripts: ReadonlyArray<{
     readonly filePath: string;
     readonly mtimeMs: number | null;
+    readonly origin: AgentSessionOrigin;
   }>;
 }
 
@@ -516,8 +534,33 @@ function isManagedWorktree(
   );
 }
 
-/** Extract `cwd` from a session-meta record, tolerating the shapes each CLI writes. */
-function extractCwd(line: string): string | null {
+/**
+ * Classify a session from the record that names its `cwd`. Claude Code writes
+ * `entrypoint` there (`cli`, IDE names, or `sdk-ts`/`sdk-py` for Agent SDK
+ * runs); Codex writes `originator` and `source` in its session metadata.
+ * Missing or unknown values count as interactive so older formats still import.
+ */
+function sessionOrigin(
+  record: Record<string, unknown>,
+  payload: Record<string, unknown> | null,
+): AgentSessionOrigin {
+  const originator =
+    typeof payload?.originator === "string" ? payload.originator.trim().toLowerCase() : "";
+  if (originator.startsWith("upcomputer") || originator.startsWith("t3code")) return "app";
+  if (typeof record.entrypoint === "string" && record.entrypoint.startsWith("sdk")) {
+    return "automated";
+  }
+  // `codex exec`, Codex serving as an MCP tool, and subagents a session spawned.
+  const source = payload?.source;
+  if (source === "exec" || source === "mcp" || originator === "codex_exec") return "automated";
+  if (typeof source === "object" && source !== null && "subagent" in source) return "automated";
+  return "interactive";
+}
+
+/** Extract `cwd` and origin from a session-meta record, tolerating the shapes each CLI writes. */
+function extractSessionMetadata(
+  line: string,
+): { readonly cwd: string; readonly origin: AgentSessionOrigin } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
@@ -527,16 +570,17 @@ function extractCwd(line: string): string | null {
   if (typeof parsed !== "object" || parsed === null) return null;
 
   const record = parsed as Record<string, unknown>;
-  if (typeof record.cwd === "string" && record.cwd.trim().length > 0) {
-    return record.cwd;
-  }
   // Codex nests session metadata under `payload`.
-  const payload = record.payload;
-  if (typeof payload === "object" && payload !== null) {
-    const nested = (payload as Record<string, unknown>).cwd;
-    if (typeof nested === "string" && nested.trim().length > 0) {
-      return nested;
-    }
+  const payload =
+    typeof record.payload === "object" && record.payload !== null
+      ? (record.payload as Record<string, unknown>)
+      : null;
+  if (typeof record.cwd === "string" && record.cwd.trim().length > 0) {
+    return { cwd: record.cwd, origin: sessionOrigin(record, payload) };
+  }
+  const nested = payload?.cwd;
+  if (typeof nested === "string" && nested.trim().length > 0) {
+    return { cwd: nested, origin: sessionOrigin(record, payload) };
   }
   return null;
 }
@@ -691,7 +735,7 @@ export const make = Effect.gen(function* () {
 
   // A large history snapshot can precede session metadata. Read bounded
   // chunks until a complete record names its cwd or the safety budget ends.
-  const readCwd = Effect.fn("AgentSessionScanner.readCwd")(function* (
+  const readSessionMetadata = Effect.fn("AgentSessionScanner.readSessionMetadata")(function* (
     transcript: TranscriptCandidate,
     budget: MetadataReadBudget,
   ) {
@@ -728,7 +772,9 @@ export const make = Effect.gen(function* () {
             };
             const readLastRecord = () => {
               const record = remaining + decoder.decode();
-              return record.length === 0 || !reserveRecord() ? null : extractCwd(record.trim());
+              return record.length === 0 || !reserveRecord()
+                ? null
+                : extractSessionMetadata(record.trim());
             };
 
             while (bytesRead < maxBytes) {
@@ -755,8 +801,8 @@ export const make = Effect.gen(function* () {
 
               for (const line of lines) {
                 if (!reserveRecord()) return null;
-                const cwd = extractCwd(line.trim());
-                if (cwd !== null) return cwd;
+                const metadata = extractSessionMetadata(line.trim());
+                if (metadata !== null) return metadata;
               }
             }
 
@@ -956,25 +1002,24 @@ export const make = Effect.gen(function* () {
       {
         cwd: string;
         providerInstanceId: ProviderInstanceId;
-        lastActiveAtMs: number;
-        transcripts: Array<{ filePath: string; mtimeMs: number }>;
+        transcripts: Array<RawCandidate["transcripts"][number]>;
       }
     >();
 
     for (const transcript of transcripts) {
-      const cwd = yield* readCwd(transcript, budget);
-      if (cwd === null) continue;
+      const metadata = yield* readSessionMetadata(transcript, budget);
+      if (metadata === null) continue;
+      const { cwd, origin } = metadata;
       const key = `${transcript.providerInstanceId}\0${cwd}`;
+      const entry = { filePath: transcript.filePath, mtimeMs: transcript.mtimeMs, origin };
       const existing = byOwnerAndCwd.get(key);
       if (existing) {
-        existing.lastActiveAtMs = Math.max(existing.lastActiveAtMs, transcript.mtimeMs);
-        existing.transcripts.push(transcript);
+        existing.transcripts.push(entry);
       } else {
         byOwnerAndCwd.set(key, {
           cwd,
           providerInstanceId: transcript.providerInstanceId,
-          lastActiveAtMs: transcript.mtimeMs,
-          transcripts: [transcript],
+          transcripts: [entry],
         });
       }
     }
@@ -985,8 +1030,6 @@ export const make = Effect.gen(function* () {
         cwd: group.cwd,
         source,
         providerInstanceId: group.providerInstanceId,
-        threadCount: group.transcripts.length,
-        lastActiveAtMs: group.lastActiveAtMs,
         transcripts: group.transcripts,
       }),
     );
@@ -1108,9 +1151,12 @@ export const make = Effect.gen(function* () {
 
   let cachedCandidates: ReadonlyArray<RawCandidate> | null = null;
 
-  const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
+  const scan = Effect.fn("AgentSessionScanner.scan")(function* (
+    options: AgentSessionScanOptions = {},
+  ) {
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
+    const skippedSessions = { automated: 0, app: 0 };
 
     // Filesystem identity merges symlinks and case aliases without collapsing
     // distinct case-sensitive directories.
@@ -1119,6 +1165,8 @@ export const make = Effect.gen(function* () {
       {
         path: string;
         sources: Array<AgentSessionSource>;
+        /** Sources of skipped sessions, shown only when nothing else ran there. */
+        skippedSources: Array<AgentSessionSource>;
         threadCount: number;
         lastActiveAtMs: number | null;
         git: AgentSessionProjectGit | null;
@@ -1160,25 +1208,44 @@ export const make = Effect.gen(function* () {
       }
       if (key === "") continue;
 
+      // Counts and recency describe only the sessions an import would bring in,
+      // so a project used only by scripts is listed but not preselected.
+      const included = candidate.transcripts.filter((transcript) =>
+        isOriginIncluded(transcript.origin, options),
+      );
+      for (const transcript of candidate.transcripts) {
+        if (transcript.origin === "app") skippedSessions.app += 1;
+        else if (transcript.origin === "automated" && options.includeAutomated !== true) {
+          skippedSessions.automated += 1;
+        }
+      }
+      const threadCount = included.length;
+      const lastActiveAtMs = included.reduce<number | null>(
+        (latest, { mtimeMs }) => (mtimeMs === null ? latest : Math.max(latest ?? mtimeMs, mtimeMs)),
+        null,
+      );
+
       const existing = merged.get(key);
       if (!existing) {
         merged.set(key, {
           path: resolved,
-          sources: [candidate.source],
-          threadCount: candidate.threadCount,
-          lastActiveAtMs: candidate.lastActiveAtMs,
+          sources: threadCount > 0 ? [candidate.source] : [],
+          skippedSources: threadCount > 0 ? [] : [candidate.source],
+          threadCount,
+          lastActiveAtMs,
           git: gitIdentities.get(key) ?? null,
         });
         continue;
       }
-      if (!existing.sources.includes(candidate.source)) {
-        existing.sources.push(candidate.source);
+      const sources = threadCount > 0 ? existing.sources : existing.skippedSources;
+      if (!sources.includes(candidate.source)) {
+        sources.push(candidate.source);
       }
-      existing.threadCount += candidate.threadCount;
+      existing.threadCount += threadCount;
       existing.lastActiveAtMs =
-        existing.lastActiveAtMs === null || candidate.lastActiveAtMs === null
-          ? (existing.lastActiveAtMs ?? candidate.lastActiveAtMs)
-          : Math.max(existing.lastActiveAtMs, candidate.lastActiveAtMs);
+        existing.lastActiveAtMs === null || lastActiveAtMs === null
+          ? (existing.lastActiveAtMs ?? lastActiveAtMs)
+          : Math.max(existing.lastActiveAtMs, lastActiveAtMs);
     }
 
     // Resolve persisted roots too. A project and a transcript can name
@@ -1209,7 +1276,7 @@ export const make = Effect.gen(function* () {
         path: candidatePath,
         title: path.basename(candidatePath) || candidatePath,
         ...(importedProject === undefined ? {} : { projectId: importedProject.id }),
-        sources: entry.sources,
+        sources: entry.sources.length > 0 ? entry.sources : entry.skippedSources,
         threadCount: entry.threadCount,
         lastActiveAt:
           entry.lastActiveAtMs === null
@@ -1232,12 +1299,14 @@ export const make = Effect.gen(function* () {
       candidates,
       scannedAt: DateTime.formatIso(yield* DateTime.now),
       ...(truncated ? { truncated: true } : {}),
+      skippedSessions,
     };
   });
 
   const prepareRecentThreads = Effect.fn("AgentSessionScanner.prepareRecentThreads")(function* (
     workspaceRoot: string,
     completedSources: ReadonlyArray<AgentSessionImportSource>,
+    options: AgentSessionScanOptions,
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
@@ -1261,6 +1330,7 @@ export const make = Effect.gen(function* () {
 
       for (const transcript of candidate.transcripts) {
         if (
+          !isOriginIncluded(transcript.origin, options) ||
           transcript.mtimeMs === null ||
           transcript.mtimeMs < cutoffMs ||
           transcript.mtimeMs > nowMs
@@ -1346,16 +1416,17 @@ export const make = Effect.gen(function* () {
           }
           recordsRemaining -= lines.length;
 
-          // A stable replacement file can belong to a different project than the cached candidate.
-          let snapshotCwd: string | null = null;
+          // A stable replacement file can belong to a different project, or
+          // come from a different client, than the cached candidate.
+          let snapshotMetadata: ReturnType<typeof extractSessionMetadata> = null;
           for (const line of lines) {
-            snapshotCwd = extractCwd(line);
-            if (snapshotCwd !== null) break;
+            snapshotMetadata = extractSessionMetadata(line);
+            if (snapshotMetadata !== null) break;
           }
-          if (snapshotCwd === null) {
+          if (snapshotMetadata === null || !isOriginIncluded(snapshotMetadata.origin, options)) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
-          const expandedCwd = expandHomePath(snapshotCwd.trim());
+          const expandedCwd = expandHomePath(snapshotMetadata.cwd.trim());
           if (
             !path.isAbsolute(expandedCwd) ||
             (yield* directoryIdentity(path.resolve(expandedCwd))) !== rootIdentity
@@ -1403,7 +1474,8 @@ export const make = Effect.gen(function* () {
   const recentThreads: AgentSessionScanner["Service"]["recentThreads"] = (
     workspaceRoot,
     completedSources = [],
-  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources));
+    options = {},
+  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources, options));
 
   return AgentSessionScanner.of({ scan, recentThreads });
 });

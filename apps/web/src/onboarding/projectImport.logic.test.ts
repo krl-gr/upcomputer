@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   describeImportWarning,
+  describeSkippedSessions,
   groupOnboardingProjects,
   partitionOnboardingProjects,
   onboardingProjectKey,
@@ -85,6 +86,26 @@ describe("partitionOnboardingProjects", () => {
     const { git: _git, ...legacy } = candidate("/projects/legacy");
 
     expect(partitionOnboardingProjects([legacy], now).recent).toEqual([legacy]);
+  });
+});
+
+describe("describeSkippedSessions", () => {
+  it("counts automated and app sessions until automated ones are included", () => {
+    expect(describeSkippedSessions({ automated: 835, app: 14 }, false)).toBe(
+      "849 automated sessions (SDK, exec, Up.computer) skipped",
+    );
+    expect(describeSkippedSessions({ automated: 835, app: 14 }, true)).toBe(
+      "14 sessions from Up.computer or T3 Code skipped",
+    );
+    expect(describeSkippedSessions({ automated: 1, app: 0 }, false)).toBe(
+      "1 automated session (SDK, exec, Up.computer) skipped",
+    );
+  });
+
+  it("stays quiet when nothing was skipped or the server does not report it", () => {
+    expect(describeSkippedSessions({ automated: 0, app: 0 }, false)).toBeNull();
+    expect(describeSkippedSessions({ automated: 0, app: 0 }, true)).toBeNull();
+    expect(describeSkippedSessions(undefined, false)).toBeNull();
   });
 });
 
