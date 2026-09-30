@@ -445,6 +445,11 @@ function selectPairingEndpoint(
   );
 }
 
+// Browsers only install web apps from secure origins, so a phone paired over
+// a plain-http LAN address can only add a shortcut.
+const PHONE_INSTALL_HINT =
+  "To install Up.computer on a phone, pair over Tailscale HTTPS; browsers only install apps from https addresses.";
+
 function isTailscaleHttpsEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.id.startsWith("tailscale-magicdns:");
 }
@@ -2977,7 +2982,9 @@ export function ConnectionsSettings() {
       status={
         desktopServerExposureError ? (
           <span className="block text-destructive">{desktopServerExposureError}</span>
-        ) : null
+        ) : (
+          PHONE_INSTALL_HINT
+        )
       }
       control={renderNetworkAccessToggle()}
     />
@@ -2990,6 +2997,7 @@ export function ConnectionsSettings() {
           ? "This backend is already configured for remote access. Network exposure changes must be made where the server is launched."
           : "This backend is only reachable on this machine. Restart it with a non-loopback host to enable remote pairing."
       }
+      status={PHONE_INSTALL_HINT}
       control={
         <Tooltip>
           <TooltipTrigger
