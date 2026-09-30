@@ -442,6 +442,9 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      // First-turn prompt seed. A title that still equals it was written by
+      // the client's auto-title, not a user rename.
+      readonly titleSeed?: string;
     },
   ) {
     const thread = yield* resolveThreadShell(threadId);
@@ -596,6 +599,13 @@ const make = Effect.gen(function* () {
       });
     });
 
+    // OpenCode skips its own session title generation when session.create
+    // already has a title. "New thread" and the first-turn prompt seed are not
+    // real titles, so omit them and let the provider generate one.
+    const sessionTitle = canReplaceThreadTitle(thread.title, options?.titleSeed)
+      ? undefined
+      : thread.title;
+
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
@@ -608,7 +618,7 @@ const make = Effect.gen(function* () {
           providerInstanceId: desiredInstanceId,
           ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
           ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
-          ...(thread.title ? { title: thread.title } : {}),
+          ...(sessionTitle ? { title: sessionTitle } : {}),
           modelSelection: desiredModelSelection,
           ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
           runtimeMode: desiredRuntimeMode,
@@ -729,6 +739,7 @@ const make = Effect.gen(function* () {
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: ProviderInteractionMode;
     readonly createdAt: string;
+    readonly titleSeed?: string;
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
     if (!thread) {
@@ -738,6 +749,7 @@ const make = Effect.gen(function* () {
     }
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
+      ...(input.titleSeed !== undefined ? { titleSeed: input.titleSeed } : {}),
       pendingTurnStart: true,
     });
     if (input.modelSelection !== undefined) {
@@ -1018,6 +1030,11 @@ const make = Effect.gen(function* () {
         : {}),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
+      // Later turns must not reuse the current title as titleSeed. Only the
+      // first prompt seed should suppress a not-yet-renamed session title.
+      ...(!hasOtherUserMessages && event.payload.titleSeed !== undefined
+        ? { titleSeed: event.payload.titleSeed }
+        : {}),
     }).pipe(
       Effect.map(Option.some),
       Effect.catchCause((cause) => handleTurnStartFailure(cause).pipe(Effect.as(Option.none()))),
