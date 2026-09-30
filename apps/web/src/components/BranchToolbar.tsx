@@ -451,6 +451,19 @@ export const BranchToolbar = memo(function BranchToolbar({
               />
               <span className="min-w-0 truncate">{activeProject.title}</span>
             </BranchToolbarProjectPicker>
+            {/* No Git controls here, but a remote or pickable environment
+                still needs to show where the project runs. */}
+            {showEnvironmentIndicator && availableEnvironments ? (
+              <>
+                <ContextBarSlash />
+                <BranchToolbarEnvironmentSelector
+                  envLocked={envLocked}
+                  environmentId={environmentId}
+                  availableEnvironments={availableEnvironments}
+                  {...(showEnvironmentPicker && onEnvironmentChange ? { onEnvironmentChange } : {})}
+                />
+              </>
+            ) : null}
             {linkedProjectIcons}
           </>
         ) : isMobile ? (
