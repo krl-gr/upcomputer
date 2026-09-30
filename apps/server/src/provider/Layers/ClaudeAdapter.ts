@@ -480,24 +480,37 @@ function resultErrorsText(result: SDKResultMessage): string {
     : "";
 }
 
-/**
- * First user-facing error from a non-success result. "[ede_diagnostic] ..."
- * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
- * so they must never become the error banner.
- */
-function resultUserFacingError(
-  result: SDKResultMessage,
-  options?: { readonly includeSuccess?: boolean },
+/** Failure text for structured terminal reasons, including success-tagged failures. */
+function terminalResultError(
+  reason: SDKResultMessage["terminal_reason"],
+  failureHint?: string,
 ): string | undefined {
-  // Success results carry no typed error list, but a success-tagged failure may still list one.
-  if (result.subtype === "success" && options?.includeSuccess !== true) {
-    return undefined;
+  switch (reason) {
+    case "api_error":
+      return failureHint ?? "Claude gave up after repeated API errors.";
+    case "malformed_tool_use_exhausted":
+      return "Claude gave up after repeated malformed tool calls.";
+    case "budget_exhausted":
+      return "Claude stopped: the turn's token budget was exhausted.";
+    case "structured_output_retry_exhausted":
+      return "Claude could not produce the requested structured output.";
+    case "tool_deferred_unavailable":
+      return "Claude could not resume a deferred tool call: the tool is no longer available.";
+    case "turn_setup_failed":
+      return "Claude could not start the turn.";
+    case "blocking_limit":
+      return "Claude stopped: a usage limit blocked the request.";
+    case "rapid_refill_breaker":
+      return "Claude stopped: the context refilled too quickly after compaction.";
+    case "prompt_too_long":
+      return "Claude stopped: the prompt exceeds the model's context window.";
+    case "image_error":
+      return "Claude stopped: an image in the conversation could not be processed.";
+    case "model_error":
+      return "Claude stopped: the model returned an error.";
+    default:
+      return undefined;
   }
-  const errors: ReadonlyArray<unknown> =
-    "errors" in result && Array.isArray(result.errors) ? result.errors : [];
-  return errors.find(
-    (error): error is string => typeof error === "string" && !error.startsWith("[ede_diagnostic]"),
-  );
 }
 
 /** How long Stop waits for Claude to abort a turn before killing the process. */
@@ -508,6 +521,7 @@ const CLAUDE_USAGE_LIMIT_WINDOWS = {
   seven_day: "7-day",
   seven_day_opus: "7-day Opus",
   seven_day_sonnet: "7-day Sonnet",
+  seven_day_overage_included: "7-day model",
   overage: "overage",
 } satisfies Record<NonNullable<SDKRateLimitInfo["rateLimitType"]>, string>;
 
@@ -1286,19 +1300,51 @@ const resolveClaudePermissionMode = Effect.fn("resolveClaudePermissionMode")(fun
   return undefined;
 });
 
-function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
-  if (result.subtype === "success") {
-    return "completed";
-  }
+/**
+ * The CLI reports repeated 529 overload failures as a success-subtype result
+ * with api_error_status 529 and an empty error list; the status code is the
+ * only structured failure signal.
+ */
+function isOverloadedResult(result: SDKResultMessage): boolean {
+  return result.subtype === "success" && result.api_error_status === 529;
+}
 
-  const errors = resultErrorsText(result);
-  if (isInterruptedResult(result)) {
-    return "interrupted";
-  }
-  if (errors.includes("cancel")) {
-    return "cancelled";
-  }
-  return "failed";
+/** Derives turn status and its error from the same provider result. */
+function resultOutcome(
+  result: SDKResultMessage,
+  failureHint?: string,
+): {
+  status: ProviderRuntimeTurnStatus;
+  errorMessage: string | undefined;
+} {
+  // A success result flagged is_error only fails when the turn already
+  // reported its cause (expired login, rejected usage window).
+  const successTaggedFailure = result.subtype === "success" && result.is_error === true;
+  const structuredError = isOverloadedResult(result)
+    ? "Claude API is overloaded (529). Try again shortly."
+    : (terminalResultError(result.terminal_reason, failureHint) ??
+      (successTaggedFailure ? failureHint : undefined));
+  // "[ede_diagnostic] ..." entries are CLI-internal telemetry (the CLI hides
+  // them from its own UI too), so they must never become the error banner.
+  // Success results carry no typed error list, but a success-tagged failure
+  // may still list one.
+  const listedErrors: ReadonlyArray<unknown> =
+    "errors" in result && Array.isArray(result.errors) ? result.errors : [];
+  const listedError =
+    result.subtype === "success" && !successTaggedFailure
+      ? undefined
+      : listedErrors.find(
+          (error): error is string =>
+            typeof error === "string" && !error.startsWith("[ede_diagnostic]"),
+        );
+  const errorMessage = listedError || structuredError;
+  if (structuredError !== undefined) return { status: "failed", errorMessage };
+  if (result.subtype === "success") return { status: "completed", errorMessage };
+  if (isInterruptedResult(result)) return { status: "interrupted", errorMessage };
+  return {
+    status: resultErrorsText(result).includes("cancel") ? "cancelled" : "failed",
+    errorMessage,
+  };
 }
 
 function streamKindFromDeltaType(deltaType: string): ClaudeTextStreamKind {
@@ -2880,14 +2926,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       (turn && (turn.rejectedRateLimitTypes.size > 0 || turn.latestAssistantRateLimited)
         ? "Claude usage limit reached. Send the message again once the limit resets."
         : undefined);
-    // A success result flagged is_error only fails when the turn already
-    // reported its cause (expired login, rejected usage window).
-    const successTaggedFailure =
-      message.subtype === "success" && message.is_error === true && failureHint !== undefined;
-    const status = successTaggedFailure ? "failed" : turnStatusFromResult(message);
-    const errorMessage = successTaggedFailure
-      ? (resultUserFacingError(message, { includeSuccess: true }) ?? failureHint)
-      : resultUserFacingError(message);
+    const { status, errorMessage } = resultOutcome(message, failureHint);
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
@@ -2923,15 +2962,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // Undeclared-but-real subtypes (absent from the SDK's union, so they can't
     // be switch cases): consumed intentionally without emitting, otherwise
     // they fall through to the unknown-subtype warning and surface as spurious
-    // error rows in client work logs. `background_tasks_changed` is a roster
-    // snapshot ({tasks: [...]}) — the task_* lifecycle events carry the
-    // authoritative per-agent data and the typed background_tasks control
-    // request is the reconciliation source. `vcs_state_changed`
+    // error rows in client work logs. `vcs_state_changed`
     // ({kind: commit|push|rebase}) and `code_change_published`
     // ({provider, url, repo}) are informational CLI notices; the work log
     // already shows the underlying git/gh tool calls.
     switch (message.subtype as string) {
-      case "background_tasks_changed":
       case "vcs_state_changed":
       case "code_change_published":
         return;
@@ -3151,11 +3186,38 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return;
       // Inner protocol/UX details with no T3 surface today — consumed
       // deliberately so they don't masquerade as unknown-subtype warnings.
+      // `background_tasks_changed` is a roster snapshot ({tasks: [...]}); the
+      // task_* lifecycle events carry the authoritative per-agent data and
+      // the typed background_tasks control request is the reconciliation
+      // source. `control_request_progress` is a liveness heartbeat for an
+      // in-flight control request. `worker_shutting_down` is a Remote
+      // Control worker notice; the session close path reports the outcome.
       case "local_command_output":
       case "plugin_install":
       case "commands_changed":
       case "memory_recall":
       case "elicitation_complete":
+      case "background_tasks_changed":
+      case "control_request_progress":
+      case "worker_shutting_down":
+        return;
+      case "informational":
+        // Transcript-level CLI notes. Only warnings (e.g. a Stop hook that
+        // refused continuation) warrant a work-log row; info/notice/
+        // suggestion levels are CLI chrome.
+        if (message.level === "warning") {
+          yield* emitRuntimeWarning(context, message.content, message);
+        }
+        return;
+      case "model_refusal_no_fallback":
+        // The API refused the request and no fallback model was available.
+        // The terminal result reports the failed turn; this row carries the
+        // refusal explanation the result's error list lacks.
+        yield* emitRuntimeWarning(
+          context,
+          message.api_refusal_explanation?.trim() || message.content,
+          message,
+        );
         return;
       case "permission_denied":
         yield* offerRuntimeEvent({
@@ -3181,7 +3243,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // handled above, so `message` narrows to never here — a new SDK
         // release adding a subtype fails this typecheck instead of silently
         // warning at runtime. The runtime fallback still catches undeclared
-        // wire-only subtypes (like background_tasks_changed used to be).
+        // wire-only subtypes (like vcs_state_changed).
         message satisfies never;
         const unknownMessage = message as never as { subtype: string };
         yield* emitRuntimeWarning(
@@ -3348,7 +3410,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         yield* handleSdkTelemetryMessage(context, message);
         return;
       // Composer prompt suggestions have no T3 surface; consumed deliberately.
+      // `conversation_reset` announces a CLI-side conversation id swap
+      // (e.g. /clear); we keep our own thread identity and resume cursor.
       case "prompt_suggestion":
+      case "conversation_reset":
         return;
       default: {
         // Exhaustiveness guard (see handleSystemMessage): new SDK top-level
