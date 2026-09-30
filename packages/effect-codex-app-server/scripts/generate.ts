@@ -167,28 +167,10 @@ const CODEX_COMPATIBILITY_DEFINITION_SCHEMAS: Record<string, Schema.Json> = {
     type: "string",
     enum: ["inProgress", "completed", "failed", "interrupted"],
   },
-  PlanType: {
-    type: "string",
-    enum: [
-      "free",
-      "go",
-      "plus",
-      "pro",
-      "prolite",
-      "team",
-      "self_serve_business_prolite",
-      "self_serve_business_usage_based",
-      "business",
-      "ent26",
-      "enterprise_cbp_automation",
-      "enterprise_cbp_usage_based",
-      "enterprise",
-      "edu",
-      "edu_plus",
-      "edu_pro",
-      "unknown",
-    ],
-  },
+  // Codex adds plan slugs between our protocol refreshes (0.159 added `promax`).
+  // We only use the plan for labels, so an unknown slug must not fail the whole
+  // `account/read` decode and take the provider down with it.
+  PlanType: { type: "string" },
   SubAgentActivityKind: {
     type: "string",
     enum: ["started", "interacted", "interrupted", "completed"],

@@ -154,4 +154,37 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       assert.equal(initialized.userAgent, "mock-codex-app-server");
     }),
   );
+
+  it.effect.each(["promax", "some_future_plan"])(
+    "reads accounts whose plan slug is newer than the pinned protocol: %s",
+    (planType) =>
+      Effect.gen(function* () {
+        const handle = yield* makeHandle({ CODEX_APP_SERVER_TEST_PLAN_TYPE: planType });
+        const scope = yield* Scope.make();
+        const context = yield* Layer.buildWithScope(CodexClient.layerChildProcess(handle), scope);
+
+        const account = yield* Effect.gen(function* () {
+          const client = yield* CodexClient.CodexAppServerClient;
+          yield* client.request("initialize", {
+            clientInfo: {
+              name: "effect-codex-app-server-test",
+              title: "Effect Codex App Server Test",
+              version: "0.0.0",
+            },
+            capabilities: {
+              experimentalApi: true,
+              optOutNotificationMethods: null,
+            },
+          });
+          yield* client.notify("initialized", undefined);
+          return yield* client.request("account/read", {});
+        }).pipe(Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
+
+        assert.deepEqual(account.account, {
+          type: "chatgpt",
+          email: "mock@example.com",
+          planType,
+        });
+      }),
+  );
 });

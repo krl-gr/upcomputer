@@ -51,7 +51,7 @@ it("accepts Codex 0.150+ multi-agent values in current thread fixtures", () => {
   assert.equal(isCompletedItem(completedItem), true);
 });
 
-it("keeps Codex 0.147 plans and accepts Codex 0.150+ account plans", () => {
+it("accepts account plan slugs newer than the pinned protocol", () => {
   for (const planType of [
     "plus",
     "self_serve_business_prolite",
@@ -59,6 +59,8 @@ it("keeps Codex 0.147 plans and accepts Codex 0.150+ account plans", () => {
     "enterprise_cbp_automation",
     "edu_plus",
     "edu_pro",
+    "promax",
+    "some_future_plan",
   ]) {
     assert.equal(
       isAccount({

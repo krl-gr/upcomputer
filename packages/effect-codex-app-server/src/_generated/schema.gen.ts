@@ -2404,43 +2404,8 @@ export const ServerNotification__PlanDeltaNotification = Schema.Struct({
     "EXPERIMENTAL - proposed plan streaming deltas for plan items. Clients should not assume concatenated deltas match the completed plan item content.",
 });
 
-export type ServerNotification__PlanType =
-  | "free"
-  | "go"
-  | "plus"
-  | "pro"
-  | "prolite"
-  | "team"
-  | "self_serve_business_prolite"
-  | "self_serve_business_usage_based"
-  | "business"
-  | "ent26"
-  | "enterprise_cbp_automation"
-  | "enterprise_cbp_usage_based"
-  | "enterprise"
-  | "edu"
-  | "edu_plus"
-  | "edu_pro"
-  | "unknown";
-export const ServerNotification__PlanType = Schema.Literals([
-  "free",
-  "go",
-  "plus",
-  "pro",
-  "prolite",
-  "team",
-  "self_serve_business_prolite",
-  "self_serve_business_usage_based",
-  "business",
-  "ent26",
-  "enterprise_cbp_automation",
-  "enterprise_cbp_usage_based",
-  "enterprise",
-  "edu",
-  "edu_plus",
-  "edu_pro",
-  "unknown",
-]);
+export type ServerNotification__PlanType = string;
+export const ServerNotification__PlanType = Schema.String;
 
 export type ServerNotification__ProcessExitedNotification = {
   readonly exitCode: number;
@@ -3251,43 +3216,8 @@ export const V2AccountRateLimitsUpdatedNotification__CreditsSnapshot = Schema.St
   unlimited: Schema.Boolean,
 });
 
-export type V2AccountRateLimitsUpdatedNotification__PlanType =
-  | "free"
-  | "go"
-  | "plus"
-  | "pro"
-  | "prolite"
-  | "team"
-  | "self_serve_business_prolite"
-  | "self_serve_business_usage_based"
-  | "business"
-  | "ent26"
-  | "enterprise_cbp_automation"
-  | "enterprise_cbp_usage_based"
-  | "enterprise"
-  | "edu"
-  | "edu_plus"
-  | "edu_pro"
-  | "unknown";
-export const V2AccountRateLimitsUpdatedNotification__PlanType = Schema.Literals([
-  "free",
-  "go",
-  "plus",
-  "pro",
-  "prolite",
-  "team",
-  "self_serve_business_prolite",
-  "self_serve_business_usage_based",
-  "business",
-  "ent26",
-  "enterprise_cbp_automation",
-  "enterprise_cbp_usage_based",
-  "enterprise",
-  "edu",
-  "edu_plus",
-  "edu_pro",
-  "unknown",
-]);
+export type V2AccountRateLimitsUpdatedNotification__PlanType = string;
+export const V2AccountRateLimitsUpdatedNotification__PlanType = Schema.String;
 
 export type V2AccountRateLimitsUpdatedNotification__RateLimitReachedType =
   | "rate_limit_reached"
@@ -3349,43 +3279,8 @@ export const V2AccountUpdatedNotification__AuthMode = Schema.Literals([
   "bedrockApiKey",
 ]).annotate({ description: "Authentication mode for OpenAI-backed providers." });
 
-export type V2AccountUpdatedNotification__PlanType =
-  | "free"
-  | "go"
-  | "plus"
-  | "pro"
-  | "prolite"
-  | "team"
-  | "self_serve_business_prolite"
-  | "self_serve_business_usage_based"
-  | "business"
-  | "ent26"
-  | "enterprise_cbp_automation"
-  | "enterprise_cbp_usage_based"
-  | "enterprise"
-  | "edu"
-  | "edu_plus"
-  | "edu_pro"
-  | "unknown";
-export const V2AccountUpdatedNotification__PlanType = Schema.Literals([
-  "free",
-  "go",
-  "plus",
-  "pro",
-  "prolite",
-  "team",
-  "self_serve_business_prolite",
-  "self_serve_business_usage_based",
-  "business",
-  "ent26",
-  "enterprise_cbp_automation",
-  "enterprise_cbp_usage_based",
-  "enterprise",
-  "edu",
-  "edu_plus",
-  "edu_pro",
-  "unknown",
-]);
+export type V2AccountUpdatedNotification__PlanType = string;
+export const V2AccountUpdatedNotification__PlanType = Schema.String;
 
 export type V2AppListUpdatedNotification__AppBranding = {
   readonly category?: string | null;
@@ -4166,43 +4061,8 @@ export const V2GetAccountRateLimitsResponse__CreditsSnapshot = Schema.Struct({
   unlimited: Schema.Boolean,
 });
 
-export type V2GetAccountRateLimitsResponse__PlanType =
-  | "free"
-  | "go"
-  | "plus"
-  | "pro"
-  | "prolite"
-  | "team"
-  | "self_serve_business_prolite"
-  | "self_serve_business_usage_based"
-  | "business"
-  | "ent26"
-  | "enterprise_cbp_automation"
-  | "enterprise_cbp_usage_based"
-  | "enterprise"
-  | "edu"
-  | "edu_plus"
-  | "edu_pro"
-  | "unknown";
-export const V2GetAccountRateLimitsResponse__PlanType = Schema.Literals([
-  "free",
-  "go",
-  "plus",
-  "pro",
-  "prolite",
-  "team",
-  "self_serve_business_prolite",
-  "self_serve_business_usage_based",
-  "business",
-  "ent26",
-  "enterprise_cbp_automation",
-  "enterprise_cbp_usage_based",
-  "enterprise",
-  "edu",
-  "edu_plus",
-  "edu_pro",
-  "unknown",
-]);
+export type V2GetAccountRateLimitsResponse__PlanType = string;
+export const V2GetAccountRateLimitsResponse__PlanType = Schema.String;
 
 export type V2GetAccountRateLimitsResponse__RateLimitReachedType =
   | "rate_limit_reached"
@@ -4264,43 +4124,8 @@ export const V2GetAccountRateLimitsResponse__SpendControlLimitSnapshot = Schema.
   used: Schema.String,
 });
 
-export type V2GetAccountResponse__PlanType =
-  | "free"
-  | "go"
-  | "plus"
-  | "pro"
-  | "prolite"
-  | "team"
-  | "self_serve_business_prolite"
-  | "self_serve_business_usage_based"
-  | "business"
-  | "ent26"
-  | "enterprise_cbp_automation"
-  | "enterprise_cbp_usage_based"
-  | "enterprise"
-  | "edu"
-  | "edu_plus"
-  | "edu_pro"
-  | "unknown";
-export const V2GetAccountResponse__PlanType = Schema.Literals([
-  "free",
-  "go",
-  "plus",
-  "pro",
-  "prolite",
-  "team",
-  "self_serve_business_prolite",
-  "self_serve_business_usage_based",
-  "business",
-  "ent26",
-  "enterprise_cbp_automation",
-  "enterprise_cbp_usage_based",
-  "enterprise",
-  "edu",
-  "edu_plus",
-  "edu_pro",
-  "unknown",
-]);
+export type V2GetAccountResponse__PlanType = string;
+export const V2GetAccountResponse__PlanType = Schema.String;
 
 export type V2GetAccountTokenUsageResponse__AccountTokenUsageDailyBucket = {
   readonly startDate: string;
