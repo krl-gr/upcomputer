@@ -2226,7 +2226,7 @@ function SidebarSectionHeaderAction({
             aria-label={label}
             data-testid={testId}
             className={cn(
-              "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring group-hover/sidebar-section-header:opacity-100 group-focus-within/sidebar-section-header:opacity-100 max-sm:opacity-100 dark:hover:text-white/86",
+              "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring group-hover/sidebar-section-header:opacity-100 group-focus-within/sidebar-section-header:opacity-100 max-sm:opacity-100 dark:hover:text-white/86",
               SIDEBAR_MUTED_TEXT_CLASS,
             )}
             onPointerDown={(event) => event.stopPropagation()}
