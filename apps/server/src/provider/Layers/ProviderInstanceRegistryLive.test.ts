@@ -24,7 +24,7 @@
  */
 import { manifest } from "../ClaudeModelCatalog.testFixtures.ts";
 import * as ModelManifest from "../ModelManifest.ts";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type ClaudeSettings,
@@ -37,7 +37,9 @@ import {
   ProviderInstanceId,
 } from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { ServerConfig } from "../../config.ts";
@@ -346,6 +348,36 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(refreshed.models.map((m) => m.slug)).not.toContain("claude-synthetic-next");
     }).pipe(Effect.provideService(ModelManifest.ModelManifest, service), Effect.provide(testLayer));
   });
+
+  it.live("discovers Claude project skills from the requested workspace", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "claude-workspace-skills-" });
+      const workspace = path.join(tempDir, "workspace");
+      const skillDir = path.join(workspace, ".claude", "skills", "deploy");
+      yield* fs.makeDirectory(skillDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(skillDir, "SKILL.md"),
+        ["---", "name: deploy", "description: Deploy the app.", "---", "", "# Deploy"].join("\n"),
+      );
+
+      const instance = yield* ClaudeDriver.create({
+        instanceId: ProviderInstanceId.make("claude-skills"),
+        displayName: undefined,
+        environment: [],
+        enabled: true,
+        config: makeClaudeConfig({
+          enabled: true,
+          binaryPath: path.join(tempDir, "missing-claude"),
+          homePath: path.join(tempDir, "claude-home"),
+        }),
+      });
+      assert(instance.snapshotForCwd);
+      const snapshot = yield* instance.snapshotForCwd(workspace);
+      expect(snapshot.skills?.map((skill) => skill.name)).toEqual(["deploy"]);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>
     Effect.gen(function* () {
