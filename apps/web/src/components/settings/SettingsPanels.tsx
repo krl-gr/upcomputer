@@ -361,9 +361,10 @@ function AboutVersionSection() {
               value={selectedHostedAppChannel}
               onValueChange={(value) => {
                 if (value === selectedHostedAppChannel) return;
-                window.location.assign(
-                  buildHostedChannelSelectionUrl({ channel: value as HostedAppChannel }),
-                );
+                const channelUrl = buildHostedChannelSelectionUrl({
+                  channel: value as HostedAppChannel,
+                });
+                if (channelUrl) window.location.assign(channelUrl);
               }}
             >
               <SelectTrigger className="w-full sm:w-40" aria-label="Update track">

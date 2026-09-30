@@ -1,5 +1,3 @@
-import { DEFAULT_HOSTED_APP_URL } from "@upcomputer/shared/connectAuth";
-
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
 
 export interface HostedPairingRequest {
@@ -10,8 +8,13 @@ export interface HostedPairingRequest {
 
 export type HostedAppChannel = "latest" | "nightly";
 
-export function configuredHostedAppUrl(): string {
-  return import.meta.env.VITE_HOSTED_APP_URL?.trim() || DEFAULT_HOSTED_APP_URL;
+/**
+ * The hosted static app, when this build was given one. There is no default:
+ * without an explicit `VITE_HOSTED_APP_URL` no hosted app exists, and links
+ * must point at the backend itself.
+ */
+export function configuredHostedAppUrl(): string | null {
+  return import.meta.env.VITE_HOSTED_APP_URL?.trim() || null;
 }
 
 function configuredBackendUrl(): string {
@@ -32,7 +35,8 @@ function originFromUrl(value: string): string | null {
 }
 
 export function isHostedStaticApp(url: URL = new URL(window.location.href)): boolean {
-  if (configuredBackendUrl()) {
+  const hostedAppUrl = configuredHostedAppUrl();
+  if (configuredBackendUrl() || hostedAppUrl === null) {
     return false;
   }
 
@@ -40,7 +44,7 @@ export function isHostedStaticApp(url: URL = new URL(window.location.href)): boo
     return true;
   }
 
-  const hostedOrigin = originFromUrl(configuredHostedAppUrl());
+  const hostedOrigin = originFromUrl(hostedAppUrl);
   return hostedOrigin !== null && url.origin === hostedOrigin;
 }
 
@@ -68,8 +72,12 @@ export function buildHostedPairingUrl(input: {
   readonly host: string;
   readonly token: string;
   readonly label?: string | null;
-}): string {
-  const url = new URL("/pair", configuredHostedAppUrl());
+}): string | null {
+  const hostedAppUrl = configuredHostedAppUrl();
+  if (hostedAppUrl === null) {
+    return null;
+  }
+  const url = new URL("/pair", hostedAppUrl);
   url.searchParams.set("host", input.host);
 
   const label = input.label?.trim();
@@ -82,8 +90,12 @@ export function buildHostedPairingUrl(input: {
 
 export function buildHostedChannelSelectionUrl(input: {
   readonly channel: HostedAppChannel;
-}): string {
-  const url = new URL("/__upcomputer/channel", configuredHostedAppUrl());
+}): string | null {
+  const hostedAppUrl = configuredHostedAppUrl();
+  if (hostedAppUrl === null) {
+    return null;
+  }
+  const url = new URL("/__upcomputer/channel", hostedAppUrl);
   url.searchParams.set("channel", input.channel);
   return url.toString();
 }

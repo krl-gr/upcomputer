@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   buildHostedChannelSelectionUrl,
   buildHostedPairingUrl,
+  configuredHostedAppUrl,
   hasHostedPairingRequest,
   isHostedStaticApp,
   readHostedPairingRequest,
@@ -32,7 +33,7 @@ describe("hostedPairing", () => {
         host: "https://backend.example.com:3773",
         token: "pairing-token",
         label: "Workstation",
-      }),
+      }) ?? "",
     );
 
     expect(url.origin).toBe("https://preview.t3.codes");
@@ -49,13 +50,25 @@ describe("hostedPairing", () => {
     const url = new URL(
       buildHostedChannelSelectionUrl({
         channel: "nightly",
-      }),
+      }) ?? "",
     );
 
     expect(url.origin).toBe("https://app.t3.codes");
     expect(url.pathname).toBe("/__upcomputer/channel");
     expect(url.searchParams.get("channel")).toBe("nightly");
     expect(url.searchParams.has("next")).toBe(false);
+  });
+
+  it("builds no hosted links and detects no hosted app without an explicit hosted app URL", () => {
+    vi.stubEnv("VITE_HOSTED_APP_URL", "");
+    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "nightly");
+    vi.stubEnv("VITE_HTTP_URL", "");
+    vi.stubEnv("VITE_WS_URL", "");
+
+    expect(configuredHostedAppUrl()).toBeNull();
+    expect(buildHostedPairingUrl({ host: "https://desktop.tail.ts.net", token: "t" })).toBeNull();
+    expect(buildHostedChannelSelectionUrl({ channel: "nightly" })).toBeNull();
+    expect(isHostedStaticApp(new URL("https://up.computer/"))).toBe(false);
   });
 
   it("ignores incomplete hosted pairing requests", () => {
