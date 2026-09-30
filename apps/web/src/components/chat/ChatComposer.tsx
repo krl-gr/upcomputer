@@ -2867,7 +2867,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   open={isComposerModelPickerOpen}
                   triggerClassName={cn(
                     COMPOSER_CONTROL_TEXT_TRIGGER_CLASS,
-                    "min-w-16 max-w-52 shrink sm:max-w-60",
+                    "max-w-52 shrink sm:max-w-60",
                   )}
                   showProviderIcon={false}
                   showProviderLabel
