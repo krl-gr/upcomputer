@@ -52,6 +52,7 @@ import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
+import { folderDropTarget, resolveDroppedFolderPath, splitDroppedItems } from "./folderDrop";
 import {
   type ComposerImageAttachment,
   type DraftId,
@@ -2336,12 +2337,40 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsDragOverComposer(false);
   };
 
+  const addDroppedFolders = (folders: File[]) => {
+    if (
+      folderDropTarget({ environmentId: composerEnvironmentId, primaryEnvironmentId }) === "remote"
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Folders can't be dropped into remote environments",
+      });
+      return;
+    }
+    for (const folder of folders) {
+      const path = resolveDroppedFolderPath(folder, window.desktopBridge?.getPathForFile);
+      if (path === null) {
+        toastManager.add({
+          type: "error",
+          title: `Couldn't get the path of "${folder.name}"`,
+          description: "Type the folder path with @ instead.",
+        });
+        continue;
+      }
+      insertComposerTextAtEnd(`${serializeComposerFileLink(path)} `, {
+        ensureLeadingBoundary: true,
+      });
+    }
+  };
+
   const onComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     setIsDragOverComposer(false);
-    const files = Array.from(event.dataTransfer.files);
-    addComposerImages(files);
+    // Folders become path links on this machine instead of failing as images.
+    const { files, folders } = splitDroppedItems(event.dataTransfer);
+    if (files.length > 0) addComposerImages(files);
+    if (folders.length > 0) addDroppedFolders(folders);
     focusComposer();
   };
 
