@@ -1,6 +1,7 @@
 import {
   type ProviderDriverKind,
   type ProviderInstanceId,
+  type ProviderOptionChoice,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type ScopedThreadRef,
@@ -92,6 +93,29 @@ function DefaultBadge() {
     >
       Default
     </Badge>
+  );
+}
+
+export function TraitsSelectOptionLabel({ option }: { option: ProviderOptionChoice }) {
+  return (
+    <span className="flex w-full min-w-0 flex-col">
+      <span className="flex w-full min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0 truncate">
+          {option.label}
+          {option.isDefault ? (
+            <>
+              {" "}
+              <DefaultBadge />
+            </>
+          ) : null}
+        </span>
+      </span>
+      {option.description ? (
+        <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
+          {option.description}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -403,17 +427,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                     closeOnClick
                     disabled={ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id}
                   >
-                    <span className="flex w-full min-w-0 items-center justify-between gap-3">
-                      <span className="min-w-0 truncate">
-                        {option.label}
-                        {option.isDefault ? (
-                          <>
-                            {" "}
-                            <DefaultBadge />
-                          </>
-                        ) : null}
-                      </span>
-                    </span>
+                    <TraitsSelectOptionLabel option={option} />
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>
