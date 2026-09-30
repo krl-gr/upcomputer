@@ -2971,8 +2971,18 @@ function ChatViewContent(props: ChatViewProps) {
     return () => window.removeEventListener("paste", handler, true);
   }, [isWorkspacePanelActive, activeThreadId, composerRef]);
 
+  const [pendingRevert, setPendingRevert] = useState<{
+    turnCount: number;
+    messageId: MessageId;
+    routeThreadKey: string;
+  } | null>(null);
+
+  if (pendingRevert && pendingRevert.routeThreadKey !== routeThreadKey) {
+    setPendingRevert(null);
+  }
+
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number, messageId: MessageId) => {
+    async (turnCount: number, messageId: MessageId, restoreFiles?: boolean) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
       const message = displayServerMessages.find((message) => message.id === messageId);
@@ -2989,14 +2999,9 @@ function ChatViewContent(props: ChatViewProps) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
         return;
       }
-      const confirmed = await localApi.dialogs.confirm(
-        [
-          "Edit from here?",
-          "Rewind files and chat to before this message.",
-          "Your prompt and images return to the composer.",
-        ].join("\n"),
-      );
-      if (!confirmed) {
+      // The first call asks whether to keep workspace files; the dialog calls back with the choice.
+      if (restoreFiles === undefined) {
+        setPendingRevert({ turnCount, messageId, routeThreadKey });
         return;
       }
 
@@ -3014,7 +3019,7 @@ function ChatViewContent(props: ChatViewProps) {
         await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
           const result = await revertThreadCheckpoint({
             environmentId,
-            input: { threadId: activeThread.id, turnCount },
+            input: { threadId: activeThread.id, turnCount, restoreFiles },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         });
@@ -4641,6 +4646,52 @@ function ChatViewContent(props: ChatViewProps) {
                     }}
                   >
                     Switch branch
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogPopup>
+            </AlertDialog>
+            <AlertDialog
+              open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
+              onOpenChange={(open) => {
+                if (!open) setPendingRevert(null);
+              }}
+            >
+              <AlertDialogPopup>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Edit from here?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Rewind chat to before this message. Your prompt and images return to the
+                    composer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+                      setPendingRevert(null);
+                      void onRevertToTurnCount(
+                        pendingRevert.turnCount,
+                        pendingRevert.messageId,
+                        true,
+                      );
+                    }}
+                  >
+                    Revert files too
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+                      setPendingRevert(null);
+                      void onRevertToTurnCount(
+                        pendingRevert.turnCount,
+                        pendingRevert.messageId,
+                        false,
+                      );
+                    }}
+                  >
+                    Revert and keep changes
                   </Button>
                 </AlertDialogFooter>
               </AlertDialogPopup>
