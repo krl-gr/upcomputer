@@ -14,9 +14,9 @@ import { connectCommand } from "./cli/connect.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { type CliServerFlags, sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
-import { makeServeCommand, makeStartCommand, runServerCommand } from "./cli/server.ts";
+import { makeServeCommand, makeStartCommand, runServerCommandForProduct } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
-import { CORE_SERVER_PRODUCT_ENTRY } from "./product/defaultProductEntry.ts";
+import { PUBLIC_SERVER_PRODUCT_ENTRY } from "./product/publicProductEntry.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -86,23 +86,26 @@ export const makeCli = ({
   ).pipe(
     Command.withDescription(
       remoteServerCliEnabled
-        ? `Run the ${CORE_SERVER_PRODUCT_ENTRY.manifest.displayName} server.`
+        ? `Run the ${PUBLIC_SERVER_PRODUCT_ENTRY.manifest.displayName} server.`
         : "Internal backend entry point for Up.computer Desktop.",
     ),
     // The Desktop backend is the only official caller and supplies a bootstrap envelope.
     Command.withHandler((flags) => {
       if (!remoteServerCliEnabled) {
         return Option.isSome(flags.bootstrapFd)
-          ? runServerCommand(bundledDesktopServerFlags(flags.bootstrapFd))
+          ? runServerCommandForProduct(
+              bundledDesktopServerFlags(flags.bootstrapFd),
+              PUBLIC_SERVER_PRODUCT_ENTRY,
+            )
           : Effect.fail(new RemoteServerCliUnavailableError({ cause: "local-desktop-only" }));
       }
-      return runServerCommand(flags as CliServerFlags);
+      return runServerCommandForProduct(flags as CliServerFlags, PUBLIC_SERVER_PRODUCT_ENTRY);
     }),
     Command.withSubcommands(
       remoteServerCliEnabled
         ? [
-            makeStartCommand(CORE_SERVER_PRODUCT_ENTRY),
-            makeServeCommand(CORE_SERVER_PRODUCT_ENTRY),
+            makeStartCommand(PUBLIC_SERVER_PRODUCT_ENTRY),
+            makeServeCommand(PUBLIC_SERVER_PRODUCT_ENTRY),
             authCommand,
             projectCommand,
             serviceCommand,

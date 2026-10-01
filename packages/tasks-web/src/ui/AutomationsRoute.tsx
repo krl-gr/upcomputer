@@ -24,7 +24,7 @@ export default function AutomationsRoute() {
     void navigate({
       to: selectedAutomationKey ? "/automations" : "/",
       ...(selectedAutomationKey ? { search: {}, replace: true } : {}),
-    });
+    } as never);
   }, [canGoBack, navigate, selectedAutomationKey]);
 
   return (
@@ -50,13 +50,13 @@ export default function AutomationsRoute() {
           to: "/automations",
           search: automationKey ? { automation: automationKey } : {},
           ...(automationKey ? {} : { replace: true }),
-        });
+        } as never);
       }}
       onOpenTask={(environmentId, taskId) => {
         void navigate({
           to: "/tasks",
           search: { task: `${environmentId}:${taskId}` },
-        });
+        } as never);
       }}
     />
   );

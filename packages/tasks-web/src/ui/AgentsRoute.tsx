@@ -63,7 +63,7 @@ export default function AgentsRoute() {
     void navigate({
       to: selectedAgentKey ? "/agents" : "/",
       ...(selectedAgentKey ? { search: {}, replace: true } : {}),
-    });
+    } as never);
   }, [canGoBack, navigate, selectedAgentKey]);
 
   return (
@@ -86,13 +86,13 @@ export default function AgentsRoute() {
           to: "/agents",
           search: agentKey ? { agent: agentKey } : {},
           ...(agentKey ? {} : { replace: true }),
-        });
+        } as never);
       }}
       onOpenTask={(environmentId, taskId) => {
         void navigate({
           to: "/tasks",
           search: { task: `${environmentId}:${taskId}` },
-        });
+        } as never);
       }}
       onOpenThread={(environmentId, threadId) => {
         void navigate({

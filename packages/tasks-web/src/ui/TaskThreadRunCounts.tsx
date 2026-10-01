@@ -76,7 +76,10 @@ function ThreadTasksMenuItems({
     <MenuItem
       key={task.id}
       onClick={() =>
-        void navigate({ to: "/tasks", search: { task: taskKey({ environmentId, id: task.id }) } })
+        void navigate({
+          to: "/tasks",
+          search: { task: taskKey({ environmentId, id: task.id }) },
+        } as never)
       }
     >
       <span className="min-w-0 flex-1 truncate">{task.title}</span>

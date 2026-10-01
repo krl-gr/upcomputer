@@ -26,7 +26,7 @@ export default function TasksRoute() {
     void navigate({
       to: selectedTaskKey ? "/tasks" : "/",
       ...(selectedTaskKey ? { search: {}, replace: true } : {}),
-    });
+    } as never);
   }, [canGoBack, navigate, selectedTaskKey]);
 
   return (
@@ -56,7 +56,7 @@ export default function TasksRoute() {
           to: "/tasks",
           search: taskKey ? { task: taskKey } : {},
           ...(taskKey ? {} : { replace: true }),
-        });
+        } as never);
       }}
       onOpenThread={(environmentId, threadId) => {
         void navigate({
