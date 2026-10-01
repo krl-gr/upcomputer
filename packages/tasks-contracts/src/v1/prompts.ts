@@ -15,7 +15,13 @@ export const TaskPromptSettings = Schema.Struct({
 });
 export type TaskPromptSettings = typeof TaskPromptSettings.Type;
 
-export const TaskPromptSettingsGetInput = Schema.Struct({});
+/**
+ * Without `projectId`, the global texts. With it, that project's additions,
+ * which are added after the global texts for the project's tasks.
+ */
+export const TaskPromptSettingsGetInput = Schema.Struct({
+  projectId: Schema.optional(TrimmedNonEmptyString),
+});
 export type TaskPromptSettingsGetInput = typeof TaskPromptSettingsGetInput.Type;
 
 export const TASK_PROMPT_FIELDS = [
@@ -48,8 +54,11 @@ const InstructionsTexts = Schema.Struct({
  * core `customInstructions` setting: saving it here records it in the
  * instructions history. `base` holds the text a field had when the page loaded
  * it: a field whose current text differs was changed elsewhere and is not saved.
+ * With `projectId` the save edits that project's additions; `allChats` is
+ * global only and is refused then.
  */
 export const TaskPromptSettingsUpdateInput = Schema.Struct({
+  projectId: Schema.optional(TrimmedNonEmptyString),
   ...InstructionsTexts.fields,
   base: Schema.optional(InstructionsTexts),
 });
@@ -83,7 +92,9 @@ export type TaskPromptChangeSource = typeof TaskPromptChangeSource.Type;
 /** One recorded edit of one instruction field. History rows are never deleted. */
 export const TaskPromptSettingsChange = Schema.Struct({
   id: TrimmedNonEmptyString,
-  /** The settings revision this change produced. */
+  /** The project whose additions changed; null for the global texts. */
+  projectId: Schema.NullOr(TrimmedNonEmptyString),
+  /** The revision this change produced; global and each project count separately. */
   revision: PositiveInt,
   field: InstructionsField,
   previousText: Schema.String,
@@ -97,10 +108,14 @@ export const TaskPromptSettingsChange = Schema.Struct({
 });
 export type TaskPromptSettingsChange = typeof TaskPromptSettingsChange.Type;
 
-export const InstructionsGetInput = Schema.Struct({});
+/** Without `projectId` the instructions tools act on the global texts, with it on that project's. */
+const InstructionsScope = { projectId: Schema.optional(TrimmedNonEmptyString) };
+
+export const InstructionsGetInput = Schema.Struct(InstructionsScope);
 export type InstructionsGetInput = typeof InstructionsGetInput.Type;
 
 export const InstructionsUpdateInput = Schema.Struct({
+  ...InstructionsScope,
   field: InstructionsField,
   text: Schema.String,
   reason: TrimmedNonEmptyString,
@@ -109,16 +124,26 @@ export const InstructionsUpdateInput = Schema.Struct({
 export type InstructionsUpdateInput = typeof InstructionsUpdateInput.Type;
 
 export const InstructionsHistoryInput = Schema.Struct({
+  ...InstructionsScope,
   field: Schema.optional(InstructionsField),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
 });
 export type InstructionsHistoryInput = typeof InstructionsHistoryInput.Type;
 
 export const InstructionsRevertInput = Schema.Struct({
+  ...InstructionsScope,
   changeId: TrimmedNonEmptyString,
   reason: Schema.optional(TrimmedNonEmptyString),
 });
 export type InstructionsRevertInput = typeof InstructionsRevertInput.Type;
+
+/** A project's additions start empty: it gets the global texts only. */
+export const EMPTY_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
+  taskCreation: "",
+  agentCreation: "",
+  automationCreation: "",
+  taskExecution: "",
+};
 
 export const DEFAULT_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
   taskCreation: `Create focused, independently reviewable tasks. The description must be self-contained and keep the user's intent: goal, context, target, constraints, verification and expected output, so the agent never needs the originating chat. Include absolute paths of attached images and tell the agent to open them.

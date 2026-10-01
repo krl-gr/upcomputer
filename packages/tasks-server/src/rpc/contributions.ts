@@ -212,15 +212,22 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               });
             }),
           ),
-        [TASKS_RPC_METHODS.getPromptSettings]: () =>
+        [TASKS_RPC_METHODS.getPromptSettings]: (input) =>
           asTaskRpc(
             Effect.gen(function* () {
-              return yield* (yield* TaskPromptSettingsStore).get;
+              const store = yield* TaskPromptSettingsStore;
+              return input.projectId === undefined
+                ? yield* store.get
+                : (yield* store.getProject(input.projectId)).settings;
             }),
           ),
         [TASKS_RPC_METHODS.updatePromptSettings]: (input) =>
           asTaskRpc(
             Effect.gen(function* () {
+              if (input.projectId !== undefined && input.allChats !== undefined)
+                return yield* Effect.fail(
+                  taskError("All chats is global; a project has no All chats instructions."),
+                );
               return yield* (yield* TaskPromptSettingsStore).update(input);
             }),
           ),

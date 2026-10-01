@@ -7,6 +7,7 @@ import { afterEach, test } from "vite-plus/test";
 
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
   TASKS_RPC_METHODS,
   TaskAgentId,
   TaskAgentRunId,
@@ -19,6 +20,7 @@ import { ProjectId, ProviderInstanceId, ThreadId } from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 
 import {
@@ -60,6 +62,9 @@ const loopbackMcp: ExperimentalDynamicToolInvocationContext = {
   mutationPolicy: "allow",
 };
 
+/** The environment's active projects; any other id is unknown or deleted. */
+const projectTitles: Record<string, string> = { "project-a": "Alpha", "project-b": "Beta" };
+
 function countingCrypto(): Layer.Layer<Crypto.Crypto> {
   let seed = 0;
   return Layer.succeed(
@@ -95,7 +100,16 @@ async function harness(options: { readonly allChats?: string } = {}) {
     ),
   );
   const resolver: TaskToolContextResolverShape = {
-    resolve: () => Effect.succeed({ projects: [] } as never),
+    resolve: ({ args }) => {
+      const title = args.projectId === undefined ? undefined : projectTitles[args.projectId];
+      return Effect.succeed({
+        projects: [],
+        resolvedProject:
+          title === undefined
+            ? null
+            : { source: "explicit-project-id", project: { id: args.projectId, title } },
+      } as never);
+    },
   };
   const layer = TaskToolServiceLive.pipe(
     Layer.provideMerge(
@@ -103,7 +117,14 @@ async function harness(options: { readonly allChats?: string } = {}) {
         storage,
         Layer.succeed(TaskToolContextResolver, resolver),
         Layer.succeed(TaskAgentService, {} as TaskAgentServiceShape),
-        Layer.succeed(ProjectionSnapshotQuery, {} as never),
+        Layer.succeed(ProjectionSnapshotQuery, {
+          getProjectShellById: (id: string) =>
+            Effect.succeed(
+              projectTitles[id] === undefined
+                ? Option.none()
+                : Option.some({ id, title: projectTitles[id] }),
+            ),
+        } as never),
       ),
     ),
   );
@@ -123,13 +144,13 @@ async function harness(options: { readonly allChats?: string } = {}) {
     };
   };
   // The settings page goes through the RPC.
-  const settingsPage = (save?: TaskPromptSettingsUpdateInput) =>
+  const settingsPage = (save?: TaskPromptSettingsUpdateInput, scope: { projectId?: string } = {}) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const client = yield* RpcTest.makeClient(TasksRpcGroup);
         return save
           ? yield* client[TASKS_RPC_METHODS.updatePromptSettings](save)
-          : yield* client[TASKS_RPC_METHODS.getPromptSettings]({});
+          : yield* client[TASKS_RPC_METHODS.getPromptSettings](scope);
       }).pipe(
         Effect.provide(TASKS_RPC_CONTRIBUTION.handlers({ currentSessionId: "test" as never })),
         Effect.provide(layer),
@@ -874,4 +895,257 @@ test("a settings page save does not overwrite a field a chat changed after the p
   });
   NodeAssert.deepEqual(resaved.conflicts, []);
   NodeAssert.equal(resaved.taskCreation, "Page task guidance");
+});
+
+test("project additions are stored, edited, listed and reverted apart from global and other projects", async () => {
+  const { call } = await harness();
+  const a = { projectId: "project-a" };
+
+  const initial = await call("instructions_get", a);
+  NodeAssert.equal(initial.isError, false, initial.text);
+  NodeAssert.deepEqual(initial.body.project, { id: "project-a", title: "Alpha" });
+  NodeAssert.equal(initial.body.revision, 0);
+  NodeAssert.equal(initial.body.fields.taskCreation.text, "");
+  NodeAssert.equal(initial.body.fields.allChats, undefined);
+  NodeAssert.match(initial.body.fields.taskCreation.use, /added after the global text/);
+  NodeAssert.deepEqual(initial.body.global.fields, DEFAULT_TASK_PROMPT_SETTINGS);
+
+  const updated = await call("instructions_update", {
+    ...a,
+    field: "taskCreation",
+    text: "Tag every task with release:<version>.",
+    reason: "release tags",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(updated.isError, false, updated.text);
+  NodeAssert.equal(updated.body.revision, 1);
+  NodeAssert.deepEqual(updated.body.project, { id: "project-a", title: "Alpha" });
+
+  // Each scope keeps its own revision: global and project B are still at 0.
+  const global = (await call("instructions_get")).body;
+  NodeAssert.equal(global.revision, 0);
+  NodeAssert.equal(global.fields.taskCreation.text, DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+  const b = (await call("instructions_get", { projectId: "project-b" })).body;
+  NodeAssert.equal(b.revision, 0);
+  NodeAssert.equal(b.fields.taskCreation.text, "");
+  const globalEdit = await call("instructions_update", {
+    field: "taskExecution",
+    text: "Global rule",
+    reason: "global",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(globalEdit.isError, false, globalEdit.text);
+  NodeAssert.equal(globalEdit.body.revision, 1);
+
+  const stale = await call("instructions_update", {
+    ...a,
+    field: "agentCreation",
+    text: "Stale",
+    reason: "stale",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(stale.isError, true);
+  NodeAssert.equal(stale.body.currentRevision, 1);
+
+  const history = (await call("instructions_history", a)).body.changes;
+  NodeAssert.deepEqual(
+    history.map(({ projectId, revision, field }: Record<string, unknown>) => ({
+      projectId,
+      revision,
+      field,
+    })),
+    [{ projectId: "project-a", revision: 1, field: "taskCreation" }],
+  );
+  const globalHistory = (await call("instructions_history")).body.changes;
+  NodeAssert.deepEqual(
+    globalHistory.map(({ field }: Record<string, unknown>) => field),
+    ["taskExecution"],
+  );
+  NodeAssert.equal(globalHistory[0].projectId, undefined);
+  NodeAssert.deepEqual(
+    (await call("instructions_history", { projectId: "project-b" })).body.changes,
+    [],
+  );
+
+  // A change is reverted in its own scope only.
+  const elsewhere = await call("instructions_revert", { changeId: history[0].changeId });
+  NodeAssert.equal(elsewhere.isError, true);
+  NodeAssert.match(elsewhere.text, /not found in the global instructions/);
+  const reverted = await call("instructions_revert", { ...a, changeId: history[0].changeId });
+  NodeAssert.equal(reverted.isError, false, reverted.text);
+  NodeAssert.equal(reverted.body.revision, 2);
+  NodeAssert.equal((await call("instructions_get", a)).body.fields.taskCreation.text, "");
+  NodeAssert.equal((await call("instructions_get")).body.fields.taskExecution.text, "Global rule");
+});
+
+test("project scope refuses allChats and unknown projects", async () => {
+  const { call } = await harness({ allChats: "Every chat" });
+  for (const [name, args] of [
+    [
+      "instructions_update",
+      {
+        projectId: "project-a",
+        field: "allChats",
+        text: "Project chats",
+        reason: "no",
+        expectedRevision: 0,
+      },
+    ],
+    ["instructions_history", { projectId: "project-a", field: "allChats" }],
+  ] as const) {
+    const refused = await call(name, args);
+    NodeAssert.equal(refused.isError, true);
+    NodeAssert.match(refused.text, /allChats is global/);
+  }
+  for (const [name, args] of [
+    ["instructions_get", { projectId: "project-deleted" }],
+    [
+      "instructions_update",
+      {
+        projectId: "project-deleted",
+        field: "taskCreation",
+        text: "x",
+        reason: "no",
+        expectedRevision: 0,
+      },
+    ],
+    ["instructions_history", { projectId: "project-deleted" }],
+    ["instructions_revert", { projectId: "project-deleted", changeId: "missing" }],
+  ] as const) {
+    const refused = await call(name, args);
+    NodeAssert.equal(refused.isError, true);
+    NodeAssert.match(refused.text, /Project 'project-deleted' was not found/);
+  }
+  NodeAssert.equal((await call("instructions_get")).body.revision, 0);
+});
+
+test("task_context gives the global guidance plus the target project's additions only", async () => {
+  const { call } = await harness();
+  for (const [projectId, text] of [
+    ["project-a", "Alpha creation rule"],
+    ["project-b", "Beta creation rule"],
+  ] as const) {
+    const updated = await call("instructions_update", {
+      projectId,
+      field: "taskCreation",
+      text,
+      reason: "project rule",
+      expectedRevision: 0,
+    });
+    NodeAssert.equal(updated.isError, false, updated.text);
+  }
+
+  const forA = (await call("task_context", { projectId: "project-a" })).body.promptGuidance;
+  NodeAssert.deepEqual(forA, {
+    ...DEFAULT_TASK_PROMPT_SETTINGS,
+    taskCreation: `${DEFAULT_TASK_PROMPT_SETTINGS.taskCreation}\n\nProject "Alpha":\nAlpha creation rule`,
+  });
+  NodeAssert.ok(!JSON.stringify(forA).includes("Beta creation rule"));
+  // Without a resolved project, only the global texts.
+  NodeAssert.deepEqual(
+    (await call("task_context")).body.promptGuidance,
+    DEFAULT_TASK_PROMPT_SETTINGS,
+  );
+});
+
+test("project writes keep the run restriction and dry runs", async () => {
+  const { call, run } = await harness();
+  await seedAgentRuns(run, { ended: false });
+  const worker = { ...chat, threadId: ThreadId.make("thread-worker") };
+  const write = {
+    projectId: "project-a",
+    field: "taskExecution",
+    text: "Injected project rule",
+    reason: "injected",
+    expectedRevision: 0,
+  };
+
+  const refused = await call("instructions_update", write, worker);
+  NodeAssert.equal(refused.isError, true);
+  NodeAssert.match(refused.text, /run-worker' cannot change the shared task instructions/);
+
+  const preview = await call("instructions_update", write, readOnlyChat);
+  NodeAssert.equal(preview.isError, false, preview.text);
+  NodeAssert.equal(preview.body.dryRun, true);
+  NodeAssert.equal(preview.body.changed, true);
+
+  const real = await call("instructions_update", write);
+  NodeAssert.equal(real.isError, false, real.text);
+  const revertPreview = await call(
+    "instructions_revert",
+    { projectId: "project-a", changeId: real.body.changeId },
+    readOnlyChat,
+  );
+  NodeAssert.equal(revertPreview.isError, false, revertPreview.text);
+  NodeAssert.equal(revertPreview.body.dryRun, true);
+  const revertRefused = await call(
+    "instructions_revert",
+    { projectId: "project-a", changeId: real.body.changeId },
+    worker,
+  );
+  NodeAssert.equal(revertRefused.isError, true);
+
+  const state = (await call("instructions_get", { projectId: "project-a" })).body;
+  NodeAssert.equal(state.revision, 1);
+  NodeAssert.equal(state.fields.taskExecution.text, "Injected project rule");
+  NodeAssert.equal(
+    (await call("instructions_history", { projectId: "project-a" })).body.changes.length,
+    1,
+  );
+});
+
+test("settings page saves a project's additions with per-scope conflicts and no allChats", async () => {
+  const { call, settingsPage, allChats } = await harness({ allChats: "Every chat" });
+  const save = async (input: TaskPromptSettingsUpdateInput) =>
+    (await settingsPage(input)) as TaskPromptSettingsUpdateResult;
+
+  NodeAssert.deepEqual(
+    await settingsPage(undefined, { projectId: "project-a" }),
+    EMPTY_TASK_PROMPT_SETTINGS,
+  );
+  const saved = await save({
+    projectId: "project-a",
+    taskCreation: "Page rule",
+    base: { taskCreation: "" },
+  });
+  NodeAssert.deepEqual(saved, {
+    ...EMPTY_TASK_PROMPT_SETTINGS,
+    taskCreation: "Page rule",
+    conflicts: [],
+  });
+  NodeAssert.deepEqual(await settingsPage(), DEFAULT_TASK_PROMPT_SETTINGS);
+  NodeAssert.deepEqual(
+    await settingsPage(undefined, { projectId: "project-b" }),
+    EMPTY_TASK_PROMPT_SETTINGS,
+  );
+
+  // A chat edits the project field after the page loaded it: the page save is refused.
+  const chatEdit = await call("instructions_update", {
+    projectId: "project-a",
+    field: "taskCreation",
+    text: "Chat rule",
+    reason: "chat",
+    expectedRevision: 1,
+  });
+  NodeAssert.equal(chatEdit.isError, false, chatEdit.text);
+  const refused = await save({
+    projectId: "project-a",
+    taskCreation: "Page rule 2",
+    base: { taskCreation: "Page rule" },
+  });
+  NodeAssert.deepEqual(refused.conflicts, ["taskCreation"]);
+  NodeAssert.equal(refused.taskCreation, "Chat rule");
+
+  // The same base is current for the global field, which saves.
+  const globalSave = await save({
+    taskCreation: "Global page rule",
+    base: { taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation },
+  });
+  NodeAssert.deepEqual(globalSave.conflicts, []);
+
+  await NodeAssert.rejects(
+    save({ projectId: "project-a", allChats: "Project chats", base: { allChats: "Every chat" } }),
+    /All chats is global/,
+  );
+  NodeAssert.equal(await allChats(), "Every chat");
 });

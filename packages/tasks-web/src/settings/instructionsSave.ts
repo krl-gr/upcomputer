@@ -40,8 +40,11 @@ export function promptsAfterReload(
 /**
  * The settings page save: only the fields edited on the page, each with the
  * text the page loaded as `base`, so the server refuses fields changed elsewhere.
+ * The fields belong to the scope the page loaded: global, or one project.
  */
 export function instructionsSaveInput(input: {
+  /** A project's additions; null for the global texts. */
+  readonly projectId?: string | null | undefined;
   readonly saved: TaskPromptSettings;
   readonly draft: TaskPromptSettings;
   readonly allChats?: AllChatsDraft | undefined;
@@ -57,7 +60,7 @@ export function instructionsSaveInput(input: {
     texts.allChats = input.allChats.text;
     base.allChats = input.allChats.base;
   }
-  return { ...texts, base };
+  return { ...(input.projectId ? { projectId: input.projectId } : {}), ...texts, base };
 }
 
 /** The draft after a save: the current texts, except refused edits stay unsaved. */

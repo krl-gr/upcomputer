@@ -1,5 +1,8 @@
 /* oxlint-disable upcomputer/no-manual-effect-runtime-in-tests -- imported node:test suite; migrate to it.effect separately. */
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { test } from "vite-plus/test";
 
 import {
@@ -10,7 +13,10 @@ import {
   type TaskAgent,
   type TaskAgentRun,
 } from "@upcomputer/tasks-contracts/v1";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@upcomputer/tasks-contracts/v1";
+import {
+  DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
+} from "@upcomputer/tasks-contracts/v1";
 import {
   MessageId,
   ProjectId,
@@ -26,10 +32,15 @@ import * as Option from "effect/Option";
 import {
   OrchestrationEngineService,
   ProjectionSnapshotQuery,
+  runExperimentalFeatureMigrations,
 } from "../../../../apps/server/src/extensionApi.ts";
+import * as NodeSqliteClient from "../../../../apps/server/src/persistence/NodeSqliteClient.ts";
+import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
+import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskRepository, type TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 import {
   TaskPromptSettingsStore,
+  TaskPromptSettingsStoreLive,
   type TaskPromptSettingsStoreShape,
 } from "../persistence/TaskPromptSettingsStore.ts";
 import { makeTaskAgentResultConsumer } from "./TaskAgentResultFinalization.ts";
@@ -252,6 +263,7 @@ test("task-agent startup forwards complete advertised Astra options to run and b
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
@@ -288,6 +300,97 @@ test("task-agent startup forwards complete advertised Astra options to run and b
       turn.message.text,
       /rank: 0000000100000000 \(global position 1 of 1 in this environment; informational only\)/,
     );
+  }
+});
+
+test("a run prompt gets the global taskExecution plus its project's, from real storage", async () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-run-prompt-"));
+  try {
+    const sql = NodeSqliteClient.layer({ filename: NodePath.join(directory, "tasks.sqlite") });
+    await Effect.runPromise(
+      runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]).pipe(Effect.provide(sql)),
+    );
+    const store = TaskPromptSettingsStoreLive.pipe(
+      Layer.provide(Layer.mergeAll(sql, deterministicCrypto(), ServerSettings.layerTest())),
+    );
+    const origin = { source: "settings-page", threadId: null, runId: null } as const;
+    const write = (projectId: string | null, text: string) =>
+      Effect.flatMap(TaskPromptSettingsStore, (settings) =>
+        settings.updateField({
+          projectId,
+          field: "taskExecution",
+          text,
+          reason: "test",
+          expectedRevision: 0,
+          origin,
+          dryRun: false,
+        }),
+      );
+
+    const configuredAgent = agent();
+    const assignedTask = task();
+    const commands: OrchestrationCommand[] = [];
+    const unused = () => Effect.die("unused repository method");
+    const repository = new Proxy(
+      {
+        listAllActiveAgentRuns: () => Effect.succeed([]),
+        listAllAgents: () => Effect.succeed([configuredAgent]),
+        listAllTasks: () => Effect.succeed([assignedTask]),
+        getById: () => Effect.succeed(Option.some(assignedTask)),
+        getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
+        findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),
+        searchAgentRuns: () => Effect.succeed([]),
+        startAgentRun: (run: unknown) => Effect.succeed(Option.some(run as never)),
+        appendEvent: (event: unknown) => Effect.succeed(event as never),
+      } as unknown as TaskRepositoryShape,
+      {
+        get: (target, property) =>
+          (target as unknown as Record<string | symbol, unknown>)[property] ?? unused,
+      },
+    );
+    const layer = TaskAgentServiceLive.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          store,
+          Layer.succeed(TaskRepository, repository),
+          Layer.succeed(OrchestrationEngineService, {
+            dispatch: (command: OrchestrationCommand) =>
+              Effect.sync(() => {
+                commands.push(command);
+                return { sequence: commands.length };
+              }),
+          } as never),
+          Layer.succeed(ProjectionSnapshotQuery, {
+            getProjectShellById: (projectId: string) =>
+              Effect.succeed(Option.some({ id: projectId, title: "UpComputer" })),
+          } as never),
+          deterministicCrypto(),
+        ),
+      ),
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* write(null, "Global execution rule.");
+        yield* write(assignedTask.projectId, "Run the UpComputer checks.");
+        yield* write("project-other", "Other project rule.");
+        yield* (yield* TaskAgentService).recover;
+      }).pipe(Effect.provide(layer)),
+    );
+
+    const turn = commands.find((command) => command.type === "thread.turn.start");
+    NodeAssert.equal(turn?.type, "thread.turn.start");
+    if (turn?.type === "thread.turn.start") {
+      NodeAssert.ok(
+        turn.message.text.includes(
+          'Task execution guidance:\nGlobal execution rule.\n\nProject "UpComputer":\nRun the UpComputer checks.\n\nAssigned task:',
+        ),
+        turn.message.text,
+      );
+      NodeAssert.ok(!turn.message.text.includes("Other project rule."));
+    }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -361,6 +464,7 @@ test("restart interrupts persisted active runs, clears assignment, and does not 
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
@@ -531,6 +635,7 @@ test("live ready-result reconciliation waits for consumption and cannot overwrit
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),
@@ -642,6 +747,7 @@ test("failed cleanup leaves finalization active and retry releases the assignmen
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () =>
@@ -768,6 +874,7 @@ test("live reconciliation waits for a fresh run's thread but still fails a missi
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),
@@ -854,6 +961,7 @@ test("live reconciliation consumes a result the event stream missed, and finaliz
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),

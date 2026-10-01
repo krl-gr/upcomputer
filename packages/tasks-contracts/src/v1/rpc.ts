@@ -53,7 +53,7 @@ import {
   TaskUpdateInput,
 } from "./tasks.ts";
 
-export const TASKS_RPC_CONTRACT_VERSION = 10 as const;
+export const TASKS_RPC_CONTRACT_VERSION = 11 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {

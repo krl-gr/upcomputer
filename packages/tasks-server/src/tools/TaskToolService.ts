@@ -22,6 +22,7 @@ import {
   InstructionsRevertInput,
   InstructionsUpdateInput,
   INSTRUCTIONS_FIELDS,
+  TASK_PROMPT_FIELDS,
   TaskAppendEventInput,
   TaskDeleteInput,
   TaskEventId,
@@ -51,6 +52,7 @@ import * as Schema from "effect/Schema";
 
 import {
   CUSTOM_INSTRUCTIONS_MAX_CHARS,
+  ProjectId,
   type ModelSelection,
   type OrchestrationThread,
 } from "@upcomputer/contracts";
@@ -66,6 +68,7 @@ import { normalizeAutomationTemplate } from "../automations/automationWrites.ts"
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
+  composeTaskPromptSettings,
   TaskPromptSettingsStore,
   type TaskPromptChangeOrigin,
 } from "../persistence/TaskPromptSettingsStore.ts";
@@ -182,6 +185,12 @@ const INSTRUCTION_FIELD_USE: Record<InstructionsField, string> = {
   taskExecution: "Part of the prompt of every task-agent run.",
 };
 
+const PROJECT_FIELD_NOTE =
+  "This project's text is added after the global text, under a heading, for tasks in this project.";
+
+const ALL_CHATS_IS_GLOBAL =
+  "allChats is global: every chat gets it, and a project has no allChats text. Leave out projectId to read or edit it.";
+
 /** Above this, allChats or taskExecution noticeably grows every prompt they are part of. */
 const EVERY_PROMPT_LARGE_CHARS = 2_000;
 const CHANGE_EXCERPT_MAX_CHARS = 600;
@@ -218,6 +227,7 @@ function describeInstructionsChange(field: InstructionsField, previous: string, 
 function instructionsChangeView(change: TaskPromptSettingsChange) {
   return {
     changeId: change.id,
+    ...(change.projectId === null ? {} : { projectId: change.projectId }),
     revision: change.revision,
     field: change.field,
     previousText: change.previousText,
@@ -374,19 +384,48 @@ const make = Effect.gen(function* () {
       };
     });
 
+  /**
+   * The project an instructions tool targets: null for the global texts. A
+   * deleted project's texts are kept but cannot be read or edited here.
+   */
+  const instructionsProject = (projectId: string | undefined) =>
+    projectId === undefined
+      ? Effect.succeed({ project: null, error: null })
+      : projections.getProjectShellById(ProjectId.make(projectId)).pipe(
+          Effect.map((project) =>
+            Option.isSome(project)
+              ? { project: { id: project.value.id, title: project.value.title }, error: null }
+              : {
+                  project: null,
+                  error: `Project '${projectId}' was not found. Use task_context to list projects.`,
+                },
+          ),
+        );
+
   const call: TaskToolServiceShape["call"] = ({ name, args, context }) =>
     Effect.gen(function* () {
       const isDryRun = dryRun(context);
       switch (name) {
         case "task_context": {
+          const resolution = yield* resolver.resolve({
+            args: yield* decoders.task_context(args),
+            invocationContext: context,
+          });
+          // The task's target project, which may differ from the chat's.
+          const project = resolution.resolvedProject?.project;
           return {
             isError: false,
             text: json({
-              ...(yield* resolver.resolve({
-                args: yield* decoders.task_context(args),
-                invocationContext: context,
-              })),
-              promptGuidance: yield* promptSettings.get,
+              ...resolution,
+              promptGuidance: composeTaskPromptSettings(
+                yield* promptSettings.get,
+                project === undefined
+                  ? null
+                  : {
+                      title: project.title,
+                      settings: (yield* promptSettings.getProject(project.id)).settings,
+                    },
+              ),
               promptGuidanceEditing: PROMPT_GUIDANCE_EDITING,
               triggerRules: TASK_TRIGGER_RULES,
             }),
@@ -887,8 +926,43 @@ const make = Effect.gen(function* () {
           return { isError: false, text: json({ deleted: true, id: input.id }) };
         }
         case "instructions_get": {
-          yield* decoders.instructions_get(args);
+          const input = yield* decoders.instructions_get(args);
+          const { project, error } = yield* instructionsProject(input.projectId);
+          if (error !== null) return { isError: true, text: error };
           const state = yield* promptSettings.getState;
+          if (project !== null) {
+            const projectState = yield* promptSettings.getProject(project.id);
+            return {
+              isError: false,
+              text: json({
+                project,
+                revision: projectState.revision,
+                fields: Object.fromEntries(
+                  TASK_PROMPT_FIELDS.map((field) => {
+                    const text = projectState.settings[field];
+                    return [
+                      field,
+                      {
+                        text,
+                        length: text.length,
+                        use: `${INSTRUCTION_FIELD_USE[field]} ${PROJECT_FIELD_NOTE}`,
+                      },
+                    ];
+                  }),
+                ),
+                global: {
+                  note: "The global texts these are added to, for context. Edit them without projectId.",
+                  revision: state.revision,
+                  fields: state.settings,
+                },
+                triggerRules: {
+                  editable: false,
+                  note: "Server behavior, listed for reference. Not part of the instructions and cannot be edited.",
+                  rules: TASK_TRIGGER_RULES,
+                },
+              }),
+            };
+          }
           return {
             isError: false,
             text: json({
@@ -911,6 +985,10 @@ const make = Effect.gen(function* () {
           const input = yield* decoders.instructions_update(args);
           const access = yield* instructionsWriteAccess(name, context);
           if (access.refusal !== null) return { isError: true, text: access.refusal };
+          if (input.projectId !== undefined && input.field === "allChats")
+            return { isError: true, text: ALL_CHATS_IS_GLOBAL };
+          const { project, error } = yield* instructionsProject(input.projectId);
+          if (error !== null) return { isError: true, text: error };
           if (
             input.field === "allChats" &&
             input.text.trim().length > CUSTOM_INSTRUCTIONS_MAX_CHARS
@@ -921,6 +999,7 @@ const make = Effect.gen(function* () {
             };
           const result = yield* promptSettings.updateField({
             ...input,
+            projectId: project?.id ?? null,
             origin: access.origin,
             dryRun: isDryRun,
           });
@@ -936,6 +1015,7 @@ const make = Effect.gen(function* () {
             isError: false,
             text: json({
               ...(isDryRun ? { dryRun: true } : {}),
+              ...(project === null ? {} : { project }),
               revision: result.state.revision,
               ...(result.change === null
                 ? { changed: false, note: "The text is already identical; nothing was recorded." }
@@ -953,7 +1033,12 @@ const make = Effect.gen(function* () {
         }
         case "instructions_history": {
           const input = yield* decoders.instructions_history(args);
+          if (input.projectId !== undefined && input.field === "allChats")
+            return { isError: true, text: ALL_CHATS_IS_GLOBAL };
+          const { project, error } = yield* instructionsProject(input.projectId);
+          if (error !== null) return { isError: true, text: error };
           const changes = yield* promptSettings.history({
+            projectId: project?.id ?? null,
             field: input.field,
             limit: input.limit ?? 20,
           });
@@ -963,7 +1048,10 @@ const make = Effect.gen(function* () {
           const input = yield* decoders.instructions_revert(args);
           const access = yield* instructionsWriteAccess(name, context);
           if (access.refusal !== null) return { isError: true, text: access.refusal };
+          const { project, error } = yield* instructionsProject(input.projectId);
+          if (error !== null) return { isError: true, text: error };
           const result = yield* promptSettings.revert({
+            projectId: project?.id ?? null,
             changeId: input.changeId,
             reason: input.reason ?? null,
             origin: access.origin,
@@ -973,7 +1061,7 @@ const make = Effect.gen(function* () {
             return result.reason === "not-found"
               ? {
                   isError: true,
-                  text: `Instructions change '${input.changeId}' was not found. Use instructions_history to find change ids.`,
+                  text: `Instructions change '${input.changeId}' was not found in ${project === null ? "the global instructions" : `project '${project.id}'`}. Use instructions_history with the same projectId to find change ids.`,
                 }
               : {
                   isError: true,

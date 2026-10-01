@@ -30,7 +30,10 @@ import {
 } from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
-import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
+import {
+  composeTaskPromptSettings,
+  TaskPromptSettingsStore,
+} from "../persistence/TaskPromptSettingsStore.ts";
 import {
   latestFinalizedAssistantMessage,
   makeTaskAgentResultConsumer,
@@ -276,6 +279,24 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
   const jobs = yield* Queue.bounded<ReconciliationJob>(RECONCILIATION_QUEUE_CAPACITY);
+
+  /**
+   * The global task texts plus the task's project additions. A deleted
+   * project's texts are ignored.
+   */
+  const runPromptSettings = (task: Task) =>
+    Effect.gen(function* () {
+      const global = yield* promptSettings.get;
+      const project = yield* promptSettings.getProject(task.projectId);
+      if (!project.settings.taskExecution.trim()) return global;
+      const shell = yield* projections.getProjectShellById(task.projectId);
+      return Option.isSome(shell)
+        ? composeTaskPromptSettings(global, {
+            title: shell.value.title,
+            settings: project.settings,
+          })
+        : global;
+    });
 
   const scheduleTaskChanged = (input: TaskChangedInput) =>
     Queue.offer(jobs, { type: "task", input }).pipe(Effect.asVoid);
@@ -757,7 +778,7 @@ const make = Effect.gen(function* () {
       }
 
       const timestamp = yield* now;
-      const settings = yield* promptSettings.get;
+      const settings = yield* runPromptSettings(task);
       const threadId = ThreadId.make(yield* randomId("task-agent"));
       const runId = TaskAgentRunId.make(yield* randomId("task-agent-run"));
       const runtimeMode = agent.config.runtimeMode ?? DEFAULT_RUNTIME_MODE;

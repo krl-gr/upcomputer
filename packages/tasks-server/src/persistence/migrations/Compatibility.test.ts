@@ -405,6 +405,74 @@ test("updating default instructions replaces unedited defaults and keeps edited 
   });
 });
 
+test("project instructions keep the global texts and history, with revisions per scope", async () => {
+  const path = temporaryDatabase("task-project-prompts.sqlite");
+  await migrate(path, [
+    {
+      ...TASK_MIGRATION_CONTRIBUTION,
+      migrations: TASK_MIGRATION_CONTRIBUTION.migrations.filter(({ version }) => version < 16),
+    },
+  ]);
+  database(path, (db) => {
+    db.prepare(
+      "UPDATE task_prompt_settings SET task_creation = ?, revision = revision + 1 WHERE id = 1",
+    ).run("Custom task guidance");
+    db.prepare(
+      `INSERT INTO task_prompt_settings_changes (
+         id, revision, field, previous_text, new_text, reason,
+         source, thread_id, run_id, reverts_change_id, created_at
+       ) VALUES (?, (SELECT revision FROM task_prompt_settings WHERE id = 1), ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+    ).run(
+      "change-global",
+      "taskCreation",
+      "Old",
+      "Custom task guidance",
+      "user asked",
+      "thread",
+      "thread-1",
+      "2026-10-01T00:00:00.000Z",
+    );
+  });
+
+  await migrate(path, [TASK_MIGRATION_CONTRIBUTION]);
+  database(path, (db) => {
+    const row = db
+      .prepare("SELECT task_creation AS taskCreation FROM task_prompt_settings WHERE id = 1")
+      .get();
+    NodeAssert.deepEqual({ ...row }, { taskCreation: "Custom task guidance" });
+    const changes = db
+      .prepare(
+        `SELECT id, project_id AS projectId, field, new_text AS newText, thread_id AS threadId
+         FROM task_prompt_settings_changes`,
+      )
+      .all()
+      .map((change) => ({ ...change }));
+    NodeAssert.deepEqual(changes, [
+      {
+        id: "change-global",
+        projectId: null,
+        field: "taskCreation",
+        newText: "Custom task guidance",
+        threadId: "thread-1",
+      },
+    ]);
+    const { revision } = db
+      .prepare("SELECT revision FROM task_prompt_settings_changes WHERE id = 'change-global'")
+      .get() as { revision: number };
+
+    // Each scope counts its own revisions; within a scope they stay unique.
+    const insert = db.prepare(
+      `INSERT INTO task_prompt_settings_changes (
+         id, project_id, revision, field, previous_text, new_text, source, created_at
+       ) VALUES (?, ?, ?, 'taskCreation', '', 'x', 'settings-page', '2026-10-02T00:00:00.000Z')`,
+    );
+    insert.run("change-project-a", "project-a", revision);
+    insert.run("change-project-b", "project-b", revision);
+    NodeAssert.throws(() => insert.run("change-project-a-again", "project-a", revision));
+    NodeAssert.throws(() => insert.run("change-global-again", null, revision));
+  });
+});
+
 test("backfills existing task-agent threads as hidden from the core sidebar", async () => {
   const path = temporaryDatabase("thread-visibility.sqlite");
   const migrationsThroughAgentStorage: ExperimentalFeatureMigrationContribution<Error> = {

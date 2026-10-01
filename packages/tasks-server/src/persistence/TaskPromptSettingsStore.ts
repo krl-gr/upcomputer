@@ -1,6 +1,7 @@
 import type { ServerSettingsError } from "@upcomputer/contracts";
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
   TASK_PROMPT_FIELDS,
   TaskPromptSettings,
   TaskPromptSettingsChange,
@@ -38,6 +39,15 @@ export interface InstructionsState extends TaskPromptSettingsState {
   readonly allChats: string;
 }
 
+/**
+ * The texts an edit applies to: the global ones with `allChats`, or a project's
+ * additions, which have no `allChats`.
+ */
+export type ScopedInstructionsState = TaskPromptSettingsState & { readonly allChats?: string };
+
+/** The project whose additions an edit targets; null for the global texts. */
+export type InstructionsScope = string | null;
+
 export type InstructionsStoreError = TaskRepositoryError | ServerSettingsError;
 
 export interface TaskPromptChangeOrigin {
@@ -50,7 +60,7 @@ export interface TaskPromptChangeOrigin {
 export type TaskPromptFieldUpdateResult =
   | {
       readonly ok: true;
-      readonly state: InstructionsState;
+      readonly state: ScopedInstructionsState;
       readonly change: TaskPromptSettingsChange | null;
     }
   | { readonly ok: false; readonly reason: "stale-revision"; readonly currentRevision: number };
@@ -58,7 +68,7 @@ export type TaskPromptFieldUpdateResult =
 export type TaskPromptRevertResult =
   | {
       readonly ok: true;
-      readonly state: InstructionsState;
+      readonly state: ScopedInstructionsState;
       readonly reverted: TaskPromptSettingsChange;
       readonly change: TaskPromptSettingsChange | null;
     }
@@ -74,18 +84,25 @@ export interface TaskPromptSettingsStoreShape {
   /** The task fields only, without reading core settings. */
   readonly get: Effect.Effect<TaskPromptSettings, TaskRepositoryError>;
   readonly getState: Effect.Effect<InstructionsState, InstructionsStoreError>;
+  /** A project's additions to the task fields; empty texts and revision 0 until edited. */
+  readonly getProject: (
+    projectId: string,
+  ) => Effect.Effect<TaskPromptSettingsState, TaskRepositoryError>;
   /**
    * The settings page save: records each field that changed as a settings-page change.
    * A field whose current text differs from its `base` is left as it is and reported.
+   * With `projectId` it edits that project's additions; callers refuse `allChats` then.
    */
   readonly update: (
     input: TaskPromptSettingsUpdateInput,
   ) => Effect.Effect<TaskPromptSettingsUpdateResult, InstructionsStoreError>;
   /**
-   * Replaces one field when `expectedRevision` is current. A dry run checks and previews only.
-   * `allChats` is stored trimmed, like every core settings write.
+   * Replaces one field when `expectedRevision` is the scope's current revision.
+   * A dry run checks and previews only. `allChats` is stored trimmed, like every
+   * core settings write, and is global only.
    */
   readonly updateField: (input: {
+    readonly projectId: InstructionsScope;
     readonly field: InstructionsField;
     readonly text: string;
     readonly reason: string;
@@ -96,15 +113,18 @@ export interface TaskPromptSettingsStoreShape {
   /**
    * Restores the field's text from before a change, recorded as a new change.
    * Refused when the field changed after it, so later edits are never undone silently.
+   * A change of another scope is not found.
    */
   readonly revert: (input: {
+    readonly projectId: InstructionsScope;
     readonly changeId: string;
     readonly reason: string | null;
     readonly origin: TaskPromptChangeOrigin;
     readonly dryRun: boolean;
   }) => Effect.Effect<TaskPromptRevertResult, InstructionsStoreError>;
-  /** Newest first. */
+  /** Newest first, of one scope. */
   readonly history: (input: {
+    readonly projectId: InstructionsScope;
     readonly field?: InstructionsField | undefined;
     readonly limit: number;
   }) => Effect.Effect<ReadonlyArray<TaskPromptSettingsChange>, TaskRepositoryError>;
@@ -125,8 +145,32 @@ const StateRow = Schema.Struct({ ...TaskPromptSettings.fields, revision: Schema.
 const decodeStateRow = Schema.decodeUnknownEffect(StateRow);
 const decodeChanges = Schema.decodeUnknownEffect(Schema.Array(TaskPromptSettingsChange));
 
-const textOf = (state: InstructionsState, field: InstructionsField) =>
-  field === "allChats" ? state.allChats : state.settings[field];
+const textOf = (state: ScopedInstructionsState, field: InstructionsField) =>
+  field === "allChats" ? (state.allChats ?? "") : state.settings[field];
+
+const globalOnly = (projectId: InstructionsScope, field: InstructionsField) =>
+  projectId !== null && field === "allChats"
+    ? Effect.die(new Error("allChats is global; a project has no allChats text."))
+    : Effect.void;
+
+/**
+ * The texts an agent gets: each global text, followed by the project's
+ * addition under a heading. An empty addition adds nothing.
+ */
+export function composeTaskPromptSettings(
+  global: TaskPromptSettings,
+  project: { readonly title: string; readonly settings: TaskPromptSettings } | null,
+): TaskPromptSettings {
+  const composed = { ...global };
+  if (project === null) return composed;
+  for (const field of TASK_PROMPT_FIELDS) {
+    const addition = project.settings[field].trim();
+    if (!addition) continue;
+    const heading = `Project "${project.title}":\n${addition}`;
+    composed[field] = global[field].trim() ? `${global[field]}\n\n${heading}` : heading;
+  }
+  return composed;
+}
 
 /** Core settings store `customInstructions` trimmed; compare and record what is stored. */
 const normalizeText = (field: InstructionsField, text: string) =>
@@ -139,6 +183,7 @@ const make = Effect.gen(function* () {
 
   const changeColumns = sql`
     id,
+    project_id AS "projectId",
     revision,
     field,
     previous_text AS "previousText",
@@ -187,6 +232,34 @@ const make = Effect.gen(function* () {
     return { ...state, allChats: customInstructions };
   });
 
+  const getProject: TaskPromptSettingsStoreShape["getProject"] = (projectId) =>
+    sql`
+      SELECT
+        task_creation AS "taskCreation",
+        agent_creation AS "agentCreation",
+        automation_creation AS "automationCreation",
+        task_execution AS "taskExecution",
+        revision
+      FROM task_project_prompt_settings
+      WHERE project_id = ${projectId}
+    `.pipe(
+      Effect.mapError(toTaskPersistenceSqlError("get project task prompt settings")),
+      Effect.flatMap((rows) => {
+        const row = rows[0];
+        return row === undefined
+          ? Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 })
+          : decodeStateRow(row).pipe(
+              Effect.mapError(toTaskPersistenceDecodeError("decode project task prompt settings")),
+              Effect.map(({ revision, ...settings }) => ({ settings, revision })),
+            );
+      }),
+    );
+
+  const readState = (
+    projectId: InstructionsScope,
+  ): Effect.Effect<ScopedInstructionsState, InstructionsStoreError> =>
+    projectId === null ? getState : getProject(projectId);
+
   const writeState = (state: TaskPromptSettingsState) =>
     sql`
       INSERT INTO task_prompt_settings (
@@ -212,13 +285,38 @@ const make = Effect.gen(function* () {
         revision = excluded.revision
     `.pipe(Effect.mapError(toTaskPersistenceSqlError("update task prompt settings")));
 
+  const writeProjectState = (projectId: string, state: TaskPromptSettingsState) =>
+    sql`
+      INSERT INTO task_project_prompt_settings (
+        project_id,
+        task_creation,
+        agent_creation,
+        automation_creation,
+        task_execution,
+        revision
+      ) VALUES (
+        ${projectId},
+        ${state.settings.taskCreation},
+        ${state.settings.agentCreation},
+        ${state.settings.automationCreation},
+        ${state.settings.taskExecution},
+        ${state.revision}
+      )
+      ON CONFLICT (project_id) DO UPDATE SET
+        task_creation = excluded.task_creation,
+        agent_creation = excluded.agent_creation,
+        automation_creation = excluded.automation_creation,
+        task_execution = excluded.task_execution,
+        revision = excluded.revision
+    `.pipe(Effect.mapError(toTaskPersistenceSqlError("update project task prompt settings")));
+
   const insertChange = (change: TaskPromptSettingsChange) =>
     sql`
       INSERT INTO task_prompt_settings_changes (
-        id, revision, field, previous_text, new_text, reason,
+        id, project_id, revision, field, previous_text, new_text, reason,
         source, thread_id, run_id, reverts_change_id, created_at
       ) VALUES (
-        ${change.id}, ${change.revision}, ${change.field}, ${change.previousText},
+        ${change.id}, ${change.projectId}, ${change.revision}, ${change.field}, ${change.previousText},
         ${change.newText}, ${change.reason}, ${change.source}, ${change.threadId},
         ${change.runId}, ${change.revertsChangeId}, ${change.createdAt}
       )
@@ -231,10 +329,10 @@ const make = Effect.gen(function* () {
       Effect.map((changes) => Option.fromNullishOr(changes[0])),
     );
 
-  const changesAfter = (field: InstructionsField, revision: number) =>
+  const changesAfter = (projectId: InstructionsScope, field: InstructionsField, revision: number) =>
     sql`
       SELECT ${changeColumns} FROM task_prompt_settings_changes
-      WHERE field = ${field} AND revision > ${revision}
+      WHERE project_id IS ${projectId} AND field = ${field} AND revision > ${revision}
       ORDER BY revision DESC
     `.pipe(
       Effect.mapError(toTaskPersistenceSqlError("list later task prompt settings changes")),
@@ -244,7 +342,8 @@ const make = Effect.gen(function* () {
   const history: TaskPromptSettingsStoreShape["history"] = (input) =>
     sql`
       SELECT ${changeColumns} FROM task_prompt_settings_changes
-      WHERE (${input.field ?? null} IS NULL OR field = ${input.field ?? null})
+      WHERE project_id IS ${input.projectId}
+        AND (${input.field ?? null} IS NULL OR field = ${input.field ?? null})
       ORDER BY revision DESC
       LIMIT ${input.limit}
     `.pipe(
@@ -253,6 +352,7 @@ const make = Effect.gen(function* () {
     );
 
   const newChange = (input: {
+    readonly projectId: InstructionsScope;
     readonly revision: number;
     readonly field: InstructionsField;
     readonly previousText: string;
@@ -265,6 +365,7 @@ const make = Effect.gen(function* () {
       const change: TaskPromptSettingsChange = {
         // A failing random source is a defect, not a storage error.
         id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4)}`,
+        projectId: input.projectId,
         revision: input.revision,
         field: input.field,
         previousText: input.previousText,
@@ -298,7 +399,8 @@ const make = Effect.gen(function* () {
    * the recorded change with the transaction.
    */
   const applyFieldChange = (input: {
-    readonly state: InstructionsState;
+    readonly projectId: InstructionsScope;
+    readonly state: ScopedInstructionsState;
     readonly field: InstructionsField;
     readonly text: string;
     readonly reason: string | null;
@@ -307,7 +409,9 @@ const make = Effect.gen(function* () {
     readonly dryRun: boolean;
   }) =>
     Effect.gen(function* () {
+      yield* globalOnly(input.projectId, input.field);
       const change = yield* newChange({
+        projectId: input.projectId,
         revision: input.state.revision + 1,
         field: input.field,
         previousText: textOf(input.state, input.field),
@@ -316,7 +420,7 @@ const make = Effect.gen(function* () {
         origin: input.origin,
         revertsChangeId: input.revertsChangeId,
       });
-      const state: InstructionsState =
+      const state: ScopedInstructionsState =
         input.field === "allChats"
           ? { ...input.state, allChats: input.text, revision: change.revision }
           : {
@@ -326,7 +430,8 @@ const make = Effect.gen(function* () {
             };
       // A dry run reports the current state with the change it would record.
       if (input.dryRun) return { state: input.state, change };
-      yield* writeState(state);
+      if (input.projectId === null) yield* writeState(state);
+      else yield* writeProjectState(input.projectId, state);
       yield* insertChange(change);
       if (input.field === "allChats")
         yield* serverSettings.updateSettings({ customInstructions: input.text });
@@ -336,11 +441,13 @@ const make = Effect.gen(function* () {
   const update: TaskPromptSettingsStoreShape["update"] = (input) =>
     transaction(
       Effect.gen(function* () {
-        let state = yield* getState;
+        const projectId = input.projectId ?? null;
+        let state = yield* readState(projectId);
         const conflicts: InstructionsField[] = [];
         // allChats last: its core settings write is the one step outside SQL.
         for (const field of [...TASK_PROMPT_FIELDS, "allChats"] as const) {
           const requested = input[field];
+          if (requested !== undefined) yield* globalOnly(projectId, field);
           if (requested === undefined) continue;
           const text = normalizeText(field, requested);
           const current = textOf(state, field);
@@ -352,6 +459,7 @@ const make = Effect.gen(function* () {
             continue;
           }
           state = (yield* applyFieldChange({
+            projectId,
             state,
             field,
             text,
@@ -363,7 +471,7 @@ const make = Effect.gen(function* () {
         }
         return {
           ...state.settings,
-          ...(input.allChats === undefined ? {} : { allChats: state.allChats }),
+          ...(input.allChats === undefined ? {} : { allChats: textOf(state, "allChats") }),
           conflicts,
         };
       }),
@@ -372,7 +480,8 @@ const make = Effect.gen(function* () {
   const updateField: TaskPromptSettingsStoreShape["updateField"] = (input) =>
     transaction(
       Effect.gen(function* () {
-        const state = yield* getState;
+        yield* globalOnly(input.projectId, input.field);
+        const state = yield* readState(input.projectId);
         if (state.revision !== input.expectedRevision)
           return {
             ok: false,
@@ -390,9 +499,10 @@ const make = Effect.gen(function* () {
     transaction(
       Effect.gen(function* (): Effect.fn.Return<TaskPromptRevertResult, InstructionsStoreError> {
         const reverted = yield* getChange(input.changeId);
-        if (Option.isNone(reverted)) return { ok: false, reason: "not-found" };
+        if (Option.isNone(reverted) || reverted.value.projectId !== input.projectId)
+          return { ok: false, reason: "not-found" };
         const target = reverted.value;
-        const state = yield* getState;
+        const state = yield* readState(input.projectId);
         const current = textOf(state, target.field);
         if (current === target.previousText)
           return { ok: true, state, reverted: target, change: null };
@@ -401,9 +511,10 @@ const make = Effect.gen(function* () {
             ok: false,
             reason: "changed-since",
             reverted: target,
-            laterChanges: yield* changesAfter(target.field, target.revision),
+            laterChanges: yield* changesAfter(input.projectId, target.field, target.revision),
           };
         const applied = yield* applyFieldChange({
+          projectId: input.projectId,
           state,
           field: target.field,
           text: target.previousText,
@@ -419,6 +530,7 @@ const make = Effect.gen(function* () {
   return {
     get,
     getState,
+    getProject,
     update,
     updateField,
     revert,

@@ -1,5 +1,6 @@
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
   type InstructionsField,
   type TaskPromptSettings,
 } from "@upcomputer/tasks-contracts/v1";
@@ -12,13 +13,20 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../apps/web/src/components/ui/select.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
 import { SettingsPageContainer } from "../../../../apps/web/src/components/settings/settingsLayout.tsx";
 import { readEnvironmentExtensionApi } from "../../../../apps/web/src/extensionApi.ts";
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
-import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
+import { useProjects, useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { serverEnvironment } from "../../../../apps/web/src/state/server.ts";
 import { useAtomCommand } from "../../../../apps/web/src/state/use-atom-command.ts";
 import { TASKS_WEB_ENVIRONMENT_API } from "../environmentApi.ts";
@@ -44,6 +52,9 @@ const PROMPT_TABS = [
 const TABS = [ALL_CHATS_TAB, ...PROMPT_TABS] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/** The scope switcher's value for the global texts; any other value is a project id. */
+const ALL_PROJECTS = "all-projects";
 
 const selectCustomInstructions = (settings: UnifiedSettings) => settings.customInstructions;
 
@@ -79,6 +90,13 @@ function InstructionsSettingsPage() {
   const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
     reportFailure: false,
   });
+  const allProjects = useProjects();
+  const projects = allProjects.filter((project) => project.environmentId === environmentId);
+  // null edits the global texts; a project id edits that project's additions.
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const project = projects.find(({ id }) => id === projectId);
+  // The global texts a project's additions follow, shown for context.
+  const [globalPrompts, setGlobalPrompts] = useState<TaskPromptSettings>();
   const [activeTab, setActiveTab] = useState<TabId>(ALL_CHATS_TAB.id);
   // The latest server texts, for Cancel; `saved` is each field's base, which
   // stays the loaded text while the field is edited.
@@ -93,8 +111,12 @@ function InstructionsSettingsPage() {
   const promptsDirty = !sameSettings(saved, draft);
   const customInstructionsDirty = customInstructions !== savedCustomInstructions;
   const dirty = promptsDirty || customInstructionsDirty;
-  const tab = TABS.find(({ id }) => id === activeTab) ?? ALL_CHATS_TAB;
+  // A project has no All chats text.
+  const tabs = projectId === null ? TABS : PROMPT_TABS;
+  const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
+  const promptDefaults =
+    projectId === null ? DEFAULT_TASK_PROMPT_SETTINGS : EMPTY_TASK_PROMPT_SETTINGS;
 
   // Config events (provider status, keybindings, settings) reload the texts
   // without disabling the editor or replacing fields edited on the page.
@@ -108,10 +130,14 @@ function InstructionsSettingsPage() {
         cancelled = true;
       };
     }
-    void api.tasks.getPromptSettings({}).then(
-      (settings) => {
+    void Promise.all([
+      api.tasks.getPromptSettings(projectId === null ? {} : { projectId }),
+      projectId === null ? undefined : api.tasks.getPromptSettings({}),
+    ]).then(
+      ([settings, global]) => {
         if (cancelled) return;
         setServerPrompts(settings);
+        setGlobalPrompts(global);
         setPrompts((current) => promptsAfterReload(current, settings));
         setLoading(false);
       },
@@ -124,7 +150,7 @@ function InstructionsSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, environmentId, serverConfigs]);
+  }, [api, environmentId, projectId, serverConfigs]);
 
   useEffect(() => {
     // Hand back to the saved value once settings catch up with a save.
@@ -152,6 +178,7 @@ function InstructionsSettingsPage() {
       if (api) {
         const result = await api.tasks.updatePromptSettings(
           instructionsSaveInput({
+            projectId,
             saved,
             draft,
             allChats: customInstructionsDirty ? customInstructionsDraft : undefined,
@@ -205,6 +232,7 @@ function InstructionsSettingsPage() {
     dirty,
     draft,
     environmentId,
+    projectId,
     promptsDirty,
     saved,
     saving,
@@ -225,28 +253,72 @@ function InstructionsSettingsPage() {
   return (
     <SettingsPageContainer className="max-w-5xl gap-0">
       <div className="min-w-0">
+        <div className="mb-3 px-1">
+          {/* Switching scope is held while there are unsaved changes, so each
+              save and its conflict check stay within one scope. */}
+          <Select
+            value={projectId ?? ALL_PROJECTS}
+            disabled={dirty || saving}
+            onValueChange={(value) => {
+              const next = value === null || value === ALL_PROJECTS ? null : value;
+              if (next === projectId) return;
+              const defaults =
+                next === null ? DEFAULT_TASK_PROMPT_SETTINGS : EMPTY_TASK_PROMPT_SETTINGS;
+              setProjectId(next);
+              setLoading(true);
+              setError(undefined);
+              setServerPrompts(defaults);
+              setPrompts({ saved: defaults, draft: defaults });
+            }}
+          >
+            <SelectTrigger
+              className="w-auto min-w-48"
+              aria-label="Instructions scope"
+              title={dirty ? "Save or cancel your changes to switch scope." : undefined}
+            >
+              <SelectValue>{project?.title ?? "All projects"}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+              {projects.map((candidate) => (
+                <SelectItem key={candidate.id} value={candidate.id}>
+                  {candidate.title}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
         <p className="mb-4 max-w-2xl px-1 text-[13px] leading-[1.45] text-muted-foreground/80">
-          <span className="text-foreground/80">
-            Shared instructions for all agents across every project.
-          </span>{" "}
-          &ldquo;All chats&rdquo; applies to every agent in every chat and task run. The other tabs
-          apply when agents create tasks, agents, or automations, and when they run a task.
-          They&apos;re added after an agent&apos;s own instructions.
+          {projectId === null ? (
+            <>
+              <span className="text-foreground/80">
+                Shared instructions for all agents across every project.
+              </span>{" "}
+              &ldquo;All chats&rdquo; applies to every agent in every chat and task run. The other
+              tabs apply when agents create tasks, agents, or automations, and when they run a task.
+              They&apos;re added after an agent&apos;s own instructions.
+            </>
+          ) : (
+            <>
+              Added after the global instructions, only for tasks in{" "}
+              <span className="text-foreground/80">{project?.title ?? "this project"}</span>.
+            </>
+          )}
         </p>
         <div
           role="tablist"
           aria-label="Instruction type"
           className="scrollbar-none flex min-w-0 gap-1 overflow-x-auto px-1"
         >
-          {TABS.map((promptTab) => (
+          {tabs.map((promptTab) => (
             <button
               key={promptTab.id}
               type="button"
               role="tab"
-              aria-selected={activeTab === promptTab.id}
+              aria-selected={tab.id === promptTab.id}
               className={cn(
                 "relative shrink-0 px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:px-4",
-                activeTab === promptTab.id &&
+                tab.id === promptTab.id &&
                   "text-foreground after:absolute after:inset-x-2 after:bottom-[-1px] after:h-0.5 after:rounded-full after:bg-foreground",
               )}
               onClick={() => setActiveTab(promptTab.id)}
@@ -261,6 +333,16 @@ function InstructionsSettingsPage() {
           or while there are unsaved changes. */}
       <div className="group/editor flex min-w-0 flex-1 flex-col">
         <div className="px-1 pt-6 sm:px-3 sm:pt-8">
+          {projectId !== null && !editingAllChats && globalPrompts?.[tab.id].trim() ? (
+            <details className="mb-3 text-[13px] text-muted-foreground">
+              <summary className="cursor-pointer select-none">
+                Global {tab.label.toLowerCase()} instructions, which come first
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap rounded-lg border border-border px-3 py-2 leading-[1.5]">
+                {globalPrompts[tab.id]}
+              </p>
+            </details>
+          ) : null}
           <textarea
             value={editingAllChats ? customInstructions : draft[tab.id]}
             disabled={saving || (editingAllChats ? environmentId === null : loading || !api)}
@@ -272,7 +354,9 @@ function InstructionsSettingsPage() {
                 ? "Instructions every agent follows in every chat, e.g. answer in Russian, never commit without asking."
                 : loading
                   ? "Loading…"
-                  : "Add guidance…"
+                  : projectId === null
+                    ? "Add guidance…"
+                    : `Add guidance for ${project?.title ?? "this project"}…`
             }
             onChange={(event) => {
               const value = event.currentTarget.value;
@@ -314,7 +398,7 @@ function InstructionsSettingsPage() {
                 ? environmentId === null ||
                   saving ||
                   customInstructions === DEFAULT_CUSTOM_INSTRUCTIONS
-                : loading || saving || draft[tab.id] === DEFAULT_TASK_PROMPT_SETTINGS[tab.id]
+                : loading || saving || draft[tab.id] === promptDefaults[tab.id]
             }
             onClick={() => {
               const promptKey = tab.id;
@@ -327,11 +411,11 @@ function InstructionsSettingsPage() {
               }
               setPrompts((current) => ({
                 ...current,
-                draft: { ...current.draft, [promptKey]: DEFAULT_TASK_PROMPT_SETTINGS[promptKey] },
+                draft: { ...current.draft, [promptKey]: promptDefaults[promptKey] },
               }));
             }}
           >
-            Restore default
+            {projectId === null ? "Restore default" : "Clear"}
           </Button>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button

@@ -8,6 +8,7 @@ import { afterEach, test } from "vite-plus/test";
 
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
   TaskAgentId,
   TaskAgentRunId,
   TaskId,
@@ -392,6 +393,7 @@ async function withScheduler(
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>

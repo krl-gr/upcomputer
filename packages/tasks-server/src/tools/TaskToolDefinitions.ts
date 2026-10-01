@@ -63,7 +63,14 @@ const instructionField = {
 
 /** One line in task_context pointing at the instructions tools. */
 export const PROMPT_GUIDANCE_EDITING =
-  "promptGuidance is the user's shared task instructions (Settings → Instructions). Read them, and allChats, the instructions every chat gets, with instructions_get, edit one field with instructions_update, and see or undo changes with instructions_history and instructions_revert. triggerRules are server behavior and cannot be edited.";
+  "promptGuidance is the user's task instructions (Settings → Instructions): each global text, followed by the resolved project's addition under a `Project \"<title>\":` heading. Read them, and allChats, the instructions every chat gets, with instructions_get (projectId for a project's additions), edit one field with instructions_update, and see or undo changes with instructions_history and instructions_revert. triggerRules are server behavior and cannot be edited.";
+
+/** Optional on every instructions tool: without it they act on the global texts. */
+const instructionsProjectId = {
+  ...id,
+  description:
+    "Act on this project's additions to the four task fields instead of the global texts. A project has no allChats.",
+} as const;
 
 const INSTRUCTIONS_WRITE_ACCESS =
   "Task-agent run threads, also after the run ended, are refused unless the run's agent lists this tool in its tools. This guards against accidental or injected writes by unattended agents; it is not a security boundary.";
@@ -388,17 +395,18 @@ export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
     mutation: "read",
     name: "instructions_get",
     description:
-      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance; and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable.",
-    inputSchema: object({}),
+      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance; and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable. With projectId: that project's additions to the four task fields, which are added after the global texts for tasks in that project (empty until written), their own revision, and the global texts for context.",
+    inputSchema: object({ projectId: instructionsProjectId }),
   },
   {
     type: "function",
     namespace: "upcomputer_tasks",
     mutation: "write",
     name: "instructions_update",
-    description: `Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. Rules for one specific agent belong in that agent's instructions (agent_update); rules about the user's own paths, repos or accounts belong in their project's AGENTS.md, not in these shared defaults. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    description: `Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. When the rule concerns one project ("in this project…", or it names a project), write it to that project with its projectId (from task_context) and the revision from instructions_get with the same projectId: it is added after the global text for that project's tasks only. Otherwise edit the global fields without projectId. Rules for one specific agent belong in that agent's instructions (agent_update); rules about a repository's code belong in its AGENTS.md. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
     inputSchema: object(
       {
+        projectId: instructionsProjectId,
         field: instructionField,
         text: { type: "string" },
         reason: id,
@@ -413,8 +421,9 @@ export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
     mutation: "read",
     name: "instructions_history",
     description:
-      "List recent changes to the shared instructions, including allChats, newest first: change id, field, previous and new text, reason, source (the settings page, or the thread and task-agent run that made it) and time. Pass a change id to instructions_revert to undo it.",
+      "List recent changes to the shared instructions, including allChats, newest first: change id, field, previous and new text, reason, source (the settings page, or the thread and task-agent run that made it) and time. Pass a change id to instructions_revert to undo it. Without projectId the global changes, with it that project's.",
     inputSchema: object({
+      projectId: instructionsProjectId,
       field: instructionField,
       limit: { type: "integer", minimum: 1, maximum: 100 },
     }),
@@ -424,7 +433,9 @@ export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
     namespace: "upcomputer_tasks",
     mutation: "write",
     name: "instructions_revert",
-    description: `Undo one shared instructions change: restore the field's text from before it. The restore is recorded as a new change; history is never deleted. Refused when the field changed after that change: revert the later changes first, newest first, or use instructions_update. Tell the user in one line what was restored and in which field. ${INSTRUCTIONS_WRITE_ACCESS}`,
-    inputSchema: object({ changeId: id, reason: id }, ["changeId"]),
+    description: `Undo one shared instructions change: restore the field's text from before it. The restore is recorded as a new change; history is never deleted. Refused when the field changed after that change: revert the later changes first, newest first, or use instructions_update. Tell the user in one line what was restored and in which field. Pass the projectId of a project's change, as in instructions_history. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ projectId: instructionsProjectId, changeId: id, reason: id }, [
+      "changeId",
+    ]),
   },
 ];

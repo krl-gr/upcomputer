@@ -1,6 +1,8 @@
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
   INSTRUCTIONS_FIELDS,
+  TASK_PROMPT_FIELDS,
   type InstructionsField,
   type TaskPromptSettings,
   type TaskPromptSettingsUpdateInput,
@@ -11,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const setup = vi.hoisted(() => ({
   server: {} as Record<string, string>,
+  projectServer: {} as Record<string, Record<string, string>>,
   allChats: "",
   configs: new Map<string, unknown>(),
   getPromptSettings: vi.fn(),
@@ -28,6 +31,19 @@ vi.mock("../../../../apps/web/src/components/ui/button.tsx", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) =>
     createElement("button", props, children),
 }));
+vi.mock("../../../../apps/web/src/components/ui/select.tsx", () => {
+  const passthrough = ({ children }: { children: ReactNode }) =>
+    createElement("div", null, children);
+  return {
+    Select: ({ children, ...props }: { children: ReactNode }) =>
+      createElement("div", { ...props, "data-scope": true }, children),
+    SelectItem: ({ children, value }: { children: ReactNode; value: string }) =>
+      createElement("div", { "data-value": value }, children),
+    SelectPopup: passthrough,
+    SelectTrigger: passthrough,
+    SelectValue: passthrough,
+  };
+});
 vi.mock("../../../../apps/web/src/components/ui/toast.tsx", () => ({
   toastManager: { add: () => {} },
 }));
@@ -50,6 +66,11 @@ vi.mock("../../../../apps/web/src/state/environments.ts", () => ({
 }));
 vi.mock("../../../../apps/web/src/state/entities.ts", () => ({
   useServerConfigs: () => setup.configs,
+  useProjects: () => [
+    { environmentId: "environment-1", id: "project-a", title: "Alpha" },
+    { environmentId: "environment-1", id: "project-b", title: "Beta" },
+    { environmentId: "environment-2", id: "project-elsewhere", title: "Elsewhere" },
+  ],
 }));
 vi.mock("../../../../apps/web/src/state/server.ts", () => ({
   serverEnvironment: { updateSettings: "updateSettings" },
@@ -75,6 +96,16 @@ let renderer: ReactTestRenderer;
 /** The server refuses a field whose base differs from its current text, like the Tasks store. */
 function updateServerTexts(input: TaskPromptSettingsUpdateInput) {
   const conflicts: InstructionsField[] = [];
+  if (input.projectId !== undefined) {
+    const project = setup.projectServer[input.projectId]!;
+    for (const field of TASK_PROMPT_FIELDS) {
+      const text = input[field];
+      if (text === undefined) continue;
+      if (input.base?.[field] !== project[field]) conflicts.push(field);
+      else project[field] = text;
+    }
+    return { ...project, conflicts };
+  }
   for (const field of INSTRUCTIONS_FIELDS) {
     const text = input[field];
     if (text === undefined) continue;
@@ -122,6 +153,20 @@ async function save() {
   await act(async () => button("Save changes").props.onClick());
 }
 
+function scopeSelect(): ReactTestInstance {
+  return renderer.root.find((node) => node.props["data-scope"] === true);
+}
+
+async function chooseScope(value: string) {
+  await act(async () => scopeSelect().props.onValueChange(value));
+}
+
+function tabLabels(): string[] {
+  return renderer.root
+    .findAll((node) => node.type === "button" && node.props.role === "tab")
+    .map((node) => node.props.children as string);
+}
+
 function errorText(): string | undefined {
   const [error] = renderer.root.findAll(
     (node) => node.type === "p" && String(node.props.className).includes("text-destructive"),
@@ -134,9 +179,17 @@ describe("InstructionsSettingsPage reloads", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
     setup.server = { ...original };
+    setup.projectServer = {
+      "project-a": { ...EMPTY_TASK_PROMPT_SETTINGS },
+      "project-b": { ...EMPTY_TASK_PROMPT_SETTINGS, taskCreation: "Beta rule" },
+    };
     setup.allChats = "Original all chats";
     setup.configs = new Map([["environment-1", {}]]);
-    setup.getPromptSettings.mockImplementation(async () => ({ ...setup.server }));
+    setup.getPromptSettings.mockImplementation(async (input: { projectId?: string }) =>
+      input.projectId === undefined
+        ? { ...setup.server }
+        : { ...setup.projectServer[input.projectId] },
+    );
     setup.updatePromptSettings.mockImplementation(async (input: TaskPromptSettingsUpdateInput) =>
       updateServerTexts(input),
     );
@@ -222,5 +275,65 @@ describe("InstructionsSettingsPage reloads", () => {
     await save();
     expect(setup.server.taskCreation).toBe("Page creation");
     expect(errorText()).toBeUndefined();
+  });
+
+  it("switches to a project's additions, saves them there, and refuses a project field changed elsewhere", async () => {
+    await render();
+    expect(tabLabels()).toContain("All chats");
+    // "All projects" plus this environment's projects.
+    expect(
+      scopeSelect()
+        .findAll((node) => node.props["data-value"] !== undefined)
+        .map((node) => node.props["data-value"]),
+    ).toEqual(["all-projects", "project-a", "project-b"]);
+
+    await chooseScope("project-a");
+    expect(setup.getPromptSettings).toHaveBeenLastCalledWith({});
+    expect(setup.getPromptSettings).toHaveBeenCalledWith({ projectId: "project-a" });
+    expect(tabLabels()).toEqual([
+      "Task creation",
+      "Agent creation",
+      "Automation creation",
+      "Task execution",
+    ]);
+    expect(editorText()).toBe("");
+    // The global text it follows is shown for context.
+    expect(JSON.stringify(renderer.toJSON())).toContain("Original creation");
+
+    await type("Alpha rule");
+    expect(scopeSelect().props.disabled).toBe(true);
+    await save();
+    expect(setup.updatePromptSettings).toHaveBeenLastCalledWith({
+      projectId: "project-a",
+      taskCreation: "Alpha rule",
+      base: { taskCreation: "" },
+    });
+    expect(setup.projectServer["project-a"]!.taskCreation).toBe("Alpha rule");
+    expect(setup.server.taskCreation).toBe("Original creation");
+    expect(scopeSelect().props.disabled).toBe(false);
+
+    // A chat edits the project's field while the page has an unsaved edit of it.
+    await type("Alpha page edit");
+    setup.projectServer["project-a"]!.taskCreation = "Alpha chat rule";
+    setup.server = { ...setup.server, taskCreation: "Chat creation" };
+    await deliverConfigs();
+    expect(editorText()).toBe("Alpha page edit");
+    await save();
+    expect(setup.updatePromptSettings).toHaveBeenLastCalledWith({
+      projectId: "project-a",
+      taskCreation: "Alpha page edit",
+      base: { taskCreation: "Alpha rule" },
+    });
+    expect(setup.projectServer["project-a"]!.taskCreation).toBe("Alpha chat rule");
+    expect(errorText()).toContain("Task creation changed elsewhere");
+    await act(async () => button("Cancel").props.onClick());
+    expect(editorText()).toBe("Alpha chat rule");
+
+    await chooseScope("project-b");
+    expect(editorText()).toBe("Beta rule");
+    await chooseScope("all-projects");
+    expect(tabLabels()).toContain("All chats");
+    await openTab("Task creation");
+    expect(editorText()).toBe("Chat creation");
   });
 });

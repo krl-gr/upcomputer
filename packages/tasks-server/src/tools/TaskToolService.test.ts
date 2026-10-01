@@ -8,7 +8,10 @@ import type {
   TaskAgentRun,
   TaskReorderInput,
 } from "@upcomputer/tasks-contracts/v1";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@upcomputer/tasks-contracts/v1";
+import {
+  DEFAULT_TASK_PROMPT_SETTINGS,
+  EMPTY_TASK_PROMPT_SETTINGS,
+} from "@upcomputer/tasks-contracts/v1";
 import type { ModelSelection, OrchestrationThread, ThreadId } from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -128,6 +131,7 @@ function testService(
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
+      getProject: () => Effect.succeed({ settings: EMPTY_TASK_PROMPT_SETTINGS, revision: 0 }),
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(TaskAgentService, {
       scheduleTaskChanged: () => Effect.void,
