@@ -1,9 +1,11 @@
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
 import { ComputerUseSettings } from "@upcomputer/computer-use-contracts";
 import * as Schema from "effect/Schema";
 import { test } from "vite-plus/test";
 
 import { evaluateComputerUsePolicy } from "./ComputerUsePolicy.ts";
+import { systemCredentialAppNames } from "./SensitiveApps.ts";
 
 const settings = Schema.decodeUnknownSync(ComputerUseSettings)({});
 
@@ -27,6 +29,13 @@ test("credential and payment apps are blocked by name, localized name or bundle 
     "Wallet",
     "Пароли",
     "Связка ключей",
+    "Passwörter",
+    "Mots de passe",
+    "Contraseñas",
+    "Schlüsselbund\u00adverwaltung",
+    "Trousseaux d’accès",
+    "Acceso a Llaveros",
+    "Passwords.app",
   ]) {
     for (const toolName of ["computer_get_app_state", "computer_click"]) {
       const decision = decide(toolName, app);
@@ -41,3 +50,14 @@ test("ordinary apps stay usable", () => {
     NodeAssert.equal(decide("computer_click", app).allowed, true, app);
   }
 });
+
+test.runIf(NodeFS.existsSync("/System/Applications/Passwords.app"))(
+  "every localized name the system gives Passwords and Keychain Access is blocked",
+  () => {
+    const names = [...systemCredentialAppNames()];
+    // Dozens of system languages, read from the apps' own tables.
+    NodeAssert.ok(names.length > 40, `only ${names.length} names`);
+    const allowed = names.filter((app) => decide("computer_get_app_state", app).allowed);
+    NodeAssert.deepEqual(allowed, []);
+  },
+);

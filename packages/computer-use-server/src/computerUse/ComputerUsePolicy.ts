@@ -6,6 +6,7 @@ import {
   sanitizeComputerUseArgs,
   summarizeComputerUseArgs,
 } from "./ComputerUseToolDefinitions.ts";
+import { isSensitiveApp } from "./SensitiveApps.ts";
 
 /** The parts of an interaction mode the policy reads; a resolved mode or a mode descriptor. */
 export type ComputerUseInteractionMode = Pick<ResolvedInteractionMode, "displayName" | "safety">;
@@ -16,33 +17,6 @@ export interface ComputerUsePolicyDecision {
   readonly requiresApproval: boolean;
   readonly sanitizedArgs: Record<string, unknown>;
   readonly detail: string;
-}
-
-/**
- * Matched as substrings against the `app` argument, which may be a visible
- * name (possibly localized) or a bundle identifier, so plurals and IDs such as
- * `com.apple.Passwords` or `com.agilebits.onepassword7` are caught too.
- */
-const SENSITIVE_APP_PATTERNS = [
-  /pass(?:word|wd)/i,
-  /keychain/i,
-  /bitwarden/i,
-  /dashlane/i,
-  /lastpass/i,
-  /keepass/i,
-  /enpass/i,
-  /proton\s*pass/i,
-  /wallet/i,
-  /payment/i,
-  /парол/iu,
-  /связка ключей/iu,
-] as const;
-
-function isSensitiveApp(value: unknown): boolean {
-  if (typeof value !== "string") {
-    return false;
-  }
-  return SENSITIVE_APP_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 function usesCoordinates(args: Record<string, unknown>): boolean {
