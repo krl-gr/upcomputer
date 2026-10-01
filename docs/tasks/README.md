@@ -156,10 +156,12 @@ The run's assignment is released when the result is recorded.
 
 ## Instructions
 
-Settings → Instructions holds four shared texts: `taskCreation`,
-`agentCreation`, and `automationCreation`, which `task_context` returns as
-`promptGuidance`, and `taskExecution`, which is part of every run's prompt.
-Besides the settings page, chats read and edit them with tools:
+Settings → Instructions holds five shared texts: `allChats` (the All chats
+tab), which is the core `customInstructions` setting and part of the prompt of
+every chat and every run in every harness; `taskCreation`, `agentCreation`,
+and `automationCreation`, which `task_context` returns as `promptGuidance`;
+and `taskExecution`, which is part of every run's prompt. Besides the settings
+page, chats read and edit them with tools:
 
 - `instructions_get` returns the texts, their lengths, and a `revision` that
   changes on every edit.
@@ -173,11 +175,15 @@ Besides the settings page, chats read and edit them with tools:
   a change and records that as a new change. It is refused when the field
   changed after that change; revert the later changes first.
 
+`allChats` is stored only in core settings (trimmed, at most 20,000
+characters); its history and the shared revision live with the task fields.
 Every change, including settings-page saves, is recorded; history is never
-deleted. The write tools dry-run in read-only interaction modes. Task-agent
-runs may only read: a run's agent must list `instructions_update` or
-`instructions_revert` in its tools to write. The loopback MCP endpoint may
-write.
+deleted. An edit of `customInstructions` outside the Instructions page, such
+as a hand edit of `settings.json`, is not recorded, and a later revert of an
+earlier change is then refused because the text changed since. The write
+tools dry-run in read-only interaction modes. Task-agent runs may only read: a
+run's agent must list `instructions_update` or `instructions_revert` in its
+tools to write. The loopback MCP endpoint may write.
 
 ## Automations
 

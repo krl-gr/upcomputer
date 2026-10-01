@@ -33,6 +33,7 @@ import {
   TaskPromptSettings,
   TaskPromptSettingsGetInput,
   TaskPromptSettingsUpdateInput,
+  TaskPromptSettingsUpdateResult,
 } from "./prompts.ts";
 import {
   Task,
@@ -214,7 +215,7 @@ export const TasksGetPromptSettingsRpc = Rpc.make(TASKS_RPC_METHODS.getPromptSet
 });
 export const TasksUpdatePromptSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updatePromptSettings, {
   payload: TaskPromptSettingsUpdateInput,
-  success: TaskPromptSettings,
+  success: TaskPromptSettingsUpdateResult,
   error: TaskError,
 });
 

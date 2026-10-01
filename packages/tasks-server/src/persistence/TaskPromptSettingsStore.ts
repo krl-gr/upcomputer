@@ -1,11 +1,13 @@
+import type { ServerSettingsError } from "@upcomputer/contracts";
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
   TASK_PROMPT_FIELDS,
   TaskPromptSettings,
   TaskPromptSettingsChange,
+  type InstructionsField,
   type TaskPromptChangeSource,
-  type TaskPromptField,
   type TaskPromptSettingsUpdateInput,
+  type TaskPromptSettingsUpdateResult,
 } from "@upcomputer/tasks-contracts/v1";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -17,6 +19,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SqlError } from "effect/unstable/sql/SqlError";
 
+import { ServerSettingsService } from "../../../../apps/server/src/extensionApi.ts";
 import type { TaskRepositoryError } from "./Errors.ts";
 import { toTaskPersistenceDecodeError, toTaskPersistenceSqlError } from "./Errors.ts";
 
@@ -25,6 +28,17 @@ export interface TaskPromptSettingsState {
   /** Bumped once for every recorded change. */
   readonly revision: number;
 }
+
+/**
+ * The task fields plus `allChats`, which is not stored here: it is the core
+ * `customInstructions` setting, read and written through ServerSettingsService.
+ * Its history and the shared revision are kept here.
+ */
+export interface InstructionsState extends TaskPromptSettingsState {
+  readonly allChats: string;
+}
+
+export type InstructionsStoreError = TaskRepositoryError | ServerSettingsError;
 
 export interface TaskPromptChangeOrigin {
   readonly source: TaskPromptChangeSource;
@@ -36,7 +50,7 @@ export interface TaskPromptChangeOrigin {
 export type TaskPromptFieldUpdateResult =
   | {
       readonly ok: true;
-      readonly state: TaskPromptSettingsState;
+      readonly state: InstructionsState;
       readonly change: TaskPromptSettingsChange | null;
     }
   | { readonly ok: false; readonly reason: "stale-revision"; readonly currentRevision: number };
@@ -44,7 +58,7 @@ export type TaskPromptFieldUpdateResult =
 export type TaskPromptRevertResult =
   | {
       readonly ok: true;
-      readonly state: TaskPromptSettingsState;
+      readonly state: InstructionsState;
       readonly reverted: TaskPromptSettingsChange;
       readonly change: TaskPromptSettingsChange | null;
     }
@@ -57,21 +71,25 @@ export type TaskPromptRevertResult =
     };
 
 export interface TaskPromptSettingsStoreShape {
+  /** The task fields only, without reading core settings. */
   readonly get: Effect.Effect<TaskPromptSettings, TaskRepositoryError>;
-  readonly getState: Effect.Effect<TaskPromptSettingsState, TaskRepositoryError>;
+  readonly getState: Effect.Effect<InstructionsState, InstructionsStoreError>;
   /** The settings page save: records each field that changed as a settings-page change. */
   readonly update: (
     input: TaskPromptSettingsUpdateInput,
-  ) => Effect.Effect<TaskPromptSettings, TaskRepositoryError>;
-  /** Replaces one field when `expectedRevision` is current. A dry run checks and previews only. */
+  ) => Effect.Effect<TaskPromptSettingsUpdateResult, InstructionsStoreError>;
+  /**
+   * Replaces one field when `expectedRevision` is current. A dry run checks and previews only.
+   * `allChats` is stored trimmed, like every core settings write.
+   */
   readonly updateField: (input: {
-    readonly field: TaskPromptField;
+    readonly field: InstructionsField;
     readonly text: string;
     readonly reason: string;
     readonly expectedRevision: number;
     readonly origin: TaskPromptChangeOrigin;
     readonly dryRun: boolean;
-  }) => Effect.Effect<TaskPromptFieldUpdateResult, TaskRepositoryError>;
+  }) => Effect.Effect<TaskPromptFieldUpdateResult, InstructionsStoreError>;
   /**
    * Restores the field's text from before a change, recorded as a new change.
    * Refused when the field changed after it, so later edits are never undone silently.
@@ -81,10 +99,10 @@ export interface TaskPromptSettingsStoreShape {
     readonly reason: string | null;
     readonly origin: TaskPromptChangeOrigin;
     readonly dryRun: boolean;
-  }) => Effect.Effect<TaskPromptRevertResult, TaskRepositoryError>;
+  }) => Effect.Effect<TaskPromptRevertResult, InstructionsStoreError>;
   /** Newest first. */
   readonly history: (input: {
-    readonly field?: TaskPromptField | undefined;
+    readonly field?: InstructionsField | undefined;
     readonly limit: number;
   }) => Effect.Effect<ReadonlyArray<TaskPromptSettingsChange>, TaskRepositoryError>;
 }
@@ -104,9 +122,17 @@ const StateRow = Schema.Struct({ ...TaskPromptSettings.fields, revision: Schema.
 const decodeStateRow = Schema.decodeUnknownEffect(StateRow);
 const decodeChanges = Schema.decodeUnknownEffect(Schema.Array(TaskPromptSettingsChange));
 
+const textOf = (state: InstructionsState, field: InstructionsField) =>
+  field === "allChats" ? state.allChats : state.settings[field];
+
+/** Core settings store `customInstructions` trimmed; compare and record what is stored. */
+const normalizeText = (field: InstructionsField, text: string) =>
+  field === "allChats" ? text.trim() : text;
+
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
+  const serverSettings = yield* ServerSettingsService;
 
   const changeColumns = sql`
     id,
@@ -125,7 +151,7 @@ const make = Effect.gen(function* () {
   const decodedChanges = (operation: string) => (rows: ReadonlyArray<unknown>) =>
     decodeChanges(rows).pipe(Effect.mapError(toTaskPersistenceDecodeError(operation)));
 
-  const getState: TaskPromptSettingsStoreShape["getState"] = sql`
+  const getTaskState: Effect.Effect<TaskPromptSettingsState, TaskRepositoryError> = sql`
     SELECT
       task_creation AS "taskCreation",
       agent_creation AS "agentCreation",
@@ -147,7 +173,16 @@ const make = Effect.gen(function* () {
     }),
   );
 
-  const get: TaskPromptSettingsStoreShape["get"] = Effect.map(getState, (state) => state.settings);
+  const get: TaskPromptSettingsStoreShape["get"] = Effect.map(
+    getTaskState,
+    (state) => state.settings,
+  );
+
+  const getState: TaskPromptSettingsStoreShape["getState"] = Effect.gen(function* () {
+    const state = yield* getTaskState;
+    const { customInstructions } = yield* serverSettings.getSettings;
+    return { ...state, allChats: customInstructions };
+  });
 
   const writeState = (state: TaskPromptSettingsState) =>
     sql`
@@ -193,7 +228,7 @@ const make = Effect.gen(function* () {
       Effect.map((changes) => Option.fromNullishOr(changes[0])),
     );
 
-  const changesAfter = (field: TaskPromptField, revision: number) =>
+  const changesAfter = (field: InstructionsField, revision: number) =>
     sql`
       SELECT ${changeColumns} FROM task_prompt_settings_changes
       WHERE field = ${field} AND revision > ${revision}
@@ -216,7 +251,7 @@ const make = Effect.gen(function* () {
 
   const newChange = (input: {
     readonly revision: number;
-    readonly field: TaskPromptField;
+    readonly field: InstructionsField;
     readonly previousText: string;
     readonly newText: string;
     readonly reason: string | null;
@@ -243,7 +278,7 @@ const make = Effect.gen(function* () {
 
   // Read, compare and write in one transaction, so a revision check cannot
   // race another writer.
-  const transaction = <A>(effect: Effect.Effect<A, TaskRepositoryError>) =>
+  const transaction = <A>(effect: Effect.Effect<A, InstructionsStoreError>) =>
     sql
       .withTransaction(effect)
       .pipe(
@@ -254,10 +289,14 @@ const make = Effect.gen(function* () {
         ),
       );
 
-  /** Applies one field change on top of `state`; writes nothing on a dry run. */
+  /**
+   * Applies one field change on top of `state`; writes nothing on a dry run.
+   * `allChats` is written to core settings last, so a failed write rolls back
+   * the recorded change with the transaction.
+   */
   const applyFieldChange = (input: {
-    readonly state: TaskPromptSettingsState;
-    readonly field: TaskPromptField;
+    readonly state: InstructionsState;
+    readonly field: InstructionsField;
     readonly text: string;
     readonly reason: string | null;
     readonly origin: TaskPromptChangeOrigin;
@@ -268,20 +307,26 @@ const make = Effect.gen(function* () {
       const change = yield* newChange({
         revision: input.state.revision + 1,
         field: input.field,
-        previousText: input.state.settings[input.field],
+        previousText: textOf(input.state, input.field),
         newText: input.text,
         reason: input.reason,
         origin: input.origin,
         revertsChangeId: input.revertsChangeId,
       });
-      const state: TaskPromptSettingsState = {
-        settings: { ...input.state.settings, [input.field]: input.text },
-        revision: change.revision,
-      };
+      const state: InstructionsState =
+        input.field === "allChats"
+          ? { ...input.state, allChats: input.text, revision: change.revision }
+          : {
+              ...input.state,
+              settings: { ...input.state.settings, [input.field]: input.text },
+              revision: change.revision,
+            };
       // A dry run reports the current state with the change it would record.
       if (input.dryRun) return { state: input.state, change };
       yield* writeState(state);
       yield* insertChange(change);
+      if (input.field === "allChats")
+        yield* serverSettings.updateSettings({ customInstructions: input.text });
       return { state, change };
     });
 
@@ -289,19 +334,26 @@ const make = Effect.gen(function* () {
     transaction(
       Effect.gen(function* () {
         let state = yield* getState;
-        for (const field of TASK_PROMPT_FIELDS) {
-          if (state.settings[field] === input[field]) continue;
+        // allChats last: its core settings write is the one step outside SQL.
+        for (const field of [...TASK_PROMPT_FIELDS, "allChats"] as const) {
+          const requested = input[field];
+          if (requested === undefined) continue;
+          const text = normalizeText(field, requested);
+          if (textOf(state, field) === text) continue;
           state = (yield* applyFieldChange({
             state,
             field,
-            text: input[field],
+            text,
             reason: null,
             origin: SETTINGS_PAGE_ORIGIN,
             revertsChangeId: null,
             dryRun: false,
           })).state;
         }
-        return state.settings;
+        return {
+          ...state.settings,
+          ...(input.allChats === undefined ? {} : { allChats: state.allChats }),
+        };
       }),
     );
 
@@ -315,21 +367,21 @@ const make = Effect.gen(function* () {
             reason: "stale-revision",
             currentRevision: state.revision,
           } as const;
-        if (state.settings[input.field] === input.text)
-          return { ok: true, state, change: null } as const;
-        const applied = yield* applyFieldChange({ ...input, state, revertsChangeId: null });
+        const text = normalizeText(input.field, input.text);
+        if (textOf(state, input.field) === text) return { ok: true, state, change: null } as const;
+        const applied = yield* applyFieldChange({ ...input, text, state, revertsChangeId: null });
         return { ok: true, ...applied } as const;
       }),
     );
 
   const revert: TaskPromptSettingsStoreShape["revert"] = (input) =>
     transaction(
-      Effect.gen(function* (): Effect.fn.Return<TaskPromptRevertResult, TaskRepositoryError> {
+      Effect.gen(function* (): Effect.fn.Return<TaskPromptRevertResult, InstructionsStoreError> {
         const reverted = yield* getChange(input.changeId);
         if (Option.isNone(reverted)) return { ok: false, reason: "not-found" };
         const target = reverted.value;
         const state = yield* getState;
-        const current = state.settings[target.field];
+        const current = textOf(state, target.field);
         if (current === target.previousText)
           return { ok: true, state, reverted: target, change: null };
         if (current !== target.newText)

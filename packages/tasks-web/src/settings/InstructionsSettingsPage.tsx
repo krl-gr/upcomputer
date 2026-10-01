@@ -120,14 +120,17 @@ function InstructionsSettingsPage() {
     setSaving(true);
     setError(undefined);
     try {
-      // Task prompts first: saving core settings refreshes server configs,
-      // which reloads the task prompts above.
-      if (promptsDirty && api) {
-        const settings = await api.tasks.updatePromptSettings(draft);
+      // The Tasks save records every changed field, All chats included, in the
+      // instructions history. Without Tasks, All chats goes to core settings.
+      if (api) {
+        const { allChats, ...settings } = await api.tasks.updatePromptSettings({
+          ...(promptsDirty ? draft : {}),
+          ...(customInstructionsDirty ? { allChats: customInstructions } : {}),
+        });
         setSaved(settings);
         setDraft(settings);
-      }
-      if (customInstructionsDirty && environmentId !== null) {
+        if (allChats !== undefined) setCustomInstructionsDraft(allChats);
+      } else if (customInstructionsDirty && environmentId !== null) {
         const result = await updateServerSettings({
           environmentId,
           input: { patch: { customInstructions } },

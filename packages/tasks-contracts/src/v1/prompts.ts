@@ -18,8 +18,26 @@ export type TaskPromptSettings = typeof TaskPromptSettings.Type;
 export const TaskPromptSettingsGetInput = Schema.Struct({});
 export type TaskPromptSettingsGetInput = typeof TaskPromptSettingsGetInput.Type;
 
-export const TaskPromptSettingsUpdateInput = TaskPromptSettings;
+/**
+ * The settings page save; fields left out stay as they are. `allChats` is the
+ * core `customInstructions` setting: saving it here records it in the
+ * instructions history.
+ */
+export const TaskPromptSettingsUpdateInput = Schema.Struct({
+  taskCreation: Schema.optional(Schema.String),
+  agentCreation: Schema.optional(Schema.String),
+  automationCreation: Schema.optional(Schema.String),
+  taskExecution: Schema.optional(Schema.String),
+  allChats: Schema.optional(Schema.String),
+});
 export type TaskPromptSettingsUpdateInput = typeof TaskPromptSettingsUpdateInput.Type;
+
+/** The saved task texts, and `allChats` as stored (trimmed) when the save included it. */
+export const TaskPromptSettingsUpdateResult = Schema.Struct({
+  ...TaskPromptSettings.fields,
+  allChats: Schema.optional(Schema.String),
+});
+export type TaskPromptSettingsUpdateResult = typeof TaskPromptSettingsUpdateResult.Type;
 
 export const TASK_PROMPT_FIELDS = [
   "taskCreation",
@@ -29,6 +47,14 @@ export const TASK_PROMPT_FIELDS = [
 ] as const;
 export const TaskPromptField = Schema.Literals(TASK_PROMPT_FIELDS);
 export type TaskPromptField = typeof TaskPromptField.Type;
+
+/**
+ * The fields the instructions tools edit: the four task fields and `allChats`,
+ * the core `customInstructions` setting that every chat and task run gets.
+ */
+export const INSTRUCTIONS_FIELDS = ["allChats", ...TASK_PROMPT_FIELDS] as const;
+export const InstructionsField = Schema.Literals(INSTRUCTIONS_FIELDS);
+export type InstructionsField = typeof InstructionsField.Type;
 
 /**
  * Who made a change: the settings page, a tool call from a thread (a chat or
@@ -48,7 +74,7 @@ export const TaskPromptSettingsChange = Schema.Struct({
   id: TrimmedNonEmptyString,
   /** The settings revision this change produced. */
   revision: PositiveInt,
-  field: TaskPromptField,
+  field: InstructionsField,
   previousText: Schema.String,
   newText: Schema.String,
   reason: Schema.NullOr(Schema.String),
@@ -64,7 +90,7 @@ export const InstructionsGetInput = Schema.Struct({});
 export type InstructionsGetInput = typeof InstructionsGetInput.Type;
 
 export const InstructionsUpdateInput = Schema.Struct({
-  field: TaskPromptField,
+  field: InstructionsField,
   text: Schema.String,
   reason: TrimmedNonEmptyString,
   expectedRevision: NonNegativeInt,
@@ -72,7 +98,7 @@ export const InstructionsUpdateInput = Schema.Struct({
 export type InstructionsUpdateInput = typeof InstructionsUpdateInput.Type;
 
 export const InstructionsHistoryInput = Schema.Struct({
-  field: Schema.optional(TaskPromptField),
+  field: Schema.optional(InstructionsField),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
 });
 export type InstructionsHistoryInput = typeof InstructionsHistoryInput.Type;

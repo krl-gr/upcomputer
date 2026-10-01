@@ -12,7 +12,7 @@ import {
   TaskAgentRunId,
   TaskId,
   TasksRpcGroup,
-  type TaskPromptSettings,
+  type TaskPromptSettingsUpdateInput,
 } from "@upcomputer/tasks-contracts/v1";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
@@ -23,9 +23,11 @@ import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import {
   ProjectionSnapshotQuery,
   runExperimentalFeatureMigrations,
+  ServerSettingsService,
   type ExperimentalDynamicToolInvocationContext,
 } from "../../../../apps/server/src/extensionApi.ts";
 import * as NodeSqliteClient from "../../../../apps/server/src/persistence/NodeSqliteClient.ts";
+import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { TaskAgentService, type TaskAgentServiceShape } from "../agents/TaskAgentService.ts";
 import {
   TaskToolContextResolver,
@@ -71,7 +73,15 @@ function countingCrypto(): Layer.Layer<Crypto.Crypto> {
   );
 }
 
-async function harness() {
+async function harness(options: { readonly allChats?: string } = {}) {
+  // One settings service for the whole harness, so core settings persist between calls.
+  const serverSettings = await Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* ServerSettingsService;
+    }).pipe(
+      Effect.provide(ServerSettings.layerTest({ customInstructions: options.allChats ?? "" })),
+    ),
+  );
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-instructions-"));
   directories.push(directory);
   const sql = NodeSqliteClient.layer({ filename: NodePath.join(directory, "tasks.sqlite") });
@@ -79,7 +89,9 @@ async function harness() {
     runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]).pipe(Effect.provide(sql)),
   );
   const storage = Layer.mergeAll(TaskRepositoryLive, TaskPromptSettingsStoreLive).pipe(
-    Layer.provideMerge(Layer.merge(sql, countingCrypto())),
+    Layer.provideMerge(
+      Layer.mergeAll(sql, countingCrypto(), Layer.succeed(ServerSettingsService, serverSettings)),
+    ),
   );
   const resolver: TaskToolContextResolverShape = {
     resolve: () => Effect.succeed({ projects: [] } as never),
@@ -109,8 +121,8 @@ async function harness() {
       body: result.isError && !result.text.startsWith("{") ? null : json(result),
     };
   };
-  // The settings page goes through the unchanged RPC.
-  const settingsPage = (save?: TaskPromptSettings) =>
+  // The settings page goes through the RPC.
+  const settingsPage = (save?: TaskPromptSettingsUpdateInput) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const client = yield* RpcTest.makeClient(TasksRpcGroup);
@@ -123,7 +135,11 @@ async function harness() {
         Effect.scoped,
       ),
     );
-  return { call, run, settingsPage };
+  const allChats = () =>
+    Effect.runPromise(
+      Effect.map(serverSettings.getSettings, (settings) => settings.customInstructions),
+    );
+  return { call, run, settingsPage, allChats };
 }
 
 function json(result: { readonly text: string }) {
@@ -558,4 +574,200 @@ test("a large taskExecution update carries a size warning", async () => {
   });
   NodeAssert.match(updated.body.summary.warning, /2500 characters/);
   NodeAssert.ok(updated.body.summary.added.length < 700);
+});
+
+test("allChats reads and writes the core customInstructions setting, with history and revert", async () => {
+  const { call, allChats } = await harness({ allChats: "Answer in Russian." });
+
+  const initial = (await call("instructions_get")).body;
+  NodeAssert.equal(initial.revision, 0);
+  NodeAssert.equal(initial.fields.allChats.text, "Answer in Russian.");
+  NodeAssert.match(initial.fields.allChats.use, /every chat and every task-agent run/);
+
+  const updated = await call("instructions_update", {
+    field: "allChats",
+    text: "  Answer in Russian.\nDelegate work to task agents.\n",
+    reason: "Onboarding agreed",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(updated.isError, false, updated.text);
+  NodeAssert.equal(updated.body.revision, 1);
+  // Stored trimmed, like every core settings write, and recorded as stored.
+  NodeAssert.equal(await allChats(), "Answer in Russian.\nDelegate work to task agents.");
+  NodeAssert.equal(
+    (await call("instructions_get")).body.fields.allChats.text,
+    "Answer in Russian.\nDelegate work to task agents.",
+  );
+
+  const [change] = (await call("instructions_history", { field: "allChats" })).body.changes;
+  NodeAssert.deepEqual(
+    {
+      field: change.field,
+      previousText: change.previousText,
+      newText: change.newText,
+      reason: change.reason,
+      source: change.source,
+      threadId: change.threadId,
+    },
+    {
+      field: "allChats",
+      previousText: "Answer in Russian.",
+      newText: "Answer in Russian.\nDelegate work to task agents.",
+      reason: "Onboarding agreed",
+      source: "thread",
+      threadId: "thread-chat",
+    },
+  );
+  NodeAssert.deepEqual(
+    (await call("instructions_history", { field: "taskExecution" })).body.changes,
+    [],
+  );
+
+  // The same text again, differing only in surrounding whitespace, changes nothing.
+  const identical = await call("instructions_update", {
+    field: "allChats",
+    text: "Answer in Russian.\nDelegate work to task agents.  ",
+    reason: "same",
+    expectedRevision: 1,
+  });
+  NodeAssert.equal(identical.body.changed, false);
+
+  const reverted = await call("instructions_revert", { changeId: change.changeId });
+  NodeAssert.equal(reverted.isError, false, reverted.text);
+  NodeAssert.equal(reverted.body.revision, 2);
+  NodeAssert.equal(await allChats(), "Answer in Russian.");
+
+  // allChats shares the revision with the task fields.
+  const stale = await call("instructions_update", {
+    field: "taskCreation",
+    text: "Stale",
+    reason: "stale",
+    expectedRevision: 1,
+  });
+  NodeAssert.equal(stale.isError, true);
+  NodeAssert.equal(stale.body.currentRevision, 2);
+});
+
+test("allChats rejects a stale revision, dry-runs under a read-only policy, and refuses runs", async () => {
+  const { call, run, allChats } = await harness();
+  const first = await call("instructions_update", {
+    field: "taskExecution",
+    text: "Edited",
+    reason: "first",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(first.isError, false, first.text);
+  const stale = await call("instructions_update", {
+    field: "allChats",
+    text: "From a stale chat",
+    reason: "stale",
+    expectedRevision: 0,
+  });
+  NodeAssert.equal(stale.isError, true);
+  NodeAssert.equal(stale.body.currentRevision, 1);
+  NodeAssert.equal(await allChats(), "");
+
+  const preview = await call(
+    "instructions_update",
+    { field: "allChats", text: "Planned", reason: "plan", expectedRevision: 1 },
+    readOnlyChat,
+  );
+  NodeAssert.equal(preview.isError, false, preview.text);
+  NodeAssert.equal(preview.body.dryRun, true);
+  NodeAssert.equal(preview.body.changed, true);
+  NodeAssert.equal(preview.body.summary.added, "Planned");
+  NodeAssert.equal(await allChats(), "");
+  NodeAssert.equal(
+    (await call("instructions_history", { field: "allChats" })).body.changes.length,
+    0,
+  );
+
+  const tooLong = await call("instructions_update", {
+    field: "allChats",
+    text: "x".repeat(20_001),
+    reason: "long",
+    expectedRevision: 1,
+  });
+  NodeAssert.equal(tooLong.isError, true);
+  NodeAssert.match(tooLong.text, /limited to 20000 characters/);
+
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+  const at = new Date().toISOString();
+  await run(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsert({
+        id: TaskId.make("task-1"),
+        projectId: ProjectId.make("project-1"),
+        title: "Task",
+        description: "",
+        output: null,
+        status: "To Do",
+        priority: null,
+        createdBy: "test",
+        assigneeAgentRunId: null,
+        sourceThreadId: null,
+        sourceRunId: null,
+        metadata: null,
+        tags: [],
+        createdAt: at,
+        updatedAt: at,
+        closedAt: null,
+      });
+      yield* repository.upsertAgent({
+        id: TaskAgentId.make("worker"),
+        projectId: null,
+        name: "worker",
+        enabled: true,
+        startStatuses: [],
+        startTags: ["worker"],
+        startRunStatuses: [],
+        config: { role: "worker", modelSelection, instructions: "Work." },
+        createdAt: at,
+        updatedAt: at,
+      });
+      yield* repository.createAgentRun({
+        id: TaskAgentRunId.make("run-worker"),
+        taskId: TaskId.make("task-1"),
+        agentId: TaskAgentId.make("worker"),
+        threadId: ThreadId.make("thread-worker"),
+        modelSelection,
+        status: "running",
+        startedAt: at,
+        completedAt: null,
+        triggerRunId: null,
+        continuesRunId: null,
+      });
+    }),
+  );
+  const refused = await call(
+    "instructions_update",
+    { field: "allChats", text: "Injected", reason: "injected", expectedRevision: 1 },
+    { ...chat, threadId: ThreadId.make("thread-worker") },
+  );
+  NodeAssert.equal(refused.isError, true);
+  NodeAssert.match(refused.text, /run-worker' cannot change the shared task instructions/);
+  NodeAssert.equal(await allChats(), "");
+});
+
+test("settings page saves of All chats go to core settings and are recorded", async () => {
+  const { call, settingsPage, allChats } = await harness();
+  const saved = await settingsPage({ allChats: "  Never commit without asking.\n" });
+  NodeAssert.deepEqual(saved, {
+    ...DEFAULT_TASK_PROMPT_SETTINGS,
+    allChats: "Never commit without asking.",
+  });
+  NodeAssert.equal(await allChats(), "Never commit without asking.");
+  // Fields left out stay as they are, and an unchanged All chats records nothing.
+  await settingsPage({ allChats: "Never commit without asking." });
+
+  const changes = (await call("instructions_history")).body.changes;
+  NodeAssert.equal(changes.length, 1);
+  NodeAssert.equal(changes[0].field, "allChats");
+  NodeAssert.equal(changes[0].source, "settings page");
+  NodeAssert.equal(changes[0].previousText, "");
+
+  const reverted = await call("instructions_revert", { changeId: changes[0].changeId });
+  NodeAssert.equal(reverted.isError, false, reverted.text);
+  NodeAssert.equal(await allChats(), "");
 });

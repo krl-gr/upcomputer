@@ -21,7 +21,7 @@ import {
   InstructionsHistoryInput,
   InstructionsRevertInput,
   InstructionsUpdateInput,
-  TASK_PROMPT_FIELDS,
+  INSTRUCTIONS_FIELDS,
   TaskAppendEventInput,
   TaskDeleteInput,
   TaskEventId,
@@ -38,7 +38,7 @@ import {
   type TaskAgent,
   type TaskAgentRun,
   type TaskAutomation,
-  type TaskPromptField,
+  type InstructionsField,
   type TaskPromptSettingsChange,
 } from "@upcomputer/tasks-contracts/v1";
 import * as Crypto from "effect/Crypto";
@@ -49,7 +49,11 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import type { ModelSelection, OrchestrationThread } from "@upcomputer/contracts";
+import {
+  CUSTOM_INSTRUCTIONS_MAX_CHARS,
+  type ModelSelection,
+  type OrchestrationThread,
+} from "@upcomputer/contracts";
 
 import {
   ProjectionSnapshotQuery,
@@ -169,19 +173,21 @@ function buildAgentRunTranscript(
   };
 }
 
-const INSTRUCTION_FIELD_USE: Record<TaskPromptField, string> = {
+const INSTRUCTION_FIELD_USE: Record<InstructionsField, string> = {
+  allChats:
+    "Settings → Instructions → All chats (the core customInstructions setting). Part of the prompt of every chat and every task-agent run, in every harness.",
   taskCreation: "Returned by task_context; guidance for task_create.",
   agentCreation: "Returned by task_context; guidance for agent_create and agent_update.",
   automationCreation: "Returned by task_context; guidance for automation_create.",
   taskExecution: "Part of the prompt of every task-agent run.",
 };
 
-/** Above this, taskExecution noticeably grows every run's prompt. */
-const TASK_EXECUTION_LARGE_CHARS = 2_000;
+/** Above this, allChats or taskExecution noticeably grows every prompt they are part of. */
+const EVERY_PROMPT_LARGE_CHARS = 2_000;
 const CHANGE_EXCERPT_MAX_CHARS = 600;
 
 /** The edited span between the common prefix and suffix, enough for a one-line report. */
-function describeInstructionsChange(field: TaskPromptField, previous: string, next: string) {
+function describeInstructionsChange(field: InstructionsField, previous: string, next: string) {
   let prefix = 0;
   while (prefix < previous.length && prefix < next.length && previous[prefix] === next[prefix])
     prefix += 1;
@@ -200,9 +206,10 @@ function describeInstructionsChange(field: TaskPromptField, previous: string, ne
     newLength: next.length,
     removed: truncateText(removed, CHANGE_EXCERPT_MAX_CHARS),
     added: truncateText(added, CHANGE_EXCERPT_MAX_CHARS),
-    ...(field === "taskExecution" && next.length > TASK_EXECUTION_LARGE_CHARS
+    ...((field === "taskExecution" || field === "allChats") &&
+    next.length > EVERY_PROMPT_LARGE_CHARS
       ? {
-          warning: `taskExecution is now ${next.length} characters and is part of every task-agent run's prompt. Tell the user it is getting large.`,
+          warning: `${field} is now ${next.length} characters and is part of ${field === "allChats" ? "every chat's and every task-agent run's" : "every task-agent run's"} prompt. Tell the user it is getting large.`,
         }
       : {}),
   };
@@ -883,14 +890,10 @@ const make = Effect.gen(function* () {
             text: json({
               revision: state.revision,
               fields: Object.fromEntries(
-                TASK_PROMPT_FIELDS.map((field) => [
-                  field,
-                  {
-                    text: state.settings[field],
-                    length: state.settings[field].length,
-                    use: INSTRUCTION_FIELD_USE[field],
-                  },
-                ]),
+                INSTRUCTIONS_FIELDS.map((field) => {
+                  const text = field === "allChats" ? state.allChats : state.settings[field];
+                  return [field, { text, length: text.length, use: INSTRUCTION_FIELD_USE[field] }];
+                }),
               ),
               triggerRules: {
                 editable: false,
@@ -904,6 +907,14 @@ const make = Effect.gen(function* () {
           const input = yield* decoders.instructions_update(args);
           const access = yield* instructionsWriteAccess(name, context);
           if (access.refusal !== null) return { isError: true, text: access.refusal };
+          if (
+            input.field === "allChats" &&
+            input.text.trim().length > CUSTOM_INSTRUCTIONS_MAX_CHARS
+          )
+            return {
+              isError: true,
+              text: `allChats is limited to ${CUSTOM_INSTRUCTIONS_MAX_CHARS} characters. Shorten the text.`,
+            };
           const result = yield* promptSettings.updateField({
             ...input,
             origin: access.origin,
