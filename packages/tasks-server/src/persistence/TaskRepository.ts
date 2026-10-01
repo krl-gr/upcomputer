@@ -230,6 +230,14 @@ export interface TaskRepositoryShape {
   readonly createAgentRun: (
     input: PersistTaskAgentRunInput,
   ) => Effect.Effect<TaskAgentRun, TaskRepositoryError>;
+  /**
+   * Creates a triggered run only if, at insert time, its task is open and past
+   * its notBefore (`startableAt`) and its agent exists and is enabled. None
+   * when a close, postponement, disable or delete won the race.
+   */
+  readonly startAgentRun: (
+    input: PersistTaskAgentRunInput & { readonly startableAt: string },
+  ) => Effect.Effect<Option.Option<TaskAgentRun>, TaskRepositoryError>;
   readonly getAgentRunById: (input: {
     readonly id: TaskAgentRunId;
   }) => Effect.Effect<Option.Option<TaskAgentRun>, TaskRepositoryError>;

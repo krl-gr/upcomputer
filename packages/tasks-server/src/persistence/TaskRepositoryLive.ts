@@ -1069,6 +1069,45 @@ const makeTaskRepository = Effect.gen(function* () {
       `,
   });
 
+  const startAgentRunRow = SqlSchema.findAll({
+    Request: Schema.Struct({ ...PersistTaskAgentRunInput.fields, startableAt: Schema.String }),
+    Result: Schema.Struct({ id: TaskAgentRunId }),
+    execute: (run) =>
+      sql`
+        INSERT INTO task_agent_runs (
+          id,
+          task_id,
+          agent_id,
+          thread_id,
+          model_selection_json,
+          status,
+          started_at,
+          completed_at,
+          trigger_run_id,
+          continues_run_id
+        )
+        SELECT
+          ${run.id},
+          ${run.taskId},
+          ${run.agentId},
+          ${run.threadId},
+          ${stringifyJsonColumn(run.modelSelection)},
+          ${run.status},
+          ${run.startedAt},
+          ${run.completedAt},
+          ${run.triggerRunId},
+          ${run.continuesRunId}
+        WHERE EXISTS (
+            SELECT 1 FROM tasks
+            WHERE id = ${run.taskId}
+              AND closed_at IS NULL
+              AND (not_before IS NULL OR not_before <= ${run.startableAt})
+          )
+          AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
+        RETURNING id
+      `,
+  });
+
   const getAgentRunRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ id: TaskAgentRunId }),
     Result: TaskAgentRunDbRow,
@@ -2218,6 +2257,24 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  const startAgentRun: TaskRepositoryShape["startAgentRun"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const inserted = yield* startAgentRunRow(input);
+          if (inserted.length === 0) return Option.none<TaskAgentRun>();
+          return yield* getAgentRunById({ id: input.id });
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.startAgentRun:query",
+            "TaskRepository.startAgentRun:decodeRows",
+          ),
+        ),
+      );
+
   const findActiveAgentRunForTaskAgent: TaskRepositoryShape["findActiveAgentRunForTaskAgent"] = (
     input,
   ) =>
@@ -2610,6 +2667,12 @@ const makeTaskRepository = Effect.gen(function* () {
     listAllAgents,
     deleteAgent,
     createAgentRun: (input) => withChanges(createAgentRun(input), (run) => [run.taskId], true),
+    startAgentRun: (input) =>
+      withChanges(
+        startAgentRun(input),
+        (run) => (Option.isSome(run) ? [run.value.taskId] : []),
+        true,
+      ),
     getAgentRunById,
     findActiveAgentRunForTaskAgent,
     findActiveAgentRunByThreadId,

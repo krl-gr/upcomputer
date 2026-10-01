@@ -235,10 +235,10 @@ test("task-agent startup forwards complete advertised Astra options to run and b
       getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
       findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),
       searchAgentRuns: () => Effect.succeed([]),
-      createAgentRun: (run: { readonly modelSelection: unknown }) =>
+      startAgentRun: (run: { readonly modelSelection: unknown }) =>
         Effect.sync(() => {
           runs.push(run);
-          return run as never;
+          return Option.some(run as never);
         }),
       appendEvent: (event: unknown) => Effect.succeed(event as never),
     } as unknown as TaskRepositoryShape,
@@ -345,10 +345,10 @@ test("restart interrupts persisted active runs, clears assignment, and does not 
           events.push(event);
           return event as never;
         }),
-      createAgentRun: () =>
+      startAgentRun: () =>
         Effect.sync(() => {
           createCalls += 1;
-          return persistedRun as never;
+          return Option.some(persistedRun as never);
         }),
     } as unknown as TaskRepositoryShape,
     {
@@ -752,10 +752,10 @@ test("live reconciliation waits for a fresh run's thread but still fails a missi
             continuesRunId: null,
           },
         ]),
-      createAgentRun: () =>
+      startAgentRun: () =>
         Effect.sync(() => {
           replays += 1;
-          return null as never;
+          return Option.none();
         }),
     } as unknown as TaskRepositoryShape,
     {

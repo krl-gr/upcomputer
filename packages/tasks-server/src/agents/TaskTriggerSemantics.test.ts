@@ -1068,26 +1068,38 @@ test("a delayed duplicate stop of a finished run leaves the continuation on its 
           runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
         );
 
-        // Stop A claims finalization and pauses; stop B (same claim kind) finishes the run.
+        // Stop A claims finalization and pauses; stop B (same claim kind) and a
+        // continuation message arrive meanwhile. They must wait for A, so neither
+        // can be undone by A's late session stop.
         pauseNextStopClaim = true;
         const stopA = yield* Effect.forkChild(service.stopRun({ id: first.id }));
         yield* waitFor(
           "stop A to pause",
           Effect.sync(() => (gate.paused ? true : undefined)),
         );
-        yield* service.stopRun({ id: first.id });
-        const continued = yield* service.messageRun({ id: first.id, text: "Continue." });
-        NodeAssert.ok(continued);
-        const startIndex = commands.findLastIndex(
-          (command) => command.type === "thread.turn.start",
+        const stopB = yield* Effect.forkChild(service.stopRun({ id: first.id }));
+        const message = yield* Effect.forkChild(
+          service.messageRun({ id: first.id, text: "Continue." }),
+        );
+        yield* Effect.sleep("100 millis");
+        NodeAssert.equal(
+          commands.filter((command) => command.type === "thread.turn.start").length,
+          1,
+          "the continuation waits for the finalizer that holds the thread",
         );
 
         gate.release();
         yield* Fiber.join(stopA);
+        yield* Fiber.join(stopB);
+        const continued = yield* Fiber.join(message);
+        NodeAssert.equal(continued.ok, true);
+        const startIndex = commands.findLastIndex(
+          (command) => command.type === "thread.turn.start",
+        );
         NodeAssert.deepEqual(
           commands.slice(startIndex + 1).map(({ type }) => type),
           [],
-          "the late stop must not stop the continuation's session",
+          "no stop after the continuation's turn",
         );
         const runs = yield* runsOf(repository, "t");
         NodeAssert.equal(runs.filter((run) => run.completedAt === null).length, 1);
@@ -1104,6 +1116,83 @@ test("a delayed duplicate stop of a finished run leaves the continuation on its 
                   gate.paused = true;
                   return released;
                 })
+              : Effect.void,
+          ),
+        ),
+    }),
+  );
+});
+
+test("a close, postponement or agent deletion between the start checks and the run insert prevents the start", async () => {
+  const pause: { taskId: string | null; reached: boolean; release: () => void } = {
+    taskId: null,
+    reached: false,
+    release: () => {},
+  };
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service, commands } = harness;
+        const cases = [
+          {
+            id: "closed-meanwhile",
+            cancel: (taskId: TaskId) => repository.update({ id: taskId, closedAt: isoNow() }),
+          },
+          {
+            id: "postponed-meanwhile",
+            cancel: (taskId: TaskId) =>
+              repository.update({
+                id: taskId,
+                notBefore: new Date(Date.now() + 3_600_000).toISOString(),
+              }),
+          },
+          {
+            id: "agent-deleted-meanwhile",
+            cancel: () => repository.deleteAgent({ id: TaskAgentId.make("dev") }),
+          },
+        ] as const;
+        for (const { id, cancel } of cases) {
+          yield* repository.upsertAgent(agentInput("dev"));
+          const task = yield* repository.upsert(taskInput(id));
+          const released = new Promise<void>((resolve) => {
+            pause.release = resolve;
+          });
+          pause.taskId = id;
+          pause.reached = false;
+          yield* service.scheduleTaskChanged({ task, reason: "created" });
+          // The scheduler passed its eligibility checks and is about to insert the run.
+          yield* waitFor(
+            `start of ${id} to pause`,
+            Effect.sync(() => (pause.reached ? true : undefined)),
+          );
+          yield* cancel(task.id);
+          pause.release();
+          yield* Effect.sleep("200 millis");
+          NodeAssert.equal((yield* runsOf(repository, id)).length, 0, id);
+          void released;
+        }
+        NodeAssert.equal(commands.filter((command) => command.type === "thread.create").length, 0);
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      // The history lookup runs after the eligibility checks and before the insert.
+      searchAgentRuns: (input) =>
+        repository.searchAgentRuns(input).pipe(
+          Effect.tap(() =>
+            pause.taskId !== null && input.taskId === pause.taskId
+              ? Effect.promise(
+                  () =>
+                    new Promise<void>((resolve) => {
+                      pause.reached = true;
+                      pause.taskId = null;
+                      const release = pause.release;
+                      pause.release = () => {
+                        release();
+                        resolve();
+                      };
+                    }),
+                )
               : Effect.void,
           ),
         ),
