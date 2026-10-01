@@ -1199,3 +1199,85 @@ test("a close, postponement or agent deletion between the start checks and the r
     }),
   );
 });
+
+test("a close, disable or agent deletion just before a continuation is inserted refuses the message", async () => {
+  const pause: { armed: boolean; reached: boolean; release: () => void } = {
+    armed: false,
+    reached: false,
+    release: () => {},
+  };
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service, commands } = harness;
+        const cases = [
+          {
+            id: "closed-before-continue",
+            cancel: (taskId: TaskId) => repository.update({ id: taskId, closedAt: isoNow() }),
+          },
+          {
+            id: "disabled-before-continue",
+            cancel: () => repository.upsertAgent({ ...agentInput("dev"), enabled: false }),
+          },
+          {
+            id: "deleted-before-continue",
+            cancel: () => repository.deleteAgent({ id: TaskAgentId.make("dev") }),
+          },
+        ] as const;
+        for (const { id, cancel } of cases) {
+          yield* repository.upsertAgent(agentInput("dev"));
+          const task = yield* repository.upsert(taskInput(id));
+          yield* service.scheduleTaskChanged({ task, reason: "created" });
+          const first = yield* waitFor(
+            `run on ${id}`,
+            runsOf(repository, id).pipe(Effect.map((runs) => runs[0])),
+          );
+          yield* service.stopRun({ id: first.id });
+          const turnsBefore = commands.filter(
+            (command) => command.type === "thread.turn.start",
+          ).length;
+
+          pause.armed = true;
+          pause.reached = false;
+          const message = yield* Effect.forkChild(
+            service.messageRun({ id: first.id, text: "Continue." }),
+          );
+          // The message passed its checks and is about to insert the continuation.
+          yield* waitFor(
+            `message on ${id} to pause`,
+            Effect.sync(() => (pause.reached ? true : undefined)),
+          );
+          yield* cancel(task.id);
+          pause.release();
+          const result = yield* Fiber.join(message);
+          NodeAssert.equal(result.ok, false, id);
+          NodeAssert.equal((yield* runsOf(repository, id)).length, 1, id);
+          NodeAssert.equal(
+            commands.filter((command) => command.type === "thread.turn.start").length,
+            turnsBefore,
+            `${id}: no turn sent`,
+          );
+        }
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      // messageRun looks for another active run right before inserting.
+      findActiveAgentRunForTaskAgent: (input) =>
+        repository.findActiveAgentRunForTaskAgent(input).pipe(
+          Effect.tap(() =>
+            pause.armed
+              ? Effect.promise(
+                  () =>
+                    new Promise<void>((resolve) => {
+                      pause.armed = false;
+                      pause.reached = true;
+                      pause.release = resolve;
+                    }),
+                )
+              : Effect.void,
+          ),
+        ),
+    }),
+  );
+});

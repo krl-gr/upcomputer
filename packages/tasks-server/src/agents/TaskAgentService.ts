@@ -1023,8 +1023,10 @@ const make = Effect.gen(function* () {
           });
           const active = yield* findActive;
           if (Option.isSome(active)) return activeRefusal(active.value);
+          // Open task and enabled agent are re-checked inside the insert, so a
+          // close, disable or delete committed since the checks above wins.
           const created = yield* repository
-            .createAgentRun({
+            .startAgentRun({
               id: TaskAgentRunId.make(yield* randomId("task-agent-run")),
               taskId: task.id,
               agentId: agent.id,
@@ -1035,9 +1037,14 @@ const make = Effect.gen(function* () {
               completedAt: null,
               triggerRunId: null,
               continuesRunId: run.id,
+              // Explicit messages ignore notBefore.
+              startableAt: null,
             })
             .pipe(
-              Effect.map((continuation) => ({ continuation, active: null })),
+              Effect.map((continuation) => ({
+                continuation: Option.getOrNull(continuation),
+                active: null,
+              })),
               // The one-active-run index lost a race against another start.
               Effect.catch((cause) =>
                 findActive.pipe(
@@ -1051,6 +1058,10 @@ const make = Effect.gen(function* () {
             );
           if (created.active !== null) return activeRefusal(created.active);
           const continuation = created.continuation;
+          if (continuation === null)
+            return refuse(
+              `Task '${task.id}' was closed, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
+            );
 
           pending.current = { continuation, task };
           const sent = yield* Effect.exit(

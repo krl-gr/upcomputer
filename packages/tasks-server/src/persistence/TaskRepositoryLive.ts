@@ -1070,7 +1070,10 @@ const makeTaskRepository = Effect.gen(function* () {
   });
 
   const startAgentRunRow = SqlSchema.findAll({
-    Request: Schema.Struct({ ...PersistTaskAgentRunInput.fields, startableAt: Schema.String }),
+    Request: Schema.Struct({
+      ...PersistTaskAgentRunInput.fields,
+      startableAt: Schema.NullOr(Schema.String),
+    }),
     Result: Schema.Struct({ id: TaskAgentRunId }),
     execute: (run) =>
       sql`
@@ -1101,7 +1104,7 @@ const makeTaskRepository = Effect.gen(function* () {
             SELECT 1 FROM tasks
             WHERE id = ${run.taskId}
               AND closed_at IS NULL
-              AND (not_before IS NULL OR not_before <= ${run.startableAt})
+              AND (${run.startableAt} IS NULL OR not_before IS NULL OR not_before <= ${run.startableAt})
           )
           AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
         RETURNING id
