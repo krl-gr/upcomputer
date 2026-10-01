@@ -193,7 +193,11 @@ as a hand edit of `settings.json`, is not recorded, and a later revert of an
 earlier change is then refused because the text changed since. The write
 tools dry-run in read-only interaction modes. Task-agent runs may only read: a
 run's agent must list `instructions_update` or `instructions_revert` in its
-tools to write. The loopback MCP endpoint may write.
+tools to write. A thread stays a run thread after its run ends; the latest run
+on it decides, and history records that run. Ordinary chats and the loopback
+MCP endpoint may write. This guards against accidental or injected writes by
+unattended agents. It is not a security boundary: a run with shell access can
+edit the settings files directly.
 
 ## Automations
 

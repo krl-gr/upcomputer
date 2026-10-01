@@ -343,8 +343,12 @@ const make = Effect.gen(function* () {
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
-   * instructions" must not rewrite every agent's rules. A run writes only when
-   * its agent lists the tool. Chats and the loopback MCP bridge may write.
+   * instructions" must not rewrite every agent's rules. A thread that any run
+   * used stays a run thread after the run ends: it writes only when the agent
+   * of its latest run lists the tool. Chats and the loopback MCP bridge may
+   * write. This guards against accidental or injected writes; it is not a
+   * security boundary, since a run with shell access can edit the settings
+   * files directly.
    */
   const instructionsWriteAccess = (
     name: string,
@@ -352,7 +356,7 @@ const make = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const run = context.threadId
-        ? yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId })
+        ? yield* repository.findLatestAgentRunByThreadId({ threadId: context.threadId })
         : Option.none<TaskAgentRun>();
       const origin: TaskPromptChangeOrigin = {
         source: context.threadId ? "thread" : context.source === "mcp" ? "mcp" : "unknown",
@@ -366,7 +370,7 @@ const make = Effect.gen(function* () {
         origin,
         refusal: allowed
           ? null
-          : `Task-agent run '${run.value.id}' cannot change the shared task instructions: they apply to every agent, and a run may be acting on untrusted content. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools.`,
+          : `Task-agent run '${run.value.id}' cannot change the shared task instructions: they apply to every agent, and a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`,
       };
     });
 

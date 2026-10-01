@@ -66,7 +66,7 @@ export const PROMPT_GUIDANCE_EDITING =
   "promptGuidance is the user's shared task instructions (Settings → Instructions). Read them, and allChats, the instructions every chat gets, with instructions_get, edit one field with instructions_update, and see or undo changes with instructions_history and instructions_revert. triggerRules are server behavior and cannot be edited.";
 
 const INSTRUCTIONS_WRITE_ACCESS =
-  "Task-agent runs are refused unless their agent lists this tool in its tools.";
+  "Task-agent run threads, also after the run ended, are refused unless the run's agent lists this tool in its tools. This guards against accidental or injected writes by unattended agents; it is not a security boundary.";
 
 export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
   {

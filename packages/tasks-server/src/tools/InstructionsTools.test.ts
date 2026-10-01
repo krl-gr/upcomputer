@@ -352,8 +352,14 @@ test("settings page saves are recorded per changed field with the RPC payload un
   );
 });
 
-test("task-agent runs are refused unless their agent lists the write tool; reads stay allowed", async () => {
-  const { call, run } = await harness();
+/**
+ * A task with two runs: `worker`, whose agent lists no write tool, and
+ * `consolidator`, whose agent lists `instructions_update`. Each run has its own thread.
+ */
+async function seedAgentRuns(
+  run: Awaited<ReturnType<typeof harness>>["run"],
+  options: { readonly ended: boolean },
+) {
   const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
   const at = new Date().toISOString();
   await run(
@@ -404,15 +410,20 @@ test("task-agent runs are refused unless their agent lists the write tool; reads
           agentId: TaskAgentId.make(id),
           threadId: ThreadId.make(`thread-${id}`),
           modelSelection,
-          status: "running",
+          status: options.ended ? "completed" : "running",
           startedAt: at,
-          completedAt: null,
+          completedAt: options.ended ? at : null,
           triggerRunId: null,
           continuesRunId: null,
         });
       }
     }),
   );
+}
+
+test("task-agent runs are refused unless their agent lists the write tool; reads stay allowed", async () => {
+  const { call, run } = await harness();
+  await seedAgentRuns(run, { ended: false });
   const worker = { ...chat, threadId: ThreadId.make("thread-worker") };
   const consolidator = { ...chat, threadId: ThreadId.make("thread-consolidator") };
 
@@ -440,6 +451,42 @@ test("task-agent runs are refused unless their agent lists the write tool; reads
   const revert = await call("instructions_revert", { changeId: change.changeId }, consolidator);
   NodeAssert.equal(revert.isError, true);
   NodeAssert.match(revert.text, /adding 'instructions_revert' to its tools/);
+});
+
+test("a thread stays restricted after its run ended; the latest run's agent decides", async () => {
+  const { call, run } = await harness();
+  await seedAgentRuns(run, { ended: true });
+  const worker = { ...chat, threadId: ThreadId.make("thread-worker") };
+  const consolidator = { ...chat, threadId: ThreadId.make("thread-consolidator") };
+
+  const refused = await call(
+    "instructions_update",
+    { field: "allChats", text: "Injected rule", reason: "late turn", expectedRevision: 0 },
+    worker,
+  );
+  NodeAssert.equal(refused.isError, true);
+  NodeAssert.match(refused.text, /run-worker' cannot change the shared task instructions/);
+  NodeAssert.match(refused.text, /not a security boundary/);
+  NodeAssert.deepEqual((await call("instructions_history")).body.changes, []);
+
+  const allowed = await call(
+    "instructions_update",
+    { field: "taskExecution", text: "Consolidated rule", reason: "weekly", expectedRevision: 0 },
+    consolidator,
+  );
+  NodeAssert.equal(allowed.isError, false, allowed.text);
+  const [change] = (await call("instructions_history")).body.changes;
+  NodeAssert.equal(change.threadId, "thread-consolidator");
+  NodeAssert.equal(change.runId, "run-consolidator");
+
+  // An ordinary chat thread never used by a run may still write.
+  const fromChat = await call("instructions_update", {
+    field: "taskCreation",
+    text: "From a chat",
+    reason: "user asked",
+    expectedRevision: 1,
+  });
+  NodeAssert.equal(fromChat.isError, false, fromChat.text);
 });
 
 test("a read-only mutation policy dry-runs writes without recording anything", async () => {
