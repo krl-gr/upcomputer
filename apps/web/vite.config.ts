@@ -133,8 +133,8 @@ const defaultProductEntry = NodeURL.fileURLToPath(
   new URL("./src/product/defaultProductEntry.ts", import.meta.url),
 );
 // Feature packages bundled by the default product entry live outside this app.
-const publicFeatureTailwindSources = ["tasks-web", "orchestrator-web"].map((name) =>
-  NodeURL.fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url)),
+const publicFeatureTailwindSources = ["tasks-web", "orchestrator-web", "computer-use-web"].map(
+  (name) => NodeURL.fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url)),
 );
 
 const devProxyTarget = resolveDevProxyTarget(
