@@ -23,7 +23,7 @@ export interface ComposerOrchestrationProposalBannerProps {
   readonly onApply: () => void;
 }
 
-/** Compact composer banner driven by durable private proposal state. */
+/** Compact composer banner driven by durable proposal state. */
 export const ComposerOrchestrationProposalBanner = memo(
   function ComposerOrchestrationProposalBanner({
     proposal,

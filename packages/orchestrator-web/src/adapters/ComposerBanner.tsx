@@ -1,7 +1,7 @@
 import type { ComposerBannerProps } from "./slotProps.ts";
 
 import { ComposerOrchestrationProposalBanner } from "../components/ComposerOrchestrationProposalBanner.tsx";
-import { usePrivateProposal } from "./usePrivateProposal.ts";
+import { useProposal } from "./useProposal.ts";
 
 export default function ComposerBanner(props: ComposerBannerProps) {
   if (
@@ -22,20 +22,20 @@ function LoadedComposerBanner(
     readonly proposedPlan: NonNullable<ComposerBannerProps["proposedPlan"]>;
   },
 ) {
-  const privateProposal = usePrivateProposal({
+  const proposalState = useProposal({
     environmentId: props.environmentId,
     threadId: props.threadId,
     planId: props.proposedPlan.id,
   });
-  if (!privateProposal.proposal) return null;
+  if (!proposalState.proposal) return null;
 
   return (
     <ComposerOrchestrationProposalBanner
-      proposal={privateProposal.proposal}
-      canApply={privateProposal.canApply}
-      isApplying={privateProposal.state.status === "applying"}
+      proposal={proposalState.proposal}
+      canApply={proposalState.canApply}
+      isApplying={proposalState.state.status === "applying"}
       onApply={() => {
-        void privateProposal.apply().catch(() => undefined);
+        void proposalState.apply().catch(() => undefined);
       }}
     />
   );

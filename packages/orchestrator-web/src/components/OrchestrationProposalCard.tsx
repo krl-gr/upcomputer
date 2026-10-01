@@ -38,7 +38,7 @@ function statusLabel(state: ProposalDataState): string {
 }
 
 /**
- * Private structured proposal renderer. Apply is permitted only after the
+ * Structured proposal renderer. Apply is permitted only after the
  * durable proposal was read from the server and the capability gate allows it.
  */
 export function OrchestrationProposalCard({

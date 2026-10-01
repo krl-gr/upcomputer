@@ -14,7 +14,7 @@ import { defineExperimentalWebFeature } from "../../../apps/web/src/extensionApi
 
 export { TASKS_WEB_ENVIRONMENT_API, TASKS_WEB_ENVIRONMENT_API_FACTORY } from "./environmentApi.ts";
 
-const exactPrivateCapability = (id: string, version: number) =>
+const exactTasksCapability = (id: string, version: number) =>
   ({
     id,
     minimum: version,
@@ -30,7 +30,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   version: 1,
   threadAccessory: {
     component: TaskThreadRunCounts,
-    capabilities: [exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
+    capabilities: [exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
   },
   settings: [
     {
@@ -46,15 +46,15 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks",
       path: "/tasks",
-      capabilities: [exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
+      capabilities: [exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
       load: () => import("./ui/TasksRoute.tsx"),
     },
     {
       id: "agents",
       path: "/agents",
       capabilities: [
-        exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
-        exactPrivateCapability(TASK_AGENTS_RPC_CAPABILITY_ID, TASK_AGENTS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(TASK_AGENTS_RPC_CAPABILITY_ID, TASK_AGENTS_RPC_CONTRACT_VERSION),
       ],
       load: () => import("./ui/AgentsRoute.tsx"),
     },
@@ -62,8 +62,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       id: "automations",
       path: "/automations",
       capabilities: [
-        exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
-        exactPrivateCapability(
+        exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(
           TASK_AUTOMATIONS_RPC_CAPABILITY_ID,
           TASK_AUTOMATIONS_RPC_CONTRACT_VERSION,
         ),
@@ -80,7 +80,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       order: 20,
       icon: ListTodoIcon,
       accessory: TaskNavigationRunCounts,
-      capabilities: [exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
+      capabilities: [exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION)],
     },
     {
       id: "agents",
@@ -90,8 +90,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       order: 30,
       icon: BotIcon,
       capabilities: [
-        exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
-        exactPrivateCapability(TASK_AGENTS_RPC_CAPABILITY_ID, TASK_AGENTS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(TASK_AGENTS_RPC_CAPABILITY_ID, TASK_AGENTS_RPC_CONTRACT_VERSION),
       ],
     },
     {
@@ -102,8 +102,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       order: 40,
       icon: CalendarClockIcon,
       capabilities: [
-        exactPrivateCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
-        exactPrivateCapability(
+        exactTasksCapability(TASKS_RPC_CAPABILITY_ID, TASKS_RPC_CONTRACT_VERSION),
+        exactTasksCapability(
           TASK_AUTOMATIONS_RPC_CAPABILITY_ID,
           TASK_AUTOMATIONS_RPC_CONTRACT_VERSION,
         ),

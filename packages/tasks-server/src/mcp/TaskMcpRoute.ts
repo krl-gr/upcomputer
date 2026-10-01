@@ -125,7 +125,7 @@ export const TASK_MCP_HTTP_CONTRIBUTION = defineHttpRouteContribution({
       catch: (cause) => cause,
     }).pipe(
       Effect.catch((cause) =>
-        Effect.logWarning("Failed to handle private task MCP request", { cause }).pipe(
+        Effect.logWarning("Failed to handle task MCP request", { cause }).pipe(
           Effect.as(errorResponse(500, -32603, "Internal server error")),
         ),
       ),

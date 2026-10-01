@@ -271,7 +271,7 @@ const make = Effect.gen(function* () {
       });
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to append private task lifecycle event", {
+        Effect.logWarning("Failed to append task lifecycle event", {
           taskId: task.id,
           kind,
           cause,
@@ -406,7 +406,7 @@ const make = Effect.gen(function* () {
           : Effect.void,
       ),
       Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to schedule a finished private task-agent run", {
+        Effect.logWarning("Failed to schedule a finished task-agent run", {
           taskId,
           cause,
         }),
@@ -632,7 +632,7 @@ const make = Effect.gen(function* () {
             }
           }).pipe(
             Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to reconcile active private task-agent run", {
+              Effect.logWarning("Failed to reconcile active task-agent run", {
                 agentRunId: run.id,
                 cause,
               }),
@@ -785,7 +785,7 @@ const make = Effect.gen(function* () {
               reason: `Task-agent provider startup failed: ${String(cause)}`,
               stopSession: true,
             }).pipe(Effect.ignore);
-            yield* Effect.logError("Failed to start private task agent", {
+            yield* Effect.logError("Failed to start task agent", {
               taskId: task.id,
               agentId: agent.id,
               cause,
@@ -898,7 +898,7 @@ const make = Effect.gen(function* () {
             notBeforeSweptUntil = until;
           }).pipe(
             Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to wake private tasks reaching notBefore", { cause }),
+              Effect.logWarning("Failed to wake tasks reaching notBefore", { cause }),
             ),
           ),
         ),

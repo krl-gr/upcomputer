@@ -16,7 +16,7 @@ export interface WorkspaceViewAction {
   readonly title?: string;
 }
 
-/** Shared main-area shell used by the private Tasks and Agents routes. */
+/** Shared main-area shell used by the Tasks and Agents routes. */
 export function WorkspaceViewLayout({
   title,
   titleDetail,

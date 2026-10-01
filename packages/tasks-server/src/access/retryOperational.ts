@@ -18,7 +18,7 @@ export function retryOperational<A, E, R>(
         MAX_RETRY_DELAY_MS,
         INITIAL_RETRY_DELAY_MS * 2 ** Math.min(attempt, 6),
       );
-      return Effect.logWarning("Retrying private task runtime operation", {
+      return Effect.logWarning("Retrying task runtime operation", {
         ...fields,
         attempt: attempt + 1,
         delayMs,

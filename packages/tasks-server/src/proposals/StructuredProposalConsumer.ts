@@ -125,7 +125,7 @@ export const StructuredProposalConsumerLive = Layer.effectDiscard(
         return decodeProposal(event.payload.output).pipe(
           Effect.matchEffect({
             onFailure: (error) =>
-              Effect.logWarning("Ignored invalid private Orchestrator output", {
+              Effect.logWarning("Ignored invalid Orchestrator output", {
                 threadId: event.threadId,
                 eventId: event.eventId,
                 error,
@@ -145,7 +145,7 @@ export const StructuredProposalConsumerLive = Layer.effectDiscard(
                 },
               ).pipe(
                 Effect.tap((stored) =>
-                  Effect.logInfo("Persisted private Orchestrator proposal", {
+                  Effect.logInfo("Persisted Orchestrator proposal", {
                     threadId: stored.threadId,
                     planId: stored.planId,
                   }),

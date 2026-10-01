@@ -88,6 +88,6 @@ test("tasks RPC returns a typed error when repository neighbor validation fails"
         },
       ),
     ),
-    (error) => error instanceof TaskError && /Private task operation failed/.test(error.message),
+    (error) => error instanceof TaskError && /Task operation failed/.test(error.message),
   );
 });

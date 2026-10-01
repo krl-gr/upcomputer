@@ -50,7 +50,7 @@ function taskError(message: string, cause?: unknown) {
 function asTaskRpc<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return effect.pipe(
     Effect.mapError((cause) =>
-      cause instanceof TaskError ? cause : taskError("Private task operation failed.", cause),
+      cause instanceof TaskError ? cause : taskError("Task operation failed.", cause),
     ),
   );
 }

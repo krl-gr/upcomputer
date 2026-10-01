@@ -1,10 +1,10 @@
 import type { ProposedPlanRendererProps } from "./slotProps.ts";
 
 import { OrchestrationProposalCard } from "../components/OrchestrationProposalCard.tsx";
-import { resolvePrivateProposalTarget } from "./usePrivateProposal.ts";
+import { resolveProposalTarget } from "./useProposal.ts";
 
 export default function ProposedPlanRenderer(props: ProposedPlanRendererProps) {
-  const target = resolvePrivateProposalTarget({
+  const target = resolveProposalTarget({
     environmentId: props.environmentId,
     threadId: props.threadId,
     planId: props.proposedPlan.id,

@@ -41,7 +41,7 @@ export interface AppliedProposalState {
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : "Private Orchestrator proposal operation failed.";
+    : "Orchestrator proposal operation failed.";
 }
 
 export async function loadProposalState(

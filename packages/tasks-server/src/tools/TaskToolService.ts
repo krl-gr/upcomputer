@@ -741,13 +741,13 @@ const make = Effect.gen(function* () {
           return { isError: false, text: json({ deleted: true, id: input.id }) };
         }
         default:
-          return { isError: true, text: `Unknown private task tool: ${name}` };
+          return { isError: true, text: `Unknown task tool: ${name}` };
       }
     }).pipe(
       Effect.catch((cause) =>
         Effect.succeed({
           isError: true,
-          text: cause instanceof Error ? cause.message : `Private task tool '${name}' failed.`,
+          text: cause instanceof Error ? cause.message : `Task tool '${name}' failed.`,
         }),
       ),
     );

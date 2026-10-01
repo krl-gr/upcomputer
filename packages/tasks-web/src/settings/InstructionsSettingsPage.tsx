@@ -77,7 +77,7 @@ function InstructionsSettingsPage() {
     setError(undefined);
     if (!api) {
       setLoading(false);
-      setError("Connect to an official Tasks environment to edit instructions.");
+      setError("Connect to an environment with Tasks to edit instructions.");
       return () => {
         cancelled = true;
       };

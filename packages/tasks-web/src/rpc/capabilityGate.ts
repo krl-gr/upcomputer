@@ -88,7 +88,7 @@ function supportsExactCapability(
 
 /**
  * Resolves UI affordances from authoritative remote metadata. This is a
- * client-side safety check only; private server access policy remains final.
+ * client-side safety check only; the server remains authoritative.
  */
 export function resolveTasksWebAccess(input: ResolveTasksWebAccessInput): TasksWebAccess {
   if (input.metadataStatus === "loading") {
@@ -178,7 +178,7 @@ export function resolveTasksWebAccess(input: ResolveTasksWebAccessInput): TasksW
   if (!hasReadableCapability) {
     return unavailable(
       "incompatible",
-      "The connected server did not advertise a compatible private RPC capability.",
+      "The connected server did not advertise a compatible Tasks RPC capability.",
       extension,
     );
   }
@@ -207,6 +207,6 @@ export class TasksWebCapabilityUnavailableError extends Error {
     readonly operation: string,
     readonly reason: string,
   ) {
-    super(`Private operation '${operation}' is unavailable: ${reason}`);
+    super(`Tasks operation '${operation}' is unavailable: ${reason}`);
   }
 }

@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import { TaskAgent, TaskAgentId } from "./agents.ts";
 import { Task, TaskId } from "./tasks.ts";
 
-/** Public core plan identity reused by the private proposal-application API. */
+/** Core plan identity reused by the proposal-application API. */
 export const OrchestrationProposedPlanId = PublicOrchestrationProposedPlanId;
 export type OrchestrationProposedPlanId = typeof OrchestrationProposedPlanId.Type;
 
@@ -40,7 +40,7 @@ export const OrchestrationProposalTask = Schema.Struct({
 export type OrchestrationProposalTask = typeof OrchestrationProposalTask.Type;
 
 /**
- * Private, version-one Orchestrator payload.
+ * Version-one Orchestrator payload.
  *
  * `approvalGates` and `assumptions` remain decodable for legacy payload
  * compatibility even though current instructions ask the model to place those
@@ -76,7 +76,7 @@ export const OrchestrationProposalApplicationState = Schema.Literals([
 export type OrchestrationProposalApplicationState =
   typeof OrchestrationProposalApplicationState.Type;
 
-/** Durable private proposal projection exposed to the official web feature. */
+/** Durable proposal projection exposed to the Orchestrator web feature. */
 export const OrchestrationProposalSnapshot = Schema.Struct({
   threadId: ThreadId,
   planId: OrchestrationProposedPlanId,

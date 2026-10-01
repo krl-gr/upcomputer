@@ -78,7 +78,7 @@ const make = Effect.gen(function* () {
         updatedAt: yield* now,
       });
       if (!applied) {
-        yield* Effect.logInfo("Skipped a stale private task automation write", {
+        yield* Effect.logInfo("Skipped a stale task automation write", {
           automationId: automation.id,
         });
       }
@@ -211,7 +211,7 @@ const make = Effect.gen(function* () {
               failureCount,
             }).pipe(Effect.ignore);
           }
-          yield* Effect.logError("Private task automation failed to fire", {
+          yield* Effect.logError("Task automation failed to fire", {
             automationId: automation.id,
             slot,
             cause,
@@ -229,7 +229,7 @@ const make = Effect.gen(function* () {
           // A schedule that no longer parses cannot be re-armed, so park it
           // rather than logging the same failure on every tick.
           yield* park(automation, decision.message, automation.failureCount + 1);
-          yield* Effect.logWarning("Disabled a private task automation with an invalid schedule", {
+          yield* Effect.logWarning("Disabled a task automation with an invalid schedule", {
             automationId: automation.id,
             schedule: describeSchedule(automation.schedule),
           });
@@ -252,7 +252,7 @@ const make = Effect.gen(function* () {
           });
           yield* persistSchedule(automation, { nextRunAt: decision.nextRunAt });
           if (!claimed) return;
-          yield* Effect.logInfo("Skipped a missed private task automation slot", {
+          yield* Effect.logInfo("Skipped a missed task automation slot", {
             automationId: automation.id,
             slot: decision.slot,
           });
@@ -265,7 +265,7 @@ const make = Effect.gen(function* () {
       }
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.logError("Failed to evaluate a private task automation", {
+        Effect.logError("Failed to evaluate a task automation", {
           automationId: automation.id,
           cause,
         }),
@@ -275,9 +275,7 @@ const make = Effect.gen(function* () {
   const tick = Effect.gen(function* () {
     const automations = yield* repository.listAutomationsByStatus({ status: "enabled" });
     yield* Effect.forEach(automations, evaluate, { discard: true, concurrency: 1 });
-  }).pipe(
-    Effect.catchCause((cause) => Effect.logError("Private task automation tick failed", { cause })),
-  );
+  }).pipe(Effect.catchCause((cause) => Effect.logError("Task automation tick failed", { cause })));
 
   /**
    * Re-arms every enabled automation on startup. Slots missed while the process
@@ -292,9 +290,7 @@ const make = Effect.gen(function* () {
       { discard: true, concurrency: 1 },
     );
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logError("Private task automation recovery failed", { cause }),
-    ),
+    Effect.catchCause((cause) => Effect.logError("Task automation recovery failed", { cause })),
   );
 
   yield* Effect.forkScoped(
