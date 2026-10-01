@@ -231,6 +231,8 @@ test("task-agent startup forwards complete advertised Astra options to run and b
       listAllActiveAgentRuns: () => Effect.succeed([]),
       listAllAgents: () => Effect.succeed([configuredAgent]),
       listAllTasks: () => Effect.succeed([assignedTask]),
+      getById: () => Effect.succeed(Option.some(assignedTask)),
+      getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
       findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),
       searchAgentRuns: () => Effect.succeed([]),
       createAgentRun: (run: { readonly modelSelection: unknown }) =>
@@ -322,6 +324,9 @@ test("restart interrupts persisted active runs, clears assignment, and does not 
       getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
       listActiveAgentRunsForTask: () => Effect.succeed([]),
       findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.some(persistedRun)),
+      // Finalization re-checks that the run still owns its thread.
+      getAgentRunById: () => Effect.succeed(Option.some({ completedAt: null } as never)),
+      findActiveAgentRunByThreadId: () => Effect.succeed(Option.none()),
       claimAgentRunFinalization: (input: { readonly finalizingStatus: string }) =>
         Effect.sync(() => {
           completions.push({ status: input.finalizingStatus.replace("finalizing:", "") });
@@ -603,6 +608,9 @@ test("failed cleanup leaves finalization active and retry releases the assignmen
         Effect.sync(() =>
           completed ? Option.none() : Option.some({ ...baseRun, status: runStatus }),
         ),
+      // Finalization re-checks that the run still owns its thread.
+      getAgentRunById: () => Effect.succeed(Option.some({ completedAt: null } as never)),
+      findActiveAgentRunByThreadId: () => Effect.succeed(Option.none()),
       claimAgentRunFinalization: (input: { readonly finalizingStatus: string }) =>
         Effect.sync(() => {
           if (runStatus.startsWith("finalizing:") && runStatus !== input.finalizingStatus) {
@@ -716,6 +724,9 @@ test("live reconciliation waits for a fresh run's thread but still fails a missi
         ),
       getById: () => Effect.succeed(Option.some(assignedTask)),
       getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
+      // Finalization re-checks that the run still owns its thread.
+      getAgentRunById: () => Effect.succeed(Option.some({ completedAt: null } as never)),
+      findActiveAgentRunByThreadId: () => Effect.succeed(Option.none()),
       claimAgentRunFinalization: () => Effect.succeed(true),
       finalizeAgentRun: (input: Record<string, unknown>) =>
         Effect.sync(() => {

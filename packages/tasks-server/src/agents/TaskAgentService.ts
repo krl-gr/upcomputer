@@ -330,6 +330,18 @@ const make = Effect.gen(function* () {
         finalizingStatus: input.finalizingStatus,
       });
       if (!claimed) return false;
+      // The claim admits a second finalizer of the same kind (crash recovery). If
+      // another one already finished this run, a continuation may own the thread
+      // now, so its session must not be touched.
+      const ownsThread = Effect.gen(function* () {
+        const run = yield* repository.getAgentRunById({ id: input.run.id });
+        if (Option.isNone(run) || run.value.completedAt !== null) return false;
+        const active = yield* repository.findActiveAgentRunByThreadId({
+          threadId: input.run.threadId,
+        });
+        return Option.isNone(active) || active.value.id === input.run.id;
+      });
+      if (!(yield* ownsThread)) return false;
       const thread = yield* projections.getThreadDetailById(input.run.threadId);
       if (input.terminalSession !== undefined && Option.isSome(thread)) {
         const session = thread.value.session;
@@ -363,7 +375,8 @@ const make = Effect.gen(function* () {
         input.stopSession &&
         Option.isSome(thread) &&
         thread.value.session !== null &&
-        thread.value.session.status !== "stopped"
+        thread.value.session.status !== "stopped" &&
+        (yield* ownsThread)
       ) {
         yield* orchestration.dispatch({
           type: "thread.session.stop",
@@ -679,8 +692,16 @@ const make = Effect.gen(function* () {
    * Run-status agents start for an unhandled terminal run of another agent;
    * every other agent starts on task state, subject to `runsAgain`.
    */
-  const startAgent = (agent: TaskAgent, task: Task) =>
+  const startAgent = (queuedAgent: TaskAgent, queuedTask: Task) =>
     Effect.gen(function* () {
+      // Jobs carry the state from when they were queued; a later close, disable,
+      // delete or notBefore must win, so decide on the stored state.
+      const currentTask = yield* repository.getById({ id: queuedTask.id });
+      const currentAgent = yield* repository.getAgentById({ id: queuedAgent.id });
+      if (Option.isNone(currentTask) || Option.isNone(currentAgent)) return;
+      const task = currentTask.value;
+      const agent = currentAgent.value;
+      if (!startsForTask(agent, task, Date.parse(yield* now))) return;
       if (
         Option.isSome(
           yield* repository.findActiveAgentRunForTaskAgent({
@@ -839,25 +860,32 @@ const make = Effect.gen(function* () {
       );
     });
 
-  const reconcileTask = ({ task, reason, releasedRunId }: TaskChangedInput) =>
+  const reconcileTask = ({ task: queuedTask, reason, releasedRunId }: TaskChangedInput) =>
     Effect.gen(function* () {
       if (reason !== "run-finished") {
-        yield* appendEvent(task, `task.${reason}`, { status: task.status, tags: task.tags });
+        yield* appendEvent(queuedTask, `task.${reason}`, {
+          status: queuedTask.status,
+          tags: queuedTask.tags,
+        });
       }
+      const current =
+        reason === "deleted"
+          ? null
+          : Option.getOrNull(yield* repository.getById({ id: queuedTask.id }));
+      const task = current ?? queuedTask;
       const active = yield* repository.listActiveAgentRunsForTask({ id: task.id });
       yield* Effect.forEach(
         active,
         (run) =>
           Effect.gen(function* () {
             const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
-            const stopReason =
-              reason === "deleted" ? "task-deleted" : endingStopReason(agent, task);
+            const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
             if (stopReason !== null) yield* stopActiveRun(run, stopReason);
             else if (run.id === releasedRunId) yield* stopActiveRun(run, "released");
           }),
         { discard: true, concurrency: 1 },
       );
-      if (reason === "deleted") return;
+      if (current === null) return;
       yield* startMatchingAgents(yield* repository.listAllAgents(), task);
     });
 

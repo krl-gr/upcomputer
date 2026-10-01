@@ -23,6 +23,7 @@ import {
 } from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -372,12 +373,22 @@ function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
 async function withScheduler(
   use: (harness: Harness) => Effect.Effect<void, unknown>,
   legacy?: (db: NodeSqlite.DatabaseSync) => void,
+  /** Wraps the scheduler's repository, e.g. to pause a call and force an interleaving. */
+  wrapRepository?: (repository: TaskRepositoryShape) => TaskRepositoryShape,
 ) {
   const repositoryLayer = await database(legacy);
+  const schedulerRepositoryLayer = wrapRepository
+    ? Layer.effect(
+        TaskRepository,
+        Effect.gen(function* () {
+          return wrapRepository(yield* TaskRepository);
+        }),
+      ).pipe(Layer.provide(repositoryLayer))
+    : repositoryLayer;
   const commands: OrchestrationCommand[] = [];
   const sessions = new Map<string, FakeSession>();
   const dependencies = Layer.mergeAll(
-    repositoryLayer,
+    schedulerRepositoryLayer,
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
@@ -667,6 +678,11 @@ test("after the upgrade, finished work in a start status is not replayed and uns
             .triggerChangedAt,
           at(5),
         );
+        NodeAssert.equal(
+          (yield* runsOf(repository, "shared")).length,
+          2,
+          "an agent that finished before another agent on the same task is not replayed",
+        );
       }),
     (db) => {
       db.prepare(`INSERT INTO task_agents (id, project_id, name, enabled, start_statuses_json,
@@ -706,6 +722,32 @@ test("after the upgrade, finished work in a start status is not replayed and uns
         at(6),
       );
       task.run("fresh", "0000000300000000", "Fresh", at(1), at(1));
+      // Two agents worked on one task: the developer finished at :04, the reviewer at :05.
+      db.prepare(`INSERT INTO task_agents (id, project_id, name, enabled, start_statuses_json,
+        start_tags_json, config_json, concurrency_key, created_at, updated_at)
+        VALUES ('reviewer', 'project-1', 'Reviewer', 1, '["To Do"]', '["shared"]', ?, NULL, ?, ?)`).run(
+        JSON.stringify({ role: "Reviewer", modelSelection, instructions: "Review." }),
+        at(0),
+        at(0),
+      );
+      task.run("shared", "0000000400000000", "Shared", at(1), at(5));
+      db.prepare("INSERT INTO task_tags (task_id, tag) VALUES ('shared', 'shared')").run();
+      run.run(
+        "run-shared-dev",
+        "shared",
+        "thread-shared-dev",
+        JSON.stringify(modelSelection),
+        "completed",
+        at(2),
+        at(4),
+      );
+      db.prepare(`INSERT INTO task_agent_runs (id, task_id, agent_id, thread_id,
+        model_selection_json, status, started_at, completed_at)
+        VALUES ('run-shared-reviewer', 'shared', 'reviewer', 'thread-shared-reviewer', ?, 'completed', ?, ?)`).run(
+        JSON.stringify(modelSelection),
+        at(4),
+        at(5),
+      );
     },
   );
 });
@@ -978,6 +1020,93 @@ test("a failed continuation triggers a run-status agent once", async () => {
           .length,
         1,
       );
+    }),
+  );
+});
+
+test("a queued change uses the stored task, so closing or disabling before it is processed starts nothing", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, commands } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      // The job carries the task as it was when queued; the task is closed before it runs.
+      const queued = yield* repository.upsert(taskInput("closed-later"));
+      yield* repository.update({ id: queued.id, closedAt: isoNow() });
+      yield* service.scheduleTaskChanged({ task: queued, reason: "created" });
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "closed-later")).length, 0);
+      // Same for an agent disabled after the change was queued.
+      const open = yield* repository.upsert(taskInput("agent-disabled-later"));
+      yield* repository.upsertAgent({ ...agentInput("dev"), enabled: false });
+      yield* service.scheduleTaskChanged({ task: open, reason: "created" });
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "agent-disabled-later")).length, 0);
+      NodeAssert.equal(
+        commands.filter((command) => command.type === "thread.create").length,
+        0,
+        "no provider thread starts",
+      );
+    }),
+  );
+});
+
+test("a delayed duplicate stop of a finished run leaves the continuation on its thread alone", async () => {
+  const gate = { release: () => {}, paused: false };
+  const released = new Promise<void>((resolve) => {
+    gate.release = resolve;
+  });
+  let pauseNextStopClaim = false;
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service, commands } = harness;
+        yield* repository.upsertAgent(agentInput("dev"));
+        const task = yield* repository.upsert(taskInput("t"));
+        yield* service.scheduleTaskChanged({ task, reason: "created" });
+        const first = yield* waitFor(
+          "first run",
+          runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+        );
+
+        // Stop A claims finalization and pauses; stop B (same claim kind) finishes the run.
+        pauseNextStopClaim = true;
+        const stopA = yield* Effect.forkChild(service.stopRun({ id: first.id }));
+        yield* waitFor(
+          "stop A to pause",
+          Effect.sync(() => (gate.paused ? true : undefined)),
+        );
+        yield* service.stopRun({ id: first.id });
+        const continued = yield* service.messageRun({ id: first.id, text: "Continue." });
+        NodeAssert.ok(continued);
+        const startIndex = commands.findLastIndex(
+          (command) => command.type === "thread.turn.start",
+        );
+
+        gate.release();
+        yield* Fiber.join(stopA);
+        NodeAssert.deepEqual(
+          commands.slice(startIndex + 1).map(({ type }) => type),
+          [],
+          "the late stop must not stop the continuation's session",
+        );
+        const runs = yield* runsOf(repository, "t");
+        NodeAssert.equal(runs.filter((run) => run.completedAt === null).length, 1);
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      claimAgentRunFinalization: (input) =>
+        repository.claimAgentRunFinalization(input).pipe(
+          Effect.tap(() =>
+            pauseNextStopClaim && input.finalizingStatus === "finalizing:stopped"
+              ? Effect.promise(() => {
+                  pauseNextStopClaim = false;
+                  gate.paused = true;
+                  return released;
+                })
+              : Effect.void,
+          ),
+        ),
     }),
   );
 });

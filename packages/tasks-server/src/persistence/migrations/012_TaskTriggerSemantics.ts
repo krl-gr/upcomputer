@@ -3,10 +3,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 /**
  * Time gate and trigger revision on tasks, run-status triggers on agents, and
- * the triggering run on runs. `trigger_changed_at` starts at the task's last
- * finished run (else `updated_at`): later writes cannot be told apart from
- * output or assignment edits, and the old scheduler started agents on real
- * changes right away, so upgraded tasks are not replayed.
+ * the triggering run on runs. `trigger_changed_at` starts at the earliest of
+ * each agent's latest finished run on the task (else `updated_at`), so no
+ * agent sees a change after its own last run: later writes cannot be told
+ * apart from output or assignment edits, and the old scheduler started agents
+ * on real changes right away, so upgraded tasks are not replayed.
  */
 export const TaskTriggerSemanticsMigration = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -14,8 +15,13 @@ export const TaskTriggerSemanticsMigration = Effect.gen(function* () {
   yield* sql`ALTER TABLE tasks ADD COLUMN trigger_changed_at TEXT`;
   yield* sql`
     UPDATE tasks SET trigger_changed_at = COALESCE(
-      (SELECT MAX(completed_at) FROM task_agent_runs
-        WHERE task_agent_runs.task_id = tasks.id AND completed_at IS NOT NULL),
+      (SELECT MIN(r.completed_at) FROM task_agent_runs r
+        WHERE r.task_id = tasks.id AND r.completed_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM task_agent_runs n
+            WHERE n.task_id = r.task_id AND n.agent_id = r.agent_id
+              AND n.completed_at > r.completed_at
+          )),
       updated_at
     )
   `;
