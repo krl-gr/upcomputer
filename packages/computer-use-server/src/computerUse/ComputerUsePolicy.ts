@@ -18,15 +18,24 @@ export interface ComputerUsePolicyDecision {
   readonly detail: string;
 }
 
+/**
+ * Matched as substrings against the `app` argument, which may be a visible
+ * name (possibly localized) or a bundle identifier, so plurals and IDs such as
+ * `com.apple.Passwords` or `com.agilebits.onepassword7` are caught too.
+ */
 const SENSITIVE_APP_PATTERNS = [
-  /\bpassword\b/i,
-  /\bkeychain\b/i,
-  /\b1password\b/i,
-  /\bbitwarden\b/i,
-  /\bdashlane\b/i,
-  /\blastpass\b/i,
-  /\bpayment\b/i,
-  /\bwallet\b/i,
+  /pass(?:word|wd)/i,
+  /keychain/i,
+  /bitwarden/i,
+  /dashlane/i,
+  /lastpass/i,
+  /keepass/i,
+  /enpass/i,
+  /proton\s*pass/i,
+  /wallet/i,
+  /payment/i,
+  /парол/iu,
+  /связка ключей/iu,
 ] as const;
 
 function isSensitiveApp(value: unknown): boolean {
