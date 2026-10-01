@@ -10,7 +10,8 @@ Agents drive a browser through the `preview_*` tools on the `upcomputer` MCP ser
   `apps/web/src/components/preview/PreviewAutomationHosts.tsx`. Requests stream to it over
   WebSocket and it drives the built-in browser tab.
 - **Server host.** A product can register a host that runs inside the server process, for
-  example a managed external browser. Core ships none.
+  example a managed external browser. The public build registers one: the managed Chrome from
+  `@upcomputer/computer-use-server` (see [Browser and computer use](../computer-use/README.md)).
 
 Both kinds receive the same `PreviewAutomationRequest` and answer with the same result and
 `PreviewAutomationRemoteError` shapes. The broker classifies failures into the same typed errors,
