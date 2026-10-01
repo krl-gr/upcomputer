@@ -30,7 +30,7 @@ export const ComputerUseSettings = Schema.Struct({
   mcpArgs: Schema.Array(TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed([...COMPUTER_USE_DEFAULT_MCP_ARGS])),
   ),
-  requireActionApproval: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  requireActionApproval: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   allowCoordinateFallback: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   allowedApps: Schema.Array(TrimmedString).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });

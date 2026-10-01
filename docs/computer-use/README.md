@@ -44,7 +44,7 @@ settings file:
 
 - **Mode**: Observe allows only the observation tools; Control also allows
   actions.
-- **Action approvals** (on by default): ask before every control action, even
+- **Action approvals** (off by default): ask before every control action, even
   in full-access threads.
 - **Allowed applications**: when set, only these apps may be targeted.
 - **Coordinate fallback** (off by default): allow raw x/y targets.
@@ -64,7 +64,7 @@ change applies to the next call. The computer-use tools apply:
 - Where the bundled UpComputer agent would ask the user for approval, other
   agents are refused instead, since they cannot ask yet: every call in a
   Supervised (approval-required) thread, and control actions while Action
-  approvals is on. Turn Action approvals off to let other agents act.
+  approvals is on.
 
 The bundled UpComputer agent uses the same service and policy and keeps its
 own approval prompts.

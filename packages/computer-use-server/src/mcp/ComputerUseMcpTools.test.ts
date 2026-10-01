@@ -208,6 +208,7 @@ test("any agent's MCP session gets the computer-use tools under its thread's mod
               computerUse: {
                 binaryPath: process.execPath,
                 mcpArgs: JSON.parse(NodeFS.readFileSync(settingsPath, "utf8")).computerUse.mcpArgs,
+                requireActionApproval: true,
               },
             }),
           );

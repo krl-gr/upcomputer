@@ -295,7 +295,7 @@ function ComputerUseSettingsPage() {
           description="Always ask before native control actions execute, even when the thread otherwise has full access. Agents that cannot ask for approval are refused control actions while this is on."
           control={
             <Switch
-              checked={settings?.requireActionApproval ?? true}
+              checked={settings?.requireActionApproval ?? false}
               disabled={unavailable || busy || !settings}
               aria-label="Require Computer Use approvals"
               onCheckedChange={(checked) =>
