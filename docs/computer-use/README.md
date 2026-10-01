@@ -60,8 +60,8 @@ change applies to the next call. The computer-use tools apply:
 
 - A read-only mode, such as Plan or Ask, may only observe.
   Actions need a mode whose mutations are allowed, such as Default.
-- A mode that is no longer registered applies as Default, like the thread's
-  turns. A thread that cannot be read is refused.
+- The removed Orchestrator mode applies as Default, like the thread's turns.
+  Any other unregistered mode, or a thread that cannot be read, is refused.
 - Agents cannot ask the user for approval yet, so they are refused instead:
   every call in a Supervised (approval-required) thread, and control actions
   while Action approvals is on.

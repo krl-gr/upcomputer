@@ -5,8 +5,13 @@ import { resolveKnownInteractionMode } from "./interactionModePresentation";
 import { createExperimentalWebProductComposition } from "./WebComposition";
 
 describe("resolveKnownInteractionMode", () => {
-  it("shows and sends a removed mode as Default", () => {
+  it("shows and sends the removed Orchestrator mode as Default", () => {
     expect(resolveKnownInteractionMode("orchestrator", WEB_PRODUCT_COMPOSITION)).toBe("default");
+  });
+
+  it("keeps other unknown modes, which show as unavailable and the server rejects", () => {
+    expect(resolveKnownInteractionMode("task-review", WEB_PRODUCT_COMPOSITION)).toBe("task-review");
+    expect(resolveKnownInteractionMode("plna", WEB_PRODUCT_COMPOSITION)).toBe("plna");
   });
 
   it("keeps core modes and modes a bundled feature defines", () => {

@@ -1306,13 +1306,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             .filter((part): part is string => typeof part === "string" && part.length > 0)
             .join("\n\n");
 
-    // A thread can store a mode this build no longer registers; it runs as Default.
+    // A thread can store the removed Orchestrator mode; it runs as Default.
+    // Other unregistered modes are rejected below.
     const interactionMode =
       parsed.interactionMode === undefined
         ? undefined
         : interactionModeRegistryService.registry.effectiveModeId(parsed.interactionMode);
     if (interactionMode !== parsed.interactionMode) {
-      yield* Effect.logWarning("Running an unregistered interaction mode as Default", {
+      yield* Effect.logWarning("Running the removed Orchestrator mode as Default", {
         threadId: parsed.threadId,
         interactionMode: parsed.interactionMode,
       });

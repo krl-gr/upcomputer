@@ -148,6 +148,12 @@ export class InteractionModeProviderBehaviorError extends Error {
   }
 }
 
+/**
+ * The removed Orchestrator mode. Threads and agents can still store it; they
+ * run as Default. No other unregistered mode falls back.
+ */
+export const REMOVED_ORCHESTRATOR_INTERACTION_MODE = "orchestrator";
+
 interface StoredInteractionMode {
   readonly registration: ExperimentalInteractionModeRegistration<unknown>;
   readonly providerBehaviors: ReadonlyMap<string, InteractionModeProviderBehavior>;
@@ -158,7 +164,8 @@ interface StoredInteractionMode {
  * Deterministic build-time interaction-mode registry.
  *
  * Unknown modes and unsupported providers are rejected. The only fallback is
- * the explicit `effectiveModeId`, for modes stored on existing threads.
+ * the explicit `effectiveModeId`, for the removed Orchestrator mode stored on
+ * existing threads.
  *
  * @experimental This API remains unstable during first-party extraction.
  */
@@ -209,13 +216,17 @@ export class ExperimentalInteractionModeRegistry {
   }
 
   /**
-   * The mode to run for a mode stored on a thread or agent. A mode that is not
-   * registered, such as the removed Orchestrator mode, runs as Default.
+   * The mode to run for a mode stored on a thread or agent. The removed
+   * Orchestrator mode runs as Default. Any other mode is returned unchanged, so
+   * an unregistered one, such as an extension mode missing from this build or
+   * a misspelled id, is still rejected instead of gaining Default's rights.
    */
   effectiveModeId(modeId: string): string {
-    return this.#modes.has(modeId) || !this.#modes.has(DEFAULT_PROVIDER_INTERACTION_MODE)
-      ? modeId
-      : DEFAULT_PROVIDER_INTERACTION_MODE;
+    return modeId === REMOVED_ORCHESTRATOR_INTERACTION_MODE &&
+      !this.#modes.has(modeId) &&
+      this.#modes.has(DEFAULT_PROVIDER_INTERACTION_MODE)
+      ? DEFAULT_PROVIDER_INTERACTION_MODE
+      : modeId;
   }
 
   resolve(

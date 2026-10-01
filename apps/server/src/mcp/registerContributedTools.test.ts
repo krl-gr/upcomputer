@@ -27,7 +27,7 @@ const projectionWithThreadMode = (interactionMode: string) =>
       Effect.succeed(Option.some({ id: threadId, runtimeMode: "full-access", interactionMode })),
   }) as unknown as ProjectionSnapshotQueryShape;
 
-it.effect("applies Default to tools called from a thread in a removed mode", () =>
+it.effect("applies Default to tools called from a thread in the removed Orchestrator mode", () =>
   Effect.gen(function* () {
     const session = yield* resolveMcpToolSession(
       invocation,
@@ -38,6 +38,18 @@ it.effect("applies Default to tools called from a thread in a removed mode", () 
 
     expect(session.interactionMode?.id).toBe("default");
     expect(session.mutationPolicy).toBe("allow");
+  }),
+);
+
+it.effect("denies mutations to tools called from a thread in another unregistered mode", () =>
+  Effect.gen(function* () {
+    const session = yield* resolveMcpToolSession(
+      invocation,
+      BUILT_IN_INTERACTION_MODE_REGISTRY,
+    ).pipe(Effect.provideService(ProjectionSnapshotQuery, projectionWithThreadMode("task-review")));
+
+    expect(session.interactionMode).toBeUndefined();
+    expect(session.mutationPolicy).toBe("deny");
   }),
 );
 

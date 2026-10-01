@@ -149,7 +149,7 @@ describe("ExperimentalInteractionModeRegistry", () => {
     expect(resolveInteractionModeFinalOutput("ignore", resolved)).toBeUndefined();
   });
 
-  it("runs a mode that is no longer registered as Default", () => {
+  it("runs only the removed Orchestrator mode as Default", () => {
     const registry = createExperimentalInteractionModeRegistry([
       { descriptor: makeDescriptor({ id: "default", displayName: "Default" }) },
       { descriptor: makeDescriptor() },
@@ -157,6 +157,12 @@ describe("ExperimentalInteractionModeRegistry", () => {
 
     expect(registry.effectiveModeId("ask")).toBe("ask");
     expect(registry.effectiveModeId("orchestrator")).toBe("default");
+    // Other unregistered modes keep their id, so resolving them still fails.
+    expect(registry.effectiveModeId("task-review")).toBe("task-review");
+    expect(registry.effectiveModeId("plna")).toBe("plna");
+    expect(() => registry.resolveOrThrow("task-review", "codex")).toThrow(
+      "Interaction mode 'task-review' is not registered.",
+    );
     expect(
       createExperimentalInteractionModeRegistry([{ descriptor: makeDescriptor() }]).effectiveModeId(
         "orchestrator",

@@ -36,8 +36,9 @@ const toCallToolResult = (result: ExperimentalMcpToolResult) =>
 
 /**
  * Reads the calling session's thread on every call, so a mode change applies
- * to the next call. A thread that cannot be read denies mutations; a mode that
- * is no longer registered applies Default, like its turns.
+ * to the next call. A thread that cannot be read, or a mode that is not
+ * registered, denies mutations. The removed Orchestrator mode applies Default,
+ * like its turns.
  */
 export const resolveMcpToolSession = Effect.fn("mcp.resolveToolSession")(function* (
   invocation: McpInvocationContext.McpInvocationScope,

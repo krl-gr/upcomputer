@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type ProviderInteractionMode,
 } from "@upcomputer/contracts";
+import { REMOVED_ORCHESTRATOR_INTERACTION_MODE } from "@upcomputer/shared/interactionMode";
 
 import {
   CORE_INTERACTION_MODE_PRESENTATIONS,
@@ -73,9 +74,9 @@ export function useInteractionModePresentations(
 }
 
 /**
- * A thread or draft can store a mode that neither core nor a bundled feature
- * defines any more, such as the removed Orchestrator mode. The server runs it
- * as Default, so the composer shows and sends Default too.
+ * A thread or draft can store the removed Orchestrator mode. The server runs it
+ * as Default, so the composer shows and sends Default too. Any other mode stays
+ * as stored: an unknown one shows as unavailable and the server rejects it.
  */
 export function resolveKnownInteractionMode(
   mode: ProviderInteractionMode,
@@ -84,7 +85,9 @@ export function resolveKnownInteractionMode(
   const known =
     CORE_INTERACTION_MODE_PRESENTATIONS.some((presentation) => presentation.id === mode) ||
     listExperimentalWebInteractionModes(composition).some((entry) => entry.mode.id === mode);
-  return known ? mode : DEFAULT_PROVIDER_INTERACTION_MODE;
+  return !known && mode === REMOVED_ORCHESTRATOR_INTERACTION_MODE
+    ? DEFAULT_PROVIDER_INTERACTION_MODE
+    : mode;
 }
 
 export function useKnownInteractionMode(mode: ProviderInteractionMode): ProviderInteractionMode {
