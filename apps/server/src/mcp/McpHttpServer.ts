@@ -9,10 +9,14 @@ import type * as Types from "effect/Types";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
+import type { ExperimentalInteractionModeRegistry } from "@upcomputer/shared/interactionMode";
+
 import packageJson from "../../package.json" with { type: "json" };
+import type { ExperimentalMcpToolContribution } from "../product/McpToolContribution.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { makeContributedToolsLayer } from "./registerContributedTools.ts";
 import { registerToolkit } from "./registerToolkit.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
@@ -222,7 +226,19 @@ const McpTransportLive = McpServer.layerHttp({
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = Layer.mergeAll(
+const CoreToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   WorkspaceToolkitRegistrationLive,
-).pipe(Layer.provideMerge(McpTransportLive));
+);
+
+export const layer = CoreToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+
+/** The core server plus tools contributed by product features. */
+export const layerWithTools = (
+  contributions: ReadonlyArray<ExperimentalMcpToolContribution>,
+  interactionModeRegistry: ExperimentalInteractionModeRegistry,
+) =>
+  makeContributedToolsLayer(contributions, interactionModeRegistry).pipe(
+    Layer.provideMerge(CoreToolkitRegistrationLive),
+    Layer.provideMerge(McpTransportLive),
+  );

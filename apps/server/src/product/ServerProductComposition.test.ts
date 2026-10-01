@@ -33,6 +33,12 @@ const TEST_PREVIEW_AUTOMATION_HOST = {
     execute: () => Effect.succeed(null),
   }),
 };
+const TEST_MCP_TOOLS = {
+  id: "task-tools",
+  ownerId: "upcomputer.tasks",
+  version: 1,
+  make: Effect.succeed([]),
+};
 const TEST_PROVIDER_DRIVER = {
   driverKind: ProviderDriverKind.make("upcomputerAgent"),
   metadata: { displayName: "UpComputer Agent", supportsMultipleInstances: false },
@@ -80,6 +86,7 @@ describe("server product composition", () => {
         providerDrivers: 0,
         interactionModeProviders: 0,
         previewAutomationHosts: 0,
+        mcpTools: 0,
       },
       {
         id: "upcomputer.tasks",
@@ -93,6 +100,7 @@ describe("server product composition", () => {
         providerDrivers: 0,
         interactionModeProviders: 0,
         previewAutomationHosts: 0,
+        mcpTools: 0,
       },
     ]);
   });
@@ -180,6 +188,7 @@ describe("server product composition", () => {
             },
           ],
           previewAutomationHosts: [TEST_PREVIEW_AUTOMATION_HOST],
+          mcpTools: [TEST_MCP_TOOLS],
         },
       ],
     });
@@ -197,12 +206,14 @@ describe("server product composition", () => {
         providerDrivers: 1,
         interactionModeProviders: 1,
         previewAutomationHosts: 1,
+        mcpTools: 1,
       },
     ]);
     expect(composition.migrations).toEqual([migration]);
     expect(composition.rpc).toEqual([rpc]);
     expect(composition.providerDrivers).toEqual([TEST_PROVIDER_DRIVER]);
     expect(composition.previewAutomationHosts).toEqual([TEST_PREVIEW_AUTOMATION_HOST]);
+    expect(composition.mcpTools).toEqual([TEST_MCP_TOOLS]);
     const resolvedMode = composition.interactionModeRegistry.resolveOrThrow("task-review", "codex");
     expect(resolvedMode.ownerId).toBe("upcomputer.tasks");
     expect(resolvedMode.provider.sandbox).toBe("read-only");

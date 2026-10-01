@@ -448,7 +448,9 @@ export const makeRoutesLayerForProduct = <
       composition.httpRoutesLayer,
       websocketRpcRouteLayer(composition.rpc),
     ),
-    McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+    McpHttpServer.layerWithTools(composition.mcpTools, composition.interactionModeRegistry).pipe(
+      Layer.provide(McpSessionRegistry.layer),
+    ),
   ).pipe(
     Layer.provide(PreviewAutomationBroker.layerWithServerHosts(composition.previewAutomationHosts)),
     Layer.provide(ServerSelfUpdate.layer),

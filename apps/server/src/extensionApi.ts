@@ -3,13 +3,14 @@
  *
  * This B3 boundary exposes product composition, server CLI assembly, feature
  * runtime layers, feature migrations, feature interaction modes, HTTP routes,
- * dynamic tools, server-side preview automation hosts, and selected service tags
- * needed by first-party private products.
+ * dynamic tools, server-side preview automation hosts, tools on the core MCP
+ * server, and selected service tags needed by first-party private products.
  */
 export * from "./product/DynamicToolRegistry.ts";
 export * from "./product/FeatureMigrations.ts";
 export * from "./product/HttpRouteContribution.ts";
 export * from "./product/InteractionModeRegistryService.ts";
+export * from "./product/McpToolContribution.ts";
 export * from "./product/PreviewAutomationHostContribution.ts";
 export * from "./product/ProviderRuntimeEvents.ts";
 export * from "./product/RpcContribution.ts";

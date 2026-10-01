@@ -15,6 +15,7 @@ import {
   type AnyHttpRouteContribution,
 } from "./HttpRouteContribution.ts";
 import { BUILT_IN_INTERACTION_MODE_REGISTRATIONS } from "./BuiltInInteractionModes.ts";
+import type { ExperimentalMcpToolContribution } from "./McpToolContribution.ts";
 import type { ExperimentalPreviewAutomationHostContribution } from "./PreviewAutomationHostContribution.ts";
 import { createRpcContributionPlan, type AnyNamespacedRpcContribution } from "./RpcContribution.ts";
 import {
@@ -80,6 +81,7 @@ export interface ExperimentalServerFeatureContribution<
   readonly providerDrivers?: ReadonlyArray<ExperimentalProviderDriverContribution>;
   readonly interactionModeProviders?: ReadonlyArray<ExperimentalInteractionModeProviderContribution>;
   readonly previewAutomationHosts?: ReadonlyArray<ExperimentalPreviewAutomationHostContribution>;
+  readonly mcpTools?: ReadonlyArray<ExperimentalMcpToolContribution>;
 }
 
 export type RpcContributionsOfFeature<Feature> = Feature extends {
@@ -106,6 +108,7 @@ export interface ExperimentalServerFeatureDiagnostic {
   readonly providerDrivers: number;
   readonly interactionModeProviders: number;
   readonly previewAutomationHosts: number;
+  readonly mcpTools: number;
 }
 
 export interface ExperimentalServerProductComposition<
@@ -122,6 +125,7 @@ export interface ExperimentalServerProductComposition<
   readonly interactionModeRegistry: ExperimentalInteractionModeRegistry;
   readonly providerDrivers: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>>;
   readonly previewAutomationHosts: ReadonlyArray<ExperimentalPreviewAutomationHostContribution>;
+  readonly mcpTools: ReadonlyArray<ExperimentalMcpToolContribution>;
 }
 
 export class ServerProductCompositionInvariantError extends Error {
@@ -142,7 +146,9 @@ export class ServerProductCompositionInvariantError extends Error {
     | "invalid-interaction-mode-provider"
     | "duplicate-interaction-mode-provider"
     | "invalid-preview-automation-host"
-    | "duplicate-preview-automation-host";
+    | "duplicate-preview-automation-host"
+    | "invalid-mcp-tool"
+    | "duplicate-mcp-tool";
 
   constructor(
     code:
@@ -161,7 +167,9 @@ export class ServerProductCompositionInvariantError extends Error {
       | "invalid-interaction-mode-provider"
       | "duplicate-interaction-mode-provider"
       | "invalid-preview-automation-host"
-      | "duplicate-preview-automation-host",
+      | "duplicate-preview-automation-host"
+      | "invalid-mcp-tool"
+      | "duplicate-mcp-tool",
     message: string,
   ) {
     super(message);
@@ -176,7 +184,8 @@ function assertStableId(
     | "invalid-layer-id"
     | "invalid-provider-driver-id"
     | "invalid-interaction-mode-provider"
-    | "invalid-preview-automation-host",
+    | "invalid-preview-automation-host"
+    | "invalid-mcp-tool",
   field: string,
 ): void {
   if (!STABLE_ID.test(value)) {
@@ -235,6 +244,19 @@ export function defineExperimentalPreviewAutomationHost(
     throw new ServerProductCompositionInvariantError(
       "invalid-preview-automation-host",
       `Preview automation host contribution '${contribution.id}' must have a positive safe-integer version.`,
+    );
+  }
+  return contribution;
+}
+
+export function defineExperimentalMcpTools(
+  contribution: ExperimentalMcpToolContribution,
+): ExperimentalMcpToolContribution {
+  assertStableId(contribution.id, "invalid-mcp-tool", "MCP tool contribution id");
+  if (!Number.isSafeInteger(contribution.version) || contribution.version < 1) {
+    throw new ServerProductCompositionInvariantError(
+      "invalid-mcp-tool",
+      `MCP tool contribution '${contribution.id}' must have a positive safe-integer version.`,
     );
   }
   return contribution;
@@ -312,6 +334,8 @@ export function createExperimentalServerProductComposition<
   const interactionModeProviders: ExperimentalInteractionModeProviderContribution[] = [];
   const previewAutomationHosts: ExperimentalPreviewAutomationHostContribution[] = [];
   const previewAutomationHostIds = new Set<string>();
+  const mcpTools: ExperimentalMcpToolContribution[] = [];
+  const mcpToolIds = new Set<string>();
   const providerDriverIds = new Set<string>();
   const providerDriverKinds = new Set(BUILT_IN_DRIVERS.map((driver) => driver.driverKind));
   const features = [...(input.features ?? [])]
@@ -411,6 +435,20 @@ export function createExperimentalServerProductComposition<
       previewAutomationHostIds.add(hostKey);
       previewAutomationHosts.push(contribution);
     }
+
+    for (const rawContribution of feature.mcpTools ?? []) {
+      const contribution = defineExperimentalMcpTools(rawContribution);
+      assertOwner(feature.id, contribution.ownerId, "MCP tool contribution");
+      const key = `${contribution.ownerId}:${contribution.id}`;
+      if (mcpToolIds.has(key)) {
+        throw new ServerProductCompositionInvariantError(
+          "duplicate-mcp-tool",
+          `MCP tool contribution '${key}' is registered more than once.`,
+        );
+      }
+      mcpToolIds.add(key);
+      mcpTools.push(contribution);
+    }
   }
 
   const orderedLayers = layers.sort(
@@ -482,6 +520,7 @@ export function createExperimentalServerProductComposition<
           providerDrivers,
           interactionModeProviders,
           previewAutomationHosts,
+          mcpTools,
         }) => ({
           id,
           version,
@@ -494,6 +533,7 @@ export function createExperimentalServerProductComposition<
           providerDrivers: providerDrivers?.length ?? 0,
           interactionModeProviders: interactionModeProviders?.length ?? 0,
           previewAutomationHosts: previewAutomationHosts?.length ?? 0,
+          mcpTools: mcpTools?.length ?? 0,
         }),
       ),
     ),
@@ -505,6 +545,7 @@ export function createExperimentalServerProductComposition<
     interactionModeRegistry,
     providerDrivers: Object.freeze(providerDrivers.map((contribution) => contribution.driver)),
     previewAutomationHosts: Object.freeze(previewAutomationHosts),
+    mcpTools: Object.freeze(mcpTools),
   });
 }
 
