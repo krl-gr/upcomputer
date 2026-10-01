@@ -71,3 +71,44 @@ test.runIf(NodeFS.existsSync("/System/Applications/Passwords.app"))(
     NodeAssert.deepEqual(allowed, []);
   },
 );
+
+const allowlisted = Schema.decodeUnknownSync(ComputerUseSettings)({
+  mode: "control",
+  allowedApps: ["Notes"],
+});
+
+test("an allowlist limits only tools that target an app", () => {
+  const evaluate = (toolName: string, args: Record<string, unknown>) =>
+    evaluateComputerUsePolicy({ toolName, args, settings: allowlisted });
+
+  NodeAssert.equal(evaluate("computer_list_apps", {}).allowed, true, "list apps");
+  NodeAssert.equal(evaluate("computer_get_app_state", { app: "notes" }).allowed, true);
+  NodeAssert.equal(evaluate("computer_click", { app: "Notes", elementIndex: 1 }).allowed, true);
+
+  for (const [toolName, args] of [
+    ["computer_get_app_state", { app: "Safari" }],
+    ["computer_click", { app: "Safari", elementIndex: 1 }],
+    // A tool that targets an app may not drop `app` to slip past the list.
+    ["computer_get_app_state", {}],
+    ["computer_screenshot", {}],
+    ["computer_press_key", { key: "return" }],
+  ] as const) {
+    const decision = evaluate(toolName, args);
+    NodeAssert.equal(
+      decision.allowed,
+      false,
+      `${toolName} on ${"app" in args ? args.app : "no app"}`,
+    );
+    NodeAssert.match(decision.reason ?? "", /not in the allowed apps list/u);
+  }
+});
+
+test("an empty allowlist allows every app except sensitive ones", () => {
+  const evaluate = (toolName: string, args: Record<string, unknown>) =>
+    evaluateComputerUsePolicy({ toolName, args, settings: { ...allowlisted, allowedApps: [] } });
+
+  NodeAssert.equal(evaluate("computer_list_apps", {}).allowed, true);
+  NodeAssert.equal(evaluate("computer_get_app_state", { app: "Safari" }).allowed, true);
+  NodeAssert.equal(evaluate("computer_click", { app: "Safari", elementIndex: 1 }).allowed, true);
+  NodeAssert.equal(evaluate("computer_get_app_state", { app: "1Password" }).allowed, false);
+});

@@ -2,6 +2,7 @@ import type { ComputerUseSettings } from "@upcomputer/computer-use-contracts/set
 import type { ResolvedInteractionMode } from "@upcomputer/shared/interactionMode";
 
 import {
+  type ComputerUseToolDefinition,
   getComputerUseToolDefinition,
   sanitizeComputerUseArgs,
   summarizeComputerUseArgs,
@@ -30,8 +31,25 @@ function usesCoordinates(args: Record<string, unknown>): boolean {
   );
 }
 
-function appAllowed(settings: ComputerUseSettings, args: Record<string, unknown>): boolean {
-  if (settings.allowedApps.length === 0) {
+/** Whether the tool acts on one app, judged by its definition, not by the arguments passed. */
+function targetsApp(tool: ComputerUseToolDefinition): boolean {
+  const properties = tool.inputSchema.properties;
+  return (
+    tool.mode === "action" ||
+    (typeof properties === "object" && properties !== null && "app" in properties)
+  );
+}
+
+/**
+ * The allowlist applies only to tools that target an app; such a tool without `app` is refused.
+ * Every screenshot targets an app, so the allowlist also rules out whole-screen captures.
+ */
+function appAllowed(
+  settings: ComputerUseSettings,
+  tool: ComputerUseToolDefinition,
+  args: Record<string, unknown>,
+): boolean {
+  if (settings.allowedApps.length === 0 || !targetsApp(tool)) {
     return true;
   }
   const app = typeof args.app === "string" ? args.app.trim().toLowerCase() : "";
@@ -70,7 +88,7 @@ export function evaluateComputerUsePolicy(input: {
     };
   }
 
-  if (!appAllowed(input.settings, input.args)) {
+  if (!appAllowed(input.settings, tool, input.args)) {
     return {
       allowed: false,
       reason: "Computer action blocked: target app is not in the allowed apps list.",
