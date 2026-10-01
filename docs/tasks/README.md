@@ -154,6 +154,31 @@ Every run ends its final message with a fenced block:
 
 The run's assignment is released when the result is recorded.
 
+## Instructions
+
+Settings → Instructions holds four shared texts: `taskCreation`,
+`agentCreation`, and `automationCreation`, which `task_context` returns as
+`promptGuidance`, and `taskExecution`, which is part of every run's prompt.
+Besides the settings page, chats read and edit them with tools:
+
+- `instructions_get` returns the texts, their lengths, and a `revision` that
+  changes on every edit.
+- `instructions_update({ field, text, reason, expectedRevision })` replaces
+  one field. It is refused when `expectedRevision` is not current, so two
+  chats cannot overwrite each other.
+- `instructions_history({ field?, limit? })` lists changes newest first, with
+  the previous and new text, the reason, and the source: the settings page,
+  or the thread and run that made it.
+- `instructions_revert({ changeId, reason? })` restores the text from before
+  a change and records that as a new change. It is refused when the field
+  changed after that change; revert the later changes first.
+
+Every change, including settings-page saves, is recorded; history is never
+deleted. The write tools dry-run in read-only interaction modes. Task-agent
+runs may only read: a run's agent must list `instructions_update` or
+`instructions_revert` in its tools to write. The loopback MCP endpoint may
+write.
+
 ## Automations
 
 An automation creates a task from a template (title, description, status,

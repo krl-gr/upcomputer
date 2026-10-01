@@ -17,6 +17,11 @@ import {
   AutomationUpdateInput,
   DEFAULT_AUTOMATION_CATCH_UP_POLICY,
   DEFAULT_AUTOMATION_TIMEZONE,
+  InstructionsGetInput,
+  InstructionsHistoryInput,
+  InstructionsRevertInput,
+  InstructionsUpdateInput,
+  TASK_PROMPT_FIELDS,
   TaskAppendEventInput,
   TaskDeleteInput,
   TaskEventId,
@@ -33,6 +38,8 @@ import {
   type TaskAgent,
   type TaskAgentRun,
   type TaskAutomation,
+  type TaskPromptField,
+  type TaskPromptSettingsChange,
 } from "@upcomputer/tasks-contracts/v1";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -54,8 +61,11 @@ import { automationToolWriteRefusal } from "../automations/automationToolPolicy.
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
-import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
-import { TASK_TRIGGER_RULES } from "./TaskToolDefinitions.ts";
+import {
+  TaskPromptSettingsStore,
+  type TaskPromptChangeOrigin,
+} from "../persistence/TaskPromptSettingsStore.ts";
+import { PROMPT_GUIDANCE_EDITING, TASK_TRIGGER_RULES } from "./TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
 
 export { TaskToolService } from "./TaskToolServiceTag.ts";
@@ -85,6 +95,10 @@ const decoders = {
   automation_create: Schema.decodeUnknownEffect(AutomationCreateInput),
   automation_update: Schema.decodeUnknownEffect(AutomationUpdateInput),
   automation_delete: Schema.decodeUnknownEffect(AutomationDeleteInput),
+  instructions_get: Schema.decodeUnknownEffect(InstructionsGetInput),
+  instructions_update: Schema.decodeUnknownEffect(InstructionsUpdateInput),
+  instructions_history: Schema.decodeUnknownEffect(InstructionsHistoryInput),
+  instructions_revert: Schema.decodeUnknownEffect(InstructionsRevertInput),
 } as const;
 
 function json(value: unknown): string {
@@ -152,6 +166,66 @@ function buildAgentRunTranscript(
     failureReason: thread.session?.lastError ?? null,
     olderEntriesOmitted: kept.length < entries.length,
     entries: kept,
+  };
+}
+
+const INSTRUCTION_FIELD_USE: Record<TaskPromptField, string> = {
+  taskCreation: "Returned by task_context; guidance for task_create.",
+  agentCreation: "Returned by task_context; guidance for agent_create and agent_update.",
+  automationCreation: "Returned by task_context; guidance for automation_create.",
+  taskExecution: "Part of the prompt of every task-agent run.",
+};
+
+/** Above this, taskExecution noticeably grows every run's prompt. */
+const TASK_EXECUTION_LARGE_CHARS = 2_000;
+const CHANGE_EXCERPT_MAX_CHARS = 600;
+
+/** The edited span between the common prefix and suffix, enough for a one-line report. */
+function describeInstructionsChange(field: TaskPromptField, previous: string, next: string) {
+  let prefix = 0;
+  while (prefix < previous.length && prefix < next.length && previous[prefix] === next[prefix])
+    prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < previous.length - prefix &&
+    suffix < next.length - prefix &&
+    previous[previous.length - 1 - suffix] === next[next.length - 1 - suffix]
+  )
+    suffix += 1;
+  const removed = previous.slice(prefix, previous.length - suffix);
+  const added = next.slice(prefix, next.length - suffix);
+  return {
+    field,
+    previousLength: previous.length,
+    newLength: next.length,
+    removed: truncateText(removed, CHANGE_EXCERPT_MAX_CHARS),
+    added: truncateText(added, CHANGE_EXCERPT_MAX_CHARS),
+    ...(field === "taskExecution" && next.length > TASK_EXECUTION_LARGE_CHARS
+      ? {
+          warning: `taskExecution is now ${next.length} characters and is part of every task-agent run's prompt. Tell the user it is getting large.`,
+        }
+      : {}),
+  };
+}
+
+function instructionsChangeView(change: TaskPromptSettingsChange) {
+  return {
+    changeId: change.id,
+    revision: change.revision,
+    field: change.field,
+    previousText: change.previousText,
+    newText: change.newText,
+    reason: change.reason,
+    source:
+      change.source === "settings-page"
+        ? "settings page"
+        : change.source === "mcp"
+          ? "MCP client"
+          : change.source,
+    threadId: change.threadId,
+    runId: change.runId,
+    revertsChangeId: change.revertsChangeId,
+    createdAt: change.createdAt,
   };
 }
 
@@ -260,6 +334,35 @@ const make = Effect.gen(function* () {
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+  /**
+   * Task-agent runs read untrusted content, so an injected "add to the
+   * instructions" must not rewrite every agent's rules. A run writes only when
+   * its agent lists the tool. Chats and the loopback MCP bridge may write.
+   */
+  const instructionsWriteAccess = (
+    name: string,
+    context: ExperimentalDynamicToolInvocationContext,
+  ) =>
+    Effect.gen(function* () {
+      const run = context.threadId
+        ? yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId })
+        : Option.none<TaskAgentRun>();
+      const origin: TaskPromptChangeOrigin = {
+        source: context.threadId ? "thread" : context.source === "mcp" ? "mcp" : "unknown",
+        threadId: context.threadId ?? null,
+        runId: Option.isSome(run) ? run.value.id : null,
+      };
+      if (Option.isNone(run)) return { origin, refusal: null };
+      const agent = yield* repository.getAgentById({ id: run.value.agentId });
+      const allowed = Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name);
+      return {
+        origin,
+        refusal: allowed
+          ? null
+          : `Task-agent run '${run.value.id}' cannot change the shared task instructions: they apply to every agent, and a run may be acting on untrusted content. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools.`,
+      };
+    });
+
   const call: TaskToolServiceShape["call"] = ({ name, args, context }) =>
     Effect.gen(function* () {
       const isDryRun = dryRun(context);
@@ -273,6 +376,7 @@ const make = Effect.gen(function* () {
                 invocationContext: context,
               })),
               promptGuidance: yield* promptSettings.get,
+              promptGuidanceEditing: PROMPT_GUIDANCE_EDITING,
               triggerRules: TASK_TRIGGER_RULES,
             }),
           };
@@ -770,6 +874,128 @@ const make = Effect.gen(function* () {
             };
           yield* repository.deleteAutomation(input);
           return { isError: false, text: json({ deleted: true, id: input.id }) };
+        }
+        case "instructions_get": {
+          yield* decoders.instructions_get(args);
+          const state = yield* promptSettings.getState;
+          return {
+            isError: false,
+            text: json({
+              revision: state.revision,
+              fields: Object.fromEntries(
+                TASK_PROMPT_FIELDS.map((field) => [
+                  field,
+                  {
+                    text: state.settings[field],
+                    length: state.settings[field].length,
+                    use: INSTRUCTION_FIELD_USE[field],
+                  },
+                ]),
+              ),
+              triggerRules: {
+                editable: false,
+                note: "Server behavior, listed for reference. Not part of the instructions and cannot be edited.",
+                rules: TASK_TRIGGER_RULES,
+              },
+            }),
+          };
+        }
+        case "instructions_update": {
+          const input = yield* decoders.instructions_update(args);
+          const access = yield* instructionsWriteAccess(name, context);
+          if (access.refusal !== null) return { isError: true, text: access.refusal };
+          const result = yield* promptSettings.updateField({
+            ...input,
+            origin: access.origin,
+            dryRun: isDryRun,
+          });
+          if (!result.ok)
+            return {
+              isError: true,
+              text: json({
+                error: `The instructions changed since revision ${input.expectedRevision}. Call instructions_get again, redo your edit on the current text, and retry with the new revision.`,
+                currentRevision: result.currentRevision,
+              }),
+            };
+          return {
+            isError: false,
+            text: json({
+              ...(isDryRun ? { dryRun: true } : {}),
+              revision: result.state.revision,
+              ...(result.change === null
+                ? { changed: false, note: "The text is already identical; nothing was recorded." }
+                : {
+                    changed: true,
+                    ...(isDryRun ? {} : { changeId: result.change.id }),
+                    summary: describeInstructionsChange(
+                      input.field,
+                      result.change.previousText,
+                      result.change.newText,
+                    ),
+                  }),
+            }),
+          };
+        }
+        case "instructions_history": {
+          const input = yield* decoders.instructions_history(args);
+          const changes = yield* promptSettings.history({
+            field: input.field,
+            limit: input.limit ?? 20,
+          });
+          return { isError: false, text: json({ changes: changes.map(instructionsChangeView) }) };
+        }
+        case "instructions_revert": {
+          const input = yield* decoders.instructions_revert(args);
+          const access = yield* instructionsWriteAccess(name, context);
+          if (access.refusal !== null) return { isError: true, text: access.refusal };
+          const result = yield* promptSettings.revert({
+            changeId: input.changeId,
+            reason: input.reason ?? null,
+            origin: access.origin,
+            dryRun: isDryRun,
+          });
+          if (!result.ok)
+            return result.reason === "not-found"
+              ? {
+                  isError: true,
+                  text: `Instructions change '${input.changeId}' was not found. Use instructions_history to find change ids.`,
+                }
+              : {
+                  isError: true,
+                  text: json({
+                    error: `${result.reverted.field} changed after this change, so reverting it would also undo the later changes below. Revert those first, newest first, or edit the field with instructions_update.`,
+                    laterChanges: result.laterChanges.map(
+                      ({ id, revision, reason, createdAt }) => ({
+                        changeId: id,
+                        revision,
+                        reason,
+                        createdAt,
+                      }),
+                    ),
+                  }),
+                };
+          return {
+            isError: false,
+            text: json({
+              ...(isDryRun ? { dryRun: true } : {}),
+              revertedChangeId: result.reverted.id,
+              revision: result.state.revision,
+              ...(result.change === null
+                ? {
+                    changed: false,
+                    note: "The field already has the text from before this change; nothing was recorded.",
+                  }
+                : {
+                    changed: true,
+                    ...(isDryRun ? {} : { changeId: result.change.id }),
+                    summary: describeInstructionsChange(
+                      result.change.field,
+                      result.change.previousText,
+                      result.change.newText,
+                    ),
+                  }),
+            }),
+          };
         }
         default:
           return { isError: true, text: `Unknown task tool: ${name}` };

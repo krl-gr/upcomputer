@@ -128,7 +128,7 @@ function testService(
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(TaskAgentService, {
       scheduleTaskChanged: () => Effect.void,
       scheduleAgentChanged: () => Effect.void,

@@ -56,6 +56,18 @@ const automationTemplate = object(
   ["title"],
 );
 
+const instructionField = {
+  type: "string",
+  enum: ["taskCreation", "agentCreation", "automationCreation", "taskExecution"],
+} as const;
+
+/** One line in task_context pointing at the instructions tools. */
+export const PROMPT_GUIDANCE_EDITING =
+  "promptGuidance is the user's shared task instructions (Settings → Instructions). Read them with instructions_get, edit one field with instructions_update, and see or undo changes with instructions_history and instructions_revert. triggerRules are server behavior and cannot be edited.";
+
+const INSTRUCTIONS_WRITE_ACCESS =
+  "Task-agent runs are refused unless their agent lists this tool in its tools.";
+
 export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
   {
     type: "function",
@@ -369,5 +381,50 @@ export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
     description:
       "Delete a draft automation. Automations a person has already reviewed are read-only from tools.",
     inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "instructions_get",
+    description:
+      "Read the user's shared task instructions (Settings → Instructions): taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance, and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable.",
+    inputSchema: object({}),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "instructions_update",
+    description: `Replace the whole text of one shared task instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. taskExecution is in every task-agent run's prompt: keep it short, and tell the user when it grows large. Rules for one specific agent belong in that agent's instructions (agent_update); rules about the user's own paths, repos or accounts belong in their project's AGENTS.md, not in these shared defaults. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object(
+      {
+        field: instructionField,
+        text: { type: "string" },
+        reason: id,
+        expectedRevision: { type: "integer", minimum: 0 },
+      },
+      ["field", "text", "reason", "expectedRevision"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "instructions_history",
+    description:
+      "List recent changes to the shared task instructions, newest first: change id, field, previous and new text, reason, source (the settings page, or the thread and task-agent run that made it) and time. Pass a change id to instructions_revert to undo it.",
+    inputSchema: object({
+      field: instructionField,
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "instructions_revert",
+    description: `Undo one shared task instructions change: restore the field's text from before it. The restore is recorded as a new change; history is never deleted. Refused when the field changed after that change: revert the later changes first, newest first, or use instructions_update. Tell the user in one line what was restored and in which field. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ changeId: id, reason: id }, ["changeId"]),
   },
 ];

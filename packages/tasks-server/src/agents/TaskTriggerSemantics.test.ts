@@ -392,7 +392,7 @@ async function withScheduler(
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
         Effect.sync(() => {

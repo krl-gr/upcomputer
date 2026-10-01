@@ -252,7 +252,7 @@ test("task-agent startup forwards complete advertised Astra options to run and b
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
         Effect.sync(() => {
@@ -361,7 +361,7 @@ test("restart interrupts persisted active runs, clears assignment, and does not 
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
         Effect.sync(() => {
@@ -531,7 +531,7 @@ test("live ready-result reconciliation waits for consumption and cannot overwrit
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),
     } as never),
@@ -642,7 +642,7 @@ test("failed cleanup leaves finalization active and retry releases the assignmen
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () =>
         Effect.suspend(() => {
@@ -768,7 +768,7 @@ test("live reconciliation waits for a fresh run's thread but still fails a missi
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),
     } as never),
@@ -854,7 +854,7 @@ test("live reconciliation consumes a result the event stream missed, and finaliz
     Layer.succeed(TaskPromptSettingsStore, {
       get: Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
       update: () => Effect.succeed(DEFAULT_TASK_PROMPT_SETTINGS),
-    } satisfies TaskPromptSettingsStoreShape),
+    } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(OrchestrationEngineService, {
       dispatch: () => Effect.succeed({ sequence: 1 }),
     } as never),

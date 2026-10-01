@@ -298,6 +298,46 @@ test("creates durable task prompt settings with product defaults", async () => {
   });
 });
 
+test("adding instructions history keeps the existing instruction texts", async () => {
+  const path = temporaryDatabase("task-prompt-history.sqlite");
+  const migrationsBeforeHistory: ExperimentalFeatureMigrationContribution<Error> = {
+    ...TASK_MIGRATION_CONTRIBUTION,
+    migrations: TASK_MIGRATION_CONTRIBUTION.migrations.filter(({ version }) => version < 14),
+  };
+  await migrate(path, [migrationsBeforeHistory]);
+  database(path, (db) => {
+    db.prepare(
+      "UPDATE task_prompt_settings SET task_creation = ?, task_execution = ? WHERE id = 1",
+    ).run("Custom task guidance", "Custom execution guidance");
+  });
+
+  await migrate(path, [TASK_MIGRATION_CONTRIBUTION]);
+  database(path, (db) => {
+    const row = db
+      .prepare(
+        `SELECT
+           task_creation AS taskCreation,
+           agent_creation AS agentCreation,
+           automation_creation AS automationCreation,
+           task_execution AS taskExecution,
+           revision
+         FROM task_prompt_settings WHERE id = 1`,
+      )
+      .get();
+    NodeAssert.deepEqual(
+      { ...row },
+      {
+        ...DEFAULT_TASK_PROMPT_SETTINGS,
+        taskCreation: "Custom task guidance",
+        taskExecution: "Custom execution guidance",
+        revision: 0,
+      },
+    );
+    const changes = db.prepare("SELECT COUNT(*) AS count FROM task_prompt_settings_changes").get();
+    NodeAssert.deepEqual({ ...changes }, { count: 0 });
+  });
+});
+
 test("backfills existing task-agent threads as hidden from the core sidebar", async () => {
   const path = temporaryDatabase("thread-visibility.sqlite");
   const migrationsThroughAgentStorage: ExperimentalFeatureMigrationContribution<Error> = {
