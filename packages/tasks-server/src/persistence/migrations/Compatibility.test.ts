@@ -338,6 +338,75 @@ test("adding instructions history keeps the existing instruction texts", async (
   });
 });
 
+test("updating default instructions replaces unedited defaults and keeps edited fields", async () => {
+  const oldTaskCreation = `Create focused, independently reviewable tasks. Preserve the user's intent in the description, include enough context to work without reopening the originating chat, and use a status and tags that match the existing project workflow.`;
+  const oldAgentCreation = `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose a model and runtime permissions appropriate for the work the agent will perform.`;
+  const oldAutomationCreation = `Create an automation only for genuinely recurring work. Use the user's timezone, make the generated task template self-contained, avoid duplicate open work when appropriate, and leave agent-created automations as drafts for human review.`;
+  const path = temporaryDatabase("task-prompt-defaults.sqlite");
+  await migrate(path, [
+    {
+      ...TASK_MIGRATION_CONTRIBUTION,
+      migrations: TASK_MIGRATION_CONTRIBUTION.migrations.filter(({ version }) => version < 15),
+    },
+  ]);
+  // An install seeded with the old defaults, one of them edited since.
+  database(path, (db) => {
+    db.prepare(
+      `UPDATE task_prompt_settings SET
+         task_creation = ?, agent_creation = ?, automation_creation = ?, task_execution = ?,
+         revision = 3
+       WHERE id = 1`,
+    ).run(oldTaskCreation, oldAgentCreation, oldAutomationCreation, "My own execution rules");
+  });
+
+  await migrate(path, [TASK_MIGRATION_CONTRIBUTION]);
+  await migrate(path, [TASK_MIGRATION_CONTRIBUTION]);
+  database(path, (db) => {
+    const row = db
+      .prepare(
+        `SELECT
+           task_creation AS taskCreation,
+           agent_creation AS agentCreation,
+           automation_creation AS automationCreation,
+           task_execution AS taskExecution,
+           revision
+         FROM task_prompt_settings WHERE id = 1`,
+      )
+      .get();
+    NodeAssert.deepEqual(
+      { ...row },
+      {
+        ...DEFAULT_TASK_PROMPT_SETTINGS,
+        taskExecution: "My own execution rules",
+        revision: 5,
+      },
+    );
+    const changes = db
+      .prepare(
+        `SELECT revision, field, previous_text AS previousText, new_text AS newText, source
+         FROM task_prompt_settings_changes ORDER BY revision`,
+      )
+      .all()
+      .map((change) => ({ ...change }));
+    NodeAssert.deepEqual(changes, [
+      {
+        revision: 4,
+        field: "taskCreation",
+        previousText: oldTaskCreation,
+        newText: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+        source: "unknown",
+      },
+      {
+        revision: 5,
+        field: "agentCreation",
+        previousText: oldAgentCreation,
+        newText: DEFAULT_TASK_PROMPT_SETTINGS.agentCreation,
+        source: "unknown",
+      },
+    ]);
+  });
+});
+
 test("backfills existing task-agent threads as hidden from the core sidebar", async () => {
   const path = temporaryDatabase("thread-visibility.sqlite");
   const migrationsThroughAgentStorage: ExperimentalFeatureMigrationContribution<Error> = {

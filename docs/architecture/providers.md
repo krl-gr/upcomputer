@@ -31,7 +31,7 @@ All three use `DrainableWorker` internally and expose `drain()` for deterministi
 
 ## Custom instructions
 
-`ServerSettings.customInstructions` holds text the user writes once and every agent follows (default empty, trimmed, patches limited to 20,000 characters). `ProviderService` reads it on every session start and recovery and passes it to the adapter as `ProviderAdapterStartSessionInput.customInstructions`; request payloads cannot set it. Adapters format it with `provider/CustomInstructions.ts` and add it to the model prompt only:
+`ServerSettings.customInstructions` holds text the user writes once and every agent follows (trimmed, patches limited to 20,000 characters). Its default, `DEFAULT_CUSTOM_INSTRUCTIONS` in `packages/contracts/src/defaultCustomInstructions.ts`, describes the delegation workflow and carries a one-time onboarding block that the onboarding chat removes. The default applies while `settings.json` has no `customInstructions` key; settings.json omits values equal to the default, so a saved empty value is kept, and a saved value equal to the default follows later default changes. Installs that cleared the value before the default existed stored nothing, so they get the default. `ProviderService` reads it on every session start and recovery and passes it to the adapter as `ProviderAdapterStartSessionInput.customInstructions`; request payloads cannot set it. Adapters format it with `provider/CustomInstructions.ts` and add it to the model prompt only:
 
 | Harness      | Channel                                                                       |
 | ------------ | ----------------------------------------------------------------------------- |

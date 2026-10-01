@@ -18,6 +18,8 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  DEFAULT_CUSTOM_INSTRUCTIONS,
+  DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -609,6 +611,33 @@ describe("ClaudeAdapterLive", () => {
         preset: "claude_code",
         append: "# User instructions (from Up.computer settings)\n\nAnswer in Russian.",
       });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("appends the shipped All chats default, onboarding block included", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        customInstructions: DEFAULT_SERVER_SETTINGS.customInstructions,
+      });
+
+      const systemPrompt = harness.getLastCreateQueryInput()?.options.systemPrompt;
+      assert.deepEqual(systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+        append: `# User instructions (from Up.computer settings)\n\n${DEFAULT_CUSTOM_INSTRUCTIONS}`,
+      });
+      assert.match(
+        DEFAULT_CUSTOM_INSTRUCTIONS,
+        /<!-- onboarding: remove after setup -->[\s\S]*task-agent runs ignore it[\s\S]*<!-- \/onboarding -->/,
+      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -177,6 +177,13 @@ page, chats read and edit them with tools:
 
 `allChats` is stored only in core settings (trimmed, at most 20,000
 characters); its history and the shared revision live with the task fields.
+The shipped defaults describe the delegation workflow: chats turn work into
+tasks for background agents, each agent works through its queue one task at a
+time, and its hand-off starts the next one. All chats starts with a one-time
+onboarding block that the first chat with the user removes once the process
+is agreed (see `docs/architecture/providers.md` for when the All chats default
+applies). Upgrading replaces a task field's text only while it still equals an
+earlier shipped default, and records that as a change with source `unknown`.
 Every change, including settings-page saves, is recorded; history is never
 deleted. An edit of `customInstructions` outside the Instructions page, such
 as a hand edit of `settings.json`, is not recorded, and a later revert of an

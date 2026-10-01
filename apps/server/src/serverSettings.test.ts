@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -901,6 +902,51 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const settings = yield* serverSettings.getSettings;
 
       assert.equal(settings.customInstructions, "Answer in Russian.");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("applies the All chats default only while customInstructions was never set", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const persisted = Effect.map(
+        fileSystem.readFileString(serverConfig.settingsPath),
+        (raw) => JSON.parse(raw) as Record<string, unknown>,
+      );
+
+      assert.equal(
+        (yield* serverSettings.getSettings).customInstructions,
+        DEFAULT_CUSTOM_INSTRUCTIONS,
+      );
+
+      // A deliberately cleared value is written out and stays cleared.
+      yield* serverSettings.updateSettings({ customInstructions: "" });
+      assert.equal((yield* persisted).customInstructions, "");
+
+      // A value equal to the default is left out, so it follows later defaults.
+      yield* serverSettings.updateSettings({ customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS });
+      assert.equal(Object.hasOwn(yield* persisted, "customInstructions"), false);
+
+      // A saved value, such as one an onboarding chat wrote, is kept as written.
+      yield* serverSettings.updateSettings({
+        customInstructions: "Work directly; delegate only when asked.",
+      });
+      assert.equal(
+        (yield* persisted).customInstructions,
+        "Work directly; delegate only when asked.",
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("keeps an empty customInstructions from an existing settings file", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, '{"customInstructions":""}');
+
+      assert.equal((yield* serverSettings.getSettings).customInstructions, "");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

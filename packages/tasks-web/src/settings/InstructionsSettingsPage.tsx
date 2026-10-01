@@ -3,7 +3,11 @@ import {
   type TaskPromptSettings,
 } from "@upcomputer/tasks-contracts/v1";
 import { squashAtomCommandFailure } from "@upcomputer/client-runtime/state/runtime";
-import { CUSTOM_INSTRUCTIONS_MAX_CHARS, type UnifiedSettings } from "@upcomputer/contracts";
+import {
+  CUSTOM_INSTRUCTIONS_MAX_CHARS,
+  DEFAULT_CUSTOM_INSTRUCTIONS,
+  type UnifiedSettings,
+} from "@upcomputer/contracts";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
@@ -250,24 +254,31 @@ function InstructionsSettingsPage() {
             if (event.target !== event.currentTarget) event.preventDefault();
           }}
         >
-          {/* "All chats" defaults to empty, so it has nothing to restore. */}
-          {editingAllChats ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              className="shrink-0"
-              disabled={loading || saving || draft[tab.id] === DEFAULT_TASK_PROMPT_SETTINGS[tab.id]}
-              onClick={() => {
-                const promptKey = tab.id;
-                setDraft((current) => ({
-                  ...current,
-                  [promptKey]: DEFAULT_TASK_PROMPT_SETTINGS[promptKey],
-                }));
-              }}
-            >
-              Restore default
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0"
+            disabled={
+              editingAllChats
+                ? environmentId === null ||
+                  saving ||
+                  customInstructions === DEFAULT_CUSTOM_INSTRUCTIONS
+                : loading || saving || draft[tab.id] === DEFAULT_TASK_PROMPT_SETTINGS[tab.id]
+            }
+            onClick={() => {
+              const promptKey = tab.id;
+              if (promptKey === ALL_CHATS_TAB.id) {
+                setCustomInstructionsDraft(DEFAULT_CUSTOM_INSTRUCTIONS);
+                return;
+              }
+              setDraft((current) => ({
+                ...current,
+                [promptKey]: DEFAULT_TASK_PROMPT_SETTINGS[promptKey],
+              }));
+            }}
+          >
+            Restore default
+          </Button>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               type="button"

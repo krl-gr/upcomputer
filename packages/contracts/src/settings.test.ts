@@ -6,6 +6,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   CUSTOM_INSTRUCTIONS_MAX_CHARS,
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   DEFAULT_SERVER_SETTINGS,
   defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
@@ -310,9 +311,20 @@ describe("ServerSettingsPatch string normalization", () => {
 });
 
 describe("ServerSettings custom instructions", () => {
-  it("defaults to empty instructions", () => {
-    expect(DEFAULT_SERVER_SETTINGS.customInstructions).toBe("");
-    expect(decodeServerSettings({}).customInstructions).toBe("");
+  it("defaults to the shipped instructions only while the value was never set", () => {
+    expect(DEFAULT_SERVER_SETTINGS.customInstructions).toBe(DEFAULT_CUSTOM_INSTRUCTIONS);
+    expect(decodeServerSettings({}).customInstructions).toBe(DEFAULT_CUSTOM_INSTRUCTIONS);
+    // A saved value, an empty one included, is kept.
+    expect(decodeServerSettings({ customInstructions: "" }).customInstructions).toBe("");
+    expect(decodeServerSettings({ customInstructions: "Mine." }).customInstructions).toBe("Mine.");
+  });
+
+  it("ships a trimmed default with a delimited onboarding block, within the patch limit", () => {
+    expect(DEFAULT_CUSTOM_INSTRUCTIONS).toBe(DEFAULT_CUSTOM_INSTRUCTIONS.trim());
+    expect(DEFAULT_CUSTOM_INSTRUCTIONS.length).toBeLessThan(CUSTOM_INSTRUCTIONS_MAX_CHARS);
+    expect(DEFAULT_CUSTOM_INSTRUCTIONS).toMatch(
+      /\n<!-- onboarding: remove after setup -->\n[\s\S]+\n<!-- \/onboarding -->$/,
+    );
   });
 
   it("trims instructions in settings and patches", () => {

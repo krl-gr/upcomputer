@@ -12,6 +12,7 @@ import type {
 } from "@upcomputer/contracts";
 import {
   ApprovalRequestId,
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   EventId,
   type InteractionModeDescriptor,
   ProviderDriverKind,
@@ -1572,7 +1573,14 @@ it.effect("ProviderServiceLive passes custom instructions to session starts and 
         ...existing,
         resumeCursor: { resume: "resume-custom-instructions" },
       }));
-    }).pipe(Effect.provide(makeLayer(firstCodex, defaultServerSettingsLayer)));
+    }).pipe(
+      Effect.provide(
+        makeLayer(
+          firstCodex,
+          ServerSettings.ServerSettingsService.layerTest({ customInstructions: "" }),
+        ),
+      ),
+    );
     // Empty settings leave the adapter input exactly as before.
     assert.equal(Object.hasOwn(startInputAt(firstCodex, 0) ?? {}, "customInstructions"), false);
 
@@ -1594,6 +1602,18 @@ it.effect("ProviderServiceLive passes custom instructions to session starts and 
     assert.deepEqual(startInputAt(secondCodex, 0)?.resumeCursor, {
       resume: "resume-custom-instructions",
     });
+
+    // Never-set settings carry the shipped default, onboarding block included.
+    const thirdCodex = makeFakeCodexAdapter();
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      yield* provider.rollbackConversation({ threadId, numTurns: 1 });
+    }).pipe(Effect.provide(makeLayer(thirdCodex, defaultServerSettingsLayer)));
+    assert.equal(startInputAt(thirdCodex, 0)?.customInstructions, DEFAULT_CUSTOM_INSTRUCTIONS);
+    assert.include(
+      startInputAt(thirdCodex, 0)?.customInstructions ?? "",
+      "<!-- onboarding: remove after setup -->",
+    );
 
     NodeFS.rmSync(tempDir, { recursive: true, force: true });
   }).pipe(Effect.provide(NodeServices.layer)),

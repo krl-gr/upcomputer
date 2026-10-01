@@ -1,3 +1,4 @@
+import { UpdateDefaultTaskPromptsMigration } from "./015_UpdateDefaultTaskPrompts.ts";
 import { TaskPromptSettingsHistoryMigration } from "./014_TaskPromptSettingsHistory.ts";
 import { TaskAgentRunContinuationMigration } from "./013_TaskAgentRunContinuation.ts";
 import { TaskTriggerSemanticsMigration } from "./012_TaskTriggerSemantics.ts";
@@ -66,5 +67,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 12, name: "TaskTriggerSemantics", run: TaskTriggerSemanticsMigration },
     { version: 13, name: "TaskAgentRunContinuation", run: TaskAgentRunContinuationMigration },
     { version: 14, name: "TaskPromptSettingsHistory", run: TaskPromptSettingsHistoryMigration },
+    { version: 15, name: "UpdateDefaultTaskPrompts", run: UpdateDefaultTaskPromptsMigration },
   ],
 } as const;

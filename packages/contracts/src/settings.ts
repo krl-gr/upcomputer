@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { DEFAULT_CUSTOM_INSTRUCTIONS } from "./defaultCustomInstructions.ts";
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
@@ -500,6 +501,7 @@ export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 
 export const CUSTOM_INSTRUCTIONS_MAX_CHARS = 20_000;
+export { DEFAULT_CUSTOM_INSTRUCTIONS };
 
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -519,7 +521,12 @@ export const ServerSettings = Schema.Struct({
   // Instructions every agent follows in every chat, whatever the harness.
   // The length limit applies to patches only: an over-long hand-edited value
   // must not make settings.json fail to decode, which resets every setting.
-  customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // The default applies while the key is absent. settings.json omits values
+  // equal to the default, so a saved empty value is kept, and a value saved
+  // equal to the default follows later default changes.
+  customInstructions: TrimmedString.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CUSTOM_INSTRUCTIONS)),
+  ),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
