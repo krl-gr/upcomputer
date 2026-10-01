@@ -1,0 +1,11 @@
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    }
+  },
+  "include": ["src", "../../apps/web/src/vite-env.d.ts"]
+}

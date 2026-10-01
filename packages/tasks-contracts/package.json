@@ -1,0 +1,42 @@
+{
+  "name": "@upcomputer/tasks-contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./v1": {
+      "types": "./src/v1/index.ts",
+      "import": "./src/v1/index.ts"
+    },
+    "./v1/tasks": {
+      "types": "./src/v1/tasks.ts",
+      "import": "./src/v1/tasks.ts"
+    },
+    "./v1/agents": {
+      "types": "./src/v1/agents.ts",
+      "import": "./src/v1/agents.ts"
+    },
+    "./v1/automations": {
+      "types": "./src/v1/automations.ts",
+      "import": "./src/v1/automations.ts"
+    },
+    "./v1/proposals": {
+      "types": "./src/v1/proposals.ts",
+      "import": "./src/v1/proposals.ts"
+    },
+    "./v1/rpc": {
+      "types": "./src/v1/rpc.ts",
+      "import": "./src/v1/rpc.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@upcomputer/contracts": "workspace:*",
+    "effect": "catalog:"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@upcomputer/orchestrator",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/interactionMode.ts",
+      "import": "./src/interactionMode.ts"
+    },
+    "./contracts": {
+      "types": "./src/contracts.ts",
+      "import": "./src/contracts.ts"
+    },
+    "./instructions": {
+      "types": "./src/instructions.ts",
+      "import": "./src/instructions.ts"
+    },
+    "./parser": {
+      "types": "./src/parser.ts",
+      "import": "./src/parser.ts"
+    },
+    "./ui": {
+      "types": "./src/ui.ts",
+      "import": "./src/ui.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "@upcomputer/tasks-contracts": "workspace:*",
+    "effect": "catalog:"
+  }
+}

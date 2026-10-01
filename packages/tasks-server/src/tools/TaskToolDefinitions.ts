@@ -1,0 +1,363 @@
+import type { ExperimentalDynamicToolSpec } from "../../../../apps/server/src/extensionApi.ts";
+
+const object = (
+  properties: Record<string, unknown>,
+  required: ReadonlyArray<string> = [],
+): Record<string, unknown> => ({
+  type: "object",
+  additionalProperties: false,
+  properties,
+  ...(required.length > 0 ? { required } : {}),
+});
+
+const id = { type: "string", minLength: 1 } as const;
+const tags = { type: "array", items: id } as const;
+const modelSelection = object(
+  {
+    instanceId: id,
+    model: id,
+    options: {
+      type: "array",
+      items: object({ id, value: { type: ["string", "boolean"] } }, ["id", "value"]),
+    },
+  },
+  ["instanceId", "model"],
+);
+
+const runStatuses = {
+  type: "array",
+  items: { type: "string", enum: ["failed", "interrupted", "blocked"] },
+} as const;
+const dateTime = {
+  type: ["string", "null"],
+  description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
+} as const;
+
+/** Server trigger semantics returned by task_context; not user-editable guidance. */
+export const TASK_TRIGGER_RULES = [
+  "An enabled agent starts on an open task when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
+  "Setting a matching status or adding a matching tag starts the agent immediately. Park work in a status no agent starts on (for example Backlog), or set notBefore to delay it.",
+  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore or closedAt really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
+  "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
+  "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is closed or deleted, or when the agent is disabled or deleted.",
+  "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
+  "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
+] as const;
+
+const automationTemplate = object(
+  {
+    title: id,
+    description: { type: "string" },
+    status: id,
+    priority: { type: ["string", "null"] },
+    tags,
+  },
+  ["title"],
+);
+
+export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "task_context",
+    description:
+      "Resolve task project, model context, and configurable task orchestration guidance for this turn.",
+    inputSchema: object({ projectId: id, workspaceRoot: id, modelSelection, modelAlias: id }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "task_get",
+    description: "Load one task by id.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "task_search",
+    description:
+      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment.",
+    inputSchema: object({ projectId: id, status: id, tags, limit: { type: "number" } }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "task_create",
+    description:
+      "Create a task in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay.",
+    inputSchema: object(
+      {
+        id,
+        projectId: id,
+        workspaceRoot: id,
+        title: id,
+        description: { type: "string" },
+        output: { type: ["string", "null"] },
+        status: id,
+        priority: { type: ["string", "null"] },
+        createdBy: id,
+        assigneeAgentRunId: { type: ["string", "null"] },
+        sourceThreadId: { type: ["string", "null"] },
+        sourceRunId: { type: ["string", "null"] },
+        metadata: {},
+        tags,
+        notBefore: dateTime,
+      },
+      ["title", "description", "status"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "task_update",
+    description:
+      "Update task fields, status, output, and tags without changing its global rank. Status, tag and notBefore changes can start agents (see task_context triggerRules).",
+    inputSchema: object(
+      {
+        id,
+        title: id,
+        description: { type: "string" },
+        output: { type: ["string", "null"] },
+        status: id,
+        priority: { type: ["string", "null"] },
+        assigneeAgentRunId: { type: ["string", "null"] },
+        metadata: {},
+        tags,
+        closedAt: { type: ["string", "null"] },
+        notBefore: dateTime,
+      },
+      ["id"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "task_reorder",
+    description:
+      "Move one task in this environment's global order using semantic neighbors. The task and neighbors must belong to the same environment; omit afterTaskId at the beginning or beforeTaskId at the end.",
+    inputSchema: object({ id, beforeTaskId: id, afterTaskId: id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "task_delete",
+    description: "Delete one task.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "task_event_append",
+    description: "Append a finding, note, or review event to a task.",
+    inputSchema: object({ id, taskId: id, kind: id, payload: {} }, ["taskId", "kind"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "agent_get",
+    description: "Load one task-agent definition.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "agent_search",
+    description: "Search task-agent definitions.",
+    inputSchema: object({
+      projectId: { type: ["string", "null"] },
+      enabled: { type: "boolean" },
+      limit: { type: "number" },
+    }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "agent_create",
+    description:
+      "Create a task-agent definition. Call task_context first and follow its agentCreation guidance and triggerRules.",
+    inputSchema: object(
+      {
+        id,
+        projectId: { type: ["string", "null"] },
+        workspaceRoot: id,
+        name: id,
+        enabled: { type: "boolean" },
+        startStatuses: tags,
+        startTags: tags,
+        startRunStatuses: runStatuses,
+        modelSelection,
+        modelAlias: id,
+        role: id,
+        runtimeMode: {
+          type: "string",
+          enum: ["approval-required", "auto-accept-edits", "full-access"],
+        },
+        interactionMode: id,
+        tools: tags,
+        skills: tags,
+        instructions: id,
+      },
+      ["name"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "agent_update",
+    description: "Update a task-agent definition.",
+    inputSchema: object(
+      {
+        id,
+        projectId: { type: ["string", "null"] },
+        workspaceRoot: id,
+        name: id,
+        enabled: { type: "boolean" },
+        startStatuses: tags,
+        startTags: tags,
+        startRunStatuses: runStatuses,
+        modelSelection,
+        modelAlias: id,
+        role: id,
+        runtimeMode: {
+          type: "string",
+          enum: ["approval-required", "auto-accept-edits", "full-access"],
+        },
+        interactionMode: id,
+        tools: tags,
+        skills: tags,
+        instructions: id,
+      },
+      ["id"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "agent_delete",
+    description: "Delete one task-agent definition.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "agent_run_get",
+    description: "Load one task-agent run.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "agent_run_search",
+    description: "Search task-agent runs.",
+    inputSchema: object({ taskId: id, agentId: id, status: id, limit: { type: "number" } }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "agent_run_transcript",
+    description:
+      "Read what a task-agent run did: run status, failure reason, and the latest thread messages and activities in chronological order. Pass runId or threadId.",
+    inputSchema: object({
+      runId: id,
+      threadId: id,
+      tail: { type: "number" },
+      includeActivities: { type: "boolean" },
+      maxChars: { type: "number" },
+    }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "agent_run_stop",
+    description:
+      "Stop an active task-agent run. It ends as stopped and does not restart until the task's status, tags, notBefore, title or description change.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "automation_get",
+    description: "Load one scheduled automation.",
+    inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "read",
+    name: "automation_search",
+    description: "Search scheduled automations.",
+    inputSchema: object({
+      projectId: id,
+      status: { type: "string", enum: ["draft", "enabled", "disabled"] },
+      limit: { type: "number" },
+    }),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "automation_create",
+    description:
+      "Propose a scheduled automation that creates a task on a cron schedule. Call task_context first and follow its automationCreation guidance. The automation is saved as an inert draft and only a person can activate it.",
+    inputSchema: object(
+      {
+        projectId: id,
+        workspaceRoot: id,
+        name: id,
+        cron: id,
+        timezone: id,
+        template: automationTemplate,
+        catchUpPolicy: { type: "string", enum: ["skip", "fire-once"] },
+        skipIfOpen: { type: "boolean" },
+      },
+      ["name", "cron", "template"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "automation_update",
+    description:
+      "Update a draft automation. Automations a person has already reviewed are read-only from tools.",
+    inputSchema: object(
+      {
+        id,
+        name: id,
+        cron: id,
+        timezone: id,
+        template: automationTemplate,
+        catchUpPolicy: { type: "string", enum: ["skip", "fire-once"] },
+        skipIfOpen: { type: "boolean" },
+      },
+      ["id"],
+    ),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "automation_delete",
+    description:
+      "Delete a draft automation. Automations a person has already reviewed are read-only from tools.",
+    inputSchema: object({ id }, ["id"]),
+  },
+];

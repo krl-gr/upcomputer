@@ -1,0 +1,31 @@
+{
+  "name": "@upcomputer/tasks-server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./feature": {
+      "types": "./src/serverFeature.ts",
+      "import": "./src/serverFeature.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/orchestrator": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "@upcomputer/tasks-contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

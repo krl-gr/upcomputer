@@ -1,0 +1,45 @@
+{
+  "name": "@upcomputer/tasks-web",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./rpc": {
+      "types": "./src/rpc/index.ts",
+      "import": "./src/rpc/index.ts"
+    },
+    "./state": {
+      "types": "./src/state/index.ts",
+      "import": "./src/state/index.ts"
+    },
+    "./feature": {
+      "types": "./src/feature.tsx",
+      "import": "./src/feature.tsx"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.160.2",
+    "@upcomputer/client-runtime": "workspace:*",
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "@upcomputer/tasks-contracts": "workspace:*",
+    "effect": "catalog:",
+    "lucide-react": "^0.564.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "~19.2.14",
+    "@types/react-dom": "~19.2.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
