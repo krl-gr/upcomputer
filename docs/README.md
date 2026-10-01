@@ -7,6 +7,7 @@
   - [Remote environments](./architecture/remote.md)
   - [Server updates](./architecture/server-updates.md)
   - [Preview automation hosts](./architecture/preview-automation-hosts.md)
+- [Tasks, agents, and automations](./tasks/README.md)
 - User guides
   - [Access from other devices with Desktop](./user/remote-access.md)
   - [Server updates in this release](./user/server-updates.md)
