@@ -45,15 +45,9 @@ If a field does not apply, omit it rather than inventing detail.`;
 
 export const ORCHESTRATOR_USER_PROMPT_PREFIX = `${ORCHESTRATOR_MODE_INSTRUCTIONS}\n\nUser orchestration request:\n`;
 
-export const PI_ORCHESTRATOR_PROMPT_PREFIX = `<collaboration_mode name="orchestrator">\n${ORCHESTRATOR_MODE_INSTRUCTIONS}\n</collaboration_mode>`;
-
 export function applyOrchestratorModePromptPrefix(prompt: string): string {
   const trimmed = prompt.trim();
   return trimmed.length > 0
     ? `${ORCHESTRATOR_USER_PROMPT_PREFIX}${trimmed}`
     : ORCHESTRATOR_MODE_INSTRUCTIONS;
-}
-
-export function applyPiOrchestratorModePromptPrefix(prompt: string): string {
-  return [PI_ORCHESTRATOR_PROMPT_PREFIX, "", prompt].join("\n");
 }

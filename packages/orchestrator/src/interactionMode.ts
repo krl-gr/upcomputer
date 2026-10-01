@@ -5,9 +5,7 @@ import type { ExperimentalProductExtensionRegistration } from "@upcomputer/share
 import {
   ORCHESTRATOR_MODE_INSTRUCTIONS,
   ORCHESTRATOR_USER_PROMPT_PREFIX,
-  PI_ORCHESTRATOR_PROMPT_PREFIX,
   applyOrchestratorModePromptPrefix,
-  applyPiOrchestratorModePromptPrefix,
 } from "./instructions.ts";
 import { parseOrchestrationProposalMarkdown } from "./parser.ts";
 import { ORCHESTRATOR_UI_METADATA } from "./ui.ts";
@@ -29,9 +27,6 @@ export const ORCHESTRATOR_PROVIDER_RUNTIME_HINTS = {
   opencode: {
     agent: "plan",
     allowUserAgentOverride: false,
-  },
-  up: {
-    toolProfile: "plan",
   },
 } as const;
 
@@ -55,7 +50,7 @@ export const ORCHESTRATOR_INTERACTION_MODE_DESCRIPTOR = {
     computerUse: "observe-only",
   },
   outputKind: "structured",
-  supportedProviders: ["codex", "claudeAgent", "cursor", "opencode", "up"],
+  supportedProviders: ["codex", "claudeAgent", "cursor", "opencode"],
   unsupportedProviderBehavior: "reject",
   providerBehaviors: [
     {
@@ -84,21 +79,12 @@ export const ORCHESTRATOR_INTERACTION_MODE_DESCRIPTOR = {
       sandbox: "read-only",
       promptPrefix: ORCHESTRATOR_USER_PROMPT_PREFIX,
     },
-    {
-      providerId: "up",
-      nativeMode: "plan",
-      sandbox: "read-only",
-      promptPrefix: PI_ORCHESTRATOR_PROMPT_PREFIX,
-    },
   ],
 } as const satisfies InteractionModeDescriptor;
 
 export const ORCHESTRATOR_INTERACTION_MODE_REGISTRATION = {
   descriptor: ORCHESTRATOR_INTERACTION_MODE_DESCRIPTOR,
-  transformPrompt: (text, context) =>
-    context.providerId === "up"
-      ? applyPiOrchestratorModePromptPrefix(text)
-      : applyOrchestratorModePromptPrefix(text),
+  transformPrompt: (text) => applyOrchestratorModePromptPrefix(text),
   parseFinalOutput: (text) => parseOrchestrationProposalMarkdown(text),
 } satisfies ExperimentalInteractionModeRegistration;
 
