@@ -11,7 +11,9 @@ import { useEnvironments } from "../../../../apps/web/src/state/environments.ts"
 import { TASKS_WEB_ENVIRONMENT_API } from "../environmentApi.ts";
 import { resolveTasksWebAccess, type TasksWebRpcClient } from "../rpc/index.ts";
 import { environmentRunCountsStore } from "../state/environmentRunCounts.ts";
-import { groupTaskRunCounts } from "./taskRunPresentation.ts";
+import { taskRunPresentation } from "./taskRunPresentation.ts";
+
+const WORKING_CLASS_NAME = taskRunPresentation("running", false)?.className ?? "";
 
 /** Renders nothing; reports one environment's counts to the summing parent. */
 function EnvironmentCounts({
@@ -30,7 +32,26 @@ function EnvironmentCounts({
   return null;
 }
 
-/** Run counts over every task of every connected environment, colored like thread rows. */
+/** One number in the Working color, or nothing when no run is working. */
+export function WorkingRunCount({ counts }: { counts: readonly TaskRunCount[] }) {
+  const working = counts.reduce(
+    (sum, count) => (count.status === "running" ? sum + count.count : sum),
+    0,
+  );
+  if (working <= 0) return null;
+  const summary = `Running task agents · ${working}`;
+  return (
+    <span
+      className={`tabular-nums opacity-80 ${WORKING_CLASS_NAME}`}
+      aria-label={summary}
+      title={`${summary}\nAll connected environments`}
+    >
+      {working}
+    </span>
+  );
+}
+
+/** Runs working now across every connected environment; history stays on thread rows. */
 export function TaskNavigationRunCounts() {
   const { environments } = useEnvironments();
   const serverConfigs = useServerConfigs();
@@ -64,11 +85,7 @@ export function TaskNavigationRunCounts() {
       }),
     [],
   );
-  const groups = useMemo(
-    () => groupTaskRunCounts([...byEnvironment.values()].flat()),
-    [byEnvironment],
-  );
-  const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
+  const counts = useMemo(() => [...byEnvironment.values()].flat(), [byEnvironment]);
   return (
     <>
       {clients.map(({ environmentId, client }) => (
@@ -79,19 +96,7 @@ export function TaskNavigationRunCounts() {
           onCounts={onCounts}
         />
       ))}
-      {groups.length > 0 ? (
-        <span
-          className="inline-flex items-center gap-1 opacity-80"
-          aria-label={summary}
-          title={`${summary}\nAll projects, including previous attempts`}
-        >
-          {groups.map((group) => (
-            <span key={group.label} className={group.className}>
-              {group.count}
-            </span>
-          ))}
-        </span>
-      ) : null}
+      <WorkingRunCount counts={counts} />
     </>
   );
 }

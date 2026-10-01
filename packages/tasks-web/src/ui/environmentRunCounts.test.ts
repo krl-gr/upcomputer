@@ -1,9 +1,12 @@
 import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import * as NodeTimersPromises from "node:timers/promises";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { TaskChange, TaskRunCount } from "@upcomputer/tasks-contracts/v1";
 import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
 import { EnvironmentRunCountsStore } from "../state/environmentRunCounts.ts";
+import { WorkingRunCount } from "./TaskNavigationRunCounts.tsx";
 
 async function until(check: () => boolean) {
   for (let i = 0; i < 400; i++) {
@@ -101,4 +104,28 @@ test("environment run counts retry after a failed request", async () => {
   h.setFail(false);
   await until(() => h.store.get().length === 1);
   stop();
+});
+
+test("the Tasks entry shows only working runs, as one number", () => {
+  const render = (counts: TaskRunCount[]) =>
+    renderToStaticMarkup(createElement(WorkingRunCount, { counts }));
+  NodeAssert.equal(
+    render([
+      { status: "completed", count: 1126 },
+      { status: "failed", count: 74 },
+      { status: "blocked", count: 2 },
+    ]),
+    "",
+    "history alone shows no badge and no zero",
+  );
+  NodeAssert.equal(render([]), "");
+  const html = render([
+    { status: "completed", count: 1126 },
+    { status: "running", count: 2 },
+    { status: "interrupted", count: 3 },
+    { status: "running", count: 1 },
+  ]);
+  NodeAssert.match(html, /^<span [^>]*>3<\/span>$/, "environments sum into one number");
+  NodeAssert.match(html, /aria-label="Running task agents · 3"/);
+  NodeAssert.match(html, /text-sky-600/, "the Working color");
 });
