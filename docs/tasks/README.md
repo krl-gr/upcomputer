@@ -53,7 +53,7 @@ same list from `task_context`):
 
 ### Run lifecycle
 
-A run starts a new provider thread with the agent's instructions, the
+A triggered run starts a new provider thread with the agent's instructions, the
 execution guidance from Settings → Instructions, the task, and the run's
 identity. A started run keeps running while the task's status and tags change.
 It ends when it reports its `task_agent_result`, sets `assigneeAgentRunId`
@@ -69,6 +69,30 @@ Run statuses:
 - `interrupted`: the app restarted during the run.
 - `stopped`: `agent_run_stop`, a person stopped the session or interrupted the
   turn, the task was closed or deleted, or the agent was disabled or deleted.
+
+### Messaging runs
+
+`agent_run_message({ runId, text })` sends a message to any run's thread. It
+is an explicit start: triggers, `runsAgain`, and `notBefore` do not apply.
+
+- An active run receives `text` as its next turn, exactly like a person's
+  message in that thread: the provider queues or steers it while a turn is
+  running. The run record does not change.
+- An ended run of any status continues in its own thread, with its context,
+  as a new run whose `continuesRunId` is the messaged run. The messaged run
+  keeps its status. The turn starts with a short header that gives the new
+  `agentRunId`, followed by `text`. The continuation then ends like any run:
+  its own `task_agent_result`, a release, `agent_run_stop`, closing or deleting
+  the task, disabling or deleting the agent, or a failure.
+- A continuation has no `triggerRunId`. If it fails, it is its agent's latest
+  run on the task, so run-status agents start for it as usual.
+
+The message is refused while the task is closed, the agent is disabled or
+deleted, the run's thread is gone, or the run is finishing. Each agent still
+has at most one active run per task: messaging an ended run while the agent
+has another active run there returns that run's ID to message instead.
+Nothing retries on its own; after a usage limit, an agent or a person
+messages the run once the limit resets.
 
 ### Run-status agents
 

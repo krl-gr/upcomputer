@@ -133,6 +133,7 @@ function testService(
       scheduleTaskChanged: () => Effect.void,
       scheduleAgentChanged: () => Effect.void,
       stopRun: () => Effect.succeed(Option.none()),
+      messageRun: () => Effect.die("unused messageRun"),
       recover: Effect.void,
       ...agentService,
     } satisfies TaskAgentServiceShape),
@@ -431,6 +432,63 @@ test("agent_run_stop stops an active run and refuses one that already ended", as
   const second = await call("agent_run_stop", { id: "run-1" });
   NodeAssert.equal(second.isError, true);
   NodeAssert.deepEqual(stops, ["run-1"]);
+});
+
+test("agent_run_message validates input, reports continuations, and returns refusals as errors", async () => {
+  const continuation = {
+    id: "run-2",
+    threadId: "thread-1",
+    continuesRunId: "run-1",
+  } as unknown as TaskAgentRun;
+  const messages: Array<{ id: string; text: string }> = [];
+  const { call } = testService(
+    undefined,
+    {
+      getAgentRunById: () =>
+        Effect.succeed(Option.some({ id: "run-1" } as unknown as TaskAgentRun)),
+    },
+    [],
+    {
+      messageRun: ({ id, text }) =>
+        Effect.sync(() => {
+          messages.push({ id, text });
+          return id === "run-1"
+            ? { ok: true as const, run: continuation, continued: true }
+            : {
+                ok: false as const,
+                error: "Agent 'Dev' already has active run 'run-9' on task 'task-1'.",
+                activeRunId: "run-9" as TaskAgentRun["id"],
+              };
+        }),
+    },
+  );
+
+  for (const args of [{ runId: "run-1" }, { runId: "run-1", text: "   " }, { text: "go" }]) {
+    NodeAssert.equal((await call("agent_run_message", args)).isError, true, JSON.stringify(args));
+  }
+  NodeAssert.deepEqual(messages, [], "invalid input sends nothing");
+
+  const continued = await call("agent_run_message", { runId: "run-1", text: " go on " });
+  NodeAssert.equal(continued.isError, false);
+  NodeAssert.deepEqual(JSON.parse(continued.text), {
+    run: continuation,
+    continued: true,
+    continuesRunId: "run-1",
+  });
+  NodeAssert.deepEqual(messages, [{ id: "run-1", text: "go on" }]);
+
+  const refused = await call("agent_run_message", { runId: "run-3", text: "go" });
+  NodeAssert.equal(refused.isError, true);
+  NodeAssert.equal(JSON.parse(refused.text).activeRunId, "run-9");
+
+  const dryRun = await call(
+    "agent_run_message",
+    { runId: "run-1", text: "go" },
+    { ...context, mutationPolicy: "deny" as never },
+  );
+  NodeAssert.equal(JSON.parse(dryRun.text).dryRun, true);
+  NodeAssert.equal(messages.length, 2, "a dry run sends nothing");
+  NodeAssert.ok(TASK_TOOL_SPECS.some((spec) => spec.name === "agent_run_message"));
 });
 
 test("agent tools expose run-status triggers and no concurrency key", () => {

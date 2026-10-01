@@ -296,6 +296,7 @@ test("run counts include history beyond 500, and run cursors/filtering are indep
           startedAt: timestamp,
           completedAt: index === 501 ? null : timestamp,
           triggerRunId: null,
+          continuesRunId: null,
         });
       }
       const page = yield* repository.page({});
@@ -459,6 +460,7 @@ test("task streams publish committed changes from every mutation path; cosmetic 
         startedAt: timestamp,
         completedAt: null,
         triggerRunId: null,
+        continuesRunId: null,
       });
       const started = yield* next();
       NodeAssert.equal(started.runsChanged, true);
@@ -576,6 +578,7 @@ function originRun(id: string, taskId: string, status = "completed") {
     startedAt: timestamp,
     completedAt: status === "running" ? null : timestamp,
     triggerRunId: null,
+    continuesRunId: null,
   };
 }
 
@@ -1060,7 +1063,7 @@ test("recreating a task with retained historical runs notifies its root; cosmeti
   );
 });
 
-test("reusing deleted IDs cannot create ancestry cycles, and ambiguous invocation threads stay unknown", async () => {
+test("reusing deleted IDs cannot create ancestry cycles, continuations keep their thread's lineage, and ambiguous invocation threads stay unknown", async () => {
   const path = pathFor("origin-cycles.sqlite");
   await migrate(path);
   await runRepository(
@@ -1083,6 +1086,21 @@ test("reusing deleted IDs cannot create ancestry cycles, and ambiguous invocatio
           ._tag,
         "Failure",
       );
+      // A continuation shares its run's thread and becomes the thread's parent run.
+      yield* repository.createAgentRun({
+        ...originRun("rb-continued", "b"),
+        threadId: ThreadId.make("thread-rb"),
+        startedAt: "2099-01-01T00:00:00.000Z",
+        completedAt: null,
+        status: "running",
+        continuesRunId: TaskAgentRunId.make("rb"),
+      });
+      const continued = yield* repository.upsert({
+        ...input("continued"),
+        originThreadId: ThreadId.make("thread-rb"),
+      });
+      NodeAssert.equal(continued.parentTaskId, "b");
+      NodeAssert.equal(continued.parentRunId, "rb-continued");
       yield* repository.createAgentRun({
         ...originRun("duplicate-thread", "b"),
         threadId: ThreadId.make("thread-rb"),

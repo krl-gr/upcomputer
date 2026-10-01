@@ -1,3 +1,4 @@
+import { TaskAgentRunContinuationMigration } from "./013_TaskAgentRunContinuation.ts";
 import { TaskTriggerSemanticsMigration } from "./012_TaskTriggerSemantics.ts";
 import { TaskOriginsMigration } from "./011_TaskOrigins.ts";
 import { NarrowTaskListRevisionMigration } from "./010_NarrowTaskListRevision.ts";
@@ -62,5 +63,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 10, name: "NarrowTaskListRevision", run: NarrowTaskListRevisionMigration },
     { version: 11, name: "TaskOrigins", run: TaskOriginsMigration },
     { version: 12, name: "TaskTriggerSemantics", run: TaskTriggerSemanticsMigration },
+    { version: 13, name: "TaskAgentRunContinuation", run: TaskAgentRunContinuationMigration },
   ],
 } as const;

@@ -62,6 +62,8 @@ export const TaskAgentRun = Schema.Struct({
   completedAt: Schema.NullOr(IsoDateTime),
   /** The run whose terminal status started this one; null for task-state starts. */
   triggerRunId: Schema.NullOr(TaskAgentRunId),
+  /** The ended run this one continues in the same thread (agent_run_message); null otherwise. */
+  continuesRunId: Schema.NullOr(TaskAgentRunId),
 });
 export type TaskAgentRun = typeof TaskAgentRun.Type;
 
@@ -146,6 +148,12 @@ export type AgentRunGetInput = typeof AgentRunGetInput.Type;
 
 export const AgentRunStopInput = Schema.Struct({ id: TaskAgentRunId });
 export type AgentRunStopInput = typeof AgentRunStopInput.Type;
+
+export const AgentRunMessageInput = Schema.Struct({
+  runId: TaskAgentRunId,
+  text: TrimmedNonEmptyString,
+});
+export type AgentRunMessageInput = typeof AgentRunMessageInput.Type;
 
 export const TaskAgentRunSearchInput = Schema.Struct({
   cursor: Schema.optional(Schema.Struct({ startedAt: IsoDateTime, id: TaskAgentRunId })),

@@ -131,6 +131,7 @@ const agentsLayer = Layer.succeed(TaskAgentService, {
   scheduleTaskChanged: () => Effect.void,
   scheduleAgentChanged: () => Effect.void,
   stopRun: () => Effect.succeed(Option.none()),
+  messageRun: () => Effect.die("unused messageRun"),
   recover: Effect.void,
 } satisfies TaskAgentServiceShape);
 

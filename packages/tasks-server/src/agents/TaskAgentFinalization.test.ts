@@ -106,6 +106,7 @@ test("finalization ownership and task truth commit atomically and idempotently",
         startedAt: timestamp,
         completedAt: null,
         triggerRunId: null,
+        continuesRunId: null,
       });
 
       NodeAssert.equal(

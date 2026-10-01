@@ -30,6 +30,7 @@ test("startup recovery persists a completed task-agent result before reconciling
     startedAt: createdAt,
     completedAt: null,
     triggerRunId: null,
+    continuesRunId: null,
   } as const;
   const task: Task = {
     id: run.taskId,
@@ -84,6 +85,7 @@ test("startup recovery persists a completed task-agent result before reconciling
       scheduleTaskChanged: () => Effect.void,
       scheduleAgentChanged: () => Effect.void,
       stopRun: () => Effect.succeed(Option.none()),
+      messageRun: () => Effect.die("unused messageRun"),
       recover: Effect.sync(() => {
         lifecycle.push("recover");
       }),
@@ -138,6 +140,7 @@ test("a result consumer that loses finalization ownership performs no task mutat
     startedAt: createdAt,
     completedAt: null,
     triggerRunId: null,
+    continuesRunId: null,
   } as const;
   let taskReads = 0;
   let finalizations = 0;
@@ -162,6 +165,7 @@ test("a result consumer that loses finalization ownership performs no task mutat
       scheduleTaskChanged: () => Effect.void,
       scheduleAgentChanged: () => Effect.void,
       stopRun: () => Effect.succeed(Option.none()),
+      messageRun: () => Effect.die("unused messageRun"),
       recover: Effect.void,
     } satisfies TaskAgentServiceShape),
     Layer.succeed(ExperimentalProviderRuntimeEvents, { stream: Stream.empty }),

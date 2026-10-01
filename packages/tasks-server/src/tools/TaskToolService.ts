@@ -3,6 +3,7 @@ import {
   AgentDeleteInput,
   AgentGetInput,
   AgentRunGetInput,
+  AgentRunMessageInput,
   AgentRunSearchInput,
   AgentRunStopInput,
   AgentRunTranscriptInput,
@@ -78,6 +79,7 @@ const decoders = {
   agent_run_search: Schema.decodeUnknownEffect(AgentRunSearchInput),
   agent_run_transcript: Schema.decodeUnknownEffect(AgentRunTranscriptInput),
   agent_run_stop: Schema.decodeUnknownEffect(AgentRunStopInput),
+  agent_run_message: Schema.decodeUnknownEffect(AgentRunMessageInput),
   automation_get: Schema.decodeUnknownEffect(AutomationGetInput),
   automation_search: Schema.decodeUnknownEffect(AutomationSearchInput),
   automation_create: Schema.decodeUnknownEffect(AutomationCreateInput),
@@ -612,6 +614,35 @@ const make = Effect.gen(function* () {
             return { isError: false, text: json({ dryRun: true, run: existing.value }) };
           const run = yield* taskAgents.stopRun(input);
           return { isError: false, text: json({ run: Option.getOrNull(run) }) };
+        }
+        case "agent_run_message": {
+          const input = yield* decoders.agent_run_message(args);
+          if (isDryRun) {
+            const existing = yield* repository.getAgentRunById({ id: input.runId });
+            return Option.isSome(existing)
+              ? {
+                  isError: false,
+                  text: json({ dryRun: true, run: existing.value, text: input.text }),
+                }
+              : { isError: true, text: `Agent run '${input.runId}' was not found.` };
+          }
+          const result = yield* taskAgents.messageRun({ id: input.runId, text: input.text });
+          return result.ok
+            ? {
+                isError: false,
+                text: json({
+                  run: result.run,
+                  continued: result.continued,
+                  ...(result.continued ? { continuesRunId: input.runId } : {}),
+                }),
+              }
+            : {
+                isError: true,
+                text: json({
+                  error: result.error,
+                  ...(result.activeRunId !== undefined ? { activeRunId: result.activeRunId } : {}),
+                }),
+              };
         }
         case "automation_get": {
           const input = yield* decoders.automation_get(args);

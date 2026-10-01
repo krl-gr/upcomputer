@@ -106,6 +106,7 @@ function run(overrides: Partial<TaskAgentRun> = {}): TaskAgentRun {
     startedAt: now,
     completedAt: "2026-08-04T11:20:00.000Z",
     triggerRunId: null,
+    continuesRunId: null,
     ...overrides,
   };
 }
@@ -737,6 +738,7 @@ test("live reconciliation waits for a fresh run's thread but still fails a missi
             startedAt: "2026-08-04T11:20:00.000Z",
             completedAt: "2026-08-04T11:30:00.000Z",
             triggerRunId: null,
+            continuesRunId: null,
           },
         ]),
       createAgentRun: () =>

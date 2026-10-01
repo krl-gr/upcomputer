@@ -37,7 +37,7 @@ export function latestFinalizedAssistantMessage(
 
 /**
  * Finalizes the thread's active run from a task_agent_result block. Returns
- * whether the markdown contained a valid result; finalization itself is
+ * whether the markdown contained a valid result for that run; finalization itself is
  * claimed once, so concurrent callers cannot double-finalize.
  */
 export const makeTaskAgentResultConsumer =
@@ -53,6 +53,8 @@ export const makeTaskAgentResultConsumer =
       const active = yield* repository.findActiveAgentRunByThreadId({ threadId: input.threadId });
       if (Option.isNone(active)) return true;
       const run = active.value;
+      // A continuation shares its thread; the run it continues reported this result.
+      if (Date.parse(input.createdAt) < Date.parse(run.startedAt)) return false;
       const finalizingStatus = "finalizing:result";
       const claimed = yield* repository.claimAgentRunFinalization({
         id: run.id,

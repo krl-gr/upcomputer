@@ -140,6 +140,7 @@ function runInput(
     startedAt: isoNow(),
     completedAt: null,
     triggerRunId: null,
+    continuesRunId: null,
     ...overrides,
   };
 }
@@ -338,11 +339,20 @@ test("notBefore wakes only open tasks inside the swept window", async () => {
 
 // --- Scheduler scenarios against the real repository -----------------------
 
+interface FakeSession {
+  status: string;
+  lastError: string | null;
+  latestTurn?: string;
+  /** Defaults to now, i.e. a session the provider just updated. */
+  updatedAt?: string;
+  messages?: ReadonlyArray<{ role: string; text: string; streaming: boolean; updatedAt: string }>;
+}
+
 interface Harness {
   readonly repository: TaskRepositoryShape;
   readonly service: TaskAgentServiceShape;
   readonly commands: OrchestrationCommand[];
-  readonly sessions: Map<string, { status: string; lastError: string | null; latestTurn?: string }>;
+  readonly sessions: Map<string, FakeSession>;
 }
 
 function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
@@ -365,10 +375,7 @@ async function withScheduler(
 ) {
   const repositoryLayer = await database(legacy);
   const commands: OrchestrationCommand[] = [];
-  const sessions = new Map<
-    string,
-    { status: string; lastError: string | null; latestTurn?: string }
-  >();
+  const sessions = new Map<string, FakeSession>();
   const dependencies = Layer.mergeAll(
     repositoryLayer,
     Layer.succeed(TaskPromptSettingsStore, {
@@ -387,7 +394,11 @@ async function withScheduler(
         Effect.sync(() => {
           const session = sessions.get(threadId) ?? { status: "running", lastError: null };
           return Option.some({
-            messages: [],
+            deletedAt: null,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            messages: session.messages ?? [],
             session: {
               status: session.status,
               providerName: "codex",
@@ -395,7 +406,7 @@ async function withScheduler(
               runtimeMode: "full-access",
               activeTurnId: session.status === "running" ? "turn-1" : null,
               lastError: session.lastError,
-              updatedAt: isoNow(),
+              updatedAt: session.updatedAt ?? isoNow(),
             },
             latestTurn: session.latestTurn ? { state: session.latestTurn } : null,
           });
@@ -755,6 +766,218 @@ test("a person stopping the session or interrupting the turn stops the run witho
           ["dev"],
         );
       }
+    }),
+  );
+});
+
+// --- agent_run_message --------------------------------------------------------
+
+const resultMessage = (status: string, summary: string, updatedAt: string) => ({
+  role: "assistant",
+  streaming: false,
+  updatedAt,
+  text: `Done.\n~~~task_agent_result\n${JSON.stringify({ status, summary, blocked: false, events: [] })}\n~~~`,
+});
+
+const turnsTo = (commands: ReadonlyArray<OrchestrationCommand>, threadId: string) =>
+  commands.flatMap((command) =>
+    command.type === "thread.turn.start" && command.threadId === threadId
+      ? [command.message.text]
+      : [],
+  );
+
+/** An agent no task state starts, so every run in these tests is explicit. */
+const idleAgent = (id: string, overrides: Partial<TaskAgent> = {}) =>
+  agentInput(id, { startStatuses: ["Never"], ...overrides });
+
+test("messaging an active run sends its next turn and creates no run", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, commands } = harness;
+      yield* repository.upsertAgent(idleAgent("dev"));
+      yield* repository.upsert(taskInput("t"));
+      const run = yield* repository.createAgentRun(runInput("r1", "t", "dev"));
+
+      const result = yield* service.messageRun({ id: run.id, text: "Also check the docs." });
+      NodeAssert.deepEqual(result, { ok: true, run, continued: false });
+      NodeAssert.deepEqual(turnsTo(commands, run.threadId), ["Also check the docs."]);
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 1);
+    }),
+  );
+});
+
+test("messaging an ended run continues it in its thread, and its own result finishes the continuation", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, commands, sessions } = harness;
+      yield* repository.upsertAgent(idleAgent("dev"));
+      // How each previous run left its thread; none of it may end the continuation.
+      const before = "2026-01-01T00:00:00.000Z";
+      const ended = {
+        completed: {
+          status: "ready",
+          lastError: null,
+          updatedAt: before,
+          messages: [resultMessage("Needs Review", "old result", before)],
+        },
+        failed: { status: "error", lastError: "usage limit", updatedAt: before },
+        stopped: { status: "stopped", lastError: null, updatedAt: before },
+      } satisfies Record<string, FakeSession>;
+      const previous = new Map<string, TaskAgentRun>();
+      for (const [status, session] of Object.entries(ended)) {
+        // notBefore gates trigger starts only, never an explicit message.
+        yield* repository.upsert(
+          taskInput(status, { notBefore: new Date(Date.now() + 3_600_000).toISOString() }),
+        );
+        const run = yield* repository.createAgentRun(runInput(`${status}-1`, status, "dev"));
+        yield* finish(repository, run, status);
+        sessions.set(run.threadId, session);
+        previous.set(status, run);
+      }
+      yield* tick;
+
+      const continuations = new Map<string, TaskAgentRun>();
+      for (const [status, run] of previous) {
+        const result = yield* service.messageRun({ id: run.id, text: "The limit reset; go on." });
+        NodeAssert.ok(result.ok, status);
+        NodeAssert.equal(result.continued, true);
+        NodeAssert.equal(result.run.threadId, run.threadId, "same thread");
+        NodeAssert.equal(result.run.continuesRunId, run.id);
+        NodeAssert.equal(result.run.triggerRunId, null);
+        NodeAssert.equal(result.run.status, "running");
+        const [turn] = turnsTo(commands, run.threadId);
+        NodeAssert.match(turn!, new RegExp(`agentRunId: ${result.run.id}`));
+        NodeAssert.match(turn!, /The limit reset; go on\.$/);
+        NodeAssert.equal(
+          Option.getOrThrow(yield* repository.getAgentRunById({ id: run.id })).status,
+          status,
+          "the messaged run keeps its status",
+        );
+        continuations.set(status, result.run);
+      }
+
+      // Reconciliation ticks see the previous run's session and result, which
+      // predate the continuation: the continuation keeps running.
+      yield* Effect.sleep("1300 millis");
+      for (const [status, run] of continuations) {
+        NodeAssert.equal(
+          Option.getOrThrow(yield* repository.getAgentRunById({ id: run.id })).completedAt,
+          null,
+          `${status} continuation still running`,
+        );
+      }
+
+      for (const [status, run] of continuations) {
+        const at = isoNow();
+        sessions.set(run.threadId, {
+          status: "ready",
+          lastError: null,
+          updatedAt: at,
+          messages: [resultMessage("Needs Review", `continued ${status}`, at)],
+        });
+      }
+      for (const [status, run] of continuations) {
+        const finished = yield* waitFor(
+          `${status} continuation result`,
+          repository.getAgentRunById({ id: run.id }).pipe(
+            Effect.map((found) => {
+              const current = Option.getOrThrow(found);
+              return current.completedAt ? current : undefined;
+            }),
+          ),
+        );
+        NodeAssert.equal(finished.status, "completed");
+        const task = Option.getOrThrow(yield* repository.getById({ id: TaskId.make(status) }));
+        NodeAssert.equal(task.status, "Needs Review");
+        NodeAssert.equal(task.output, `continued ${status}`);
+      }
+    }),
+  );
+});
+
+test("messaging refuses another active run of the agent, a closed task, and a disabled agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, commands } = harness;
+      yield* repository.upsertAgent(idleAgent("dev"));
+      yield* repository.upsert(taskInput("t"));
+      const ended = yield* repository.createAgentRun(runInput("r1", "t", "dev"));
+      yield* finish(repository, ended, "failed");
+      yield* tick;
+      const active = yield* repository.createAgentRun(runInput("r2", "t", "dev"));
+
+      const busy = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!busy.ok);
+      NodeAssert.equal(busy.activeRunId, active.id);
+      NodeAssert.match(busy.error, /active run 'r2'.*Message that run instead/);
+
+      yield* finish(repository, active, "completed");
+      yield* repository.update({ id: TaskId.make("t"), closedAt: isoNow() });
+      const closed = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!closed.ok);
+      NodeAssert.match(closed.error, /is closed/);
+
+      yield* repository.update({ id: TaskId.make("t"), closedAt: null });
+      yield* repository.upsertAgent(idleAgent("dev", { enabled: false }));
+      const disabled = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!disabled.ok);
+      NodeAssert.match(disabled.error, /is disabled/);
+
+      const missing = yield* service.messageRun({ id: TaskAgentRunId.make("nope"), text: "go" });
+      NodeAssert.ok(!missing.ok);
+      NodeAssert.match(missing.error, /'nope' was not found/);
+
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 2, "no run was created");
+      NodeAssert.equal(commands.length, 0, "no turn was sent");
+    }),
+  );
+});
+
+test("a failed continuation triggers a run-status agent once", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, sessions } = harness;
+      yield* repository.upsertAgent(idleAgent("dev"));
+      yield* repository.upsertAgent(
+        agentInput("doctor", { startStatuses: [], startRunStatuses: ["failed"] }),
+      );
+      yield* repository.upsert(taskInput("t"));
+      yield* tick;
+      const run = yield* repository.createAgentRun(runInput("r1", "t", "dev"));
+      yield* finish(repository, run, "completed");
+      sessions.set(run.threadId, {
+        status: "ready",
+        lastError: null,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const result = yield* service.messageRun({ id: run.id, text: "One more thing." });
+      NodeAssert.ok(result.ok);
+      const continuation = result.run;
+      sessions.set(continuation.threadId, { status: "error", lastError: "usage limit" });
+      const doctorRun = yield* waitFor(
+        "doctor run",
+        runsOf(repository, "t").pipe(
+          Effect.map((runs) => runs.find((candidate) => candidate.agentId === "doctor")),
+        ),
+      );
+      NodeAssert.equal(doctorRun.triggerRunId, continuation.id);
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getAgentRunById({ id: continuation.id })).status,
+        "failed",
+      );
+
+      yield* finish(repository, doctorRun, "completed");
+      yield* service.scheduleTaskChanged({
+        task: Option.getOrThrow(yield* repository.getById({ id: TaskId.make("t") })),
+        reason: "run-finished",
+      });
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal(
+        (yield* runsOf(repository, "t")).filter((candidate) => candidate.agentId === "doctor")
+          .length,
+        1,
+      );
     }),
   );
 });

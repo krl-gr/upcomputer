@@ -119,6 +119,7 @@ const TaskAgentRunDbRow = Schema.Struct({
   startedAt: TaskAgentRun.fields.startedAt,
   completedAt: TaskAgentRun.fields.completedAt,
   triggerRunId: TaskAgentRun.fields.triggerRunId,
+  continuesRunId: TaskAgentRun.fields.continuesRunId,
 });
 
 const TaskAutomationDbRow = Schema.Struct({
@@ -446,20 +447,24 @@ const makeTaskRepository = Effect.gen(function* () {
     task: import("./TaskRepository.ts").PersistTaskInput,
   ) {
     const threadId = task.originThreadId ?? task.sourceThreadId;
+    // Continuations share their run's thread, so the thread's latest run is the
+    // parent. Only a second run that started the thread anew is ambiguous.
     const byThread = threadId
-      ? yield* sql<{ id: string; taskId: string }>`
-      SELECT id, task_id AS "taskId" FROM task_agent_runs WHERE thread_id = ${threadId} LIMIT 2`
+      ? yield* sql<{ id: string; taskId: string; started: number }>`
+      SELECT id, task_id AS "taskId", continues_run_id IS NULL AS started
+      FROM task_agent_runs WHERE thread_id = ${threadId}
+      ORDER BY started_at DESC, id ASC`
       : [];
+    const ambiguous = byThread.filter(({ started }) => started).length > 1;
     const explicit =
       byThread.length === 0 && task.sourceRunId
         ? yield* sql<{ id: string; taskId: string }>`
       SELECT id, task_id AS "taskId" FROM task_agent_runs WHERE id = ${task.sourceRunId}`
         : [];
-    const parentRun =
-      byThread.length === 1 ? byThread[0] : byThread.length > 1 ? undefined : explicit[0];
+    const parentRun = ambiguous ? undefined : (byThread[0] ?? explicit[0]);
     if (!parentRun)
       return {
-        rootThreadId: byThread.length > 1 || task.sourceRunId ? null : threadId,
+        rootThreadId: ambiguous || task.sourceRunId ? null : threadId,
         parentTaskId: null,
         parentRunId: null,
       };
@@ -1046,7 +1051,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at,
           completed_at,
-          trigger_run_id
+          trigger_run_id,
+          continues_run_id
         )
         VALUES (
           ${run.id},
@@ -1057,7 +1063,8 @@ const makeTaskRepository = Effect.gen(function* () {
           ${run.status},
           ${run.startedAt},
           ${run.completedAt},
-          ${run.triggerRunId}
+          ${run.triggerRunId},
+          ${run.continuesRunId}
         )
       `,
   });
@@ -1076,7 +1083,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE id = ${id}
         LIMIT 1
@@ -1097,7 +1105,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE task_id = ${taskId}
           AND agent_id = ${agentId}
@@ -1121,7 +1130,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE thread_id = ${threadId}
           AND completed_at IS NULL
@@ -1144,7 +1154,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE thread_id = ${threadId}
         ORDER BY started_at DESC, id ASC
@@ -1166,7 +1177,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE task_id = ${id}
           AND completed_at IS NULL
@@ -1188,7 +1200,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE completed_at IS NULL
         ORDER BY started_at ASC, id ASC
@@ -1250,7 +1263,8 @@ const makeTaskRepository = Effect.gen(function* () {
           status,
           started_at AS "startedAt",
           completed_at AS "completedAt",
-          trigger_run_id AS "triggerRunId"
+          trigger_run_id AS "triggerRunId",
+          continues_run_id AS "continuesRunId"
         FROM task_agent_runs
         WHERE (${taskId} IS NULL OR task_id = ${taskId})
           AND (${agentId} IS NULL OR agent_id = ${agentId})
@@ -1282,7 +1296,8 @@ const makeTaskRepository = Effect.gen(function* () {
           r.status,
           r.started_at AS "startedAt",
           r.completed_at AS "completedAt",
-          r.trigger_run_id AS "triggerRunId"
+          r.trigger_run_id AS "triggerRunId",
+          r.continues_run_id AS "continuesRunId"
         FROM task_agent_runs r
         WHERE r.task_id = ${taskId}
           AND r.agent_id <> ${agentId}

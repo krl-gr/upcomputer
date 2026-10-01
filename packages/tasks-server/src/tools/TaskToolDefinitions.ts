@@ -41,6 +41,7 @@ export const TASK_TRIGGER_RULES = [
   "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
   "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is closed or deleted, or when the agent is disabled or deleted.",
   "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
+  "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is closed, the agent is disabled, or the agent has another active run on the task.",
   "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
 
@@ -289,6 +290,15 @@ export const TASK_TOOL_SPECS: ReadonlyArray<ExperimentalDynamicToolSpec> = [
     description:
       "Stop an active task-agent run. It ends as stopped and does not restart until the task's status, tags, notBefore, title or description change.",
     inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    namespace: "upcomputer_tasks",
+    mutation: "write",
+    name: "agent_run_message",
+    description:
+      "Send a message to a task-agent run's thread. An active run receives it as its next turn (queued or steered by the provider). An ended run of any status continues in the same thread, with its context, as a new run whose continuesRunId is the messaged run. Triggers and notBefore do not apply. Fails while the task is closed, the agent is disabled, or the agent already has another active run on the task (message that one instead).",
+    inputSchema: object({ runId: id, text: id }, ["runId", "text"]),
   },
   {
     type: "function",

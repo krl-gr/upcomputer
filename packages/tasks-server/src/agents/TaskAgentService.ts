@@ -57,6 +57,20 @@ export interface TaskAgentChangedInput {
   readonly reason: TaskAgentChangedReason;
 }
 
+export type MessageRunResult =
+  | {
+      readonly ok: true;
+      /** The messaged run when it was active, else the continuation run. */
+      readonly run: TaskAgentRun;
+      readonly continued: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly error: string;
+      /** The agent's active run on the task, when that is what refused the message. */
+      readonly activeRunId?: TaskAgentRunId;
+    };
+
 export interface TaskAgentServiceShape {
   readonly scheduleTaskChanged: (input: TaskChangedInput) => Effect.Effect<void>;
   readonly scheduleAgentChanged: (input: TaskAgentChangedInput) => Effect.Effect<void>;
@@ -64,6 +78,15 @@ export interface TaskAgentServiceShape {
   readonly stopRun: (input: {
     readonly id: TaskAgentRunId;
   }) => Effect.Effect<Option.Option<TaskAgentRun>, unknown>;
+  /**
+   * Sends a user turn into a run's thread. An active run receives it as is; an
+   * ended run continues as a new run on the same thread. Triggers and
+   * notBefore do not apply.
+   */
+  readonly messageRun: (input: {
+    readonly id: TaskAgentRunId;
+    readonly text: string;
+  }) => Effect.Effect<MessageRunResult, unknown>;
   readonly recover: Effect.Effect<void, unknown>;
 }
 
@@ -434,7 +457,7 @@ const make = Effect.gen(function* () {
       const events = [];
       if (input.task !== null) {
         const recovery =
-          "Review the run, then change the task's status, tags or notBefore to retry.";
+          "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
         const recoveryNote = `Task-agent run ${input.run.id} ${input.status}: ${input.reason} ${recovery}`;
         const existingOutput = input.task.output?.trim() ?? "";
         taskOutput = existingOutput.includes(recoveryNote)
@@ -527,7 +550,17 @@ const make = Effect.gen(function* () {
               return;
             }
 
-            const session = thread.value.session;
+            // A continuation shares its thread: until the provider takes the new
+            // turn, the idle session still shows how the previous run ended.
+            const threadSession = thread.value.session;
+            const session =
+              threadSession !== null &&
+              threadSession.activeTurnId == null &&
+              threadSession.status !== "running" &&
+              threadSession.status !== "starting" &&
+              Date.parse(threadSession.updatedAt) < Date.parse(run.startedAt)
+                ? null
+                : threadSession;
             const sessionStatus = session?.status ?? null;
             if (run.status === "finalizing:interrupted" || run.status === "finalizing:failed") {
               const intendedStatus =
@@ -705,6 +738,7 @@ const make = Effect.gen(function* () {
           startedAt: timestamp,
           completedAt: null,
           triggerRunId: trigger?.run.id ?? null,
+          continuesRunId: null,
         })
         .pipe(
           Effect.catch((cause) =>
@@ -861,6 +895,146 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const messageRun: TaskAgentServiceShape["messageRun"] = ({ id, text }) =>
+    Effect.gen(function* () {
+      const refuse = (error: string, activeRunId?: TaskAgentRunId): MessageRunResult => ({
+        ok: false,
+        error,
+        ...(activeRunId !== undefined ? { activeRunId } : {}),
+      });
+      const runOption = yield* repository.getAgentRunById({ id });
+      if (Option.isNone(runOption)) return refuse(`Agent run '${id}' was not found.`);
+      const run = runOption.value;
+      const threadOption = yield* projections.getThreadDetailById(run.threadId);
+      if (Option.isNone(threadOption) || threadOption.value.deletedAt !== null)
+        return refuse(`Thread '${run.threadId}' of agent run '${id}' was not found.`);
+      const thread = threadOption.value;
+      const taskOption = yield* repository.getById({ id: run.taskId });
+      if (Option.isNone(taskOption)) return refuse(`Task '${run.taskId}' was not found.`);
+      const task = taskOption.value;
+      if (task.closedAt !== null)
+        return refuse(`Task '${task.id}' is closed. Reopen it before messaging its runs.`);
+      const agentOption = yield* repository.getAgentById({ id: run.agentId });
+      if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
+      const agent = agentOption.value;
+      if (!agent.enabled)
+        return refuse(
+          `Agent '${agent.name}' (${agent.id}) is disabled. Enable it before messaging its runs.`,
+        );
+
+      const timestamp = yield* now;
+      // The same command a person's message sends: the provider queues or steers
+      // it when a turn is running, and resumes a stopped session.
+      const sendTurn = (messageText: string) =>
+        Effect.gen(function* () {
+          yield* orchestration.dispatch({
+            type: "thread.turn.start",
+            commandId: CommandId.make(yield* randomId("task-agent-message-turn")),
+            threadId: run.threadId,
+            message: {
+              messageId: MessageId.make(yield* randomId("task-agent-message")),
+              role: "user",
+              text: messageText,
+              attachments: [],
+            },
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            createdAt: timestamp,
+          });
+        });
+
+      if (run.completedAt === null) {
+        if (run.status.startsWith("finalizing:"))
+          return refuse(
+            `Agent run '${id}' is finishing (${run.status}). Message it again once it has ended; it then continues as a new run.`,
+          );
+        yield* sendTurn(text);
+        return { ok: true, run, continued: false } satisfies MessageRunResult;
+      }
+
+      const activeRefusal = (active: TaskAgentRun) =>
+        refuse(
+          `Agent '${agent.name}' already has active run '${active.id}' on task '${task.id}' (thread '${active.threadId}'). Message that run instead.`,
+          active.id,
+        );
+      const findActive = repository.findActiveAgentRunForTaskAgent({
+        taskId: task.id,
+        agentId: agent.id,
+      });
+      const active = yield* findActive;
+      if (Option.isSome(active)) return activeRefusal(active.value);
+      const created = yield* repository
+        .createAgentRun({
+          id: TaskAgentRunId.make(yield* randomId("task-agent-run")),
+          taskId: task.id,
+          agentId: agent.id,
+          threadId: run.threadId,
+          modelSelection: thread.modelSelection,
+          status: "running",
+          startedAt: timestamp,
+          completedAt: null,
+          triggerRunId: null,
+          continuesRunId: run.id,
+        })
+        .pipe(
+          Effect.map((continuation) => ({ continuation, active: null })),
+          // The one-active-run index lost a race against another start.
+          Effect.catch((cause) =>
+            findActive.pipe(
+              Effect.flatMap((raced) =>
+                Option.isSome(raced)
+                  ? Effect.succeed({ continuation: null, active: raced.value })
+                  : Effect.fail(cause),
+              ),
+            ),
+          ),
+        );
+      if (created.active !== null) return activeRefusal(created.active);
+      const continuation = created.continuation;
+
+      const failure = yield* sendTurn(
+        `Task-agent run continued:
+This thread continues ended run ${run.id} (status "${run.status}") as a new run.
+- agentRunId: ${continuation.id}
+Claim the task with this agentRunId and finish with a fenced task_agent_result JSON block, as before.
+
+${text}`,
+      ).pipe(
+        Effect.as(null),
+        Effect.onInterrupt(() =>
+          finishUnrecoverableRun({
+            run: continuation,
+            task,
+            status: "failed",
+            reason: "Sending the continuation message was interrupted.",
+            stopSession: false,
+          }).pipe(Effect.ignore),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const reason = `Sending the continuation message failed: ${String(cause)}`;
+            yield* finishUnrecoverableRun({
+              run: continuation,
+              task,
+              status: "failed",
+              reason,
+              stopSession: false,
+            }).pipe(Effect.ignore);
+            return reason;
+          }),
+        ),
+      );
+      if (failure !== null) return refuse(failure);
+      yield* appendEvent(task, "task.agent-started", {
+        agentId: agent.id,
+        agentRunId: continuation.id,
+        threadId: run.threadId,
+        role: agent.config.role,
+        continuesRunId: run.id,
+      });
+      return { ok: true, run: continuation, continued: true } satisfies MessageRunResult;
+    });
+
   const stopRun: TaskAgentServiceShape["stopRun"] = ({ id }) =>
     Effect.gen(function* () {
       const run = yield* repository.getAgentRunById({ id });
@@ -920,6 +1094,7 @@ const make = Effect.gen(function* () {
     scheduleAgentChanged: (input) =>
       Queue.offer(jobs, { type: "agent", input }).pipe(Effect.asVoid),
     stopRun,
+    messageRun,
     recover,
   } satisfies TaskAgentServiceShape;
 });
