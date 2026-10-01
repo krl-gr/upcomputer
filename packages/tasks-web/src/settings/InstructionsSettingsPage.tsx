@@ -22,7 +22,13 @@ import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { serverEnvironment } from "../../../../apps/web/src/state/server.ts";
 import { useAtomCommand } from "../../../../apps/web/src/state/use-atom-command.ts";
 import { TASKS_WEB_ENVIRONMENT_API } from "../environmentApi.ts";
-import { type AllChatsDraft, draftAfterSave, instructionsSaveInput } from "./instructionsSave.ts";
+import {
+  type AllChatsDraft,
+  type PromptDrafts,
+  draftAfterSave,
+  instructionsSaveInput,
+  promptsAfterReload,
+} from "./instructionsSave.ts";
 
 // "All chats" edits the core `customInstructions` setting, which every agent
 // harness adds to its prompt. The other tabs edit the Tasks prompt settings.
@@ -40,6 +46,11 @@ const TABS = [ALL_CHATS_TAB, ...PROMPT_TABS] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 const selectCustomInstructions = (settings: UnifiedSettings) => settings.customInstructions;
+
+const DEFAULT_PROMPT_DRAFTS: PromptDrafts = {
+  saved: DEFAULT_TASK_PROMPT_SETTINGS,
+  draft: DEFAULT_TASK_PROMPT_SETTINGS,
+};
 
 function sameSettings(left: TaskPromptSettings, right: TaskPromptSettings): boolean {
   return PROMPT_TABS.every(({ id }) => left[id] === right[id]);
@@ -69,8 +80,10 @@ function InstructionsSettingsPage() {
     reportFailure: false,
   });
   const [activeTab, setActiveTab] = useState<TabId>(ALL_CHATS_TAB.id);
-  const [saved, setSaved] = useState<TaskPromptSettings>(DEFAULT_TASK_PROMPT_SETTINGS);
-  const [draft, setDraft] = useState<TaskPromptSettings>(DEFAULT_TASK_PROMPT_SETTINGS);
+  // The latest server texts, for Cancel; `saved` is each field's base, which
+  // stays the loaded text while the field is edited.
+  const [serverPrompts, setServerPrompts] = useState(DEFAULT_TASK_PROMPT_SETTINGS);
+  const [{ saved, draft }, setPrompts] = useState(DEFAULT_PROMPT_DRAFTS);
   // `undefined` shows the saved value, so it follows settings changes until edited.
   const [customInstructionsDraft, setCustomInstructionsDraft] = useState<AllChatsDraft>();
   const [loading, setLoading] = useState(true);
@@ -83,9 +96,10 @@ function InstructionsSettingsPage() {
   const tab = TABS.find(({ id }) => id === activeTab) ?? ALL_CHATS_TAB;
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
 
+  // Config events (provider status, keybindings, settings) reload the texts
+  // without disabling the editor or replacing fields edited on the page.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     setError(undefined);
     if (!api) {
       setLoading(false);
@@ -97,8 +111,8 @@ function InstructionsSettingsPage() {
     void api.tasks.getPromptSettings({}).then(
       (settings) => {
         if (cancelled) return;
-        setSaved(settings);
-        setDraft(settings);
+        setServerPrompts(settings);
+        setPrompts((current) => promptsAfterReload(current, settings));
         setLoading(false);
       },
       (cause) => {
@@ -145,8 +159,8 @@ function InstructionsSettingsPage() {
         );
         const { allChats, conflicts, ...settings } = result;
         // A refused field's base becomes the newer text, so saving again replaces it.
-        setSaved(settings);
-        setDraft(draftAfterSave(draft, result));
+        setServerPrompts(settings);
+        setPrompts({ saved: settings, draft: draftAfterSave(draft, result) });
         if (allChats !== undefined)
           setCustomInstructionsDraft({
             text: conflicts.includes("allChats") ? customInstructions : allChats,
@@ -269,7 +283,10 @@ function InstructionsSettingsPage() {
                 }));
               } else {
                 const promptKey = tab.id;
-                setDraft((current) => ({ ...current, [promptKey]: value }));
+                setPrompts((current) => ({
+                  ...current,
+                  draft: { ...current.draft, [promptKey]: value },
+                }));
               }
             }}
           />
@@ -308,9 +325,9 @@ function InstructionsSettingsPage() {
                 }));
                 return;
               }
-              setDraft((current) => ({
+              setPrompts((current) => ({
                 ...current,
-                [promptKey]: DEFAULT_TASK_PROMPT_SETTINGS[promptKey],
+                draft: { ...current.draft, [promptKey]: DEFAULT_TASK_PROMPT_SETTINGS[promptKey] },
               }));
             }}
           >
@@ -322,7 +339,7 @@ function InstructionsSettingsPage() {
               variant="outline"
               disabled={!dirty || saving}
               onClick={() => {
-                setDraft(saved);
+                setPrompts({ saved: serverPrompts, draft: serverPrompts });
                 setCustomInstructionsDraft(undefined);
               }}
             >

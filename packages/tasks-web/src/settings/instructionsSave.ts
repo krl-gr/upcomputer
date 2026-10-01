@@ -12,6 +12,31 @@ export interface AllChatsDraft {
   readonly base: string;
 }
 
+/** The task texts on the page: the text each field started from, and the edits. */
+export interface PromptDrafts {
+  readonly saved: TaskPromptSettings;
+  readonly draft: TaskPromptSettings;
+}
+
+/**
+ * A reload from the server: fields not edited on the page take the server text.
+ * Edited fields keep their text and the text they started from, so saving them
+ * is still refused if the server text changed underneath.
+ */
+export function promptsAfterReload(
+  prompts: PromptDrafts,
+  server: TaskPromptSettings,
+): PromptDrafts {
+  const saved = { ...server };
+  const draft = { ...server };
+  for (const field of TASK_PROMPT_FIELDS) {
+    if (prompts.draft[field] === prompts.saved[field]) continue;
+    saved[field] = prompts.saved[field];
+    draft[field] = prompts.draft[field];
+  }
+  return { saved, draft };
+}
+
 /**
  * The settings page save: only the fields edited on the page, each with the
  * text the page loaded as `base`, so the server refuses fields changed elsewhere.
