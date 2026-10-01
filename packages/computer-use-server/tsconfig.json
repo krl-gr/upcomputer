@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ESNext", "esnext.disposable"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // Imported as-is from its former package, which reads node
+        // built-ins and JSON directly.
+        "diagnosticSeverity": {
+          "nodeBuiltinImport": "suggestion",
+          "preferSchemaOverJson": "suggestion"
+        }
+      }
+    ]
+  },
+  "include": ["src", "vite.config.ts"]
+}

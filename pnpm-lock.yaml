@@ -208,6 +208,12 @@ importers:
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609)
+      open-computer-use:
+        specifier: 0.3.5
+        version: 0.3.5
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -227,6 +233,12 @@ importers:
       '@types/yauzl':
         specifier: ^3.4.0
         version: 3.4.0
+      '@upcomputer/computer-use-contracts':
+        specifier: workspace:*
+        version: link:../../packages/computer-use-contracts
+      '@upcomputer/computer-use-server':
+        specifier: workspace:*
+        version: link:../../packages/computer-use-server
       '@upcomputer/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -314,6 +326,12 @@ importers:
       '@upcomputer/client-runtime':
         specifier: workspace:*
         version: link:../../packages/client-runtime
+      '@upcomputer/computer-use-contracts':
+        specifier: workspace:*
+        version: link:../../packages/computer-use-contracts
+      '@upcomputer/computer-use-web':
+        specifier: workspace:*
+        version: link:../../packages/computer-use-web
       '@upcomputer/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -516,6 +534,92 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.2(@types/node@24.12.4)(bufferutil@4.1.0)(esbuild@0.28.1)(jiti@2.7.0)(msw@2.12.11(@types/node@24.12.4)(typescript@6.0.3))(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
+
+  packages/computer-use-contracts:
+    dependencies:
+      '@upcomputer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609)
+
+  packages/computer-use-server:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      '@upcomputer/computer-use-contracts':
+        specifier: workspace:*
+        version: link:../computer-use-contracts
+      '@upcomputer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@upcomputer/shared':
+        specifier: workspace:*
+        version: link:../shared
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609)
+      open-computer-use:
+        specifier: 0.3.5
+        version: 0.3.5
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
+    devDependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(bufferutil@4.1.0)(effect@4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609))(ioredis@5.11.0)(utf-8-validate@6.0.6)
+      '@effect/vitest':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(patch_hash=42b87cc47e70d74e62496e7a8261b3fd298ecad4464d209348ab04b96f853a5f)(effect@4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609))
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      vite-plus:
+        specifier: 'catalog:'
+        version: 0.2.2(@types/node@24.12.4)(bufferutil@4.1.0)(esbuild@0.28.1)(jiti@2.7.0)(msw@2.12.11(@types/node@24.12.4)(typescript@6.0.3))(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
+
+  packages/computer-use-web:
+    dependencies:
+      '@tanstack/react-router':
+        specifier: ^1.160.2
+        version: 1.170.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@upcomputer/client-runtime':
+        specifier: workspace:*
+        version: link:../client-runtime
+      '@upcomputer/computer-use-contracts':
+        specifier: workspace:*
+        version: link:../computer-use-contracts
+      '@upcomputer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609)
+      lucide-react:
+        specifier: ^0.564.0
+        version: 0.564.0(react@19.2.6)
+      react:
+        specifier: 19.2.6
+        version: 19.2.6
+      react-dom:
+        specifier: 19.2.6
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      '@types/react':
+        specifier: ~19.2.14
+        version: 19.2.16
+      '@types/react-dom':
+        specifier: ~19.2.3
+        version: 19.2.3(@types/react@19.2.16)
+      vite:
+        specifier: npm:@voidzero-dev/vite-plus-core@0.2.2
+        version: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0)'
 
   packages/contracts:
     dependencies:
@@ -6597,6 +6701,10 @@ packages:
 
   oniguruma-to-es@4.3.6:
     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
+
+  open-computer-use@0.3.5:
+    resolution: {integrity: sha512-KKRY42by3yR+XPJiu6tk9wCn6lp0Y/dh1i8ap2SpW45hNSTej/hTPy1uquOLn/E4wF9hvPgProxmrsNj2FdpjQ==}
+    hasBin: true
 
   ora@9.4.0:
     resolution: {integrity: sha512-84cglkRILFxdtA8hAvLNdMrtBpPNBTrQ9/ulg0FA7xLMnD6mifv+enAIeRmvtv+WgdCE+LPGOfQmtJRrVaIVhQ==}
@@ -14190,6 +14298,8 @@ snapshots:
       oniguruma-parser: 0.12.2
       regex: 6.1.0
       regex-recursion: 6.0.2
+
+  open-computer-use@0.3.5: {}
 
   ora@9.4.0:
     dependencies:

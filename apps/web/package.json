@@ -29,6 +29,8 @@
     "@tanstack/react-pacer": "^0.19.4",
     "@tanstack/react-router": "^1.160.2",
     "@upcomputer/client-runtime": "workspace:*",
+    "@upcomputer/computer-use-contracts": "workspace:*",
+    "@upcomputer/computer-use-web": "workspace:*",
     "@upcomputer/contracts": "workspace:*",
     "@upcomputer/orchestrator-web": "workspace:*",
     "@upcomputer/shared": "workspace:*",

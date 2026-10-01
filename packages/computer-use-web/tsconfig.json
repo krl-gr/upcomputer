@@ -1,0 +1,23 @@
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    },
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "globalDate": "off",
+          "globalConsole": "off",
+          "globalRandom": "off",
+          "globalTimers": "off",
+          "globalFetch": "off"
+        }
+      }
+    ]
+  },
+  "include": ["src", "../../apps/web/src/vite-env.d.ts"]
+}

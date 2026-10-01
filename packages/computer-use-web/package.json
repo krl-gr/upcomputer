@@ -1,0 +1,39 @@
+{
+  "name": "@upcomputer/computer-use-web",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./rpc": {
+      "types": "./src/rpc/index.ts",
+      "import": "./src/rpc/index.ts"
+    },
+    "./feature": {
+      "types": "./src/feature.tsx",
+      "import": "./src/feature.tsx"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.160.2",
+    "@upcomputer/client-runtime": "workspace:*",
+    "@upcomputer/computer-use-contracts": "workspace:*",
+    "@upcomputer/contracts": "workspace:*",
+    "effect": "catalog:",
+    "lucide-react": "^0.564.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "~19.2.14",
+    "@types/react-dom": "~19.2.3",
+    "vite": "catalog:"
+  }
+}

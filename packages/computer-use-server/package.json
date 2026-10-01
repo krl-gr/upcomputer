@@ -1,0 +1,39 @@
+{
+  "name": "@upcomputer/computer-use-server",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./feature": {
+      "types": "./src/serverFeature.ts",
+      "import": "./src/serverFeature.ts"
+    },
+    "./computer-use": {
+      "types": "./src/computerUse/index.ts",
+      "import": "./src/computerUse/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@upcomputer/computer-use-contracts": "workspace:*",
+    "@upcomputer/contracts": "workspace:*",
+    "@upcomputer/shared": "workspace:*",
+    "effect": "catalog:",
+    "open-computer-use": "0.3.5",
+    "playwright-core": "1.60.0"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
