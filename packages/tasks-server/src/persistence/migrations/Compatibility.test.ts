@@ -18,11 +18,11 @@ import { ORCHESTRATOR_PROPOSAL_MIGRATION_CONTRIBUTION } from "../../proposals/mi
 import { TASK_MIGRATION_CONTRIBUTION } from "./index.ts";
 
 const temporaryDirectories: string[] = [];
-const officialMigrations = [
+const taskMigrations = [
   TASK_MIGRATION_CONTRIBUTION,
   ORCHESTRATOR_PROPOSAL_MIGRATION_CONTRIBUTION,
 ] as const;
-const officialMigrationCount = officialMigrations.reduce(
+const taskMigrationCount = taskMigrations.reduce(
   (total, contribution) => total + contribution.migrations.length,
   0,
 );
@@ -69,9 +69,9 @@ test("core-only, disabled, enabled, and restored databases preserve extension da
     NodeAssert.equal(taskTable, undefined);
   });
 
-  const officialPath = temporaryDatabase("official.sqlite");
-  await migrate(officialPath, officialMigrations);
-  database(officialPath, (db) => {
+  const tasksPath = temporaryDatabase("tasks.sqlite");
+  await migrate(tasksPath, taskMigrations);
+  database(tasksPath, (db) => {
     db.prepare(`
       INSERT INTO tasks (
         id, rank, project_id, title, description, status, priority, created_by,
@@ -99,8 +99,8 @@ test("core-only, disabled, enabled, and restored databases preserve extension da
 
   // Opening the same database without installed features must not interpret or
   // remove their tables, rows, or migration cursors.
-  await migrate(officialPath, []);
-  database(officialPath, (db) => {
+  await migrate(tasksPath, []);
+  database(tasksPath, (db) => {
     const task = db.prepare("SELECT title FROM tasks WHERE id = ?").get("task-1") as
       | { title: string }
       | undefined;
@@ -108,19 +108,19 @@ test("core-only, disabled, enabled, and restored databases preserve extension da
       count: number;
     };
     NodeAssert.equal(task?.title, "Preserved task");
-    NodeAssert.equal(history.count, officialMigrationCount);
+    NodeAssert.equal(history.count, taskMigrationCount);
   });
 
   // Re-enabling/reinstalling is idempotent and requires no data migration.
-  await migrate(officialPath, officialMigrations);
-  database(officialPath, (db) => {
+  await migrate(tasksPath, taskMigrations);
+  database(tasksPath, (db) => {
     const count = db.prepare("SELECT COUNT(*) AS count FROM tasks").get() as { count: number };
     NodeAssert.equal(count.count, 1);
   });
 
-  const backupPath = NodePath.join(officialPath, "..", "restored.sqlite");
-  NodeFS.copyFileSync(officialPath, backupPath);
-  await migrate(backupPath, officialMigrations);
+  const backupPath = NodePath.join(tasksPath, "..", "restored.sqlite");
+  NodeFS.copyFileSync(tasksPath, backupPath);
+  await migrate(backupPath, taskMigrations);
   database(backupPath, (db) => {
     const restored = db.prepare("SELECT title FROM tasks WHERE id = ?").get("task-1") as
       | { title: string }
@@ -184,7 +184,7 @@ test("legacy task agents and runs import without deleting legacy tables", async 
     );
   });
 
-  await migrate(path, officialMigrations);
+  await migrate(path, taskMigrations);
   database(path, (db) => {
     const agent = db
       .prepare("SELECT config_json AS configJson FROM task_agents WHERE id = ?")

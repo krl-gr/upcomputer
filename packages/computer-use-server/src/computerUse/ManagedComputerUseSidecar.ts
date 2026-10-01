@@ -4,9 +4,9 @@ import * as NodePath from "node:path";
 
 import { COMPUTER_USE_DEFAULT_BINARY_PATH } from "@upcomputer/computer-use-contracts/settings";
 
-export const COMPUTER_USE_SIDECAR_PACKAGE = "open-computer-use" as const;
+const COMPUTER_USE_SIDECAR_PACKAGE = "open-computer-use" as const;
 export const COMPUTER_USE_SIDECAR_VERSION = "0.3.5" as const;
-export const COMPUTER_USE_SIDECAR_ENV = "UPCOMPUTER_COMPUTER_USE_BINARY_PATH" as const;
+const COMPUTER_USE_SIDECAR_ENV = "UPCOMPUTER_COMPUTER_USE_BINARY_PATH" as const;
 
 export interface ComputerUseSidecarPlatform {
   readonly platform: NodeJS.Platform;
@@ -39,7 +39,7 @@ function installedPackageRoot(): string | undefined {
   }
 }
 
-export function managedComputerUseSidecarCandidates(input?: {
+function managedComputerUseSidecarCandidates(input?: {
   readonly platform?: NodeJS.Platform;
   readonly arch?: NodeJS.Architecture;
   readonly moduleDirectory?: string;

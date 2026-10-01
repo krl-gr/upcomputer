@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
-export const DEFAULT_BROWSER_PROFILE_ID = "default" as const;
+const DEFAULT_BROWSER_PROFILE_ID = "default" as const;
 
 export interface BrowserProfilePaths {
   readonly profilesDir: string;

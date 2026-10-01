@@ -1,6 +1,5 @@
 import {
   TaskId,
-  type Task,
   type TaskAutomation,
   type TaskAutomationRunOutcome,
 } from "@upcomputer/tasks-contracts/v1";
@@ -10,7 +9,6 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
@@ -24,7 +22,7 @@ import {
  * Polling beats a long timer here: the host is a desktop machine that sleeps,
  * and a fiber parked for eight hours wakes up with a stale deadline.
  */
-export const AUTOMATION_TICK_INTERVAL = Duration.seconds(30);
+const AUTOMATION_TICK_INTERVAL = Duration.seconds(30);
 
 export interface TaskAutomationServiceShape {
   /** Runs one scheduler pass. Exposed so tests can drive it deterministically. */

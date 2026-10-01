@@ -12,10 +12,10 @@ import { makeComputerUseService } from "./computerUse/ComputerUseService.ts";
 import { makeComputerUseMcpTools } from "./mcp/ComputerUseMcpTools.ts";
 import { COMPUTER_USE_RPC_CONTRIBUTION } from "./rpc/ComputerUseRpc.ts";
 
-export const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use" as const;
+const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use" as const;
 
 /** Runs every harness's preview_* browser tools in the managed Chrome when no desktop app serves them. */
-export const CHROME_PREVIEW_AUTOMATION_HOST = defineExperimentalPreviewAutomationHost({
+const CHROME_PREVIEW_AUTOMATION_HOST = defineExperimentalPreviewAutomationHost({
   id: "chrome",
   ownerId: COMPUTER_USE_FEATURE_ID,
   version: 1,
@@ -23,7 +23,7 @@ export const CHROME_PREVIEW_AUTOMATION_HOST = defineExperimentalPreviewAutomatio
 });
 
 /** The computer_* tools on the core MCP server, for every harness. */
-export const COMPUTER_USE_MCP_TOOLS = defineExperimentalMcpTools({
+const COMPUTER_USE_MCP_TOOLS = defineExperimentalMcpTools({
   id: "computer-use-tools",
   ownerId: COMPUTER_USE_FEATURE_ID,
   version: 1,

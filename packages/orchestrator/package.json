@@ -7,10 +7,6 @@
       "types": "./src/interactionMode.ts",
       "import": "./src/interactionMode.ts"
     },
-    "./contracts": {
-      "types": "./src/contracts.ts",
-      "import": "./src/contracts.ts"
-    },
     "./instructions": {
       "types": "./src/instructions.ts",
       "import": "./src/instructions.ts"

@@ -28,7 +28,7 @@ import {
   OrchestrationEngineService,
   ProjectionSnapshotQuery,
 } from "../../../../apps/server/src/extensionApi.ts";
-import { retryOperational } from "../access/retryOperational.ts";
+import { retryOperational } from "../retryOperational.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
 import {

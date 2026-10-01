@@ -4,7 +4,7 @@ import { WsRpcGroup } from "@upcomputer/contracts";
 import type * as Effect from "effect/Effect";
 
 /** Core RPC shape plus the browser and computer-use settings namespace. */
-export const ComputerUseWsRpcGroup = WsRpcGroup.merge(ComputerUseRpcGroup);
+const ComputerUseWsRpcGroup = WsRpcGroup.merge(ComputerUseRpcGroup);
 
 export const makeComputerUseWsRpcProtocolClient =
   makeWsRpcProtocolClientForGroup(ComputerUseWsRpcGroup);

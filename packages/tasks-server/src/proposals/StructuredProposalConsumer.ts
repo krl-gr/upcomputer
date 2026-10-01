@@ -15,7 +15,7 @@ import {
   ExperimentalProviderRuntimeEvents,
   ProjectionSnapshotQuery,
 } from "../../../../apps/server/src/extensionApi.ts";
-import { retryOperational } from "../access/retryOperational.ts";
+import { retryOperational } from "../retryOperational.ts";
 import { ProposalStore } from "./ProposalStore.ts";
 
 const decodeProposal = Schema.decodeUnknownEffect(OrchestrationProposalSpec);

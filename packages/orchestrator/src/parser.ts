@@ -5,13 +5,13 @@ import {
   type OrchestrationProposalSpec as OrchestrationProposalSpecType,
 } from "@upcomputer/tasks-contracts/v1/proposals";
 
-export const ORCHESTRATION_PROPOSAL_FENCE_LABELS = [
+const ORCHESTRATION_PROPOSAL_FENCE_LABELS = [
   "orchestration_proposal",
   "orchestration-proposal",
   "orchestrationProposal",
 ] as const;
 
-export const ORCHESTRATION_PROPOSAL_WRAPPER_KEYS = [
+const ORCHESTRATION_PROPOSAL_WRAPPER_KEYS = [
   "proposal",
   "orchestrationProposal",
   "orchestration_proposal",

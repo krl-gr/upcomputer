@@ -22,11 +22,11 @@ export const ALL_PROJECTS_FILTER = ALL_FILTER;
 /** Follow the sidebar's selected logical project (every member project). */
 export const SIDEBAR_PROJECTS_FILTER = "__sidebar__";
 
-export function viewProjectKey(environmentId: EnvironmentId, projectId: ProjectId): string {
+function viewProjectKey(environmentId: EnvironmentId, projectId: ProjectId): string {
   return `${environmentId}:${projectId}`;
 }
 
-export function projectFilterKeys(filter: ViewProjectFilter | null): ReadonlySet<string> | null {
+function projectFilterKeys(filter: ViewProjectFilter | null): ReadonlySet<string> | null {
   return filter
     ? new Set(filter.projectRefs.map((ref) => viewProjectKey(ref.environmentId, ref.projectId)))
     : null;

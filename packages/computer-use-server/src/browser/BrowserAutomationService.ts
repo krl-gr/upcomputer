@@ -9,9 +9,6 @@ import * as NodePath from "node:path";
 
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { chromium } from "playwright-core";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import { PRODUCT_BASE_NAME } from "../Branding.ts";
 
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
@@ -101,11 +98,6 @@ export interface BrowserAutomationServiceShape {
   readonly clearProfileData: () => Promise<BrowserProfileSnapshot>;
 }
 
-export class BrowserAutomationService extends Context.Service<
-  BrowserAutomationService,
-  BrowserAutomationServiceShape
->()("@upcomputer/computer-use-server/browser/BrowserAutomationService") {}
-
 function trimText(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
@@ -132,7 +124,7 @@ function candidatePath(
   return join(...(parts as string[]));
 }
 
-export function getInstalledBrowserCandidates(input?: {
+function getInstalledBrowserCandidates(input?: {
   readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
 }): ReadonlyArray<BrowserExecutableCandidate> {
@@ -192,7 +184,7 @@ export function getInstalledBrowserCandidates(input?: {
   ];
 }
 
-export function buildBrowserLaunchArgs(input: {
+function buildBrowserLaunchArgs(input: {
   readonly debuggingPort: number;
   readonly userDataDir: string;
   readonly initialUrl?: string;
@@ -389,14 +381,6 @@ async function launchBrowserProcess(input: {
   };
 }
 
-export async function waitForCdpEndpointForTests(
-  port: number,
-  timeoutMs: number,
-  processHandle?: BrowserProcessHandle,
-): Promise<void> {
-  return waitForCdpEndpoint(port, timeoutMs, processHandle);
-}
-
 async function connectOverCdp(port: number): Promise<{
   readonly browser: Browser;
   readonly context: BrowserContext;
@@ -410,7 +394,7 @@ async function connectOverCdp(port: number): Promise<{
   return { browser, context };
 }
 
-export async function launchCdpBrowser(input: {
+async function launchCdpBrowser(input: {
   readonly userDataDir: string;
   readonly initialUrl?: string;
 }): Promise<LaunchedCdpBrowser> {
@@ -651,13 +635,3 @@ export function getBrowserAutomationService(
   browserAutomationServices.set(serverConfig.stateDir, created);
   return created;
 }
-
-export const makeBrowserAutomationService = Effect.gen(function* () {
-  const serverConfig = yield* ServerConfig;
-  return getBrowserAutomationService(serverConfig);
-});
-
-export const BrowserAutomationServiceLive = Layer.effect(
-  BrowserAutomationService,
-  makeBrowserAutomationService,
-);

@@ -6,8 +6,8 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        // Imported as-is from the former private package. These rules report
-        // existing code; tighten them once the package is migrated.
+        // These rules report existing code at suggestion level; tighten them
+        // as the code is cleaned up.
         "diagnosticSeverity": {
           "anyUnknownInErrorContext": "suggestion",
           "deterministicKeys": "suggestion",

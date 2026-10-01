@@ -571,9 +571,6 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(bufferutil@4.1.0)(effect@4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609))(ioredis@5.11.0)(utf-8-validate@6.0.6)
-      '@effect/vitest':
-        specifier: 4.0.0-beta.78
-        version: 4.0.0-beta.78(patch_hash=42b87cc47e70d74e62496e7a8261b3fd298ecad4464d209348ab04b96f853a5f)(effect@4.0.0-beta.78(patch_hash=3e688d7371b2a5b2d18755a6f2aedd4acf2c8f880ac6468a34a92abe3d61d609))
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4

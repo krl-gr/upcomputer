@@ -13,8 +13,8 @@ import {
 import type { ProductExtensionSnapshot, ProductManifestSnapshot } from "@upcomputer/contracts";
 import { supportsProductCapability } from "@upcomputer/shared/product";
 
-export const TASKS_EXTENSION_ID = "upcomputer.tasks" as const;
-export const TASKS_WEB_SUPPORTED_EXTENSION_API_VERSION = 1 as const;
+const TASKS_EXTENSION_ID = "upcomputer.tasks" as const;
+const TASKS_WEB_SUPPORTED_EXTENSION_API_VERSION = 1 as const;
 
 export type TasksWebAvailability =
   | "loading"

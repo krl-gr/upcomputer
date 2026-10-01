@@ -7,7 +7,7 @@ import {
   ExperimentalProviderRuntimeEvents,
   ProjectionSnapshotQuery,
 } from "../../../../apps/server/src/extensionApi.ts";
-import { retryOperational } from "../access/retryOperational.ts";
+import { retryOperational } from "../retryOperational.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskAgentService } from "./TaskAgentService.ts";
 import {

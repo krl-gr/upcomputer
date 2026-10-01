@@ -186,7 +186,7 @@ export type AgentCreateModelDecision =
   | { readonly ok: true; readonly modelSelection: ModelSelection }
   | { readonly ok: false; readonly reason: "missing-explicit-selection" | "unresolved-selection" };
 
-export function resolveAgentCreateModelDecision(
+function resolveAgentCreateModelDecision(
   input: typeof AgentCreateInput.Type,
   resolvedModel: ModelSelection | undefined,
 ): AgentCreateModelDecision {
@@ -198,7 +198,7 @@ export function resolveAgentCreateModelDecision(
     : { ok: false, reason: "unresolved-selection" };
 }
 
-export function resolveAgentUpdateModelSelection(
+function resolveAgentUpdateModelSelection(
   input: typeof AgentUpdateInput.Type,
   existing: ModelSelection,
   resolvedModel: ModelSelection | undefined,

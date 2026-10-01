@@ -5,9 +5,10 @@ proposals.
 
 This package owns only Orchestrator-specific behavior:
 
-- the `orchestrator` mode registration and provider mapping hints;
+- the `orchestrator` mode registration and its per-provider behavior;
 - the non-mutating proposal instructions;
-- the proposal schema and final-output parser;
+- the final-output parser for proposals (the proposal schema lives in
+  `@upcomputer/tasks-contracts/v1/proposals`);
 - serializable UI metadata consumed by `@upcomputer/orchestrator-web`;
 - the server feature and product-manifest entry composed by the public build.
 

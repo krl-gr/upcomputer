@@ -4,17 +4,9 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    },
     "./feature": {
       "types": "./src/serverFeature.ts",
       "import": "./src/serverFeature.ts"
-    },
-    "./computer-use": {
-      "types": "./src/computerUse/index.ts",
-      "import": "./src/computerUse/index.ts"
     }
   },
   "scripts": {
@@ -32,7 +24,6 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
-    "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

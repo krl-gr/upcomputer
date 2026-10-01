@@ -12,8 +12,8 @@ import { AddTaskOutputMigration } from "./006_AddTaskOutput.ts";
 import { CreateTaskPromptSettingsMigration } from "./007_CreateTaskPromptSettings.ts";
 import { AddGlobalTaskRankMigration } from "./008_AddGlobalTaskRank.ts";
 
-export const TASK_MIGRATION_OWNER_ID = "upcomputer.tasks" as const;
-export const TASK_MIGRATION_NAMESPACE = "upcomputer.tasks" as const;
+const TASK_MIGRATION_OWNER_ID = "upcomputer.tasks" as const;
+const TASK_MIGRATION_NAMESPACE = "upcomputer.tasks" as const;
 
 export const TASK_MIGRATION_CONTRIBUTION = {
   ownerId: TASK_MIGRATION_OWNER_ID,

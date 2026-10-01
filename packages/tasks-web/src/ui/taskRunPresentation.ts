@@ -1,5 +1,5 @@
 /** Run-count status for a blocked run that is no longer its task's latest run. */
-export const SUPERSEDED_BLOCKED_RUN_STATUS = "blocked:superseded";
+const SUPERSEDED_BLOCKED_RUN_STATUS = "blocked:superseded";
 
 /** Status to search runs by for a run-count status. */
 export function runSearchStatus(countStatus: string): string {

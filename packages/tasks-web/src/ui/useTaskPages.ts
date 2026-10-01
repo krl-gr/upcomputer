@@ -9,7 +9,7 @@ import {
   type ViewProjectFilter,
 } from "./projectFilter.ts";
 
-export const ALL_TASKS_FILTER = ALL_FILTER;
+const ALL_TASKS_FILTER = ALL_FILTER;
 const PAGE_SIZE = 100;
 
 /**

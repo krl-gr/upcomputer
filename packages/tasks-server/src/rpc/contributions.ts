@@ -236,7 +236,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     ),
 });
 
-export const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
+const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
   id: "task-agents-rpc-v1",
   ownerId: OWNER_ID,
   version: 1,
@@ -303,7 +303,7 @@ export const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     ),
 });
 
-export const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
+const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
   id: "task-automations-rpc-v1",
   ownerId: OWNER_ID,
   version: 1,
@@ -403,7 +403,7 @@ export const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution
     ),
 });
 
-export const ORCHESTRATOR_PROPOSALS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
+const ORCHESTRATOR_PROPOSALS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
   id: "orchestrator-proposals-rpc-v1",
   ownerId: OWNER_ID,
   version: 1,
@@ -418,7 +418,7 @@ export const ORCHESTRATOR_PROPOSALS_RPC_CONTRIBUTION = defineNamespacedRpcContri
     ),
 });
 
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
+const ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
   id: "orchestrator-proposal-reads-rpc-v1",
   ownerId: OWNER_ID,
   version: 1,

@@ -30,9 +30,9 @@ import { TASK_RPC_CONTRIBUTIONS } from "./rpc/contributions.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
 import { TaskDynamicToolRegistrationLive } from "./tools/contribution.ts";
 
-export const TASKS_FEATURE_ID = "upcomputer.tasks" as const;
+const TASKS_FEATURE_ID = "upcomputer.tasks" as const;
 
-export function makeTasksServerFeature(): ExperimentalServerFeatureContribution {
+function makeTasksServerFeature(): ExperimentalServerFeatureContribution {
   const taskBaseServicesLive = Layer.mergeAll(
     TaskRepositoryLive,
     TaskPromptSettingsStoreLive,

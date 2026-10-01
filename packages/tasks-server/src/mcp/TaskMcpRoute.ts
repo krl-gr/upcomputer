@@ -13,7 +13,7 @@ import { defineHttpRouteContribution } from "../../../../apps/server/src/extensi
 import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "../tools/TaskToolServiceTag.ts";
 
-export const TASK_MCP_ROUTE_PATH = "/api/extensions/upcomputer.tasks/mcp" as const;
+const TASK_MCP_ROUTE_PATH = "/api/extensions/upcomputer.tasks/mcp" as const;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

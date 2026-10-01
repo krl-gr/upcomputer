@@ -212,12 +212,6 @@ export const TaskTagInput = Schema.Struct({
 });
 export type TaskTagInput = typeof TaskTagInput.Type;
 
-export const TaskClaimInput = Schema.Struct({
-  id: TaskId,
-  assigneeAgentRunId: TrimmedNonEmptyString,
-});
-export type TaskClaimInput = typeof TaskClaimInput.Type;
-
 export const TaskAppendEventInput = Schema.Struct({
   id: Schema.optional(TaskEventId),
   taskId: TaskId,

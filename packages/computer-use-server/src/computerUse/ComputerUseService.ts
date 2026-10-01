@@ -7,11 +7,9 @@ import {
   type ComputerUseSnapshot,
   type ComputerUseToolSnapshot,
 } from "@upcomputer/computer-use-contracts/settings";
-import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -89,11 +87,6 @@ export interface ComputerUseServiceShape {
     readonly interactionMode?: ComputerUseInteractionMode;
   }) => Promise<{ readonly required: boolean; readonly detail: string }>;
 }
-
-export class ComputerUseService extends Context.Service<
-  ComputerUseService,
-  ComputerUseServiceShape
->()("@upcomputer/computer-use-server/computerUse/ComputerUseService") {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -336,7 +329,7 @@ function missingRequiredTools(backendToolNames: ReadonlySet<string>): string[] {
   ).map((tool) => tool.backendName);
 }
 
-export function createComputerUseService(
+function createComputerUseService(
   serverConfig: ServerConfig["Service"],
   dependencies: ComputerUseServiceDependencies,
 ): ComputerUseServiceShape {
@@ -510,20 +503,3 @@ export const makeComputerUseService = Effect.gen(function* () {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return getComputerUseService(serverConfig, { fileSystem, childProcessSpawner });
 });
-
-export const ComputerUseServiceLive = Layer.effect(ComputerUseService, makeComputerUseService);
-
-export function computerUseResultToCodexContentItems(result: ComputerUseToolResult) {
-  return result.content.map((item) => {
-    if (item.type === "image") {
-      return {
-        type: "inputImage" as const,
-        imageUrl: `data:${item.mimeType};base64,${item.data}`,
-      };
-    }
-    return {
-      type: "inputText" as const,
-      text: item.text,
-    };
-  });
-}

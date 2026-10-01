@@ -243,8 +243,8 @@ test("agent_update keeps stored options when project resolution returns another 
     enabled: true,
     startStatuses: [],
     startTags: [],
+    startRunStatuses: [],
     config: { role: "Agent", modelSelection: selected, instructions: "Old instructions." },
-    concurrencyKey: null,
     createdAt: "2026-08-12T00:00:00.000Z",
     updatedAt: "2026-08-12T00:00:00.000Z",
   } as unknown as TaskAgent;

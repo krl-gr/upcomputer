@@ -14,9 +14,6 @@ import { Task, TaskId } from "./tasks.ts";
 export const OrchestrationProposedPlanId = PublicOrchestrationProposedPlanId;
 export type OrchestrationProposedPlanId = typeof OrchestrationProposedPlanId.Type;
 
-export const OrchestrationProposalId = OrchestrationProposedPlanId;
-export type OrchestrationProposalId = typeof OrchestrationProposalId.Type;
-
 export const OrchestrationProposalAgent = Schema.Struct({
   name: TrimmedNonEmptyString,
   role: Schema.optional(TrimmedNonEmptyString),

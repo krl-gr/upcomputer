@@ -3,10 +3,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    },
     "./feature": {
       "types": "./src/serverFeature.ts",
       "import": "./src/serverFeature.ts"

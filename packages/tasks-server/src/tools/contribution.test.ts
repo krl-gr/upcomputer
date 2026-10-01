@@ -78,7 +78,7 @@ test("Tasks dynamic tools register into the public registry for the feature laye
   NodeAssert.deepEqual(registry.snapshot(), { revision: 2, owners: [], specs: [] });
 });
 
-test("Claude MCP composes the real private task registration with per-turn mutation policy", async () => {
+test("Claude MCP composes the real task registration with per-turn mutation policy", async () => {
   const calls: Array<{ name: string; mutationPolicy: string; args: Record<string, unknown> }> = [];
   const service: TaskToolServiceShape = {
     call: ({ name, args, context }) =>
@@ -97,8 +97,8 @@ test("Claude MCP composes the real private task registration with per-turn mutat
     invocationContext: () => ({
       source: "provider",
       mutationPolicy,
-      threadId: "thread-private-composed" as never,
-      turnId: "turn-private-composed" as never,
+      threadId: "thread-composed" as never,
+      turnId: "turn-composed" as never,
       runtimeMode: "full-access",
       interactionMode: "default",
     }),
@@ -106,7 +106,7 @@ test("Claude MCP composes the real private task registration with per-turn mutat
   const server = servers.upcomputer_tasks;
   NodeAssert.ok(server);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "private-composed-test", version: "1" });
+  const client = new Client({ name: "composed-test", version: "1" });
   await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
 
   const names = new Set((await client.listTools()).tools.map(({ name }) => name));

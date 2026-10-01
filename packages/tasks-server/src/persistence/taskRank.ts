@@ -1,15 +1,15 @@
 import { TaskRank, type TaskId } from "@upcomputer/tasks-contracts/v1";
 
-export const TASK_RANK_WIDTH = 16;
+const TASK_RANK_WIDTH = 16;
 export const TASK_RANK_STEP = 0x1_0000_0000n;
-export const TASK_RANK_MAX = 0xffff_ffff_ffff_ffffn;
+const TASK_RANK_MAX = 0xffff_ffff_ffff_ffffn;
 
 export function encodeTaskRank(value: bigint): TaskRank {
   if (value < 0n || value > TASK_RANK_MAX) throw new RangeError("Task rank is out of range.");
   return TaskRank.make(value.toString(16).padStart(TASK_RANK_WIDTH, "0"));
 }
 
-export function decodeTaskRank(rank: string): bigint {
+function decodeTaskRank(rank: string): bigint {
   if (!/^[0-9a-f]{16}$/.test(rank)) throw new Error(`Invalid task rank '${rank}'.`);
   return BigInt(`0x${rank}`);
 }

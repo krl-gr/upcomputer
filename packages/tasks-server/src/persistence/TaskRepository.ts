@@ -116,9 +116,6 @@ export interface FinalizeTaskAgentRunInput {
   readonly events: ReadonlyArray<PersistTaskEventInput>;
 }
 
-export const ListTasksByProjectInput = Schema.Struct({ projectId: ProjectId });
-export type ListTasksByProjectInput = typeof ListTasksByProjectInput.Type;
-
 export const PersistTaskAutomationInput = TaskAutomation;
 export type PersistTaskAutomationInput = typeof PersistTaskAutomationInput.Type;
 

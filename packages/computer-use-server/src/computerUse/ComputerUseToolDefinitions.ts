@@ -263,10 +263,6 @@ export function getComputerUseToolDefinition(name: string): ComputerUseToolDefin
   return toolByName.get(name);
 }
 
-export function isComputerUseToolName(name: string): boolean {
-  return toolByName.has(name);
-}
-
 export function isComputerUseActionTool(name: string): boolean {
   return getComputerUseToolDefinition(name)?.mode === "action";
 }

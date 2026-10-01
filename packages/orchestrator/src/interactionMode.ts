@@ -10,29 +10,9 @@ import {
 import { parseOrchestrationProposalMarkdown } from "./parser.ts";
 import { ORCHESTRATOR_UI_METADATA } from "./ui.ts";
 
-export const ORCHESTRATOR_PROVIDER_RUNTIME_HINTS = {
-  codex: {
-    collaborationMode: "plan",
-    sandbox: "read-only",
-  },
-  claudeAgent: {
-    permissionMode: "plan",
-    restorePermissionModeAfterTurn: true,
-  },
-  cursor: {
-    nativeModeAliases: ["orchestrator", "orchestration"],
-    safeFallbackModeAliases: ["plan", "architect"],
-    rejectWhenNoSafeNativeMode: true,
-  },
-  opencode: {
-    agent: "plan",
-    allowUserAgentOverride: false,
-  },
-} as const;
-
 export const ORCHESTRATOR_INTERACTION_MODE_CAPABILITY_ID =
   "upcomputer.orchestrator.interaction-mode.v1" as const;
-export const ORCHESTRATOR_INTERACTION_MODE_CAPABILITY = {
+const ORCHESTRATOR_INTERACTION_MODE_CAPABILITY = {
   id: ORCHESTRATOR_INTERACTION_MODE_CAPABILITY_ID,
   version: 1,
 } as const;
@@ -88,7 +68,7 @@ export const ORCHESTRATOR_INTERACTION_MODE_REGISTRATION = {
   parseFinalOutput: (text) => parseOrchestrationProposalMarkdown(text),
 } satisfies ExperimentalInteractionModeRegistration;
 
-export const ORCHESTRATOR_FEATURE_ID = "upcomputer.orchestrator" as const;
+const ORCHESTRATOR_FEATURE_ID = "upcomputer.orchestrator" as const;
 
 /** Server contribution that registers the Orchestrator interaction mode. */
 export const ORCHESTRATOR_SERVER_FEATURE = {

@@ -124,9 +124,6 @@ export const TaskAutomationRunSearchInput = Schema.Struct({
 });
 export type TaskAutomationRunSearchInput = typeof TaskAutomationRunSearchInput.Type;
 
-export const AutomationRunSearchInput = TaskAutomationRunSearchInput;
-export type AutomationRunSearchInput = typeof AutomationRunSearchInput.Type;
-
 export const TaskAutomationRunSearchResult = Schema.Struct({
   runs: Schema.Array(TaskAutomationRun),
 });
@@ -195,7 +192,3 @@ export const DEFAULT_AUTOMATION_CATCH_UP_POLICY: TaskAutomationCatchUpPolicy = "
 
 /** Bounds how many inert drafts one agent loop can pile into a project. */
 export const AUTOMATION_DRAFT_LIMIT_PER_PROJECT = 20 as const;
-
-export function isAutomationDueForReview(automation: TaskAutomation): boolean {
-  return automation.status === "draft";
-}
