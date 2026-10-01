@@ -18,18 +18,36 @@ const SENSITIVE_APP_PATTERNS = [
   /proton\s*pass/i,
   /wallet/i,
   /payment/i,
+  // System authentication and credential prompts.
+  /securityagent/i,
+  /coreautha/i,
+  /localauthentication/i,
+  /ticket[\s-]?viewer/i,
+  /netauthagent/i,
+  /escrowsecurity/i,
   /парол/iu,
   /связка ключей/iu,
 ] as const;
 
 /**
- * macOS credential apps whose localized names agents may use as targets. Their
- * names in every system language are read from the bundles' own tables.
+ * macOS credential apps and authentication prompts whose names agents may use
+ * as targets. Their names in every system language are read from the bundles'
+ * own tables.
  */
 const SYSTEM_CREDENTIAL_APP_BUNDLES = [
   "/System/Applications/Passwords.app",
   "/System/Applications/Utilities/Keychain Access.app",
   "/System/Library/CoreServices/Applications/Keychain Access.app",
+  // Keychain access and administrator password prompts.
+  "/System/Library/Frameworks/Security.framework/Versions/A/MachServices/SecurityAgent.bundle",
+  // Touch ID and password confirmation prompts.
+  "/System/Library/Frameworks/LocalAuthentication.framework/Support/coreautha.bundle",
+  // Kerberos tickets.
+  "/System/Library/CoreServices/Applications/Ticket Viewer.app",
+  // Network share passwords.
+  "/System/Library/CoreServices/NetAuthAgent.app",
+  "/System/Library/CoreServices/EscrowSecurityAlert.app",
+  "/System/Library/CoreServices/Keychain Circle Notification.app",
 ] as const;
 
 /** Used when the bundles cannot be read, e.g. on other platforms or in tests. */

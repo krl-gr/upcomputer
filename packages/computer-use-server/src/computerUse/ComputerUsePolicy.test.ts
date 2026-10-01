@@ -36,6 +36,16 @@ test("credential and payment apps are blocked by name, localized name or bundle 
     "Trousseaux d’accès",
     "Acceso a Llaveros",
     "Passwords.app",
+    "SecurityAgent",
+    "com.apple.SecurityAgent",
+    "Ticket Viewer",
+    "com.apple.Ticket-Viewer",
+    "coreautha",
+    "com.apple.LocalAuthentication.UIAgent",
+    "NetAuthAgent",
+    "com.apple.NetAuthAgent",
+    "Keychain Circle Notification",
+    "com.apple.EscrowSecurityAlert",
   ]) {
     for (const toolName of ["computer_get_app_state", "computer_click"]) {
       const decision = decide(toolName, app);
