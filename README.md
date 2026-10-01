@@ -18,8 +18,10 @@ with an issue before a pull request.
 
 ## Install
 
-This public repository produces **Up.computer Core**, the MIT-licensed core-only
-composition. Build it from source using the instructions below.
+This public repository produces **Up.computer Core**, the MIT-licensed
+composition of the app with tasks, task agents, automations, browser
+automation, and computer use. Build it from source using the instructions
+below.
 
 The normal official Up.computer installer is assembled by a separate private
 release pipeline from this exact public core plus bundled first-party
@@ -28,9 +30,9 @@ binary is not represented by this public source tree alone.
 
 The official installer includes the built-in **Up** agent runtime, so a user can install
 Up.computer, sign in or configure a supported BYOK provider, and start without installing a
-third-party harness. Browser and Computer Use are integrated through that runtime. The current
-release is local Desktop only; it does not distribute an official npm CLI or headless server. The
-public npm package named `t3` belongs to upstream T3 Code and is not an Up.computer install path.
+third-party harness. The current release is local Desktop only; it does not distribute an official
+npm CLI or headless server. The public npm package named `t3` belongs to upstream T3 Code and is
+not an Up.computer install path.
 
 The public Core source also supports external provider CLIs. Install and authenticate any optional
 runtime you want to use:
@@ -89,6 +91,10 @@ vp run dev:marketing
   sessions.
 - Review changed files and diffs before trusting or shipping a run.
 - Commit, push, publish repositories, and open pull requests from the app.
+- Track work as tasks, let saved task agents pick them up by status and tag,
+  and create tasks on a schedule. See [Tasks, agents, and automations](./docs/tasks/README.md).
+- Give every agent a managed browser and native desktop observation and control. See
+  [Browser and computer use](./docs/computer-use/README.md).
 - Work against local Desktop projects and use T3 Connect with the bundled Desktop backend.
 - Preserve existing remote-environment records while official remote support remains unavailable.
 
@@ -103,6 +109,9 @@ vp run dev:marketing
   WebSocket protocol, settings, and session types.
 - `packages/shared`: Shared runtime utilities consumed by server and clients.
 - `packages/ssh` and `packages/tailscale`: Remote-environment support.
+- `packages/tasks-*` and `packages/orchestrator*`: Tasks, task agents, automations, and the
+  Orchestrator mode.
+- `packages/computer-use-*`: Browser automation and computer use.
 - `docs`: User-facing and operational docs.
 
 ## Relationship To T3 Code

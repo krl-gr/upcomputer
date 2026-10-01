@@ -45,12 +45,12 @@ backoff. There is no idle data polling. The stream closes on last unsubscribe.
 Creation/deletion membership changes notify roots after commit, including reuse
 of IDs with retained historical runs. Cosmetic edits do not refresh aggregates.
 
-The public host's optional `threadAccessory` web-feature contribution owns only
+The host's optional `threadAccessory` web-feature contribution owns only
 content. The sidebar retains layout, timestamp fallback, and environment-specific
-capability gating. No private Tasks imports are added to the public host.
+capability gating. The host does not import Tasks code.
 
 Focused coverage: `TaskRank.test.ts`, `TaskToolService.test.ts`,
 `TaskPageRpc.test.ts`, `threadRunCounts.test.ts`, `taskRunPresentation.test.ts`,
-and the public `SidebarThreadAccessory.test.tsx`. The repository test includes indexed
+and `SidebarThreadAccessory.test.tsx` in apps/web. The repository test includes indexed
 aggregation of 10,000 tasks / 50,000 runs across 100 roots. This is not a promise
 of production latency on arbitrary hardware.

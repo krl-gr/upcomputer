@@ -14,7 +14,9 @@ The packages:
 - `@upcomputer/tasks-web`: the Tasks, Agents, and Automations views and the
   Instructions settings page.
 - `@upcomputer/orchestrator` and `@upcomputer/orchestrator-web`: the
-  read-only Orchestrator mode and its structured proposals.
+  read-only Orchestrator interaction mode, the parser for its structured
+  proposals, and the proposal components. The composer does not offer the
+  mode at the moment.
 
 The public product entries (`apps/server/src/product/publicProductEntry.ts`
 and `apps/web/src/product/defaultProductEntry.ts`) compose them through the
@@ -28,10 +30,16 @@ optional assignee run. Statuses are plain strings; a common workflow is
 `Backlog` → `To Do` → `In Progress` → `Needs Review` → `Done`. Tasks are kept
 in one global order per environment.
 
+The server also keeps `triggerChangedAt`: the time of the last real change to
+the title, description, status, tags, `notBefore`, or `closedAt`. Writes that
+leave those fields as they were, and changes to the output, assignee,
+metadata, or priority, do not move it.
+
 ## Agents and trigger rules
 
 An agent has instructions, a model selection, a runtime mode, an optional
-project, and a trigger: `startStatuses`, `startTags`, and optionally
+project (an agent with a project starts only on that project's tasks), and a
+trigger: `startStatuses`, `startTags`, and optionally
 `startRunStatuses`. The scheduler applies these rules (`TASK_TRIGGER_RULES` in
 `packages/tasks-server/src/tools/TaskToolDefinitions.ts`; agents receive the
 same list from `task_context`):
@@ -51,14 +59,32 @@ same list from `task_context`):
    removing its own trigger tag or moving the status; otherwise a later change
    starts it again.
 
+Rule 3 compares times: an agent runs again when the task's
+`triggerChangedAt` is later than the end of its previous run on the task, or
+the agent's `updatedAt` is later than that run's start. A status set by a
+run's own `task_agent_result` is recorded at the run's end, so it does not
+start the same agent again; it can start other agents. Each agent has at most
+one active run per task.
+
+`notBefore` holds back every start on the task until it passes. The server
+checks for tasks whose `notBefore` passed every few seconds and on startup, so
+a postponed task starts without another change. `agent_run_message` ignores
+`notBefore`.
+
 ### Run lifecycle
 
 A triggered run starts a new provider thread with the agent's instructions, the
 execution guidance from Settings → Instructions, the task, and the run's
 identity. A started run keeps running while the task's status and tags change.
 It ends when it reports its `task_agent_result`, sets `assigneeAgentRunId`
-away from itself, is stopped with `agent_run_stop`, when the task is closed or
-deleted, or when the agent is disabled or deleted.
+away from itself (a release), is stopped with `agent_run_stop`, when the task
+is closed or deleted, or when the agent is disabled or deleted. Ending a run
+clears the task's `assigneeAgentRunId` if it still names that run.
+
+`agent_run_stop({ id })` stops an active run as `stopped` and stops its
+provider session; for an ended run it changes nothing. A stopped run is that
+agent's latest run on the task, so the agent starts there again only after a
+real change (rule 3).
 
 Run statuses:
 
@@ -66,14 +92,15 @@ Run statuses:
 - `blocked`: the agent itself reported it cannot continue.
 - `failed`: the server saw the run break (provider error, missing thread, no
   result).
-- `interrupted`: the app restarted during the run.
+- `interrupted`: the app restarted while the run was working. All such runs
+  end at once after a restart, so run-status agents start for each of them.
 - `stopped`: `agent_run_stop`, a person stopped the session or interrupted the
   turn, the task was closed or deleted, or the agent was disabled or deleted.
 
 ### Messaging runs
 
 `agent_run_message({ runId, text })` sends a message to any run's thread. It
-is an explicit start: triggers, `runsAgain`, and `notBefore` do not apply.
+is an explicit start: triggers, the re-run rule, and `notBefore` do not apply.
 
 - An active run receives `text` as its next turn, exactly like a person's
   message in that thread: the provider queues or steers it while a turn is
@@ -98,10 +125,12 @@ messages the run once the limit resets.
 
 An agent with `startRunStatuses` (`failed`, `interrupted`, `blocked`) does not
 start on task state alone. It starts once for each run of another agent on a
-matching task that ended with one of those statuses and is still that agent's
-latest run there. Runs started this way never trigger such agents, and stopped
-runs never trigger agents. Use it for an agent that decides what happens after
-a failure; its prompt names the triggering run.
+matching task that ended with one of those statuses after the run-status agent
+was created and is still that agent's latest run there. The task must still
+match the agent's statuses, tags, project, and `notBefore`. Runs started this
+way never trigger such agents, and stopped runs never trigger agents. Use it
+for an agent that decides what happens after a failure; its prompt names the
+triggering run.
 
 ### Result protocol
 
@@ -118,7 +147,8 @@ Every run ends its final message with a fenced block:
 - `status`, when present, becomes the task status. Leave it out to keep the
   status unchanged.
 - `blocked: true` ends the run as `blocked` and, unless `status` is given,
-  sets the task status to `blocked`.
+  sets the task status to `blocked`. A `status` containing "block" also
+  counts as blocked.
 - `events` entries (`{"kind": "...", "message": "..."}`) are appended to the
   task.
 
@@ -127,12 +157,17 @@ The run's assignment is released when the result is recorded.
 ## Automations
 
 An automation creates a task from a template (title, description, status,
-priority, tags) on a cron schedule in a time zone. `catchUpPolicy` decides
-what happens to slots missed while the app was closed: `skip` drops them and
-`fire-once` creates one task. With `skipIfOpen`, a slot is skipped while a
-task the automation created is still open. Agents can only create and edit
-drafts (`automation_create`); a person activates an automation in the
-Automations view.
+priority, tags) on a cron schedule in a time zone. The scheduler checks every
+30 seconds. `catchUpPolicy` decides what happens to slots missed by more than
+two minutes, for example while the app was closed: `skip` drops them and
+`fire-once` (the default) creates one task. With `skipIfOpen`, a slot is
+skipped while a task the automation created is still open. Created tasks
+start agents like any other task. After five failures in a row, or when its
+schedule no longer parses, an automation turns itself off.
+
+Agents can only propose drafts (`automation_create`, at most 20 per project)
+and edit or delete drafts; a person enables an automation in the Automations
+view.
 
 ## Example agents
 

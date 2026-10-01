@@ -38,15 +38,17 @@ MCP sidecar, pinned at 0.3.5 and started on first use.
 
 ### Enabling
 
-Computer use is on by default. **Settings → Computer Use** has the switch to
-turn it off and its options, stored in the `computerUse` section of the server
-settings file:
+Computer use is on by default, in Control mode, with Action approvals off.
+**Settings → Computer Use** has the switch to turn it off and its options,
+stored in the `computerUse` section of the server settings file:
 
-- **Mode**: Observe allows only the observation tools; Control also allows
-  actions.
+- **Mode** (Control by default): Observe allows only the observation tools;
+  Control also allows actions.
 - **Action approvals** (off by default): ask before every control action, even
-  in full-access threads.
-- **Allowed applications**: when set, only these apps may be targeted.
+  in full-access threads. Agents that cannot ask are refused control actions
+  while it is on.
+- **Allowed applications** (empty by default): when set, only these apps, by
+  exact name, may be targeted.
 - **Coordinate fallback** (off by default): allow raw x/y targets.
 
 ### Policy per session
@@ -56,18 +58,26 @@ Features add tools to that server with the `mcpTools` contribution
 the calling thread's current interaction mode and runtime mode, so a mode
 change applies to the next call. The computer-use tools apply:
 
-- A read-only mode, such as Plan or Ask, may only observe. Actions need a mode
-  whose mutations are allowed, such as Default.
-- Apps that look like credential or payment surfaces (password managers,
-  Keychain, wallets, payment screens) are always blocked.
+- A read-only mode, such as Plan, Ask, or Orchestrator, may only observe.
+  Actions need a mode whose mutations are allowed, such as Default.
 - A thread whose mode cannot be resolved is refused.
-- Where the bundled UpComputer agent would ask the user for approval, other
-  agents are refused instead, since they cannot ask yet: every call in a
-  Supervised (approval-required) thread, and control actions while Action
-  approvals is on.
+- Agents cannot ask the user for approval yet, so they are refused instead:
+  every call in a Supervised (approval-required) thread, and control actions
+  while Action approvals is on.
+- The settings above apply: the switch, Mode, Allowed applications, and
+  Coordinate fallback.
+- Credential and payment surfaces are refused even when they are in Allowed
+  applications (`packages/computer-use-server/src/computerUse/SensitiveApps.ts`).
+  These include Passwords, Keychain Access, the system authentication prompts
+  (SecurityAgent for keychain and administrator passwords, coreautha for
+  Touch ID and password confirmations), Ticket Viewer, NetAuthAgent, and
+  password managers, wallets, and payment apps by name. Names are matched
+  against the `app` argument, including bundle IDs and the localized names
+  macOS reports. This is best effort: it recognizes known names only, so it
+  does not catch every credential prompt, and it is not a security boundary.
 
-The bundled UpComputer agent uses the same service and policy and keeps its
-own approval prompts.
+The UpComputer agent (`up`), an optional extra that is not part of this
+repository, uses the same service and policy and asks for approval itself.
 
 ### macOS permissions
 
