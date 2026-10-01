@@ -54,6 +54,8 @@ export interface ExperimentalWebNavigationContribution {
   readonly slot: ExperimentalWebNavigationSlot;
   readonly order?: number;
   readonly icon?: ComponentType<{ readonly className?: string }>;
+  /** Compact status content after the label, such as counts. The host owns placement. */
+  readonly accessory?: ComponentType;
   readonly capabilities?: ReadonlyArray<ExperimentalWebCapabilityRequirement>;
 }
 

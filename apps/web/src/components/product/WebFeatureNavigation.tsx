@@ -37,6 +37,7 @@ function WebFeatureNavigationItem({
   const { isMobile, setOpenMobile } = useSidebar();
   const availability = useConnectedWebFeatureAvailability(feature, item.capabilities);
   const Icon = item.icon;
+  const Accessory = item.accessory;
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -67,6 +68,17 @@ function WebFeatureNavigationItem({
         >
           {item.label}
         </span>
+        {Accessory ? (
+          <span
+            className={cn(
+              "ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums",
+              SIDEBAR_MUTED_TEXT_CLASS,
+              SIDEBAR_LABEL_TEXT_CLASS,
+            )}
+          >
+            <Accessory />
+          </span>
+        ) : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
