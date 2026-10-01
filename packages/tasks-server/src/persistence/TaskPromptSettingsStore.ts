@@ -74,7 +74,10 @@ export interface TaskPromptSettingsStoreShape {
   /** The task fields only, without reading core settings. */
   readonly get: Effect.Effect<TaskPromptSettings, TaskRepositoryError>;
   readonly getState: Effect.Effect<InstructionsState, InstructionsStoreError>;
-  /** The settings page save: records each field that changed as a settings-page change. */
+  /**
+   * The settings page save: records each field that changed as a settings-page change.
+   * A field whose current text differs from its `base` is left as it is and reported.
+   */
   readonly update: (
     input: TaskPromptSettingsUpdateInput,
   ) => Effect.Effect<TaskPromptSettingsUpdateResult, InstructionsStoreError>;
@@ -334,12 +337,20 @@ const make = Effect.gen(function* () {
     transaction(
       Effect.gen(function* () {
         let state = yield* getState;
+        const conflicts: InstructionsField[] = [];
         // allChats last: its core settings write is the one step outside SQL.
         for (const field of [...TASK_PROMPT_FIELDS, "allChats"] as const) {
           const requested = input[field];
           if (requested === undefined) continue;
           const text = normalizeText(field, requested);
-          if (textOf(state, field) === text) continue;
+          const current = textOf(state, field);
+          if (current === text) continue;
+          // Changed elsewhere, e.g. from a chat, since the page loaded it.
+          const base = input.base?.[field];
+          if (base !== undefined && normalizeText(field, base) !== current) {
+            conflicts.push(field);
+            continue;
+          }
           state = (yield* applyFieldChange({
             state,
             field,
@@ -353,6 +364,7 @@ const make = Effect.gen(function* () {
         return {
           ...state.settings,
           ...(input.allChats === undefined ? {} : { allChats: state.allChats }),
+          conflicts,
         };
       }),
     );

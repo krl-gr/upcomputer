@@ -13,6 +13,7 @@ import {
   TaskId,
   TasksRpcGroup,
   type TaskPromptSettingsUpdateInput,
+  type TaskPromptSettingsUpdateResult,
 } from "@upcomputer/tasks-contracts/v1";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@upcomputer/contracts";
 import * as Crypto from "effect/Crypto";
@@ -302,6 +303,7 @@ test("settings page saves are recorded per changed field with the RPC payload un
     ...DEFAULT_TASK_PROMPT_SETTINGS,
     taskCreation: "Page task guidance",
     taskExecution: "Page execution guidance",
+    conflicts: [],
   });
   // Saving the same texts again records nothing.
   await settingsPage(saved);
@@ -338,7 +340,8 @@ test("settings page saves are recorded per changed field with the RPC payload un
     ],
   );
   NodeAssert.equal((await call("instructions_get")).body.revision, 2);
-  NodeAssert.deepEqual(await settingsPage(), saved);
+  const { conflicts: _conflicts, ...savedTexts } = saved;
+  NodeAssert.deepEqual(await settingsPage(), savedTexts);
 
   // A page edit is revertible like any other change.
   const reverted = await call("instructions_revert", { changeId: changes[1].changeId });
@@ -756,6 +759,7 @@ test("settings page saves of All chats go to core settings and are recorded", as
   NodeAssert.deepEqual(saved, {
     ...DEFAULT_TASK_PROMPT_SETTINGS,
     allChats: "Never commit without asking.",
+    conflicts: [],
   });
   NodeAssert.equal(await allChats(), "Never commit without asking.");
   // Fields left out stay as they are, and an unchanged All chats records nothing.
@@ -770,4 +774,57 @@ test("settings page saves of All chats go to core settings and are recorded", as
   const reverted = await call("instructions_revert", { changeId: changes[0].changeId });
   NodeAssert.equal(reverted.isError, false, reverted.text);
   NodeAssert.equal(await allChats(), "");
+});
+
+test("a settings page save does not overwrite a field a chat changed after the page loaded", async () => {
+  const { call, settingsPage, allChats } = await harness({ allChats: "Loaded all chats" });
+  const loaded = await settingsPage();
+  const save = async (input: TaskPromptSettingsUpdateInput) =>
+    (await settingsPage(input)) as TaskPromptSettingsUpdateResult;
+  for (const [field, text] of [
+    ["taskCreation", "Chat task guidance"],
+    ["allChats", "Chat all chats"],
+  ] as const) {
+    const revision: number = (await call("instructions_get")).body.revision;
+    const edited = await call("instructions_update", {
+      field,
+      text,
+      reason: "chat edit",
+      expectedRevision: revision,
+    });
+    NodeAssert.equal(edited.isError, false, edited.text);
+  }
+
+  // The page edits the same fields from its older copy: both are refused.
+  const refused = await save({
+    taskCreation: "Page task guidance",
+    allChats: "Page all chats",
+    base: { taskCreation: loaded.taskCreation, allChats: "Loaded all chats" },
+  });
+  NodeAssert.deepEqual(refused.conflicts, ["taskCreation", "allChats"]);
+  NodeAssert.equal(refused.taskCreation, "Chat task guidance");
+  NodeAssert.equal(refused.allChats, "Chat all chats");
+  NodeAssert.equal(await allChats(), "Chat all chats");
+  NodeAssert.equal((await call("instructions_history")).body.changes.length, 2);
+
+  // A different field saves and keeps the chat edits.
+  const saved = await save({
+    taskExecution: "Page execution guidance",
+    base: { taskExecution: loaded.taskExecution },
+  });
+  NodeAssert.deepEqual(saved, {
+    ...DEFAULT_TASK_PROMPT_SETTINGS,
+    taskCreation: "Chat task guidance",
+    taskExecution: "Page execution guidance",
+    conflicts: [],
+  });
+  NodeAssert.equal(await allChats(), "Chat all chats");
+
+  // A base that matches the current text saves, e.g. after the page reloads.
+  const resaved = await save({
+    taskCreation: "Page task guidance",
+    base: { taskCreation: "Chat task guidance" },
+  });
+  NodeAssert.deepEqual(resaved.conflicts, []);
+  NodeAssert.equal(resaved.taskCreation, "Page task guidance");
 });

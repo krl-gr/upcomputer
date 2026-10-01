@@ -1,5 +1,6 @@
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  type InstructionsField,
   type TaskPromptSettings,
 } from "@upcomputer/tasks-contracts/v1";
 import { squashAtomCommandFailure } from "@upcomputer/client-runtime/state/runtime";
@@ -21,6 +22,7 @@ import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { serverEnvironment } from "../../../../apps/web/src/state/server.ts";
 import { useAtomCommand } from "../../../../apps/web/src/state/use-atom-command.ts";
 import { TASKS_WEB_ENVIRONMENT_API } from "../environmentApi.ts";
+import { type AllChatsDraft, draftAfterSave, instructionsSaveInput } from "./instructionsSave.ts";
 
 // "All chats" edits the core `customInstructions` setting, which every agent
 // harness adds to its prompt. The other tabs edit the Tasks prompt settings.
@@ -41,6 +43,12 @@ const selectCustomInstructions = (settings: UnifiedSettings) => settings.customI
 
 function sameSettings(left: TaskPromptSettings, right: TaskPromptSettings): boolean {
   return PROMPT_TABS.every(({ id }) => left[id] === right[id]);
+}
+
+/** Refused edits stay in the editor; Cancel shows the newer text, saving again replaces it. */
+function conflictMessage(conflicts: ReadonlyArray<InstructionsField>): string {
+  const labels = conflicts.map((field) => TABS.find(({ id }) => id === field)?.label ?? field);
+  return `${labels.join(", ")} changed elsewhere after this page loaded it, so your edit was not saved. Cancel to load the newer text, or save again to replace it.`;
 }
 
 function errorMessage(cause: unknown): string {
@@ -64,11 +72,11 @@ function InstructionsSettingsPage() {
   const [saved, setSaved] = useState<TaskPromptSettings>(DEFAULT_TASK_PROMPT_SETTINGS);
   const [draft, setDraft] = useState<TaskPromptSettings>(DEFAULT_TASK_PROMPT_SETTINGS);
   // `undefined` shows the saved value, so it follows settings changes until edited.
-  const [customInstructionsDraft, setCustomInstructionsDraft] = useState<string>();
+  const [customInstructionsDraft, setCustomInstructionsDraft] = useState<AllChatsDraft>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const customInstructions = customInstructionsDraft ?? savedCustomInstructions;
+  const customInstructions = customInstructionsDraft?.text ?? savedCustomInstructions;
   const promptsDirty = !sameSettings(saved, draft);
   const customInstructionsDirty = customInstructions !== savedCustomInstructions;
   const dirty = promptsDirty || customInstructionsDirty;
@@ -106,7 +114,7 @@ function InstructionsSettingsPage() {
 
   useEffect(() => {
     // Hand back to the saved value once settings catch up with a save.
-    if (customInstructionsDraft === savedCustomInstructions) {
+    if (customInstructionsDraft?.text === savedCustomInstructions) {
       setCustomInstructionsDraft(undefined);
     }
   }, [customInstructionsDraft, savedCustomInstructions]);
@@ -125,22 +133,43 @@ function InstructionsSettingsPage() {
     setError(undefined);
     try {
       // The Tasks save records every changed field, All chats included, in the
-      // instructions history. Without Tasks, All chats goes to core settings.
+      // instructions history, and refuses fields changed elsewhere since the
+      // page loaded them. Without Tasks, All chats goes to core settings.
       if (api) {
-        const { allChats, ...settings } = await api.tasks.updatePromptSettings({
-          ...(promptsDirty ? draft : {}),
-          ...(customInstructionsDirty ? { allChats: customInstructions } : {}),
-        });
+        const result = await api.tasks.updatePromptSettings(
+          instructionsSaveInput({
+            saved,
+            draft,
+            allChats: customInstructionsDirty ? customInstructionsDraft : undefined,
+          }),
+        );
+        const { allChats, conflicts, ...settings } = result;
+        // A refused field's base becomes the newer text, so saving again replaces it.
         setSaved(settings);
-        setDraft(settings);
-        if (allChats !== undefined) setCustomInstructionsDraft(allChats);
+        setDraft(draftAfterSave(draft, result));
+        if (allChats !== undefined)
+          setCustomInstructionsDraft({
+            text: conflicts.includes("allChats") ? customInstructions : allChats,
+            base: allChats,
+          });
+        if (conflicts.length > 0) {
+          const message = conflictMessage(conflicts);
+          setError(message);
+          toastManager.add({
+            type: "warning",
+            title: "Instructions changed elsewhere",
+            description: message,
+          });
+          return;
+        }
       } else if (customInstructionsDirty && environmentId !== null) {
         const result = await updateServerSettings({
           environmentId,
           input: { patch: { customInstructions } },
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        setCustomInstructionsDraft(result.value.customInstructions);
+        const stored = result.value.customInstructions;
+        setCustomInstructionsDraft({ text: stored, base: stored });
       }
       toastManager.add({ type: "success", title: "Instructions saved" });
     } catch (cause) {
@@ -158,10 +187,12 @@ function InstructionsSettingsPage() {
     api,
     customInstructions,
     customInstructionsDirty,
+    customInstructionsDraft,
     dirty,
     draft,
     environmentId,
     promptsDirty,
+    saved,
     saving,
     updateServerSettings,
   ]);
@@ -232,7 +263,10 @@ function InstructionsSettingsPage() {
             onChange={(event) => {
               const value = event.currentTarget.value;
               if (editingAllChats) {
-                setCustomInstructionsDraft(value);
+                setCustomInstructionsDraft((current) => ({
+                  text: value,
+                  base: current?.base ?? savedCustomInstructions,
+                }));
               } else {
                 const promptKey = tab.id;
                 setDraft((current) => ({ ...current, [promptKey]: value }));
@@ -268,7 +302,10 @@ function InstructionsSettingsPage() {
             onClick={() => {
               const promptKey = tab.id;
               if (promptKey === ALL_CHATS_TAB.id) {
-                setCustomInstructionsDraft(DEFAULT_CUSTOM_INSTRUCTIONS);
+                setCustomInstructionsDraft((current) => ({
+                  text: DEFAULT_CUSTOM_INSTRUCTIONS,
+                  base: current?.base ?? savedCustomInstructions,
+                }));
                 return;
               }
               setDraft((current) => ({

@@ -18,27 +18,6 @@ export type TaskPromptSettings = typeof TaskPromptSettings.Type;
 export const TaskPromptSettingsGetInput = Schema.Struct({});
 export type TaskPromptSettingsGetInput = typeof TaskPromptSettingsGetInput.Type;
 
-/**
- * The settings page save; fields left out stay as they are. `allChats` is the
- * core `customInstructions` setting: saving it here records it in the
- * instructions history.
- */
-export const TaskPromptSettingsUpdateInput = Schema.Struct({
-  taskCreation: Schema.optional(Schema.String),
-  agentCreation: Schema.optional(Schema.String),
-  automationCreation: Schema.optional(Schema.String),
-  taskExecution: Schema.optional(Schema.String),
-  allChats: Schema.optional(Schema.String),
-});
-export type TaskPromptSettingsUpdateInput = typeof TaskPromptSettingsUpdateInput.Type;
-
-/** The saved task texts, and `allChats` as stored (trimmed) when the save included it. */
-export const TaskPromptSettingsUpdateResult = Schema.Struct({
-  ...TaskPromptSettings.fields,
-  allChats: Schema.optional(Schema.String),
-});
-export type TaskPromptSettingsUpdateResult = typeof TaskPromptSettingsUpdateResult.Type;
-
 export const TASK_PROMPT_FIELDS = [
   "taskCreation",
   "agentCreation",
@@ -55,6 +34,38 @@ export type TaskPromptField = typeof TaskPromptField.Type;
 export const INSTRUCTIONS_FIELDS = ["allChats", ...TASK_PROMPT_FIELDS] as const;
 export const InstructionsField = Schema.Literals(INSTRUCTIONS_FIELDS);
 export type InstructionsField = typeof InstructionsField.Type;
+
+const InstructionsTexts = Schema.Struct({
+  taskCreation: Schema.optional(Schema.String),
+  agentCreation: Schema.optional(Schema.String),
+  automationCreation: Schema.optional(Schema.String),
+  taskExecution: Schema.optional(Schema.String),
+  allChats: Schema.optional(Schema.String),
+});
+
+/**
+ * The settings page save; fields left out stay as they are. `allChats` is the
+ * core `customInstructions` setting: saving it here records it in the
+ * instructions history. `base` holds the text a field had when the page loaded
+ * it: a field whose current text differs was changed elsewhere and is not saved.
+ */
+export const TaskPromptSettingsUpdateInput = Schema.Struct({
+  ...InstructionsTexts.fields,
+  base: Schema.optional(InstructionsTexts),
+});
+export type TaskPromptSettingsUpdateInput = typeof TaskPromptSettingsUpdateInput.Type;
+
+/**
+ * The current task texts, and `allChats` as stored (trimmed) when the save
+ * included it. `conflicts` lists the fields not saved because their text no
+ * longer matched `base`; they keep their current text.
+ */
+export const TaskPromptSettingsUpdateResult = Schema.Struct({
+  ...TaskPromptSettings.fields,
+  allChats: Schema.optional(Schema.String),
+  conflicts: Schema.Array(InstructionsField),
+});
+export type TaskPromptSettingsUpdateResult = typeof TaskPromptSettingsUpdateResult.Type;
 
 /**
  * Who made a change: the settings page, a tool call from a thread (a chat or
