@@ -1,8 +1,4 @@
 import {
-  ORCHESTRATOR_PROPOSAL_READS_RPC_CAPABILITY_ID,
-  ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRACT_VERSION,
-  ORCHESTRATOR_PROPOSALS_RPC_CAPABILITY_ID,
-  ORCHESTRATOR_PROPOSALS_RPC_CONTRACT_VERSION,
   TASK_AGENTS_RPC_CAPABILITY_ID,
   TASK_AGENTS_RPC_CONTRACT_VERSION,
   TASK_AUTOMATIONS_RPC_CAPABILITY_ID,
@@ -34,8 +30,6 @@ export interface TasksWebAccess {
   readonly canMutateAgents: boolean;
   readonly canReadAutomations: boolean;
   readonly canMutateAutomations: boolean;
-  readonly canReadProposals: boolean;
-  readonly canApplyProposals: boolean;
 }
 
 export interface ResolveTasksWebAccessInput {
@@ -50,8 +44,6 @@ const NO_ACCESS = {
   canMutateAgents: false,
   canReadAutomations: false,
   canMutateAutomations: false,
-  canReadProposals: false,
-  canApplyProposals: false,
 } as const;
 
 function unavailable(
@@ -160,20 +152,7 @@ export function resolveTasksWebAccess(input: ResolveTasksWebAccessInput): TasksW
     TASK_AUTOMATIONS_RPC_CAPABILITY_ID,
     TASK_AUTOMATIONS_RPC_CONTRACT_VERSION,
   );
-  const canReadProposals = supportsExactCapability(
-    manifest,
-    ORCHESTRATOR_PROPOSAL_READS_RPC_CAPABILITY_ID,
-    ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRACT_VERSION,
-  );
-  const canApplyProposals =
-    canMutate &&
-    supportsExactCapability(
-      manifest,
-      ORCHESTRATOR_PROPOSALS_RPC_CAPABILITY_ID,
-      ORCHESTRATOR_PROPOSALS_RPC_CONTRACT_VERSION,
-    );
-  const hasReadableCapability =
-    canReadTasks || canReadAgents || canReadAutomations || canReadProposals;
+  const hasReadableCapability = canReadTasks || canReadAgents || canReadAutomations;
 
   if (!hasReadableCapability) {
     return unavailable(
@@ -195,8 +174,6 @@ export function resolveTasksWebAccess(input: ResolveTasksWebAccessInput): TasksW
     canMutateAgents: canMutate && canReadAgents,
     canReadAutomations,
     canMutateAutomations: canMutate && canReadAutomations,
-    canReadProposals,
-    canApplyProposals,
   };
 }
 

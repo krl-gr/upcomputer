@@ -32,7 +32,6 @@
     "@upcomputer/computer-use-contracts": "workspace:*",
     "@upcomputer/computer-use-web": "workspace:*",
     "@upcomputer/contracts": "workspace:*",
-    "@upcomputer/orchestrator-web": "workspace:*",
     "@upcomputer/shared": "workspace:*",
     "@upcomputer/tasks-web": "workspace:*",
     "class-variance-authority": "^0.7.1",

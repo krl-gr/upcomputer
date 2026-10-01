@@ -4,7 +4,6 @@ import {
   COMPUTER_USE_WEB_ENVIRONMENT_API_FACTORY,
   COMPUTER_USE_WEB_FEATURE,
 } from "@upcomputer/computer-use-web/feature";
-import { ORCHESTRATOR_WEB_FEATURE } from "@upcomputer/orchestrator-web/feature";
 import {
   TASKS_WEB_ENVIRONMENT_API_FACTORY,
   TASKS_WEB_FEATURE,
@@ -25,7 +24,7 @@ const makePublicWsRpcProtocolClient = makeWsRpcProtocolClientForGroup(
  * orchestration, browser, and computer use.
  */
 export const WEB_PRODUCT_COMPOSITION = createExperimentalWebProductComposition({
-  features: [TASKS_WEB_FEATURE, ORCHESTRATOR_WEB_FEATURE, COMPUTER_USE_WEB_FEATURE],
+  features: [TASKS_WEB_FEATURE, COMPUTER_USE_WEB_FEATURE],
   rpc: defineExperimentalWebRpcComposition({
     clientFactory: () => makePublicWsRpcProtocolClient,
     extensionApis: [TASKS_WEB_ENVIRONMENT_API_FACTORY, COMPUTER_USE_WEB_ENVIRONMENT_API_FACTORY],

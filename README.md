@@ -109,8 +109,7 @@ vp run dev:marketing
   WebSocket protocol, settings, and session types.
 - `packages/shared`: Shared runtime utilities consumed by server and clients.
 - `packages/ssh` and `packages/tailscale`: Remote-environment support.
-- `packages/tasks-*` and `packages/orchestrator*`: Tasks, task agents, automations, and the
-  Orchestrator mode.
+- `packages/tasks-*`: Tasks, task agents, and automations.
 - `packages/computer-use-*`: Browser automation and computer use.
 - `docs`: User-facing and operational docs.
 

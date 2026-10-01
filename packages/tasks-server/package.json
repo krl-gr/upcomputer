@@ -15,7 +15,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@upcomputer/contracts": "workspace:*",
-    "@upcomputer/orchestrator": "workspace:*",
     "@upcomputer/shared": "workspace:*",
     "@upcomputer/tasks-contracts": "workspace:*",
     "effect": "catalog:"

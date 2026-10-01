@@ -1306,11 +1306,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             .filter((part): part is string => typeof part === "string" && part.length > 0)
             .join("\n\n");
 
+    // A thread can store a mode this build no longer registers; it runs as Default.
+    const interactionMode =
+      parsed.interactionMode === undefined
+        ? undefined
+        : interactionModeRegistryService.registry.effectiveModeId(parsed.interactionMode);
+    if (interactionMode !== parsed.interactionMode) {
+      yield* Effect.logWarning("Running an unregistered interaction mode as Default", {
+        threadId: parsed.threadId,
+        interactionMode: parsed.interactionMode,
+      });
+    }
     const input = {
       ...parsed,
       ...(inputTextWithAttachmentPaths !== undefined
         ? { input: inputTextWithAttachmentPaths }
         : {}),
+      ...(interactionMode !== undefined ? { interactionMode } : {}),
       attachments,
     };
     yield* Effect.annotateCurrentSpan({

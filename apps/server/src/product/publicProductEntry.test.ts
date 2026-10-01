@@ -15,11 +15,9 @@ describe("public server product entry", () => {
   it("composes the open-source features with their manifest capabilities", () => {
     expect(composition.features.map((feature) => feature.id)).toEqual([
       "upcomputer.computer-use",
-      "upcomputer.orchestrator",
       "upcomputer.tasks",
     ]);
     expect(composition.migrations.map((migration) => migration.ownerId)).toEqual([
-      "upcomputer.tasks",
       "upcomputer.tasks",
     ]);
     expect(composition.rpc.map((contribution) => contribution.namespace)).toEqual(
@@ -35,9 +33,11 @@ describe("public server product entry", () => {
     expect(composition.mcpTools.map(({ ownerId, id }) => `${ownerId}:${id}`)).toEqual([
       "upcomputer.computer-use:computer-use-tools",
     ]);
-    expect(composition.interactionModeRegistry.snapshot().map((mode) => mode.id)).toContain(
-      "orchestrator",
-    );
+    expect(composition.interactionModeRegistry.snapshot().map((mode) => mode.id)).toEqual([
+      "ask",
+      "default",
+      "plan",
+    ]);
 
     expect(
       manifest.capabilities.find((capability) => capability.id === TASKS_RPC_CAPABILITY_ID),
@@ -48,7 +48,6 @@ describe("public server product entry", () => {
     });
     expect(manifest.extensions.map(({ id, state }) => ({ id, state }))).toEqual([
       { id: "upcomputer.computer-use", state: "enabled-free" },
-      { id: "upcomputer.orchestrator", state: "enabled-free" },
       { id: "upcomputer.tasks", state: "enabled-free" },
     ]);
   });

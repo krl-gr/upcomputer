@@ -14,14 +14,12 @@ import {
   type ExperimentalFeatureMigrationContribution,
 } from "../../../../../apps/server/src/extensionApi.ts";
 import * as NodeSqliteClient from "../../../../../apps/server/src/persistence/NodeSqliteClient.ts";
-import { ORCHESTRATOR_PROPOSAL_MIGRATION_CONTRIBUTION } from "../../proposals/migrations.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { TASKS_SERVER_FEATURE } from "../../serverFeature.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "./index.ts";
 
 const temporaryDirectories: string[] = [];
-const taskMigrations = [
-  TASK_MIGRATION_CONTRIBUTION,
-  ORCHESTRATOR_PROPOSAL_MIGRATION_CONTRIBUTION,
-] as const;
+const taskMigrations = [TASK_MIGRATION_CONTRIBUTION] as const;
 const taskMigrationCount = taskMigrations.reduce(
   (total, contribution) => total + contribution.migrations.length,
   0,
@@ -454,5 +452,86 @@ test("backfills existing task-agent threads as hidden from the core sidebar", as
       (visibility.get("task-agent-thread-1") as { sidebarVisible: number }).sidebarVisible,
       0,
     );
+  });
+});
+
+// The removed Orchestrator proposal pipeline registered this namespace. Older
+// databases keep its table, rows, and history entry.
+const LEGACY_ORCHESTRATOR_PROPOSAL_MIGRATIONS: ExperimentalFeatureMigrationContribution<Error> = {
+  ownerId: "upcomputer.tasks",
+  namespace: "upcomputer.orchestrator-proposals",
+  migrations: [
+    {
+      version: 1,
+      name: "CreateOrchestratorProposalStorage",
+      run: Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE IF NOT EXISTS upcomputer_orchestrator_proposals (
+            thread_id TEXT NOT NULL,
+            plan_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            mode_id TEXT NOT NULL,
+            mode_version INTEGER NOT NULL,
+            proposal_json TEXT NOT NULL,
+            application_state TEXT NOT NULL,
+            agent_ids_json TEXT NOT NULL,
+            task_ids_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            applied_at TEXT,
+            PRIMARY KEY (thread_id, plan_id)
+          )
+        `;
+      }),
+    },
+  ],
+};
+
+test("databases with Orchestrator proposals still migrate and keep the proposal data", async () => {
+  const path = temporaryDatabase("orchestrator-proposals.sqlite");
+  await migrate(path, [TASK_MIGRATION_CONTRIBUTION, LEGACY_ORCHESTRATOR_PROPOSAL_MIGRATIONS]);
+  database(path, (db) => {
+    db.prepare(`
+      INSERT INTO upcomputer_orchestrator_proposals (
+        thread_id, plan_id, owner_id, mode_id, mode_version, proposal_json,
+        application_state, agent_ids_json, task_ids_json, created_at, updated_at, applied_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "thread-1",
+      "plan:thread-1:turn:turn-1",
+      "upcomputer.orchestrator",
+      "orchestrator",
+      1,
+      '{"title":"Plan"}',
+      "applied",
+      "[]",
+      '["task:proposal:plan:thread-1:turn:turn-1:task:0:fix"]',
+      "2026-07-12T00:00:00.000Z",
+      "2026-07-12T00:00:00.000Z",
+      "2026-07-12T00:00:00.000Z",
+    );
+  });
+
+  NodeAssert.ok(TASKS_SERVER_FEATURE.migrations);
+  await migrate(path, TASKS_SERVER_FEATURE.migrations);
+  await migrate(path, TASKS_SERVER_FEATURE.migrations);
+  database(path, (db) => {
+    const proposal = db
+      .prepare("SELECT application_state AS state FROM upcomputer_orchestrator_proposals")
+      .all() as Array<{ state: string }>;
+    const history = db
+      .prepare("SELECT version, name FROM feature_migration_history WHERE namespace = ?")
+      .all("upcomputer.orchestrator-proposals") as Array<{ version: number; name: string }>;
+    const tasks = db.prepare("SELECT COUNT(*) AS count FROM tasks").get() as { count: number };
+    NodeAssert.deepEqual(
+      proposal.map((row) => ({ ...row })),
+      [{ state: "applied" }],
+    );
+    NodeAssert.deepEqual(
+      history.map((row) => ({ ...row })),
+      [{ version: 1, name: "CreateOrchestratorProposalStorage" }],
+    );
+    NodeAssert.equal(tasks.count, 0);
   });
 });

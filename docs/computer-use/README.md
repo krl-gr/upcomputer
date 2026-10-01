@@ -58,9 +58,10 @@ Features add tools to that server with the `mcpTools` contribution
 the calling thread's current interaction mode and runtime mode, so a mode
 change applies to the next call. The computer-use tools apply:
 
-- A read-only mode, such as Plan, Ask, or Orchestrator, may only observe.
+- A read-only mode, such as Plan or Ask, may only observe.
   Actions need a mode whose mutations are allowed, such as Default.
-- A thread whose mode cannot be resolved is refused.
+- A mode that is no longer registered applies as Default, like the thread's
+  turns. A thread that cannot be read is refused.
 - Agents cannot ask the user for approval yet, so they are refused instead:
   every call in a Supervised (approval-required) thread, and control actions
   while Action approvals is on.

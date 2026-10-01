@@ -1,11 +1,19 @@
-import type { EnvironmentId } from "@upcomputer/contracts";
+import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  type EnvironmentId,
+  type ProviderInteractionMode,
+} from "@upcomputer/contracts";
 
 import {
   CORE_INTERACTION_MODE_PRESENTATIONS,
   type InteractionModePresentation,
 } from "../interactionModes";
 import { useServerConfigs } from "../state/entities";
-import { listExperimentalWebInteractionModes, useWebProductComposition } from "./WebComposition";
+import {
+  listExperimentalWebInteractionModes,
+  useWebProductComposition,
+  type ExperimentalWebProductComposition,
+} from "./WebComposition";
 import { resolveWebFeatureAvailability } from "./environmentProduct";
 
 const CORE_ORDER = new Map([
@@ -62,4 +70,23 @@ export function useInteractionModePresentations(
       return order !== 0 ? order : left.id.localeCompare(right.id);
     })
     .map(({ order: _order, ...presentation }) => presentation);
+}
+
+/**
+ * A thread or draft can store a mode that neither core nor a bundled feature
+ * defines any more, such as the removed Orchestrator mode. The server runs it
+ * as Default, so the composer shows and sends Default too.
+ */
+export function resolveKnownInteractionMode(
+  mode: ProviderInteractionMode,
+  composition: ExperimentalWebProductComposition,
+): ProviderInteractionMode {
+  const known =
+    CORE_INTERACTION_MODE_PRESENTATIONS.some((presentation) => presentation.id === mode) ||
+    listExperimentalWebInteractionModes(composition).some((entry) => entry.mode.id === mode);
+  return known ? mode : DEFAULT_PROVIDER_INTERACTION_MODE;
+}
+
+export function useKnownInteractionMode(mode: ProviderInteractionMode): ProviderInteractionMode {
+  return resolveKnownInteractionMode(mode, useWebProductComposition());
 }

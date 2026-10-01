@@ -22,14 +22,6 @@ import {
   TaskAutomationUpsertInput,
 } from "./automations.ts";
 import {
-  OrchestrationProposalApplyInput,
-  OrchestrationProposalApplyResult,
-  OrchestrationProposalGetInput,
-  OrchestrationProposalGetResult,
-  OrchestrationProposalSearchInput,
-  OrchestrationProposalSearchResult,
-} from "./proposals.ts";
-import {
   TaskPromptSettings,
   TaskPromptSettingsGetInput,
   TaskPromptSettingsUpdateInput,
@@ -85,25 +77,6 @@ export const TASK_AUTOMATIONS_RPC_CAPABILITY = {
   version: TASK_AUTOMATIONS_RPC_CONTRACT_VERSION,
 } as const;
 
-export const ORCHESTRATOR_PROPOSALS_RPC_CONTRACT_VERSION = 1 as const;
-export const ORCHESTRATOR_PROPOSALS_RPC_NAMESPACE = "upcomputer.orchestrator-proposals.v1" as const;
-export const ORCHESTRATOR_PROPOSALS_RPC_CAPABILITY_ID =
-  "upcomputer.orchestrator-proposals.rpc.v1" as const;
-export const ORCHESTRATOR_PROPOSALS_RPC_CAPABILITY = {
-  id: ORCHESTRATOR_PROPOSALS_RPC_CAPABILITY_ID,
-  version: ORCHESTRATOR_PROPOSALS_RPC_CONTRACT_VERSION,
-} as const;
-
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRACT_VERSION = 1 as const;
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_NAMESPACE =
-  "upcomputer.orchestrator-proposal-reads.v1" as const;
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_CAPABILITY_ID =
-  "upcomputer.orchestrator-proposal-reads.rpc.v1" as const;
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_CAPABILITY = {
-  id: ORCHESTRATOR_PROPOSAL_READS_RPC_CAPABILITY_ID,
-  version: ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRACT_VERSION,
-} as const;
-
 export const TASKS_RPC_METHODS = {
   create: `${TASKS_RPC_NAMESPACE}.create`,
   search: `${TASKS_RPC_NAMESPACE}.search`,
@@ -137,15 +110,6 @@ export const TASK_AUTOMATIONS_RPC_METHODS = {
   setStatus: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.setStatus`,
   delete: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.delete`,
   searchRuns: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.searchRuns`,
-} as const;
-
-export const ORCHESTRATOR_PROPOSALS_RPC_METHODS = {
-  apply: `${ORCHESTRATOR_PROPOSALS_RPC_NAMESPACE}.apply`,
-} as const;
-
-export const ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS = {
-  get: `${ORCHESTRATOR_PROPOSAL_READS_RPC_NAMESPACE}.get`,
-  search: `${ORCHESTRATOR_PROPOSAL_READS_RPC_NAMESPACE}.search`,
 } as const;
 
 export const TasksCreateRpc = Rpc.make(TASKS_RPC_METHODS.create, {
@@ -315,35 +279,4 @@ export const TaskAutomationsRpcGroup = RpcGroup.make(
   TaskAutomationsSetStatusRpc,
   TaskAutomationsDeleteRpc,
   TaskAutomationsSearchRunsRpc,
-);
-
-export const OrchestratorProposalsApplyRpc = Rpc.make(ORCHESTRATOR_PROPOSALS_RPC_METHODS.apply, {
-  payload: OrchestrationProposalApplyInput,
-  success: OrchestrationProposalApplyResult,
-  error: TaskError,
-});
-
-export const OrchestratorProposalsRpcGroup = RpcGroup.make(OrchestratorProposalsApplyRpc);
-
-export const OrchestratorProposalReadsGetRpc = Rpc.make(
-  ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.get,
-  {
-    payload: OrchestrationProposalGetInput,
-    success: OrchestrationProposalGetResult,
-    error: TaskError,
-  },
-);
-
-export const OrchestratorProposalReadsSearchRpc = Rpc.make(
-  ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.search,
-  {
-    payload: OrchestrationProposalSearchInput,
-    success: OrchestrationProposalSearchResult,
-    error: TaskError,
-  },
-);
-
-export const OrchestratorProposalReadsRpcGroup = RpcGroup.make(
-  OrchestratorProposalReadsGetRpc,
-  OrchestratorProposalReadsSearchRpc,
 );

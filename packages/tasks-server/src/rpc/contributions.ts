@@ -1,10 +1,4 @@
 import {
-  ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS,
-  ORCHESTRATOR_PROPOSAL_READS_RPC_NAMESPACE,
-  OrchestratorProposalReadsRpcGroup,
-  ORCHESTRATOR_PROPOSALS_RPC_METHODS,
-  ORCHESTRATOR_PROPOSALS_RPC_NAMESPACE,
-  OrchestratorProposalsRpcGroup,
   DEFAULT_AUTOMATION_CATCH_UP_POLICY,
   TASK_AGENTS_RPC_METHODS,
   TASK_AGENTS_RPC_NAMESPACE,
@@ -37,8 +31,6 @@ import {
 } from "../automations/automationWrites.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
-import { ProposalApplicationService } from "../proposals/ProposalApplicationService.ts";
-import { ProposalStore } from "../proposals/ProposalStore.ts";
 
 const OWNER_ID = "upcomputer.tasks" as const;
 const now = Effect.map(DateTime.now, DateTime.formatIso);
@@ -403,53 +395,8 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     ),
 });
 
-const ORCHESTRATOR_PROPOSALS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
-  id: "orchestrator-proposals-rpc-v1",
-  ownerId: OWNER_ID,
-  version: 1,
-  namespace: ORCHESTRATOR_PROPOSALS_RPC_NAMESPACE,
-  group: OrchestratorProposalsRpcGroup,
-  handlers: () =>
-    OrchestratorProposalsRpcGroup.toLayer(
-      OrchestratorProposalsRpcGroup.of({
-        [ORCHESTRATOR_PROPOSALS_RPC_METHODS.apply]: (input) =>
-          Effect.flatMap(ProposalApplicationService, (service) => service.apply(input)),
-      }),
-    ),
-});
-
-const ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
-  id: "orchestrator-proposal-reads-rpc-v1",
-  ownerId: OWNER_ID,
-  version: 1,
-  namespace: ORCHESTRATOR_PROPOSAL_READS_RPC_NAMESPACE,
-  group: OrchestratorProposalReadsRpcGroup,
-  handlers: () =>
-    OrchestratorProposalReadsRpcGroup.toLayer(
-      OrchestratorProposalReadsRpcGroup.of({
-        [ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.get]: (input) =>
-          asTaskRpc(
-            Effect.gen(function* () {
-              const proposals = yield* ProposalStore;
-              const proposal = yield* proposals.get(input);
-              return { proposal: Option.getOrNull(proposal) };
-            }),
-          ),
-        [ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.search]: (input) =>
-          asTaskRpc(
-            Effect.gen(function* () {
-              const proposals = yield* ProposalStore;
-              return { proposals: yield* proposals.search(input) };
-            }),
-          ),
-      }),
-    ),
-});
-
 export const TASK_RPC_CONTRIBUTIONS = [
   TASKS_RPC_CONTRIBUTION,
   TASK_AGENTS_RPC_CONTRIBUTION,
   TASK_AUTOMATIONS_RPC_CONTRIBUTION,
-  ORCHESTRATOR_PROPOSAL_READS_RPC_CONTRIBUTION,
-  ORCHESTRATOR_PROPOSALS_RPC_CONTRIBUTION,
 ] as const;

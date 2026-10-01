@@ -322,7 +322,7 @@ const makeTaskRepository = Effect.gen(function* () {
     );
 
   // All UI, tool, automation and agent mutations pass this repository boundary.
-  // Proposal batches use withChangeTransaction to defer until the OUTER commit.
+  // Multi-write batches use withChangeTransaction to defer until the OUTER commit.
   // Failed transactions never emit changes; notifications cannot be interrupted
   // after commit. Slow consumers cannot block writes (the bus is sliding).
   const withChanges = <A>(

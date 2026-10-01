@@ -1,8 +1,9 @@
-import type {
-  InteractionModeDescriptor,
-  InteractionModeDescriptorSnapshot,
-  InteractionModeProviderBehavior,
-  InteractionModeSandboxPolicy,
+import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  type InteractionModeDescriptor,
+  type InteractionModeDescriptorSnapshot,
+  type InteractionModeProviderBehavior,
+  type InteractionModeSandboxPolicy,
 } from "@upcomputer/contracts";
 import * as Effect from "effect/Effect";
 
@@ -156,9 +157,8 @@ interface StoredInteractionMode {
 /**
  * Deterministic build-time interaction-mode registry.
  *
- * Unknown modes and unsupported providers are rejected. There is deliberately
- * no implicit default-mode fallback because silently broadening a read-only
- * extension mode into an implementation mode would be unsafe.
+ * Unknown modes and unsupported providers are rejected. The only fallback is
+ * the explicit `effectiveModeId`, for modes stored on existing threads.
  *
  * @experimental This API remains unstable during first-party extraction.
  */
@@ -206,6 +206,16 @@ export class ExperimentalInteractionModeRegistry {
           supportedProviders: [...descriptor.supportedProviders].sort(),
         };
       });
+  }
+
+  /**
+   * The mode to run for a mode stored on a thread or agent. A mode that is not
+   * registered, such as the removed Orchestrator mode, runs as Default.
+   */
+  effectiveModeId(modeId: string): string {
+    return this.#modes.has(modeId) || !this.#modes.has(DEFAULT_PROVIDER_INTERACTION_MODE)
+      ? modeId
+      : DEFAULT_PROVIDER_INTERACTION_MODE;
   }
 
   resolve(

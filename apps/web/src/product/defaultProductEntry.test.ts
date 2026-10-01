@@ -7,7 +7,6 @@ describe("default web product entry", () => {
   it("composes the open-source web features with their RPC clients", () => {
     expect(WEB_PRODUCT_COMPOSITION.features.map((feature) => feature.id)).toEqual([
       "upcomputer.computer-use.web",
-      "upcomputer.orchestrator.web",
       "upcomputer.tasks.web",
     ]);
     expect(

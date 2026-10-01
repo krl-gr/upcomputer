@@ -36,9 +36,10 @@ const toCallToolResult = (result: ExperimentalMcpToolResult) =>
 
 /**
  * Reads the calling session's thread on every call, so a mode change applies
- * to the next call. A thread or mode that cannot be resolved denies mutations.
+ * to the next call. A thread that cannot be read denies mutations; a mode that
+ * is no longer registered applies Default, like its turns.
  */
-const resolveMcpToolSession = Effect.fn("mcp.resolveToolSession")(function* (
+export const resolveMcpToolSession = Effect.fn("mcp.resolveToolSession")(function* (
   invocation: McpInvocationContext.McpInvocationScope,
   interactionModeRegistry: ExperimentalInteractionModeRegistry,
 ) {
@@ -54,7 +55,11 @@ const resolveMcpToolSession = Effect.fn("mcp.resolveToolSession")(function* (
   const interactionMode =
     thread === undefined
       ? undefined
-      : interactionModeRegistry.snapshot().find((mode) => mode.id === thread.interactionMode);
+      : interactionModeRegistry
+          .snapshot()
+          .find(
+            (mode) => mode.id === interactionModeRegistry.effectiveModeId(thread.interactionMode),
+          );
   return {
     threadId: invocation.threadId,
     providerInstanceId: invocation.providerInstanceId,

@@ -22,9 +22,12 @@ export interface ExperimentalMcpToolSession {
   readonly providerInstanceId: ProviderInstanceId;
   /** Undefined when the thread cannot be read. */
   readonly runtimeMode: RuntimeMode | undefined;
-  /** The thread's interaction mode; undefined when the thread or its mode cannot be resolved. */
+  /**
+   * The thread's interaction mode; undefined when the thread cannot be read.
+   * A mode that is no longer registered resolves to Default.
+   */
   readonly interactionMode: InteractionModeDescriptorSnapshot | undefined;
-  /** The mode's mutation policy; "deny" when the mode cannot be resolved. */
+  /** The mode's mutation policy; "deny" when the thread cannot be read. */
   readonly mutationPolicy: "allow" | "deny";
 }
 

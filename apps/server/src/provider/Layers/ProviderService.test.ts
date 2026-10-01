@@ -3228,32 +3228,32 @@ validation.layer("ProviderServiceLive validation", (it) => {
     }),
   );
 
-  it.effect("rejects unregistered interaction modes before provider dispatch", () =>
-    Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const threadId = asThreadId("thread-interaction-mode-unknown");
+  it.effect(
+    "sends a turn in an unregistered mode, such as the removed Orchestrator, as Default",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("thread-interaction-mode-unknown");
 
-      yield* provider.startSession(threadId, {
-        provider: ProviderDriverKind.make("codex"),
-        providerInstanceId: codexInstanceId,
-        threadId,
-        runtimeMode: "full-access",
-      });
-      validation.codex.sendTurn.mockClear();
-
-      const failure = yield* Effect.flip(
-        provider.sendTurn({
+        yield* provider.startSession(threadId, {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: codexInstanceId,
           threadId,
-          input: "review this",
-          attachments: [],
-          interactionMode: "task-review",
-        }),
-      );
+          runtimeMode: "full-access",
+        });
+        validation.codex.sendTurn.mockClear();
 
-      assert.instanceOf(failure, ProviderValidationError);
-      assert.include(failure.issue, "Interaction mode 'task-review' is not registered.");
-      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
-    }),
+        yield* provider.sendTurn({
+          threadId,
+          input: "continue",
+          attachments: [],
+          interactionMode: "orchestrator",
+        });
+
+        const sendInput = validation.codex.sendTurn.mock.calls[0]?.[0];
+        assert.equal(sendInput?.interactionMode, "default");
+        assert.equal(sendInput?.resolvedInteractionMode?.id, "default");
+      }),
   );
 
   it.effect("rejects interaction modes unsupported by the routed provider", () =>

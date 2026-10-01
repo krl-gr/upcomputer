@@ -13,14 +13,17 @@ The packages:
   `/api/extensions/upcomputer.tasks/mcp`.
 - `@upcomputer/tasks-web`: the Tasks, Agents, and Automations views and the
   Instructions settings page.
-- `@upcomputer/orchestrator` and `@upcomputer/orchestrator-web`: the
-  read-only Orchestrator interaction mode, the parser for its structured
-  proposals, and the proposal components. The composer does not offer the
-  mode at the moment.
 
 The public product entries (`apps/server/src/product/publicProductEntry.ts`
 and `apps/web/src/product/defaultProductEntry.ts`) compose them through the
 extension API.
+
+Any chat orchestrates work through the task tools. The former Orchestrator
+mode and its proposal pipeline are removed. Threads that stored the
+`orchestrator` mode open and continue as Default. Their old proposals stay in
+the `upcomputer_orchestrator_proposals` table, which nothing reads or drops.
+Tasks applied from a proposal keep their `orchestrationProposal` metadata,
+which the Tasks view and task agents still read.
 
 ## Tasks
 

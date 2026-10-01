@@ -45,7 +45,6 @@
     "@upcomputer/computer-use-contracts": "workspace:*",
     "@upcomputer/computer-use-server": "workspace:*",
     "@upcomputer/contracts": "workspace:*",
-    "@upcomputer/orchestrator": "workspace:*",
     "@upcomputer/shared": "workspace:*",
     "@upcomputer/tailscale": "workspace:*",
     "@upcomputer/tasks-contracts": "workspace:*",

@@ -7,10 +7,6 @@
       "types": "./src/v1/index.ts",
       "import": "./src/v1/index.ts"
     },
-    "./v1/proposals": {
-      "types": "./src/v1/proposals.ts",
-      "import": "./src/v1/proposals.ts"
-    },
     "./v1/rpc": {
       "types": "./src/v1/rpc.ts",
       "import": "./src/v1/rpc.ts"

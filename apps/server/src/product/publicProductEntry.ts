@@ -2,10 +2,6 @@ import {
   COMPUTER_USE_PRODUCT_EXTENSION,
   COMPUTER_USE_SERVER_FEATURE,
 } from "@upcomputer/computer-use-server/feature";
-import {
-  ORCHESTRATOR_PRODUCT_EXTENSION,
-  ORCHESTRATOR_SERVER_FEATURE,
-} from "@upcomputer/orchestrator";
 import { createUpcomputerProductManifest } from "@upcomputer/shared/product";
 import { TASKS_PRODUCT_EXTENSION, TASKS_SERVER_FEATURE } from "@upcomputer/tasks-server/feature";
 
@@ -22,12 +18,10 @@ import { defineExperimentalServerProductEntry } from "./ServerProductEntry.ts";
 export const PUBLIC_SERVER_PRODUCT_ENTRY = defineExperimentalServerProductEntry({
   manifest: createUpcomputerProductManifest(packageJson.version, [
     COMPUTER_USE_PRODUCT_EXTENSION,
-    ORCHESTRATOR_PRODUCT_EXTENSION,
     TASKS_PRODUCT_EXTENSION,
   ]),
   composition: composeExperimentalServerFeatures([
     COMPUTER_USE_SERVER_FEATURE,
-    ORCHESTRATOR_SERVER_FEATURE,
     TASKS_SERVER_FEATURE,
   ]),
 });

@@ -1,6 +1,4 @@
 import {
-  ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS,
-  ORCHESTRATOR_PROPOSALS_RPC_METHODS,
   TASK_AGENTS_RPC_METHODS,
   TASK_AUTOMATIONS_RPC_METHODS,
   TASKS_RPC_METHODS,
@@ -62,11 +60,6 @@ export interface TasksWebRpcClient {
     readonly delete: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.delete>;
     readonly searchRuns: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.searchRuns>;
   };
-  readonly proposals: {
-    readonly get: RpcUnaryMethod<typeof ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.get>;
-    readonly search: RpcUnaryMethod<typeof ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.search>;
-    readonly apply: RpcUnaryMethod<typeof ORCHESTRATOR_PROPOSALS_RPC_METHODS.apply>;
-  };
 }
 
 export interface CreateTasksWebRpcClientOptions {
@@ -79,9 +72,7 @@ type AccessFlag =
   | "canReadAgents"
   | "canMutateAgents"
   | "canReadAutomations"
-  | "canMutateAutomations"
-  | "canReadProposals"
-  | "canApplyProposals";
+  | "canMutateAutomations";
 
 export function createTasksWebRpcClient(
   requestRpc: EnvironmentExtensionRpcRequest<TasksWsRpcProtocolClient>,
@@ -206,29 +197,6 @@ export function createTasksWebRpcClient(
           "automations.searchRuns",
           "canReadAutomations",
           TASK_AUTOMATIONS_RPC_METHODS.searchRuns,
-          input,
-        ),
-    },
-    proposals: {
-      get: (input) =>
-        request(
-          "proposals.get",
-          "canReadProposals",
-          ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.get,
-          input,
-        ),
-      search: (input) =>
-        request(
-          "proposals.search",
-          "canReadProposals",
-          ORCHESTRATOR_PROPOSAL_READS_RPC_METHODS.search,
-          input,
-        ),
-      apply: (input) =>
-        request(
-          "proposals.apply",
-          "canApplyProposals",
-          ORCHESTRATOR_PROPOSALS_RPC_METHODS.apply,
           input,
         ),
     },

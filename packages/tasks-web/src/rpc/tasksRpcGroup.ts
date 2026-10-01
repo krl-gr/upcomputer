@@ -1,6 +1,4 @@
 import {
-  OrchestratorProposalReadsRpcGroup,
-  OrchestratorProposalsRpcGroup,
   TaskAgentsRpcGroup,
   TaskAutomationsRpcGroup,
   TasksRpcGroup,
@@ -12,9 +10,7 @@ import type * as Effect from "effect/Effect";
 /** Core RPC shape plus the Tasks namespaces, served over the same socket. */
 export const TasksWsRpcGroup = WsRpcGroup.merge(TasksRpcGroup)
   .merge(TaskAgentsRpcGroup)
-  .merge(TaskAutomationsRpcGroup)
-  .merge(OrchestratorProposalReadsRpcGroup)
-  .merge(OrchestratorProposalsRpcGroup);
+  .merge(TaskAutomationsRpcGroup);
 
 export const makeTasksWsRpcProtocolClient = makeWsRpcProtocolClientForGroup(TasksWsRpcGroup);
 

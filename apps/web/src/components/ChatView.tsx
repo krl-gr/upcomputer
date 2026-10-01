@@ -96,6 +96,7 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
+import { useKnownInteractionMode } from "../product/interactionModePresentation";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -862,8 +863,9 @@ function ChatViewContent(props: ChatViewProps) {
   // setThreadError(null) bails when only session.lastError drives the banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
-  const interactionMode =
-    composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
+  const interactionMode = useKnownInteractionMode(
+    composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
+  );
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadRef = useMemo(

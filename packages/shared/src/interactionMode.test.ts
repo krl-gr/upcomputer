@@ -149,6 +149,21 @@ describe("ExperimentalInteractionModeRegistry", () => {
     expect(resolveInteractionModeFinalOutput("ignore", resolved)).toBeUndefined();
   });
 
+  it("runs a mode that is no longer registered as Default", () => {
+    const registry = createExperimentalInteractionModeRegistry([
+      { descriptor: makeDescriptor({ id: "default", displayName: "Default" }) },
+      { descriptor: makeDescriptor() },
+    ]);
+
+    expect(registry.effectiveModeId("ask")).toBe("ask");
+    expect(registry.effectiveModeId("orchestrator")).toBe("default");
+    expect(
+      createExperimentalInteractionModeRegistry([{ descriptor: makeDescriptor() }]).effectiveModeId(
+        "orchestrator",
+      ),
+    ).toBe("orchestrator");
+  });
+
   it("rejects duplicate mode registrations", () => {
     expect(() =>
       createExperimentalInteractionModeRegistry([
