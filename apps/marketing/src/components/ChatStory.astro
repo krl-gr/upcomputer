@@ -1,4 +1,6 @@
 ---
+import HorizonBackdrop from "./HorizonBackdrop.astro";
+
 /**
  * Homepage hero: a static replica of the Up.computer window whose chats tell
  * the product story. On desktop the window stays pinned while the page
@@ -96,10 +98,9 @@ const first = chats[0]!;
 
 <section class="story" data-story style={`--steps: ${chats.length}`}>
   <div class="story-stage">
-    <picture class="story-bg" aria-hidden="true">
-      <source media="(max-width: 899px)" srcset="/hero-horizon-1280.webp" />
-      <img src="/hero-horizon.webp" alt="" width="2560" height="1441" fetchpriority="high" />
-    </picture>
+    <div class="story-bg" aria-hidden="true">
+      <HorizonBackdrop />
+    </div>
 
     <h1 class="story-title">
       Your agents, your data, any provider.<br />Nothing extra.
@@ -316,12 +317,6 @@ const first = chats[0]!;
   .story-bg {
     position: absolute;
     inset: 0;
-  }
-
-  .story-bg img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
   }
 
   .story-bg::after {
