@@ -85,6 +85,10 @@ const svg = (name: keyof typeof icons) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 
 const first = chats[0]!;
+
+// The app's task run counts on a thread row (TaskThreadRunCounts): working
+// runs, then completed ones, in their status colors. story.ts fills them in.
+const runCounts = `<span class="run-counts" data-run-counts hidden><span class="run-working"></span><span class="run-completed"></span></span>`;
 ---
 
 <section class="story" data-story style={`--steps: ${chats.length}`}>
@@ -104,7 +108,7 @@ const first = chats[0]!;
 
         <div class="sidebar-group">
           <div class="sidebar-item"><Fragment set:html={svg("search")} /><span>Search</span><kbd>⌘K</kbd></div>
-          <div class="sidebar-item"><Fragment set:html={svg("tasks")} /><span>Tasks</span></div>
+          <div class="sidebar-item"><Fragment set:html={svg("tasks")} /><span>Tasks</span><span class="run-counts nav-run-counts" data-nav-run-counts hidden><span class="run-working"></span></span></div>
           <div class="sidebar-item"><Fragment set:html={svg("agents")} /><span>Agents</span></div>
           <div class="sidebar-item"><Fragment set:html={svg("automations")} /><span>Automations</span></div>
         </div>
@@ -138,6 +142,7 @@ const first = chats[0]!;
               {chat.status && <em class="chat-status">{chat.status}</em>}
               <span class="chat-name">{chat.title}</span>
               <time>{chat.meta}</time>
+              <Fragment set:html={runCounts} />
             </button>
           ))}
         </nav>
@@ -159,6 +164,7 @@ const first = chats[0]!;
                 aria-current={index === 0 ? "true" : "false"}
               >
                 <span class="demo-tab-title">{chat.title}</span>
+                <Fragment set:html={runCounts} />
                 <span class="demo-tab-close" aria-hidden="true"><Fragment set:html={svg("close")} /></span>
               </button>
             ))}
@@ -186,15 +192,31 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="1" hidden>
-            <div class="msg msg-user"><p>How should I use tasks?</p></div>
+            <div class="msg msg-user"><p>How should I use tasks? I keep losing track of my threads.</p></div>
             <div class="msg msg-agent">
-              <p>Stop treating threads as tasks. Talk ideas through with me here, and I’ll turn each one into a task for a worker agent. While it runs, move on to the next idea. Next time, just ask me what got done.</p>
+              <p>Stop treating threads as tasks. Tell me what you want done, and I’ll turn it into a task for a worker agent. We keep talking while it runs in the background, so move on to the next idea. Next time, just ask me what got done.</p>
             </div>
-            <div class="msg msg-user">
-              <p>Compare every agent CLI for me. Low priority, on GLM 5.3 Flash.</p>
+            <!-- data-pause: extra reading room before this message (story.ts). -->
+            <div class="msg msg-user" data-pause>
+              <p>Okay. I want one place that compares every agent CLI. Run it in the background on GLM 5.3 Flash, one task at a time, low priority.</p>
             </div>
-            <div class="msg msg-agent">
-              <p>Queued three tasks for a worker agent. By the way, two tasks are ready for review:</p>
+            <!-- data-runs-*: the thread's task run counts once this message shows. -->
+            <div class="msg msg-agent" data-runs-working="1">
+              <p>Done. One worker agent, four tasks in the queue: each starts when the previous one finishes.</p>
+              <div class="card agent-card">
+                <span class="card-icon"><Fragment set:html={svg("agents")} /></span>
+                <span class="card-main"><strong>CLI researcher</strong><small>OpenCode · GLM 5.3 Flash · one task at a time</small></span>
+              </div>
+              <div class="card task-card">
+                <div class="task-row"><span>Collect Claude Code features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Collect Codex features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Collect Grok Build features and limits</span><em>Low</em></div>
+                <div class="task-row"><span>Put it all in one comparison</span><em>Low</em></div>
+              </div>
+              <p>You’ll see them on this thread in the sidebar; they turn green when done. Click a number to open a task, or follow them all in Tasks.</p>
+            </div>
+            <div class="msg msg-agent" data-runs-working="1" data-runs-completed="2">
+              <p>By the way, two of your tasks are ready for review:</p>
               <ul class="result-list">
                 <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
                 <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
@@ -526,6 +548,35 @@ const first = chats[0]!;
     flex: none;
     color: var(--app-muted);
     font-size: 13px;
+  }
+
+  /* Task run counts, like the app's thread accessory: they take the place
+     of the row's time, one number per run status in its status color. */
+  .demo-window :global(.run-counts) {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+  }
+
+  .demo-window :global(.run-counts[hidden]),
+  .demo-window :global(.run-counts > [hidden]) {
+    display: none;
+  }
+
+  .demo-window :global(.run-working) {
+    color: #38bdf8;
+  }
+
+  .demo-window :global(.run-completed) {
+    color: rgba(110, 231, 183, 0.9);
+  }
+
+  .nav-run-counts {
+    margin-left: auto;
   }
 
   .sidebar-foot {

@@ -1,7 +1,8 @@
 // Scroll-driven homepage demo: the pinned app window lifts into place, then
 // each scroll step opens the next chat and reveals its messages one by one as
 // the reader scrolls. Wide screens mark the chat in the sidebar, small screens
-// in the top thread tabs.
+// in the top thread tabs. Messages that set up tasks also set the thread's
+// task run counts, shown like the app's sidebar indicator.
 
 interface ChatProject {
   name: string;
@@ -9,9 +10,16 @@ interface ChatProject {
   tone: string;
 }
 
+interface RunCounts {
+  working: number;
+  completed: number;
+}
+
 interface ChatStep {
   pane: HTMLElement;
   messages: HTMLElement[];
+  // Run counts once each message shows, null before any task exists.
+  runs: (RunCounts | null)[];
   // Where each message appears, in message distances from the step start.
   reveals: number[];
   start: number;
@@ -27,6 +35,9 @@ const MESSAGE_DISTANCE = 0.22;
 const READ_AFTER_LAST = 2;
 // The first chat opens in the hero with its question and answer.
 const FIRST_CHAT_OPENING = 2;
+// Extra message distances before a message marked `data-pause`, so the reader
+// finishes the previous answer before the story moves on.
+const READING_PAUSE = 2;
 
 const story = document.querySelector<HTMLElement>("[data-story]");
 
@@ -35,6 +46,9 @@ if (story) {
   const rows = [...story.querySelectorAll<HTMLButtonElement>("[data-chat-target]")];
   const tabs = [...story.querySelectorAll<HTMLButtonElement>("[data-tab-target]")];
   const tabStrip = tabs[0]!.parentElement!;
+  const rowRuns = rows.map((row) => row.querySelector<HTMLElement>("[data-run-counts]")!);
+  const tabRuns = tabs.map((tab) => tab.querySelector<HTMLElement>("[data-run-counts]")!);
+  const navRuns = story.querySelector<HTMLElement>("[data-nav-run-counts]")!;
   const panes = [...story.querySelectorAll<HTMLElement>("[data-chat]")];
   const titleEl = story.querySelector<HTMLElement>("[data-chat-title]")!;
   const modelEl = story.querySelector<HTMLElement>("[data-chat-model]")!;
@@ -70,11 +84,29 @@ if (story) {
     const messages = [...pane.querySelectorAll<HTMLElement>(".msg")];
     const opening = index === 0 ? FIRST_CHAT_OPENING : 1;
     const lead = index === 0 ? LIFT_DISTANCE / MESSAGE_DISTANCE - 1 : 0;
-    const reveals = messages.map((_, messageIndex) =>
-      messageIndex < opening ? 0 : lead + messageIndex - opening + 1,
-    );
+    let pauses = 0;
+    const reveals = messages.map((message, messageIndex) => {
+      if ("pause" in message.dataset) pauses += READING_PAUSE;
+      return messageIndex < opening ? 0 : lead + pauses + messageIndex - opening + 1;
+    });
+    let runs: RunCounts | null = null;
+    const runsByMessage = messages.map((message) => {
+      const { runsWorking, runsCompleted } = message.dataset;
+      if (runsWorking !== undefined || runsCompleted !== undefined) {
+        runs = { working: Number(runsWorking ?? 0), completed: Number(runsCompleted ?? 0) };
+      }
+      return runs;
+    });
     const length = reveals[reveals.length - 1]! + READ_AFTER_LAST;
-    const step = { pane, messages, reveals, start: total, length, shown: -1 };
+    const step = {
+      pane,
+      messages,
+      runs: runsByMessage,
+      reveals,
+      start: total,
+      length,
+      shown: -1,
+    };
     total += length;
     return step;
   });
@@ -110,6 +142,56 @@ if (story) {
     renderProject(row.dataset.project);
   };
 
+  const renderRuns = (el: HTMLElement, runs: RunCounts | null, label: string) => {
+    const [working, completed] = el.children as HTMLCollectionOf<HTMLElement>;
+    el.hidden = !runs;
+    if (!runs) return;
+    for (const [item, count] of [
+      [working, runs.working],
+      [completed, runs.completed],
+    ] as const) {
+      if (!item) continue;
+      item.hidden = count === 0;
+      item.textContent = String(count);
+    }
+    el.setAttribute("aria-label", label);
+  };
+
+  // A thread's run counts follow the story: none before the chat that sets up
+  // its tasks, then as of its newest shown message, and final once it is past.
+  // Reduced motion shows the final counts throughout.
+  let shownRuns = "";
+  const updateRuns = () => {
+    const runs = steps.map((step, index) => {
+      const final = step.runs[step.runs.length - 1] ?? null;
+      if (reducedMotion.matches || index < active) return final;
+      if (index > active) return null;
+      return step.runs[step.shown - 1] ?? null;
+    });
+    const key = JSON.stringify(runs);
+    if (key === shownRuns) return;
+    shownRuns = key;
+    runs.forEach((counts, index) => {
+      const parts = counts
+        ? [
+            counts.working && `Working: ${counts.working}`,
+            counts.completed && `Completed: ${counts.completed}`,
+          ].filter(Boolean)
+        : [];
+      const label = `Task runs · ${parts.join(" · ")}`;
+      renderRuns(rowRuns[index]!, counts, label);
+      renderRuns(tabRuns[index]!, counts, label);
+      rows[index]!.querySelector("time")!.hidden = Boolean(counts);
+    });
+    // The Tasks item counts runs working now, across every thread.
+    const working = runs.reduce((sum, counts) => sum + (counts?.working ?? 0), 0);
+    renderRuns(
+      navRuns,
+      working ? { working, completed: 0 } : null,
+      `Running task agents · ${working}`,
+    );
+  };
+
   // `jump` skips the smooth pane scroll for a chat that just opened or a
   // layout change.
   const reveal = (step: ChatStep, position: number, jump: boolean) => {
@@ -119,13 +201,17 @@ if (story) {
     step.messages.forEach((message, index) => {
       message.classList.toggle("is-shown", index < shown);
     });
-    // Where a chat does not fit (small phones), keep its newest message in
-    // view. The pane moves only as the reader scrolls on to the next message.
+    // Keep the newest message in view: the pane scrolls just enough to show
+    // it, but never past its top, so a tall message reads from the start.
+    // The pane moves only as the reader scrolls the page, and back with it.
     const { pane } = step;
     const newest = step.messages[shown - 1]!;
-    const bottom =
-      newest.offsetTop + newest.offsetHeight + parseFloat(getComputedStyle(pane).paddingBottom);
-    const top = Math.max(0, bottom - pane.clientHeight);
+    const { paddingTop, paddingBottom } = getComputedStyle(pane);
+    const bottom = newest.offsetTop + newest.offsetHeight + parseFloat(paddingBottom);
+    const top = Math.max(
+      0,
+      Math.min(bottom - pane.clientHeight, newest.offsetTop - parseFloat(paddingTop)),
+    );
     if (top !== pane.scrollTop) {
       pane.scrollTo({ top, behavior: jump || reducedMotion.matches ? "auto" : "smooth" });
     }
@@ -155,6 +241,7 @@ if (story) {
     const opened = index !== active;
     activate(index);
     reveal(steps[index]!, position - steps[index]!.start, jump || opened);
+    updateRuns();
   };
 
   [rows, tabs].forEach((items) =>
@@ -187,5 +274,6 @@ if (story) {
 
   window.addEventListener("scroll", schedule, { passive: true });
   window.addEventListener("resize", onLayoutChange);
+  reducedMotion.addEventListener("change", onLayoutChange);
   onLayoutChange();
 }
