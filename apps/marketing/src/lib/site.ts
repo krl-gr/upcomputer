@@ -2,7 +2,6 @@ import { RELEASE_VERSION } from "./releases";
 
 export const GITHUB_REPOSITORY_URL = "https://github.com/krl-gr/upcomputer";
 export const LICENSE_URL = `${GITHUB_REPOSITORY_URL}/blob/main/LICENSE`;
-export const SECURITY_POLICY_URL = `${GITHUB_REPOSITORY_URL}/blob/main/SECURITY.md`;
 
 export const SOFTWARE_APPLICATION_STRUCTURED_DATA = {
   "@context": "https://schema.org",

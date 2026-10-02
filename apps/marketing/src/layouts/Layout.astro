@@ -1,5 +1,5 @@
 ---
-import { GITHUB_REPOSITORY_URL, LICENSE_URL, SECURITY_POLICY_URL } from "../lib/site";
+import { GITHUB_REPOSITORY_URL } from "../lib/site";
 
 interface Props {
   title?: string;
@@ -111,8 +111,6 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
             >Download</a>
             <a href="/atlas">Atlas</a>
             <a href="/privacy">Privacy</a>
-            <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer">License</a>
-            <a href={SECURITY_POLICY_URL} target="_blank" rel="noopener noreferrer">Security</a>
           </div>
         </div>
       </footer>
