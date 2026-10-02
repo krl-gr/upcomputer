@@ -2,8 +2,9 @@
 /**
  * Homepage hero: a static replica of the Up.computer window whose chats tell
  * the product story. The window stays pinned while the page scrolls, and each
- * scroll step opens the next chat. Wide screens show the chats in the sidebar;
- * small screens hide the sidebar and show them as the app's top thread tabs.
+ * scroll step opens the next chat and reveals its messages as the reader
+ * scrolls. Wide screens show the chats in the sidebar; small screens hide the
+ * sidebar and show them as the app's top thread tabs.
  */
 
 interface StoryChat {
@@ -38,20 +39,6 @@ const chats: StoryChat[] = [
     model: "Grok Build · Grok 4.6",
   },
   {
-    id: "studio",
-    title: "Ableton template for mixing",
-    meta: "2d",
-    project: { name: "Studio", mark: "S", tone: "orange" },
-    model: "Pi · OpenAI · GPT-5.5",
-  },
-  {
-    id: "different",
-    title: "How is this different from Cowork?",
-    meta: "3d",
-    project: null,
-    model: "Claude · Claude Fable 5.1",
-  },
-  {
     id: "cost",
     title: "What does it cost?",
     meta: "3d",
@@ -81,7 +68,6 @@ const icons = {
     '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
-  cursor: '<path d="m4 4 7 17 2.5-7.5L21 11Z"/>',
   database:
     '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   queue: '<path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/>',
@@ -182,9 +168,9 @@ const first = chats[0]!;
         </header>
 
         <div class="demo-panes">
-          <article class="chat-pane is-revealed" data-chat="0">
-            <div class="msg msg-user" style="--i:0"><p>How does Up.computer work?</p></div>
-            <div class="msg msg-agent" style="--i:1">
+          <article class="chat-pane" data-chat="0">
+            <div class="msg msg-user is-shown"><p>How does Up.computer work?</p></div>
+            <div class="msg msg-agent is-shown">
               <p>It’s one home for the agent CLIs you already have. Install Claude Code, Codex, Grok Build, OpenCode or Cursor, and each one runs on your own subscription. No new plan, no lock-in.</p>
               <div class="harness-row">
                 <span class="harness-chip"><img src="/harnesses/claude-ai-icon.svg" alt="" />Claude Code</span>
@@ -194,52 +180,39 @@ const first = chats[0]!;
                 <span class="harness-chip"><img src="/harnesses/cursor_light.svg" alt="" />Cursor</span>
               </div>
             </div>
-            <div class="msg msg-agent" style="--i:2">
+            <div class="msg msg-agent">
               <p>On top sits a flexible orchestration layer. Talk a task through, drop it in the backlog, and agents pick it up in the background. When they need to see the screen, they use the browser or your computer.</p>
             </div>
           </article>
 
           <article class="chat-pane" data-chat="1" hidden>
-            <div class="msg msg-user" style="--i:0"><p>How should I use tasks? I keep losing track of my threads.</p></div>
-            <div class="msg msg-agent" style="--i:1">
+            <div class="msg msg-user"><p>How should I use tasks?</p></div>
+            <div class="msg msg-agent">
               <p>Stop treating threads as tasks. Talk ideas through with me here, and I’ll turn each one into a task for a worker agent. While it runs, move on to the next idea. Next time, just ask me what got done.</p>
             </div>
-            <div class="msg msg-user" style="--i:2">
-              <p>Okay. I want one place that compares every agent CLI. Run it in the background on GLM 5.3 Flash, one task at a time, low priority.</p>
+            <div class="msg msg-user">
+              <p>Compare every agent CLI for me. Low priority, on GLM 5.3 Flash.</p>
             </div>
-            <div class="msg msg-agent" style="--i:3">
-              <p>Done. One agent, four tasks in the backlog.</p>
-              <div class="card agent-card">
-                <span class="card-icon"><Fragment set:html={svg("agents")} /></span>
-                <span class="card-main"><strong>CLI researcher</strong><small>OpenCode · GLM 5.3 Flash · one task at a time</small></span>
-              </div>
-              <div class="card task-card">
-                <div class="task-row"><span>Collect Claude Code features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Collect Codex features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Collect Grok Build features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Put it all in one comparison</span><em>Low</em></div>
-              </div>
-            </div>
-            <div class="msg msg-agent" style="--i:4">
-              <p>By the way, two of your tasks are ready for review:</p>
+            <div class="msg msg-agent">
+              <p>Queued three tasks for a worker agent. By the way, two tasks are ready for review:</p>
               <ul class="result-list">
                 <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
                 <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
               </ul>
             </div>
-            <div class="msg msg-user" style="--i:5"><p>Merge them.</p></div>
-            <div class="msg msg-agent" style="--i:6">
+            <div class="msg msg-user"><p>Merge them.</p></div>
+            <div class="msg msg-agent">
               <p>Both merged. I’ll tell you when the comparison is ready.</p>
             </div>
           </article>
 
           <article class="chat-pane" data-chat="2" hidden>
-            <div class="msg msg-user" style="--i:0"><p>Where do my chats live? Can other agents read them?</p></div>
-            <div class="msg msg-agent" style="--i:1">
+            <div class="msg msg-user"><p>Where do my chats live? Can other agents read them?</p></div>
+            <div class="msg msg-agent">
               <p>On your computer, in one local database: every chat with every agent, in one place. It isn’t tied to any provider, so any agent you connect can search it, summarize it, or turn it into something new.</p>
             </div>
-            <div class="msg msg-user" style="--i:2"><p>Which projects took most of my time this month?</p></div>
-            <div class="msg msg-agent" style="--i:3">
+            <div class="msg msg-user"><p>Which projects took most of my time this month?</p></div>
+            <div class="msg msg-agent">
               <div class="work-row"><Fragment set:html={svg("database")} /><span>Read local history · 214 chats across 4 agents</span></div>
               <ul class="share-list">
                 <li><span>Studio</span><i style="--share:41%"></i><small>41%</small></li>
@@ -251,33 +224,8 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="3" hidden>
-            <div class="msg msg-user" style="--i:0">
-              <p>Set up a new Ableton Live template: four audio tracks, a Drum Rack, and my usual chain on the master.</p>
-            </div>
-            <div class="msg msg-agent" style="--i:1">
-              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Computer use · opened Ableton Live</span></div>
-              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Created four audio tracks and a Drum Rack</span></div>
-              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Master: EQ Eight → Glue Compressor → Limiter</span></div>
-              <div class="work-row"><Fragment set:html={svg("cursor")} /><span>Saved the set as a template</span></div>
-            </div>
-            <div class="msg msg-agent" style="--i:2">
-              <p>Your template “Mix start” is ready. It opens with every new set from now on.</p>
-            </div>
-          </article>
-
-          <article class="chat-pane" data-chat="4" hidden>
-            <div class="msg msg-user" style="--i:0"><p>How is this different from Claude Cowork or the Codex app?</p></div>
-            <div class="msg msg-agent" style="--i:1">
-              <p>Those are great if you only ever use one provider. Up.computer stays neutral: bring any agent, switch per task, and keep one history that belongs to you.</p>
-            </div>
-            <div class="msg msg-agent" style="--i:2">
-              <p>It also stays small. No feed, no upsell: just your chats, your tasks and the agents you set up.</p>
-            </div>
-          </article>
-
-          <article class="chat-pane" data-chat="5" hidden>
-            <div class="msg msg-user" style="--i:0"><p>What does it cost?</p></div>
-            <div class="msg msg-agent" style="--i:1">
+            <div class="msg msg-user"><p>What does it cost?</p></div>
+            <div class="msg msg-agent">
               <p>The app is free. You keep paying your providers what you pay them today: Up.computer doesn’t resell models or add a markup.</p>
               <a
                 class="card download-card"
@@ -324,7 +272,8 @@ const first = chats[0]!;
     --start-y: 30vh;
     --start-scale: 0.82;
     position: relative;
-    height: calc(100vh + var(--steps) * 72vh);
+    /* Estimate until story.ts sets the height from the message count. */
+    height: calc(100vh + var(--steps) * 105vh);
   }
 
   .story-stage {
@@ -646,10 +595,9 @@ const first = chats[0]!;
     transition:
       opacity 0.45s ease,
       transform 0.45s ease;
-    transition-delay: calc(var(--i) * 0.55s);
   }
 
-  .chat-pane.is-revealed .msg {
+  .msg.is-shown {
     opacity: 1;
     transform: none;
   }
@@ -1109,6 +1057,8 @@ const first = chats[0]!;
 
   @media (prefers-reduced-motion: reduce) {
     .msg {
+      opacity: 1;
+      transform: none;
       transition: none;
     }
   }
