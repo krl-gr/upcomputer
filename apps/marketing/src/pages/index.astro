@@ -1,51 +1,25 @@
 ---
 import ChatStory from "../components/ChatStory.astro";
+import DownloadLinks from "../components/DownloadLinks.astro";
 import Layout from "../layouts/Layout.astro";
 import { SOFTWARE_APPLICATION_STRUCTURED_DATA } from "../lib/site";
 ---
 
 <Layout
-  title="Up.computer — Your agents, your data, any provider"
-  description="One local home for the agent CLIs you already use. Bring any provider, run tasks in the background, and keep every chat on your computer."
+  title="Up.computer · Your agents, your data, any provider"
+  description="One local home for the agent CLIs you already use. Free and open source. Bring any provider, run tasks in the background, and keep every chat on your computer."
   structuredData={SOFTWARE_APPLICATION_STRUCTURED_DATA}
   backdrop="none"
 >
   <ChatStory />
 
-  <section class="closing">
-    <h2>Free, local, and yours.</h2>
-    <p>macOS, Windows and Linux. You bring the agents and subscriptions you already pay for.</p>
-    <a
-      class="btn btn-primary btn-lg"
-      href="/download"
-      data-analytics-event="marketing_download_cta_clicked"
-      data-analytics-placement="homepage_final_cta"
-    >
-      Download
-    </a>
-  </section>
+  <div class="closing">
+    <DownloadLinks placement="homepage_final_cta" />
+  </div>
 </Layout>
 
 <style>
   .closing {
-    padding: 120px 24px 140px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-    text-align: center;
-  }
-
-  .closing h2 {
-    font-size: 15px;
-    font-weight: 400;
-    color: var(--fg);
-  }
-
-  .closing p {
-    max-width: 440px;
-    margin-bottom: 14px;
-    color: var(--fg-muted);
-    font-size: 14px;
+    padding: 56px 24px;
   }
 </style>
