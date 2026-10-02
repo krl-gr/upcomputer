@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsSectionList } from "../components/settings/SettingsSectionList";
+import { resolveSettingsHeaderClassName } from "../components/settings/settingsHeaderLayout";
 import { useLeaveSettings } from "../components/settings/useLeaveSettings";
 import { SETTINGS_NAV_ITEMS } from "../components/settings/SettingsSidebarNav";
 import {
@@ -22,8 +23,6 @@ import { SidebarInset, useSidebar } from "../components/ui/sidebar";
 import { isElectron } from "../env";
 import { isMobileViewport } from "../hooks/useMediaQuery";
 import { listExperimentalWebSettings, useWebProductComposition } from "../product/WebComposition";
-import { cn } from "~/lib/utils";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
@@ -111,13 +110,7 @@ function SettingsContentLayout() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         {!isElectron && (
-          <header
-            className={cn(
-              "px-3 py-2 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-              // Phones have no floating sidebar toggle to make room for.
-              !isMobile && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
+          <header className={resolveSettingsHeaderClassName({ isElectron, isMobile })}>
             <div className="flex min-h-7 items-center gap-2 sm:min-h-6">
               {backButton}
               <h1 className="text-sm font-medium text-foreground">{activeSettingsTitle}</h1>
@@ -131,12 +124,7 @@ function SettingsContentLayout() {
         )}
 
         {isElectron && (
-          <div
-            className={cn(
-              "drag-region flex h-[52px] shrink-0 items-center px-5 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
-              !isMobile && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
+          <div className={resolveSettingsHeaderClassName({ isElectron, isMobile })}>
             {backButton}
             <h1 className="text-xs font-medium tracking-wide text-muted-foreground/70">
               {activeSettingsTitle}
