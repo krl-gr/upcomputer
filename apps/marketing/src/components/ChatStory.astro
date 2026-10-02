@@ -25,9 +25,8 @@ const chats: StoryChat[] = [
   },
   {
     id: "overnight",
-    title: "What got done overnight?",
+    title: "How should I use tasks?",
     meta: "8h",
-    status: "Working",
     project: { name: "Research", mark: "R", tone: "purple" },
     model: "Codex · GPT-6 Astra",
   },
@@ -201,20 +200,15 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="1" hidden>
-            <div class="msg msg-user" style="--i:0"><p>What got done overnight?</p></div>
+            <div class="msg msg-user" style="--i:0"><p>How should I use tasks? I keep losing track of my threads.</p></div>
             <div class="msg msg-agent" style="--i:1">
-              <p>Three tasks finished while you were away:</p>
-              <ul class="result-list">
-                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
-                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
-                <li><span class="result-icon warn"><Fragment set:html={svg("alert")} /></span><span>Invoice export is blocked: it needs your login</span><small>Grok</small></li>
-              </ul>
+              <p>Stop treating threads as tasks. Talk ideas through with me here, and I’ll turn each one into a task for a worker agent. While it runs, move on to the next idea. Next time, just ask me what got done.</p>
             </div>
             <div class="msg msg-user" style="--i:2">
-              <p>I want one place that compares every agent CLI. Don’t burn my Claude Code plan: set up background tasks on GLM 5.3 Flash to collect the data. One at a time so we don’t hit limits. Low priority.</p>
+              <p>Okay. I want one place that compares every agent CLI. Run it in the background on GLM 5.3 Flash, one task at a time, low priority.</p>
             </div>
             <div class="msg msg-agent" style="--i:3">
-              <p>Done. One agent, five tasks in the backlog.</p>
+              <p>Done. One agent, four tasks in the backlog.</p>
               <div class="card agent-card">
                 <span class="card-icon"><Fragment set:html={svg("agents")} /></span>
                 <span class="card-main"><strong>CLI researcher</strong><small>OpenCode · GLM 5.3 Flash · one task at a time</small></span>
@@ -223,10 +217,19 @@ const first = chats[0]!;
                 <div class="task-row"><span>Collect Claude Code features and limits</span><em>Low</em></div>
                 <div class="task-row"><span>Collect Codex features and limits</span><em>Low</em></div>
                 <div class="task-row"><span>Collect Grok Build features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Collect OpenCode features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Merge everything into one comparison</span><em>Low</em></div>
+                <div class="task-row"><span>Put it all in one comparison</span><em>Low</em></div>
               </div>
-              <p class="msg-note">The next task starts when the previous one finishes. I’ll let you know when the comparison is ready.</p>
+            </div>
+            <div class="msg msg-agent" style="--i:4">
+              <p>By the way, two of your tasks are ready for review:</p>
+              <ul class="result-list">
+                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
+                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
+              </ul>
+            </div>
+            <div class="msg msg-user" style="--i:5"><p>Merge them.</p></div>
+            <div class="msg msg-agent" style="--i:6">
+              <p>Both merged. I’ll tell you when the comparison is ready.</p>
             </div>
           </article>
 
