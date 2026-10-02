@@ -152,6 +152,17 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   html {
     color-scheme: dark;
     scroll-behavior: smooth;
+    background: var(--bg);
+  }
+
+  /* macOS rubber-band overscroll at the top shows the root background, so
+     paint it in the backdrop's top sky color while the sky is in view. */
+  html:not(.is-past-top):has(.story-bg, .page-backdrop) {
+    background: #142442;
+  }
+
+  html:not(.is-past-top):has(.page-backdrop.is-dim) {
+    background: #101828;
   }
 
   body {

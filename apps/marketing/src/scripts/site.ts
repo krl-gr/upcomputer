@@ -57,6 +57,14 @@ if (isProductionSite && posthogProjectKey && !analyticsOptOut) {
   });
 }
 
+// Past the first screen the root background goes back to the page color, so a
+// bottom overscroll does not show the sky color (see `html` in Layout.astro).
+const markPastTop = () => {
+  document.documentElement.classList.toggle("is-past-top", window.scrollY > window.innerHeight);
+};
+window.addEventListener("scroll", markPastTop, { passive: true });
+markPastTop();
+
 document.addEventListener("click", (event) => {
   if (!analyticsReady || !(event.target instanceof Element)) return;
   const link = event.target.closest<HTMLAnchorElement>("a[data-analytics-event]");
