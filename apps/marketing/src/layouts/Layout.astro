@@ -152,6 +152,8 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   html {
     color-scheme: dark;
     scroll-behavior: smooth;
+    /* No rubber-band overscroll: it showed the dark page color above the backdrop. */
+    overscroll-behavior-y: none;
   }
 
   body {
