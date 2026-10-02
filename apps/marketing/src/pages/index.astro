@@ -1,6 +1,7 @@
 ---
 import ChatStory from "../components/ChatStory.astro";
 import Layout from "../layouts/Layout.astro";
+import { RELEASE_TAG, releaseAssetUrl } from "../lib/releases";
 import { SOFTWARE_APPLICATION_STRUCTURED_DATA } from "../lib/site";
 ---
 
@@ -12,40 +13,60 @@ import { SOFTWARE_APPLICATION_STRUCTURED_DATA } from "../lib/site";
 >
   <ChatStory />
 
-  <section class="closing">
-    <h2>Free, local, and yours.</h2>
-    <p>macOS, Windows and Linux. You bring the agents and subscriptions you already pay for.</p>
+  <p class="closing">
+    Download for{" "}
     <a
-      class="btn btn-primary btn-lg"
-      href="/download"
-      data-analytics-event="marketing_download_cta_clicked"
-      data-analytics-placement="homepage_final_cta"
-    >
-      Download
-    </a>
-  </section>
+      href={releaseAssetUrl("arm64.dmg")}
+      data-analytics-event="marketing_download_clicked"
+      data-analytics-platform="macos"
+      data-analytics-architecture="arm64"
+      data-analytics-format="dmg"
+      data-analytics-release={RELEASE_TAG}
+      data-analytics-placement="homepage_final_cta">macOS</a>,{" "}
+    <a
+      href={releaseAssetUrl("x64.exe")}
+      data-analytics-event="marketing_download_clicked"
+      data-analytics-platform="windows"
+      data-analytics-architecture="x64"
+      data-analytics-format="exe"
+      data-analytics-release={RELEASE_TAG}
+      data-analytics-placement="homepage_final_cta">Windows</a>,{" "}
+    <a
+      href={releaseAssetUrl("x86_64.AppImage")}
+      data-analytics-event="marketing_download_clicked"
+      data-analytics-platform="linux"
+      data-analytics-architecture="x86_64"
+      data-analytics-format="appimage"
+      data-analytics-release={RELEASE_TAG}
+      data-analytics-placement="homepage_final_cta">Linux</a>
+  </p>
 </Layout>
 
 <style>
+  /* Same type as .story-title in ChatStory.astro. */
   .closing {
-    padding: 120px 24px 140px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
+    padding: 56px 24px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
     text-align: center;
   }
 
-  .closing h2 {
-    font-size: 15px;
-    font-weight: 400;
-    color: var(--fg);
+  .closing a {
+    /* Taller hit area for touch; inline padding does not move the line. */
+    padding: 10px 2px;
+    margin: 0 -2px;
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.35);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    transition: text-decoration-color 0.2s ease;
   }
 
-  .closing p {
-    max-width: 440px;
-    margin-bottom: 14px;
-    color: var(--fg-muted);
-    font-size: 14px;
+  .closing a:hover,
+  .closing a:focus-visible {
+    text-decoration-color: #fff;
   }
 </style>
