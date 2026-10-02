@@ -1,68 +1,56 @@
 ---
 import LegalPage from "../components/LegalPage.astro";
 import Layout from "../layouts/Layout.astro";
+import { GITHUB_REPOSITORY_URL } from "../lib/site";
 ---
 
-<Layout title="Privacy Policy · Up.computer" description="How Up.computer handles information.">
+<Layout title="Privacy Policy · Up.computer" description="What the Up.computer app and website collect.">
   <LegalPage
     title="Privacy Policy"
-    description="This policy explains what Up.computer processes when you use the app and website."
-    effectiveDate="July 16, 2026"
+    description="What the Up.computer app and this website collect, and what they don’t."
+    effectiveDate="October 3, 2026"
   >
     <h2>Who operates Up.computer</h2>
     <p>
-      Up.computer is operated by Kirill Gurianov. Privacy and data requests can be sent to
+      Up.computer is operated by Kirill Gurianov. Privacy and data requests can be sent to{" "}
       <a href="mailto:support@up.computer">support@up.computer</a>.
     </p>
 
-    <h2>Local data and agent providers</h2>
+    <h2>Your data stays on your computer</h2>
     <p>
-      Project files, thread history, settings, and credentials are primarily stored on your device.
-      When you ask an agent to work, the content needed for that request is sent to the model or
-      service provider you selected. That provider processes it under its own terms and privacy
-      policy. Remote environments and websites used through Browser or Computer Use can also
-      receive and observe the data you send to them.
+      Projects, chats, and settings are stored on your computer. When you ask an agent to work, the
+      content it needs goes to the provider you chose, such as Claude Code or Codex, under that
+      provider’s own terms. Websites and apps an agent opens through the browser or computer use see
+      what it sends them.
     </p>
 
-    <h2>Diagnostics and analytics</h2>
+    <h2>App telemetry</h2>
     <p>
-      The app sends anonymous operational and product events to PostHog using an
-      installation-scoped identifier. These events can include the app version, operating system,
-      processor architecture, configured provider type, selected model, interaction mode, and
-      aggregate counts. They do not include repository contents, prompts, responses, credentials,
-      file paths, or account identifiers. The app can also create local logs and traces for
-      operation and troubleshooting.
-    </p>
-    <p>
-      The website uses PostHog for cookieless page views, Core Web Vitals, and explicit interactions
-      such as GitHub, changelog, and download clicks. Website analytics does not use general
-      interaction autocapture, session replay, persistent browser identifiers, or person profiles,
-      and it respects browser Do Not Track.
-      If you later answer an article poll, the selected response and article context will be sent
-      only after you submit it.
+      The app sends usage events to PostHog: app version, operating system, processor architecture,
+      provider, model, interaction and access mode, counts, durations, and error categories. Events
+      never include prompts, responses, file contents, file paths, or credentials. They are tied to a
+      pseudonymous ID: a SHA-256 hash of your local Codex or Claude Code account ID if there is one,
+      otherwise of a random ID the app creates. Set <code>UPCOMPUTER_TELEMETRY_ENABLED=false</code>
+      to turn it off. The code is{" "}
+      <a href={`${GITHUB_REPOSITORY_URL}/tree/main/apps/server/src/telemetry`} target="_blank" rel="noopener noreferrer">open source</a>.
     </p>
 
-    <h2>Website and third parties</h2>
+    <h2>Website</h2>
     <p>
-      The website and app can link to or integrate with third-party services such as GitHub, model
-      providers, authentication providers, and telemetry infrastructure. Their handling of data is
-      governed by their own policies. Basic server logs may include IP address, user agent, time,
+      This website counts page views, Core Web Vitals, and clicks on download, GitHub, and changelog
+      links with PostHog, without cookies, persistent identifiers, or session replay. It respects Do
+      Not Track and Global Privacy Control. Hosting logs may include IP address, user agent, time,
       and requested path for security and reliability.
     </p>
 
     <h2>Retention and your choices</h2>
     <p>
-      Local data remains until you delete it or uninstall the relevant data directory. Service data
-      is kept only as reasonably necessary for operation, security, support, and legal obligations.
-      Data held by third-party providers is subject to their retention controls and policies. Send
-      access, correction, or deletion requests concerning Up.computer-operated services to the
-      contact above.
+      Local data stays until you delete it. Telemetry is kept only as long as it helps operate and
+      improve the app. Data held by providers follows their policies. Send access or deletion
+      requests to the contact above.
     </p>
 
     <h2>Changes</h2>
-    <p>
-      This policy may change as the product evolves. Material updates will be published on
-      this page with a new effective date.
-    </p>
+    <p>Updates will be published on this page with a new effective date.</p>
   </LegalPage>
 </Layout>

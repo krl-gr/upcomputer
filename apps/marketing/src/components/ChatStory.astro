@@ -7,6 +7,8 @@
  * sidebar and show them as the app's top thread tabs.
  */
 
+import { GITHUB_REPOSITORY_URL } from "../lib/site";
+
 interface StoryChat {
   id: string;
   title: string;
@@ -107,7 +109,7 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
         <div class="demo-brand"><img src="/icon.webp" alt="" width="18" height="18" /></div>
 
         <div class="sidebar-group">
-          <div class="sidebar-item"><Fragment set:html={svg("search")} /><span>Search</span><kbd>⌘K</kbd></div>
+          <div class="sidebar-item"><Fragment set:html={svg("search")} /><span>Search</span></div>
           <div class="sidebar-item"><Fragment set:html={svg("tasks")} /><span>Tasks</span><span class="run-counts nav-run-counts" data-nav-run-counts hidden><span class="run-working"></span></span></div>
           <div class="sidebar-item"><Fragment set:html={svg("agents")} /><span>Agents</span></div>
           <div class="sidebar-item"><Fragment set:html={svg("automations")} /><span>Automations</span></div>
@@ -257,7 +259,14 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
           <article class="chat-pane" data-chat="3" hidden>
             <div class="msg msg-user"><p>What does it cost?</p></div>
             <div class="msg msg-agent">
-              <p>The app is free. You keep paying your providers what you pay them today: Up.computer doesn’t resell models or add a markup.</p>
+              <p>The app is free and <a
+                class="chat-link"
+                href={GITHUB_REPOSITORY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-analytics-event="marketing_github_clicked"
+                data-analytics-placement="homepage_story"
+              >open source</a>. You keep paying your providers what you pay them today: Up.computer doesn’t resell models or add a markup.</p>
               <a
                 class="card download-card"
                 href="/download"
@@ -450,13 +459,6 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
 
   .sidebar-item :global(svg) {
     color: var(--app-muted);
-  }
-
-  .sidebar-item kbd {
-    margin-left: auto;
-    color: var(--app-muted);
-    font-family: inherit;
-    font-size: 12px;
   }
 
   .sidebar-item.is-muted-active {
@@ -666,6 +668,19 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
   .msg p + .harness-row,
   .msg .harness-row + p {
     margin-top: 10px;
+  }
+
+  .chat-link {
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.35);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 0.2s ease;
+  }
+
+  .chat-link:hover,
+  .chat-link:focus-visible {
+    text-decoration-color: #fff;
   }
 
   .step-list {
