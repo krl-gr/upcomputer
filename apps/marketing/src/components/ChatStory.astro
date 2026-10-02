@@ -386,7 +386,6 @@ const first = chats[0]!;
     grid-template-columns: 252px minmax(0, 1fr);
     overflow: hidden;
     border-radius: 12px;
-    background: #131313;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.06),
       0 40px 90px -30px rgba(0, 0, 0, 0.85);
@@ -418,9 +417,21 @@ const first = chats[0]!;
     flex-direction: column;
     padding: 0 8px 10px;
     border-right: 1px solid var(--app-border);
+    /* Glass like the app's sidebar: the backdrop shows through, blurred.
+       Opaque enough that text keeps the contrast of the solid fallback. */
     background:
       linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
-      rgba(35, 28, 31, 0.9);
+      rgba(19, 19, 19, 0.78);
+    -webkit-backdrop-filter: blur(28px) saturate(1.25);
+    backdrop-filter: blur(28px) saturate(1.25);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .demo-sidebar {
+      background:
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        rgba(35, 28, 31, 0.9);
+    }
   }
 
   .demo-brand {
@@ -573,6 +584,7 @@ const first = chats[0]!;
   .demo-main {
     position: relative;
     min-width: 0;
+    background: #131313;
     display: flex;
     flex-direction: column;
     overflow: hidden;
