@@ -1,9 +1,9 @@
 ---
 /**
  * Homepage hero: a static replica of the Up.computer window whose chats tell
- * the product story. On desktop the window stays pinned while the page
- * scrolls, and each scroll step opens the next chat in the sidebar. On small
- * screens the chats render one after another as plain content.
+ * the product story. The window stays pinned while the page scrolls, and each
+ * scroll step opens the next chat. Wide screens show the chats in the sidebar;
+ * small screens hide the sidebar and show them as the app's top thread tabs.
  */
 
 interface StoryChat {
@@ -86,7 +86,12 @@ const icons = {
   database:
     '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   queue: '<path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 };
+
+// The app's filled panel icon, used for the sidebar and context toggles.
+const panelIconPath =
+  "M12.154 2.004C13.739 2.084 15 3.395 15 5v6c0 1.605-1.261 2.916-2.846 2.996L12 14H4c-1.657 0-3-1.343-3-3V5c0-1.657 1.343-3 3-3h8l.154.004ZM4 3.25c-.967 0-1.75.784-1.75 1.75v6c0 .967.783 1.75 1.75 1.75h8c.967 0 1.75-.783 1.75-1.75V5c0-.966-.783-1.75-1.75-1.75H4Zm8 1.125c.345 0 .625.28.625.625v6a.625.625 0 1 1-1.25 0V5c0-.345.28-.625.625-.625Z";
 
 const svg = (name: keyof typeof icons) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
@@ -154,13 +159,28 @@ const first = chats[0]!;
 
       <div class="demo-main">
         <header class="demo-header">
+          <span class="demo-header-toggle">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="filled" d={panelIconPath}></path></svg>
+          </span>
+          <nav class="demo-tabs" aria-label="Chats in this demo">
+            {chats.map((chat, index) => (
+              <button
+                type="button"
+                class:list={["demo-tab", { "is-active": index === 0 }]}
+                data-tab-target={index}
+                aria-current={index === 0 ? "true" : "false"}
+              >
+                <span class="demo-tab-title">{chat.title}</span>
+                <span class="demo-tab-close" aria-hidden="true"><Fragment set:html={svg("close")} /></span>
+              </button>
+            ))}
+          </nav>
           <span class="demo-header-title" data-chat-title>{first.title}</span>
           <span class="demo-header-action"><Fragment set:html={svg("compose")} /></span>
         </header>
 
         <div class="demo-panes">
           <article class="chat-pane is-revealed" data-chat="0">
-            <h2 class="pane-title">How does Up.computer work?</h2>
             <div class="msg msg-user" style="--i:0"><p>How does Up.computer work?</p></div>
             <div class="msg msg-agent" style="--i:1">
               <p>It’s one home for the agent CLIs you already have. Install Claude Code, Codex, Grok Build, OpenCode or Cursor, and each one runs on your own subscription. No new plan, no lock-in.</p>
@@ -178,7 +198,6 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="1" hidden>
-            <h2 class="pane-title">What got done overnight?</h2>
             <div class="msg msg-user" style="--i:0"><p>What got done overnight?</p></div>
             <div class="msg msg-agent" style="--i:1">
               <p>Three tasks finished while you were away:</p>
@@ -209,7 +228,6 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="2" hidden>
-            <h2 class="pane-title">Where do my chats live?</h2>
             <div class="msg msg-user" style="--i:0"><p>Where do my chats live? Can other agents read them?</p></div>
             <div class="msg msg-agent" style="--i:1">
               <p>On your computer, in one local database: every chat with every agent, in one place. It isn’t tied to any provider, so any agent you connect can search it, summarize it, or turn it into something new.</p>
@@ -227,7 +245,6 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="3" hidden>
-            <h2 class="pane-title">Ableton template for mixing</h2>
             <div class="msg msg-user" style="--i:0">
               <p>Set up a new Ableton Live template: four audio tracks, a Drum Rack, and my usual chain on the master.</p>
             </div>
@@ -243,7 +260,6 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="4" hidden>
-            <h2 class="pane-title">How is this different from Cowork?</h2>
             <div class="msg msg-user" style="--i:0"><p>How is this different from Claude Cowork or the Codex app?</p></div>
             <div class="msg msg-agent" style="--i:1">
               <p>Those are great if you only ever use one provider. Up.computer stays neutral: bring any agent, switch per task, and keep one history that belongs to you.</p>
@@ -254,7 +270,6 @@ const first = chats[0]!;
           </article>
 
           <article class="chat-pane" data-chat="5" hidden>
-            <h2 class="pane-title">What does it cost?</h2>
             <div class="msg msg-user" style="--i:0"><p>What does it cost?</p></div>
             <div class="msg msg-agent" style="--i:1">
               <p>The app is free. You keep paying your providers what you pay them today: Up.computer doesn’t resell models or add a markup.</p>
@@ -286,7 +301,7 @@ const first = chats[0]!;
           <div class="context-bar">
             <span class="context-project" data-chat-project>Select project</span>
             <span class="context-toggle">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="filled" d="M12.154 2.004C13.739 2.084 15 3.395 15 5v6c0 1.605-1.261 2.916-2.846 2.996L12 14H4c-1.657 0-3-1.343-3-3V5c0-1.657 1.343-3 3-3h8l.154.004ZM4 3.25c-.967 0-1.75.784-1.75 1.75v6c0 .967.783 1.75 1.75 1.75h8c.967 0 1.75-.783 1.75-1.75V5c0-.966-.783-1.75-1.75-1.75H4Zm8 1.125c.345 0 .625.28.625.625v6a.625.625 0 1 1-1.25 0V5c0-.345.28-.625.625-.625Z"></path></svg>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="filled" d={panelIconPath}></path></svg>
             </span>
           </div>
         </div>
@@ -572,6 +587,12 @@ const first = chats[0]!;
     color: var(--app-muted);
   }
 
+  /* Small screens only: the sidebar toggle and the thread tabs. */
+  .demo-header-toggle,
+  .demo-tabs {
+    display: none;
+  }
+
   .demo-panes {
     position: relative;
     min-height: 0;
@@ -590,10 +611,6 @@ const first = chats[0]!;
   }
 
   .chat-pane[hidden] {
-    display: none;
-  }
-
-  .pane-title {
     display: none;
   }
 
@@ -922,79 +939,144 @@ const first = chats[0]!;
     place-items: center;
   }
 
-  .context-toggle .filled {
+  .filled {
     fill: currentColor;
     stroke: none;
   }
 
-  /* ── Small screens: the chats read as a plain story ───────── */
+  /* ── Small screens: no sidebar, the chats become the app's top
+     thread tabs (mirrors the dockview header in the web app) ──── */
   @media (max-width: 899px) {
-    .story {
-      height: auto;
-    }
-
-    .story-stage {
-      position: relative;
-      height: auto;
-      overflow: visible;
-      padding: 132px 16px 56px;
-    }
-
-    .story-bg {
-      bottom: auto;
-      height: 620px;
-    }
-
-    .story-title {
-      position: relative;
-      top: auto;
-      margin-bottom: 56px;
-      opacity: 1;
-    }
-
     .demo-window {
-      position: relative;
-      top: auto;
-      width: 100%;
-      height: auto;
-      display: block;
-      transform: none;
+      /* svh keeps the composer above the mobile browser toolbar. */
+      width: calc(100% - 24px);
+      height: min(760px, calc(100svh - 96px));
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .demo-sidebar,
-    .demo-header,
-    .demo-composer {
+    .demo-header-title,
+    .demo-header-action {
       display: none;
     }
 
-    .demo-panes {
-      display: flex;
-      flex-direction: column;
+    .demo-header {
+      height: 48px;
+      padding: 0;
+      justify-content: flex-start;
     }
 
-    .chat-pane,
-    .chat-pane[hidden] {
-      position: relative;
-      inset: auto;
-      display: flex;
-      padding: 20px 18px 24px;
-      mask-image: none;
-    }
-
-    .chat-pane + .chat-pane {
-      border-top: 1px solid var(--app-border);
-    }
-
-    .pane-title {
-      display: block;
+    .demo-header-toggle {
+      width: 32px;
+      height: 32px;
+      margin-left: 8px;
+      display: grid;
+      place-items: center;
+      flex: none;
       color: var(--app-muted);
-      font-size: 13px;
-      font-weight: 400;
     }
 
-    .msg {
-      opacity: 1;
-      transform: none;
+    .demo-tabs {
+      position: relative;
+      min-width: 0;
+      height: 100%;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 12px 0 8px;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to right, transparent, #000 8px, #000 calc(100% - 12px), transparent);
+    }
+
+    .demo-tabs::-webkit-scrollbar {
+      display: none;
+    }
+
+    .demo-tab {
+      position: relative;
+      height: 32px;
+      min-width: 96px;
+      padding: 0 8px;
+      display: flex;
+      flex: none;
+      align-items: center;
+      gap: 4px;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 14px;
+      white-space: nowrap;
+      transition: background 0.18s ease, color 0.18s ease;
+    }
+
+    /* The app's 12px dividers between tabs, hidden next to the active one. */
+    .demo-tab + .demo-tab::before {
+      content: "";
+      position: absolute;
+      left: -2px;
+      top: 10px;
+      width: 1px;
+      height: 12px;
+      background: #2b2b2c;
+    }
+
+    .demo-tab.is-active::before,
+    .demo-tab.is-active + .demo-tab::before {
+      display: none;
+    }
+
+    .demo-tab.is-active {
+      background: rgba(255, 255, 255, 0.07);
+      color: #fff;
+    }
+
+    .demo-tab-title {
+      flex: 1;
+      text-align: left;
+    }
+
+    .demo-tab-close {
+      width: 16px;
+      height: 16px;
+      display: none;
+      place-items: center;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .demo-tab.is-active .demo-tab-close {
+      display: grid;
+    }
+
+    .demo-tab-close :global(svg) {
+      width: 14px;
+      height: 14px;
+    }
+
+    .chat-pane {
+      padding: 16px 16px 24px;
+    }
+
+    .msg-user {
+      max-width: 88%;
+    }
+
+    .demo-composer {
+      width: calc(100% - 16px);
+      margin-bottom: 2px;
+    }
+
+    .composer {
+      height: 96px;
+    }
+
+    .composer-placeholder {
+      padding: 16px 18px 0;
+    }
+
+    .composer-toolbar {
+      padding: 0 10px 10px;
     }
   }
 

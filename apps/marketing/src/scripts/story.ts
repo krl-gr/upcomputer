@@ -1,6 +1,6 @@
 // Scroll-driven homepage demo: the pinned app window lifts into place, then
-// each scroll step opens the next chat. Small screens render every chat in
-// order and skip all of this.
+// each scroll step opens the next chat. Wide screens mark the chat in the
+// sidebar, small screens in the top thread tabs.
 
 interface ChatProject {
   name: string;
@@ -17,15 +17,20 @@ const story = document.querySelector<HTMLElement>("[data-story]");
 if (story) {
   const windowEl = story.querySelector<HTMLElement>("[data-demo-window]")!;
   const rows = [...story.querySelectorAll<HTMLButtonElement>("[data-chat-target]")];
+  const tabs = [...story.querySelectorAll<HTMLButtonElement>("[data-tab-target]")];
+  const tabStrip = tabs[0]!.parentElement!;
   const panes = [...story.querySelectorAll<HTMLElement>("[data-chat]")];
   const titleEl = story.querySelector<HTMLElement>("[data-chat-title]")!;
   const modelEl = story.querySelector<HTMLElement>("[data-chat-model]")!;
   const projectEl = story.querySelector<HTMLElement>("[data-chat-project]")!;
-  const desktop = window.matchMedia("(min-width: 900px)");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let active = 0;
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+  // The layout viewport ignores the mobile browser toolbar, so showing or
+  // hiding it does not move the window. On desktop it equals innerHeight.
+  const viewportHeight = () => document.documentElement.clientHeight;
 
   const renderProject = (raw: string | undefined) => {
     projectEl.replaceChildren();
@@ -56,11 +61,21 @@ if (story) {
   const activate = (index: number) => {
     if (index === active) return;
     active = index;
-    rows.forEach((row, rowIndex) => {
-      const isActive = rowIndex === index;
-      row.classList.toggle("is-active", isActive);
-      row.setAttribute("aria-current", isActive ? "true" : "false");
-    });
+    [rows, tabs].forEach((items) =>
+      items.forEach((item, itemIndex) => {
+        const isActive = itemIndex === index;
+        item.classList.toggle("is-active", isActive);
+        item.setAttribute("aria-current", isActive ? "true" : "false");
+      }),
+    );
+    // Center the active tab in the strip; a hidden strip has no width.
+    const tab = tabs[index]!;
+    if (tabStrip.clientWidth > 0) {
+      tabStrip.scrollTo({
+        left: tab.offsetLeft - (tabStrip.clientWidth - tab.offsetWidth) / 2,
+        behavior: reducedMotion.matches ? "auto" : "smooth",
+      });
+    }
     panes.forEach((pane, paneIndex) => {
       pane.hidden = paneIndex !== index;
     });
@@ -79,14 +94,9 @@ if (story) {
   };
 
   const measure = () => {
-    if (!desktop.matches) {
-      story.style.removeProperty("--start-y");
-      story.style.removeProperty("--start-scale");
-      return;
-    }
     // Start the window low enough to leave room for the title, scaled so the
     // whole window (composer included) fits in the first screen.
-    const viewport = window.innerHeight;
+    const viewport = viewportHeight();
     const windowHeight = windowEl.offsetHeight;
     const startTop = Math.max(viewport * 0.34, 220);
     const startScale = clamp((viewport - 28 - startTop) / windowHeight, 0.55, 1);
@@ -95,8 +105,7 @@ if (story) {
   };
 
   const update = () => {
-    if (!desktop.matches) return;
-    const viewport = window.innerHeight;
+    const viewport = viewportHeight();
     const scrollable = story.offsetHeight - viewport;
     const scrolled = clamp(-story.getBoundingClientRect().top, 0, scrollable);
     story.style.setProperty("--lift", String(clamp(scrolled / (viewport * LIFT_DISTANCE), 0, 1)));
@@ -104,19 +113,22 @@ if (story) {
     activate(clamp(Math.floor(scrolled / step), 0, rows.length - 1));
   };
 
-  rows.forEach((row, index) => {
-    row.addEventListener("click", () => {
-      const scrollable = story.offsetHeight - window.innerHeight;
-      const step = scrollable / rows.length;
-      // Land in the middle of the chat's step; the first chat needs the
-      // window fully lifted, which happens within its step.
-      const offset = index === 0 ? window.innerHeight * LIFT_DISTANCE : (index + 0.5) * step;
-      window.scrollTo({
-        top: story.offsetTop + offset,
-        behavior: reducedMotion.matches ? "auto" : "smooth",
+  [rows, tabs].forEach((items) =>
+    items.forEach((item, index) => {
+      item.addEventListener("click", () => {
+        const viewport = viewportHeight();
+        const scrollable = story.offsetHeight - viewport;
+        const step = scrollable / rows.length;
+        // Land in the middle of the chat's step; the first chat needs the
+        // window fully lifted, which happens within its step.
+        const offset = index === 0 ? viewport * LIFT_DISTANCE : (index + 0.5) * step;
+        window.scrollTo({
+          top: story.offsetTop + offset,
+          behavior: reducedMotion.matches ? "auto" : "smooth",
+        });
       });
-    });
-  });
+    }),
+  );
 
   let frame = 0;
   const schedule = () => {
@@ -134,6 +146,5 @@ if (story) {
 
   window.addEventListener("scroll", schedule, { passive: true });
   window.addEventListener("resize", onLayoutChange);
-  desktop.addEventListener("change", onLayoutChange);
   onLayoutChange();
 }
