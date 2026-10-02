@@ -363,19 +363,6 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     position: fixed;
     inset: 0 0 auto;
     z-index: 50;
-    background: transparent;
-    border-bottom: 1px solid transparent;
-    transition:
-      background 0.3s ease,
-      border-color 0.3s ease,
-      backdrop-filter 0.3s ease;
-  }
-
-  .nav.is-scrolled {
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    background: color-mix(in srgb, var(--bg) 78%, transparent);
-    border-bottom-color: var(--border);
   }
 
   .nav-inner {

@@ -1,13 +1,5 @@
 import posthog from "posthog-js";
 
-const nav = document.querySelector(".nav");
-const updateNavigation = () => {
-  if (!nav) return;
-  nav.classList.toggle("is-scrolled", window.scrollY > 12);
-};
-window.addEventListener("scroll", updateNavigation, { passive: true });
-updateNavigation();
-
 const posthogProjectKey = import.meta.env.PUBLIC_POSTHOG_KEY?.trim();
 const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
 const isProductionSite = window.location.hostname === "up.computer";
