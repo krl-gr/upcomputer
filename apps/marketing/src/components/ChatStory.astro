@@ -368,12 +368,16 @@ const first = chats[0]!;
     --app-muted: rgba(255, 255, 255, 0.5);
     --app-text: rgba(255, 255, 255, 0.86);
     --app-border: rgba(255, 255, 255, 0.07);
+    --viewport: 100vh;
+    --window-height: min(760px, calc(var(--viewport) - 108px));
     position: absolute;
-    top: 84px;
+    /* Lifted, the window is centered in the viewport but stays clear of the
+       fixed nav (57px tall). story.ts reads this top for the lift start. */
+    top: max(72px, calc((var(--viewport) - var(--window-height)) / 2));
     left: 0;
     right: 0;
     width: min(1180px, calc(100vw - 64px));
-    height: min(760px, calc(100vh - 108px));
+    height: var(--window-height);
     margin: 0 auto;
     display: grid;
     grid-template-columns: 252px minmax(0, 1fr);
@@ -949,8 +953,9 @@ const first = chats[0]!;
   @media (max-width: 899px) {
     .demo-window {
       /* svh keeps the composer above the mobile browser toolbar. */
+      --viewport: 100svh;
+      --window-height: min(760px, calc(var(--viewport) - 96px));
       width: calc(100% - 24px);
-      height: min(760px, calc(100svh - 96px));
       grid-template-columns: minmax(0, 1fr);
     }
 

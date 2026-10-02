@@ -10,7 +10,6 @@ interface ChatProject {
 
 // Share of the viewport scrolled before the window finishes lifting.
 const LIFT_DISTANCE = 0.45;
-const NAV_OFFSET = 84;
 
 const story = document.querySelector<HTMLElement>("[data-story]");
 
@@ -95,12 +94,14 @@ if (story) {
 
   const measure = () => {
     // Start the window low enough to leave room for the title, scaled so the
-    // whole window (composer included) fits in the first screen.
+    // whole window (composer included) fits in the first screen. The lift
+    // ends at the window's CSS top, which centers it below the nav.
     const viewport = viewportHeight();
     const windowHeight = windowEl.offsetHeight;
+    const liftedTop = windowEl.offsetTop;
     const startTop = Math.max(viewport * 0.34, 220);
     const startScale = clamp((viewport - 28 - startTop) / windowHeight, 0.55, 1);
-    story.style.setProperty("--start-y", `${startTop - NAV_OFFSET}px`);
+    story.style.setProperty("--start-y", `${startTop - liftedTop}px`);
     story.style.setProperty("--start-scale", String(startScale));
   };
 
