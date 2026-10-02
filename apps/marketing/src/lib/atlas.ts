@@ -55,6 +55,7 @@ export const TOOL_ICONS: Record<string, string> = {
   "cursor-cli": "/harnesses/cursor_light.svg",
   "opencode-cli": "/harnesses/opencode-dark.svg",
   "pi-cli": "/harnesses/pi.svg",
+  "grok-build": "/harnesses/grok-dark.svg",
 };
 
 const SEARCHED = { release_notes: "release notes", source_code: "source code" } as const;

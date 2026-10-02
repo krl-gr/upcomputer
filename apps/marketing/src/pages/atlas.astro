@@ -18,6 +18,8 @@ const coverage = data.products
     return { ...p, documented: count("documented"), close: count("unresolved"), missing: count("not_found") };
   })
   .sort((a, b) => b.documented - a.documented);
+// Hidden for now; set to true to show the coverage chart again.
+const SHOW_COVERAGE = false;
 ---
 
 <Layout
@@ -30,6 +32,9 @@ const coverage = data.products
       <h1>
         Keeping up with everything coding agents can do is hard.<br />So we mapped it for you.
       </h1>
+      <p class="atlas-note">
+        Work in progress. Mapped by agents from official docs, so some entries may be wrong.
+      </p>
     </header>
 
     <div class="tool-chips" role="group" aria-label="Show only these tools">
@@ -45,6 +50,7 @@ const coverage = data.products
       ))}
     </div>
 
+    {SHOW_COVERAGE && (
     <figure class="coverage" aria-labelledby="coverage-title">
       <figcaption id="coverage-title">
         <strong>Features confirmed in official sources</strong>
@@ -82,6 +88,7 @@ const coverage = data.products
         ))}
       </ul>
     </figure>
+    )}
 
     <table class="capability-table">
       <caption class="sr-only">
@@ -149,8 +156,9 @@ const coverage = data.products
 
     <footer class="atlas-foot">
       <p>
-        Built from each tool’s official documentation, not hands-on tests. Every answer links to the page it
-        comes from. Spotted a mistake?
+        Built from each tool’s official documentation, release notes and, for open-source tools, source code;
+        not hands-on tests. Two AI models decide every cell independently, a third settles disagreements and a
+        human reviews the result. Every answer links to the page it comes from. Spotted a mistake?
         <a href="https://github.com/krl-gr/upcomputer/issues" target="_blank" rel="noopener noreferrer">Tell us</a>.
       </p>
       <span>Updated {data.built_at}</span>
@@ -185,8 +193,9 @@ const coverage = data.products
     min-height: calc(34vh - 132px);
     margin-bottom: 40px;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
     padding-top: calc(19vh - 132px);
   }
 
@@ -196,6 +205,15 @@ const coverage = data.products
     font-weight: 400;
     line-height: 1.45;
     letter-spacing: -0.005em;
+    text-align: center;
+  }
+
+  .atlas-note {
+    margin-top: 10px;
+    color: #f3e3a3;
+    font-size: 15px;
+    letter-spacing: -0.005em;
+    line-height: 1.45;
     text-align: center;
   }
 
