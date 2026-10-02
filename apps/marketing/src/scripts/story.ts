@@ -37,7 +37,7 @@ const READ_AFTER_LAST = 2;
 const FIRST_CHAT_OPENING = 2;
 // Extra message distances before a message marked `data-pause`, so the reader
 // finishes the previous answer before the story moves on.
-const READING_PAUSE = 2;
+const READING_PAUSE = 3;
 
 const story = document.querySelector<HTMLElement>("[data-story]");
 

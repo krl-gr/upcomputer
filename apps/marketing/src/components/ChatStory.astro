@@ -28,7 +28,7 @@ const chats: StoryChat[] = [
     id: "overnight",
     title: "How should I use tasks?",
     meta: "8h",
-    project: { name: "Research", mark: "R", tone: "purple" },
+    project: { name: "Website", mark: "W", tone: "mint" },
     model: "Codex · GPT-6 Astra",
   },
   {
@@ -192,39 +192,48 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
           </article>
 
           <article class="chat-pane" data-chat="1" hidden>
-            <div class="msg msg-user"><p>How should I use tasks? I keep losing track of my threads.</p></div>
+            <div class="msg msg-user"><p>How should I use tasks?</p></div>
             <div class="msg msg-agent">
-              <p>Stop treating threads as tasks. Tell me what you want done, and I’ll turn it into a task for a worker agent. We keep talking while it runs in the background, so move on to the next idea. Next time, just ask me what got done.</p>
+              <p>Stop treating threads as tasks. Your job is a clear vision of what to build. That’s it.</p>
+              <ol class="step-list">
+                <li>Open a thread</li>
+                <li>Talk the idea through with me</li>
+                <li>Ask me to create a task for a worker agent</li>
+                <li>While it runs, explore the next idea and queue a task for that too</li>
+                <li>Repeat until the agents have enough work, then walk away</li>
+                <li>Task statuses show up as clickable badges on the thread in the sidebar</li>
+                <li>Next time you open your computer, ask me what got done. I’ll have everything that needs your attention ready in this thread. You tell me what to refine or what’s next.</li>
+              </ol>
             </div>
             <!-- data-pause: extra reading room before this message (story.ts). -->
             <div class="msg msg-user" data-pause>
-              <p>Okay. I want one place that compares every agent CLI. Run it in the background on GLM 5.3 Flash, one task at a time, low priority.</p>
+              <p>Okay. Let’s add a compact sidebar to Up.computer.</p>
             </div>
-            <!-- data-runs-*: the thread's task run counts once this message shows. -->
-            <div class="msg msg-agent" data-runs-working="1">
-              <p>Done. One worker agent, four tasks in the queue: each starts when the previous one finishes.</p>
+            <div class="msg msg-agent">
+              <p>I’ll create a UI developer agent on Claude Opus 5.5 and give it the task. Want GPT-6 Astra to review it when it’s done?</p>
               <div class="card agent-card">
                 <span class="card-icon"><Fragment set:html={svg("agents")} /></span>
-                <span class="card-main"><strong>CLI researcher</strong><small>OpenCode · GLM 5.3 Flash · one task at a time</small></span>
+                <span class="card-main"><strong>UI developer</strong><small>Claude · Claude Opus 5.5 · one task at a time</small></span>
               </div>
+            </div>
+            <div class="msg msg-user"><p>Yes.</p></div>
+            <!-- data-runs-*: the thread's task run counts once this message shows. -->
+            <div class="msg msg-agent" data-runs-working="1">
               <div class="card task-card">
-                <div class="task-row"><span>Collect Claude Code features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Collect Codex features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Collect Grok Build features and limits</span><em>Low</em></div>
-                <div class="task-row"><span>Put it all in one comparison</span><em>Low</em></div>
+                <div class="task-row"><span>Compact sidebar</span><em>In progress</em></div>
+                <div class="task-row"><span>Review · GPT-6 Astra</span><em>Next</em></div>
               </div>
-              <p>You’ll see them on this thread in the sidebar; they turn green when done. Click a number to open a task, or follow them all in Tasks.</p>
+              <p>It’s in progress. What’s next?</p>
             </div>
-            <div class="msg msg-agent" data-runs-working="1" data-runs-completed="2">
-              <p>By the way, two of your tasks are ready for review:</p>
-              <ul class="result-list">
-                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Sample library sorted by key and BPM</span><small>Claude</small></li>
-                <li><span class="result-icon ok"><Fragment set:html={svg("check")} /></span><span>Landing page copy, second review</span><small>Codex</small></li>
-              </ul>
+            <div class="msg msg-user">
+              <p>On the website, the demo should show the mobile layout on small screens.</p>
             </div>
-            <div class="msg msg-user"><p>Merge them.</p></div>
             <div class="msg msg-agent">
-              <p>Both merged. I’ll tell you when the comparison is ready.</p>
+              <p>Queued for the same agent. It starts as soon as the first task is done.</p>
+            </div>
+            <div class="msg msg-user"><p>Great. Star the Up.computer repo on GitHub.</p></div>
+            <div class="msg msg-agent">
+              <p>That one’s quick, I’ll do it myself. Done.</p>
             </div>
           </article>
 
@@ -657,6 +666,17 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
   .msg p + .harness-row,
   .msg .harness-row + p {
     margin-top: 10px;
+  }
+
+  .step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 22px;
+  }
+
+  .step-list li::marker {
+    color: var(--app-muted);
   }
 
   .msg-user {
