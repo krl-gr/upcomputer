@@ -87,6 +87,9 @@ const icons = {
     '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   queue: '<path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  // lucide MessageSquareDashed, the app's "No project" chat icon.
+  noProject:
+    '<path d="M14 3h2"/><path d="M16 19h-2"/><path d="M2 12v-2"/><path d="M2 16v5.286a.71.71 0 0 0 1.212.502l1.149-1.149"/><path d="M20 19a2 2 0 0 0 2-2v-1"/><path d="M22 10v2"/><path d="M22 6V5a2 2 0 0 0-2-2"/><path d="M4 3a2 2 0 0 0-2 2v1"/><path d="M8 19h2"/><path d="M8 3h2"/>',
 };
 
 // The app's filled panel icon, used for the sidebar and context toggles.
@@ -145,7 +148,7 @@ const first = chats[0]!;
               {chat.project ? (
                 <b class={`project-mark ${chat.project.tone}`}>{chat.project.mark}</b>
               ) : (
-                <span class="project-mark none" aria-hidden="true"></span>
+                <span class="project-mark none" aria-hidden="true"><Fragment set:html={svg("noProject")} /></span>
               )}
               {chat.status && <em class="chat-status">{chat.status}</em>}
               <span class="chat-name">{chat.title}</span>
@@ -498,7 +501,11 @@ const first = chats[0]!;
   .demo-window :global(.project-mark.orange) { color: #ff9f43; background: rgba(255, 159, 67, 0.18); }
   .demo-window :global(.project-mark.purple) { color: #ad85ff; background: rgba(173, 133, 255, 0.18); }
   .demo-window :global(.project-mark.mint) { color: #72dfc2; background: rgba(114, 223, 194, 0.18); }
-  .demo-window :global(.project-mark.none) { background: rgba(255, 255, 255, 0.07); }
+  .demo-window :global(.project-mark.none) { color: var(--app-muted); }
+  .demo-window :global(.project-mark.none svg) {
+    width: 14px;
+    height: 14px;
+  }
   .demo-window :global(.project-mark.all) {
     background:
       linear-gradient(rgba(255, 255, 255, 0.25) 0 0) 2px 2px / 5px 5px no-repeat,
