@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@upcomputer/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@upcomputer/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { DraftId } from "../composerDraftStore";
 import { resolveWorkspacePanelIdForOpenRequest } from "./chatWorkspaceController";

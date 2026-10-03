@@ -11,7 +11,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationThread,
 } from "@upcomputer/contracts";
-import { describe, it } from "vitest";
+import { describe, it } from "vite-plus/test";
 
 import {
   buildSnapshotThreadContextBinding,
