@@ -102,7 +102,8 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
     </div>
 
     <h1 class="story-title">
-      Your agents, your data, any provider.<br />Nothing extra.
+      <span>I’m the orchestrator.</span>
+      <span>I turn your ideas into tasks and hand them to your agents.</span>
     </h1>
 
     <div class="demo-window" data-demo-window>
@@ -190,11 +191,13 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
               </div>
             </div>
             <div class="msg msg-agent">
-              <p>On top sits a flexible orchestration layer. Talk a task through, drop it in the backlog, and agents pick it up in the background. When they need to see the screen, they use the browser or your computer.</p>
+              <p>Talk a task through, and agents pick it up in the background. When they need to see the screen, they use the browser or your computer.</p>
             </div>
           </article>
 
-          <article class="chat-pane" data-chat="1" hidden>
+          <!-- data-later-*: this thread's run counts once a later chat is open: the
+               compact sidebar is done and the mobile layout task is running. -->
+          <article class="chat-pane" data-chat="1" data-later-working="1" data-later-completed="1" hidden>
             <div class="msg msg-user"><p>How should I use tasks?</p></div>
             <div class="msg msg-agent">
               <p>Stop treating threads as tasks. Your job is a clear vision of what to build. That’s it.</p>
@@ -222,8 +225,10 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
             <div class="msg msg-user"><p>Yes.</p></div>
             <!-- data-runs-*: the thread's task run counts once this message shows. -->
             <div class="msg msg-agent" data-runs-working="1">
+              <!-- One task, its runs below: the developer first, then the review. -->
               <div class="card task-card">
-                <div class="task-row"><span>Compact sidebar</span><em>In progress</em></div>
+                <div class="task-title"><span class="task-kind">Task</span>Compact sidebar</div>
+                <div class="task-row"><span>UI developer · Claude Opus 5.5</span><em class="is-working">In progress</em></div>
                 <div class="task-row"><span>Review · GPT-6 Astra</span><em>Next</em></div>
               </div>
               <p>It’s in progress. What’s next?</p>
@@ -232,6 +237,10 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
               <p>On the website, the demo should show the mobile layout on small screens.</p>
             </div>
             <div class="msg msg-agent">
+              <div class="card task-card">
+                <div class="task-title"><span class="task-kind">Task</span>Mobile layout for the site demo</div>
+                <div class="task-row"><span>UI developer · Claude Opus 5.5</span><em>Queued</em></div>
+              </div>
               <p>Queued for the same agent. It starts as soon as the first task is done.</p>
             </div>
             <div class="msg msg-user"><p>Great. Star the Up.computer repo on GitHub.</p></div>
@@ -350,7 +359,13 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
     line-height: 1.45;
     letter-spacing: -0.005em;
     text-align: center;
+    text-wrap: balance;
     opacity: calc(1 - var(--lift) * 1.8);
+  }
+
+  /* One block per line, so each line balances on its own when it wraps. */
+  .story-title span {
+    display: block;
   }
 
   /* ── Window ───────────────────────────────────────────────── */
@@ -846,6 +861,32 @@ const runCounts = `<span class="run-counts" data-run-counts hidden><span class="
     color: var(--app-muted);
     font-size: 13px;
     font-style: normal;
+  }
+
+  .task-title {
+    padding: 8px 0 6px;
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .task-kind {
+    margin-right: 8px;
+    color: var(--app-muted);
+    font-weight: 400;
+  }
+
+  /* Runs of the task above, a step quieter than the task itself. */
+  .task-title ~ .task-row {
+    color: rgba(255, 255, 255, 0.66);
+  }
+
+  /* Same blue as the working run count on the thread. */
+  .task-row em.is-working {
+    color: #38bdf8;
+    opacity: 0.8;
   }
 
   .work-row {

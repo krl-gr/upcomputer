@@ -75,61 +75,71 @@ const STAR_RADIUS_MIN = 0.45;
 const STAR_RADIUS_MAX = 0.95;
 const STAR_BRIGHTNESS = 0.55;
 const STAR_FALLOFF = 2.2;
-const STAR_TWINKLE = 0.2;
+const STAR_TWINKLE = 0.3;
 const STAR_TWINKLE_HOVER = 0.85;
 const STAR_HOVER_GAIN = 0.5;
 // Stars turn about a pole behind and above the camera, in degrees per second.
-const STAR_TURN = 0.012;
+const STAR_TURN = 0.02;
 // Shimmer of the air over the edge: angle, height of the band it fills,
 // horizontal scale (features per radian) and speed.
-const SHIMMER = 0.025;
+const SHIMMER = 0.04;
 const SHIMMER_HEIGHT = 0.6;
 const SHIMMER_SCALE = 90;
-const SHIMMER_SPEED = 0.18;
+const SHIMMER_SPEED = 0.3;
 // Glow breathing: relative brightness swing of the warm glow and its periods.
-const GLOW_BREATH = 0.035;
-const GLOW_PERIOD = 14;
-const GLOW_PERIOD_2 = 23;
+const GLOW_BREATH = 0.06;
+const GLOW_PERIOD = 9;
+const GLOW_PERIOD_2 = 15;
 // High bands: altitude, feature size across and along the view, coverage
 // threshold, strength, color, how high above the edge they reach, and wind.
 const BAND_ALTITUDE = 82;
 const BAND_SCALE_X = 160;
 const BAND_SCALE_Z = 110;
 const BAND_COVERAGE = 0.45;
-const BAND_STRENGTH = 0.12;
+const BAND_STRENGTH = 0.2;
 const BAND_COLOR = [0.62, 0.72, 0.86];
 const BAND_HEIGHT = 5;
 const BAND_WIND = [0.4, -1];
 // Camera sway: amplitudes and periods of yaw, pitch and height.
-const DRIFT_YAW = 0.35;
-const DRIFT_YAW_PERIOD = 97;
-const DRIFT_PITCH = 0.12;
-const DRIFT_PITCH_PERIOD = 71;
-const DRIFT_HEIGHT = 0.8;
-const DRIFT_HEIGHT_PERIOD = 59;
+const DRIFT_YAW = 0.6;
+const DRIFT_YAW_PERIOD = 60;
+const DRIFT_PITCH = 0.2;
+const DRIFT_PITCH_PERIOD = 45;
+const DRIFT_HEIGHT = 1.5;
+const DRIFT_HEIGHT_PERIOD = 40;
 // Pointer: camera tilt toward it, sideways and upward camera shift, follow lag.
-const TILT = 0.3;
+const TILT = 0.45;
 const TILT_SHIFT = 1.5;
 const TILT_RISE = 0.5;
 const TILT_LAG = 1.4;
 // Per-frame grain amplitude, as a share of full brightness.
-const GRAIN = 0.03;
+const GRAIN = 0.05;
 // Darkening at the center of each scanline, and their spacing in CSS px.
-const SCANLINE_OPACITY = 0.035;
+const SCANLINE_OPACITY = 0.05;
 const SCANLINE_PERIOD = 3;
 // Corner darkening.
 const VIGNETTE = 0.12;
 // Brightness jitter during a flicker, how long one lasts and the gap between.
 const FLICKER = 0.01;
 const FLICKER_DURATION = 0.22;
-const FLICKER_GAP_MIN = 5;
-const FLICKER_GAP_MAX = 12;
+const FLICKER_GAP_MIN = 3;
+const FLICKER_GAP_MAX = 8;
 // Pointer: radius of the noisy spot (CSS px), extra grain at its center,
 // pixels pulled toward the pointer, and the follow lag (time constant, s).
 const CURSOR_RADIUS = 200;
-const CURSOR_GRAIN = 0.035;
+const CURSOR_GRAIN = 0.05;
 const CURSOR_PULL = 1.5;
 const CURSOR_LAG = 0.35;
+// Intro, like an old TV switching on: snow on a dark screen, the picture
+// coming up, a short flash, then settled. The full intro plays once per visit
+// (session storage); later pages get a short fade up. Durations in s.
+const INTRO_DURATION = 1.8;
+const INTRO_SHORT = 0.35;
+const INTRO_SNOW = 0.14;
+const INTRO_FLASH = 0.22;
+const INTRO_SEEN_KEY = "horizon-intro-seen";
+// Without a live frame by then (s), show the photo instead of the dark screen.
+const FALLBACK_TIMEOUT = 2.5;
 // Render resolution: device pixels per CSS pixel and a total pixel budget.
 const MAX_DPR = 1.5;
 const MAX_PIXELS = 2560 * 1440;
@@ -312,6 +322,8 @@ uniform vec2 u_offset;
 uniform float u_glow;
 uniform float u_starTurn;
 uniform float u_flicker;
+// Intro: picture gain (with the flash on top) and snow strength.
+uniform vec2 u_power;
 
 out vec4 outColor;
 
@@ -452,6 +464,7 @@ void main() {
   color *= 1.0 - ${glsl(VIGNETTE)} * smoothstep(0.3, 0.75, length(centered));
 
   color *= 1.0 + u_flicker;
+  color = color * u_power.x + random.z * u_power.y;
   vec3 dither = random3(ivec3(ivec2(fragCoord), int(u_frame) + 7));
   color += (dither.x + dither.y - 1.0) / 255.0;
   outColor = vec4(color, 1.0);
@@ -466,6 +479,7 @@ interface Frame {
   glow: number;
   starTurn: number;
   flicker: number;
+  power: readonly number[];
 }
 
 interface Renderer {
@@ -556,6 +570,7 @@ const createRenderer = (canvas: HTMLCanvasElement): Renderer | null => {
     glow: uniform("u_glow"),
     starTurn: uniform("u_starTurn"),
     flicker: uniform("u_flicker"),
+    power: uniform("u_power"),
   };
 
   return {
@@ -581,6 +596,7 @@ const createRenderer = (canvas: HTMLCanvasElement): Renderer | null => {
       gl.uniform1f(u.glow, frame.glow);
       gl.uniform1f(u.starTurn, frame.starTurn);
       gl.uniform1f(u.flicker, frame.flicker);
+      gl.uniform2f(u.power, frame.power[0]!, frame.power[1]!);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
   };
@@ -608,6 +624,34 @@ window.addEventListener("pointerout", (event) => {
 const wave = (time: number, period: number, phase = 0) =>
   Math.sin((2 * Math.PI * time) / period + phase);
 const clamp = (value: number) => Math.min(1, Math.max(-1, value));
+const smoothstep = (from: number, to: number, value: number) => {
+  const x = Math.min(1, Math.max(0, (value - from) / (to - from)));
+  return x * x * (3 - 2 * x);
+};
+
+const readIntroSeen = () => {
+  try {
+    return sessionStorage.getItem(INTRO_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const markIntroSeen = () => {
+  try {
+    sessionStorage.setItem(INTRO_SEEN_KEY, "1");
+  } catch {
+    // Storage can be unavailable (private modes); the intro then just replays.
+  }
+};
+
+// Picture gain and snow at intro progress `t` (0..1).
+const fullIntro = (t: number) => {
+  const flash = INTRO_FLASH * Math.exp(-(((t - 0.84) / 0.05) ** 2));
+  const gain = smoothstep(0.22, 0.8, t) + flash;
+  const snow = INTRO_SNOW * smoothstep(0, 0.1, t) * (1 - smoothstep(0.45, 0.85, t));
+  return [gain, snow];
+};
+const shortIntro = (t: number) => [smoothstep(0, 1, t), 0];
 
 const mount = (root: HTMLElement) => {
   const canvas = root.querySelector("canvas");
@@ -630,6 +674,22 @@ const mount = (root: HTMLElement) => {
   const cursor = [0, 0, 0];
   const camera = [0, 0, 0];
   const offset = [0, 0];
+  // The page starts dark with the photo hidden (see HorizonBackdrop.astro);
+  // the canvas plays the intro over it. A short intro on later pages, none if
+  // the photo is already showing as a fallback.
+  const booting = document.documentElement.classList.contains("horizon-boot");
+  const introDuration = readIntroSeen() ? INTRO_SHORT : INTRO_DURATION;
+  const intro = introDuration === INTRO_SHORT ? shortIntro : fullIntro;
+  let introTime = booting ? 0 : introDuration;
+  const fallback = () => root.classList.add("is-fallback");
+  if (booting) {
+    window.setTimeout(() => {
+      if (!live) {
+        fallback();
+        introTime = introDuration;
+      }
+    }, FALLBACK_TIMEOUT * 1000);
+  }
 
   const flickerAt = (now: number) => {
     if (now >= nextFlicker) {
@@ -671,7 +731,12 @@ const mount = (root: HTMLElement) => {
     offset[0] = BAND_WIND[0]! * time + TILT_SHIFT * tilt.x;
     offset[1] = BAND_WIND[1]! * time;
 
+    // The first frame is drawn with dt 0, so the intro starts from black.
+    if (live) introTime = Math.min(introTime + dt, introDuration);
+    const power = introTime >= introDuration ? [1, 0] : intro(introTime / introDuration);
+
     renderer.draw({
+      power,
       time,
       frame,
       cursor,
@@ -684,6 +749,7 @@ const mount = (root: HTMLElement) => {
     if (!live) {
       live = true;
       canvas.classList.add("is-live");
+      markIntroSeen();
     }
   };
 
@@ -721,6 +787,7 @@ const mount = (root: HTMLElement) => {
       frameRequest = 0;
     }
     canvas.classList.toggle("is-live", live && !failed && !reducedMotion.matches);
+    if (failed || reducedMotion.matches) fallback();
   };
 
   canvas.addEventListener("webglcontextlost", () => {

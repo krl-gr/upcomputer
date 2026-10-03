@@ -7,7 +7,8 @@ export const SOFTWARE_APPLICATION_STRUCTURED_DATA = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "Up.computer",
-  description: "A free, open-source desktop workspace for the coding-agent CLIs you already use.",
+  description:
+    "A free, open-source, self-orchestrating control plane for the coding-agent CLIs you already use.",
   applicationCategory: "DeveloperApplication",
   operatingSystem: ["macOS", "Windows 10", "Windows 11", "Linux"],
   softwareVersion: RELEASE_VERSION,

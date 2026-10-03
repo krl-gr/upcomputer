@@ -1,12 +1,20 @@
 ---
 /**
  * The horizon behind the top of a page. It fills its positioned parent. The
- * <picture> is the base layer and the whole backdrop without JS, with reduced
- * motion or without WebGL; horizon-backdrop.ts fades a canvas in over it that
- * renders the same scene live (curved planet, atmosphere, stars) with faint
- * old-TV noise.
+ * <picture> is the whole backdrop without JS, with reduced motion or without
+ * WebGL. Otherwise the page starts dark with the photo hidden, and
+ * horizon-backdrop.ts plays the scene in on a canvas like an old TV switching
+ * on (curved planet, atmosphere, stars, faint noise). If no live frame comes
+ * in time, the photo fades in instead (`is-fallback`).
  */
 ---
+
+<!-- Before first paint, so the photo never flashes before the intro. -->
+<script is:inline>
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.documentElement.classList.add("horizon-boot");
+  }
+</script>
 
 <div class="horizon" data-horizon-backdrop aria-hidden="true">
   <picture>
@@ -45,5 +53,23 @@
 
   .horizon canvas.is-live {
     opacity: 1;
+  }
+
+  /* Dark start: the canvas intro begins from black, so it needs no fade. */
+  :global(html.horizon-boot) .horizon picture {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+
+  :global(html.horizon-boot) .horizon canvas {
+    transition: none;
+  }
+
+  :global(html.horizon-boot) .horizon.is-fallback picture {
+    opacity: 1;
+  }
+
+  :global(html.horizon-boot) .horizon.is-fallback canvas {
+    transition: opacity 1.2s ease;
   }
 </style>

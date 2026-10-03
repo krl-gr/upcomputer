@@ -20,6 +20,8 @@ interface ChatStep {
   messages: HTMLElement[];
   // Run counts once each message shows, null before any task exists.
   runs: (RunCounts | null)[];
+  // Run counts once the story has moved on to a later chat.
+  later: RunCounts | null;
   // Where each message appears, in message distances from the step start.
   reveals: number[];
   start: number;
@@ -97,11 +99,17 @@ if (story) {
       }
       return runs;
     });
+    const { laterWorking, laterCompleted } = pane.dataset;
+    const later =
+      laterWorking !== undefined || laterCompleted !== undefined
+        ? { working: Number(laterWorking ?? 0), completed: Number(laterCompleted ?? 0) }
+        : null;
     const length = reveals[reveals.length - 1]! + READ_AFTER_LAST;
     const step = {
       pane,
       messages,
       runs: runsByMessage,
+      later,
       reveals,
       start: total,
       length,
@@ -158,12 +166,13 @@ if (story) {
   };
 
   // A thread's run counts follow the story: none before the chat that sets up
-  // its tasks, then as of its newest shown message, and final once it is past.
-  // Reduced motion shows the final counts throughout.
+  // its tasks, then as of its newest shown message, and its `later` counts (or
+  // the final ones) once the story is past it. Reduced motion shows those
+  // throughout.
   let shownRuns = "";
   const updateRuns = () => {
     const runs = steps.map((step, index) => {
-      const final = step.runs[step.runs.length - 1] ?? null;
+      const final = step.later ?? step.runs[step.runs.length - 1] ?? null;
       if (reducedMotion.matches || index < active) return final;
       if (index > active) return null;
       return step.runs[step.shown - 1] ?? null;
