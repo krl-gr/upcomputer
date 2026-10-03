@@ -1,0 +1,784 @@
+---
+import rawData from "../data/atlas.json";
+import Layout from "../layouts/Layout.astro";
+import { TOOL_ICONS, cellKey, flattenTree, statusHint, type AtlasData } from "../lib/atlas";
+
+const data = rawData as AtlasData;
+const flat = flattenTree(data.nodes);
+const cells = new Map(data.cells.map((c) => [cellKey(c.capability_id, c.product_id), c]));
+const columnCount = data.products.length + 1;
+const monogram = (name: string) => name.charAt(0).toUpperCase();
+
+// Coverage chart: how many Atlas features each tool's docs confirm.
+const featureIds = flat.filter((n) => n.kind === "capability").map((n) => n.id);
+const coverage = data.products
+  .map((p) => {
+    const statuses = featureIds.map((id) => cells.get(cellKey(id, p.id))?.status);
+    const count = (status: string) => statuses.filter((s) => s === status).length;
+    return { ...p, documented: count("documented"), close: count("unresolved"), missing: count("not_found") };
+  })
+  .sort((a, b) => b.documented - a.documented);
+// Hidden for now; set to true to show the coverage chart again.
+const SHOW_COVERAGE = false;
+---
+
+<Layout
+  backdrop="full"
+  title="CLI Atlas — what your coding agent can do"
+  description="Every feature of Claude Code, Codex, Cursor CLI, OpenCode, Pi and Hermes Agent in one list, with how each tool does it and a link to the official docs."
+>
+  <section class="atlas">
+    <header class="atlas-head">
+      <h1>
+        Keeping up with everything coding agents can do is hard.<br />So we mapped it for you.
+      </h1>
+      <p class="atlas-note">
+        Work in progress. Mapped by agents from official docs, so some entries may be wrong.
+      </p>
+    </header>
+
+    <div class="tool-chips" role="group" aria-label="Show only these tools">
+      {data.products.map((p) => (
+        <button type="button" class="tool-chip" data-tool={p.id} aria-pressed="false">
+          {TOOL_ICONS[p.id] ? (
+            <img src={TOOL_ICONS[p.id]} alt="" width="16" height="16" />
+          ) : (
+            <span class="tool-monogram" aria-hidden="true">{monogram(p.name)}</span>
+          )}
+          <span>{p.name}</span>
+        </button>
+      ))}
+    </div>
+
+    {SHOW_COVERAGE && (
+    <figure class="coverage" aria-labelledby="coverage-title">
+      <figcaption id="coverage-title">
+        <strong>Features confirmed in official sources</strong>
+        <span>out of {featureIds.length} in the Atlas</span>
+      </figcaption>
+      <ul class="coverage-rows">
+        {coverage.map((p) => (
+          <li
+            class="coverage-row"
+            data-product-column={p.id}
+            tabindex="0"
+            aria-label={`${p.name}: ${p.documented} of ${featureIds.length} features confirmed, ${p.close} close, ${p.missing} not found`}
+          >
+            <span class="coverage-name">
+              {TOOL_ICONS[p.id] ? (
+                <img src={TOOL_ICONS[p.id]} alt="" width="16" height="16" />
+              ) : (
+                <span class="tool-monogram" aria-hidden="true">{monogram(p.name)}</span>
+              )}
+              <span>{p.name}</span>
+            </span>
+            <span
+              class="coverage-track"
+              aria-hidden="true"
+              style={`--share: ${(p.documented / featureIds.length) * 100}%`}
+            >
+              <span class="coverage-bar"></span>
+              <span class="coverage-tip">
+                <strong>{p.documented} of {featureIds.length}</strong>
+                <span>{p.close} close · {p.missing} not found</span>
+              </span>
+            </span>
+            <span class="coverage-value" aria-hidden="true">{p.documented}</span>
+          </li>
+        ))}
+      </ul>
+    </figure>
+    )}
+
+    <table class="capability-table">
+      <caption class="sr-only">
+        What each coding agent can do. Open a cell for how the tool does it and its official source.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col" class="feature-col">Feature</th>
+          {data.products.map((p) => (
+            <th scope="col" class="tool-col" data-product-column={p.id} title={p.name}>
+              {TOOL_ICONS[p.id] ? (
+                <img src={TOOL_ICONS[p.id]} alt={p.name} width="18" height="18" />
+              ) : (
+                <span class="tool-monogram" role="img" aria-label={p.name}>{monogram(p.name)}</span>
+              )}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {flat.map((n) =>
+          n.kind === "group" ? (
+            <tr id={`cap-${n.id}`} class:list={["group-row", { "is-section": n.depth === 0 }]}>
+              <th scope="colgroup" colspan={columnCount} data-group-cell>{n.label}</th>
+            </tr>
+          ) : (
+            <tr id={`cap-${n.id}`}>
+              <th scope="row" class="feature-col">
+                <span class="feature-name">
+                  {n.label}
+                  <a class="row-link" href={`#cap-${n.id}`} aria-label={`Link to ${n.label}`}>#</a>
+                </span>
+                {n.summary && <small>{n.summary}</small>}
+              </th>
+              {data.products.map((p) => {
+                const c = cells.get(cellKey(n.id, p.id));
+                return (
+                  <td class="tool-col" data-product-column={p.id}>
+                    {c && (
+                      <button
+                        type="button"
+                        class={`cell is-${c.status}`}
+                        data-cell={cellKey(n.id, p.id)}
+                        data-tip={c.status === "documented" ? undefined : statusHint(c)}
+                        aria-haspopup="dialog"
+                        aria-label={`${p.name}: ${statusHint(c)}`}
+                      >
+                        {c.status === "documented" ? (
+                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" /></svg>
+                        ) : c.status === "unresolved" ? (
+                          "?"
+                        ) : (
+                          "—"
+                        )}
+                      </button>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ),
+        )}
+      </tbody>
+    </table>
+
+    <footer class="atlas-foot">
+      <p>
+        Built from each tool’s official documentation, release notes and, for open-source tools, source code;
+        not hands-on tests. Two AI models decide every cell independently, a third settles disagreements and a
+        human reviews the result. Every answer links to the page it comes from. Spotted a mistake?
+        <a href="https://github.com/krl-gr/upcomputer/issues" target="_blank" rel="noopener noreferrer">Tell us</a>.
+      </p>
+      <span>Updated {data.built_at}</span>
+    </footer>
+  </section>
+
+  <dialog id="cell-dialog" class="cell-dialog" aria-labelledby="cell-title" aria-describedby="cell-path">
+    <div class="dialog-top">
+      <span id="cell-product"></span>
+      <form method="dialog"><button class="dialog-close" aria-label="Close" autofocus>×</button></form>
+    </div>
+    <p id="cell-path"></p>
+    <h2 id="cell-title"></h2>
+    <div id="cell-content"></div>
+  </dialog>
+
+  <script is:inline type="application/json" id="atlas-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
+  <script src="../scripts/atlas.ts"></script>
+</Layout>
+
+<style>
+  /* Fixed nav height: the table header sticks right below it. */
+  .atlas {
+    --nav-height: 57px;
+    /* Same content box as the nav: 1240px container with 32px padding. */
+    width: min(1176px, calc(100% - 64px));
+    margin: 0 auto;
+    padding: 132px 0 72px;
+  }
+
+  .atlas-head {
+    min-height: calc(34vh - 132px);
+    margin-bottom: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: calc(19vh - 132px);
+  }
+
+  .atlas-head h1 {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    text-align: center;
+  }
+
+  .atlas-note {
+    margin-top: 10px;
+    color: #f3e3a3;
+    font-size: 15px;
+    letter-spacing: -0.005em;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  /* ── Tool chips ───────────────────────────────────────────── */
+  .tool-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .tool-chip {
+    height: 34px;
+    padding: 0 14px 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    background: rgba(12, 12, 14, 0.5);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 13px;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  }
+
+  .tool-chip:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #fff;
+  }
+
+  .tool-chip[aria-pressed="true"] {
+    border-color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.9);
+    color: #0b0b0d;
+  }
+
+  .tool-chip img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  .tool-monogram {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .tool-chip[aria-pressed="true"] .tool-monogram {
+    background: #0b0b0d;
+  }
+
+  /* ── Coverage chart (one series: no legend; bar ends carry values) ── */
+  .coverage {
+    margin: 0 0 16px;
+    padding: 20px 24px 18px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #0e0e10;
+  }
+
+  .coverage figcaption {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+
+  .coverage figcaption strong {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .coverage figcaption span {
+    color: var(--fg-dim);
+    font-size: 13px;
+  }
+
+  .coverage-rows {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .coverage-row {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 16px;
+    height: 32px;
+    border-radius: 6px;
+    outline: none;
+  }
+
+  .coverage-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .coverage-name img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  /* Track is the whole feature list; the bar grows from its left baseline. */
+  .coverage-track {
+    position: relative;
+    height: 10px;
+    border-radius: 0 4px 4px 0;
+    background: #1c1c1f;
+  }
+
+  .coverage-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--share);
+    border-radius: 0 4px 4px 0;
+    background: #d4d4d8;
+    transition: background 0.15s ease;
+  }
+
+  .coverage-value {
+    color: var(--fg);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .coverage-tip {
+    position: absolute;
+    z-index: 3;
+    bottom: calc(100% + 10px);
+    /* Right edge on the bar's end, so it opens over the track and never past the card. */
+    right: calc(100% - var(--share));
+    display: none;
+    flex-direction: column;
+    width: max-content;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #1a1a1d;
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+    box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.7);
+  }
+
+  .coverage-tip strong {
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .coverage-tip span {
+    color: var(--fg-muted);
+  }
+
+  .coverage-row:hover .coverage-bar,
+  .coverage-row:focus-visible .coverage-bar {
+    background: #fafafa;
+  }
+
+  .coverage-row:hover .coverage-name,
+  .coverage-row:focus-visible .coverage-name {
+    color: var(--fg);
+  }
+
+  .coverage-row:hover .coverage-tip,
+  .coverage-row:focus-visible .coverage-tip {
+    display: flex;
+  }
+
+  .coverage-row[hidden] {
+    display: none;
+  }
+
+  /* ── Table ────────────────────────────────────────────────── */
+  /* Fixed layout: tool columns keep their width, feature names take the rest. */
+  .capability-table {
+    width: 100%;
+    table-layout: fixed;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #0e0e10;
+    font-size: 14px;
+  }
+
+  .capability-table th,
+  .capability-table td {
+    padding: 0;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .capability-table thead th {
+    position: sticky;
+    top: var(--nav-height);
+    z-index: 2;
+    height: 48px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: #0e0e10;
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 400;
+  }
+
+  .capability-table thead th:first-child {
+    border-top-left-radius: 14px;
+  }
+
+  .capability-table thead th:last-child {
+    border-top-right-radius: 14px;
+  }
+
+  .capability-table .tool-col {
+    width: 64px;
+    min-width: 64px;
+    padding: 0;
+    text-align: center;
+  }
+
+  .capability-table thead .tool-col img,
+  .capability-table thead .tool-col .tool-monogram {
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+
+  .capability-table tbody tr {
+    scroll-margin-top: calc(var(--nav-height) + 56px);
+  }
+
+  .group-row th {
+    padding: 22px 16px 8px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .group-row.is-section th {
+    padding-top: 30px;
+    color: var(--fg);
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+
+  .group-row.is-section:first-child th {
+    padding-top: 20px;
+  }
+
+  .capability-table .feature-col {
+    padding: 10px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  tbody .feature-col {
+    font-weight: 400;
+  }
+
+  .feature-name {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.88);
+  }
+
+  .feature-col small {
+    display: block;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .row-link {
+    color: var(--fg-faint);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  tr:hover .row-link,
+  .row-link:focus-visible {
+    opacity: 1;
+  }
+
+  tbody .tool-col {
+    position: relative;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  tbody tr:hover > * {
+    background: rgba(255, 255, 255, 0.018);
+  }
+
+  .cell {
+    width: 100%;
+    min-height: 48px;
+    display: grid;
+    place-items: center;
+    color: var(--fg-faint);
+    font-size: 14px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .cell:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--fg);
+  }
+
+  .cell svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .cell.is-documented {
+    color: rgba(255, 255, 255, 0.86);
+  }
+
+  /* Hint for "?" and "—"; shown on hover and keyboard focus. */
+  .cell[data-tip]:hover::after,
+  .cell[data-tip]:focus-visible::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 3;
+    right: 8px;
+    bottom: calc(100% - 4px);
+    width: max-content;
+    max-width: 220px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #1a1a1d;
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    pointer-events: none;
+    box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.7);
+  }
+
+  .atlas-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-top: 20px;
+    color: var(--fg-dim);
+    font-size: 13px;
+  }
+
+  .atlas-foot p {
+    max-width: 720px;
+  }
+
+  .atlas-foot a {
+    color: var(--fg-muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .atlas-foot span {
+    flex: none;
+  }
+
+  /* ── Details dialog ───────────────────────────────────────── */
+  .cell-dialog {
+    width: min(520px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px);
+    margin: auto;
+    padding: 20px 22px 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: #141416;
+    color: var(--fg);
+    box-shadow: 0 32px 80px -24px rgba(0, 0, 0, 0.8);
+  }
+
+  .cell-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  .dialog-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--fg-dim);
+    font-size: 13px;
+  }
+
+  .dialog-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--fg-muted);
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .dialog-close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--fg);
+  }
+
+  #cell-path {
+    margin-top: 10px;
+    color: var(--fg-dim);
+    font-size: 12px;
+  }
+
+  #cell-title {
+    margin: 2px 0 14px;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  #cell-content :global(p) {
+    margin-bottom: 12px;
+    color: var(--fg-muted);
+    font-size: 14px;
+  }
+
+  #cell-content :global(.cell-how) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  #cell-content :global(code) {
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.9);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  #cell-content :global(.cell-warning) {
+    color: var(--warn);
+  }
+
+  #cell-content :global(h3) {
+    margin: 18px 0 8px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #cell-content :global(ul) {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #cell-content :global(.source-kind) {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--fg-dim);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  #cell-content :global(li a) {
+    color: var(--fg);
+    font-size: 14px;
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.25);
+    text-underline-offset: 3px;
+  }
+
+  #cell-content :global(blockquote) {
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid rgba(255, 255, 255, 0.12);
+    color: var(--fg-muted);
+    font-size: 13px;
+  }
+
+  #cell-content :global(.record-dates) {
+    margin: 14px 0 0;
+    color: var(--fg-dim);
+    font-size: 12px;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 820px) {
+    .atlas {
+      width: calc(100% - 24px);
+      padding-top: 104px;
+    }
+
+    .atlas-head {
+      min-height: 0;
+      padding-top: 24px;
+      margin-bottom: 40px;
+    }
+
+    .capability-table .tool-col {
+      width: 38px;
+      min-width: 38px;
+    }
+
+    .coverage {
+      padding: 16px 14px 14px;
+    }
+
+    .coverage figcaption {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .coverage-row {
+      grid-template-columns: 118px minmax(0, 1fr) 32px;
+      gap: 10px;
+    }
+
+    .capability-table .feature-col {
+      padding: 10px 8px 10px 12px;
+      font-size: 13px;
+    }
+
+    .group-row th {
+      padding-left: 12px;
+    }
+
+    .atlas-foot {
+      flex-direction: column;
+      gap: 8px;
+    }
+  }
+</style>

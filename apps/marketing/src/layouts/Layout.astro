@@ -1,16 +1,23 @@
 ---
+import HorizonBackdrop from "../components/HorizonBackdrop.astro";
 import { GITHUB_REPOSITORY_URL } from "../lib/site";
 
 interface Props {
   title?: string;
   description?: string;
   structuredData?: Readonly<Record<string, unknown>>;
+  /**
+   * The horizon image behind the top of the page: `full` behind short intro
+   * copy, `dim` (default) behind long text, `none` where the page draws its own.
+   */
+  backdrop?: "full" | "dim" | "none";
 }
 
 const {
-  title = "Up.computer — Visual workspace for AI agents",
-  description = "Run Up Agent or bring your existing agent CLIs into one visual desktop workspace.",
+  title = "Up.computer · Visual workspace for AI agents",
+  description = "Bring the agent CLIs you already use into one free, open-source desktop workspace.",
   structuredData,
+  backdrop = "dim",
 } = Astro.props;
 const canonicalUrl = new URL(Astro.url.pathname, "https://up.computer");
 const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
@@ -49,35 +56,32 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   </head>
   <body>
     <div class="page">
+      {backdrop !== "none" && (
+        <div class:list={["page-backdrop", { "is-dim": backdrop === "dim" }]} aria-hidden="true">
+          <HorizonBackdrop />
+        </div>
+      )}
       <nav class="nav">
         <div class="nav-inner">
           <a href="/" class="nav-brand" aria-label="Up.computer home">
             <img class="nav-brand-icon" src="/icon.webp" alt="" width="32" height="32" />
           </a>
           <div class="nav-right">
+            <a class="nav-link" href="/atlas">Atlas</a>
             <a
-              class="nav-stars"
+              class="nav-link"
               href={GITHUB_REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Open Up.computer on GitHub"
               data-analytics-event="marketing_github_clicked"
               data-analytics-placement="header"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 2.3l2.9 5.88 6.49.94-4.7 4.58 1.11 6.47L12 17.12l-5.8 3.05 1.11-6.47-4.7-4.58 6.49-.94L12 2.3z"/>
-              </svg>
-              <span class="nav-github-label">GitHub</span>
-              <strong id="github-star-count" hidden></strong>
-            </a>
+            >GitHub</a>
             <a
-              class="btn btn-primary nav-download"
+              class="nav-link"
               href="/download"
               data-analytics-event="marketing_download_cta_clicked"
               data-analytics-placement="header"
-            >
-              Download
-            </a>
+            >Download</a>
           </div>
         </div>
       </nav>
@@ -105,9 +109,8 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
               data-analytics-event="marketing_download_cta_clicked"
               data-analytics-placement="footer"
             >Download</a>
+            <a href="/atlas">Atlas</a>
             <a href="/privacy">Privacy</a>
-            <a href="/terms">Terms</a>
-            <a href="/security">Security</a>
           </div>
         </div>
       </footer>
@@ -149,6 +152,8 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   html {
     color-scheme: dark;
     scroll-behavior: smooth;
+    /* No rubber-band overscroll: it showed the dark page color above the backdrop. */
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -159,7 +164,7 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
-    overflow-x: hidden;
+    overflow-x: clip;
     line-height: 1.5;
   }
 
@@ -308,29 +313,50 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
 
 <style>
   .page {
+    position: relative;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  .page-backdrop {
+    position: absolute;
+    z-index: 0;
+    inset: 0 0 auto;
+    height: 100vh;
+    min-height: 640px;
+    pointer-events: none;
+  }
+
+  .page-backdrop.is-dim::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: rgba(9, 9, 11, 0.5);
+  }
+
+  .page-backdrop::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 1;
+    height: 30%;
+    background: linear-gradient(to bottom, transparent, var(--bg));
+  }
+
+  /* Content paints above the backdrop layer and its overlays. */
+  .main,
+  .footer {
+    position: relative;
+    z-index: 1;
   }
 
   .nav {
     position: fixed;
     inset: 0 0 auto;
     z-index: 50;
-    background: transparent;
-    border-bottom: 1px solid transparent;
-    transition:
-      background 0.3s ease,
-      border-color 0.3s ease,
-      backdrop-filter 0.3s ease;
-  }
-
-  .nav.is-scrolled {
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    background: color-mix(in srgb, var(--bg) 78%, transparent);
-    border-bottom-color: var(--border);
   }
 
   .nav-inner {
@@ -368,46 +394,19 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
   .nav-right {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 28px;
   }
 
-  .nav-download {
-    min-height: 36px;
-    padding: 0 16px;
-    border-radius: 999px;
-    font-size: 13px;
+  .nav-link {
+    padding: 6px 2px;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 14px;
+    letter-spacing: -0.005em;
+    transition: color 0.18s ease;
   }
 
-  .nav-stars {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 36px;
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.02);
-    color: var(--fg-muted);
-    font-size: 13px;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
-    transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-  }
-
-  .nav-stars:hover {
-    color: var(--fg);
-    border-color: var(--border-strong);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .nav-stars strong {
-    color: var(--fg);
-    font-weight: 600;
-  }
-
-  .nav-stars svg {
-    color: var(--warn);
-    flex-shrink: 0;
+  .nav-link:hover {
+    color: #fff;
   }
 
   .main {
@@ -449,7 +448,8 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
 
   .footer-links {
     display: flex;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 8px 20px;
   }
 
   .footer-links a {
@@ -474,26 +474,4 @@ const socialImageUrl = new URL("/updated-screenshot.webp", canonicalUrl);
     }
   }
 
-  @media (max-width: 520px) {
-    .nav-inner {
-      gap: 12px;
-    }
-
-    .nav-stars {
-      height: 34px;
-      gap: 6px;
-      padding: 0 11px;
-      font-size: 12px;
-    }
-
-    .nav-github-label {
-      display: none;
-    }
-
-    .nav-download {
-      min-height: 34px;
-      padding: 0 13px;
-      font-size: 12px;
-    }
-  }
 </style>
