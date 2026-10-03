@@ -1,6 +1,6 @@
 // Opt-in rendered regression pass against an already paired, disposable dev profile.
 // UPCOMPUTER_TEST_CDP=http://127.0.0.1:19459 UPCOMPUTER_TEST_ORIGIN=http://127.0.0.1:5919 \
-//   node --test scripts/workspace-chrome.browser.test.mjs
+//   node --test scripts/workspace-chrome.browser-check.mjs
 // This creates draft tabs, but never sends prompts. Windows classes exercise CSS,
 // not native caption buttons: an installed Windows smoke pass is still required.
 import * as NodeAssert from "node:assert/strict";
