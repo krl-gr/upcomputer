@@ -87,7 +87,7 @@ describe("RelayTokens", () => {
         jti: "access-token-1",
         issuedAtEpochSeconds: 100,
         expiresAtEpochSeconds: 1_900,
-        clientId: "t3-mobile",
+        clientId: "upcomputer-mobile",
         scopes: ["environment:connect", "environment:status", "mobile:registration"],
       });
 
@@ -96,7 +96,7 @@ describe("RelayTokens", () => {
       ).toMatchObject({
         sub: "user_123",
         cnf: { jkt: "proof-key-thumbprint" },
-        client_id: "t3-mobile",
+        client_id: "upcomputer-mobile",
         scope: ["environment:connect", "environment:status", "mobile:registration"],
       });
       expect(
@@ -114,14 +114,14 @@ describe("RelayTokens", () => {
         jti: "web-access-token-1",
         issuedAtEpochSeconds: 100,
         expiresAtEpochSeconds: 200,
-        clientId: "t3-web",
+        clientId: "upcomputer-web",
         scopes: ["environment:connect", "environment:status"],
       });
 
       expect(
         yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 150 }),
       ).toMatchObject({
-        client_id: "t3-web",
+        client_id: "upcomputer-web",
         scope: ["environment:connect", "environment:status"],
         cnf: { jkt: "web-proof-key-thumbprint" },
       });
@@ -133,7 +133,7 @@ describe("RelayTokens", () => {
       const relayTokens = yield* RelayTokens.RelayTokens;
       expect(
         relayTokens.resolveDpopAccessTokenScopes({
-          clientId: "t3-mobile",
+          clientId: "upcomputer-mobile",
           scope: "environment:status environment:connect environment:status",
         }),
       ).toEqual(["environment:status", "environment:connect"]);
@@ -153,7 +153,7 @@ describe("RelayTokens", () => {
           jti: "access-token-invalid-scope",
           iat: 100,
           exp: 200,
-          client_id: "t3-mobile",
+          client_id: "upcomputer-mobile",
           scope: "environment:admin",
           cnf: { jkt: "proof-key-thumbprint" },
         },
@@ -176,7 +176,7 @@ describe("RelayTokens", () => {
           jti: "web-token-invalid-mobile-scope",
           iat: 100,
           exp: 200,
-          client_id: "t3-web",
+          client_id: "upcomputer-web",
           scope: "environment:connect mobile:registration",
           cnf: { jkt: "proof-key-thumbprint" },
         },
