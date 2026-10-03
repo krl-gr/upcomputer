@@ -1,3 +1,0 @@
-[submodule ".repos/alchemy-effect/.vendor/alchemy"]
-	path = .repos/alchemy-effect/.vendor/alchemy
-	url = https://github.com/alchemy-run/alchemy.git
