@@ -1,8 +1,8 @@
 # Release Checklist
 
-This document covers public Core and nightly builds. Official Up.computer distributions are
-composed and released from the private distribution repository. That workflow exclusively owns
-ordinary stable tags and releases in the `vX.Y.Z` namespace.
+This document covers public Core and nightly builds. Stable Core releases are the published
+Up.computer product. The private distribution repository's official `vX.Y.Z` workflow is currently
+unused.
 
 ## What the Core workflow does
 
@@ -19,7 +19,7 @@ ordinary stable tags and releases in the `vX.Y.Z` namespace.
   - Linux `x64` AppImage
   - Windows `x64` NSIS installer
 - Publishes one GitHub Release with all produced files.
-  - Core releases use `core-vX.Y.Z` and are never marked as the repository's latest release.
+  - Core releases use `core-vX.Y.Z`. Final `X.Y.Z` versions are marked as the repository's latest release, which desktop auto-update reads; suffixed versions are prereleases.
   - Nightly runs are always GitHub prereleases and never marked latest.
   - Automatically generated release notes compare only with the previous tag in the same namespace.
 - Includes Electron auto-update metadata (for example `latest*.yml`, `nightly*.yml`, and `*.blockmap`) in release assets.

@@ -1,8 +1,10 @@
 name: Core Release
 
-# Official vX.Y.Z tags and releases are owned by upcomputer-pro. Manually
-# dispatched Core releases use the separate core-vX.Y.Z namespace, while
-# scheduled nightlies continue to use their dedicated prerelease tags.
+# Stable Core releases are the published product: manually dispatched X.Y.Z
+# versions are published as core-vX.Y.Z and become the repository's Latest
+# release, which desktop auto-update reads. Nightlies use their dedicated
+# prerelease tags and never become Latest. The upcomputer-pro official vX.Y.Z
+# workflow is currently unused.
 #
 # Optional parts are skipped unless their configuration exists, so a plain
 # desktop release needs only the Apple signing and release App secrets:
@@ -151,7 +153,7 @@ jobs:
             echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
             if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-              echo "make_latest=false" >> "$GITHUB_OUTPUT"
+              echo "make_latest=true" >> "$GITHUB_OUTPUT"
             else
               echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
               echo "make_latest=false" >> "$GITHUB_OUTPUT"
