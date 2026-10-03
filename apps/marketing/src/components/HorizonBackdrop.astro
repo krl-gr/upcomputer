@@ -10,11 +10,7 @@
 ---
 
 <!-- Before first paint, so the photo never flashes before the intro. -->
-<script is:inline>
-  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    document.documentElement.classList.add("horizon-boot");
-  }
-</script>
+<script is:inline src="/scripts/horizon-boot.js"></script>
 
 <div class="horizon" data-horizon-backdrop aria-hidden="true">
   <picture>
