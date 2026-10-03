@@ -1,4 +1,4 @@
-import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
+import { RotateCcwIcon } from "lucide-react";
 import {
   Outlet,
   createFileRoute,
@@ -8,6 +8,10 @@ import {
 } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  SettingsHeaderBackButton,
+  SettingsHeaderTitle,
+} from "../components/settings/SettingsHeader";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsSectionList } from "../components/settings/SettingsSectionList";
 import { resolveSettingsHeaderClassName } from "../components/settings/settingsHeaderLayout";
@@ -37,24 +41,6 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
       <RotateCcwIcon className="mx-1 size-3.5" />
       Restore defaults
     </Button>
-  );
-}
-
-/**
- * Phones have no settings sidebar: the section list is the way in, and the
- * header steps back up one level (section → list → last chat).
- */
-function MobileSettingsBackButton(props: { isSectionList: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label={props.isSectionList ? "Back to chat" : "Back to settings"}
-      className="-ms-1.5 inline-flex h-8 shrink-0 items-center gap-0.5 rounded-md pe-2 ps-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [-webkit-app-region:no-drag]"
-      onClick={props.onClick}
-    >
-      <ChevronLeftIcon aria-hidden="true" className="size-5" />
-      {props.isSectionList ? null : <span>Settings</span>}
-    </button>
   );
 }
 
@@ -103,7 +89,7 @@ function SettingsContentLayout() {
   }, [navigateBack]);
 
   const backButton = isMobile ? (
-    <MobileSettingsBackButton isSectionList={isSectionList} onClick={navigateBack} />
+    <SettingsHeaderBackButton isSectionList={isSectionList} onClick={navigateBack} />
   ) : null;
 
   return (
@@ -113,7 +99,7 @@ function SettingsContentLayout() {
           <header className={resolveSettingsHeaderClassName({ isElectron, isMobile })}>
             <div className="flex min-h-7 items-center gap-2 sm:min-h-6">
               {backButton}
-              <h1 className="text-sm font-medium text-foreground">{activeSettingsTitle}</h1>
+              <SettingsHeaderTitle>{activeSettingsTitle}</SettingsHeaderTitle>
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">
                   <RestoreDefaultsButton onRestored={handleRestored} />
@@ -126,9 +112,7 @@ function SettingsContentLayout() {
         {isElectron && (
           <div className={resolveSettingsHeaderClassName({ isElectron, isMobile })}>
             {backButton}
-            <h1 className="text-xs font-medium tracking-wide text-muted-foreground/70">
-              {activeSettingsTitle}
-            </h1>
+            <SettingsHeaderTitle>{activeSettingsTitle}</SettingsHeaderTitle>
             {showRestoreDefaults ? (
               <div className="ms-auto flex items-center gap-2">
                 <RestoreDefaultsButton onRestored={handleRestored} />

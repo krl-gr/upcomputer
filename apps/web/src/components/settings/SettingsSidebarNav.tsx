@@ -70,6 +70,48 @@ export function useSettingsNavigationEntries(): SettingsNavigationEntry[] {
   });
 }
 
+/**
+ * The settings section rows. The sidebar nav and the phone section list both
+ * render them, so the two lists keep one look.
+ */
+export function SettingsNavigationMenu(props: {
+  entries: ReadonlyArray<SettingsNavigationEntry>;
+  pathname: string;
+  onSelect: (to: string) => void;
+}) {
+  return (
+    <SidebarMenu className="gap-0.5">
+      {props.entries.map((item) => {
+        const Icon = item.icon;
+        const isActive = props.pathname === item.to;
+        return (
+          <SidebarMenuItem key={item.key}>
+            <SidebarMenuButton
+              size="sm"
+              isActive={isActive}
+              className={
+                isActive
+                  ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
+                  : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
+              }
+              onClick={() => props.onSelect(item.to)}
+            >
+              {Icon ? <Icon className="size-4 shrink-0" /> : null}
+              <span
+                className={
+                  SIDEBAR_LABEL_TEXT_CLASS + " truncate text-foreground/72 dark:text-white/82"
+                }
+              >
+                {item.label}
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
+}
+
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -95,35 +137,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     <>
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup className="px-2 pt-2 pb-2">
-          <SidebarMenu className="gap-0.5">
-            {entries.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.to;
-              return (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    size="sm"
-                    isActive={isActive}
-                    className={
-                      isActive
-                        ? "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground dark:hover:text-white/86 dark:data-[active=true]:text-white/82"
-                        : `h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground dark:hover:text-white/86 ${SIDEBAR_MUTED_TEXT_CLASS}`
-                    }
-                    onClick={() => handleSectionClick(item.to)}
-                  >
-                    {Icon ? <Icon className="size-4 shrink-0" /> : null}
-                    <span
-                      className={
-                        SIDEBAR_LABEL_TEXT_CLASS + " truncate text-foreground/72 dark:text-white/82"
-                      }
-                    >
-                      {item.label}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
+          <SettingsNavigationMenu
+            entries={entries}
+            pathname={pathname}
+            onSelect={handleSectionClick}
+          />
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-2">
