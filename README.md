@@ -1,11 +1,12 @@
 # Up.computer
 
-The desktop workspace for coding-agent CLIs.
+The self-orchestrating control plane for coding agents.
 
-Up.computer runs coding-agent CLIs from one visual surface. Keep Codex CLI,
-Claude Code, Cursor CLI, OpenCode, your editor, and your git workflow. Add
-durable threads, diffs, branches, source-control actions, and local
-Desktop environment controls around them.
+Up.computer brings the agent CLIs you already use into one free, open-source
+desktop app. Talk an idea through in a chat and it becomes a task that a
+worker agent picks up in the background, on Codex, Claude Code, Cursor CLI,
+Grok Build, OpenCode, or another provider you choose. Each agent runs on your
+own subscription, and every chat stays on your computer.
 
 ## Status
 
@@ -18,24 +19,16 @@ with an issue before a pull request.
 
 ## Install
 
-This public repository produces **Up.computer Core**, the MIT-licensed
-composition of the app with tasks, task agents, automations, browser
-automation, and computer use. Build it from source using the instructions
-below.
+Download the app from [up.computer/download](https://up.computer/download/) or the
+[latest release](https://github.com/krl-gr/upcomputer/releases/latest). Builds are published for
+macOS (Apple Silicon and Intel), Windows, and Linux, straight from this repository. The macOS
+builds are signed and notarized. The Windows installer is not signed yet, so SmartScreen shows a
+warning on first launch. Installed apps update themselves from GitHub releases.
 
-The normal official Up.computer installer is assembled by a separate private
-release pipeline from this exact public core plus bundled first-party
-extensions. It is still one Up.computer application, but the complete official
-binary is not represented by this public source tree alone.
+The release is the desktop app only. There is no npm CLI or headless server. The public npm
+package named `t3` belongs to upstream T3 Code and is not an Up.computer install path.
 
-The official installer includes the built-in **Up** agent runtime, so a user can install
-Up.computer, sign in or configure a supported BYOK provider, and start without installing a
-third-party harness. The current release is local Desktop only; it does not distribute an official
-npm CLI or headless server. The public npm package named `t3` belongs to upstream T3 Code and is
-not an Up.computer install path.
-
-The public Core source also supports external provider CLIs. Install and authenticate any optional
-runtime you want to use:
+Up.computer runs the provider CLIs you install. Install and authenticate any you want to use:
 
 - Codex CLI: install the [Codex CLI](https://developers.openai.com/codex/cli)
   and run `codex login`.
@@ -59,8 +52,7 @@ Requirements:
 - Vite+ `vp`
 - Node 24.13.1+
 - Git
-- A supported external coding-agent CLI installed and authenticated when running Core without the
-  private built-in Up runtime
+- At least one supported coding-agent CLI, installed and authenticated
 
 Install Vite+:
 
@@ -95,7 +87,7 @@ vp run dev:marketing
   and create tasks on a schedule. See [Tasks, agents, and automations](./docs/tasks/README.md).
 - Give every agent a managed browser and native desktop observation and control. See
   [Browser and computer use](./docs/computer-use/README.md).
-- Work against local Desktop projects and use T3 Connect with the bundled Desktop backend.
+- Work against local projects with the desktop app's built-in backend.
 - Preserve existing remote-environment records while official remote support remains unavailable.
 
 ## Repository Layout
@@ -123,9 +115,8 @@ This fork keeps the upstream runtime, provider orchestration, contracts,
 desktop infrastructure, and release plumbing close to upstream while developing
 a different product direction, UI, branding, and workflow layer.
 
-Some internal package names, storage keys, and compatibility environment variables intentionally
-retain T3 Code identifiers so existing profiles keep working and upstream changes remain practical
-to merge. Public application identity, protocol links, update identity, and new data directories use
+Some internal package names and identifiers still carry T3 Code names so upstream changes stay
+practical to merge. The application identity, protocol links, updates, and data directories use
 Up.computer names.
 
 ## Contributing
@@ -146,9 +137,8 @@ Please do not report security vulnerabilities in public issues. See
 
 ## License And Brand
 
-The public Core source code is MIT licensed. See [LICENSE](./LICENSE) and [NOTICE.md](./NOTICE.md).
-Official installers can additionally contain proprietary first-party extensions and third-party
-components under their own licenses.
+The source code is MIT licensed. See [LICENSE](./LICENSE) and [NOTICE.md](./NOTICE.md). Release
+builds also bundle third-party components under their own licenses.
 
 The MIT license does not grant trademark rights in the Up.computer name, logo,
 or visual identity. You may use the name to refer to this project, but do not
