@@ -5,14 +5,10 @@ The self-orchestrating control plane for coding agents.
 Up.computer brings the agent CLIs you already use into one free, open-source
 desktop app. Talk an idea through in a chat and it becomes a task that a
 worker agent picks up in the background, on Codex, Claude Code, Cursor CLI,
-Grok Build, OpenCode, or another provider you choose. Each agent runs on your
-own subscription, and every chat stays on your computer.
+Grok Build, or OpenCode. Each agent runs on your own
+subscription, and every chat stays on your computer.
 
 ## Status
-
-Up.computer is an alpha project. It is usable, but the app and repository are
-moving quickly. Expect rough edges, incomplete docs, and occasional breaking
-changes while the product direction settles.
 
 Bug reports and focused feedback are welcome. Large feature work should start
 with an issue before a pull request.
@@ -24,9 +20,6 @@ Download the app from [up.computer/download](https://up.computer/download/) or t
 macOS (Apple Silicon and Intel), Windows, and Linux, straight from this repository. The macOS
 builds are signed and notarized. The Windows installer is not signed yet, so SmartScreen shows a
 warning on first launch. Installed apps update themselves from GitHub releases.
-
-The release is the desktop app only. There is no npm CLI or headless server. The public npm
-package named `t3` belongs to upstream T3 Code and is not an Up.computer install path.
 
 Up.computer runs the provider CLIs you install. Install and authenticate any you want to use:
 
@@ -115,9 +108,7 @@ This fork keeps the upstream runtime, provider orchestration, contracts,
 desktop infrastructure, and release plumbing close to upstream while developing
 a different product direction, UI, branding, and workflow layer.
 
-Some internal package names and identifiers still carry T3 Code names so upstream changes stay
-practical to merge. The application identity, protocol links, updates, and data directories use
-Up.computer names.
+A few internal identifiers, such as metric names, log labels, and dev tooling, still carry T3 Code names. Packages, the application identity, protocol links, updates, and data directories use Up.computer names.
 
 ## Contributing
 
