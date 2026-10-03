@@ -3,9 +3,19 @@ name: Core Release
 # Official vX.Y.Z tags and releases are owned by upcomputer-pro. Manually
 # dispatched Core releases use the separate core-vX.Y.Z namespace, while
 # scheduled nightlies continue to use their dedicated prerelease tags.
+#
+# Optional parts are skipped unless their configuration exists, so a plain
+# desktop release needs only the Apple signing and release App secrets:
+# - UpComputer Connect: repository variable RELAY_DOMAIN or RELAY_API_ZONE_NAME
+#   (plus the Cloudflare and Clerk settings that relay_public_config reads).
+# - npm CLI: repository variable NPM_PUBLISH_CLI=true (npm trusted publishing).
+# - Hosted web: repository variable UPCOMPUTER_WEB_ROUTER_URL (plus VERCEL_*).
+# - Discord: secret DISCORD_RELEASE_WEBHOOK_URL.
 on:
-  schedule:
-    - cron: "0 */3 * * *"
+  # Scheduled nightlies are paused. To re-enable them, restore this trigger
+  # (it only fires from the default branch). Manual nightly dispatch still works.
+  # schedule:
+  #   - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -29,7 +39,7 @@ jobs:
   check_changes:
     name: Check for changes since last nightly
     if: github.event_name == 'schedule'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     outputs:
       has_changes: ${{ steps.check.outputs.has_changes }}
     steps:
@@ -65,8 +75,8 @@ jobs:
     if: |
       !failure() && !cancelled() &&
       (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     outputs:
       release_channel: ${{ steps.release_meta.outputs.release_channel }}
       version: ${{ steps.release_meta.outputs.version }}
@@ -168,8 +178,10 @@ jobs:
   relay_public_config:
     name: Resolve UpComputer Connect public config
     needs: preflight
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Connect is optional. The relay domain must be a repository variable: a
+    # job-level `if` cannot read variables scoped to the production environment.
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment:
       name: production
@@ -254,9 +266,9 @@ jobs:
   build:
     name: Build ${{ matrix.label }}
     needs: [preflight, relay_public_config]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' }}
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && (needs.relay_public_config.result == 'success' || needs.relay_public_config.result == 'skipped') }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       UPCOMPUTER_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
       UPCOMPUTER_CLERK_JWT_TEMPLATE: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
@@ -266,20 +278,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # GitHub-hosted runners: Blacksmith is not set up for this repository.
           - label: macOS arm64
-            runner: blacksmith-12vcpu-macos-26
+            runner: macos-15
             platform: mac
             target: dmg
             arch: arm64
-          # Intel macOS is intentionally not built. Divergence from upstream:
-          # expect this entry to reappear on every upstream sync.
+          - label: macOS x64
+            runner: macos-15-intel
+            platform: mac
+            target: dmg
+            arch: x64
           - label: Linux x64
-            runner: blacksmith-32vcpu-ubuntu-2404
+            runner: ubuntu-24.04
             platform: linux
             target: AppImage
             arch: x64
           - label: Windows x64
-            runner: blacksmith-32vcpu-windows-2025
+            runner: windows-2025
             platform: win
             target: nsis
             arch: x64
@@ -303,12 +319,14 @@ jobs:
           run-install: true
 
       - name: Download relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: relay-client-tracing-config
           path: ${{ runner.temp }}/relay-client-tracing
 
       - name: Load relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
@@ -497,15 +515,14 @@ jobs:
             done
           done
 
-          # Enable if a second macOS architecture is built again. Suffixing the
-          # non-arm64 manifest is what lets the release job merge the per-arch
-          # manifests back into one canonical "*-mac.yml".
-          # if [[ "${{ matrix.platform }}" == "mac" && "${{ matrix.arch }}" != "arm64" ]]; then
-          #   shopt -s nullglob
-          #   for manifest in release-publish/*-mac.yml; do
-          #     mv "$manifest" "${manifest%.yml}-${{ matrix.arch }}.yml"
-          #   done
-          # fi
+          # Suffixing the non-arm64 manifest is what lets the release job merge
+          # the per-arch manifests back into one canonical "*-mac.yml".
+          if [[ "${{ matrix.platform }}" == "mac" && "${{ matrix.arch }}" != "arm64" ]]; then
+            shopt -s nullglob
+            for manifest in release-publish/*-mac.yml; do
+              mv "$manifest" "${manifest%.yml}-${{ matrix.arch }}.yml"
+            done
+          fi
 
           # Enable if Windows arm64 builds are enabled.
           # Windows updater metadata is channel-specific (for example
@@ -529,7 +546,8 @@ jobs:
   publish_cli:
     name: Publish CLI to npm
     needs: [preflight, relay_public_config, build]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build.result == 'success' }}
+    # Opt-in: npm trusted publishing must be configured for @upcomputer/server.
+    if: ${{ !failure() && !cancelled() && vars.NPM_PUBLISH_CLI == 'true' && needs.preflight.result == 'success' && (needs.relay_public_config.result == 'success' || needs.relay_public_config.result == 'skipped') && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04 # blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
@@ -553,17 +571,19 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=t3...
+              - --filter=@upcomputer/server...
               - --filter=@upcomputer/web...
               - --filter=@upcomputer/scripts...
 
       - name: Download relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: relay-client-tracing-config
           path: ${{ runner.temp }}/relay-client-tracing
 
       - name: Load relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
@@ -578,7 +598,7 @@ jobs:
         run: vp run --filter @upcomputer/web build
 
       - name: Build CLI package
-        run: vp run --filter t3 build
+        run: vp run --filter @upcomputer/server build
 
       - name: Publish CLI package
         run: node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --verbose
@@ -586,8 +606,8 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: [preflight, build, publish_cli]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success' && needs.publish_cli.result == 'success' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success' && (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - id: app_token
@@ -619,19 +639,16 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      # macOS ships arm64 only, so the arm64 build's "*-mac.yml" is already the
-      # canonical updater manifest and there is nothing to merge. Re-enable
-      # alongside the matrix entry if a second macOS architecture returns.
-      # - name: Merge macOS updater manifests
-      #   run: |
-      #     shopt -s nullglob
-      #     for x64_manifest in release-assets/*-mac-x64.yml; do
-      #       arm64_manifest="${x64_manifest%-x64.yml}.yml"
-      #       if [[ -f "$arm64_manifest" ]]; then
-      #         node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
-      #         rm -f "$x64_manifest"
-      #       fi
-      #     done
+      - name: Merge macOS updater manifests
+        run: |
+          shopt -s nullglob
+          for x64_manifest in release-assets/*-mac-x64.yml; do
+            arm64_manifest="${x64_manifest%-x64.yml}.yml"
+            if [[ -f "$arm64_manifest" ]]; then
+              node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
+              rm -f "$x64_manifest"
+            fi
+          done
 
       # - name: Merge Windows updater manifests
       #   run: |
@@ -706,8 +723,8 @@ jobs:
   deploy_web:
     name: Deploy hosted web app
     needs: [preflight, relay_public_config, release]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.release.result == 'success' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: ${{ !failure() && !cancelled() && vars.UPCOMPUTER_WEB_ROUTER_URL != '' && needs.preflight.result == 'success' && (needs.relay_public_config.result == 'success' || needs.relay_public_config.result == 'skipped') && needs.release.result == 'success' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       UPCOMPUTER_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
@@ -738,12 +755,14 @@ jobs:
               - --filter=@upcomputer/web...
 
       - name: Download relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: relay-client-tracing-config
           path: ${{ runner.temp }}/relay-client-tracing
 
       - name: Load relay client tracing config
+        if: needs.relay_public_config.result == 'success'
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
@@ -821,7 +840,7 @@ jobs:
     name: Finalize release
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'stable' }}
     needs: [preflight, release]
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - id: app_token
@@ -897,13 +916,16 @@ jobs:
     if: |
       always() && !cancelled() &&
       needs.preflight.result == 'success' &&
-      needs.relay_public_config.result == 'success' &&
+      (needs.preflight.outputs.is_prerelease == 'true' || needs.preflight.outputs.make_latest == 'true') &&
+      (needs.relay_public_config.result == 'success' || needs.relay_public_config.result == 'skipped') &&
       needs.release.result == 'success' &&
-      needs.deploy_web.result == 'success' &&
+      (needs.deploy_web.result == 'success' || needs.deploy_web.result == 'skipped') &&
       (needs.finalize.result == 'success' || needs.finalize.result == 'skipped')
     needs: [preflight, relay_public_config, release, deploy_web, finalize]
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -920,7 +942,7 @@ jobs:
               - --filter=@upcomputer/scripts...
 
       - name: Announce prerelease on Discord
-        if: needs.preflight.outputs.is_prerelease == 'true'
+        if: needs.preflight.outputs.is_prerelease == 'true' && env.DISCORD_WEBHOOK_URL != ''
         continue-on-error: true
         env:
           DISCORD_MENTION_ROLE_ID: ${{ secrets.DISCORD_RELEASE_NIGHTLY_ROLE_ID }}
@@ -934,7 +956,7 @@ jobs:
             --release-url "https://github.com/${{ github.repository }}/releases/tag/${{ needs.preflight.outputs.tag }}"
 
       - name: Announce latest release on Discord
-        if: needs.preflight.outputs.make_latest == 'true'
+        if: needs.preflight.outputs.make_latest == 'true' && env.DISCORD_WEBHOOK_URL != ''
         continue-on-error: true
         env:
           DISCORD_MENTION_ROLE_ID: ${{ secrets.DISCORD_RELEASE_LATEST_ROLE_ID }}
