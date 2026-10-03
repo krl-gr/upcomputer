@@ -1,7 +1,7 @@
 ---
 import DownloadLinks from "../components/DownloadLinks.astro";
 import Layout from "../layouts/Layout.astro";
-import { RELEASE_TAG, RELEASE_URL } from "../lib/releases";
+import { RELEASE_TAG, RELEASE_URL, RELEASE_VERSION, releaseAssetUrl } from "../lib/releases";
 ---
 
 <Layout
@@ -11,7 +11,16 @@ import { RELEASE_TAG, RELEASE_URL } from "../lib/releases";
   <div class="download-page">
     <DownloadLinks placement="download_page" />
     <p class="release">
-      Latest ({RELEASE_TAG}) ·{" "}
+      Version {RELEASE_VERSION} ·{" "}
+      <a
+        href={releaseAssetUrl("x64.dmg")}
+        data-analytics-event="marketing_download_clicked"
+        data-analytics-platform="macos"
+        data-analytics-architecture="x64"
+        data-analytics-format="dmg"
+        data-analytics-release={RELEASE_TAG}
+        data-analytics-placement="download_page"
+      >Intel Mac</a>{" "}·{" "}
       <a
         href={RELEASE_URL}
         target="_blank"
