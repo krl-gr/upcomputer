@@ -81,6 +81,7 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
@@ -352,6 +353,7 @@ const makeRuntimeCoreDependenciesLive = <const ProductEntry extends Experimental
 
   const runtimeFoundation = ReactorLayerLive.pipe(
     Layer.provideMerge(AntigravityInstallationRefreshLive),
+    Layer.provideMerge(ReplayMarkers.layer),
     Layer.provideMerge(ProviderAuthServiceLive),
     // Core Services
     Layer.provideMerge(CheckpointingLayerLive),
