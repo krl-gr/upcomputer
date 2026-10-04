@@ -57,6 +57,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { requireEnvironmentScope } from "../auth/http.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import {
   CLOUD_ENDPOINT_RUNTIME_CONFIG,
@@ -359,6 +360,7 @@ interface CloudHttpDependencies {
   readonly environmentAuth: EnvironmentAuth.EnvironmentAuth["Service"];
   readonly cliTokenManager: CliTokenManager.CloudCliTokenManager["Service"];
   readonly httpClient: HttpClient.HttpClient;
+  readonly awarenessRelay: AgentAwarenessRelay.AgentAwarenessRelay["Service"];
 }
 
 const cloudHttpDependencies = Effect.gen(function* () {
@@ -369,6 +371,7 @@ const cloudHttpDependencies = Effect.gen(function* () {
     environmentAuth: yield* EnvironmentAuth.EnvironmentAuth,
     cliTokenManager: yield* CliTokenManager.CloudCliTokenManager,
     httpClient: yield* HttpClient.HttpClient,
+    awarenessRelay: yield* AgentAwarenessRelay.AgentAwarenessRelay,
   } satisfies CloudHttpDependencies;
 });
 
@@ -482,6 +485,7 @@ const applyCloudRelayConfig = Effect.fn("environment.cloud.applyRelayConfig")(fu
     stringToBytes(payload.environmentCredential),
   );
   yield* dependencies.secrets.set(CLOUD_MINT_PUBLIC_KEY, stringToBytes(payload.cloudMintPublicKey));
+  yield* dependencies.awarenessRelay.requestCatchUp();
   if (payload.endpointRuntime) {
     const endpointRuntimeJson = yield* encodeEndpointRuntimeConfigJson(payload.endpointRuntime);
     yield* dependencies.secrets.set(
@@ -774,6 +778,7 @@ const cloudPreferencesHandler = Effect.fn("environment.cloud.preferences")(
       PUBLISH_AGENT_ACTIVITY_SECRET,
       stringToBytes(String(payload.publishAgentActivity)),
     );
+    yield* dependencies.awarenessRelay.requestCatchUp();
     return yield* readCloudLinkState(dependencies);
   },
   Effect.catchIf(
