@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { BUILT_IN_THEME_IDS } from "@t3tools/shared/themePalettes";
 
 import {
+  DEFAULT_THEME_PREFERENCE,
   getThemeColorsForMode,
   getThemeDefinition,
   getThemeModes,
@@ -9,6 +10,7 @@ import {
   isKnownThemePreference,
   isReservedThemeId,
   parseThemeFile,
+  resolveThemeAppearance,
   T3_CHAT_THEME,
   THEME_COLOR_ROLES,
   THEME_FILE_VERSION,
@@ -81,6 +83,23 @@ describe("Up.computer theme", () => {
         colors: { canvas: "#ffffff" },
       }),
     ).toThrow('The theme id "upcomputer" is reserved.');
+  });
+
+  it("is the default for a fresh install and follows the OS appearance", async () => {
+    expect(DEFAULT_THEME_PREFERENCE).toBe(UPCOMPUTER_THEME.id);
+
+    const fresh = await loadThemeHook();
+    const theme = fresh.readThemePreference();
+    expect(theme).toBe(UPCOMPUTER_THEME.id);
+    const mode = fresh.readAppearanceModePreference(theme);
+    expect(mode).toBe("system");
+    expect(resolveThemeAppearance(theme, true, true, mode)).toBe("dark");
+    expect(resolveThemeAppearance(theme, false, true, mode)).toBe("light");
+  });
+
+  it("replaces a preference that no longer resolves", async () => {
+    const hook = await loadThemeHook({ "t3code:theme": "removed-custom-theme" });
+    expect(hook.readThemePreference()).toBe(UPCOMPUTER_THEME.id);
   });
 
   it("keeps explicit choices, including the stock look and upstream themes", async () => {

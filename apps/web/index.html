@@ -18,6 +18,9 @@
         const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
         const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
         const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
+        // Mirrors the runtime's DEFAULT_THEME_PREFERENCE: a missing or
+        // unresolvable preference wears this theme and follows the OS.
+        const DEFAULT_THEME_ID = "upcomputer";
         const SPLASH_COLORS = {
           light: {
             background: "#ffffff",
@@ -232,7 +235,6 @@
         };
 
         try {
-          const storedTheme = window.localStorage.getItem("t3code:theme");
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           // Older builds stored the dark T3 Chat palette as its own theme id
           // and every maintainer theme under a t3- prefix; keep those
@@ -244,6 +246,17 @@
             "t3-ember": "ember",
             "t3-iris": "iris",
           };
+          const rawStoredTheme = window.localStorage.getItem("t3code:theme");
+          const rawThemeId =
+            rawStoredTheme === null ? "" : (LEGACY_THEME_IDS[rawStoredTheme] ?? rawStoredTheme);
+          const storedTheme =
+            rawStoredTheme === "light" ||
+            rawStoredTheme === "dark" ||
+            rawStoredTheme === "system" ||
+            BUILT_IN_THEME_MODES[rawThemeId] ||
+            findCustomTheme(rawThemeId)
+              ? rawStoredTheme
+              : DEFAULT_THEME_ID;
           const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
           const themeId =
             storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
@@ -281,7 +294,7 @@
               ? "system"
               : storedFollowSystem === "false"
                 ? preferenceMode
-                : theme === "system"
+                : theme === "system" || theme === DEFAULT_THEME_ID
                   ? "system"
                   : preferenceMode;
           // A valid mix half for the wanted appearance takes over: it decides
@@ -400,17 +413,19 @@
           }
           setThemeColor(chromeColor);
         } catch {
-          // Mirror the runtime's storage-failure fallback: follow the OS.
+          // Mirror the runtime's storage-failure fallback: the default theme,
+          // following the OS.
           let prefersDark = true;
           try {
             prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           } catch {
             // Keep the dark default when even matchMedia is unavailable.
           }
-          delete document.documentElement.dataset.themeId;
+          document.documentElement.dataset.themeId = DEFAULT_THEME_ID;
           delete document.documentElement.dataset.themeSelected;
           document.documentElement.classList.toggle("dark", prefersDark);
-          const fallbackColor = prefersDark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+          const fallbackColor =
+            BUILT_IN_THEME_PALETTES[DEFAULT_THEME_ID][prefersDark ? "dark" : "light"].chrome;
           document.documentElement.style.backgroundColor = fallbackColor;
           setThemeColor(fallbackColor);
         }

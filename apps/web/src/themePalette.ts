@@ -48,6 +48,12 @@ const LEGACY_T3_CHAT_DARK_THEME_ID = "t3-chat-dark";
 export const ThemePreference = Schema.String;
 export type ThemePreference = typeof ThemePreference.Type;
 
+/**
+ * What a client with no stored (or no longer resolvable) preference wears.
+ * Choosing the stock look stores "system", "light" or "dark" explicitly.
+ */
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = UPCOMPUTER_THEME.id;
+
 const THEME_COLOR_ROLE_SET: ReadonlySet<string> = new Set(THEME_COLOR_ROLES);
 export type ThemeColorOverrides = Readonly<Partial<Record<ThemeColorRole, string>>>;
 export type ThemeVariantOverrides = Readonly<Partial<Record<ThemeAppearance, ThemeColorOverrides>>>;
