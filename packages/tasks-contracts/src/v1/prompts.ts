@@ -1,0 +1,182 @@
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+/** User-editable guidance layered on top of the Tasks machine protocol. */
+export const TaskPromptSettings = Schema.Struct({
+  taskCreation: Schema.String,
+  agentCreation: Schema.String,
+  automationCreation: Schema.String,
+  taskExecution: Schema.String,
+});
+export type TaskPromptSettings = typeof TaskPromptSettings.Type;
+
+/**
+ * Without `projectId`, the global texts. With it, that project's additions,
+ * which are added after the global texts for the project's tasks.
+ */
+export const TaskPromptSettingsGetInput = Schema.Struct({
+  projectId: Schema.optional(TrimmedNonEmptyString),
+});
+export type TaskPromptSettingsGetInput = typeof TaskPromptSettingsGetInput.Type;
+
+export const TASK_PROMPT_FIELDS = [
+  "taskCreation",
+  "agentCreation",
+  "automationCreation",
+  "taskExecution",
+] as const;
+export const TaskPromptField = Schema.Literals(TASK_PROMPT_FIELDS);
+export type TaskPromptField = typeof TaskPromptField.Type;
+
+/**
+ * The fields the instructions tools edit: the four task fields and `allChats`,
+ * the core `customInstructions` setting that every chat and task run gets.
+ */
+export const INSTRUCTIONS_FIELDS = ["allChats", ...TASK_PROMPT_FIELDS] as const;
+export const InstructionsField = Schema.Literals(INSTRUCTIONS_FIELDS);
+export type InstructionsField = typeof InstructionsField.Type;
+
+const InstructionsTexts = Schema.Struct({
+  taskCreation: Schema.optional(Schema.String),
+  agentCreation: Schema.optional(Schema.String),
+  automationCreation: Schema.optional(Schema.String),
+  taskExecution: Schema.optional(Schema.String),
+  allChats: Schema.optional(Schema.String),
+});
+
+/**
+ * The settings page save; fields left out stay as they are. `allChats` is the
+ * core `customInstructions` setting: saving it here records it in the
+ * instructions history. `base` holds the text a field had when the page loaded
+ * it: a field whose current text differs was changed elsewhere and is not saved.
+ * With `projectId` the save edits that project's additions; `allChats` is
+ * global only and is refused then.
+ */
+export const TaskPromptSettingsUpdateInput = Schema.Struct({
+  projectId: Schema.optional(TrimmedNonEmptyString),
+  ...InstructionsTexts.fields,
+  base: Schema.optional(InstructionsTexts),
+});
+export type TaskPromptSettingsUpdateInput = typeof TaskPromptSettingsUpdateInput.Type;
+
+/**
+ * The current task texts, and `allChats` as stored (trimmed) when the save
+ * included it. `conflicts` lists the fields not saved because their text no
+ * longer matched `base`; they keep their current text.
+ */
+export const TaskPromptSettingsUpdateResult = Schema.Struct({
+  ...TaskPromptSettings.fields,
+  allChats: Schema.optional(Schema.String),
+  conflicts: Schema.Array(InstructionsField),
+});
+export type TaskPromptSettingsUpdateResult = typeof TaskPromptSettingsUpdateResult.Type;
+
+/**
+ * Who made a change: the settings page, a tool call from a thread (a chat or
+ * an opted-in task-agent run), or a tool call without a thread such as the
+ * loopback MCP bridge.
+ */
+export const TaskPromptChangeSource = Schema.Literals([
+  "settings-page",
+  "thread",
+  "mcp",
+  "unknown",
+]);
+export type TaskPromptChangeSource = typeof TaskPromptChangeSource.Type;
+
+/** One recorded edit of one instruction field. History rows are never deleted. */
+export const TaskPromptSettingsChange = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  /** The project whose additions changed; null for the global texts. */
+  projectId: Schema.NullOr(TrimmedNonEmptyString),
+  /** The revision this change produced; global and each project count separately. */
+  revision: PositiveInt,
+  field: InstructionsField,
+  previousText: Schema.String,
+  newText: Schema.String,
+  reason: Schema.NullOr(Schema.String),
+  source: TaskPromptChangeSource,
+  threadId: Schema.NullOr(TrimmedNonEmptyString),
+  runId: Schema.NullOr(TrimmedNonEmptyString),
+  revertsChangeId: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+});
+export type TaskPromptSettingsChange = typeof TaskPromptSettingsChange.Type;
+
+/** Without `projectId` the instructions tools act on the global texts, with it on that project's. */
+const InstructionsScope = { projectId: Schema.optional(TrimmedNonEmptyString) };
+
+export const InstructionsGetInput = Schema.Struct(InstructionsScope);
+export type InstructionsGetInput = typeof InstructionsGetInput.Type;
+
+export const InstructionsUpdateInput = Schema.Struct({
+  ...InstructionsScope,
+  field: InstructionsField,
+  text: Schema.String,
+  reason: TrimmedNonEmptyString,
+  expectedRevision: NonNegativeInt,
+});
+export type InstructionsUpdateInput = typeof InstructionsUpdateInput.Type;
+
+export const InstructionsHistoryInput = Schema.Struct({
+  ...InstructionsScope,
+  field: Schema.optional(InstructionsField),
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
+});
+export type InstructionsHistoryInput = typeof InstructionsHistoryInput.Type;
+
+export const InstructionsRevertInput = Schema.Struct({
+  ...InstructionsScope,
+  changeId: TrimmedNonEmptyString,
+  reason: Schema.optional(TrimmedNonEmptyString),
+});
+export type InstructionsRevertInput = typeof InstructionsRevertInput.Type;
+
+/** A project's additions start empty: it gets the global texts only. */
+export const EMPTY_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
+  taskCreation: "",
+  agentCreation: "",
+  automationCreation: "",
+  taskExecution: "",
+};
+
+export const DEFAULT_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
+  taskCreation: `Create focused, independently reviewable tasks. The description must be self-contained and keep the user's intent: goal, context, target, constraints, verification and expected output, so the agent never needs the originating chat. Include absolute paths of attached images and tell the agent to open them.
+
+Choosing the agent: unless the user's recorded preferences or explicit words already decide it, do not pick one silently. Call agent_search, show the relevant agents (name, model, enabled, trigger statuses and tags), recommend one with a reason, and let the user decide. If none fits, propose creating one.
+
+Assignment: add the chosen agent's trigger tag and record its id in metadata.targetAgentId. A run id exists only after the run starts.
+
+Queue: an agent works through its tasks one at a time. If it has no task in its start status and none In Progress (task_search with its tag), create the task directly in its start status so it starts now. Otherwise create it in Backlog; the agent's queue hand-off activates it later. An agent without start statuses starts on its tag in any status, so add the tag only when the task should start. Never start several tasks of one queue at once unless the user asked for fan-out.`,
+  agentCreation: `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
+
+Adapt these templates for the agent's instructions.
+
+Queue worker (developer), started by its tag in its start status, e.g. To Do:
+- Work only on tasks with your tag in your start status.
+- At start: task_get, claim the task with your run id, set In Progress, and read the repository's AGENTS.md or CLAUDE.md.
+- Make the smallest coherent change; verify it with tests, typecheck and lint.
+- Commit only your own files, and only if the user allowed commits.
+- Run every command in the foreground with a timeout; start no background processes.
+- Keep the task output current.
+- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the oldest Backlog task with your tag to your start status. Never more than one.
+- Final mutation: a single task_update to the review status, e.g. Needs Review, with assigneeAgentRunId: null.
+
+Reviewer, started by its own tag or status:
+- Read the full diff and run the verification yourself.
+- Never edit; report findings by severity with file:line and evidence.
+- End with one task_update that hands the task to a person: the review status, and your trigger tag removed.`,
+  automationCreation: `Create an automation only for genuinely recurring work. Use the user's timezone, make the generated task template self-contained, avoid duplicate open work when appropriate, and leave agent-created automations as drafts for human review.`,
+  taskExecution: `Your agent's own instructions come first; where they differ from this, follow them.
+- Claim the task first: task_get, then set assigneeAgentRunId to your run id.
+- Keep the task status and output current, so a person can evaluate the result without reading the thread.
+- Run every command in the foreground and wait for it; start no background processes.
+- Record blockers with evidence. On quota, rate-limit or auth failures, stop and report them; do not retry.
+- If your instructions define a queue hand-off, do it before the final update.
+- Do everything else first, then make exactly one final task_update, then report your task_agent_result.`,
+};

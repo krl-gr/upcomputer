@@ -1,0 +1,31 @@
+{
+  "name": "@t3tools/tasks-server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agents": {
+      "types": "./src/agents/TaskAgentService.ts",
+      "import": "./src/agents/TaskAgentService.ts"
+    },
+    "./persistence": {
+      "types": "./src/persistence/index.ts",
+      "import": "./src/persistence/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "@t3tools/tasks-contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

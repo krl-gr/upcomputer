@@ -1,0 +1,22 @@
+{
+  "name": "@t3tools/tasks-contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./v1": {
+      "types": "./src/v1/index.ts",
+      "import": "./src/v1/index.ts"
+    },
+    "./v1/rpc": {
+      "types": "./src/v1/rpc.ts",
+      "import": "./src/v1/rpc.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:"
+  }
+}
