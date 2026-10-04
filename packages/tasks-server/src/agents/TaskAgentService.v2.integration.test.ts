@@ -1,7 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  EnvironmentId,
+  EventId,
   ProjectId,
+  ThreadId as ThreadIdBrand,
+  CommandId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
@@ -21,6 +25,11 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { McpSchema, McpServer } from "effect/unstable/ai";
+
+import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
+import { ProviderRegistry } from "../../../../apps/server/src/provider/Services/ProviderRegistry.ts";
+import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { SqlitePersistenceMemory } from "../../../../apps/server/src/persistence/Layers/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "../../../../apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts";
 import type {
@@ -33,6 +42,9 @@ import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/Proj
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "../../../../apps/server/src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
+import { TaskToolContextResolverLive } from "../context/TaskToolContextResolver.ts";
+import { TaskMcpToolsLive } from "../mcp/TaskMcpTools.ts";
+import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
 import { AllChatsInstructions } from "../persistence/AllChatsInstructions.ts";
 import { runTaskMigrations } from "../persistence/runTaskMigrations.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
@@ -281,11 +293,20 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
     Layer.provide(Layer.effectDiscard(Effect.orDie(runTaskMigrations))),
     Layer.provide(allChats),
   );
-  return TaskAgentServiceLive.pipe(
+  const agents = TaskAgentServiceLive.pipe(
     Layer.provideMerge(taskStorage),
     Layer.provideMerge(v2),
     Layer.provideMerge(NodeServices.layer),
   );
+  // The task MCP tools on the core MCP server, as a provider session calls them.
+  const tools = TaskMcpToolsLive.pipe(
+    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(TaskToolServiceLive),
+    Layer.provide(TaskToolContextResolverLive),
+    Layer.provide(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
+    Layer.provide(ServerSettings.layerTest().pipe(Layer.orDie)),
+  );
+  return tools.pipe(Layer.provideMerge(agents));
 }
 
 /** Polls stored state until it is Some; the service settles runs asynchronously. */
@@ -340,7 +361,16 @@ const runSlice = <A, E>(
       readonly started: Ref.Ref<ReadonlyArray<StartedTurn>>;
       readonly cwd: string;
     },
-  ) => Effect.Effect<A, E, TaskRepository | TaskAgentService | SqlClient.SqlClient>,
+  ) => Effect.Effect<
+    A,
+    E,
+    | TaskRepository
+    | TaskAgentService
+    | SqlClient.SqlClient
+    | McpServer.McpServer
+    | ProjectStore.ProjectStoreV2
+    | ThreadManagementService.ThreadManagementService
+  >,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -467,6 +497,115 @@ it.live("stopping an active run interrupts its v2 run and records it as stopped"
       `;
       assert.lengthOf(stopEvents, 1);
       assert.include(stopEvents[0]?.payload_json ?? "", "stop-requested");
+    }),
+  ),
+);
+
+const mcpClient = McpSchema.McpServerClient.of({
+  clientId: 1,
+  protocolVersion: "2025-06-18",
+  clientCapabilities: {},
+  clientInfo: { name: "task-agent-v2", version: "1" },
+  initializePayload: {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "task-agent-v2", version: "1" },
+  },
+  getClient: Effect.die("unused"),
+});
+
+it.live("a chat creates a task through the task MCP tools and the started run reports back", () =>
+  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd }) =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const projectStore = yield* ProjectStore.ProjectStoreV2;
+      const toolNames = new Set(server.tools.map(({ tool }) => tool.name));
+      for (const name of ["task_create", "task_get", "agent_run_message", "agent_run_stop"]) {
+        assert.isTrue(toolNames.has(name), `${name} is registered`);
+      }
+      yield* projectStore.apply({
+        sequence: 1,
+        eventId: EventId.make("event:task-agents-v2:project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: timestamp,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "project.created",
+        payload: {
+          projectId,
+          title: "Task agents",
+          workspaceRoot: cwd,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      });
+      const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2:chat");
+      yield* threads.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("command:task-agents-v2:chat"),
+        threadId: chatThreadId,
+        projectId,
+        title: "Chat",
+        modelSelection: agentModel,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* repository.upsertAgent(agent);
+      const callTool = (name: string, args: Record<string, unknown>) =>
+        server.callTool({ name, arguments: args }).pipe(
+          Effect.provideService(McpInvocationContext, {
+            environmentId: EnvironmentId.make("environment:task-agents-v2"),
+            threadId: chatThreadId,
+            providerSessionId: "session:task-agents-v2",
+            providerInstanceId: instanceId,
+            capabilities: new Set<never>(),
+            issuedAt: 0,
+          }),
+          Effect.provideService(McpSchema.McpServerClient, mcpClient),
+        );
+      const textOf = (result: McpSchema.CallToolResult) =>
+        result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+
+      const created = yield* callTool("task_create", {
+        title: task.title,
+        description: task.description,
+        status: "To Do",
+      });
+      assert.isFalse(created.isError, textOf(created));
+      const createdTask = JSON.parse(textOf(created)).task;
+      assert.strictEqual(createdTask.projectId, projectId);
+      assert.strictEqual(createdTask.sourceThreadId, chatThreadId);
+
+      const run = yield* eventually(
+        "the run to start",
+        repository
+          .searchAgentRuns({ taskId: createdTask.id, limit: 1 })
+          .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+      yield* eventually(
+        "the run to complete",
+        repository
+          .searchAgentRuns({ taskId: createdTask.id, limit: 1 })
+          .pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(runs.find((candidate) => candidate.status === "completed")),
+            ),
+          ),
+      );
+      const transcript = yield* callTool("agent_run_transcript", { runId: run.id });
+      assert.isFalse(transcript.isError, textOf(transcript));
+      assert.include(textOf(transcript), "task_agent_result");
+      const fetched = yield* callTool("task_get", { id: createdTask.id });
+      assert.include(textOf(fetched), "Needs Review");
     }),
   ),
 );
