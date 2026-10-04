@@ -13,6 +13,16 @@ an official remote/headless server or an SSH/npm bootstrap flow.
 UpComputer Connect installs no npm server package. It links clients to the backend already bundled with the
 Desktop app.
 
+## Deregister an UpComputer Connect environment
+
+Open your account menu and choose **UpComputer Connect** to see every environment registered to
+your account. Choose **Deregister** to revoke an environment's UpComputer Connect access, remove
+its managed tunnel, and free its slot.
+
+Deregistration is an account action and does not need a connection to the environment, so it also
+works for a machine that was wiped or is no longer reachable. Device-local connect and disconnect
+controls remain in **Settings** > **Connections**.
+
 ## Pairing links
 
 Pairing codes and share links are available only in the client that created them, while its

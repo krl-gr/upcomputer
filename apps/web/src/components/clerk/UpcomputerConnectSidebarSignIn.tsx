@@ -1,9 +1,10 @@
 import { UserButton, useAuth } from "@clerk/react";
-import { LogInIcon, SmartphoneIcon } from "lucide-react";
+import { LogInIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
 
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
+import { UpcomputerConnectUserProfilePage } from "./UpcomputerConnectUserProfilePage";
 import { useT3ConnectAuthPrompt } from "./useT3ConnectAuthPrompt";
 
 export function UpcomputerConnectSidebarSignIn() {
@@ -38,6 +39,13 @@ function ConfiguredUpcomputerConnectSidebarAvatar() {
         url="mobile-clients"
       >
         <MobileClientsUserProfilePage />
+      </UserButton.UserProfilePage>
+      <UserButton.UserProfilePage
+        label="UpComputer Connect"
+        labelIcon={<ServerIcon className="size-4" />}
+        url="upcomputer-connect"
+      >
+        <UpcomputerConnectUserProfilePage />
       </UserButton.UserProfilePage>
     </UserButton>
   );
