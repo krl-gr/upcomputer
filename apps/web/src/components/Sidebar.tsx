@@ -1958,7 +1958,8 @@ const SidebarProjectFilterRow = memo(function SidebarProjectFilterRow(
         isActive={selected}
         data-testid={`sidebar-project-row-${project.projectKey}`}
         className={cn(
-          "h-8 gap-2 px-2 text-left hover:bg-sidebar-row-hover group-hover/project-row:pr-14 group-focus-within/project-row:pr-14 data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground max-sm:pr-14 dark:hover:text-white/86 dark:data-[active=true]:text-white/82",
+          // Hover is keyed to the whole row, so it stays while the pointer is on the row actions.
+          "h-8 gap-2 px-2 text-left group-hover/project-row:bg-sidebar-row-hover group-hover/project-row:text-sidebar-foreground group-hover/project-row:pr-14 group-focus-within/project-row:pr-14 data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground max-sm:pr-14 dark:group-hover/project-row:text-white/86 dark:data-[active=true]:text-white/82",
           SIDEBAR_LABEL_COLOR_CLASS,
         )}
         onClick={() => onSelect(project.projectKey)}
