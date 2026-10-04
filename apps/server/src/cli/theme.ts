@@ -24,7 +24,11 @@ import {
   environmentThemeFileHasColors,
 } from "@t3tools/contracts";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@t3tools/shared/themePalettes";
+import {
+  BUILT_IN_THEME_IDS,
+  UNPUBLISHABLE_THEME_IDS,
+  UPCOMPUTER_THEME_ID,
+} from "@t3tools/shared/themePalettes";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -455,7 +459,11 @@ const publishThemeFile = Effect.fn(function* (input: {
  */
 const resolvableThemeIds = Effect.fn(function* (themesDir: string) {
   const published = yield* readPublishedThemes(themesDir);
-  return [...BUILT_IN_THEME_IDS, ...published.map((theme) => theme.id)].toSorted();
+  return [
+    ...BUILT_IN_THEME_IDS,
+    UPCOMPUTER_THEME_ID,
+    ...published.map((theme) => theme.id),
+  ].toSorted();
 });
 
 const themeSetCommand = Command.make("set", {

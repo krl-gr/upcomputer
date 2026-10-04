@@ -56,6 +56,14 @@ describe("t3 theme", () => {
     }),
   );
 
+  it.effect("accepts the Up.computer theme", () =>
+    Effect.gen(function* () {
+      const baseDir = makeBaseDir();
+      yield* runCli(["theme", "set", "upcomputer", "--base-dir", baseDir]);
+      assert.equal(readSettings(baseDir).defaultTheme, "upcomputer");
+    }),
+  );
+
   // A provisioning command runs against settings written by whatever version
   // happens to be installed, so it must not drop what it cannot interpret.
   it.effect("preserves settings it does not recognise", () =>
