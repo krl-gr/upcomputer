@@ -1,7 +1,7 @@
 # Remote Architecture
 
 > Future architecture reference, not current Up.computer product availability. The current release
-> supports the bundled local Desktop backend and T3 Connect clients to that backend; official
+> supports the bundled local Desktop backend and UpComputer Connect clients to that backend; official
 > remote/headless server setup is unavailable.
 
 This document describes the target architecture for first-class remote environments in T3 Code.

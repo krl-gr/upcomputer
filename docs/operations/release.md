@@ -12,7 +12,7 @@ unused.
   - manual `workflow_dispatch` for either a Core or nightly build
 - A manual Core version `X.Y.Z` is published as `core-vX.Y.Z`; this workflow cannot create `vX.Y.Z`.
 - Runs quality gates first: lint, typecheck, test.
-- Reads the shared production T3 Connect relay URL and Clerk client configuration before packaging clients.
+- Reads the shared production UpComputer Connect relay URL and Clerk client configuration before packaging clients.
 - Builds four artifacts in parallel for both channels:
   - macOS `arm64` DMG
   - macOS `x64` DMG
@@ -31,7 +31,7 @@ unused.
   - nightly releases are aliased to the `nightly` hosted app channel
 - Signing is optional and auto-detected per platform from secrets.
 
-## T3 Connect relay deployment
+## UpComputer Connect relay deployment
 
 The relay is a shared control plane versioned separately from client releases. Stable and nightly
 client builds must point at the same relay so users see the same linked environments when switching
@@ -86,7 +86,7 @@ Personal stages reference the production-owned zones.
 Developers deploy personal stages locally rather than through pull-request automation:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage "$USER" --env-file .env.local
+vp run --filter @upcomputer/relay deploy -- --stage "$USER" --env-file .env.local
 ```
 
 ## Hosted web app release deployment

@@ -14,7 +14,7 @@
   - [Server updates in this release](./user/server-updates.md)
   - [Background service availability](./user/background-service.md)
   - [Keybindings](./user/keybindings.md)
-- [T3 Connect](./cloud/t3-connect-clerk.md)
+- [UpComputer Connect](./cloud/t3-connect-clerk.md)
 - [Integrations](./integrations/source-control-providers.md)
 - [Operations](./operations/ci.md)
 - [Providers](./providers/codex.md)

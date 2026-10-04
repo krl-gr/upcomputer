@@ -1,16 +1,16 @@
 # Access from other devices
 
-This release supports T3 Connect to the backend bundled with Up.computer Desktop. It does not ship
+This release supports UpComputer Connect to the backend bundled with Up.computer Desktop. It does not ship
 an official remote/headless server or an SSH/npm bootstrap flow.
 
-## Use T3 Connect with Desktop
+## Use UpComputer Connect with Desktop
 
 1. Open Up.computer Desktop on the machine that owns your projects.
 2. Open **Settings** → **Connections**.
-3. Under the local backend controls, enable T3 Connect and follow the pairing flow.
+3. Under the local backend controls, enable UpComputer Connect and follow the pairing flow.
 4. Keep the Desktop application running while another paired client uses that environment.
 
-T3 Connect installs no npm server package. It links clients to the backend already bundled with the
+UpComputer Connect installs no npm server package. It links clients to the backend already bundled with the
 Desktop app.
 
 ## Pairing links

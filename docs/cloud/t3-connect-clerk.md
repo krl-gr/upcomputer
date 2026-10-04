@@ -1,23 +1,23 @@
-# T3 Connect Clerk Setup
+# UpComputer Connect Clerk Setup
 
 > Internal source-build operations only. Background/headless service commands described here are
-> not an official Up.computer distribution path in the current local-Desktop release. T3 Connect
+> not an official Up.computer distribution path in the current local-Desktop release. UpComputer Connect
 > in the product links clients to the backend bundled with Desktop.
 
-T3 Connect uses one Clerk application for web, desktop, and mobile authentication. The relay accepts
-Clerk JWTs only when they are generated from the `t3-relay` template with the shared
-`t3-code-relay` audience.
+UpComputer Connect uses one Clerk application for web, desktop, and mobile authentication. The relay accepts
+Clerk JWTs only when they are generated from the `upcomputer-relay` template with the shared
+`upcomputer-relay` audience.
 
 ## Application Keys
 
-T3 Connect is disabled in a fresh clone. To enable it for source builds, add a repository-root `.env`
+UpComputer Connect is disabled in a fresh clone. To enable it for source builds, add a repository-root `.env`
 or `.env.local` file:
 
 ```dotenv
-T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
-T3CODE_CLERK_JWT_TEMPLATE=<JWT template name>
-T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=<public OAuth application client ID>
-T3CODE_RELAY_URL=https://relay.example.com
+UPCOMPUTER_CLERK_PUBLISHABLE_KEY=<publishable key>
+UPCOMPUTER_CLERK_JWT_TEMPLATE=<JWT template name>
+UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID=<public OAuth application client ID>
+UPCOMPUTER_RELAY_URL=https://relay.example.com
 ```
 
 The shared client loader projects these canonical values into framework-specific `VITE_*` and
@@ -34,13 +34,13 @@ The Clerk publishable key, JWT template name, CLI OAuth client ID, and relay URL
 identifiers, not secrets.
 Web, desktop, mobile, and bundled server builds statically inject the values they consume during
 their build step. A built artifact does not need an environment file at runtime. CI release builds
-should set `T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`,
-`T3CODE_CLERK_CLI_OAUTH_CLIENT_ID`, and `T3CODE_RELAY_URL` before building. EAS preview and
+should set `UPCOMPUTER_CLERK_PUBLISHABLE_KEY`, `UPCOMPUTER_CLERK_JWT_TEMPLATE`,
+`UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID`, and `UPCOMPUTER_RELAY_URL` before building. EAS preview and
 production builds only need the Clerk publishable key, JWT template name, and relay URL in their EAS
 environment.
 
 When any client-facing public value is absent, cloud UI is omitted. When the CLI public values are
-absent, the `t3 connect` CLI command group is omitted. The bundled server still accepts runtime
+absent, the `upcomputer connect` CLI command group is omitted. The bundled server still accepts runtime
 overrides for self-hosted or operator-managed
 deployments.
 
@@ -48,7 +48,7 @@ For a hosted relay deployment, copy `infra/relay/.env.example` to `infra/relay/.
 deployment reads `RELAY_DOMAIN`, `RELAY_API_ZONE_NAME`, `RELAY_TUNNEL_ZONE_NAME`,
 `CLERK_PUBLISHABLE_KEY`, and `CLERK_JWT_AUDIENCE` through Effect `Config`. There are no checked-in
 deployment defaults.
-`vp run --filter t3code-relay deploy` invokes Alchemy from the relay directory, so Alchemy loads
+`vp run --filter @upcomputer/relay deploy` invokes Alchemy from the relay directory, so Alchemy loads
 `infra/relay/.env`. After a successful deployment, the wrapper updates the repository-root `.env`
 with the deployed HTTPS relay URL. The relay still requires
 `CLERK_SECRET_KEY` as an Alchemy secret. Never put `CLERK_SECRET_KEY` in a client application
@@ -60,16 +60,16 @@ personal developer stage.
 
 ## Headless CLI OAuth Application
 
-The `t3 connect` commands authorize a headless environment with a separate Clerk OAuth application.
+The `upcomputer connect` commands authorize a headless environment with a separate Clerk OAuth application.
 This uses an OAuth public client with PKCE, so the CLI stores no client secret.
 
 In **Clerk Dashboard > OAuth applications**:
 
-1. Create an OAuth application for the T3 CLI.
+1. Create an OAuth application for the UpComputer CLI.
 2. Enable the **Public** option so authorization-code exchange uses PKCE.
 3. Add `http://127.0.0.1:34338/callback` as an allowed redirect URI.
 4. Enable the `openid`, `profile`, and `email` scopes.
-5. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` in the repository-root `.env` file and release build
+5. Set `UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID` in the repository-root `.env` file and release build
    environment to the generated public client ID.
 
 The CLI derives Clerk's frontend API URL from the publishable key and calls Clerk's
@@ -79,28 +79,28 @@ handshake; it only validates the issued Clerk bearer token when the CLI manages 
 The CLI supports these headless operations:
 
 ```sh
-t3 connect login
-t3 connect link
-t3 connect status
-t3 connect unlink
-t3 connect logout
-t3 serve
+upcomputer connect login
+upcomputer connect link
+upcomputer connect status
+upcomputer connect unlink
+upcomputer connect logout
+upcomputer serve
 ```
 
-`t3 connect login` opens the Clerk authorization flow and stores the CLI credential without enabling
-cloud exposure. `t3 connect link` installs the pinned managed `cloudflared` binary when needed,
+`upcomputer connect login` opens the Clerk authorization flow and stores the CLI credential without enabling
+cloud exposure. `upcomputer connect link` installs the pinned managed `cloudflared` binary when needed,
 authorizes when needed, and records durable intent to expose the environment. It works without a
-running T3 server. The next `t3 serve` or `t3 start` reconciles the relay link and launches the
-managed tunnel. `t3 connect unlink` records disabled intent immediately, stops a reachable running
+running UpComputer server. The next `upcomputer serve` or `upcomputer start` reconciles the relay link and launches the
+managed tunnel. `upcomputer connect unlink` records disabled intent immediately, stops a reachable running
 connector, and attempts to revoke the relay-side environment record. It retains the stored CLI
-authorization so `t3 connect link` can re-enable exposure without another browser flow. `t3 connect
+authorization so `upcomputer connect link` can re-enable exposure without another browser flow. `upcomputer connect
 logout` performs the same cleanup and removes the stored CLI authorization.
 
 The background service has an independent lifecycle. Connect setup may offer to install it, but
-logout leaves it running; manage it with `t3 service status`, `install`, `update`, and `uninstall`.
+logout leaves it running; manage it with `upcomputer service status`, `install`, `update`, and `uninstall`.
 
 The current OAuth callback listener binds to loopback port `34338`. When running the CLI over SSH,
-forward that port before running `t3 connect login` or `t3 connect link`:
+forward that port before running `upcomputer connect login` or `upcomputer connect link`:
 
 ```sh
 ssh -L 34338:127.0.0.1:34338 <host>
@@ -113,15 +113,15 @@ stored PKCE token model.
 
 In **Clerk Dashboard > JWT templates**, create a template with:
 
-| Setting | Value                        |
-| ------- | ---------------------------- |
-| Name    | `t3-relay`                   |
-| Claims  | `{ "aud": "t3-code-relay" }` |
+| Setting | Value                           |
+| ------- | ------------------------------- |
+| Name    | `upcomputer-relay`              |
+| Claims  | `{ "aud": "upcomputer-relay" }` |
 
-Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` in the repository-root `.env`, and set
-`CLERK_JWT_AUDIENCE=t3-code-relay` in `infra/relay/.env`. Define `CLERK_JWT_TEMPLATE` and
+Set `UPCOMPUTER_CLERK_JWT_TEMPLATE=upcomputer-relay` in the repository-root `.env`, and set
+`CLERK_JWT_AUDIENCE=upcomputer-relay` in `infra/relay/.env`. Define `CLERK_JWT_TEMPLATE` and
 `CLERK_JWT_AUDIENCE` in the production relay deployment environment as well. The stable `aud` value
-is shared by production and non-production relay stages. The client-facing `T3CODE_RELAY_URL` still
+is shared by production and non-production relay stages. The client-facing `UPCOMPUTER_RELAY_URL` still
 selects the concrete relay deployment, but changing that URL does not require a JWT template change.
 
 ## Desktop OAuth Redirect Allowlist
@@ -168,6 +168,9 @@ The production macOS bundle ID is `computer.up.upcomputer`. To enable native pas
    `webcredentials.apps` contains `<TEAM_ID>.computer.up.upcomputer`.
 5. Set the local or CI signing configuration described below.
 
+> Not wired in this fork yet: `scripts/build-desktop-artifact.ts` does not read the variables below.
+> They describe the upstream signing flow and still use upstream names.
+
 For a local signed build, add these values to `.env.local` or export them before invoking the
 desktop artifact command:
 
@@ -179,13 +182,13 @@ T3CODE_CLERK_PASSKEY_RP_DOMAINS=example.clerk.accounts.dev,clerk.example.com
 ```
 
 When `T3CODE_CLERK_PASSKEY_RP_DOMAINS` is absent, the build derives the RP domain from
-`T3CODE_CLERK_PUBLISHABLE_KEY`. Signed macOS builds fail early if the Team ID, provisioning profile,
+`UPCOMPUTER_CLERK_PUBLISHABLE_KEY`. Signed macOS builds fail early if the Team ID, provisioning profile,
 or RP-domain configuration is missing. The generated main-app entitlements include every configured
 `webcredentials:<domain>` entry; helper apps keep Electron's minimal default entitlements.
 
 The normal `dev:desktop` launcher is unsigned and cannot complete macOS passkey ceremonies. For
 renderer HMR, build and install a signed app first, run the renderer dev server, then launch the
-installed app executable with `VITE_DEV_SERVER_URL` and `T3CODE_PORT` set. Rebuild the signed app
+installed app executable with `VITE_DEV_SERVER_URL` and `UPCOMPUTER_PORT` set. Rebuild the signed app
 after native dependency, main-process, preload, entitlement, provisioning, or signing changes;
 renderer-only changes can reuse the installed app.
 
@@ -194,7 +197,7 @@ binary from another:
 
 ```sh
 VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
-T3CODE_PORT=13773 \
+UPCOMPUTER_PORT=13773 \
   "/Applications/Up.computer (Alpha).app/Contents/MacOS/Up.computer (Alpha)"
 ```
 
@@ -218,11 +221,11 @@ For a private beta where people should request access, use **Clerk Dashboard > W
 1. Toggle on **Enable waitlist** and save.
 2. Review requests on the same page and select **Invite** or **Deny**.
 
-Approved signed-in users manage T3 Connect under **Connections**. The web and desktop sidebars do
+Approved signed-in users manage UpComputer Connect under **Connections**. The web and desktop sidebars do
 not expose a dedicated account or waitlist control. Signed-out users reach Clerk's waitlist and
-sign-in flow contextually from the T3 Connect controls on the Connections page.
+sign-in flow contextually from the UpComputer Connect controls on the Connections page.
 
-On mobile, signed-out users open **Settings > T3 Account** to reach `/settings/waitlist` within the
+On mobile, signed-out users open **Settings > Account** to reach `/settings/waitlist` within the
 Settings form sheet. It submits enrollment through Clerk's `useWaitlist()` flow because the prebuilt
 `<Waitlist />` component is web-only in the Expo SDK. Approved users can use **Sign in** from that
 screen.

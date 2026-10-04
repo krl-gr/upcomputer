@@ -81,7 +81,7 @@ preflight also removes the candidate runtime so retrying the same version perfor
 
 ## Host Service Lifecycle
 
-The systemd user service is a host lifecycle concern, not a T3 Connect resource. The standalone
+The systemd user service is a host lifecycle concern, not a UpComputer Connect resource. The standalone
 `t3 service install`, `uninstall`, `update`, and `status` commands own it. Install and update both
 reconcile the unit through `BootService`; running `npx t3@latest service update` therefore pins and
 activates the latest CLI release without requiring a connected client.

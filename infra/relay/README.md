@@ -1,22 +1,23 @@
-# T3 Connect Relay
+# UpComputer Connect Relay
 
 > [!WARNING]
-> T3 Connect is currently in private beta. Join the waitlist in the app under Settings > T3 Connect.
+> UpComputer Connect is not deployed yet. Follow the
+> [setup checklist](../../docs/cloud/upcomputer-connect-setup.md) to deploy it under your own accounts.
 
-The relay is the hosted control plane for T3 Connect. It helps clients discover and connect to
+The relay is the hosted control plane for UpComputer Connect. It helps clients discover and connect to
 remote environments, manages the cloud-side records needed for those connections, and delivers
 optional mobile notifications and Live Activities.
 
-The relay is intentionally not in the hot path for normal T3 Code traffic. After a client connects,
+The relay is intentionally not in the hot path for normal UpComputer traffic. After a client connects,
 regular API and WebSocket traffic goes directly between that client and the selected environment.
-See the [T3 Connect architecture overview](../../docs/cloud/t3-code-connect-auth-flow.html) for the larger system
+See the [UpComputer Connect architecture overview](../../docs/cloud/t3-code-connect-auth-flow.html) for the larger system
 design.
 
 ## Responsibilities
 
 The relay currently owns:
 
-- Linking T3 Code environments to a cloud account.
+- Linking UpComputer environments to a cloud account.
 - Provisioning and tracking managed environment endpoints.
 - Issuing short-lived credentials used to connect clients to linked environments.
 - Listing linked environments and registered mobile devices for an account.
@@ -25,7 +26,7 @@ The relay currently owns:
 - Persisting relay state and exposing relay-specific traces for diagnostics.
 
 The environment server and relay have separate credentials and trust boundaries. Read
-[Environment Authentication Profile](../../docs/environment-auth.md) before changing token,
+[Environment Authentication Profile](../../docs/cloud/environment-auth.md) before changing token,
 credential, or authorization behavior.
 
 ## Code Map
@@ -79,7 +80,7 @@ dependencies represented at their boundary rather than mocking internal behavior
 The relay deploys through Alchemy:
 
 ```sh
-vp run --filter t3code-relay deploy
+vp run --filter @upcomputer/relay deploy
 ```
 
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
@@ -95,8 +96,8 @@ PlanetScale branch and runtime role for local development, so deploy `prod` befo
 developer stages:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage prod
-vp run --filter t3code-relay deploy -- --env-file .env.local
+vp run --filter @upcomputer/relay deploy -- --stage prod
+vp run --filter @upcomputer/relay deploy -- --env-file .env.local
 ```
 
 Alchemy defaults personal deployments to the `dev_$USER` stage. Relay custom domains apply the same
@@ -159,8 +160,8 @@ and hosted web builds.
 
 See:
 
-- [T3 Connect Clerk Setup](../../docs/cloud/t3-connect-clerk.md) for Clerk keys, JWT templates, and waitlist
+- [UpComputer Connect Clerk Setup](../../docs/cloud/t3-connect-clerk.md) for Clerk keys, JWT templates, and waitlist
   setup.
-- [Relay Observability](../../docs/relay-observability.md) for deployment tracing and diagnostics.
-- [T3 Connect Architecture Overview](../../docs/cloud/t3-code-connect-auth-flow.html) for the full link,
+- [Relay Observability](../../docs/operations/relay-observability.md) for deployment tracing and diagnostics.
+- [UpComputer Connect Architecture Overview](../../docs/cloud/t3-code-connect-auth-flow.html) for the full link,
   connect, endpoint, and notification flows.

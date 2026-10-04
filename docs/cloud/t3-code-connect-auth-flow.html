@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>T3 Connect Architecture</title>
+    <title>UpComputer Connect Architecture</title>
     <style>
       :root {
         color-scheme: light;
@@ -253,9 +253,9 @@
     <main class="shell">
       <header>
         <div class="eyebrow">Implemented architecture</div>
-        <h1>T3 Connect Control Plane and Managed Endpoint Flow</h1>
+        <h1>UpComputer Connect Control Plane and Managed Endpoint Flow</h1>
         <p class="lede">
-          T3 Connect links a locally authorized T3 environment to a signed-in cloud user, provisions
+          UpComputer Connect links a locally authorized UpComputer environment to a signed-in cloud user, provisions
           a managed HTTPS/WSS endpoint for that environment, and brokers proof-bound remote
           connections. The local environment remains the authority that issues environment access
           credentials. The hosted relay stores links, reconciles managed endpoint resources,
@@ -279,7 +279,7 @@
             following:
           </p>
           <ul>
-            <li>a Clerk-authenticated T3 Connect user;</li>
+            <li>a Clerk-authenticated UpComputer Connect user;</li>
             <li>an active relay link for that user and environment;</li>
             <li>a DPoP proof key held by the remote client;</li>
             <li>a relay-signed mint request accepted by the linked local environment; and</li>
@@ -353,7 +353,7 @@ flowchart LR
 
   Clerk["Clerk<br/>user identity and OAuth"]
 
-  subgraph Relay["T3 Code Relay on Cloudflare"]
+  subgraph Relay["UpComputer Connect relay on Cloudflare"]
     Worker["Relay Worker<br/>HTTP API"]
     Queue["APNs delivery queue<br/>with dead-letter queue"]
     Hyperdrive["Hyperdrive"]
@@ -364,7 +364,7 @@ flowchart LR
   APNs["Apple Push Notification service"]
   Traces["Axiom OTLP traces"]
 
-  subgraph Local["Linked T3 environment"]
+  subgraph Local["Linked UpComputer environment"]
     Env["Environment server<br/>local auth authority"]
     RelayClient["Relay client<br/>cloudflared implementation"]
     Secrets["Server secret store<br/>keys + relay config"]
@@ -547,7 +547,7 @@ sequenceDiagram
   participant CF as Cloudflare APIs
   participant RC as Local relay client
 
-  U->>C: Enable T3 Connect for a locally paired environment
+  U->>C: Enable UpComputer Connect for a locally paired environment
   C->>E: Check relay client availability
   alt relay client is missing
     C->>U: Prompt before download and install
@@ -585,13 +585,13 @@ sequenceDiagram
           <pre class="diagram mermaid">
 sequenceDiagram
   participant U as Operator
-  participant CLI as t3 connect CLI
+  participant CLI as upcomputer connect CLI
   participant Clerk as Clerk OAuth
   participant S as Environment server on next start
   participant R as Relay Worker
   participant RC as Local relay client
 
-  U->>CLI: t3 connect link
+  U->>CLI: upcomputer connect link
   CLI->>CLI: Resolve relay client
   alt relay client is missing
     CLI->>U: Confirm managed relay-client install
@@ -601,15 +601,15 @@ sequenceDiagram
   CLI->>Clerk: Browser PKCE authorization-code flow
   Clerk-->>CLI: OAuth access and refresh tokens
   CLI->>CLI: Persist desired cloud-link state
-  U->>S: Start T3 environment server
+  U->>S: Start UpComputer environment server
   S->>R: Create challenge and submit local signed proof
   R-->>S: Managed endpoint config and connector token
   S->>RC: Start relay client
           </pre>
           <p>
-            <code>t3 connect login</code> stores authorization without enabling exposure.
-            <code>t3 connect unlink</code> disables exposure while retaining authorization.
-            <code>t3 connect logout</code> also removes the stored CLI authorization.
+            <code>upcomputer connect login</code> stores authorization without enabling exposure.
+            <code>upcomputer connect unlink</code> disables exposure while retaining authorization.
+            <code>upcomputer connect logout</code> also removes the stored CLI authorization.
           </p>
         </article>
 
@@ -626,7 +626,7 @@ sequenceDiagram
   C->>R: POST /v1/client/dpop-token (Clerk JWT + DPoP proof)
   R-->>C: Relay DPoP access token
   C->>R: POST /v1/environments/:id/connect (relay DPoP)
-  R->>E: POST /api/t3-connect/mint-credential (relay-signed proof)
+  R->>E: POST /api/upcomputer-connect/mint-credential (relay-signed proof)
   E->>E: Verify relay signer, linked user, scope, lifetime, cnf, and replay guards
   E-->>R: Bootstrap credential + environment-signed proof
   R->>R: Verify environment signature, nonce, endpoint, and DPoP binding
@@ -953,7 +953,7 @@ sequenceDiagram
             <tr>
               <td><code>GET /api/connect/link-state</code></td>
               <td>Local environment token with <code>relay:read</code></td>
-              <td>Read the environment's current T3 Connect link state.</td>
+              <td>Read the environment's current UpComputer Connect link state.</td>
             </tr>
             <tr>
               <td><code>POST /api/connect/preferences</code></td>
@@ -963,15 +963,15 @@ sequenceDiagram
             <tr>
               <td><code>POST /api/connect/unlink</code></td>
               <td>Local environment token with <code>relay:write</code></td>
-              <td>Stop the relay client and clear local T3 Connect configuration.</td>
+              <td>Stop the relay client and clear local UpComputer Connect configuration.</td>
             </tr>
             <tr>
-              <td><code>POST /api/t3-connect/health</code></td>
+              <td><code>POST /api/upcomputer-connect/health</code></td>
               <td>Relay-signed proof</td>
               <td>Return a signed environment health response.</td>
             </tr>
             <tr>
-              <td><code>POST /api/t3-connect/mint-credential</code></td>
+              <td><code>POST /api/upcomputer-connect/mint-credential</code></td>
               <td>Relay-signed proof</td>
               <td>Mint a DPoP-bound one-time bootstrap credential for a remote client.</td>
             </tr>
@@ -1010,7 +1010,7 @@ sequenceDiagram
           <h2>Relay Infrastructure</h2>
           <ul>
             <li>Cloudflare Worker for the hosted relay HTTP API.</li>
-            <li>PlanetScale Postgres database named <code>t3coderelay</code>.</li>
+            <li>PlanetScale Postgres database named <code>upcomputerrelay</code>.</li>
             <li>
               Production uses the shared database; non-production stages use database branches.
             </li>
@@ -1047,8 +1047,8 @@ sequenceDiagram
             <tr>
               <td>Source-built desktop/server cloud features</td>
               <td>
-                Optional <code>T3CODE_RELAY_URL</code>, <code>T3CODE_CLERK_PUBLISHABLE_KEY</code>,
-                and <code>T3CODE_CLERK_CLI_OAUTH_CLIENT_ID</code>. Release builds inject public
+                Optional <code>UPCOMPUTER_RELAY_URL</code>, <code>UPCOMPUTER_CLERK_PUBLISHABLE_KEY</code>,
+                and <code>UPCOMPUTER_CLERK_CLI_OAUTH_CLIENT_ID</code>. Release builds inject public
                 values at build time.
               </td>
             </tr>
