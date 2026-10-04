@@ -55,6 +55,7 @@ test("agent row isolates switch activation while preserving row and name navigat
     editable: true,
     saving: false,
     triggerLabel: "To Do · review",
+    modelLabel: "Codex · Model One",
     onOpen: () => {
       opens += 1;
     },
@@ -64,6 +65,7 @@ test("agent row isolates switch activation while preserving row and name navigat
   }) as ReactElement<Record<string, unknown>>;
   const cells = row.props.children as ReactElement<Record<string, unknown>>[];
   const nameButton = cells[0]?.props.children as ReactElement<Record<string, unknown>>;
+  NodeAssert.equal(cells[2]?.props.children, "Codex · Model One", "the model cell shows names");
   const switchCell = cells[4];
   const enabledSwitch = switchCell?.props.children as ReactElement<Record<string, unknown>>;
   const interactiveTarget = { closest: () => ({ role: "switch" }) };

@@ -21,7 +21,9 @@ import {
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import ChatMarkdown from "../../../../apps/web/src/components/ChatMarkdown.tsx";
+import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
+import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
 import { persistPlannedTaskMove, planVisibleTaskMove } from "./taskReorder.ts";
 import {
   DETAIL_INPUT_CLASS,
@@ -84,6 +86,11 @@ export interface TasksViewProps {
   readonly onLoadMore: () => void;
   readonly agents: readonly ScopedTaskAgent[];
   readonly runs: readonly ScopedTaskAgentRun[];
+  /** Resolves run harness and model display names. */
+  readonly providerEntriesByEnvironment: ReadonlyMap<
+    EnvironmentId,
+    readonly ProviderInstanceEntry[]
+  >;
   readonly status: "loading" | "ready" | "error";
   readonly errorMessage?: string;
   readonly initialSelectedTaskKey?: string;
@@ -936,21 +943,25 @@ export function TasksView(props: TasksViewProps) {
                         : "No active runs."}
                   </p>
                 ) : (
-                  activeRuns.map((run) => (
-                    <TaskThreadLink
-                      key={run.id}
-                      environmentId={run.environmentId}
-                      threadId={run.threadId}
-                      title={
-                        props.agents.find(
-                          (agent) =>
-                            agent.environmentId === run.environmentId && agent.id === run.agentId,
-                        )?.name ?? "Agent run"
-                      }
-                      runStatus={run.status}
-                      onOpen={props.onOpenThread}
-                    />
-                  ))
+                  activeRuns.map((run) => {
+                    const { agentName, modelLabel } = getTaskRunAgentPresentation(
+                      run,
+                      props.agents,
+                      props.providerEntriesByEnvironment.get(run.environmentId),
+                    );
+                    return (
+                      <TaskThreadLink
+                        key={run.id}
+                        environmentId={run.environmentId}
+                        threadId={run.threadId}
+                        title={agentName}
+                        label={agentName}
+                        detail={modelLabel}
+                        runStatus={run.status}
+                        onOpen={props.onOpenThread}
+                      />
+                    );
+                  })
                 )}
               </DetailSidebarSection>
               <DetailSidebarSection title="Runs" count={detailRuns.length}>
@@ -984,17 +995,19 @@ export function TasksView(props: TasksViewProps) {
                 ) : (
                   <div className="flex min-w-0 flex-col gap-0.5">
                     {taskThreads.map((run) => {
-                      const agent = props.agents.find(
-                        (candidate) =>
-                          candidate.environmentId === run.environmentId &&
-                          candidate.id === run.agentId,
+                      const { agentName, modelLabel } = getTaskRunAgentPresentation(
+                        run,
+                        props.agents,
+                        props.providerEntriesByEnvironment.get(run.environmentId),
                       );
                       return (
                         <TaskThreadLink
                           key={`${run.environmentId}:${run.id}`}
                           environmentId={run.environmentId}
                           threadId={run.threadId}
-                          title={agent?.name ?? "Agent run"}
+                          title={agentName}
+                          label={agentName}
+                          detail={modelLabel}
                           runStatus={run.status}
                           timestamp={run.startedAt}
                           onOpen={props.onOpenThread}

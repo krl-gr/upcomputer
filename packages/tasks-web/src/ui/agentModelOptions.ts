@@ -1,4 +1,8 @@
-import type { ProviderOptionDescriptor, ProviderOptionSelection } from "@upcomputer/contracts";
+import type {
+  ModelSelection,
+  ProviderOptionDescriptor,
+  ProviderOptionSelection,
+} from "@upcomputer/contracts";
 import {
   getProviderOptionCurrentLabel,
   getProviderOptionDescriptors,
@@ -6,6 +10,37 @@ import {
 
 import { getProviderModelCapabilities } from "../../../../apps/web/src/providerModels.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
+import { getTriggerDisplayModelName } from "../../../../apps/web/src/components/chat/providerIconUtils.ts";
+import type { ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+
+/**
+ * "Claude Code · Claude Opus 5.5", as the composer's model picker labels a
+ * selection. Falls back to the slug where the catalog has no entry.
+ */
+export function getAgentModelLabel(
+  entries: ReadonlyArray<ProviderInstanceEntry> | undefined,
+  selection: Pick<ModelSelection, "instanceId" | "model">,
+): string {
+  const provider = entries?.find((entry) => entry.instanceId === selection.instanceId);
+  if (!provider) return selection.model;
+  const model = provider.models.find((candidate) => candidate.slug === selection.model);
+  return `${provider.displayName} · ${model ? getTriggerDisplayModelName(model) : selection.model}`;
+}
+
+/** A run's agent name and the harness and model it ran on, which can differ from the agent's current config. */
+export function getTaskRunAgentPresentation(
+  run: ScopedTaskAgentRun,
+  agents: ReadonlyArray<ScopedTaskAgent>,
+  entries: ReadonlyArray<ProviderInstanceEntry> | undefined,
+): { readonly agentName: string; readonly modelLabel: string } {
+  const agent = agents.find(
+    (candidate) => candidate.environmentId === run.environmentId && candidate.id === run.agentId,
+  );
+  return {
+    agentName: agent?.name ?? "Agent run",
+    modelLabel: getAgentModelLabel(entries, run.modelSelection),
+  };
+}
 
 export function getAgentModelOptionDescriptors(input: {
   readonly provider: ProviderInstanceEntry | undefined;

@@ -39,6 +39,7 @@ import { useInteractionModePresentations } from "../../../../apps/web/src/extens
 
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import {
+  getAgentModelLabel,
   getAgentModelOptionDescriptors,
   getAgentModelOptionPresentation,
   retainValidAgentModelOptions,
@@ -200,12 +201,23 @@ interface AgentTableRowProps {
   readonly editable: boolean;
   readonly saving: boolean;
   readonly triggerLabel: string;
+  /** Harness and model display names, e.g. "Claude Code · Claude Opus 5.5". */
+  readonly modelLabel: string;
   readonly onOpen: () => void;
   readonly onToggleEnabled: () => void;
 }
 
 export function AgentTableRow(props: AgentTableRowProps) {
-  const { agent, agentProject, editable, saving, triggerLabel, onOpen, onToggleEnabled } = props;
+  const {
+    agent,
+    agentProject,
+    editable,
+    saving,
+    triggerLabel,
+    modelLabel,
+    onOpen,
+    onToggleEnabled,
+  } = props;
 
   return (
     <tr
@@ -244,7 +256,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
         className="truncate px-4 py-4 text-muted-foreground"
         title={agent.config.interactionMode ?? "default"}
       >
-        {agent.config.modelSelection.model}
+        {modelLabel}
       </td>
       <td className="truncate px-4 py-4 text-muted-foreground" title={triggerLabel}>
         {triggerLabel}
@@ -427,8 +439,11 @@ export function AgentsView(props: AgentsViewProps) {
   const detailModelProvider = selectedProviderCatalog?.entries.find(
     (entry) => entry.instanceId === detailModelInstanceId,
   );
-  const detailModelLabel = detailModelProvider
-    ? `${detailModelProvider.displayName} · ${detailModelSlug}`
+  const detailModelLabel = detailModelInstanceId
+    ? getAgentModelLabel(selectedProviderCatalog?.entries, {
+        instanceId: detailModelInstanceId,
+        model: detailModelSlug,
+      })
     : detailModelSlug;
   const detailModelOptionDescriptors = getAgentModelOptionDescriptors({
     provider: detailModelProvider,
@@ -1376,6 +1391,10 @@ export function AgentsView(props: AgentsViewProps) {
                         editable={editable}
                         saving={savingKey !== null}
                         triggerLabel={triggerLabel}
+                        modelLabel={getAgentModelLabel(
+                          props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
+                          agent.config.modelSelection,
+                        )}
                         onOpen={() => openEdit(agent)}
                         onToggleEnabled={() => {
                           void toggleEnabled(agent);

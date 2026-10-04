@@ -1,5 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+
+import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
+import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 
 import { useTaskPages } from "./useTaskPages.ts";
 import { TasksView } from "./TasksView.tsx";
@@ -18,6 +21,17 @@ export default function TasksRoute() {
   const data = useTasksWorkspaceData(false);
   const sidebarProjectFilter = useViewProjectFilter();
   const pages = useTaskPages(data.taskTargets, sidebarProjectFilter);
+  const serverConfigs = useServerConfigs();
+  const providerEntriesByEnvironment = useMemo(
+    () =>
+      new Map(
+        [...serverConfigs].map(([environmentId, config]) => [
+          environmentId,
+          deriveProviderInstanceEntries(config.providers),
+        ]),
+      ),
+    [serverConfigs],
+  );
   const navigateBack = useCallback(() => {
     if (canGoBack) {
       window.history.back();
@@ -44,6 +58,7 @@ export default function TasksRoute() {
       onLoadMore={pages.loadMore}
       agents={data.agents.agents}
       runs={data.agents.runs}
+      providerEntriesByEnvironment={providerEntriesByEnvironment}
       status={pages.status}
       {...(selectedTaskKey === undefined ? {} : { initialSelectedTaskKey: selectedTaskKey })}
       {...(pages.errorMessage === undefined ? {} : { errorMessage: pages.errorMessage })}

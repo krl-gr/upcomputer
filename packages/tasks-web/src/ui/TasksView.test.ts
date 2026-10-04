@@ -142,6 +142,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
     ],
     agents: [],
     runs: [],
+    providerEntriesByEnvironment: new Map(),
     status: "ready",
     statuses: ["Backlog", "in progress"],
     projectFilter: "__all__",
