@@ -422,6 +422,10 @@ it.live(
         assert.strictEqual(thread.thread.modelSelection.model, agentModel.model);
         assert.strictEqual(thread.thread.runtimeMode, "full-access");
         assert.strictEqual(thread.thread.createdBy, "agent");
+        // Run threads stay out of thread lists but keep a shell, so they open by link.
+        assert.strictEqual(thread.thread.sidebarHidden, true);
+        const shell = yield* threads.getThreadShell(run.threadId);
+        assert.strictEqual(shell?.sidebarHidden, true);
         const firstTurn = yield* eventually(
           "the provider turn",
           Ref.get(started).pipe(Effect.map((turns) => Option.fromNullishOr(turns[0]))),

@@ -298,6 +298,7 @@ export function buildProjectActionItems(input: {
 export type BuildThreadActionItemsThread = Pick<
   SidebarThreadSummary,
   | "archivedAt"
+  | "sidebarHidden"
   | "branch"
   | "createdAt"
   | "environmentId"
@@ -330,7 +331,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   limit?: number;
 }): CommandPaletteActionItem[] {
   const sortedThreads = sortThreads(
-    input.threads.filter((thread) => thread.archivedAt === null),
+    input.threads.filter((thread) => thread.archivedAt === null && thread.sidebarHidden !== true),
     input.sortOrder,
   );
   const visibleThreads =

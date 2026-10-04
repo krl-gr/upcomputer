@@ -115,7 +115,8 @@ function EnvironmentNotifications({
     }
     const next = new Map<ThreadId, { attention: string | null; completion: number | null }>();
     for (const rawThread of shell.snapshot.value.threads) {
-      if (rawThread.lineage.relationshipToParent === "subagent") continue;
+      if (rawThread.lineage.relationshipToParent === "subagent" || rawThread.sidebarHidden === true)
+        continue;
       const thread = presentThreadShell(environmentId, rawThread);
       let status = resolveSidebarThreadStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";

@@ -365,6 +365,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  /** Machine-created threads (task-agent runs) stay out of thread lists but open by link. */
+  sidebarHidden: Schema.optional(Schema.Boolean),
   /** Pull request the user linked to this thread (#8160); optional so
       pre-linking servers still decode. */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
@@ -1716,6 +1718,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: Schema.String,
+  sidebarHidden: Schema.optional(Schema.Boolean),
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -2487,6 +2490,7 @@ export const OrchestrationV2Command = Schema.Union([
     interactionMode: ProviderInteractionMode,
     branch: Schema.NullOr(TrimmedNonEmptyString),
     worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+    sidebarHidden: Schema.optional(Schema.Boolean),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({

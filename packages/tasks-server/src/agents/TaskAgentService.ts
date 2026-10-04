@@ -772,8 +772,8 @@ const make = Effect.gen(function* () {
           index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
           total: globallyOrderedTasks.length,
         };
-        // Task-agent threads run in the project root. V1 hid them from the
-        // sidebar with sidebarVisible: false; v2 has no such flag yet.
+        // Task-agent threads run in the project root and stay out of thread
+        // lists; the task UI links to them.
         yield* threads.dispatch({
           type: "thread.create",
           createdBy: "agent",
@@ -787,6 +787,7 @@ const make = Effect.gen(function* () {
           interactionMode,
           branch: null,
           worktreePath: null,
+          sidebarHidden: true,
         });
         yield* threads.sendToThread({
           projectId: task.projectId,

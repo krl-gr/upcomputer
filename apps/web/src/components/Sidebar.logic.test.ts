@@ -437,10 +437,16 @@ describe("sidebar thread lineage helpers", () => {
       environmentId,
       projectId: ProjectId.make("project-other"),
     });
+    const hidden = makeThreadFixture({
+      id: ThreadId.make("thread-hidden"),
+      environmentId,
+      projectId,
+      sidebarHidden: true,
+    });
 
     expect(
       filterSidebarV2VisibleThreads(
-        [root, subagent, fork, archived, otherProject],
+        [root, subagent, fork, archived, otherProject, hidden],
         new Set([`${environmentId}:${projectId}`]),
       ).map((thread) => thread.id),
     ).toEqual([parentId, fork.id]);

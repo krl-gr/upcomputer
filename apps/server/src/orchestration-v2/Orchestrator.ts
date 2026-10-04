@@ -2149,6 +2149,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       interactionMode: command.interactionMode,
       branch: command.branch,
       worktreePath: command.worktreePath,
+      ...(command.sidebarHidden === true ? { sidebarHidden: true } : {}),
       activeProviderThreadId: null,
       lineage: {
         parentThreadId: null,
