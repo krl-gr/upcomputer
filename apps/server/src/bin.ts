@@ -22,6 +22,7 @@ if (
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
   } else {
     const { runCli } = await import("./binCli.ts");
-    runCli();
+    const { PUBLIC_SERVER_PRODUCT } = await import("./product/publicProduct.ts");
+    runCli(PUBLIC_SERVER_PRODUCT);
   }
 }

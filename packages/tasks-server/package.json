@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./feature": {
+      "types": "./src/serverFeature.ts",
+      "import": "./src/serverFeature.ts"
+    },
     "./agents": {
       "types": "./src/agents/TaskAgentService.ts",
       "import": "./src/agents/TaskAgentService.ts"

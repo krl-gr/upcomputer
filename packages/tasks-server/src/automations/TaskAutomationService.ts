@@ -10,6 +10,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { forkParked } from "../../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -291,7 +292,7 @@ const make = Effect.gen(function* () {
     Effect.catchCause((cause) => Effect.logError("Task automation recovery failed", { cause })),
   );
 
-  yield* Effect.forkScoped(
+  yield* forkParked(
     recover.pipe(
       Effect.andThen(Effect.forever(Effect.andThen(Effect.sleep(AUTOMATION_TICK_INTERVAL), tick))),
     ),

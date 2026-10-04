@@ -11,10 +11,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ProjectStoreV2 } from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
-import { ThreadManagementService } from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
-import { ProviderRegistry } from "../../../../apps/server/src/provider/Services/ProviderRegistry.ts";
-import { ServerSettingsService } from "../../../../apps/server/src/serverSettings.ts";
+import {
+  ProjectStoreV2,
+  ProviderRegistry,
+  ServerSettingsService,
+  ThreadManagementService,
+} from "../../../../apps/server/src/extensionApi.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
 
 export interface TaskProjectCandidate {

@@ -15,7 +15,21 @@ import {
   type OrchestrationV2Run,
   type ThreadId,
 } from "@t3tools/contracts";
-import { TaskAgentId, TaskId, type Task, type TaskAgent } from "@t3tools/tasks-contracts/v1";
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthSessionId,
+  RpcScopeAuthorization,
+  type AuthEnvironmentScope,
+} from "@t3tools/contracts";
+import {
+  TASKS_RPC_METHODS,
+  TaskAgentId,
+  TaskId,
+  TasksRpcGroup,
+  type Task,
+  type TaskAgent,
+} from "@t3tools/tasks-contracts/v1";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,7 +40,11 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { McpSchema, McpServer } from "effect/unstable/ai";
+import type * as Rpc from "effect/unstable/rpc/Rpc";
+import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import * as RpcTest from "effect/unstable/rpc/RpcTest";
 
+import { rpcScopeAuthorizationLayer } from "../../../../apps/server/src/auth/RpcAuthorization.ts";
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import { ProviderRegistry } from "../../../../apps/server/src/provider/Services/ProviderRegistry.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
@@ -42,15 +60,19 @@ import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/Proj
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "../../../../apps/server/src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
-import { TaskToolContextResolverLive } from "../context/TaskToolContextResolver.ts";
-import { TaskMcpToolsLive } from "../mcp/TaskMcpTools.ts";
-import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
-import { AllChatsInstructions } from "../persistence/AllChatsInstructions.ts";
-import { runTaskMigrations } from "../persistence/runTaskMigrations.ts";
+import {
+  composeExperimentalServerFeatures,
+  productFeatureLayer,
+  productMcpToolsLayer,
+  rpcContributionHandlersLayer,
+  rpcContributionScopes,
+  ServerProduct,
+} from "../../../../apps/server/src/extensionApi.ts";
+import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
+import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
-import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
-import { TaskPromptSettingsStoreLive } from "../persistence/TaskPromptSettingsStore.ts";
-import { TaskAgentService, TaskAgentServiceLive } from "./TaskAgentService.ts";
+import { TASKS_SERVER_FEATURE } from "../serverFeature.ts";
+import { TaskAgentService } from "./TaskAgentService.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const instanceId = ProviderInstanceId.make("codex-task-agent-test");
@@ -274,6 +296,13 @@ const task: Task = {
   triggerChangedAt: timestamp,
 };
 
+const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
+
+/**
+ * Upstream's v2 runtime with a scripted provider, plus the tasks feature
+ * composed through the product seam: the hooks core reads for its runtime
+ * services and its MCP server, with the product provided as the CLI does.
+ */
 function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<StartedTurn>>) {
   const db = SqlitePersistenceMemory;
   const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
@@ -281,32 +310,25 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
     ProviderAdapterRegistry.makeSingleLayer(makeTaskAgentAdapter(started)),
     { databaseLayer: db },
   );
-  const v2 = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
+  const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
     Layer.provideMerge(runtime),
     Layer.provideMerge(db),
-  );
-  const allChats = Layer.succeed(AllChatsInstructions, {
-    get: Effect.succeed(""),
-    set: () => Effect.void,
-  });
-  const taskStorage = Layer.mergeAll(TaskRepositoryLive, TaskPromptSettingsStoreLive).pipe(
-    Layer.provide(Layer.effectDiscard(Effect.orDie(runTaskMigrations))),
-    Layer.provide(allChats),
-  );
-  const agents = TaskAgentServiceLive.pipe(
-    Layer.provideMerge(taskStorage),
-    Layer.provideMerge(v2),
+    Layer.provideMerge(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
+    Layer.provideMerge(ServerSettings.layerTest().pipe(Layer.orDie)),
     Layer.provideMerge(NodeServices.layer),
   );
-  // The task MCP tools on the core MCP server, as a provider session calls them.
-  const tools = TaskMcpToolsLive.pipe(
+  const composed = productMcpToolsLayer.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
-    Layer.provideMerge(TaskToolServiceLive),
-    Layer.provide(TaskToolContextResolverLive),
-    Layer.provide(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
-    Layer.provide(ServerSettings.layerTest().pipe(Layer.orDie)),
+    Layer.provideMerge(productFeatureLayer),
+    Layer.provideMerge(core),
+    Layer.provide(Layer.succeed(ServerProduct, TASKS_PRODUCT)),
   );
-  return tools.pipe(Layer.provideMerge(agents));
+  // Feature services are erased at the product boundary; the tests read them.
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
+  return composed as Layer.Layer<
+    Layer.Success<typeof composed> | TaskRepository | TaskAgentService,
+    Layer.Error<typeof composed>
+  >;
 }
 
 /** Polls stored state until it is Some; the service settles runs asynchronously. */
@@ -608,4 +630,78 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       assert.include(textOf(fetched), "Needs Review");
     }),
   ),
+);
+
+/** The tasks RPC group as the WebSocket server serves it: with core's scope middleware. */
+const servedTasksGroup = TasksRpcGroup.middleware(RpcScopeAuthorization);
+const tasksRpcClient = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
+  RpcTest.makeClient(servedTasksGroup).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        rpcContributionHandlersLayer(TASKS_PRODUCT.rpc, {
+          currentSessionId: AuthSessionId.make("session:task-agents-v2"),
+        }) as Layer.Layer<Rpc.ToHandler<RpcGroup.Rpcs<typeof TasksRpcGroup>>>,
+        rpcScopeAuthorizationLayer(scopes, rpcContributionScopes(TASKS_PRODUCT.rpc)),
+      ),
+    ),
+  );
+
+it.live(
+  "the composed tasks feature migrates, lists its MCP tools and runs a task created over RPC",
+  () =>
+    runSlice("task-agent-v2-seam", ({ repository }) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const tables = new Set(
+          (yield* sql<{ readonly name: string }>`
+          SELECT name FROM sqlite_master WHERE type = 'table'
+        `).map((row) => row.name),
+        );
+        for (const table of ["tasks", "task_agents", "task_agent_runs", "task_automations"]) {
+          assert.isTrue(tables.has(table), `${table} exists`);
+        }
+        const ledger = yield* sql<{ readonly version: number }>`
+        SELECT version FROM feature_migration_history WHERE namespace = 'upcomputer.tasks'
+      `;
+        assert.lengthOf(ledger, TASK_MIGRATION_CONTRIBUTION.migrations.length);
+
+        const server = yield* McpServer.McpServer;
+        assert.deepStrictEqual(
+          new Set(server.tools.map(({ tool }) => tool.name)),
+          new Set(TASK_TOOL_SPECS.map((spec) => spec.name)),
+        );
+
+        yield* repository.upsertAgent(agent);
+        const input = {
+          projectId,
+          title: task.title,
+          description: task.description,
+          status: "To Do",
+        };
+        const reader = yield* tasksRpcClient([AuthOrchestrationReadScope]);
+        const denied = yield* reader[TASKS_RPC_METHODS.create](input).pipe(Effect.flip);
+        assert.strictEqual(denied._tag, "EnvironmentAuthorizationError");
+
+        const operator = yield* tasksRpcClient([
+          AuthOrchestrationReadScope,
+          AuthOrchestrationOperateScope,
+        ]);
+        const created = yield* operator[TASKS_RPC_METHODS.create](input);
+        const runOf = (status?: string) =>
+          repository
+            .searchAgentRuns({ taskId: created.id, limit: 1 })
+            .pipe(
+              Effect.map((runs) =>
+                Option.fromNullishOr(
+                  runs.find((run) => status === undefined || run.status === status),
+                ),
+              ),
+            );
+        const run = yield* eventually("the run to start", runOf());
+        assert.strictEqual(run.agentId, agent.id);
+        yield* eventually("the run to complete", runOf("completed"));
+        const fetched = yield* reader[TASKS_RPC_METHODS.get]({ id: created.id });
+        assert.strictEqual(fetched?.status, "Needs Review");
+      }).pipe(Effect.scoped),
+    ),
 );

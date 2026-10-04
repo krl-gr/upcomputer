@@ -16,6 +16,7 @@ export type { BuiltInDriversEnv } from "./provider/builtInDrivers.ts";
 export { McpInvocationContext } from "./mcp/McpInvocationContext.ts";
 export { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 export {
+  isActiveRun,
   latestActiveRun,
   ThreadManagementService,
 } from "./orchestration-v2/ThreadManagementService.ts";

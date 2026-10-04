@@ -25,11 +25,12 @@ import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-import { ProjectStoreV2 } from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
 import {
+  forkParked,
   isActiveRun,
+  ProjectStoreV2,
   ThreadManagementService,
-} from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
+} from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import {
@@ -1111,10 +1112,12 @@ ${text}`,
       ),
     ),
     (stream) => retryOperational(stream, { operation: "task-agent-run-events" }),
-    Effect.forkScoped,
+    forkParked,
   );
 
-  yield* Effect.forkScoped(
+  // Background work waits for server activation, so a standby server never
+  // starts or settles runs.
+  yield* forkParked(
     Effect.forever(
       Effect.sleep(ACTIVE_RUN_RECONCILIATION_INTERVAL).pipe(Effect.andThen(reconcileActiveRuns)),
     ),
@@ -1123,7 +1126,7 @@ ${text}`,
   // Wakes tasks whose notBefore passed since the previous sweep. Tasks already
   // due at startup are covered by `recover`.
   let notBeforeSweptUntil = yield* now;
-  yield* Effect.forkScoped(
+  yield* forkParked(
     Effect.forever(
       Effect.sleep(NOT_BEFORE_SWEEP_INTERVAL).pipe(
         Effect.andThen(
@@ -1156,7 +1159,7 @@ ${text}`,
       jobType: job.type,
     });
   };
-  yield* Effect.forkScoped(Effect.forever(Queue.take(jobs).pipe(Effect.flatMap(process))));
+  yield* forkParked(Effect.forever(Queue.take(jobs).pipe(Effect.flatMap(process))));
 
   return {
     scheduleTaskChanged,

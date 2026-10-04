@@ -56,8 +56,10 @@ import {
   type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 
-import { ProjectStoreV2 } from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
-import { ThreadManagementService } from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
+import {
+  ProjectStoreV2,
+  ThreadManagementService,
+} from "../../../../apps/server/src/extensionApi.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
 /** The V1 fork capped the core customInstructions setting at this length. */

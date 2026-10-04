@@ -3,11 +3,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 
-import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import {
   latestActiveRun,
+  McpInvocationContext,
   ThreadManagementService,
-} from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
+} from "../../../../apps/server/src/extensionApi.ts";
 import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";

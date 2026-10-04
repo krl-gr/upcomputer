@@ -587,6 +587,9 @@ importers:
       '@t3tools/tailscale':
         specifier: workspace:*
         version: link:../../packages/tailscale
+      '@t3tools/tasks-server':
+        specifier: workspace:*
+        version: link:../../packages/tasks-server
       '@t3tools/web':
         specifier: workspace:*
         version: link:../web
