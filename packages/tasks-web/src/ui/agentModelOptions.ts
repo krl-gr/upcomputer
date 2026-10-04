@@ -23,8 +23,16 @@ export function getAgentModelLabel(
 ): string {
   const provider = entries?.find((entry) => entry.instanceId === selection.instanceId);
   if (!provider) return selection.model;
-  const model = provider.models.find((candidate) => candidate.slug === selection.model);
-  return `${provider.displayName} · ${model ? getTriggerDisplayModelName(model) : selection.model}`;
+  return `${provider.displayName} · ${getAgentModelName(provider, selection.model)}`;
+}
+
+/** The model's display name, or its slug when the provider does not list it. */
+export function getAgentModelName(
+  provider: ProviderInstanceEntry | undefined,
+  slug: string,
+): string {
+  const model = provider?.models.find((candidate) => candidate.slug === slug);
+  return model ? getTriggerDisplayModelName(model) : slug;
 }
 
 /** A run's agent name and the harness and model it ran on, which can differ from the agent's current config. */

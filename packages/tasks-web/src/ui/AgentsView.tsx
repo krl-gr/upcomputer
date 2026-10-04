@@ -40,6 +40,7 @@ import { useInteractionModePresentations } from "../../../../apps/web/src/extens
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import {
   getAgentModelLabel,
+  getAgentModelName,
   getAgentModelOptionDescriptors,
   getAgentModelOptionPresentation,
   retainValidAgentModelOptions,
@@ -840,7 +841,7 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceEntries={selectedProviderCatalog?.entries ?? []}
                         showProviderIcon={false}
                         showProviderLabel
-                        triggerModelLabel={detailModelSlug}
+                        triggerModelLabel={getAgentModelName(detailModelProvider, detailModelSlug)}
                         modelOptionsByInstance={
                           selectedProviderCatalog?.modelOptionsByInstance ?? new Map()
                         }
@@ -1190,7 +1191,7 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceEntries={selectedProviderCatalog?.entries ?? []}
                         showProviderIcon={false}
                         showProviderLabel
-                        triggerModelLabel={detailModelSlug}
+                        triggerModelLabel={getAgentModelName(detailModelProvider, detailModelSlug)}
                         modelOptionsByInstance={
                           selectedProviderCatalog?.modelOptionsByInstance ?? new Map()
                         }
@@ -1361,9 +1362,9 @@ export function AgentsView(props: AgentsViewProps) {
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-[20%] px-4 py-3 font-medium">Name</th>
+                    <th className="w-[18%] px-4 py-3 font-medium">Name</th>
                     <th className="w-[15%] px-4 py-3 font-medium">Project</th>
-                    <th className="w-[18%] px-4 py-3 font-medium">Model</th>
+                    <th className="w-[25%] px-4 py-3 font-medium">Model</th>
                     <th className="px-4 py-3 font-medium">Triggers</th>
                     <th className="w-28 px-4 py-3 text-center font-medium">Status</th>
                   </tr>

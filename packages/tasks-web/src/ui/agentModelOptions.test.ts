@@ -6,6 +6,7 @@ import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerIns
 import type { ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
 import {
   getAgentModelLabel,
+  getAgentModelName,
   getAgentModelOptionPresentation,
   getTaskRunAgentPresentation,
   retainValidAgentModelOptions,
@@ -109,6 +110,8 @@ test("falls back to the slug where the catalog has no entry", () => {
     getAgentModelLabel(undefined, { instanceId: "codex", model: "gpt-test" } as never),
     "gpt-test",
   );
+  NodeAssert.equal(getAgentModelName(provider(), "gpt-test"), "GPT Test");
+  NodeAssert.equal(getAgentModelName(undefined, "gpt-test"), "gpt-test");
 });
 
 test("a run is labeled with its agent and its own model selection", () => {
