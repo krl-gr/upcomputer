@@ -13,6 +13,7 @@ import {
   T3_CODE_DARK_THEME_COLORS,
   RESERVED_THEME_IDS,
   THEME_COLOR_ROLES,
+  UPCOMPUTER_THEME,
   type ThemeAppearance,
   type ThemeColorRole,
   type ThemeColors,
@@ -20,7 +21,15 @@ import {
   type ThemeVariants,
 } from "@t3tools/shared/themePalettes";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
+export {
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  OCEAN_THEME,
+  T3_CHAT_THEME,
+  THEME_COLOR_ROLES,
+  UPCOMPUTER_THEME,
+};
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 export const T3_CHAT_THEME_ID = "t3-chat" as const;
@@ -1067,7 +1076,10 @@ export function updateThemeColorFamily(
   }
 }
 
-const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES;
+const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
+  UPCOMPUTER_THEME,
+  ...BUILT_IN_THEMES,
+];
 
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {
   const themeId = themeIdFromPreference(theme);

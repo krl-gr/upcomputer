@@ -51,6 +51,20 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          upcomputer: {
+            light: {
+              background: "oklch(0.997025 0 0)",
+              foreground: "oklch(0.273936 0.005477 286.033)",
+              accent: "oklch(0.487701 0.217531 264.105)",
+              chrome: "oklch(0.997025 0 0)",
+            },
+            dark: {
+              background: "oklch(0.186741 0 0)",
+              foreground: "oklch(0.970151 0 0)",
+              accent: "oklch(0.570912 0.210134 263.99)",
+              chrome: "oklch(0.186741 0 0)",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -139,6 +153,7 @@
           "ocean",
           "ember",
           "iris",
+          "upcomputer",
           "t3-chat-dark",
           "t3-grove",
           "t3-ocean",

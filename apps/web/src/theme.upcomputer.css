@@ -1,0 +1,8 @@
+/* Up.computer theme tokens that are not color roles. Colors live in the
+ * palette (packages/shared/src/upcomputerTheme.ts); this file only sets
+ * existing upstream variables, scoped to the theme id so upstream themes and
+ * the stock look stay untouched. */
+html[data-theme-id="upcomputer"] {
+  /* The Up.computer look has no fractal-noise grain on its surfaces. */
+  --surface-grain: none;
+}
