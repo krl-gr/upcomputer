@@ -1,4 +1,3 @@
-import { RelayEnvironmentConnectScope } from "@upcomputer/contracts/relay";
 import { withRelayClientTracing } from "@upcomputer/shared/relayTracing";
 import {
   UPCOMPUTER_RELEASE_CAPABILITIES,
@@ -11,7 +10,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
-import * as ManagedRelay from "../relay/managedRelay.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
   BearerConnectionCredential,
@@ -20,12 +18,7 @@ import {
   SshConnectionProfile,
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
-import {
-  credentialMissingError,
-  environmentMismatchError,
-  mapManagedRelayError,
-  profileMissingError,
-} from "./errors.ts";
+import { credentialMissingError, environmentMismatchError, profileMissingError } from "./errors.ts";
 import type {
   BearerConnectionTarget,
   ConnectionTarget,
@@ -143,38 +136,12 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
 });
 
 const makeRelayBroker = Effect.fn("clientRuntime.connection.broker.makeRelay")(function* () {
-  const relay = yield* ManagedRelay.ManagedRelayClient;
-  const session = yield* ClientCapabilities.CloudSession;
-  const identity = yield* ClientCapabilities.RelayDeviceIdentity;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
 
   return Effect.fnUntraced(
     function* (target: RelayConnectionTarget) {
       const authorized = yield* remote.authorizeDpop({
         expectedEnvironmentId: target.environmentId,
-        obtainBootstrap: Effect.gen(function* () {
-          const clerkToken = yield* session.clerkToken.pipe(
-            Effect.withSpan("relay.connection.cloudSessionToken.resolve"),
-          );
-          const deviceId = yield* identity.deviceId.pipe(
-            Effect.withSpan("relay.connection.deviceIdentity.resolve"),
-          );
-          const connected = yield* relay
-            .connectEnvironment({
-              clerkToken,
-              scopes: [RelayEnvironmentConnectScope],
-              environmentId: target.environmentId,
-              ...(Option.isSome(deviceId) ? { deviceId: deviceId.value } : {}),
-            })
-            .pipe(Effect.mapError(mapManagedRelayError));
-          if (connected.environmentId !== target.environmentId) {
-            return yield* environmentMismatchError({
-              expected: target.environmentId,
-              actual: connected.environmentId,
-            });
-          }
-          return connected;
-        }).pipe(Effect.withSpan("relay.connection.bootstrap.obtain")),
       });
       return {
         environmentId: authorized.environmentId,

@@ -25,6 +25,10 @@ controls remain in **Settings** > **Connections**.
 
 If UpComputer Connect cannot connect, check the date and time on both devices, then try again.
 
+UpComputer Connect renews access credentials when needed without disconnecting a healthy
+connection. A failed renewal affects only that request; it does not disconnect an otherwise
+healthy conversation.
+
 ## Pairing links
 
 Pairing codes and share links are available only in the client that created them, while its

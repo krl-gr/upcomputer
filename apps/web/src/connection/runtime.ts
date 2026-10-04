@@ -20,12 +20,16 @@ type ConnectionLayerSource =
   | typeof runtimeContextLayer
   | typeof connectionPlatformLayer;
 
-const connectionLayer = Layer.merge(
-  Connection.layerWithOptions({
-    resolveClientFactory: () => getInstalledWebProductComposition().rpc?.clientFactory,
-  }),
-  snapshotLoaderLayer,
-).pipe(Layer.provideMerge(Layer.mergeAll(runtimeContextLayer, providedConnectionPlatformLayer)));
+// Snapshot loaders read the connection's shared authorization service, so they
+// sit on top of the connection layer instead of beside it.
+const connectionLayer = snapshotLoaderLayer.pipe(
+  Layer.provideMerge(
+    Connection.layerWithOptions({
+      resolveClientFactory: () => getInstalledWebProductComposition().rpc?.clientFactory,
+    }),
+  ),
+  Layer.provideMerge(Layer.mergeAll(runtimeContextLayer, providedConnectionPlatformLayer)),
+);
 
 export const connectionAtomRuntime: Atom.AtomRuntime<
   Layer.Success<ConnectionLayerSource>,

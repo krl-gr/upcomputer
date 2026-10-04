@@ -11,13 +11,9 @@ import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
 
-const resolverLayer = ConnectionResolver.layer.pipe(
-  Layer.provide(RemoteEnvironmentAuthorization.layer),
-);
-
 const driverLayer = (options: RpcSession.RpcSessionLayerOptions = {}) =>
   ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layerWithOptions(options))),
+    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layerWithOptions(options))),
   );
 
 const registryLayer = (options: RpcSession.RpcSessionLayerOptions = {}) =>
@@ -41,7 +37,12 @@ const connectionStartupLayer = Layer.effectDiscard(
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 
+// One authorization service is shared by connection setup and HTTP snapshot
+// loaders, so a renewed relay credential is reused instead of minted twice.
 export const layerWithOptions = (options: RpcSession.RpcSessionLayerOptions = {}) =>
-  connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer(options)));
+  connectionStartupLayer.pipe(
+    Layer.provideMerge(connectionServicesLayer(options)),
+    Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
+  );
 
 export const layer = layerWithOptions();

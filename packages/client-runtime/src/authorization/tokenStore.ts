@@ -12,6 +12,7 @@ export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
   "@upcomputer/client-runtime/authorization/RemoteDpopAccessToken",
 )({
   environmentId: EnvironmentId,
+  accountId: Schema.optionalKey(Schema.String),
   label: Schema.String,
   endpoint: RelayManagedEndpoint,
   accessToken: Schema.String,
