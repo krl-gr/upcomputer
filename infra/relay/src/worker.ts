@@ -216,7 +216,11 @@ export default class Api extends Cloudflare.Worker<Api>()(
       Layer.provideMerge(LiveActivities.layer),
       Layer.provideMerge(DeliveryAttempts.layer),
       Layer.provideMerge(RelayTokens.layer),
-      Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
+      Layer.provideMerge(
+        RelayDb.RelayTransactions.layer.pipe(
+          Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
+        ),
+      ),
       Layer.provideMerge(Layer.effect(RelayConfiguration.RelayConfiguration, loadSettings)),
       Layer.provideMerge(webcryptoLayer),
     );

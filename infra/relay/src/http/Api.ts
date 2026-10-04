@@ -403,6 +403,67 @@ export const healthApi = HttpApiBuilder.group(
   }),
 );
 
+export const revokeEnvironmentLinkRecord = Effect.fn(
+  "relay.api.client.revokeEnvironmentLinkRecord",
+)(function* (input: {
+  readonly userId: string;
+  readonly environmentId: string;
+  readonly environmentPublicKey: string;
+}) {
+  const transactions = yield* RelayDb.RelayTransactions;
+  const links = yield* EnvironmentLinks.EnvironmentLinks;
+  const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
+  return yield* transactions.withTransaction(
+    Effect.gen(function* () {
+      const revoked = yield* links.revokeForUser({
+        userId: input.userId,
+        environmentId: input.environmentId,
+      });
+      if (revoked) {
+        yield* credentials.revokeForEnvironmentPublicKey({
+          environmentId: input.environmentId,
+          environmentPublicKey: input.environmentPublicKey,
+        });
+      }
+      return revoked;
+    }),
+  );
+});
+
+export const unlinkEnvironmentRecord = Effect.fn("relay.api.client.unlinkEnvironmentRecord")(
+  function* (input: { readonly userId: string; readonly environmentId: string }) {
+    const links = yield* EnvironmentLinks.EnvironmentLinks;
+    const managedEndpointProvider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+    const deprovisionTarget = yield* managedEndpointProvider.prepareDeprovision({
+      userId: input.userId,
+      environmentId: input.environmentId,
+    });
+    const link = yield* links.getForUser({
+      userId: input.userId,
+      environmentId: input.environmentId,
+    });
+    const unlinked =
+      link === null
+        ? false
+        : yield* revokeEnvironmentLinkRecord({
+            userId: input.userId,
+            environmentId: link.environmentId,
+            environmentPublicKey: link.environmentPublicKey,
+          });
+
+    // External teardown cannot share the SQL transaction. Run it only after
+    // revocation commits so a database failure leaves a fully usable active
+    // link. Still run teardown when the link is already revoked, allowing a
+    // retry to finish cleanup after an earlier Cloudflare failure.
+    yield* managedEndpointProvider.deprovision({
+      userId: input.userId,
+      environmentId: input.environmentId,
+      target: deprovisionTarget,
+    });
+    return unlinked;
+  },
+);
+
 export const mobileApi = HttpApiBuilder.group(
   RelayApi,
   "mobile",
@@ -470,8 +531,17 @@ export const clientApi = HttpApiBuilder.group(
     const linker = yield* EnvironmentLinker.EnvironmentLinker;
     const links = yield* EnvironmentLinks.EnvironmentLinks;
     const managedEndpointProvider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
-    const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
     const devices = yield* Devices.Devices;
+    // Services the shared unlink helpers need, captured while the group is built
+    // so handlers do not leak them into the Worker's request context.
+    const unlinkServices = Context.make(EnvironmentLinks.EnvironmentLinks, links).pipe(
+      Context.add(ManagedEndpointProvider.ManagedEndpointProvider, managedEndpointProvider),
+      Context.add(
+        EnvironmentCredentials.EnvironmentCredentials,
+        yield* EnvironmentCredentials.EnvironmentCredentials,
+      ),
+      Context.add(RelayDb.RelayTransactions, yield* RelayDb.RelayTransactions),
+    );
     return handlers
       .handle(
         "listEnvironments",
@@ -592,29 +662,17 @@ export const clientApi = HttpApiBuilder.group(
         Effect.fn("relay.api.client.unlinkEnvironment")(function* (args) {
           const { params } = args;
           const { userId } = yield* RelayClientPrincipal;
-          yield* managedEndpointProvider
-            .deprovision({
-              userId,
-              environmentId: params.environmentId,
-            })
-            .pipe(Effect.catch(() => relayInternalErrorResponse("upstream_unavailable")));
-          const link = yield* links.getForUser({
+          const unlinked = yield* unlinkEnvironmentRecord({
             userId,
             environmentId: params.environmentId,
-          });
-          if (link === null) {
-            return { ok: false };
-          }
-          const unlinked = yield* links.revokeForUser({
-            userId,
-            environmentId: params.environmentId,
-          });
-          if (unlinked) {
-            yield* credentials.revokeForEnvironmentPublicKey({
-              environmentId: link.environmentId,
-              environmentPublicKey: link.environmentPublicKey,
-            });
-          }
+          }).pipe(
+            Effect.provide(unlinkServices),
+            Effect.catchTags({
+              SqlError: () => relayInternalErrorResponse("internal_error"),
+              ManagedEndpointDeprovisioningFailed: () =>
+                relayInternalErrorResponse("upstream_unavailable"),
+            }),
+          );
           return { ok: unlinked };
         }, mapRelayCommonApiErrors("not_authorized")),
       )
