@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import indexHtml from "../index.html?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
+  DEFAULT_THEME_PREFERENCE,
   getDefaultThemeColors,
   getThemeColorsForMode,
   invalidateCustomThemes,
@@ -16,6 +17,7 @@ import {
   THEME_APPEARANCE_MODE_STORAGE_KEY,
   THEME_FOLLOW_SYSTEM_STORAGE_KEY,
   toCanonicalThemeColor,
+  UPCOMPUTER_THEME,
 } from "./themePalette";
 
 const THEME_STORAGE_KEY = "t3code:theme";
@@ -113,7 +115,7 @@ function runtimeResolvedAppearance(
   invalidateCustomThemes();
   try {
     const raw = storage[THEME_STORAGE_KEY] ?? null;
-    const theme = raw !== null && isKnownThemePreference(raw) ? raw : "system";
+    const theme = raw !== null && isKnownThemePreference(raw) ? raw : DEFAULT_THEME_PREFERENCE;
     const followRaw = storage[THEME_FOLLOW_SYSTEM_STORAGE_KEY] ?? null;
     const appearanceRaw = storage[THEME_APPEARANCE_MODE_STORAGE_KEY] ?? null;
     const appearanceMode =
@@ -123,7 +125,7 @@ function runtimeResolvedAppearance(
           ? "system"
           : followRaw === "false"
             ? null
-            : theme === "system"
+            : theme === "system" || theme === DEFAULT_THEME_PREFERENCE
               ? "system"
               : null;
     const followSystem = appearanceMode === "system";
@@ -342,7 +344,14 @@ describe("index.html boot script", () => {
   // boot script's hand-maintained copy into a CI-enforced contract: any
   // palette change breaks this test until the copy in index.html is updated.
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [
+      UPCOMPUTER_THEME,
+      T3_CHAT_THEME,
+      GROVE_THEME,
+      OCEAN_THEME,
+      EMBER_THEME,
+      IRIS_THEME,
+    ]) {
       // The boot script resolves every built-in from a light base appearance.
       expect(theme.appearance).toBe("light");
       for (const mode of ["light", "dark"] as const) {
@@ -491,26 +500,25 @@ describe("index.html boot script", () => {
       prefersDark: false,
     });
 
-    expect(boot.themeId).toBeUndefined();
-    expect(boot.themeSelected).toBeUndefined();
-    expect(boot.backgroundColor).toBe("#ffffff");
-    expect(boot.metaContent).toBe("#ffffff");
+    expect(boot.themeId).toBe(DEFAULT_THEME_PREFERENCE);
+    expect(boot.backgroundColor).toBe(UPCOMPUTER_THEME.colors.chrome);
+    expect(boot.metaContent).toBe(UPCOMPUTER_THEME.colors.chrome);
   });
 
-  it("leaves unknown preferences unthemed so the runtime default applies", () => {
-    const boot = runBootScript({
-      storage: { [THEME_STORAGE_KEY]: "gone-theme" },
-      prefersDark: true,
-    });
-    expect(boot.themeId).toBeUndefined();
-    expect(boot.themeSelected).toBeUndefined();
-    expect(boot.isDark).toBe(true);
+  it("puts missing and unknown preferences on the default theme, following the OS", () => {
+    for (const storage of [{}, { [THEME_STORAGE_KEY]: "gone-theme" }]) {
+      const boot = runBootScript({ storage, prefersDark: true });
+      expect(boot.themeId).toBe(DEFAULT_THEME_PREFERENCE);
+      expect(boot.isDark).toBe(true);
+      expect(boot.backgroundColor).toBe(UPCOMPUTER_THEME.variants!.dark!.chrome);
+    }
   });
 
   it("follows the OS appearance when storage is unavailable", () => {
     const light = runBootScript({ storageThrows: true, prefersDark: false });
     expect(light.isDark).toBe(false);
-    expect(light.themeId).toBeUndefined();
+    expect(light.themeId).toBe(DEFAULT_THEME_PREFERENCE);
+    expect(light.backgroundColor).toBe(UPCOMPUTER_THEME.colors.chrome);
 
     const dark = runBootScript({ storageThrows: true, prefersDark: true });
     expect(dark.isDark).toBe(true);

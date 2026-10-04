@@ -1,3 +1,7 @@
+import { UPCOMPUTER_THEME_ID } from "./upcomputerTheme.ts";
+
+export { UPCOMPUTER_THEME, UPCOMPUTER_THEME_ID } from "./upcomputerTheme.ts";
+
 export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
 /** The standard T3 Code palette, kept separate from the optional built-in theme library. */
@@ -21,6 +25,7 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "light",
   "dark",
   ...BUILT_IN_THEME_IDS,
+  UPCOMPUTER_THEME_ID,
   "t3-chat-dark",
   "t3-grove",
   "t3-ocean",
