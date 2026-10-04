@@ -1195,6 +1195,8 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export { DEFAULT_CUSTOM_INSTRUCTIONS };
+/** The longest "all chats" text a settings write accepts. */
+export const CUSTOM_INSTRUCTIONS_MAX_CHARS = 20_000;
 
 export const ServerSettings = Schema.Struct({
   /**
@@ -1585,7 +1587,9 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
-  customInstructions: Schema.optionalKey(TrimmedString),
+  customInstructions: Schema.optionalKey(
+    TrimmedString.check(Schema.isMaxLength(CUSTOM_INSTRUCTIONS_MAX_CHARS)),
+  ),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([

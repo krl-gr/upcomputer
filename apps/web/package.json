@@ -29,6 +29,8 @@
     "@t3tools/client-runtime": "workspace:*",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/shared": "workspace:*",
+    "@t3tools/tasks-contracts": "workspace:*",
+    "@t3tools/tasks-web": "workspace:*",
     "@tanstack/react-pacer": "^0.19.4",
     "@tanstack/react-router": "^1.160.2",
     "@tiptap/core": "^3.31.3",

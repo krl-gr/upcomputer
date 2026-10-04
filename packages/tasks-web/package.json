@@ -1,0 +1,47 @@
+{
+  "name": "@t3tools/tasks-web",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./rpc": {
+      "types": "./src/rpc/index.ts",
+      "import": "./src/rpc/index.ts"
+    },
+    "./state": {
+      "types": "./src/state/index.ts",
+      "import": "./src/state/index.ts"
+    },
+    "./feature": {
+      "types": "./src/feature.tsx",
+      "import": "./src/feature.tsx"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@t3tools/client-runtime": "workspace:*",
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "@t3tools/tasks-contracts": "workspace:*",
+    "@tanstack/react-router": "^1.160.2",
+    "effect": "catalog:",
+    "lucide-react": "^0.564.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "~19.3.0",
+    "@types/react-dom": "~19.2.3",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.2.6",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

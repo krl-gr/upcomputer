@@ -1,0 +1,30 @@
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    },
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "globalDate": "off",
+          "globalConsole": "off",
+          "globalRandom": "off",
+          "globalTimers": "off",
+          "globalFetch": "off",
+          // Source-shape tests read sibling files directly.
+          "nodeBuiltinImport": "suggestion"
+        }
+      }
+    ]
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "../../apps/web/src/vite-env.d.ts",
+    "../../apps/web/src/router.ts"
+  ]
+}

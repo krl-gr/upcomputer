@@ -51,6 +51,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
+  CUSTOM_INSTRUCTIONS_MAX_CHARS,
   ProjectId,
   type ModelSelection,
   type OrchestrationV2ThreadProjection,
@@ -62,8 +63,6 @@ import {
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
-/** The V1 fork capped the core customInstructions setting at this length. */
-const CUSTOM_INSTRUCTIONS_MAX_CHARS = 20_000;
 import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
