@@ -1176,7 +1176,7 @@ const makeCloudMintCredentialRequest = (input: {
 }) => {
   const payload = {
     iss: input.issuer ?? "https://relay.example.test",
-    aud: input.audience ?? `t3-env:${input.environmentId}`,
+    aud: input.audience ?? `upcomputer-env:${input.environmentId}`,
     sub: input.subject ?? "user_123",
     jti: input.jti ?? "cloud-mint-jti-1",
     environmentId: input.environmentId,
@@ -1213,7 +1213,7 @@ const makeCloudEnvironmentHealthRequest = (input: {
 }) => {
   const payload = {
     iss: input.issuer ?? "https://relay.example.test",
-    aud: input.audience ?? `t3-env:${input.environmentId}`,
+    aud: input.audience ?? `upcomputer-env:${input.environmentId}`,
     sub: input.subject ?? "user_123",
     jti: input.jti ?? "cloud-health-jti-1",
     environmentId: input.environmentId,
@@ -3417,7 +3417,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           privateKey: cloudKeyPair.privateKey,
           environmentId: testEnvironmentDescriptor.environmentId,
           clientProofKeyThumbprint: "client-proof-key-thumbprint",
-          audience: "t3-env:other-environment",
+          audience: "upcomputer-env:other-environment",
           jti: "cloud-mint-jti-wrong-audience",
           nonce: "cloud-mint-nonce-wrong-audience",
           issuedAt: DateTime.formatIso(now),
@@ -3584,7 +3584,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         makeCloudEnvironmentHealthRequest({
           privateKey: cloudKeyPair.privateKey,
           environmentId: testEnvironmentDescriptor.environmentId,
-          audience: "t3-env:other-environment",
+          audience: "upcomputer-env:other-environment",
           jti: "cloud-health-jti-wrong-audience",
           nonce: "cloud-health-nonce-wrong-audience",
           issuedAt: DateTime.formatIso(now),

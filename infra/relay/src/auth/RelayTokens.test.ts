@@ -145,7 +145,7 @@ describe("RelayTokens", () => {
       const relayTokens = yield* RelayTokens.RelayTokens;
       const token = yield* signRelayJwt({
         privateKey: keyPair.privateKey,
-        typ: "t3-relay-dpop-access+jwt",
+        typ: "upcomputer-relay-dpop-access+jwt",
         payload: {
           iss: "https://relay.example.test",
           aud: "https://relay.example.test",
@@ -163,12 +163,44 @@ describe("RelayTokens", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("accepts only the UpComputer DPoP access token type", () =>
+    Effect.gen(function* () {
+      const relayTokens = yield* RelayTokens.RelayTokens;
+      const sign = (typ: string) =>
+        signRelayJwt({
+          privateKey: keyPair.privateKey,
+          typ,
+          payload: {
+            iss: "https://relay.example.test",
+            aud: "https://relay.example.test",
+            sub: "user_123",
+            jti: `access-token-${typ}`,
+            iat: 100,
+            exp: 200,
+            client_id: "upcomputer-web",
+            scope: "environment:connect",
+            cnf: { jkt: "proof-key-thumbprint" },
+          },
+        });
+
+      const token = yield* sign("upcomputer-relay-dpop-access+jwt");
+      expect(
+        yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 150 }),
+      ).toMatchObject({ jti: "access-token-upcomputer-relay-dpop-access+jwt" });
+
+      const upstreamToken = yield* sign("t3-relay-dpop-access+jwt");
+      expect(
+        yield* relayTokens.verifyDpopAccessToken({ token: upstreamToken, nowEpochSeconds: 150 }),
+      ).toBeNull();
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("rejects mobile registration scope on a web public client token", () =>
     Effect.gen(function* () {
       const relayTokens = yield* RelayTokens.RelayTokens;
       const token = yield* signRelayJwt({
         privateKey: keyPair.privateKey,
-        typ: "t3-relay-dpop-access+jwt",
+        typ: "upcomputer-relay-dpop-access+jwt",
         payload: {
           iss: "https://relay.example.test",
           aud: "https://relay.example.test",

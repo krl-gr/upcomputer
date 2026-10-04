@@ -139,7 +139,7 @@ const make = Effect.gen(function* () {
         publicKey: input.environmentPublicKey,
         token: input.request.proof,
         typ: RELAY_ACTIVITY_PUBLISH_TYP,
-        issuer: `t3-env:${input.environmentId}`,
+        issuer: `upcomputer-env:${input.environmentId}`,
         audience: normalizeRelayIssuer(config.relayIssuer),
         nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
       }).pipe(

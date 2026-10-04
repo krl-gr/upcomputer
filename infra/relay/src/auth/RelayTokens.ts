@@ -23,8 +23,8 @@ import * as Schema from "effect/Schema";
 
 import * as RelayConfiguration from "../Config.ts";
 
-const LINK_CHALLENGE_TYP = "t3-link-challenge+jwt";
-const ACCESS_TOKEN_TYP = "t3-relay-dpop-access+jwt";
+const LINK_CHALLENGE_TYP = "upcomputer-link-challenge+jwt";
+const ACCESS_TOKEN_TYP = "upcomputer-relay-dpop-access+jwt";
 const LINK_CHALLENGE_KIND = "environment_link_challenge";
 export const RELAY_DPOP_ACCESS_TOKEN_TTL = "30 minutes";
 
