@@ -79,6 +79,23 @@ Requested scopes must be a subset of the one-time bootstrap credential grant.
 An ordinary paired client therefore cannot exchange its grant for
 `access:read`, `access:write`, or `relay:write`.
 
+### DPoP-Bound Access Token
+
+The same `/oauth/token` exchange supports proof-of-possession tokens. A client
+that sends a `DPoP` header has its proof verified by `verifyRequestDpopProof`;
+the resulting JWK thumbprint is stored on the session, which is then issued with
+method `dpop-access-token` and a one-hour TTL instead of the bearer default. An
+invalid proof gets a DPoP challenge header and a credential error rather than a
+bearer token. Newer servers include a safe `dpopFailureReason` category in that
+error. When an older server omits the category, clients mention clock skew as
+one possible cause rather than presenting it as confirmed.
+
+`dpop-access-token` is advertised alongside `browser-session-cookie` and
+`bearer-access-token` in the descriptor's `sessionMethods`
+(`EnvironmentAuthPolicy.ts`), so clients can discover support rather than
+assume it. Relay-brokered clients use this mode so that a leaked token cannot be
+replayed without the corresponding key.
+
 ### WebSocket Ticket
 
 `POST /api/auth/websocket-ticket` accepts any authenticated session and returns

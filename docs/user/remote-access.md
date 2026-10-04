@@ -23,6 +23,8 @@ Deregistration is an account action and does not need a connection to the enviro
 works for a machine that was wiped or is no longer reachable. Device-local connect and disconnect
 controls remain in **Settings** > **Connections**.
 
+If UpComputer Connect cannot connect, check the date and time on both devices, then try again.
+
 ## Pairing links
 
 Pairing codes and share links are available only in the client that created them, while its
