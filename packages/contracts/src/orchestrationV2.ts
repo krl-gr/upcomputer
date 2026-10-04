@@ -1036,6 +1036,13 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     CommandNotificationSource,
     Schema.Struct({ kind: Schema.Literal("monitor") }),
     Schema.Struct({ kind: Schema.Literal("background_task") }),
+    // UpComputer task-agent runs that finished for tasks created in this thread.
+    Schema.Struct({
+      kind: Schema.Literal("task_agent_run"),
+      tasks: Schema.Array(Schema.Struct({ id: TrimmedNonEmptyString, title: Schema.String })),
+      /** The run's own thread, when the notification reports one run. */
+      childThreadId: Schema.optional(ThreadId),
+    }),
   ],
   (kind) => Schema.Struct({ kind }),
   () => ({ kind: "background_task" }),

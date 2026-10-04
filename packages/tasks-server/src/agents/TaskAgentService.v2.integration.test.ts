@@ -73,6 +73,7 @@ import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TASKS_SERVER_FEATURE } from "../serverFeature.ts";
 import { TaskAgentService } from "./TaskAgentService.ts";
+import { TaskSourceWake } from "./TaskSourceWake.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const instanceId = ProviderInstanceId.make("codex-task-agent-test");
@@ -326,7 +327,7 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
   // Feature services are erased at the product boundary; the tests read them.
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   return composed as Layer.Layer<
-    Layer.Success<typeof composed> | TaskRepository | TaskAgentService,
+    Layer.Success<typeof composed> | TaskRepository | TaskAgentService | TaskSourceWake,
     Layer.Error<typeof composed>
   >;
 }
@@ -388,6 +389,7 @@ const runSlice = <A, E>(
     E,
     | TaskRepository
     | TaskAgentService
+    | TaskSourceWake
     | SqlClient.SqlClient
     | McpServer.McpServer
     | ProjectStore.ProjectStoreV2
@@ -632,6 +634,54 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       assert.include(textOf(transcript), "task_agent_result");
       const fetched = yield* callTool("task_get", { id: createdTask.id });
       assert.include(textOf(fetched), "Needs Review");
+
+      // The chat hears about the finished run once, as a queued notification turn.
+      const wake = yield* TaskSourceWake;
+      const notificationsOf = threads
+        .getThreadRecords(chatThreadId, ["messages"])
+        .pipe(
+          Effect.map((records) =>
+            records.messages.filter(
+              (message) => message.notification?.source.kind === "task_agent_run",
+            ),
+          ),
+        );
+      const [notified] = yield* eventually(
+        "the source chat notification",
+        Effect.gen(function* () {
+          yield* wake.sweep;
+          const messages = yield* notificationsOf;
+          return messages.length > 0 ? Option.some(messages) : Option.none();
+        }),
+      );
+      yield* wake.sweep;
+      assert.lengthOf(yield* notificationsOf, 1);
+      assert.strictEqual(notified?.senderThreadId, run.threadId);
+      assert.strictEqual(notified?.createdBy, "agent");
+      assert.strictEqual(notified?.creationSource, "server");
+      assert.deepStrictEqual(notified?.notification, {
+        source: {
+          kind: "task_agent_run",
+          tasks: [{ id: createdTask.id, title: task.title }],
+          childThreadId: run.threadId,
+        },
+        outcome: "completed",
+        summary: `Task "${task.title}" completed`,
+      });
+      assert.include(notified?.text, "Summary: Handled 1");
+      // The queue delivers it as a turn of its own once the chat is idle.
+      yield* eventually(
+        "the notification turn",
+        threads
+          .getThreadRecords(chatThreadId, ["runs"])
+          .pipe(
+            Effect.map((records) =>
+              Option.fromNullishOr(
+                records.runs.find((candidate) => candidate.userMessageId === notified?.id),
+              ),
+            ),
+          ),
+      );
     }),
   ),
 );

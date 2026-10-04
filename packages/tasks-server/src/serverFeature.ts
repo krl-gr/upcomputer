@@ -7,6 +7,7 @@ import {
   forkParked,
 } from "../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService, TaskAgentServiceLive } from "./agents/TaskAgentService.ts";
+import { TaskSourceWakeLive } from "./agents/TaskSourceWake.ts";
 import { TaskAutomationServiceLive } from "./automations/TaskAutomationService.ts";
 import { TaskToolContextResolverLive } from "./context/TaskToolContextResolver.ts";
 import { TaskMcpToolsLive } from "./mcp/TaskMcpTools.ts";
@@ -28,7 +29,9 @@ const taskAgentsLive = TaskAgentServiceLive.pipe(
 );
 
 export const TaskServicesLive = TaskToolServiceLive.pipe(
-  Layer.provideMerge(Layer.mergeAll(TaskToolContextResolverLive, TaskAutomationServiceLive)),
+  Layer.provideMerge(
+    Layer.mergeAll(TaskToolContextResolverLive, TaskAutomationServiceLive, TaskSourceWakeLive),
+  ),
   Layer.provideMerge(taskAgentsLive),
 );
 
