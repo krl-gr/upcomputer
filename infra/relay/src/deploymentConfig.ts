@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 
 const DNS_LABEL_MAX_LENGTH = 63;
 const MANAGED_ENDPOINT_HASH_LENGTH = 16;
-const MANAGED_ENDPOINT_TUNNEL_PREFIX = "t3coderelay-managedendpoint";
+const MANAGED_ENDPOINT_TUNNEL_PREFIX = "upcomputerrelay-managedendpoint";
 export const MANAGED_ENDPOINT_ZONE_OWNER_STAGE = "prod";
 
 export class RelayPublicDomainLabelTooLongError extends Schema.TaggedErrorClass<RelayPublicDomainLabelTooLongError>()(

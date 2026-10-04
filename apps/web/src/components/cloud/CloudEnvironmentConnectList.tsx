@@ -113,7 +113,11 @@ export function CloudEnvironmentConnectRows({
         ? cause.message
         : "Could not connect the UpComputer Connect environment.";
     const traceId = findErrorTraceId(cause);
-    console.error("[t3-connect] Could not connect environment", { message, traceId, cause });
+    console.error("[upcomputer-connect] Could not connect environment", {
+      message,
+      traceId,
+      cause,
+    });
     toastManager.add({
       type: "error",
       title: "Could not connect environment",

@@ -47,7 +47,7 @@ export function useManagedRelayEnvironments() {
   const snapshot = readManagedRelaySnapshotState(result);
   useEffect(() => {
     if (snapshot.error) {
-      console.error("[t3-cloud] Relay environment listing failed", {
+      console.error("[upcomputer-connect] Relay environment listing failed", {
         message: snapshot.error,
         traceId: snapshot.errorTraceId,
       });
@@ -74,7 +74,7 @@ export function useManagedRelayDevices() {
   const snapshot = readManagedRelaySnapshotState(result);
   useEffect(() => {
     if (snapshot.error) {
-      console.error("[t3-cloud] Relay device listing failed", {
+      console.error("[upcomputer-connect] Relay device listing failed", {
         message: snapshot.error,
         traceId: snapshot.errorTraceId,
       });
