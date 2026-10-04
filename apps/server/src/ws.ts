@@ -246,6 +246,12 @@ import {
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+import { ServerProduct } from "./product/ServerProduct.ts";
+import {
+  mergeRpcContributionGroups,
+  rpcContributionHandlersLayer,
+  rpcContributionScopes,
+} from "./product/RpcContribution.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -3784,6 +3790,9 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const sql = yield* SqlClient.SqlClient;
+    const product = yield* ServerProduct;
+    const rpcGroup = mergeRpcContributionGroups(ServerWsRpcGroup, product.rpc);
+    const contributedScopes = rpcContributionScopes(product.rpc);
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3820,20 +3829,18 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         yield* analytics.record("client.connected", clientAnalyticsProps);
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
-          yield* RpcServer.make(ServerWsRpcGroup, { disableTracing: true }).pipe(
+          yield* RpcServer.make(rpcGroup, { disableTracing: true }).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
-            Effect.provide(rpcScopeAuthorizationLayer(session.scopes)),
+            Effect.provide(rpcScopeAuthorizationLayer(session.scopes, contributedScopes)),
             Effect.forkScoped,
           );
           // @effect-diagnostics-next-line returnEffectInGen:off
           return httpEffect;
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(
-              session,
-              clientOrigin,
-              clientAnalyticsProps,
-              previewAutomationBroker,
+            Layer.merge(
+              makeWsRpcLayer(session, clientOrigin, clientAnalyticsProps, previewAutomationBroker),
+              rpcContributionHandlersLayer(product.rpc, { currentSessionId: session.sessionId }),
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

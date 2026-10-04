@@ -62,6 +62,7 @@ import {
 } from "./ProviderOrchestrationAdapterInfrastructure.ts";
 import * as AcpRegistrySupport from "../acp/AcpRegistrySupport.ts";
 import { AcpRegistryCatalogLive } from "./AcpRegistryCatalog.ts";
+import { ServerProduct, withProductProviderDrivers } from "../../product/ServerProduct.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -179,7 +180,7 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
         : deriveProviderInstanceConfigMap(initialSettings);
 
     const mutableLayer = ProviderInstanceRegistryMutableLayer({
-      drivers: BUILT_IN_DRIVERS,
+      drivers: withProductProviderDrivers(BUILT_IN_DRIVERS, yield* ServerProduct),
       configMap: initialConfigMap,
     }).pipe(
       Layer.provide(ProviderOrchestrationAdapterInfrastructureLive),

@@ -58,6 +58,7 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import { productMcpToolsLayer } from "../product/ServerProduct.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -726,4 +727,5 @@ export const layer = Layer.mergeAll(
   WorktreeToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
+  productMcpToolsLayer,
 ).pipe(Layer.provideMerge(McpTransportLive));

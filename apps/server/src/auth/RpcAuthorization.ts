@@ -206,7 +206,12 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeBackgroundPolicy]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
-export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {
+export function requiredScopeForRpcMethod(
+  method: string,
+  contributedScopes?: ReadonlyMap<string, AuthEnvironmentScope>,
+): AuthEnvironmentScope {
+  const contributed = contributedScopes?.get(method);
+  if (contributed !== undefined) return contributed;
   if (!Object.hasOwn(RPC_REQUIRED_SCOPES, method)) {
     throw new Error(`RPC method ${method} has no declared authorization scope.`);
   }
@@ -223,10 +228,16 @@ export const rpcAuthorizationError = (requiredScope: AuthEnvironmentScope) =>
     requiredScope,
   });
 
-/** Authorizes every RPC on one connection against that connection's session scopes. */
-export const rpcScopeAuthorizationLayer = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
+/**
+ * Authorizes every RPC on one connection against that connection's session
+ * scopes. Product features declare the scopes of their own RPC methods.
+ */
+export const rpcScopeAuthorizationLayer = (
+  scopes: ReadonlyArray<AuthEnvironmentScope>,
+  contributedScopes?: ReadonlyMap<string, AuthEnvironmentScope>,
+) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc }) => {
-    const requiredScope = requiredScopeForRpcMethod(rpc._tag);
+    const requiredScope = requiredScopeForRpcMethod(rpc._tag, contributedScopes);
     return scopes.includes(requiredScope)
       ? effect
       : Effect.fail(rpcAuthorizationError(requiredScope));

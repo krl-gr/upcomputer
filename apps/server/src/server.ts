@@ -174,6 +174,7 @@ import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
+import { productFeatureLayer, productHttpRoutesLayer } from "./product/ServerProduct.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -537,6 +538,8 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
   ReplayMarkers.layer,
+  // Product features see every core runtime service; their services reach the routes.
+  productFeatureLayer,
 ).pipe(
   // Core Services
   Layer.provideMerge(OrchestrationApplicationLayerLive),
@@ -649,6 +652,7 @@ const makeRoutesLayer = Layer.mergeAll(
     deviceHubProxyRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
+    productHttpRoutesLayer,
   ),
   // The MCP session registry is provided globally (shared with V2 provider
   // sessions) rather than inline here. The orchestrator toolkit resolves

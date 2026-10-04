@@ -26,6 +26,11 @@ import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
+import {
+  CORE_SERVER_PRODUCT_COMPOSITION,
+  ServerProduct,
+  type ExperimentalServerProductComposition,
+} from "./product/ServerProduct.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -83,9 +88,13 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
 
 export const cli = makeCli();
 
-export function runCli() {
+/** Runs the CLI; a product entry point passes its composition, core alone otherwise. */
+export function runCli(
+  product: ExperimentalServerProductComposition = CORE_SERVER_PRODUCT_COMPOSITION,
+) {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
+    Effect.provideService(ServerProduct, product),
     Effect.provide(CliRuntimeLayer),
     NodeRuntime.runMain,
   );
