@@ -1,5 +1,12 @@
 name: Deploy UpComputer Connect relay
 
+# UpComputer Connect is optional. The deploy job runs only once the relay is
+# configured: set the repository variable RELAY_DOMAIN (or RELAY_API_ZONE_NAME),
+# the same switch release.yml uses for its relay config. It must be a
+# repository or organization variable: a job-level `if` cannot read variables
+# scoped to the production environment. While both are unset, the job is
+# skipped and no runner is allocated.
+
 on:
   push:
     branches:
@@ -17,6 +24,7 @@ concurrency:
 jobs:
   deploy_relay:
     name: Deploy production relay
+    if: ${{ vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 15
     environment:
