@@ -15,6 +15,8 @@ export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
+/** The user's "all chats" instructions block, appended to Pi's system prompt. */
+export const T3_PI_USER_INSTRUCTIONS_ENV = "T3_PI_USER_INSTRUCTIONS";
 
 /**
  * Pi tools whose confirmations the bridge raises as file-change approvals.
@@ -29,6 +31,7 @@ import { Type } from "typebox";
 const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
+const USER_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -321,8 +324,15 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Deliver orchestration guidance through pi's real system-prompt channel.
   // Wrapping the first user message instead would stop it from starting
   // with "/" and silently break slash-command expansion.
-  pi.on("before_agent_start", (event) => ({
-    systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS,
-  }));
+  pi.on("before_agent_start", (event) => {
+    const userInstructions = env(USER_INSTRUCTIONS_ENV);
+    return {
+      systemPrompt:
+        event.systemPrompt +
+        "\\n\\n" +
+        ORCHESTRATION_INSTRUCTIONS +
+        (userInstructions === undefined ? "" : "\\n\\n" + userInstructions),
+    };
+  });
 }
 `;

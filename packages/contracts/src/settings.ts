@@ -1,4 +1,5 @@
 import { SshDeviceHostConfigs } from "./device.ts";
+import { DEFAULT_CUSTOM_INSTRUCTIONS } from "./defaultCustomInstructions.ts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
@@ -1193,7 +1194,17 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+export { DEFAULT_CUSTOM_INSTRUCTIONS };
+
 export const ServerSettings = Schema.Struct({
+  /**
+   * The user's "all chats" instructions, added to every provider session (see
+   * `provider/UserInstructions.ts`). Not the source-control writing style's
+   * `customInstructions`, which only guides git text.
+   */
+  customInstructions: TrimmedString.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CUSTOM_INSTRUCTIONS)),
+  ),
   worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   storageCleanup: StorageCleanupSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(StorageCleanupSettings)({}))),
@@ -1574,6 +1585,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  customInstructions: Schema.optionalKey(TrimmedString),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([

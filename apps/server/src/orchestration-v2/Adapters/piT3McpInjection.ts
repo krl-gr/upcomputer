@@ -9,7 +9,9 @@ import {
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
+  T3_PI_USER_INSTRUCTIONS_ENV,
 } from "./piT3McpExtensionSource.ts";
+import { currentUserInstructionsBlock } from "../../provider/UserInstructions.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
   "--continue",
@@ -291,6 +293,8 @@ export function buildPiRpcLaunch(input: {
   // credentials inherited from the server or a parent provider process.
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
+  delete environment[T3_PI_USER_INSTRUCTIONS_ENV];
+  const userInstructions = hasT3Extension ? currentUserInstructionsBlock() : undefined;
 
   return {
     args,
@@ -302,6 +306,9 @@ export function buildPiRpcLaunch(input: {
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
+      ...(userInstructions === undefined
+        ? {}
+        : { [T3_PI_USER_INSTRUCTIONS_ENV]: userInstructions }),
       ...(hasT3Mcp && input.mcpSession !== undefined
         ? {
             [T3_MCP_URL_ENV]: input.mcpSession.endpoint,

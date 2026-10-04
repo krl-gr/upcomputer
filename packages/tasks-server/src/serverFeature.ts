@@ -12,7 +12,7 @@ import { TaskAutomationServiceLive } from "./automations/TaskAutomationService.t
 import { TaskToolContextResolverLive } from "./context/TaskToolContextResolver.ts";
 import { TaskMcpToolsLive } from "./mcp/TaskMcpTools.ts";
 import {
-  AllChatsInstructionsUnavailableLive,
+  AllChatsInstructionsLive,
   TASK_MIGRATION_CONTRIBUTION,
   TaskPromptSettingsStoreLive,
   TaskRepositoryLive,
@@ -25,7 +25,7 @@ const TASKS_FEATURE_ID = "upcomputer.tasks";
 
 const taskAgentsLive = TaskAgentServiceLive.pipe(
   Layer.provideMerge(Layer.mergeAll(TaskRepositoryLive, TaskPromptSettingsStoreLive)),
-  Layer.provide(AllChatsInstructionsUnavailableLive),
+  Layer.provide(AllChatsInstructionsLive),
 );
 
 export const TaskServicesLive = TaskToolServiceLive.pipe(

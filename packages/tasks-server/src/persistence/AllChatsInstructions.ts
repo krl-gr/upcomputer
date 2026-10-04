@@ -2,10 +2,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { ServerSettingsService } from "../../../../apps/server/src/extensionApi.ts";
+
 /**
- * Where the "all chats" instructions live. On the V1 fork this was the core
- * `customInstructions` server setting; upstream v2 has no such setting yet, so
- * the host provides the storage (and injects the text into provider prompts).
+ * Where the "all chats" instructions live: the core `customInstructions`
+ * server setting, which core adds to every provider session. Their history
+ * is kept with the other instruction fields in TaskPromptSettingsStore.
  */
 export interface AllChatsInstructionsShape {
   readonly get: Effect.Effect<string, AllChatsInstructionsError>;
@@ -22,15 +24,26 @@ export class AllChatsInstructions extends Context.Service<
   AllChatsInstructionsShape
 >()("@t3tools/tasks-server/persistence/AllChatsInstructions") {}
 
-/**
- * Until core stores and injects the "all chats" instructions, they read as
- * empty and saving them fails with a clear error instead of being dropped.
- */
-export const AllChatsInstructionsUnavailableLive = Layer.succeed(AllChatsInstructions, {
-  get: Effect.succeed(""),
-  set: () =>
-    Effect.fail({
-      _tag: "AllChatsInstructionsError",
-      message: "All-chats instructions are not available on this server yet.",
-    } satisfies AllChatsInstructionsError),
+const settingsError = (cause: unknown): AllChatsInstructionsError => ({
+  _tag: "AllChatsInstructionsError",
+  message: `Could not access the all-chats instructions setting: ${
+    cause instanceof Error ? cause.message : String(cause)
+  }`,
 });
+
+export const AllChatsInstructionsLive = Layer.effect(
+  AllChatsInstructions,
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsService;
+    return {
+      get: settings.getSettings.pipe(
+        Effect.map((value) => value.customInstructions),
+        Effect.mapError(settingsError),
+      ),
+      set: (text) =>
+        settings
+          .updateSettings({ customInstructions: text })
+          .pipe(Effect.asVoid, Effect.mapError(settingsError)),
+    };
+  }),
+);

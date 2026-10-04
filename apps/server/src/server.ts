@@ -175,6 +175,7 @@ import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 import { productFeatureLayer, productHttpRoutesLayer } from "./product/ServerProduct.ts";
+import * as UserInstructions from "./provider/UserInstructions.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -538,6 +539,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
   ReplayMarkers.layer,
+  UserInstructions.layer,
   // Product features see every core runtime service; their services reach the routes.
   productFeatureLayer,
 ).pipe(
