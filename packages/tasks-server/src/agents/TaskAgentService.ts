@@ -711,11 +711,17 @@ const make = Effect.gen(function* () {
         });
         if (Option.isNone(triggerRun)) return;
         const triggerAgent = yield* repository.getAgentById({ id: triggerRun.value.agentId });
+        // A failed run's provider error is its thread's last error, as V1's session error was.
+        const failedShell =
+          triggerRun.value.status === "failed"
+            ? yield* threads
+                .getThreadShell(triggerRun.value.threadId)
+                .pipe(Effect.orElseSucceed(() => null))
+            : null;
         trigger = {
           run: triggerRun.value,
           agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
-          // V1 read the session's lastError here; v2 keeps failures on the run's turn items.
-          reason: null,
+          reason: failedShell?.lastError?.trim() || null,
         };
       } else {
         const [latestRun] = yield* repository.searchAgentRuns({
