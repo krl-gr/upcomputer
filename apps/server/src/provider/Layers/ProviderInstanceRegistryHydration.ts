@@ -62,7 +62,11 @@ import {
 } from "./ProviderOrchestrationAdapterInfrastructure.ts";
 import * as AcpRegistrySupport from "../acp/AcpRegistrySupport.ts";
 import { AcpRegistryCatalogLive } from "./AcpRegistryCatalog.ts";
-import { ServerProduct, withProductProviderDrivers } from "../../product/ServerProduct.ts";
+import {
+  ServerProduct,
+  withProductDefaultInstances,
+  withProductProviderDrivers,
+} from "../../product/ServerProduct.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -132,11 +136,12 @@ const SettingsWatcherLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
     const serverSettings = yield* Settings.ServerSettingsService;
+    const product = yield* ServerProduct;
     const settingsChanges = yield* serverSettings.subscribeChanges;
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
         mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
+          .reconcile(withProductDefaultInstances(deriveProviderInstanceConfigMap(next), product))
           .pipe(
             Effect.catchCause((cause) =>
               Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
@@ -174,13 +179,16 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
-    const initialConfigMap =
+    const product = yield* ServerProduct;
+    const initialConfigMap = withProductDefaultInstances(
       initialSettings === undefined
         ? ({} as ProviderInstanceConfigMap)
-        : deriveProviderInstanceConfigMap(initialSettings);
+        : deriveProviderInstanceConfigMap(initialSettings),
+      product,
+    );
 
     const mutableLayer = ProviderInstanceRegistryMutableLayer({
-      drivers: withProductProviderDrivers(BUILT_IN_DRIVERS, yield* ServerProduct),
+      drivers: withProductProviderDrivers(BUILT_IN_DRIVERS, product),
       configMap: initialConfigMap,
     }).pipe(
       Layer.provide(ProviderOrchestrationAdapterInfrastructureLive),

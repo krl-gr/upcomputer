@@ -14,6 +14,7 @@ import {
   eraseExperimentalServerLayer,
   productFeatureLayer,
   productMcpToolsLayer,
+  withProductDefaultInstances,
   withProductProviderDrivers,
 } from "./ServerProduct.ts";
 
@@ -133,6 +134,26 @@ describe("server product composition", () => {
     expect(() => withProductProviderDrivers(BUILT_IN_DRIVERS, shadowing)).toThrow(
       ServerProductCompositionError,
     );
+  });
+
+  it("gives a product driver its default instance unless settings define one", () => {
+    const driver = { ...BUILT_IN_DRIVERS[0]!, driverKind: "test-driver" } as never;
+    const product = composeExperimentalServerFeatures([
+      {
+        id: OWNER,
+        version: 1,
+        providerDrivers: [{ id: "test", ownerId: OWNER, version: 1, driver }],
+      },
+    ]);
+    const codex = { driver: BUILT_IN_DRIVERS[0]!.driverKind };
+    expect(withProductDefaultInstances({ codex } as never, product)).toEqual({
+      codex,
+      "test-driver": { driver: "test-driver" },
+    });
+    const explicit = { driver: "test-driver", enabled: false };
+    expect(withProductDefaultInstances({ "test-driver": explicit } as never, product)).toEqual({
+      "test-driver": explicit,
+    });
   });
 
   it.effect("runs feature migrations before feature layers and serves feature MCP tools", () =>
