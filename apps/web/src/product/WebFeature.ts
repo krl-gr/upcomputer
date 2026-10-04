@@ -119,8 +119,9 @@ export interface ExperimentalWebProviderDriverContribution {
 export interface ExperimentalWebThreadAccessoryProps {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly timeLabel: string;
-  /** The host's timestamp label. It fades while the row actions are shown. */
+  /** The sidebar row's timestamp text; absent in the chat header, which shows no timestamp. */
+  readonly timeLabel?: string;
+  /** The sidebar row's timestamp label, which fades while the row actions are shown; null in the chat header. */
   readonly fallback: ReactNode;
 }
 
@@ -145,6 +146,7 @@ export interface ExperimentalWebFeatureContribution {
    * Other content stays visible while the row actions are shown: the host shifts it
    * left to make room. The slot ignores pointer events, so interactive content opts
    * in with `pointer-events-auto` and stops its events from reaching the row.
+   * The same component also follows the open chat's title in the chat header.
    */
   readonly threadAccessory?: {
     readonly component: ComponentType<ExperimentalWebThreadAccessoryProps>;

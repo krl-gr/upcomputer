@@ -4,12 +4,12 @@ import { EnvironmentId, ThreadId } from "@upcomputer/contracts";
 import {
   createExperimentalWebProductComposition,
   WebProductCompositionProvider,
-} from "../../product/WebComposition";
-import type { ExperimentalWebThreadAccessoryProps } from "../../product/WebFeature";
-import { SidebarThreadAccessory } from "./SidebarThreadAccessory";
+} from "../product/WebComposition";
+import type { ExperimentalWebThreadAccessoryProps } from "../product/WebFeature";
+import { ThreadAccessory } from "./ThreadAccessory";
 
 const state = vi.hoisted(() => ({ canLoad: true }));
-vi.mock("../../product/environmentProduct", () => ({
+vi.mock("../product/environmentProduct", () => ({
   useEnvironmentWebFeatureAvailability: () => ({ canLoad: state.canLoad }),
 }));
 const props = {
@@ -27,7 +27,7 @@ describe("sidebar thread extension", () => {
     state.canLoad = true;
   });
   it("keeps the timestamp in the public composition", () => {
-    expect(renderToStaticMarkup(<SidebarThreadAccessory {...props} />)).toBe("26m");
+    expect(renderToStaticMarkup(<ThreadAccessory {...props} />)).toBe("26m");
   });
   it("passes environment/thread identity to an enabled contribution", () => {
     const composition = createExperimentalWebProductComposition({
@@ -37,7 +37,7 @@ describe("sidebar thread extension", () => {
     });
     const html = renderToStaticMarkup(
       <WebProductCompositionProvider composition={composition}>
-        <SidebarThreadAccessory {...props} />
+        <ThreadAccessory {...props} />
       </WebProductCompositionProvider>,
     );
     expect(html).toContain('data-thread="chat"');
@@ -54,7 +54,7 @@ describe("sidebar thread extension", () => {
     expect(
       renderToStaticMarkup(
         <WebProductCompositionProvider composition={composition}>
-          <SidebarThreadAccessory {...props} />
+          <ThreadAccessory {...props} />
         </WebProductCompositionProvider>,
       ),
     ).toBe("26m");

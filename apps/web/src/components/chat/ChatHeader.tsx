@@ -13,6 +13,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ThreadAccessory } from "../ThreadAccessory";
 import { cn } from "~/lib/utils";
 
 interface ChatHeaderProps {
@@ -91,7 +92,7 @@ export const ChatHeader = memo(function ChatHeader({
             render={
               <h2
                 aria-label={activeThreadTitle}
-                className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+                className="min-w-0 truncate text-sm font-medium text-foreground"
               >
                 {activeThreadTitle}
               </h2>
@@ -99,6 +100,13 @@ export const ChatHeader = memo(function ChatHeader({
           />
           <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
         </Tooltip>
+        <span data-chat-header-thread-accessory className="shrink-0 text-sm empty:hidden">
+          <ThreadAccessory
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+            fallback={null}
+          />
+        </span>
       </div>
       <div
         data-chat-header-actions

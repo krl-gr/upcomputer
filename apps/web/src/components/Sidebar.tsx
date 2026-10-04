@@ -1,4 +1,4 @@
-import { SidebarThreadAccessory } from "./sidebar/SidebarThreadAccessory";
+import { ThreadAccessory } from "./ThreadAccessory";
 import {
   ChevronRightIcon,
   CloudIcon,
@@ -681,7 +681,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                   </span>
                 ) : (
                   <span className={cn(SIDEBAR_MUTED_TEXT_CLASS, SIDEBAR_LABEL_TEXT_CLASS)}>
-                    <SidebarThreadAccessory
+                    <ThreadAccessory
                       environmentId={thread.environmentId}
                       threadId={thread.id}
                       timeLabel={timeLabel}

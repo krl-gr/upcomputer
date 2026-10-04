@@ -1,9 +1,9 @@
 import type {
   ExperimentalWebFeatureContribution,
   ExperimentalWebThreadAccessoryProps,
-} from "../../product/WebFeature";
-import { useWebProductComposition } from "../../product/WebComposition";
-import { useEnvironmentWebFeatureAvailability } from "../../product/environmentProduct";
+} from "../product/WebFeature";
+import { useWebProductComposition } from "../product/WebComposition";
+import { useEnvironmentWebFeatureAvailability } from "../product/environmentProduct";
 
 function Contribution({
   feature,
@@ -19,8 +19,8 @@ function Contribution({
   return availability.canLoad ? <Component {...props} /> : props.fallback;
 }
 
-/** Optional build-time extension; the public sidebar owns placement and fallback. */
-export function SidebarThreadAccessory(props: ExperimentalWebThreadAccessoryProps) {
+/** Optional build-time extension; the sidebar row and chat header own placement and fallback. */
+export function ThreadAccessory(props: ExperimentalWebThreadAccessoryProps) {
   const composition = useWebProductComposition();
   return composition.features.reduceRight(
     (fallback, feature) =>
