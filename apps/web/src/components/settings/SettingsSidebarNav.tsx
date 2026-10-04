@@ -50,6 +50,7 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
+import { ProductSettingsNavItems } from "../../product/ProductSlots";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -344,6 +345,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   );
                 })}
+                <ProductSettingsNavItems pathname={pathname} />
               </SidebarMenu>
             )}
           </div>

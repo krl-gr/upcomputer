@@ -60,6 +60,11 @@ export interface RpcSessionOptions {
   readonly usageLimitSources?: boolean;
   /** This client answers /usage-limits itself, so the server may advertise it. */
   readonly usageLimitsCommand?: boolean;
+  /**
+   * Builds the session's client. A product whose features add RPC groups
+   * passes a client for the core group merged with theirs.
+   */
+  readonly makeClient?: typeof makeWsRpcProtocolClient;
 }
 
 export class RpcSessionFactory extends Context.Service<
@@ -210,7 +215,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const protocolContext = yield* Layer.build(protocolLayer).pipe(
       Effect.withSpan("environment.websocket.connect"),
     );
-    const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
+    const protocolClient = yield* (options.makeClient ?? makeWsRpcProtocolClient).pipe(
+      Effect.provide(protocolContext),
+    );
     const initialConfigDeferred = yield* Deferred.make<ServerConfig>();
     const serverConfigExit = yield* Deferred.make<void, ServerConfigSubscriptionError>();
     const configSubscriptionClosed = yield* Deferred.make<never, ConnectionAttemptError>();
