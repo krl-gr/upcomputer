@@ -64,7 +64,7 @@ literals against it and against the electron-builder config.
 Entry points copy every `UPCOMPUTER_<NAME>` variable to `T3CODE_<NAME>`, and the `UPCOMPUTER_` value
 wins when both are set (`packages/shared/src/upcomputerEnv.ts`). They run in `apps/server/src/bin.ts`
 and `runCli` in `binCli.ts` (so product entries get them too), the desktop main process
-(`UpcomputerStartupEnvironment.ts`, which the backend inherits), `scripts/dev-runner.ts`, and the
+(`UpcomputerStartupEnvironment.ts`, which the backend inherits), `scripts/dev-runner.ts`, `scripts/build-desktop-artifact.ts`, and the
 repository `.env` loader (`scripts/lib/public-config.ts`) used by builds. Common ones:
 
 | Set                                          | Same as                              |

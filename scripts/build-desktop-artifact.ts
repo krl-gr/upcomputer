@@ -17,6 +17,7 @@ import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import {
   isUpcomputerLocalTestVersion,
   UPCOMPUTER_APP_ID,
@@ -4026,6 +4027,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
 const cliRuntimeLayer = Layer.mergeAll(Logger.layer([Logger.consolePretty()]), NodeServices.layer);
 
 if (import.meta.main) {
+  applyUpcomputerEnvAliases(process.env);
   Command.run(buildDesktopArtifactCli, { version: "0.0.0" }).pipe(
     Effect.scoped,
     Effect.provide(cliRuntimeLayer),

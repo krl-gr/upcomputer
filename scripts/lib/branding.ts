@@ -199,6 +199,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
       "executableName: UPCOMPUTER_EXECUTABLE_NAME",
       "protocols: resolveDesktopProtocols(version)",
       "hasMacPasskeySigningConfiguration(releaseEnv)",
+      "applyUpcomputerEnvAliases(process.env)",
     ],
     forbids: ['"com.t3tools.t3code"', '"T3-Code-', 'schemes: ["t3code"', '"T3 Tools"'],
   },
