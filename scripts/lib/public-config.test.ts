@@ -41,6 +41,28 @@ describe("loadRepoEnv", () => {
     expect(env.VITE_RELAY_OTLP_TRACES_TOKEN).toBeUndefined();
   });
 
+  it("reads Up.computer UPCOMPUTER_ names from every source", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env"),
+      "T3CODE_RELAY_URL=https://root.example.test\nUPCOMPUTER_DEV_AUTH_TOKEN=root-token\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env.local"),
+      "UPCOMPUTER_RELAY_URL=https://local.example.test\n",
+    );
+
+    const env = loadRepoEnv({
+      baseEnv: { UPCOMPUTER_CLERK_PUBLISHABLE_KEY: "pk_process" },
+      repoRoot,
+    });
+
+    expect(env.T3CODE_RELAY_URL).toBe("https://local.example.test");
+    expect(env.T3CODE_DEV_AUTH_TOKEN).toBe("root-token");
+    expect(env.T3CODE_CLERK_PUBLISHABLE_KEY).toBe("pk_process");
+    expect(env.VITE_CLERK_PUBLISHABLE_KEY).toBe("pk_process");
+  });
+
   it("applies process, root local, and root precedence in that order", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(

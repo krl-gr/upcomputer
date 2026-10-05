@@ -6,6 +6,7 @@ import { Argument, Command } from "effect/unstable/cli";
 import * as CliError from "effect/unstable/cli/CliError";
 
 import * as NetService from "@t3tools/shared/Net";
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import packageJson from "../package.json" with { type: "json" };
 import { acpMcpBridgeCommand, acpMcpCallCommand } from "./cli/acpMcpBridge.ts";
 import { authCommand } from "./cli/auth.ts";
@@ -92,6 +93,8 @@ export const cli = makeCli();
 export function runCli(
   product: ExperimentalServerProductComposition = CORE_SERVER_PRODUCT_COMPOSITION,
 ) {
+  // Product entries that call runCli directly get the Up.computer aliases too.
+  applyUpcomputerEnvAliases(process.env);
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provideService(ServerProduct, product),

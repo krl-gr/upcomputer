@@ -1,3 +1,4 @@
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import {
   isUpcomputerLocalTestVersion,
   UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME,
@@ -15,6 +16,7 @@ export function applyUpcomputerStartupEnvironment(input: {
   readonly joinPath: (first: string, ...segments: string[]) => string;
 }): void {
   const { env } = input;
+  applyUpcomputerEnvAliases(env);
   // A local QA build never shares the Alpha app's state, port or updater.
   if (isUpcomputerLocalTestVersion(input.appVersion)) {
     env.T3CODE_HOME = input.joinPath(

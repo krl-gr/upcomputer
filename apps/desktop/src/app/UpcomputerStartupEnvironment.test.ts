@@ -52,6 +52,24 @@ describe("Up.computer desktop identity", () => {
     }),
   );
 
+  it.effect("maps UPCOMPUTER_ variables before the desktop reads its config", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        UPCOMPUTER_HOME: "/Volumes/work/.upcomputer",
+        T3CODE_HOME: "/Users/alice/.t3",
+      };
+      applyUpcomputerStartupEnvironment({
+        env,
+        appVersion: "0.0.46",
+        homeDirectory: "/Users/alice",
+        joinPath: posixJoin,
+      });
+
+      const environment = yield* makeEnvironment("0.0.46", env);
+      assert.equal(environment.baseDir, "/Volumes/work/.upcomputer");
+    }),
+  );
+
   it.effect("isolates a local test build from the Alpha app", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

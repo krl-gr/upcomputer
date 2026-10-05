@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
+
 export interface T3CodePublicConfig {
   readonly clerkPublishableKey: string | undefined;
   readonly clerkJwtTemplate: string | undefined;
@@ -30,14 +32,16 @@ export function loadRepoEnv({
   readonly baseEnv?: Environment;
   readonly repoRoot?: string;
 } = {}): Record<string, string | undefined> {
-  const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
-  const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
-  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
+  // Each source maps its own UPCOMPUTER_ names, so precedence between sources holds.
+  const rootEnv = applyUpcomputerEnvAliases(readEnvFile(NodePath.join(repoRoot, ".env")));
+  const localEnv = applyUpcomputerEnvAliases(readEnvFile(NodePath.join(repoRoot, ".env.local")));
+  const processEnv = applyUpcomputerEnvAliases({ ...baseEnv });
+  const config = resolvePublicConfig(processEnv, localEnv, rootEnv);
 
   return {
     ...rootEnv,
     ...localEnv,
-    ...baseEnv,
+    ...processEnv,
     ...(config.clerkPublishableKey
       ? {
           T3CODE_CLERK_PUBLISHABLE_KEY: config.clerkPublishableKey,

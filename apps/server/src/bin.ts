@@ -7,6 +7,8 @@
  * CLI module graph (seconds of evaluation) loads; everything else defers to
  * the real CLI in ./binCli.ts.
  */
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
+
 import { isEntrypoint } from "./entrypoint.ts";
 
 if (
@@ -16,6 +18,7 @@ if (
     runtimeMain: import.meta.main,
   })
 ) {
+  applyUpcomputerEnvAliases(process.env);
   const command = process.argv[2];
   if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
