@@ -31,6 +31,9 @@ const COPY_ROOTS = [
   "apps/desktop/scripts/",
   "apps/server/src/",
   "packages/",
+  // Push notification and Live Activity text from the Connect relay. The rest
+  // of infra/relay runs as upstream ships it.
+  "infra/relay/src/agentActivity/",
 ] as const;
 
 const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html)$/;

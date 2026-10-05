@@ -54,6 +54,25 @@ it.effect("selects the latest earlier stable tag and ignores nightlies", () =>
   }),
 );
 
+it.effect("keeps Core and official stable tag histories separate", () =>
+  Effect.gen(function* () {
+    const previousCore = yield* resolvePreviousReleaseTag("stable", "core-v1.2.0", [
+      "v1.1.9",
+      "core-v1.1.0",
+      "core-v1.1.2",
+      "core-v1.2.0",
+    ]);
+    const previousOfficial = yield* resolvePreviousReleaseTag("stable", "v1.2.0", [
+      "core-v1.1.9",
+      "v1.1.0",
+      "v1.1.2",
+    ]);
+
+    assert.equal(previousCore, "core-v1.1.2");
+    assert.equal(previousOfficial, "v1.1.2");
+  }),
+);
+
 it.effect("accepts legacy nightly tags when selecting the previous nightly", () =>
   Effect.gen(function* () {
     const previous = yield* resolvePreviousReleaseTag("nightly", "v1.2.0-nightly.20260620.2", [

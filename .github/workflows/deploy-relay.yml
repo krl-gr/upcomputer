@@ -1,4 +1,11 @@
-name: Deploy T3 Connect relay
+name: Deploy UpComputer Connect relay
+
+# UpComputer Connect is optional. The deploy job runs only once the relay is
+# configured: set the repository variable RELAY_DOMAIN (or RELAY_API_ZONE_NAME),
+# the same switch release.yml uses for its relay config. It must be a
+# repository or organization variable: a job-level `if` cannot read variables
+# scoped to the production environment. While both are unset, the job is
+# skipped and no runner is allocated.
 
 on:
   push:
@@ -27,8 +34,9 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     # A manual run from another branch would deploy that branch to production.
-    if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: ${{ github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
+    # GitHub-hosted: Blacksmith runners are not set up for the Up.computer repository.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: production

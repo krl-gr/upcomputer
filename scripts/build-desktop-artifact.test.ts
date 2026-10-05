@@ -45,6 +45,7 @@ import {
   preflightWindowsDesktopBuild,
   renderMacPasskeyEntitlements,
   resolveClerkPasskeyNativeArtifacts,
+  hasMacPasskeySigningConfiguration,
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
   resolveMergedStageDependencies,
@@ -1860,6 +1861,16 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("signs macOS builds without passkey entitlements until a profile is configured", () => {
+    assert.isFalse(hasMacPasskeySigningConfiguration({}));
+    assert.isFalse(hasMacPasskeySigningConfiguration({ T3CODE_MACOS_PROVISIONING_PROFILE: " " }));
+    assert.isTrue(
+      hasMacPasskeySigningConfiguration({
+        T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/upcomputer.provisionprofile",
+      }),
+    );
+  });
 
   it("derives macOS passkey signing configuration from the Clerk publishable key", () => {
     const configuration = resolveMacPasskeySigningConfiguration({

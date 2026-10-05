@@ -1250,6 +1250,13 @@ function normalizePasskeyRpDomain(value: string): string {
   return parsed.hostname;
 }
 
+/** Passkey entitlements need an Associated Domains provisioning profile. */
+export function hasMacPasskeySigningConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return (env.T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "").length > 0;
+}
+
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): MacPasskeySigningConfiguration {
@@ -3664,10 +3671,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  // Up.computer signs like V1 unless a passkey provisioning profile is configured.
+  const releaseEnv = loadRepoEnv({ repoRoot });
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && hasMacPasskeySigningConfiguration(releaseEnv)
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(releaseEnv),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
