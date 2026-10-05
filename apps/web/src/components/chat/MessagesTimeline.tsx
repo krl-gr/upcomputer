@@ -2121,7 +2121,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               }}
               className="rounded-sm hover:text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
             >
-              Sent by automation
+              Sent by a scheduled prompt
             </Link>
           ) : (
             "Sent by automation"

@@ -222,7 +222,7 @@ export function ScheduledTasksSettings(target: {
   return (
     <SettingsPageContainer>
       <SettingsSection
-        title="Scheduled tasks"
+        title="Scheduled prompts"
         variant="plain"
         headerAction={
           <Button
@@ -235,7 +235,7 @@ export function ScheduledTasksSettings(target: {
             }
           >
             <PlusIcon className="size-3" />
-            New task
+            New prompt
           </Button>
         }
       >
@@ -250,7 +250,9 @@ export function ScheduledTasksSettings(target: {
                 <Clock3Icon />
               </EmptyMedia>
               <EmptyTitle>No environments available</EmptyTitle>
-              <EmptyDescription>Connect an environment to manage scheduled tasks.</EmptyDescription>
+              <EmptyDescription>
+                Connect an environment to manage scheduled prompts.
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -332,25 +334,25 @@ function ScheduledTaskEnvironmentSection({
       {!connected ? (
         <SettingsRow
           title="Environment disconnected"
-          description={`Reconnect ${environment.label} to view its scheduled tasks.`}
+          description={`Reconnect ${environment.label} to view its scheduled prompts.`}
         />
       ) : tasksQuery.error ? (
-        <SettingsRow title="Could not load scheduled tasks" description={tasksQuery.error} />
+        <SettingsRow title="Could not load scheduled prompts" description={tasksQuery.error} />
       ) : !tasks ? (
-        <SettingsRow title="Loading scheduled tasks…" role="status" />
+        <SettingsRow title="Loading scheduled prompts…" role="status" />
       ) : (
         <>
           {taskId && !linkedTask ? (
             <SettingsRow
-              title="Task unavailable"
-              description="This task no longer exists or is outside the selected project scope."
+              title="Prompt unavailable"
+              description="This prompt no longer exists or is outside the selected project scope."
               role="status"
             />
           ) : null}
           {tasks.length === 0 ? (
             <SettingsRow
-              title="No scheduled tasks"
-              description="No tasks match this environment and project selection."
+              title="No scheduled prompts"
+              description="No prompts match this environment and project selection."
             />
           ) : (
             tasks.map((task) => (
@@ -401,7 +403,7 @@ function ScheduledTaskRow({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not update scheduled task",
+          title: "Could not update scheduled prompt",
           description: String(squashAtomCommandFailure(result)),
         }),
       );
@@ -562,7 +564,7 @@ function ScheduledTaskEditorDialog({
       !projects.some((project) => project.id === selectedProjectId) ||
       selection === null
     ) {
-      reportFailure("Scheduled task is incomplete", "Add a title, prompt, project, and model.");
+      reportFailure("Scheduled prompt is incomplete", "Add a title, prompt, project, and model.");
       return;
     }
     const schedule = scheduleFromDraft(draft);
@@ -617,7 +619,7 @@ function ScheduledTaskEditorDialog({
     if (result._tag === "Failure") {
       submissionPending.current = false;
       if (!isAtomCommandInterrupted(result)) {
-        reportFailure("Could not save scheduled task", squashAtomCommandFailure(result));
+        reportFailure("Could not save scheduled prompt", squashAtomCommandFailure(result));
       }
       return;
     }
@@ -633,7 +635,7 @@ function ScheduledTaskEditorDialog({
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
+          <DialogTitle>{draft.editingId ? "Edit prompt" : "New prompt"}</DialogTitle>
           <DialogDescription>
             Run a prompt automatically — on an interval or at a fixed time.
           </DialogDescription>
@@ -694,7 +696,7 @@ function ScheduledTaskEditorDialog({
             ) : null}
             {editingTaskMissing ? (
               <p className="text-xs text-destructive" role="status">
-                This scheduled task no longer exists.
+                This scheduled prompt no longer exists.
               </p>
             ) : null}
             <Field label="Name" htmlFor="scheduled-task-title">
