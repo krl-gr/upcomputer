@@ -147,6 +147,9 @@ export const runTaskV1Cutover = Effect.fn("runTaskV1Cutover")(function* (input: 
   for (const run of yield* repository.listAllActiveAgentRuns()) {
     if (yield* interruptRun(run, input.now)) {
       interruptedRuns.push({ runId: run.id, taskId: run.taskId, threadId: run.threadId });
+      // Like every run that ended on V1 (task migration 17): its source chat
+      // is not woken, which would start a turn there on v2's first start.
+      yield* sql`UPDATE task_agent_runs SET source_wake_at = ${input.now} WHERE id = ${run.id}`;
     } else {
       leftForRecovery.push(run.id);
     }

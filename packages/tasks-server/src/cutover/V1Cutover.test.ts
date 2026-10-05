@@ -154,6 +154,10 @@ it.layer(TestLayer)("runTaskV1Cutover", (it) => {
       const run = Option.getOrThrow(yield* repository.getAgentRunById({ id: runId }));
       assert.equal(run.status, "interrupted");
       assert.equal(run.completedAt, cutoverAt);
+      const wake = yield* sql<{ readonly sourceWakeAt: string | null }>`
+        SELECT source_wake_at AS "sourceWakeAt" FROM task_agent_runs WHERE id = ${runId}
+      `;
+      assert.equal(wake[0]?.sourceWakeAt, cutoverAt);
       const after = Option.getOrThrow(yield* repository.getById({ id: taskId }));
       assert.isNull(after.assigneeAgentRunId);
       assert.include(after.output ?? "", "Step 1 done.");
