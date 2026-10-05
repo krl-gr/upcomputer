@@ -224,6 +224,8 @@ import {
   SidebarThreadsSectionHeader,
   useSidebarThreadListShown,
 } from "../sidebarProjects/SidebarThreadsSection";
+import { SidebarCompactThreadRow } from "../sidebarThreadRow/SidebarCompactThreadRow";
+import { useSidebarThreadRowSurface } from "../sidebarThreadRow/threadListSetting";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -2842,6 +2844,8 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadListShown = useSidebarThreadListShown();
+  const ThreadRow: typeof SidebarThreadRow =
+    useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -5153,7 +5157,7 @@ export default function Sidebar() {
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
                         return (
-                          <SidebarThreadRow
+                          <ThreadRow
                             // Fade between card and compact rows while the outer
                             // sortable wrapper keeps its identity during a drag.
                             key={`${threadKey}:${rowVariant}`}

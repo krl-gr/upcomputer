@@ -38,7 +38,22 @@ export function isProductKeybindingShown(command: string): boolean {
   return isProductKeybindingCommandShown(WEB_PRODUCT.flags, command);
 }
 
+// Settings rows that only the product's version of a surface has.
+const SURFACE_SETTINGS_SEARCH_IDS: Partial<Record<ProductSurface, string>> = {
+  sidebarThreadRow: "thread-list",
+};
+
 export function isProductSettingsSearchItemVisible(item: { readonly id: string }): boolean {
+  const surfaces = Object.keys(SURFACE_SETTINGS_SEARCH_IDS) as ProductSurface[];
+  if (
+    surfaces.some(
+      (surface) =>
+        SURFACE_SETTINGS_SEARCH_IDS[surface] === item.id &&
+        WEB_PRODUCT.surfaces[surface] === "upstream",
+    )
+  ) {
+    return false;
+  }
   return isProductSettingsSearchItemShown(WEB_PRODUCT.flags, item.id);
 }
 

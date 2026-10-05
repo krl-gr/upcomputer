@@ -152,6 +152,12 @@ describe("hidden upstream features in the web app", () => {
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
+
+  it("finds Thread list in settings search only where the product offers it", () => {
+    expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(false);
+    product.hidden = true;
+    expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(true);
+  });
 });
 
 function renderSidebarHeader() {

@@ -48,16 +48,23 @@ export type ProductSurfaceVariant = "upstream" | "upcomputer";
 export interface ProductSurfaces {
   /** The sidebar's Projects section, in place of the header's project scope button. */
   readonly sidebarProjects: ProductSurfaceVariant;
+  /**
+   * Sidebar thread rows. With `upcomputer` the user picks them in Settings,
+   * Appearance, "Thread list": compact rows (the default) or upstream's.
+   */
+  readonly sidebarThreadRow: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
 
 export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upstream",
+  sidebarThreadRow: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upcomputer",
+  sidebarThreadRow: "upcomputer",
 });
 
 type CapabilityKey = {
