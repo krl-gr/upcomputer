@@ -246,6 +246,23 @@
             "t3-ember": "ember",
             "t3-iris": "iris",
           };
+          // Up.computer V1 kept a bare light/dark/system choice under its own
+          // key. Carry it over once as this theme in that appearance mode; the
+          // V1 key stays so V1 still reads it after a rollback.
+          try {
+            const upcomputerV1Theme = window.localStorage.getItem("upcomputer:theme");
+            if (
+              window.localStorage.getItem("t3code:theme") === null &&
+              (upcomputerV1Theme === "light" ||
+                upcomputerV1Theme === "dark" ||
+                upcomputerV1Theme === "system")
+            ) {
+              window.localStorage.setItem("t3code:theme", DEFAULT_THEME_ID);
+              window.localStorage.setItem(THEME_APPEARANCE_MODE_STORAGE_KEY, upcomputerV1Theme);
+            }
+          } catch {
+            // Without writable storage the default theme follows the OS.
+          }
           const rawStoredTheme = window.localStorage.getItem("t3code:theme");
           const rawThemeId =
             rawStoredTheme === null ? "" : (LEGACY_THEME_IDS[rawStoredTheme] ?? rawStoredTheme);

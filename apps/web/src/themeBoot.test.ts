@@ -82,6 +82,10 @@ function runBootScript(options: {
         if (options.storageThrows) throw new Error("storage blocked");
         return options.storage?.[key] ?? null;
       },
+      setItem: (key: string, value: string) => {
+        if (options.storageThrows) throw new Error("storage blocked");
+        if (options.storage) options.storage[key] = value;
+      },
     },
     matchMedia: () => ({ matches: options.prefersDark }),
   };
@@ -151,6 +155,34 @@ const CHARCOAL_DARK_ONLY = {
 };
 
 describe("index.html boot script", () => {
+  it.each([
+    ["light", false, false],
+    ["dark", false, true],
+    ["system", true, true],
+  ] as const)(
+    "carries an Up.computer V1 %s choice over as the Up.computer theme",
+    (v1Theme, prefersDark, isDark) => {
+      const storage: Record<string, string> = { "upcomputer:theme": v1Theme };
+      const result = runBootScript({ storage, prefersDark });
+      expect(storage[THEME_STORAGE_KEY]).toBe(UPCOMPUTER_THEME.id);
+      expect(storage[THEME_APPEARANCE_MODE_STORAGE_KEY]).toBe(v1Theme);
+      expect(storage["upcomputer:theme"]).toBe(v1Theme);
+      expect(result.themeId).toBe(UPCOMPUTER_THEME.id);
+      expect(result.isDark).toBe(isDark);
+      expect(runtimeResolvedAppearance(storage, prefersDark)).toBe(isDark ? "dark" : "light");
+    },
+  );
+
+  it("leaves a theme chosen on v2 alone", () => {
+    const storage: Record<string, string> = {
+      "upcomputer:theme": "dark",
+      [THEME_STORAGE_KEY]: "grove",
+    };
+    runBootScript({ storage, prefersDark: false });
+    expect(storage[THEME_STORAGE_KEY]).toBe("grove");
+    expect(storage[THEME_APPEARANCE_MODE_STORAGE_KEY]).toBeUndefined();
+  });
+
   const parityCases: ReadonlyArray<{
     name: string;
     storage: Record<string, string>;
