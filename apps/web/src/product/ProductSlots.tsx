@@ -7,7 +7,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../components/ui/sidebar";
-import { SIDEBAR_MENU_SCOPE, SIDEBAR_SECTION_GAP } from "../sidebarMetrics/sidebarMetrics";
+import { SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/sidebarMetrics";
 import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
 import type {
@@ -51,7 +51,7 @@ export function ProductSidebarNavigation() {
   const { isMobile, setOpenMobile } = useSidebar();
   if (WEB_PRODUCT.navigation.length === 0) return null;
   return (
-    <div className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_MENU_SCOPE)}>
+    <div className={cn(SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE)}>
       <SidebarMenu>
         {WEB_PRODUCT.navigation.map((item) => {
           const Icon = item.icon;

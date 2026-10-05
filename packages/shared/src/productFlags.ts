@@ -53,6 +53,11 @@ export interface ProductSurfaces {
    * Appearance, "Thread list": compact rows (the default) or upstream's.
    */
   readonly sidebarThreadRow: ProductSurfaceVariant;
+  /**
+   * The sidebar's titlebar row. With `upcomputer` it shows no brand and no
+   * stage badge, and the sidebar toggle lines up with the sidebar's row icons.
+   */
+  readonly sidebarHeader: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -60,11 +65,13 @@ export type ProductSurface = keyof ProductSurfaces;
 export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upstream",
   sidebarThreadRow: "upstream",
+  sidebarHeader: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upcomputer",
   sidebarThreadRow: "upcomputer",
+  sidebarHeader: "upcomputer",
 });
 
 type CapabilityKey = {

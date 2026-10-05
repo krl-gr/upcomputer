@@ -1,7 +1,7 @@
 /**
  * The spacing of every UpComputer part of the sidebar: the nav slot, the
- * Projects and Threads section headers, the Projects rows and the compact
- * thread rows. Upstream's Search row (`SidebarThreadHeader`) is the reference:
+ * Projects and Threads section headers, the Projects rows, the compact
+ * thread rows and the sidebar toggle. Upstream's Search row (`SidebarThreadHeader`) is the reference:
  * each value is upstream's, read off that row or the `components/ui/sidebar`
  * primitives, so our rows line up with it and upstream's own components keep
  * their spacing. Our parts take their spacing from here only, and
@@ -51,8 +51,8 @@ export const SIDEBAR_LIST_ROW_SPACING = "pb-0.75";
 export const SIDEBAR_LIST_ROW_INTRINSIC_SIZE = "[contain-intrinsic-size:auto_--spacing(8)]";
 
 /**
- * Gap between sections (Search, the nav rows, Projects, Threads), on top of
- * each of ours: `--sidebar-content-inset`, the one inset upstream keeps
+ * Gap between sections (the nav rows, Projects, Threads), on top of each of
+ * ours: `--sidebar-content-inset`, the one inset upstream keeps
  * between stacked sidebar groups (`SidebarContent`).
  */
 export const SIDEBAR_SECTION_GAP = "pt-(--sidebar-content-inset)";
@@ -61,9 +61,30 @@ export const SIDEBAR_SECTION_GAP = "pt-(--sidebar-content-inset)";
 export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
 
 /**
+ * Above the nav rows: the row gap, so they continue upstream's Search row,
+ * which ends its header container without spacing of its own.
+ */
+export const SIDEBAR_AFTER_SEARCH_GAP = "pt-1";
+
+/**
  * The Threads header closes upstream's fixed sidebar header, whose bottom
  * inset (`--sidebar-content-inset`) separates it from the thread list. This
  * pulls the list up to `SIDEBAR_SECTION_HEADER_GAP` (`--spacing(1)`) instead.
  */
 export const SIDEBAR_FIXED_HEADER_END_GAP =
   "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";
+
+/**
+ * In `SidebarProvider`'s style: moves upstream's sidebar toggle
+ * (`SidebarControl` in `AppSidebarLayout.tsx`) so its icon starts where the
+ * row icons do. The toggle sits at `--workspace-controls-left` plus its own
+ * `ml-px`, and centres a `size-4` icon in a `--workspace-titlebar-control-size`
+ * button; a row icon starts at `--sidebar-content-inset` plus
+ * `SIDEBAR_ROW_INSET`. The macOS desktop app sets the variable after this, to
+ * clear the traffic lights. Collapsed page titles follow the toggle through
+ * `--workspace-titlebar-content-left`.
+ */
+export const SIDEBAR_TOGGLE_ALIGNMENT = {
+  "--workspace-controls-left":
+    "calc(env(safe-area-inset-left) + var(--sidebar-content-inset) + var(--spacing) * 2 - (var(--workspace-titlebar-control-size) - var(--spacing) * 4) / 2 - 1px)",
+} as const;

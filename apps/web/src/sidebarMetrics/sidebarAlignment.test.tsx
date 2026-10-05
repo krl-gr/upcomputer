@@ -25,6 +25,15 @@ await vi.hoisted(async () => {
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
   })) as unknown as typeof window.matchMedia;
+  // Upstream's sidebar measures its brand; the markup is measured in Chromium instead.
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof window.ResizeObserver;
+  globalThis.ResizeObserver = window.ResizeObserver;
+  // Base UI's scroll area asks for running animations, which jsdom does not track.
+  window.Element.prototype.getAnimations = () => [];
 });
 
 // The UpComputer build: its flags and surfaces, and the Tasks feature's
@@ -58,8 +67,20 @@ vi.mock("@tanstack/react-router", () => ({
   useLocation: (options: { select: (location: { pathname: string }) => string }) =>
     options.select({ pathname: "/tasks" }),
   useNavigate: () => () => undefined,
+  useParams: (options: { select: (params: object) => unknown }) => options.select({}),
   useRouter: () => ({ navigate: () => undefined }),
+  Link: (props: { className?: string; children?: ReactNode; "aria-label"?: string }) => (
+    <a aria-label={props["aria-label"]} className={props.className}>
+      {props.children}
+    </a>
+  ),
 }));
+// Upstream's layout renders the thread sidebar (`components/Sidebar.tsx`); it is
+// replaced by the same composition with the data filled in (`ThreadSidebarUnderTest`).
+const threadSidebar = vi.hoisted(() => ({ render: (): unknown => null }));
+vi.mock("../components/Sidebar", () => ({ default: () => threadSidebar.render() }));
+vi.mock("../components/LegacySidebar", () => ({ default: () => null }));
+vi.mock("../components/settings/SettingsSidebarNav", () => ({ SettingsSidebarNav: () => null }));
 // A box of the size the caller asks for, where the project's icon would load.
 vi.mock("../components/ProjectFavicon", () => ({
   ProjectFavicon: (props: { className?: string }) => (
@@ -69,6 +90,10 @@ vi.mock("../components/ProjectFavicon", () => ({
 const environmentId = "env-local";
 vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([["env-local", { scratchWorkspaceRoot: "/home/scratch" }]]),
+  useProjects: () => [],
+}));
+vi.mock("../hooks/useThreadVisitedMigration", () => ({
+  useThreadVisitedMigration: () => undefined,
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => "env-local" }));
 vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => () => undefined }));
@@ -83,10 +108,10 @@ import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer } from "vite-plus";
 
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import type { SidebarCompactThreadRowProps } from "../sidebarThreadRow/SidebarCompactThreadRow";
@@ -94,13 +119,14 @@ import type { SidebarCompactThreadRowProps } from "../sidebarThreadRow/SidebarCo
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { SidebarContent, SidebarGroup, SidebarProvider } = await import("../components/ui/sidebar");
+const { AppSidebarLayout } = await import("../components/AppSidebarLayout");
+const { SidebarChromeHeader } = await import("../components/sidebar/SidebarChrome");
 const { SidebarThreadHeader } = await import("../components/sidebar/SidebarThreadHeader");
 const { ProductSidebarNavigation } = await import("../product/ProductSlots");
 const { SidebarProjectsSection } = await import("../sidebarProjects/SidebarProjectsSection");
 const { SidebarThreadsSectionHeader } = await import("../sidebarProjects/SidebarThreadsSection");
 const { SidebarCompactThreadRow } = await import("../sidebarThreadRow/SidebarCompactThreadRow");
-const { WorkspaceViewLayout } =
-  await import("../../../../packages/tasks-web/src/ui/WorkspaceViewLayout.tsx");
+const { WorkspaceViewLayout } = await import("@t3tools/tasks-web");
 
 const WEB_ROOT = NodeURL.fileURLToPath(new URL("../..", import.meta.url));
 
@@ -166,57 +192,67 @@ function threadRow(title: string, index: number): SidebarCompactThreadRowProps {
 }
 
 /**
- * The sidebar's composition (`components/Sidebar.tsx`): upstream's fixed
- * header group with the Search row and our sections after it, then the thread
- * list group with upstream's list classes, holding our compact rows.
+ * The thread sidebar's composition (`components/Sidebar.tsx`): upstream's
+ * chrome header, its fixed header group with the Search row and our sections
+ * after it, then the thread list group with upstream's list classes, holding
+ * our compact rows. Upstream's layout around it adds the sidebar toggle.
  */
-function SidebarUnderTest() {
+function ThreadSidebarUnderTest() {
   const noop = () => undefined;
   return (
-    <SidebarProvider>
-      <div data-sidebar-under-test className="flex h-[48rem] w-64 flex-col bg-sidebar">
-        <SidebarContent
-          fixedHeader={
-            <SidebarGroup className="z-[1]">
-              <SidebarThreadHeader
-                hasProjects
-                projectScope={null}
-                onNewProject={noop}
-                onNewThread={noop}
-                newThreadDisabled={false}
-                newThreadShortcutLabel={null}
-                newThreadInProjectShortcutLabel={null}
-                showNewThreadInProjectHint={false}
-                searchInputRef={{ current: null }}
-                searchQuery=""
-                onSearchQueryChange={noop}
-                onSearchKeyDown={noop}
-                isSearching={false}
-                searchResultCount={0}
-                activeSearchResultIndex={0}
-                onClearSearch={noop}
-              />
-              <ProductSidebarNavigation />
-              <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} />
-              <SidebarThreadsSectionHeader
-                onNewThread={noop}
-                currentEnvironmentId={null}
-                newThreadDisabled={false}
-                newThreadShortcutLabel={null}
-              />
-            </SidebarGroup>
-          }
-        >
-          <SidebarGroup className="flex-1" role="presentation">
-            <ul role="presentation" className="relative flex flex-1 flex-col gap-px">
-              {THREAD_TITLES.map((title, index) => (
-                <SidebarCompactThreadRow key={title} {...threadRow(title, index)} />
-              ))}
-            </ul>
+    <>
+      <SidebarChromeHeader isElectron={false} />
+      <SidebarContent
+        fixedHeader={
+          <SidebarGroup className="z-[1]">
+            <SidebarThreadHeader
+              hasProjects
+              projectScope={null}
+              onNewProject={noop}
+              onNewThread={noop}
+              newThreadDisabled={false}
+              newThreadShortcutLabel={null}
+              newThreadInProjectShortcutLabel={null}
+              showNewThreadInProjectHint={false}
+              searchInputRef={{ current: null }}
+              searchQuery=""
+              onSearchQueryChange={noop}
+              onSearchKeyDown={noop}
+              isSearching={false}
+              searchResultCount={0}
+              activeSearchResultIndex={0}
+              onClearSearch={noop}
+            />
+            <ProductSidebarNavigation />
+            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} />
+            <SidebarThreadsSectionHeader
+              onNewThread={noop}
+              currentEnvironmentId={null}
+              newThreadDisabled={false}
+              newThreadShortcutLabel={null}
+            />
           </SidebarGroup>
-        </SidebarContent>
-      </div>
-    </SidebarProvider>
+        }
+      >
+        <SidebarGroup className="flex-1" role="presentation">
+          <ul role="presentation" className="relative flex flex-1 flex-col gap-px">
+            {THREAD_TITLES.map((title, index) => (
+              <SidebarCompactThreadRow key={title} {...threadRow(title, index)} />
+            ))}
+          </ul>
+        </SidebarGroup>
+      </SidebarContent>
+    </>
+  );
+}
+
+threadSidebar.render = () => <ThreadSidebarUnderTest />;
+
+function SidebarUnderTest() {
+  return (
+    <AppSidebarLayout>
+      <main />
+    </AppSidebarLayout>
   );
 }
 
@@ -282,7 +318,7 @@ interface MeasuredRow {
 
 /** Runs in the page: the row, icon and label boxes of each named row, relative to the sidebar. */
 function measureRows(names: ReadonlyArray<string>): MeasuredRow[] {
-  const sidebar = document.querySelector("[data-sidebar-under-test]")!.getBoundingClientRect();
+  const sidebar = document.querySelector('[data-slot="sidebar-inner"]')!.getBoundingClientRect();
   const box = (element: Element): Box => {
     const rect = element.getBoundingClientRect();
     return {
@@ -315,6 +351,35 @@ function measureRows(names: ReadonlyArray<string>): MeasuredRow[] {
   });
 }
 
+interface MeasuredHeader {
+  /** The sidebar toggle's icon, relative to the sidebar. */
+  readonly toggleIconLeft: number;
+  readonly headerHeight: number;
+  readonly topbarHeight: number;
+  readonly hasBrand: boolean;
+}
+
+/** Runs in the page: upstream's sidebar toggle and the chrome header above the Search row. */
+function measureHeader(): MeasuredHeader {
+  const sidebar = document.querySelector('[data-slot="sidebar-inner"]')!;
+  const toggleIcon = document.querySelector('[data-sidebar-control] [data-sidebar="trigger"] svg')!;
+  const header = sidebar.firstElementChild!;
+  const probe = document.createElement("div");
+  probe.style.height = "var(--workspace-topbar-height)";
+  sidebar.append(probe);
+  const topbarHeight = probe.getBoundingClientRect().height;
+  probe.remove();
+  return {
+    toggleIconLeft: toggleIcon.getBoundingClientRect().left - sidebar.getBoundingClientRect().left,
+    headerHeight: header.getBoundingClientRect().height,
+    topbarHeight,
+    hasBrand:
+      header.querySelector('a[aria-label="Go to threads"]') !== null ||
+      header.textContent!.includes("Up.computer") ||
+      header.querySelector("[data-environment-identification]") !== null,
+  };
+}
+
 const NAV = ["Tasks", "Agents", "Automations"];
 const PROJECT_ROWS = ["All projects", "UpComputer", "Site", "Docs", "No project", "More"];
 const ROWS = ["Search", ...NAV, "Projects", ...PROJECT_ROWS, "Threads", ...THREAD_TITLES];
@@ -336,17 +401,23 @@ afterAll(async () => {
 });
 
 describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)", () => {
+  let page: Page;
   let rows: Map<string, MeasuredRow>;
+  let header: MeasuredHeader;
 
   beforeAll(async () => {
     const [markup, css] = await Promise.all([renderMarkup(<SidebarUnderTest />), compiledAppCss()]);
-    const page = await browser!.newPage({ viewport: { width: 800, height: 900 } });
+    page = await browser!.newPage({ viewport: { width: 1200, height: 900 } });
     await page.setContent(
       `<!doctype html><html><head><style>${css}</style></head><body>${markup}</body></html>`,
     );
     rows = new Map((await page.evaluate(measureRows, ROWS)).map((row) => [row.name, row]));
-    await page.close();
+    header = await page.evaluate(measureHeader);
   }, 60_000);
+
+  afterAll(async () => {
+    await page?.close();
+  });
 
   const row = (name: string) => rows.get(name)!;
 
@@ -375,12 +446,28 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
     expect(gapsBetween([row("Threads"), row(THREAD_TITLES[0]!)])).toEqual([rowGaps[0]]);
   });
 
-  it("puts one gap between Search, the nav rows, Projects and Threads", () => {
-    const sectionGaps = gapsBetween([row("Search"), row("Tasks")])
-      .concat(gapsBetween([row("Automations"), row("Projects")]))
-      .concat(gapsBetween([row("More"), row("Threads")]));
-    expect(sectionGaps).toEqual([sectionGaps[0], sectionGaps[0], sectionGaps[0]]);
-    expect(sectionGaps[0]).toBeGreaterThan(0);
+  it("continues the Search row into the nav rows at the row gap", () => {
+    expect(gapsBetween([row("Search"), row("Tasks")])).toEqual(
+      gapsBetween(NAV.map(row)).slice(0, 1),
+    );
+  });
+
+  it("puts one gap between the nav rows, Projects and Threads", () => {
+    const sectionGaps = gapsBetween([row("Automations"), row("Projects")]).concat(
+      gapsBetween([row("More"), row("Threads")]),
+    );
+    expect(sectionGaps).toEqual([sectionGaps[0], sectionGaps[0]]);
+    expect(sectionGaps[0]).toBeGreaterThan(gapsBetween(NAV.map(row))[0]!);
+  });
+
+  it("starts the sidebar toggle's icon where the row icons do", () => {
+    expectWithinPixel("sidebar toggle icon", header.toggleIconLeft, row("Search").icon!.left);
+  });
+
+  it("shows no brand or stage badge above Search, in a titlebar-high header", () => {
+    expect(header.hasBrand).toBe(false);
+    expect(header.topbarHeight).toBeGreaterThan(0);
+    expectWithinPixel("header height", header.headerHeight, header.topbarHeight);
   });
 });
 

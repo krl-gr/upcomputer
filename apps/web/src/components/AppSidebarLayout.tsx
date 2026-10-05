@@ -39,6 +39,8 @@ import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarCh
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { productSurface } from "../product/productFlags";
+import { SIDEBAR_TOGGLE_ALIGNMENT } from "../sidebarMetrics/sidebarMetrics";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -255,6 +257,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
+    ...(productSurface("sidebarHeader") === "upcomputer" ? SIDEBAR_TOGGLE_ALIGNMENT : {}),
     ...(isMacosDesktop && !isWindowFullscreen
       ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
       : {}),
