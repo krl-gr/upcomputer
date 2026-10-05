@@ -1,10 +1,15 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { EllipsisIcon, LayoutGridIcon, MessageSquareDashedIcon } from "lucide-react";
-import { useCallback, useMemo, useReducer, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  CopyIcon,
+  EllipsisIcon,
+  LayoutGridIcon,
+  MessageSquareDashedIcon,
+  SettingsIcon,
+} from "lucide-react";
+import { useCallback, useMemo, useReducer } from "react";
 
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
@@ -23,25 +28,26 @@ import {
   ComboboxTrigger,
   useComboboxFilter,
 } from "../components/ui/combobox";
+import { MenuItem } from "../components/ui/menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "../components/ui/sidebar";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { readLocalApi } from "../localApi";
 import { projectIconColorClassName } from "../projectIconColors";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useUiStateStore } from "../uiStateStore";
+import { SidebarProjectRow } from "./SidebarProjectRow";
 import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
-
-type ProjectMenuAction = "new-thread" | "project-settings";
 
 interface ProjectItem {
   readonly value: string;
@@ -98,36 +104,27 @@ export function SidebarProjectsSection(props: {
     },
     [isMobile, router, setOpenMobile],
   );
-  const showProjectMenu = useCallback(
-    async (project: SidebarProjectSnapshot, position: { x: number; y: number }) => {
-      const api = readLocalApi();
-      if (!api) return;
-      const clicked = await settlePromise(() =>
-        api.contextMenu.show<ProjectMenuAction>(
-          [
-            { id: "new-thread", label: "New thread" },
-            { id: "project-settings", label: "Project settings" },
-          ],
-          position,
-        ),
+  const startNewThread = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      if (isMobile) setOpenMobile(false);
+      void handleNewThread(scopeProjectRef(project.environmentId, project.id));
+    },
+    [handleNewThread, isMobile, setOpenMobile],
+  );
+  const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
+    onCopy: ({ path }) => {
+      toastManager.add({ type: "success", title: "Path copied", description: path });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy path",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
       );
-      if (clicked._tag === "Failure") return;
-      if (clicked.value === "new-thread") {
-        if (isMobile) setOpenMobile(false);
-        void handleNewThread(scopeProjectRef(project.environmentId, project.id));
-      } else if (clicked.value === "project-settings") {
-        openProjectSettings(project);
-      }
     },
-    [handleNewThread, isMobile, openProjectSettings, setOpenMobile],
-  );
-  const onProjectContextMenu = useCallback(
-    (event: ReactMouseEvent, project: SidebarProjectSnapshot) => {
-      event.preventDefault();
-      void showProjectMenu(project, { x: event.clientX, y: event.clientY });
-    },
-    [showProjectMenu],
-  );
+  });
 
   if (projectGroups.length === 0) return null;
 
@@ -165,30 +162,52 @@ export function SidebarProjectsSection(props: {
           </SidebarMenuItem>
           {rows.preview.map((project) => (
             <SidebarMenuItem key={project.projectKey}>
-              <SidebarMenuButton
+              <SidebarProjectRow
+                label={project.displayName}
+                icon={
+                  // Wrapped so the button's svg color rule leaves the project's own icon color.
+                  <span className="flex shrink-0">
+                    <ProjectFavicon project={project} className="size-4" />
+                  </span>
+                }
                 isActive={scopeKey === project.projectKey}
-                onClick={() => setScopeKey(project.projectKey)}
-                onContextMenu={(event) => onProjectContextMenu(event, project)}
-              >
-                {/* Wrapped so the button's svg color rule leaves the project's own icon color. */}
-                <span className="flex shrink-0">
-                  <ProjectFavicon project={project} className="size-4" />
-                </span>
-                <span className="flex-1 truncate">{project.displayName}</span>
-              </SidebarMenuButton>
+                onSelect={() => setScopeKey(project.projectKey)}
+                newChatLabel={`New chat in ${project.displayName}`}
+                onNewChat={() => startNewThread(project)}
+                menuLabel={`Project actions for ${project.displayName}`}
+                menuItems={
+                  <>
+                    <MenuItem onClick={() => openProjectSettings(project)}>
+                      <SettingsIcon />
+                      Project settings
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() =>
+                        copyPathToClipboard(project.workspaceRoot, { path: project.workspaceRoot })
+                      }
+                    >
+                      <CopyIcon />
+                      Copy path
+                    </MenuItem>
+                  </>
+                }
+              />
             </SidebarMenuItem>
           ))}
           {rows.scratch ? (
             <SidebarMenuItem>
-              <SidebarMenuButton
+              <SidebarProjectRow
+                label="No project"
+                icon={
+                  <span className={`flex size-4 shrink-0 ${projectIconColorClassName("gray")}`}>
+                    <MessageSquareDashedIcon className="size-full" />
+                  </span>
+                }
                 isActive={scopeKey === rows.scratch.projectKey}
-                onClick={() => setScopeKey(rows.scratch?.projectKey ?? null)}
-              >
-                <span className={`flex size-4 shrink-0 ${projectIconColorClassName("gray")}`}>
-                  <MessageSquareDashedIcon className="size-full" />
-                </span>
-                <span className="flex-1 truncate">No project</span>
-              </SidebarMenuButton>
+                onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
+                newChatLabel="New chat without a project"
+                onNewChat={() => rows.scratch && startNewThread(rows.scratch)}
+              />
             </SidebarMenuItem>
           ) : null}
           {rows.overflow.length > 0 ? (
@@ -196,7 +215,7 @@ export function SidebarProjectsSection(props: {
               <SidebarProjectsMore
                 projects={rows.overflow}
                 onSelect={setScopeKey}
-                onProjectContextMenu={onProjectContextMenu}
+                onOpenProjectSettings={openProjectSettings}
               />
             </SidebarMenuItem>
           ) : null}
@@ -206,13 +225,16 @@ export function SidebarProjectsSection(props: {
   );
 }
 
-/** "More": upstream's scope menu shape (search, then projects) over the remaining projects. */
+/**
+ * "More": upstream's scope menu shape (search, then projects) over the
+ * remaining projects. As in upstream's menu, right-click opens a project's settings.
+ */
 function SidebarProjectsMore(props: {
   readonly projects: ReadonlyArray<SidebarProjectSnapshot>;
   readonly onSelect: (projectKey: string) => void;
-  readonly onProjectContextMenu: (event: ReactMouseEvent, project: SidebarProjectSnapshot) => void;
+  readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
 }) {
-  const { projects, onSelect, onProjectContextMenu } = props;
+  const { projects, onSelect, onOpenProjectSettings } = props;
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
@@ -272,8 +294,9 @@ function SidebarProjectsMore(props: {
                 value={item}
                 onContextMenu={(event) => {
                   if (!project) return;
+                  event.preventDefault();
                   dispatchMenu({ type: "project-settings-opened" });
-                  onProjectContextMenu(event, project);
+                  onOpenProjectSettings(project);
                 }}
               >
                 {project ? <ProjectFavicon project={project} className="size-4 shrink-0" /> : null}

@@ -31,15 +31,22 @@ const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 
 const environmentId = "env-local";
+const spies = vi.hoisted(() => ({
+  newThread: vi.fn(),
+  navigate: vi.fn(),
+  nativeContextMenu: vi.fn(),
+}));
 
 vi.mock("../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }));
 vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: "/home/scratch" }]]),
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
-vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => vi.fn() }));
-vi.mock("../localApi", () => ({ readLocalApi: () => null }));
-vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: vi.fn() }) }));
+vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => spies.newThread }));
+vi.mock("../localApi", () => ({
+  readLocalApi: () => ({ contextMenu: { show: spies.nativeContextMenu } }),
+}));
+vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: spies.navigate }) }));
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 
@@ -130,8 +137,36 @@ const click = (element: HTMLElement) =>
     element.click();
   });
 
+/** Dispatches a right-click and reports whether the page's own menu was suppressed. */
+const rightClick = async (element: HTMLElement) => {
+  let suppressed = false;
+  await act(async () => {
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    suppressed = !element.dispatchEvent(event);
+  });
+  return suppressed;
+};
+
+function actionLabels(label: string) {
+  return [...rowButton(label).querySelectorAll("button")].map((button) =>
+    button.getAttribute("aria-label"),
+  );
+}
+
+const menuItemLabels = () =>
+  [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].map((item) => item.textContent);
+
+function menuItem(label: string): HTMLElement {
+  const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!item) throw new Error(`No "${label}" menu item`);
+  return item;
+}
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.clearAllMocks();
   window.localStorage.clear();
   useUiStateStore.setState({ sidebarProjectScopeKey: null });
   container = document.createElement("div");
@@ -211,5 +246,81 @@ describe("SidebarProjectsSection", () => {
         ?.getAttribute("aria-expanded"),
     ).toBe("false");
     expect(rowLabels()).toEqual([]);
+  });
+
+  it("gives project rows a new chat button and a menu, revealed on hover or focus", async () => {
+    await render();
+    expect(actionLabels("UpComputer")).toEqual([
+      "Project actions for UpComputer",
+      "New chat in UpComputer",
+    ]);
+    expect(actionLabels("Docs")).toEqual(["Project actions for Docs", "New chat in Docs"]);
+    expect(actionLabels("No project")).toEqual(["New chat without a project"]);
+    expect(actionLabels("All projects")).toEqual([]);
+    expect(actionLabels("More")).toEqual([]);
+
+    const actions = rowButton("UpComputer").querySelector<HTMLElement>(
+      "[data-testid='sidebar-project-row-actions']",
+    )!;
+    expect(actions.classList).toContain("hidden");
+    expect(actions.classList).toContain("group-any-hover/sidebar-row:flex");
+    expect(actions.classList).toContain("group-focus-within/sidebar-row:flex");
+  });
+
+  it("starts a new thread in the row's project without changing the filter", async () => {
+    await render();
+    const pencil = rowButton("Site").querySelector<HTMLElement>("[aria-label='New chat in Site']")!;
+    await click(pencil);
+    expect(spies.newThread).toHaveBeenCalledExactlyOnceWith({ environmentId, projectId: "site" });
+    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+
+    await click(
+      rowButton("No project").querySelector<HTMLElement>(
+        "[aria-label='New chat without a project']",
+      )!,
+    );
+    expect(spies.newThread).toHaveBeenLastCalledWith({ environmentId, projectId: "scratch" });
+    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+  });
+
+  it("opens project settings from the row's menu", async () => {
+    await render();
+    await click(
+      rowButton("UpComputer").querySelector<HTMLElement>(
+        "[aria-label='Project actions for UpComputer']",
+      )!,
+    );
+    expect(menuItemLabels()).toEqual(["Project settings", "Copy path"]);
+    // The open menu keeps the row highlighted and its actions shown.
+    expect(rowButton("UpComputer").classList).toContain("bg-sidebar-row-hover");
+    expect(
+      rowButton("UpComputer").querySelector("[data-testid='sidebar-project-row-actions']")
+        ?.classList,
+    ).not.toContain("hidden");
+
+    await click(menuItem("Project settings"));
+    expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/projects/$projectKey",
+      params: { projectKey: "key-upcomputer" },
+    });
+    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+  });
+
+  it("opens the same menu on right-click instead of a native one", async () => {
+    await render();
+    expect(await rightClick(rowButton("Site"))).toBe(true);
+    expect(menuItemLabels()).toEqual(["Project settings", "Copy path"]);
+    expect(spies.nativeContextMenu).not.toHaveBeenCalled();
+
+    await click(rowButton("More"));
+    const design = [...document.querySelectorAll<HTMLElement>("[role='option']")].find(
+      (option) => option.textContent === "Design",
+    )!;
+    expect(await rightClick(design)).toBe(true);
+    expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/projects/$projectKey",
+      params: { projectKey: "key-design" },
+    });
+    expect(spies.nativeContextMenu).not.toHaveBeenCalled();
   });
 });
