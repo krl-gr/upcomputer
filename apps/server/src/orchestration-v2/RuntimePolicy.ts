@@ -16,6 +16,7 @@ import {
   ProviderAdapterV2RuntimePolicy,
   type ProviderAdapterV2RuntimePolicy as ProviderAdapterV2RuntimePolicyType,
 } from "./ProviderAdapter.ts";
+import { resolveThreadLinkedDirectories } from "./linkedProjects.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 
 /**
@@ -128,10 +129,16 @@ export const layerFromProjectStore: Layer.Layer<
               }),
             ),
           ));
+        const additionalDirectories = yield* resolveThreadLinkedDirectories({
+          thread: input.thread,
+          cwd,
+          projects,
+        });
         return ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
+          ...(additionalDirectories.length === 0 ? {} : { additionalDirectories }),
         });
       }),
     });

@@ -137,6 +137,8 @@ export interface AcpAdapterV2RuntimeInput {
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly mcpServers: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly acpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  /** Linked project folders, sent with session setup to agents that read them. */
+  readonly additionalDirectories?: ReadonlyArray<string>;
   /** Scoped credentials for terminal fallback when an ACP agent drops `mcpServers`. */
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly resumeSessionId?: string;
@@ -2059,6 +2061,9 @@ export function makeAcpAdapterV2(
           return {
             cwd: input.runtimePolicy.cwd ?? process.cwd(),
             runtimePolicy: input.runtimePolicy,
+            ...(input.runtimePolicy.additionalDirectories === undefined
+              ? {}
+              : { additionalDirectories: input.runtimePolicy.additionalDirectories }),
             mcpServers: mcpContext.servers,
             acpMcpServers: mcpContext.acpServers,
             ...(mcpContext.processEnvironment === undefined

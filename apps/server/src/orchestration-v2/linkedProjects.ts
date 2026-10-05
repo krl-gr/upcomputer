@@ -4,7 +4,9 @@ import type {
   ProjectId,
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import type * as ProjectStore from "./ProjectStore.ts";
 
@@ -156,3 +158,34 @@ export function resolveLinkedProjectDirectories(input: {
   }
   return directories;
 }
+
+/**
+ * Folders the thread's agent gets next to its cwd: its own and its project's
+ * linked projects. Best effort, so a failed read never blocks a turn.
+ */
+export const resolveThreadLinkedDirectories = Effect.fn("resolveThreadLinkedDirectories")(
+  function* (input: {
+    readonly thread: Pick<OrchestrationV2AppThread, "projectId" | "linkedProjectIds">;
+    readonly cwd: string | null;
+    readonly projects: ProjectStore.ProjectStoreV2["Service"];
+  }) {
+    const threadProject = Option.getOrUndefined(yield* input.projects.get(input.thread.projectId));
+    const linkedProjectIds = collectLinkedProjectIds({ thread: input.thread, threadProject });
+    if (linkedProjectIds.length === 0) return [];
+    return resolveLinkedProjectDirectories({
+      linkedProjectIds,
+      projects: yield* input.projects.list({ projectIds: linkedProjectIds }),
+      cwd: input.cwd,
+    });
+  },
+  (effect) =>
+    effect.pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning("linked project folders could not be resolved", {
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as<ReadonlyArray<string>>([])),
+      ),
+    ),
+);

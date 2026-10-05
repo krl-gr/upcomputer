@@ -8,10 +8,13 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import {
   collectLinkedProjectIds,
@@ -22,6 +25,7 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import type { ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
+import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "./testkit/ProviderReplayHarness.ts";
 
@@ -272,4 +276,68 @@ describe("linked project helpers", () => {
       ["/work/docs"],
     );
   });
+});
+
+const runtimePolicyLayer = RuntimePolicy.layerFromProjectStore.pipe(
+  Layer.provide(
+    Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+      getInstance: () => Effect.succeed(undefined),
+      listInstances: Effect.succeed([]),
+      listUnavailable: Effect.succeed([]),
+      streamChanges: Stream.empty,
+      subscribeChanges: Effect.never,
+    }),
+  ),
+  Layer.provideMerge(ProjectStore.layer),
+  Layer.provide(SqlitePersistenceMemory),
+);
+
+it.layer(runtimePolicyLayer)("linked project folders in the runtime policy", (it) => {
+  it.effect("grants thread and project links, skipping deleted projects", () =>
+    Effect.gen(function* () {
+      const projects = yield* ProjectStore.ProjectStoreV2;
+      for (const projectId of [home, docs, infra, gone]) {
+        yield* projects.apply(projectEvent(projectId, { type: "project.created" }));
+      }
+      yield* projects.apply(
+        projectEvent(home, { type: "project.meta-updated", linkedProjectIds: [infra] }),
+      );
+      yield* projects.apply(projectEvent(gone, { type: "project.deleted" }));
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const at = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:policy-links");
+      const resolved = yield* policy.resolve({
+        thread: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: home,
+          title: "Policy",
+          providerInstanceId: instanceId,
+          modelSelection: { instanceId, model: "gpt-5.1-codex" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          linkedProjectIds: [docs, gone],
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+        modelSelection: { instanceId, model: "gpt-5.1-codex" },
+      });
+      assert.equal(resolved.cwd, "/work/project-home");
+      assert.deepEqual(resolved.additionalDirectories, [
+        "/work/project-docs",
+        "/work/project-infra",
+      ]);
+    }),
+  );
 });

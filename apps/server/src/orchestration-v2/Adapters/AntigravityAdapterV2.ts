@@ -138,7 +138,10 @@ export function makeAntigravityAcpAdapterFlavor(
         options.makeRuntime({
           ...input,
           clientFileSystem: true,
-          additionalDirectories: [options.serverConfig.attachmentsDir],
+          additionalDirectories: [
+            ...(input.additionalDirectories ?? []),
+            options.serverConfig.attachmentsDir,
+          ],
         }),
       );
       return {

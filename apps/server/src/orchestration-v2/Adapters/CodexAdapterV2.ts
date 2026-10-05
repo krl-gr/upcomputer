@@ -693,6 +693,15 @@ function codexRuntimeModeTurnDefaults(runtimeMode: RuntimeMode): {
   }
 }
 
+/** Linked project folders become extra writable roots of a workspace-write sandbox. */
+function withLinkedProjectWritableRoots<
+  Policy extends CodexSchema.V2TurnStartParams__SandboxPolicy | null | undefined,
+>(policy: Policy, additionalDirectories: ReadonlyArray<string> | undefined): Policy {
+  if (policy?.type !== "workspaceWrite" || !additionalDirectories?.length) return policy;
+  const writableRoots = [...new Set([...(policy.writableRoots ?? []), ...additionalDirectories])];
+  return { ...policy, writableRoots };
+}
+
 export function buildCodexTurnStartParams(input: {
   readonly nativeThreadId: string;
   readonly codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>;
@@ -710,10 +719,12 @@ export function buildCodexTurnStartParams(input: {
       input.runtimePolicy.approvalPolicy === undefined
         ? runtimeModeDefaults.approvalPolicy
         : yield* decodeTurnApprovalPolicy(input.runtimePolicy.approvalPolicy);
-    const sandboxPolicy =
+    const sandboxPolicy = withLinkedProjectWritableRoots(
       input.runtimePolicy.sandboxPolicy === undefined
         ? runtimeModeDefaults.sandboxPolicy
-        : yield* decodeTurnSandboxPolicy(input.runtimePolicy.sandboxPolicy);
+        : yield* decodeTurnSandboxPolicy(input.runtimePolicy.sandboxPolicy),
+      input.runtimePolicy.additionalDirectories,
+    );
     const selectedEffort = getModelSelectionStringOptionValue(
       input.modelSelection,
       "reasoningEffort",
