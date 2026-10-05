@@ -8,6 +8,11 @@
  * without a product it sees the empty composition, so core behaves as
  * upstream does.
  */
+import {
+  defaultInstanceIdForDriver,
+  type ProviderInstanceConfig,
+  type ProviderInstanceConfigMap,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -295,4 +300,22 @@ export function withProductProviderDrivers(
     }
   }
   return [...builtIn, ...product.providerDrivers];
+}
+
+/**
+ * Gives every product driver its default instance (keyed by the driver kind,
+ * as built-in drivers get from their legacy settings). An explicit
+ * `providerInstances` entry for that id wins; the instance starts with the
+ * driver's default config.
+ */
+export function withProductDefaultInstances(
+  configMap: ProviderInstanceConfigMap,
+  product: ExperimentalServerProductComposition,
+): ProviderInstanceConfigMap {
+  const merged: Record<string, ProviderInstanceConfig> = { ...configMap };
+  for (const driver of product.providerDrivers) {
+    const instanceId = defaultInstanceIdForDriver(driver.driverKind);
+    if (!(instanceId in merged)) merged[instanceId] = { driver: driver.driverKind };
+  }
+  return merged as ProviderInstanceConfigMap;
 }
