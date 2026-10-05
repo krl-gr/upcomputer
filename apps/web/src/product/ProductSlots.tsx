@@ -7,6 +7,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../components/ui/sidebar";
+import { SIDEBAR_MENU_SCOPE, SIDEBAR_SECTION_GAP } from "../sidebarMetrics/sidebarMetrics";
+import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
 import type {
   ExperimentalWebThreadAccessoryProps,
@@ -49,31 +51,33 @@ export function ProductSidebarNavigation() {
   const { isMobile, setOpenMobile } = useSidebar();
   if (WEB_PRODUCT.navigation.length === 0) return null;
   return (
-    <SidebarMenu>
-      {WEB_PRODUCT.navigation.map((item) => {
-        const Icon = item.icon;
-        const Accessory = item.accessory;
-        return (
-          <SidebarMenuItem key={item.id}>
-            <SidebarMenuButton
-              isActive={isExperimentalWebNavigationActive(item, pathname)}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false);
-                void navigate({ to: "/$", params: { _splat: item.path.slice(1) } });
-              }}
-            >
-              {Icon ? <Icon /> : null}
-              <span className="flex-1 truncate">{item.label}</span>
-              {Accessory ? (
-                <span className="ml-auto shrink-0 tabular-nums">
-                  <Accessory />
-                </span>
-              ) : null}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        );
-      })}
-    </SidebarMenu>
+    <div className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_MENU_SCOPE)}>
+      <SidebarMenu>
+        {WEB_PRODUCT.navigation.map((item) => {
+          const Icon = item.icon;
+          const Accessory = item.accessory;
+          return (
+            <SidebarMenuItem key={item.id}>
+              <SidebarMenuButton
+                isActive={isExperimentalWebNavigationActive(item, pathname)}
+                onClick={() => {
+                  if (isMobile) setOpenMobile(false);
+                  void navigate({ to: "/$", params: { _splat: item.path.slice(1) } });
+                }}
+              >
+                {Icon ? <Icon /> : null}
+                <span className="flex-1 truncate">{item.label}</span>
+                {Accessory ? (
+                  <span className="ml-auto shrink-0 tabular-nums">
+                    <Accessory />
+                  </span>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
+    </div>
   );
 }
 

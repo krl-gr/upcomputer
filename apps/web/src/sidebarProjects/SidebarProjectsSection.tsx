@@ -44,6 +44,13 @@ import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useUiStateStore } from "../uiStateStore";
+import { cn } from "../lib/utils";
+import {
+  SIDEBAR_ICON_SIZE,
+  SIDEBAR_MENU_SCOPE,
+  SIDEBAR_SECTION_GAP,
+  SIDEBAR_SECTION_HEADER_GAP,
+} from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
 import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
@@ -133,7 +140,7 @@ export function SidebarProjectsSection(props: {
 
   return (
     <Collapsible open={open}>
-      <div className="pt-2">
+      <div className={SIDEBAR_SECTION_GAP}>
         <SidebarSectionHeader
           title="Projects"
           open={open}
@@ -160,73 +167,83 @@ export function SidebarProjectsSection(props: {
         />
       </div>
       <CollapsiblePanel>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
-              <LayoutGridIcon />
-              <span className="flex-1 truncate">All projects</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          {rows.preview.map((project) => (
-            <SidebarMenuItem key={project.projectKey}>
-              <SidebarProjectRow
-                label={project.displayName}
-                icon={
-                  // Wrapped so the button's svg color rule leaves the project's own icon color.
-                  <span className="flex shrink-0">
-                    <ProjectFavicon project={project} className="size-4" />
-                  </span>
-                }
-                isActive={scopeKey === project.projectKey}
-                onSelect={() => setScopeKey(project.projectKey)}
-                newChatLabel={`New chat in ${project.displayName}`}
-                onNewChat={() => startNewThread(project)}
-                menuLabel={`Project actions for ${project.displayName}`}
-                menuItems={
-                  <>
-                    <MenuItem onClick={() => openProjectSettings(project)}>
-                      <SettingsIcon />
-                      Project settings
-                    </MenuItem>
-                    <MenuItem
-                      onClick={() =>
-                        copyPathToClipboard(project.workspaceRoot, { path: project.workspaceRoot })
-                      }
+        <div className={cn(SIDEBAR_SECTION_HEADER_GAP, SIDEBAR_MENU_SCOPE)}>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
+                <LayoutGridIcon />
+                <span className="flex-1 truncate">All projects</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            {rows.preview.map((project) => (
+              <SidebarMenuItem key={project.projectKey}>
+                <SidebarProjectRow
+                  label={project.displayName}
+                  icon={
+                    // Wrapped so the button's svg color rule leaves the project's own icon color.
+                    <span className="flex shrink-0">
+                      <ProjectFavicon project={project} className={SIDEBAR_ICON_SIZE} />
+                    </span>
+                  }
+                  isActive={scopeKey === project.projectKey}
+                  onSelect={() => setScopeKey(project.projectKey)}
+                  newChatLabel={`New chat in ${project.displayName}`}
+                  onNewChat={() => startNewThread(project)}
+                  menuLabel={`Project actions for ${project.displayName}`}
+                  menuItems={
+                    <>
+                      <MenuItem onClick={() => openProjectSettings(project)}>
+                        <SettingsIcon />
+                        Project settings
+                      </MenuItem>
+                      <MenuItem
+                        onClick={() =>
+                          copyPathToClipboard(project.workspaceRoot, {
+                            path: project.workspaceRoot,
+                          })
+                        }
+                      >
+                        <CopyIcon />
+                        Copy path
+                      </MenuItem>
+                    </>
+                  }
+                />
+              </SidebarMenuItem>
+            ))}
+            {rows.scratch ? (
+              <SidebarMenuItem>
+                <SidebarProjectRow
+                  label="No project"
+                  icon={
+                    <span
+                      className={cn(
+                        "flex shrink-0",
+                        SIDEBAR_ICON_SIZE,
+                        projectIconColorClassName("gray"),
+                      )}
                     >
-                      <CopyIcon />
-                      Copy path
-                    </MenuItem>
-                  </>
-                }
-              />
-            </SidebarMenuItem>
-          ))}
-          {rows.scratch ? (
-            <SidebarMenuItem>
-              <SidebarProjectRow
-                label="No project"
-                icon={
-                  <span className={`flex size-4 shrink-0 ${projectIconColorClassName("gray")}`}>
-                    <MessageSquareDashedIcon className="size-full" />
-                  </span>
-                }
-                isActive={scopeKey === rows.scratch.projectKey}
-                onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
-                newChatLabel="New chat without a project"
-                onNewChat={() => rows.scratch && startNewThread(rows.scratch)}
-              />
-            </SidebarMenuItem>
-          ) : null}
-          {rows.overflow.length > 0 ? (
-            <SidebarMenuItem>
-              <SidebarProjectsMore
-                projects={rows.overflow}
-                onSelect={setScopeKey}
-                onOpenProjectSettings={openProjectSettings}
-              />
-            </SidebarMenuItem>
-          ) : null}
-        </SidebarMenu>
+                      <MessageSquareDashedIcon className="size-full" />
+                    </span>
+                  }
+                  isActive={scopeKey === rows.scratch.projectKey}
+                  onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
+                  newChatLabel="New chat without a project"
+                  onNewChat={() => rows.scratch && startNewThread(rows.scratch)}
+                />
+              </SidebarMenuItem>
+            ) : null}
+            {rows.overflow.length > 0 ? (
+              <SidebarMenuItem>
+                <SidebarProjectsMore
+                  projects={rows.overflow}
+                  onSelect={setScopeKey}
+                  onOpenProjectSettings={openProjectSettings}
+                />
+              </SidebarMenuItem>
+            ) : null}
+          </SidebarMenu>
+        </div>
       </CollapsiblePanel>
     </Collapsible>
   );

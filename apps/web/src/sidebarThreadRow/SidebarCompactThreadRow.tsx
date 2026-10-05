@@ -26,6 +26,14 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { ProductThreadRowAccessory } from "../product/ProductSlots";
+import {
+  SIDEBAR_ICON_GAP,
+  SIDEBAR_ICON_SIZE,
+  SIDEBAR_LIST_ROW_INTRINSIC_SIZE,
+  SIDEBAR_LIST_ROW_SPACING,
+  SIDEBAR_ROW_HEIGHT,
+  SIDEBAR_ROW_INSET,
+} from "../sidebarMetrics/sidebarMetrics";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
@@ -241,7 +249,9 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        "list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
+        "list-none [content-visibility:auto]",
+        SIDEBAR_LIST_ROW_INTRINSIC_SIZE,
+        SIDEBAR_LIST_ROW_SPACING,
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -256,7 +266,10 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               aria-busy={thread.titleRegeneration != null || undefined}
               data-testid="sidebar-row-compact"
               className={cn(
-                "group/sidebar-row relative flex h-8 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                "group/sidebar-row relative flex w-full cursor-pointer items-center overflow-hidden rounded-md text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                SIDEBAR_ROW_HEIGHT,
+                SIDEBAR_ICON_GAP,
+                SIDEBAR_ROW_INSET,
                 props.isActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : isSelected || props.sweepAction !== null
@@ -292,7 +305,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
           }
         >
           {props.project ? (
-            <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+            <ProjectFavicon project={props.project} className={cn(SIDEBAR_ICON_SIZE, "shrink-0")} />
           ) : null}
           <ThreadStatusLabel status={statusLabel} />
           {isRenaming ? (

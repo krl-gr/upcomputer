@@ -8,6 +8,11 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { productSurface } from "../product/productFlags";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { cn } from "../lib/utils";
+import {
+  SIDEBAR_FIXED_HEADER_END_GAP,
+  SIDEBAR_SECTION_GAP,
+} from "../sidebarMetrics/sidebarMetrics";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
 
 export const SIDEBAR_THREADS_OPEN_STORAGE_KEY = "upcomputer:sidebar-threads-open";
@@ -66,7 +71,7 @@ export function SidebarThreadsSectionHeader(props: {
     void startScratchThread(scratchTarget);
   };
   return (
-    <div className="pt-2">
+    <div className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}>
       <SidebarSectionHeader
         title="Threads"
         open={open}

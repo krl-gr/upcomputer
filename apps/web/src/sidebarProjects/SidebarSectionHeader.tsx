@@ -3,6 +3,11 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
+import {
+  SIDEBAR_ROW_HEIGHT,
+  SIDEBAR_ROW_INSET,
+  SIDEBAR_ROW_INSET_END,
+} from "../sidebarMetrics/sidebarMetrics";
 
 /**
  * Header of a collapsible sidebar section (Projects, Threads): the title with
@@ -21,13 +26,23 @@ export function SidebarSectionHeader(props: {
 }) {
   const { title, open, onToggle, accessory, action, testId } = props;
   return (
-    <div className="group/sidebar-section-header flex h-8 items-center gap-1 pr-1.5">
+    // The title starts where a row's icon does, and the action ends where a row's actions do.
+    <div
+      className={cn(
+        "group/sidebar-section-header flex items-center gap-1",
+        SIDEBAR_ROW_HEIGHT,
+        SIDEBAR_ROW_INSET_END,
+      )}
+    >
       <button
         type="button"
         aria-expanded={open}
         data-testid={testId}
         onClick={onToggle}
-        className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-(--sidebar-row-content-inset) text-left text-sm font-medium text-sidebar-muted-foreground/60 outline-none hover:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className={cn(
+          "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md text-left text-sm font-medium text-sidebar-muted-foreground/60 outline-none hover:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          SIDEBAR_ROW_INSET,
+        )}
       >
         <span className="shrink-0">{title}</span>
         <ChevronRightIcon
