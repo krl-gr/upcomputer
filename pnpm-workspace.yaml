@@ -1,5 +1,7 @@
 packages:
   - apps/*
+  # UpComputer does not ship the mobile app; it stays in the tree for upstream syncs.
+  - "!apps/mobile"
   - infra/*
   - oxlint-plugin-t3code
   - packages/*
@@ -238,6 +240,9 @@ packageExtensions:
   vite-plus@*:
     dependencies:
       vite: "catalog:"
+
+# The mobile-only patches stay for upstream syncs while apps/mobile is excluded.
+allowUnusedPatches: true
 
 patchedDependencies:
   alchemy@2.0.0-beta.79: patches/alchemy@2.0.0-beta.79.patch

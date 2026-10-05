@@ -78,7 +78,12 @@ function createList(bundle: string) {
   };
 }
 
-describe.each(["react-native.js", "react-native.mjs"])(
+// UpComputer excludes apps/mobile from the workspace, so its packages may be missing.
+const MOBILE_LIST_INSTALLED = NodeFS.existsSync(
+  new URL("../apps/mobile/node_modules/@legendapp/list", import.meta.url),
+);
+
+describe.skipIf(!MOBILE_LIST_INSTALLED).each(["react-native.js", "react-native.mjs"])(
   "initial inset end reveal (%s)",
   (bundle) => {
     it("waits for the native offset instead of the optimistic scroll target", () => {
