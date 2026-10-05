@@ -1,4 +1,5 @@
 import { readHashParams } from "./remote.ts";
+import { UPCOMPUTER_SITE_URL } from "./upcomputerIdentity.ts";
 
 const CONNECT_AUTH_STATE_PARAM = "state";
 const CONNECT_AUTH_CHALLENGE_PARAM = "challenge";
@@ -12,7 +13,7 @@ const CONNECT_AUTHORIZE_PATH = "/connect";
  * decide whether it is the hosted deployment — the two must agree, so the
  * default lives here.
  */
-export const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
+export const DEFAULT_HOSTED_APP_URL = UPCOMPUTER_SITE_URL;
 
 /**
  * Requested at authorize time by the hosted page and by the CLI's device

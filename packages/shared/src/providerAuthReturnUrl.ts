@@ -1,14 +1,22 @@
+import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
 import { isLoopbackHost } from "./preview.ts";
+import {
+  UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
+  UPCOMPUTER_PROTOCOL_SCHEME,
+} from "./upcomputerIdentity.ts";
 
-/** Only return to a local client or the hosted T3 client, never an arbitrary OAuth-supplied URL. */
+/** Only return to a local client or the hosted client, never an arbitrary OAuth-supplied URL. */
 export function providerAuthReturnUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    const desktop = ["t3code:", "t3code-dev:"].includes(url.protocol) && url.host === "app";
+    const desktop =
+      [`${UPCOMPUTER_PROTOCOL_SCHEME}:`, `${UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME}:`].includes(
+        url.protocol,
+      ) && url.host === "app";
     const web =
       ["http:", "https:"].includes(url.protocol) &&
-      (isLoopbackHost(url.hostname) || url.origin === "https://app.t3.codes");
+      (isLoopbackHost(url.hostname) || url.origin === new URL(DEFAULT_HOSTED_APP_URL).origin);
     if (
       url.username ||
       url.password ||

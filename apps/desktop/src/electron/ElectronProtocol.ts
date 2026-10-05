@@ -12,9 +12,14 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
+import {
+  UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
+  UPCOMPUTER_PROTOCOL_SCHEME,
+} from "@t3tools/shared/upcomputerIdentity";
+
 export const DESKTOP_HOST = "app";
-const DESKTOP_PRODUCTION_SCHEME = "t3code";
-const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
+const DESKTOP_PRODUCTION_SCHEME = UPCOMPUTER_PROTOCOL_SCHEME;
+const DESKTOP_DEVELOPMENT_SCHEME = UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME;
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;

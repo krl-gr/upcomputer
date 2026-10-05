@@ -4,6 +4,13 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import {
+  isUpcomputerLocalTestVersion,
+  UPCOMPUTER_DEVELOPMENT_USER_DATA_DIR_NAME,
+  UPCOMPUTER_LOCAL_TEST_APP_NAME,
+  UPCOMPUTER_USER_DATA_DIR_NAME,
+} from "@t3tools/shared/upcomputerIdentity";
+
 export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
   "DesktopUserDataInitializationError",
   {
@@ -31,18 +38,26 @@ export class DesktopUserDataInitializationError extends Schema.TaggedError<Deskt
   }
 }
 
-/** Select Electron's profile independently of the server's T3 home. */
+/** Select Electron's profile independently of the server's home directory. */
 export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPath")(
   function* (input: {
     readonly appDataDirectory: string;
+    readonly appVersion: string;
     readonly isDevelopment: boolean;
     readonly platform: NodeJS.Platform;
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const names = input.isDevelopment
-      ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
-      : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
+    // Up.computer keeps the V1 profile folders, so an auto-updated V1 install
+    // keeps its Chromium state (sign-ins, safeStorage keys, browser profiles).
+    const names = isUpcomputerLocalTestVersion(input.appVersion)
+      ? { current: UPCOMPUTER_LOCAL_TEST_APP_NAME, legacy: UPCOMPUTER_LOCAL_TEST_APP_NAME }
+      : input.isDevelopment
+        ? {
+            current: UPCOMPUTER_DEVELOPMENT_USER_DATA_DIR_NAME,
+            legacy: UPCOMPUTER_DEVELOPMENT_USER_DATA_DIR_NAME,
+          }
+        : { current: UPCOMPUTER_USER_DATA_DIR_NAME, legacy: UPCOMPUTER_USER_DATA_DIR_NAME };
     const destinationPath = path.join(input.appDataDirectory, names.current);
     const legacyPath = path.join(input.appDataDirectory, names.legacy);
     const inspect = (resourcePath: string) =>
@@ -63,7 +78,7 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     const legacyState = path.join(legacyPath, "Local State");
     const sourceState = (yield* inspect(legacyState))
       ? legacyState
-      : path.join(input.appDataDirectory, "t3code", "Local State");
+      : path.join(input.appDataDirectory, UPCOMPUTER_USER_DATA_DIR_NAME, "Local State");
     if (!(yield* inspect(sourceState))) return destinationPath;
     // Windows safeStorage keys live here. Copy only these preferences, never locked databases.
     const state = yield* fs

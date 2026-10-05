@@ -17,6 +17,21 @@ import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import {
+  isUpcomputerLocalTestVersion,
+  UPCOMPUTER_APP_ID,
+  UPCOMPUTER_DESKTOP_PRODUCT_NAME,
+  UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
+  UPCOMPUTER_EXECUTABLE_NAME,
+  UPCOMPUTER_LOCAL_TEST_APP_ID,
+  UPCOMPUTER_LOCAL_TEST_APP_NAME,
+  UPCOMPUTER_NIGHTLY_DESKTOP_PRODUCT_NAME,
+  UPCOMPUTER_PRODUCT_NAME,
+  UPCOMPUTER_PROTOCOL_SCHEME,
+  UPCOMPUTER_PUBLISHER_NAME,
+  UPCOMPUTER_SITE_URL,
+  UPCOMPUTER_SUPPORT_EMAIL,
+} from "@t3tools/shared/upcomputerIdentity";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
@@ -54,7 +69,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = UPCOMPUTER_APP_ID;
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2643,9 +2658,27 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
+  if (isUpcomputerLocalTestVersion(version)) return UPCOMPUTER_LOCAL_TEST_APP_NAME;
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? UPCOMPUTER_NIGHTLY_DESKTOP_PRODUCT_NAME
+    : (desktopPackageJson.productName ?? UPCOMPUTER_DESKTOP_PRODUCT_NAME);
+}
+
+// A local QA build gets its own bundle id and no update feed or URL schemes,
+// so it can never replace or intercept the installed Alpha app.
+export function resolveDesktopAppId(version: string): string {
+  return isUpcomputerLocalTestVersion(version) ? UPCOMPUTER_LOCAL_TEST_APP_ID : DESKTOP_APP_ID;
+}
+
+const DESKTOP_PROTOCOLS = [
+  {
+    name: UPCOMPUTER_PRODUCT_NAME,
+    schemes: [UPCOMPUTER_PROTOCOL_SCHEME, UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME],
+  },
+];
+
+function resolveDesktopProtocols(version: string) {
+  return isUpcomputerLocalTestVersion(version) ? [] : DESKTOP_PROTOCOLS;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2668,9 +2701,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   arch?: typeof BuildArch.Type,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: resolveDesktopAppId(version),
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "Up.computer-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2698,7 +2731,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (!isDesktopPreviewVersion(version)) {
+  if (!isDesktopPreviewVersion(version) && !isUpcomputerLocalTestVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2721,14 +2754,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       extendInfo: {
         NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
+          "Up.computer captures the active window when you use the window capture shortcut.",
       },
-      protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
-      ],
+      protocols: resolveDesktopProtocols(version),
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {
@@ -2768,24 +2796,19 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // resources/package-type into the .deb only, so electron-updater updates
       // each install in its own format.
       target: target === "AppImage" ? [target, "deb"] : [target],
-      executableName: "t3code",
+      executableName: UPCOMPUTER_EXECUTABLE_NAME,
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
       // Required by the .deb control file.
-      maintainer: "T3 Tools <hello@t3.codes>",
+      maintainer: `${UPCOMPUTER_PUBLISHER_NAME} <${UPCOMPUTER_SUPPORT_EMAIL}>`,
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
-      protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
-      ],
+      // upcomputer:// OAuth callbacks to the app.
+      protocols: resolveDesktopProtocols(version),
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: UPCOMPUTER_EXECUTABLE_NAME,
         },
       },
     };
@@ -3692,16 +3715,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    // Also names the NSIS package and the electron-updater cache directory.
+    name: UPCOMPUTER_EXECUTABLE_NAME,
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
+    description: "Up.computer desktop build",
     // Required by the .deb control file.
-    homepage: "https://t3.codes",
-    author: "T3 Tools",
+    homepage: UPCOMPUTER_SITE_URL,
+    author: UPCOMPUTER_PUBLISHER_NAME,
     main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(
       options.platform,

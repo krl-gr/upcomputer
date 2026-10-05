@@ -1,3 +1,5 @@
+// Must stay first: applies the Up.computer process environment before other modules load.
+import "./app/UpcomputerStartupEnvironmentEffect.ts";
 import * as MacPermissions from "./permissions/MacPermissions.ts";
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (err: NodeJS.ErrnoException) => {

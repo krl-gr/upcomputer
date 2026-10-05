@@ -211,6 +211,10 @@
       "types": "./src/productFlags.ts",
       "import": "./src/productFlags.ts"
     },
+    "./upcomputerIdentity": {
+      "types": "./src/upcomputerIdentity.ts",
+      "import": "./src/upcomputerIdentity.ts"
+    },
     "./threadReference": {
       "types": "./src/threadReference.ts",
       "import": "./src/threadReference.ts"

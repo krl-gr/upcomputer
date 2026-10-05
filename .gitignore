@@ -16,6 +16,7 @@ build/
 release/
 release-mock/
 .t3
+.upcomputer
 .idea/
 apps/web/.playwright
 apps/web/playwright-report
