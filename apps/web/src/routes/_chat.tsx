@@ -14,6 +14,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
+import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -121,6 +122,18 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
+        // UpComputer: New thread opens a chat without a project, as the sidebar's Threads pencil does.
+        const scratchTarget = newThreadStartsWithoutProject(legacySidebarEnabled)
+          ? scratchEnvironmentId(
+              activeThread?.environmentId ??
+                activeDraftThread?.environmentId ??
+                primaryEnvironmentId,
+            )
+          : null;
+        if (scratchTarget !== null) {
+          void startScratchThread(scratchTarget);
+          return;
+        }
         // The default sidebar routes creation through the command palette
         // whenever there is a real choice to make; the legacy sidebar (and
         // single-project setups) keep the immediate contextual create.

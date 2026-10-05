@@ -5025,6 +5025,11 @@ export default function Sidebar() {
                 />
                 <SidebarThreadsSectionHeader
                   onNewThread={handleNewThreadClick}
+                  currentEnvironmentId={
+                    newThreadContext.activeThread?.environmentId ??
+                    newThreadContext.activeDraftThread?.environmentId ??
+                    null
+                  }
                   newThreadDisabled={projects.length === 0}
                   newThreadShortcutLabel={newThreadShortcutLabel}
                 />

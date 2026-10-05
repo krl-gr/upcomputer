@@ -33,7 +33,9 @@ type Root = import("react-dom/client").Root;
 const environmentId = "env-local";
 const spies = vi.hoisted(() => ({
   addProject: vi.fn(),
-  newThreadFromHeader: vi.fn(),
+  createInCurrentProject: vi.fn(),
+  openNewThreadPicker: vi.fn(),
+  startScratchThread: vi.fn(),
   newThread: vi.fn(),
   navigate: vi.fn(),
   nativeContextMenu: vi.fn(),
@@ -45,6 +47,15 @@ vi.mock("../state/entities", () => ({
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
 vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => spies.newThread }));
+// Environments offering a thread without a project (upstream's scratch project).
+const scratch = vi.hoisted(() => ({ environmentIds: new Set<string | null>(["env-local"]) }));
+vi.mock("../hooks/useScratchProject", () => ({
+  useScratchProject: () => ({
+    scratchEnvironmentId: (current: string | null) =>
+      scratch.environmentIds.has(current) ? current : null,
+    startScratchThread: spies.startScratchThread,
+  }),
+}));
 vi.mock("../localApi", () => ({
   readLocalApi: () => ({ contextMenu: { show: spies.nativeContextMenu } }),
 }));
@@ -56,7 +67,8 @@ vi.mock("../product/productFlags", () => ({
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 
-const { filterSidebarV2VisibleThreads } = await import("../components/Sidebar.logic");
+const { filterSidebarV2VisibleThreads, shouldCreateNewThreadInCurrentProject } =
+  await import("../components/Sidebar.logic");
 const { SidebarProvider } = await import("../components/ui/sidebar");
 const { useUiStateStore } = await import("../uiStateStore");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
@@ -174,6 +186,7 @@ function menuItem(label: string): HTMLElement {
 
 beforeEach(() => {
   surface.sidebarProjects = "upcomputer";
+  scratch.environmentIds = new Set(["env-local", "env-remote"]);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -376,14 +389,26 @@ function ThreadList() {
   return useSidebarThreadListShown() ? <ul data-testid="thread-list" /> : null;
 }
 
-function renderThreads(props: { newThreadDisabled?: boolean } = {}) {
+/** Upstream's Sidebar `handleNewThreadClick` with several projects, on its real routing rule. */
+function upstreamNewThreadClick(event?: { readonly shiftKey: boolean }) {
+  if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, PROJECTS.length)) {
+    spies.createInCurrentProject();
+  } else {
+    spies.openNewThreadPicker();
+  }
+}
+
+function renderThreads(
+  props: { newThreadDisabled?: boolean; currentEnvironmentId?: string | null } = {},
+) {
   return act(async () => {
     root.render(
       <SidebarProvider>
         <SidebarThreadsSectionHeader
-          onNewThread={spies.newThreadFromHeader}
+          onNewThread={upstreamNewThreadClick}
+          currentEnvironmentId={(props.currentEnvironmentId ?? null) as never}
           newThreadDisabled={props.newThreadDisabled ?? false}
-          newThreadShortcutLabel="⌘N"
+          newThreadShortcutLabel="⇧⌘O"
         />
         <ThreadList />
       </SidebarProvider>,
@@ -393,18 +418,49 @@ function renderThreads(props: { newThreadDisabled?: boolean } = {}) {
 
 const threadList = () => container.querySelector("[data-testid='thread-list']");
 
+const shiftClick = (element: HTMLElement) =>
+  act(async () => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+  });
+
 describe("SidebarThreadsSectionHeader", () => {
-  it("runs upstream's new thread action with the click", async () => {
+  it("starts a thread without a project in the primary environment, with no picker", async () => {
     await renderThreads();
     const header = sectionHeader("sidebar-threads-toggle");
     expect(header.title()).toBe("Threads");
     await click(header.action("New thread")!);
-    expect(spies.newThreadFromHeader).toHaveBeenCalledOnce();
-    expect(spies.newThreadFromHeader.mock.calls[0]![0]).toHaveProperty("shiftKey", false);
+    expect(spies.startScratchThread).toHaveBeenCalledExactlyOnceWith(environmentId);
+    expect(spies.openNewThreadPicker).not.toHaveBeenCalled();
+    expect(spies.createInCurrentProject).not.toHaveBeenCalled();
     expect(header.toggle.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("has no new thread action while upstream disables it", async () => {
+  it("starts it in the open thread's environment, as the command palette does", async () => {
+    await renderThreads({ currentEnvironmentId: "env-remote" });
+    await click(sectionHeader("sidebar-threads-toggle").action("New thread")!);
+    expect(spies.startScratchThread).toHaveBeenCalledExactlyOnceWith("env-remote");
+  });
+
+  it("opens upstream's project picker on Shift+click", async () => {
+    await renderThreads();
+    await shiftClick(sectionHeader("sidebar-threads-toggle").action("New thread")!);
+    expect(spies.openNewThreadPicker).toHaveBeenCalledOnce();
+    expect(spies.startScratchThread).not.toHaveBeenCalled();
+  });
+
+  it("stays enabled with no projects", async () => {
+    await renderThreads({ newThreadDisabled: true });
+    await click(sectionHeader("sidebar-threads-toggle").action("New thread")!);
+    expect(spies.startScratchThread).toHaveBeenCalledExactlyOnceWith(environmentId);
+  });
+
+  it("falls back to upstream's action where no environment offers a thread without a project", async () => {
+    scratch.environmentIds = new Set();
+    await renderThreads();
+    await click(sectionHeader("sidebar-threads-toggle").action("New thread")!);
+    expect(spies.openNewThreadPicker).toHaveBeenCalledOnce();
+    expect(spies.startScratchThread).not.toHaveBeenCalled();
+
     await renderThreads({ newThreadDisabled: true });
     expect(sectionHeader("sidebar-threads-toggle").action("New thread")).toBeNull();
   });
