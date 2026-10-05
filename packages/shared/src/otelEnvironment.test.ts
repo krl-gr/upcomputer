@@ -244,7 +244,7 @@ describe("OtelEnvironment", () => {
         warnings: [],
       },
       {
-        name: "an exporter T3 Code does not have is ignored with a warning",
+        name: "an exporter Up.computer does not have is ignored with a warning",
         env: {
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector:4318",
           OTEL_METRICS_EXPORTER: "prometheus",
@@ -253,7 +253,7 @@ describe("OtelEnvironment", () => {
         metrics: "https://collector:4318/v1/metrics",
         logs: "https://collector:4318/v1/logs",
         warnings: [
-          "OTEL_METRICS_EXPORTER names prometheus, which T3 Code does not export to, so it was ignored",
+          "OTEL_METRICS_EXPORTER names prometheus, which Up.computer does not export to, so it was ignored",
         ],
       },
       {
@@ -267,8 +267,8 @@ describe("OtelEnvironment", () => {
         metrics: "https://collector:4318/v1/metrics",
         logs: "https://collector:4318/v1/logs",
         warnings: [
-          "OTEL_TRACES_EXPORTER names console, which T3 Code does not export to, so it was ignored",
-          "OTEL_LOGS_EXPORTER names console, otlpp, which T3 Code does not export to, so they were ignored",
+          "OTEL_TRACES_EXPORTER names console, which Up.computer does not export to, so it was ignored",
+          "OTEL_LOGS_EXPORTER names console, otlpp, which Up.computer does not export to, so they were ignored",
         ],
       },
     ])("$name", ({ env, traces, metrics, logs, warnings }) =>

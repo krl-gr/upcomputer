@@ -194,11 +194,11 @@ it.runIf(hasDbus)("captures through real D-Bus marshalling on a private bus", as
       animate: true,
     });
     expect(snapshot.feedback?.animationStarted).toBe(true);
-    await snapshot.feedback!.activate("T3 Code");
+    await snapshot.feedback!.activate("Up.computer");
     await snapshot.feedback!.animateTo({ x: 0.1, y: 0.8, width: 0.2, height: 0.1 });
     await snapshot.feedback!.complete();
     expect(feedbackArgs).toEqual([true, true]);
-    expect(activateTitle).toBe("T3 Code");
+    expect(activateTitle).toBe("Up.computer");
     expect(animateFrame).toEqual([0.1, 0.8, 0.2, 0.1]);
     vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
     const kde = connect();

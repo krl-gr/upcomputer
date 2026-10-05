@@ -61,7 +61,7 @@ export function NightlyMobileBetaNotice() {
     const toastId = toastManager.add({
       title: "Nightly needs the beta mobile app",
       description:
-        "Nightly uses the new orchestrator. The App Store and Google Play versions of T3 Code cannot connect to it.",
+        "Nightly uses the new orchestrator. The App Store and Google Play versions of Up.computer cannot connect to it.",
       timeout: 0,
       onClose: dismissNotice,
       actionProps: {

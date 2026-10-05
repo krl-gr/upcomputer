@@ -32,7 +32,7 @@ it("keeps redirected output readable without per-chunk updates or escapes", () =
   output.report({ stage: "validate" });
   output.finish();
   expect(output.text()).toBe(
-    "  Downloading...\n  Verifying the download...\n  Extracting T3 Code...\n  Checking the new executable...\n",
+    "  Downloading...\n  Verifying the download...\n  Extracting Up.computer...\n  Checking the new executable...\n",
   );
 });
 

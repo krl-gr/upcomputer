@@ -25,7 +25,7 @@ describe("window capture animation", () => {
     const source = {
       kind: "snap-shot" as const,
       capturedAt: "2026-08-29T00:00:00.000Z",
-      appName: "T3 Code",
+      appName: "Up.computer",
       windowTitle: "Capture animation",
     };
 

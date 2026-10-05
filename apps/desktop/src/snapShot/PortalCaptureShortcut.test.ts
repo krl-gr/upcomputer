@@ -318,7 +318,7 @@ it("guides users to manual desktop settings when the portal cannot open them", a
   expect(client.hasSession).toBe(true);
   expect(client.state.shortcutCanRetry).toBe(false);
   expect(client.state.shortcutMessage).toBe(
-    "Shortcut permission wasn't granted. Allow T3 Code in your desktop's shortcut settings.",
+    "Shortcut permission wasn't granted. Allow Up.computer in your desktop's shortcut settings.",
   );
   await expect(client.configure()).rejects.toThrow("Open your desktop's shortcut settings");
   expect(bus.calls.some((message) => message.member === "ConfigureShortcuts")).toBe(false);

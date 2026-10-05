@@ -1075,7 +1075,7 @@ describe.runIf(binaryPath !== undefined && ROOT !== "")("OpenCode 2 live orchest
           yield* send(
             threadId,
             "restart-mcp",
-            "Call the echo_marker tool from the T3 Code MCP server with word 'kiwi', then reply with its exact output and nothing else.",
+            "Call the echo_marker tool from the Up.computer MCP server with word 'kiwi', then reply with its exact output and nothing else.",
           );
           const called = yield* waitFor(threadId, runs(1));
           assert.equal(called.runs[0]?.status, "completed");

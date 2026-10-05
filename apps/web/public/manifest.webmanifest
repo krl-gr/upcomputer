@@ -3,6 +3,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "name": "Up.computer",
+  "short_name": "Up.computer",
   "background_color": "#161616",
   "theme_color": "#161616",
   "icons": [

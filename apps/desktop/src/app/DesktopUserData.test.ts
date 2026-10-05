@@ -40,7 +40,7 @@ it.effect("keeps an existing V1 Windows profile in place", () =>
     const profile = path.join(directory, "Up.computer");
     const state = '{"os_crypt":{"encrypted_key":"test-encrypted-key"}}';
     yield* fs.makeDirectory(path.join(directory, "t3code"), { recursive: true });
-    yield* fs.writeFileString(path.join(directory, "t3code", "Local State"), "T3 Code keys");
+    yield* fs.writeFileString(path.join(directory, "t3code", "Local State"), "Up.computer keys");
     yield* fs.makeDirectory(profile, { recursive: true });
     yield* fs.writeFileString(path.join(profile, "Local State"), state);
 
@@ -61,9 +61,9 @@ it.effect("never copies another app's Windows credential keys into a new profile
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "upc-profile-" });
-    for (const other of ["t3code", "T3 Code (Alpha)", "t3code-v2"]) {
+    for (const other of ["t3code", "Up.computer (Alpha)", "t3code-v2"]) {
       yield* fs.makeDirectory(path.join(directory, other), { recursive: true });
-      yield* fs.writeFileString(path.join(directory, other, "Local State"), "T3 Code keys");
+      yield* fs.writeFileString(path.join(directory, other, "Local State"), "Up.computer keys");
     }
 
     const resolved = yield* resolveUserDataPath({

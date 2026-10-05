@@ -5,7 +5,11 @@
  * platform key, so a rename here is a release-breaking change.
  */
 
-const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
+import { UPCOMPUTER_UPDATE_REPOSITORY } from "./upcomputerIdentity.ts";
+
+// Up.computer releases. CLI archives are not published there yet, so SSH
+// remotes and self-updates fail closed instead of running upstream builds.
+const CLI_RELEASE_REPOSITORY = UPCOMPUTER_UPDATE_REPOSITORY;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 /** Overrides the download origin for mirrors and air-gapped installs. */
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";

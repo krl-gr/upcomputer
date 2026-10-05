@@ -265,7 +265,7 @@ it("retains the authenticated connection until the compositor flight has landed"
   const feedback = snapshot!.feedback!;
   expect(snapshot).toMatchObject({ png, window: metadata, feedback: { animationStarted: true } });
   expect(bus.disconnect).not.toHaveBeenCalled();
-  await feedback.activate("T3 Code");
+  await feedback.activate("Up.computer");
   const landed = Promise.withResolvers<void>();
   bus.animation = landed.promise;
   const flight = feedback.animateTo({ x: 0.1, y: 0.8, width: 0.2, height: 0.1 });
@@ -277,7 +277,7 @@ it("retains the authenticated connection until the compositor flight has landed"
     bus.calls
       .filter((call) => ["CaptureWithFeedback", "Activate", "Animate"].includes(call.member))
       .map((call) => call.body),
-  ).toEqual([[false, true], ["T3 Code"], [0.1, 0.8, 0.2, 0.1]]);
+  ).toEqual([[false, true], ["Up.computer"], [0.1, 0.8, 0.2, 0.1]]);
   expect(bus.disconnect).toHaveBeenCalledOnce();
   feedback.close();
   expect(bus.disconnect).toHaveBeenCalledOnce();
@@ -301,7 +301,7 @@ it("can activate without animation, and expires a renderer-abandoned capture", a
   const snapshot = await captureLinuxWindow(appId, { flash: false, animate: false });
   expect(snapshot!.feedback!.animationStarted).toBe(false);
   bus.activationError = new Error("No window");
-  await expect(snapshot!.feedback!.activate("T3 Code")).rejects.toThrow("No window");
+  await expect(snapshot!.feedback!.activate("Up.computer")).rejects.toThrow("No window");
   expect(snapshot!.png).toEqual(png);
   await vi.advanceTimersByTimeAsync(15_000);
   expect(bus.disconnect).toHaveBeenCalledOnce();

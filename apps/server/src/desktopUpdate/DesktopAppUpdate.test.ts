@@ -114,7 +114,7 @@ it.layer(NodeServices.layer)("desktop app update", (it) => {
       const noFd = yield* makeHarness({ controlFd: undefined });
       expect(noFd.service.available).toBe(false);
       expect((yield* noFd.service.run(() => Effect.void).pipe(Effect.flip)).reason).toContain(
-        "not started by the T3 Code desktop app",
+        "not started by the Up.computer desktop app",
       );
       const desktop = yield* makeHarness();
       expect(desktop.service.available).toBe(true);
@@ -162,7 +162,7 @@ it.layer(NodeServices.layer)("desktop app update", (it) => {
         ],
       });
       expect((yield* upToDate.service.run(() => Effect.void).pipe(Effect.flip)).reason).toBe(
-        "The T3 Code desktop app on this machine is already up to date on 1.2.3.",
+        "The Up.computer desktop app on this machine is already up to date on 1.2.3.",
       );
 
       const failed = yield* makeHarness({

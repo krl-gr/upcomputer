@@ -62,15 +62,16 @@ const resolveResourcePath = Effect.fn("desktop.assets.resolveResourcePath")(func
 });
 
 const sourceTreeIconFileNames = {
+  // Up.computer artwork; see scripts/lib/brand-assets.ts.
   dev: {
-    ico: "blueprint-windows.ico",
-    macPng: "blueprint-macos-1024.png",
-    universalPng: "blueprint-universal-1024.png",
+    ico: "upcomputer-blueprint-windows.ico",
+    macPng: "upcomputer-blueprint-macos-1024.png",
+    universalPng: "upcomputer-blueprint-universal-1024.png",
   },
   prod: {
-    ico: "t3-black-windows.ico",
-    macPng: "black-macos-1024.png",
-    universalPng: "black-universal-1024.png",
+    ico: "upcomputer-windows.ico",
+    macPng: "upcomputer-macos-1024.png",
+    universalPng: "upcomputer-universal-1024.png",
   },
 } as const;
 

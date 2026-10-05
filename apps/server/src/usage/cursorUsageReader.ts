@@ -90,7 +90,7 @@ export async function readCursorAccountUsage(
         : typeof credentialSource === "string"
           ? "Cursor credentials could not be read."
           : cause instanceof CursorKeychainTimeoutError
-            ? "Allow Keychain access on the Mac running T3 Code, then refresh."
+            ? "Allow Keychain access on the Mac running Up.computer, then refresh."
             : "Cursor Keychain credentials could not be read.",
     };
   }

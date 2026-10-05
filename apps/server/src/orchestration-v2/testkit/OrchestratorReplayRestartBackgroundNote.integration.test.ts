@@ -33,7 +33,7 @@ const SESSION_ID = "cca274e4-25ae-4171-b972-bbb31118517e";
 const FIRST_AFTER_RESTART = "Is the background subagent done yet?";
 const SECOND_AFTER_RESTART = "Thanks. Anything else?";
 const NOTE = [
-  "Note: the T3 server restarted, and this background work was cancelled before it finished. It will not report back:",
+  "Note: the Up.computer server restarted, and this background work was cancelled before it finished. It will not report back:",
   "- subagent: Background subagent test",
 ].join("\n");
 
