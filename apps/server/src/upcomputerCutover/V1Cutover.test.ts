@@ -1,0 +1,277 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { TASK_MIGRATION_CONTRIBUTION } from "@t3tools/tasks-server/persistence";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import { CORE_FEATURE_MIGRATIONS } from "../persistence/CoreFeatureMigrations.ts";
+import { runMigrations } from "../persistence/Migrations.ts";
+import Migration0033 from "../persistence/Migrations/033_ProjectionThreadsSettled.ts";
+import Migration0034 from "../persistence/Migrations/034_ProjectionThreadsSnoozed.ts";
+import Migration0044 from "../persistence/Migrations/044_ClearAutomaticProjectModelDefaults.ts";
+import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
+import { runV1Cutover } from "./V1Cutover.ts";
+
+const at = "2026-10-01T00:00:00.000Z";
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const toJson = Schema.encodeSync(JsonText);
+const decodeJson = Schema.decodeUnknownSync(JsonText);
+const fromJson = (text: string) => decodeJson(text) as Record<string, unknown>;
+
+/** An UpComputer V1 home: its schema, a few threads, one in-flight task run. */
+const seedV1 = (sessionFile: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 32 });
+    const v1Migrations = [
+      [
+        33,
+        "ProjectionThreadContext",
+        sql`CREATE TABLE projection_thread_context_bindings (
+          binding_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, source_thread_id TEXT NOT NULL,
+          source_project_id TEXT, source_thread_title TEXT NOT NULL, mode TEXT NOT NULL,
+          cutoff_message_id TEXT, snapshot_text TEXT, created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL)`,
+      ],
+      [34, "ProjectionThreadsSettled", Migration0033],
+      [35, "ProjectionThreadsSnoozed", Migration0034],
+      [
+        36,
+        "ProjectionThreadsSidebarVisibility",
+        sql`ALTER TABLE projection_threads ADD COLUMN sidebar_visible INTEGER NOT NULL DEFAULT 1`,
+      ],
+      [37, "ClearAutomaticProjectModelDefaults", Migration0044],
+    ] as const;
+    for (const [id, name, migration] of v1Migrations) {
+      yield* migration;
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
+    }
+    yield* runExperimentalFeatureMigrations([CORE_FEATURE_MIGRATIONS, TASK_MIGRATION_CONTRIBUTION]);
+    // V1's own upcomputer.core migrations also gave threads these columns; v2 keeps links in JSON.
+    yield* sql`ALTER TABLE projection_threads ADD COLUMN linked_project_ids_json TEXT NOT NULL DEFAULT '[]'`;
+    yield* sql`ALTER TABLE projection_threads ADD COLUMN project_links_pinned INTEGER NOT NULL DEFAULT 0`;
+
+    yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES ('project-a', 'A', '/tmp/a', '[]', ${at}, ${at}), ('project-b', 'B', '/tmp/b', '[]', ${at}, ${at})`;
+    const thread = (id: string, instanceId: string, mode: string, visible: number, links: string) =>
+      sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, created_at, updated_at, sidebar_visible, linked_project_ids_json)
+        VALUES (${id}, 'project-a', ${id}, ${toJson({ instanceId, model: "m" })}, 'full-access',
+          ${mode}, ${at}, ${at}, ${visible}, ${links})`;
+    yield* thread("thread-run", "codex", "default", 0, "[]");
+    yield* thread("thread-chat", "claudeAgent", "ask", 1, '["project-b"]');
+    yield* thread("thread-up", "up", "default", 1, "[]");
+    const message = (id: string, threadId: string, role: string, createdAt: string) =>
+      sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
+        VALUES (${id}, ${threadId}, ${role}, ${`Text of ${id}`}, 0, ${createdAt}, ${createdAt})`;
+    yield* message("m-run-1", "thread-run", "user", "2026-10-01T01:00:00.000Z");
+    yield* message("m-chat-1", "thread-chat", "user", "2026-10-01T01:00:00.000Z");
+    yield* message("m-chat-2", "thread-chat", "assistant", "2026-10-01T02:00:00.000Z");
+    yield* message("m-chat-3", "thread-chat", "user", "2026-10-01T03:00:00.000Z");
+    yield* message("m-up-1", "thread-up", "user", "2026-10-01T01:00:00.000Z");
+    yield* sql`INSERT INTO projection_thread_context_bindings (binding_id, thread_id, source_thread_id,
+        source_thread_title, mode, snapshot_text, created_at, updated_at)
+      VALUES ('ctx-1', 'thread-chat', 'thread-up', 'Up chat', 'snapshot', 'USER: hi',
+        '2026-10-01T02:30:00.000Z', '2026-10-01T02:30:00.000Z'),
+        ('ctx-2', 'thread-chat', 'thread-run', 'Never sent', 'snapshot', 'USER: late',
+        '2026-10-01T09:00:00.000Z', '2026-10-01T09:00:00.000Z')`;
+    yield* sql`INSERT INTO provider_session_runtime (thread_id, provider_name, adapter_key, provider_instance_id,
+        runtime_mode, status, last_seen_at, resume_cursor_json)
+      VALUES ('thread-up', 'up', 'up', 'up', 'full-access', 'stopped', ${at},
+        ${toJson({ sessionFile, sessionId: "s" })})`;
+
+    yield* sql`INSERT INTO tasks (id, rank, project_id, title, description, status, created_by, metadata_json,
+        created_at, updated_at, trigger_changed_at, assignee_worker_id)
+      VALUES ('task-1', '0000000000100000', 'project-a', 'In flight', 'Uses mcp__upcomputer_tasks__task_get.',
+        'In Progress', 'agent', 'null', ${at}, ${at}, ${at}, 'run-1')`;
+    yield* sql`INSERT INTO task_agents (id, project_id, name, enabled, start_statuses_json, start_tags_json,
+        config_json, created_at, updated_at)
+      VALUES ('agent-1', NULL, 'Developer', 1, '["To Do"]', '["dev"]',
+        ${toJson({ role: "Dev", modelSelection: { instanceId: "up", model: "m" }, instructions: "Use task_get." })},
+        ${at}, ${at})`;
+    yield* sql`INSERT INTO task_agent_runs (id, task_id, agent_id, thread_id, model_selection_json, status, started_at)
+      VALUES ('run-1', 'task-1', 'agent-1', 'thread-run', '{"instanceId":"up","model":"m"}', 'running', ${at})`;
+  });
+
+function dumpV1(path: string) {
+  const database = new NodeSqlite.DatabaseSync(path, { readOnly: true });
+  try {
+    return [
+      "effect_sql_migrations",
+      "projection_threads",
+      "projection_thread_messages",
+      "tasks",
+      "task_agent_runs",
+    ].map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY 1`).all());
+  } finally {
+    database.close();
+  }
+}
+
+it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-cutover-"));
+  // The data was copied out of a home that keeps an older userdata folder.
+  const v1Home = NodePath.join(root, "v1-home");
+  const home = NodePath.join(root, "home");
+  const userdata = NodePath.join(home, "userdata");
+  const sessionName = "2026-07-17_session.jsonl";
+  const v1SessionFile = NodePath.join(
+    v1Home,
+    "userdata",
+    "provider",
+    "pi",
+    "sessions",
+    sessionName,
+  );
+  const olderSessions = NodePath.join(
+    v1Home,
+    "userdata.alpha-backup-20261003",
+    "provider",
+    "pi",
+    "sessions",
+  );
+  return Effect.gen(function* () {
+    NodeFS.mkdirSync(olderSessions, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(olderSessions, sessionName), '{"type":"session"}\n');
+    NodeFS.mkdirSync(NodePath.join(userdata, "secrets"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(userdata, "secrets", "key"), "secret");
+    NodeFS.writeFileSync(NodePath.join(userdata, "environment-id"), "environment-1\n");
+    const settings = toJson({
+      customInstructions: "Start with mcp__upcomputer_tasks__task_context.",
+      enableAssistantStreaming: true,
+      providers: { cursor: { enabled: true } },
+    });
+    NodeFS.writeFileSync(NodePath.join(userdata, "settings.json"), settings);
+    const v1Path = NodePath.join(userdata, "state.sqlite");
+    yield* seedV1(v1SessionFile).pipe(Effect.provide(NodeSqliteClient.layer({ filename: v1Path })));
+    const v1Bytes = NodeFS.readFileSync(v1Path);
+    const v1Rows = dumpV1(v1Path);
+
+    const { report, reportPath } = yield* runV1Cutover({
+      homeDir: home,
+      v1HomeDir: v1Home,
+      featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      now: DateTime.makeUnsafe("2026-10-06T08:00:00.000Z"),
+      log: () => Effect.void,
+    });
+
+    assert.deepStrictEqual(
+      report.checks.filter((check) => !check.ok),
+      [],
+    );
+    assert.equal(report.after.threads.hiddenLiveThreads, 1);
+    assert.equal(report.before.threads.askLiveThreads, 1);
+    assert.equal(report.after.threads.linkedLiveThreads, 1);
+    assert.deepStrictEqual(report.contextBindings, { mapped: 1, skipped: 1, messages: 1 });
+    assert.deepStrictEqual(report.piSessions, { inPlace: 0, recovered: 1, missing: [] });
+    assert.equal(report.after.threads.resumablePiThreads, 1);
+    assert.deepStrictEqual(
+      report.tasks.interruptedRuns.map((run) => run.runId),
+      ["run-1"],
+    );
+    assert.deepStrictEqual(report.settings.droppedByV2, ["enableAssistantStreaming"]);
+    assert.isTrue(NodeFS.existsSync(reportPath));
+    assert.isTrue(NodeFS.existsSync(reportPath.replace(/\.md$/, ".json")));
+
+    // The session file is back where the thread's cursor points, in the new home.
+    const recoveredSession = NodePath.join(userdata, "provider", "pi", "sessions", sessionName);
+    assert.isTrue(NodeFS.existsSync(recoveredSession));
+    assert.isFalse(NodeFS.existsSync(v1SessionFile));
+    // All-chats instructions were rewritten in place, keeping the other keys.
+    const settingsAfter = fromJson(
+      NodeFS.readFileSync(NodePath.join(userdata, "settings.json"), "utf8"),
+    );
+    assert.equal(settingsAfter.customInstructions, "Start with mcp__t3-code__task_context.");
+    assert.equal(settingsAfter.enableAssistantStreaming, true);
+    // V1's own database was never written.
+    assert.isTrue(NodeFS.readFileSync(v1Path).equals(v1Bytes));
+
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const up = yield* sql<{ readonly nativeId: string }>`
+        SELECT json_extract(provider.payload_json, '$.nativeThreadRef.nativeId') AS "nativeId"
+        FROM orchestration_v2_projection_threads AS thread
+        JOIN orchestration_v2_projection_provider_threads AS provider
+          ON provider.provider_thread_id = thread.active_provider_thread_id
+        WHERE thread.thread_id = 'thread-up'
+      `;
+      assert.equal(up[0]?.nativeId, recoveredSession);
+      const reference = yield* sql<{ readonly text: string; readonly threadId: string }>`
+        SELECT
+          json_extract(payload_json, '$.text') AS "text",
+          json_extract(payload_json, '$.context.records[0].threadId') AS "threadId"
+        FROM orchestration_v2_projection_messages WHERE message_id = 'm-chat-3'
+      `;
+      assert.equal(reference[0]?.threadId, "thread-up");
+      assert.include(reference[0]?.text ?? "", "[Up chat](t3-context://v1/thread/v1-ctx-1)");
+    }).pipe(
+      Effect.provide(
+        NodeSqliteClient.layer({ filename: NodePath.join(userdata, "statev2.sqlite") }),
+      ),
+    );
+
+    // A second run refuses: v2's database exists now.
+    const again = yield* runV1Cutover({
+      homeDir: home,
+      featureMigrations: [],
+      now: DateTime.makeUnsafe("2026-10-06T09:00:00.000Z"),
+      log: () => Effect.void,
+    }).pipe(Effect.flip);
+    assert.include(again.message, "already exists");
+
+    // The restore script brings V1's files back and keeps v2's database aside.
+    NodeFS.writeFileSync(NodePath.join(userdata, "settings.json"), "{}");
+    NodeFS.rmSync(NodePath.join(userdata, "secrets"), { recursive: true });
+    NodeChildProcess.execFileSync("sh", [NodePath.join(report.backupDir, "restore.sh")]);
+    assert.equal(NodeFS.readFileSync(NodePath.join(userdata, "settings.json"), "utf8"), settings);
+    assert.equal(NodeFS.readFileSync(NodePath.join(userdata, "secrets", "key"), "utf8"), "secret");
+    assert.isFalse(NodeFS.existsSync(NodePath.join(userdata, "statev2.sqlite")));
+    assert.isTrue(
+      NodeFS.readdirSync(report.backupDir).some((file) =>
+        file.startsWith("statev2.sqlite.after-v2-"),
+      ),
+    );
+    // The backup API copies pages, not bytes: compare what V1 reads.
+    assert.deepStrictEqual(dumpV1(v1Path), v1Rows);
+  }).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("refuses while the app is running", () => {
+  const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-cutover-running-"));
+  const userdata = NodePath.join(home, "userdata");
+  return Effect.gen(function* () {
+    NodeFS.mkdirSync(userdata, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(userdata, "state.sqlite"), "");
+    NodeFS.writeFileSync(
+      NodePath.join(userdata, "server-runtime.json"),
+      toJson({ pid: process.pid }),
+    );
+    const error = yield* runV1Cutover({
+      homeDir: home,
+      featureMigrations: [],
+      now: DateTime.makeUnsafe("2026-10-06T08:00:00.000Z"),
+      log: () => Effect.void,
+    }).pipe(Effect.flip);
+    assert.include(error.message, "Up.computer is running");
+    assert.deepStrictEqual(NodeFS.readdirSync(userdata).toSorted(), [
+      "server-runtime.json",
+      "state.sqlite",
+    ]);
+  }).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
+  );
+});
