@@ -119,6 +119,10 @@ export function releasedRunId(input: {
     : null;
 }
 
+/** What a person can do about a run that ended without a result. */
+export const TASK_AGENT_RUN_RECOVERY_HINT =
+  "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
+
 export class TaskAgentService extends Context.Service<TaskAgentService, TaskAgentServiceShape>()(
   "@t3tools/tasks-server/agents/TaskAgentService",
 ) {}
@@ -519,8 +523,7 @@ const make = Effect.gen(function* () {
       let taskOutput: string | null | undefined;
       const events = [];
       if (input.task !== null) {
-        const recovery =
-          "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
+        const recovery = TASK_AGENT_RUN_RECOVERY_HINT;
         const recoveryNote = `Task-agent run ${input.run.id} ${input.status}: ${input.reason} ${recovery}`;
         const existingOutput = input.task.output?.trim() ?? "";
         taskOutput = existingOutput.includes(recoveryNote)
