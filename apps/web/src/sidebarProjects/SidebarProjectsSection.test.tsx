@@ -32,6 +32,8 @@ type Root = import("react-dom/client").Root;
 
 const environmentId = "env-local";
 const spies = vi.hoisted(() => ({
+  addProject: vi.fn(),
+  newThreadFromHeader: vi.fn(),
   newThread: vi.fn(),
   navigate: vi.fn(),
   nativeContextMenu: vi.fn(),
@@ -47,6 +49,10 @@ vi.mock("../localApi", () => ({
   readLocalApi: () => ({ contextMenu: { show: spies.nativeContextMenu } }),
 }));
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: spies.navigate }) }));
+const surface = vi.hoisted(() => ({ sidebarProjects: "upcomputer" as "upstream" | "upcomputer" }));
+vi.mock("../product/productFlags", () => ({
+  productSurface: () => surface.sidebarProjects,
+}));
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 
@@ -55,6 +61,8 @@ const { SidebarProvider } = await import("../components/ui/sidebar");
 const { useUiStateStore } = await import("../uiStateStore");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
+const { SIDEBAR_THREADS_OPEN_STORAGE_KEY, SidebarThreadsSectionHeader, useSidebarThreadListShown } =
+  await import("./SidebarThreadsSection");
 
 function group(id: string, title: string, workspaceRoot = `/work/${id}`): SidebarProjectSnapshot {
   const member = { environmentId, id, workspaceRoot, title };
@@ -112,7 +120,7 @@ function render() {
   return act(async () => {
     root.render(
       <SidebarProvider>
-        <SidebarProjectsSection projectGroups={PROJECTS} />
+        <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={spies.addProject} />
       </SidebarProvider>,
     );
   });
@@ -165,6 +173,7 @@ function menuItem(label: string): HTMLElement {
 }
 
 beforeEach(() => {
+  surface.sidebarProjects = "upcomputer";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -322,5 +331,111 @@ describe("SidebarProjectsSection", () => {
       params: { projectKey: "key-design" },
     });
     expect(spies.nativeContextMenu).not.toHaveBeenCalled();
+  });
+});
+
+const sectionHeader = (testId: string) => {
+  const toggle = container.querySelector<HTMLElement>(`[data-testid='${testId}']`)!;
+  return {
+    toggle,
+    title: () => toggle.firstElementChild?.textContent,
+    chevronOpen: () =>
+      toggle
+        .querySelector("[data-testid='sidebar-section-chevron']")!
+        .classList.contains("rotate-90"),
+    action: (label: string) =>
+      toggle.parentElement!.querySelector<HTMLElement>(`button[aria-label='${label}']`),
+  };
+};
+
+describe("SidebarSectionHeader", () => {
+  it("shows the title, a chevron that turns with the section, and the action", async () => {
+    await render();
+    const header = sectionHeader("sidebar-projects-toggle");
+    expect(header.title()).toBe("Projects");
+    expect(header.chevronOpen()).toBe(true);
+    expect(header.action("Add project")).not.toBeNull();
+
+    await click(header.toggle);
+    expect(header.toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(header.chevronOpen()).toBe(false);
+    expect(header.action("Add project")).not.toBeNull();
+  });
+
+  it("runs upstream's add project action without toggling the section", async () => {
+    await render();
+    const header = sectionHeader("sidebar-projects-toggle");
+    await click(header.action("Add project")!);
+    expect(spies.addProject).toHaveBeenCalledOnce();
+    expect(header.toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+/** Stands in for upstream's thread list, which the Sidebar shows with the same hook. */
+function ThreadList() {
+  return useSidebarThreadListShown() ? <ul data-testid="thread-list" /> : null;
+}
+
+function renderThreads(props: { newThreadDisabled?: boolean } = {}) {
+  return act(async () => {
+    root.render(
+      <SidebarProvider>
+        <SidebarThreadsSectionHeader
+          onNewThread={spies.newThreadFromHeader}
+          newThreadDisabled={props.newThreadDisabled ?? false}
+          newThreadShortcutLabel="⌘N"
+        />
+        <ThreadList />
+      </SidebarProvider>,
+    );
+  });
+}
+
+const threadList = () => container.querySelector("[data-testid='thread-list']");
+
+describe("SidebarThreadsSectionHeader", () => {
+  it("runs upstream's new thread action with the click", async () => {
+    await renderThreads();
+    const header = sectionHeader("sidebar-threads-toggle");
+    expect(header.title()).toBe("Threads");
+    await click(header.action("New thread")!);
+    expect(spies.newThreadFromHeader).toHaveBeenCalledOnce();
+    expect(spies.newThreadFromHeader.mock.calls[0]![0]).toHaveProperty("shiftKey", false);
+    expect(header.toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("has no new thread action while upstream disables it", async () => {
+    await renderThreads({ newThreadDisabled: true });
+    expect(sectionHeader("sidebar-threads-toggle").action("New thread")).toBeNull();
+  });
+
+  it("collapses the thread list and remembers it", async () => {
+    await renderThreads();
+    expect(threadList()).not.toBeNull();
+    const header = sectionHeader("sidebar-threads-toggle");
+    await click(header.toggle);
+    expect(header.chevronOpen()).toBe(false);
+    expect(threadList()).toBeNull();
+    expect(window.localStorage.getItem(SIDEBAR_THREADS_OPEN_STORAGE_KEY)).toBe("false");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderThreads();
+    expect(sectionHeader("sidebar-threads-toggle").toggle.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(threadList()).toBeNull();
+
+    await click(sectionHeader("sidebar-threads-toggle").toggle);
+    expect(threadList()).not.toBeNull();
+  });
+
+  it("always shows upstream's thread list with upstream's surface", async () => {
+    window.localStorage.setItem(SIDEBAR_THREADS_OPEN_STORAGE_KEY, "false");
+    surface.sidebarProjects = "upstream";
+    await act(async () => {
+      root.render(<ThreadList />);
+    });
+    expect(threadList()).not.toBeNull();
   });
 });

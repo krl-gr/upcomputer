@@ -7,6 +7,7 @@ import {
   EllipsisIcon,
   LayoutGridIcon,
   MessageSquareDashedIcon,
+  PlusIcon,
   SettingsIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useReducer } from "react";
@@ -17,7 +18,6 @@ import {
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
-import { CollapsibleSectionHeader } from "../components/ui/collapsible-section-header";
 import {
   Combobox,
   ComboboxEmpty,
@@ -45,6 +45,7 @@ import { useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useUiStateStore } from "../uiStateStore";
 import { SidebarProjectRow } from "./SidebarProjectRow";
+import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
 import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
@@ -59,13 +60,15 @@ interface ProjectItem {
  * projects, the first projects in the sidebar's project order, No project and
  * More. Every row sets upstream's project scope, so the thread list filters
  * exactly as the header's scope menu does; the header hides that menu while
- * this surface is on.
+ * this surface is on, and its Add project button moves here.
  */
 export function SidebarProjectsSection(props: {
   /** The sidebar's project groups, in its project sort order. */
   readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
+  /** Upstream's add project action, which the search row runs without this surface. */
+  readonly onAddProject: () => void;
 }) {
-  const { projectGroups } = props;
+  const { projectGroups, onAddProject } = props;
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
@@ -131,26 +134,30 @@ export function SidebarProjectsSection(props: {
   return (
     <Collapsible open={open}>
       <div className="pt-2">
-        <CollapsibleSectionHeader
-          expanded={open}
-          onClick={() => setOpen(!open)}
-          data-testid="sidebar-projects-toggle"
+        <SidebarSectionHeader
+          title="Projects"
+          open={open}
+          onToggle={() => setOpen(!open)}
+          testId="sidebar-projects-toggle"
           accessory={
             // Collapsed, the header still names an active filter.
             !open && selectedProject ? (
-              <span className="flex min-w-0 max-w-[50%] items-center gap-1.5">
+              <>
                 {selectedProject === rows.scratch ? null : (
                   <ProjectFavicon project={selectedProject} className="size-3.5 shrink-0" />
                 )}
                 <span className="truncate">
                   {selectedProject === rows.scratch ? "No project" : selectedProject.displayName}
                 </span>
-              </span>
+              </>
             ) : null
           }
-        >
-          Projects
-        </CollapsibleSectionHeader>
+          action={
+            <SidebarSectionHeaderAction label="Add project" onClick={onAddProject}>
+              <PlusIcon className="size-3.5" />
+            </SidebarSectionHeaderAction>
+          }
+        />
       </div>
       <CollapsiblePanel>
         <SidebarMenu>

@@ -180,16 +180,21 @@ function renderSidebarHeader() {
 }
 
 describe("replaceable surfaces in the web app", () => {
-  it("keeps upstream's project scope button in the sidebar header with upstream's surfaces", () => {
+  it("keeps upstream's search row buttons with upstream's surfaces", () => {
     expect(productSurface("sidebarProjects")).toBe("upstream");
-    expect(renderSidebarHeader()).toContain("project-scope-menu");
+    const html = renderSidebarHeader();
+    expect(html).toContain("project-scope-menu");
+    expect(html).toContain('aria-label="Add project"');
+    expect(html).toContain('aria-label="New thread"');
   });
 
-  it("drops the header's project scope button for the UpComputer Projects section", () => {
+  it("leaves only search in the row for the UpComputer sidebar sections", () => {
     product.hidden = true;
     expect(productSurface("sidebarProjects")).toBe("upcomputer");
     const html = renderSidebarHeader();
+    expect(html).toContain('aria-label="Search threads"');
     expect(html).not.toContain("project-scope-menu");
-    expect(html).toContain('aria-label="Add project"');
+    expect(html).not.toContain('aria-label="Add project"');
+    expect(html).not.toContain('aria-label="New thread"');
   });
 });

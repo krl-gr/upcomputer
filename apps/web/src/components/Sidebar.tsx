@@ -220,6 +220,10 @@ import {
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
+import {
+  SidebarThreadsSectionHeader,
+  useSidebarThreadListShown,
+} from "../sidebarProjects/SidebarThreadsSection";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -2837,6 +2841,7 @@ export default function Sidebar() {
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  const threadListShown = useSidebarThreadListShown();
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -5009,7 +5014,17 @@ export default function Sidebar() {
             />
             <ProductSidebarNavigation />
             {productSurface("sidebarProjects") === "upcomputer" ? (
-              <SidebarProjectsSection projectGroups={projectGroups} />
+              <>
+                <SidebarProjectsSection
+                  projectGroups={projectGroups}
+                  onAddProject={openAddProjectCommandPalette}
+                />
+                <SidebarThreadsSectionHeader
+                  onNewThread={handleNewThreadClick}
+                  newThreadDisabled={projects.length === 0}
+                  newThreadShortcutLabel={newThreadShortcutLabel}
+                />
+              </>
             ) : null}
           </SidebarGroup>
         }
@@ -5082,7 +5097,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads ? (
+          {!isSearchingThreads && threadListShown ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -5418,6 +5433,7 @@ export default function Sidebar() {
             </TooltipProvider>
           ) : null}
           {!isSearchingThreads &&
+          threadListShown &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +

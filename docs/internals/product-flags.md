@@ -37,7 +37,7 @@ Web unit tests alias `product/productEntry` to `apps/web/test/coreProductEntry.t
 
 Some upstream UI is replaced rather than hidden. `ProductSurfaces` in the same module names each replaceable surface, and its value is `upstream` (exactly upstream's UI) or `upcomputer` (the product's version). `UPSTREAM_PRODUCT_SURFACES` is core's default; the public build passes `UPCOMPUTER_PRODUCT_SURFACES` to the web composition. The product's version lives in its own files, and upstream's file gets a minimal hook through `productSurface` in `apps/web/src/product/productFlags.ts`:
 
-- `sidebarProjects`: the sidebar's Projects section (`apps/web/src/sidebarProjects/`) under the navigation entries, and no project scope button in the sidebar header (`components/sidebar/SidebarThreadHeader.tsx`). The section reads and writes upstream's persisted project scope, so the thread list filters exactly as upstream's scope menu does.
+- `sidebarProjects`: the sidebar's Projects and Threads sections (`apps/web/src/sidebarProjects/`) under the navigation entries, and a search row with search only (`components/sidebar/SidebarThreadHeader.tsx`): Add project and New thread move into the section headers. The Projects section reads and writes upstream's persisted project scope, so the thread list filters exactly as upstream's scope menu does. The Threads header only collapses upstream's thread list (`useSidebarThreadListShown` in `Sidebar.tsx`); the list itself is upstream's.
 
 ## Mobile app
 
