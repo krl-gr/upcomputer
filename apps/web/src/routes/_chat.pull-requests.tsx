@@ -16,7 +16,7 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import {
   ArrowDownUpIcon,
   CalendarArrowDownIcon,
@@ -161,6 +161,7 @@ import { Separator } from "~/components/ui/separator";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { isProductFeatureShown } from "~/product/productFlags";
 
 function getShortcutContext() {
   return {
@@ -295,6 +296,9 @@ function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch,
 }
 
 export const Route = createFileRoute("/_chat/pull-requests")({
+  beforeLoad: () => {
+    if (!isProductFeatureShown("pullRequests")) throw redirect({ to: "/", replace: true });
+  },
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
     involvement:
       raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",

@@ -116,6 +116,7 @@ import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 const FILL_VALUE = "fill";
 const RESPONSIVE_VALUE = "responsive";
@@ -1463,7 +1464,7 @@ export function IntegrationsSettingsPanel() {
           previewDefaults
         )}
       </SettingsSection>
-      <DeviceIntegrationSettings />
+      {isProductFeatureShown("devices") ? <DeviceIntegrationSettings /> : null}
     </SettingsPageContainer>
   );
 }

@@ -40,6 +40,7 @@ import {
   useScopedSettingSource,
   useUpdateScopedSettings,
 } from "./useScopedSettings";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 /**
  * Rows for the settings a project may override. The same rows edit
@@ -415,6 +416,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
           <SettingsRow
             serverScoped
             settingKeys={["pullRequestMergeMethod"]}
+            hidden={!isProductFeatureShown("pullRequests")}
             mixed={mixedMergeMethod}
             {...searchableSetting("pull-request-merge-method")}
             description={

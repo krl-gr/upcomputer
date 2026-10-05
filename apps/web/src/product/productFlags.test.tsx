@@ -1,0 +1,145 @@
+import {
+  DEFAULT_RESOLVED_KEYBINDINGS,
+  mergeWithDefaultKeybindings,
+} from "@t3tools/shared/keybindings";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+
+import { RightPanelTabs } from "../components/RightPanelTabs";
+import { filterAvailableSettingsSearchItems } from "../components/settings/settingsSearch";
+import {
+  isProductFeatureShown,
+  isProductKeybindingShown,
+  isProductSettingsSearchItemVisible,
+  withoutHiddenProductKeybindings,
+} from "./productFlags";
+
+// Unit tests see core with upstream's flags; this file switches to the
+// UpComputer product's flags per test.
+const product = vi.hoisted(() => ({ hidden: false }));
+vi.mock("./productEntry", async () => {
+  const { composeExperimentalWebFeatures } = await import("./WebProduct");
+  const { UPCOMPUTER_PRODUCT_FLAGS, UPSTREAM_PRODUCT_FLAGS } =
+    await import("@t3tools/shared/productFlags");
+  return {
+    WEB_PRODUCT: {
+      ...composeExperimentalWebFeatures([]),
+      get flags() {
+        return product.hidden ? UPCOMPUTER_PRODUCT_FLAGS : UPSTREAM_PRODUCT_FLAGS;
+      },
+    },
+  };
+});
+
+afterEach(() => {
+  product.hidden = false;
+});
+
+function renderLauncher() {
+  return renderToStaticMarkup(
+    <RightPanelTabs
+      mode="inline"
+      surfaces={[]}
+      environmentId={null}
+      activeSurfaceId={null}
+      pendingSurfaceIds={new Set()}
+      previewSessions={{}}
+      desktopByTabId={{}}
+      terminalLabelsById={new Map()}
+      onActivate={() => undefined}
+      onCloseSurface={() => undefined}
+      onCloseOtherSurfaces={() => undefined}
+      onCloseSurfacesToRight={() => undefined}
+      onCloseAllSurfaces={() => undefined}
+      onCopyFilePath={() => undefined}
+      onAddBrowser={() => undefined}
+      onAddBrowserInProfile={() => undefined}
+      onAddTerminal={() => undefined}
+      onAddPullRequest={() => undefined}
+      onAddPullRequests={() => undefined}
+      onAddDiff={() => undefined}
+      onAddFiles={() => undefined}
+      onAddDevice={() => undefined}
+      browserAvailable
+      terminalAvailable
+      diffAvailable
+      filesAvailable
+      pullRequestAvailable
+      pullRequestsAvailable
+      deviceAvailable
+    >
+      <div>content</div>
+    </RightPanelTabs>,
+  );
+}
+
+const HIDDEN_SURFACES = [">Terminal<", ">Pull request<", ">Linked pull requests<", ">Device<"];
+const KEPT_SURFACES = [">Browser<", ">Files<", ">Diff<"];
+
+describe("hidden upstream features in the web app", () => {
+  it("keeps every upstream entry point with upstream's flags", () => {
+    expect(isProductFeatureShown("terminal")).toBe(true);
+    const html = renderLauncher();
+    for (const label of [...HIDDEN_SURFACES, ...KEPT_SURFACES]) expect(html).toContain(label);
+    expect(withoutHiddenProductKeybindings(DEFAULT_RESOLVED_KEYBINDINGS)).toEqual(
+      DEFAULT_RESOLVED_KEYBINDINGS,
+    );
+  });
+
+  it("leaves the terminal, pull request and device surfaces out of the right-panel launcher", () => {
+    product.hidden = true;
+    const html = renderLauncher();
+    for (const label of HIDDEN_SURFACES) expect(html).not.toContain(label);
+    for (const label of KEPT_SURFACES) expect(html).toContain(label);
+  });
+
+  it("drops the hidden features' default shortcuts", () => {
+    product.hidden = true;
+    const commands = withoutHiddenProductKeybindings(mergeWithDefaultKeybindings([])).map(
+      (binding) => binding.command,
+    );
+    for (const command of ["terminal.toggle", "terminal.new", "pullRequest.copyNumber"]) {
+      expect(commands).not.toContain(command);
+    }
+    expect(commands).not.toContain("thread.settle");
+    expect(commands).toEqual(expect.arrayContaining(["rightPanel.toggle", "thread.copyReference"]));
+    expect(isProductKeybindingShown("script.dev.run")).toBe(false);
+  });
+
+  it("drops the hidden features' settings from settings search", () => {
+    const all = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: true,
+      canManageLocalBackend: true,
+      isWslSettingsRowVisible: true,
+      hasThreadAutoSettlement: true,
+    });
+    product.hidden = true;
+    const hidden = all
+      .filter((item) => !isProductSettingsSearchItemVisible(item))
+      .map((item) => item.id);
+    // Every id the flags name must still exist upstream, so a renamed row fails here.
+    expect(hidden).toEqual(
+      expect.arrayContaining([
+        "terminal-font",
+        "pull-request-merge-method",
+        "github-routing",
+        "auto-settle-inactive-threads",
+        "auto-settle-merged-threads",
+        "days-before-auto-settle",
+        "device-hosts",
+        "agent-device-access",
+        "device-hub",
+        "device-platform-support",
+        "keybinding-terminal.toggle",
+        "keybinding-pullRequest.copyNumber",
+        "keybinding-thread.settle",
+      ]),
+    );
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(10);
+    expect(all.find((item) => item.id === "code-font")).toBeDefined();
+    expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
+  });
+});

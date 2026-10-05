@@ -1,5 +1,6 @@
 import { RpcScopeAuthorization, WsRpcGroup } from "@t3tools/contracts";
 import { makeWsRpcProtocolClient } from "@t3tools/client-runtime/rpc";
+import { UPSTREAM_PRODUCT_FLAGS, type ProductFlags } from "@t3tools/shared/productFlags";
 import type * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -24,6 +25,13 @@ export interface ExperimentalWebProductComposition {
   readonly rpcGroup: typeof WsRpcGroup;
   /** The session client factory; core's own when no feature adds RPC groups. */
   readonly makeRpcClient: typeof makeWsRpcProtocolClient;
+  /** Upstream features this build shows; see `@t3tools/shared/productFlags`. */
+  readonly flags: ProductFlags;
+}
+
+export interface ExperimentalWebProductOptions {
+  /** Defaults to upstream's: every upstream feature shown. */
+  readonly flags?: ProductFlags;
 }
 
 const byOrder = <T extends { readonly id: string; readonly order?: number }>(left: T, right: T) =>
@@ -70,6 +78,7 @@ function mergeRpcGroups(features: ReadonlyArray<ExperimentalWebFeatureContributi
 
 export function composeExperimentalWebFeatures(
   input: ReadonlyArray<ExperimentalWebFeatureContribution>,
+  options: ExperimentalWebProductOptions = {},
 ): ExperimentalWebProductComposition {
   const features = uniqueBy(
     [...input].map(defineExperimentalWebFeature).sort((a, b) => a.id.localeCompare(b.id)),
@@ -103,6 +112,7 @@ export function composeExperimentalWebFeatures(
     settings: [...settings].sort(byOrder),
     rpcGroup,
     makeRpcClient: rpcGroup === WsRpcGroup ? makeWsRpcProtocolClient : RpcClient.make(rpcGroup),
+    flags: Object.freeze({ ...(options.flags ?? UPSTREAM_PRODUCT_FLAGS) }),
   });
 }
 

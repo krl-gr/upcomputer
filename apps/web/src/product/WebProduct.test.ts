@@ -18,6 +18,7 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
 import { chatHeaderAccessoryElements, threadRowAccessoryElement } from "./ProductSlots";
+import { UPCOMPUTER_PRODUCT_FLAGS, UPSTREAM_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import {
   defineExperimentalWebFeature,
   WebFeatureInvariantError,
@@ -114,6 +115,10 @@ describe("web product composition", () => {
   it("keeps core's behavior when no feature fills a slot", () => {
     const product = composeExperimentalWebFeatures([]);
     expect(product.rpcGroup).toBe(WsRpcGroup);
+    expect(product.flags).toEqual(UPSTREAM_PRODUCT_FLAGS);
+    expect(composeExperimentalWebFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }).flags).toEqual(
+      UPCOMPUTER_PRODUCT_FLAGS,
+    );
     expect(
       threadRowAccessoryElement(product, {
         environmentId,

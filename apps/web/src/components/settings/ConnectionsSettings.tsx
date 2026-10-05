@@ -185,6 +185,7 @@ import {
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
 } from "../../keybindings";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -3806,7 +3807,9 @@ export function ConnectionsSettings() {
         />
       ) : null}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
-      <GitHubRoutingSettings environments={loadBalancingEnvironments} />
+      {isProductFeatureShown("pullRequests") ? (
+        <GitHubRoutingSettings environments={loadBalancingEnvironments} />
+      ) : null}
     </SettingsPageContainer>
   );
 }

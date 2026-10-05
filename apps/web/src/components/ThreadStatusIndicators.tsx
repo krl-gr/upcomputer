@@ -55,6 +55,7 @@ import {
   type PullRequestGlyphIcon,
 } from "./pullRequest/pullRequestIcons";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+import { isProductFeatureShown } from "../product/productFlags";
 
 export interface PrStatusIndicator {
   label: string;
@@ -97,7 +98,7 @@ export function useLinkedThreadPullRequest(
   // Stable per link: the shared summary effect keys on this object, and a sidebar row must not
   // touch the cache on every render.
   const reference = useMemo(() => {
-    if (fallback == null) return null;
+    if (fallback == null || !isProductFeatureShown("pullRequests")) return null;
     const host = parseChangeRequestUrl(fallback.url)?.host;
     return { ...fallback, ...(host === undefined ? {} : { host }) };
   }, [fallback]);
@@ -114,6 +115,7 @@ export function useLinkedThreadPullRequest(
   );
 
   return useMemo(() => {
+    if (!isProductFeatureShown("pullRequests")) return null;
     if (current !== null) return linkedPullRequestSnapshotStatus(current);
     return detail === null
       ? null

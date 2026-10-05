@@ -167,6 +167,7 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -1733,7 +1734,7 @@ function FontSettingsGroup() {
       <InterfaceFontRow />
       <PromptFontRow />
       <CodeFontRow />
-      <TerminalFontRow />
+      {isProductFeatureShown("terminal") ? <TerminalFontRow /> : null}
       <FontSmoothingRow />
     </>
   );
@@ -1751,22 +1752,28 @@ function SimpleFontRows() {
       <InterfaceFontRow preview={<PromptFontPreview />} />
       <CodeFontRow
         title="Monospace font"
-        description="Code blocks, diffs, file previews, and the terminal."
+        description={
+          isProductFeatureShown("terminal")
+            ? "Code blocks, diffs, file previews, and the terminal."
+            : "Code blocks, diffs, and file previews."
+        }
         preview={
           <>
             <CodeFontPreview />
-            <TerminalFontPreview
-              family={resolveTerminalFontPreference({
-                advanced: false,
-                code: settings.fontFamilyCode,
-                terminal: settings.fontFamilyTerminal,
-              })}
-              size={resolveTerminalFontSizePreference({
-                advanced: false,
-                code: settings.fontSizeCode,
-                terminal: settings.fontSizeTerminal,
-              })}
-            />
+            {isProductFeatureShown("terminal") ? (
+              <TerminalFontPreview
+                family={resolveTerminalFontPreference({
+                  advanced: false,
+                  code: settings.fontFamilyCode,
+                  terminal: settings.fontFamilyTerminal,
+                })}
+                size={resolveTerminalFontSizePreference({
+                  advanced: false,
+                  code: settings.fontSizeCode,
+                  terminal: settings.fontSizeTerminal,
+                })}
+              />
+            ) : null}
           </>
         }
       />

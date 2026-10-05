@@ -1,4 +1,5 @@
 import * as NodeZlib from "node:zlib";
+import * as NodeURL from "node:url";
 
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
@@ -82,6 +83,12 @@ const unitTestProject = {
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
+    alias: [
+      {
+        find: /^(?:\.\.\/product|\.)\/productEntry$/,
+        replacement: NodeURL.fileURLToPath(new URL("./test/coreProductEntry.ts", import.meta.url)),
+      },
+    ],
   },
 } satisfies TestProjectInlineConfiguration;
 

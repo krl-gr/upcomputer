@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { useMemo } from "react";
 
+import { isProductFeatureShown } from "../product/productFlags";
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
 
@@ -162,7 +163,7 @@ export function useKnownTerminalSessions(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<KnownTerminalSession> {
   const metadata = useEnvironmentQuery(
-    input.environmentId === null
+    input.environmentId === null || !isProductFeatureShown("terminal")
       ? null
       : terminalEnvironment.metadata({
           environmentId: input.environmentId,
