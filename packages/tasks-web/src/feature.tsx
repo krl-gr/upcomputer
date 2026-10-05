@@ -1,15 +1,51 @@
+import { lazy, Suspense } from "react";
 import { BotIcon, CalendarClockIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
 
-import { defineExperimentalWebFeature } from "../../../apps/web/src/extensionApi.ts";
-import { TasksWebRpcGroup } from "./rpc/index.ts";
-import { TaskNavigationRunCounts } from "./ui/TaskNavigationRunCounts.tsx";
-import { TaskChatHeaderRunCounts, TaskThreadRunCounts } from "./ui/TaskThreadRunCounts.tsx";
+// The pure host module, not the web extension API: the product entry imports
+// this file while the connection runtime is still initializing, so nothing here
+// may reach web state at module load. The UI below loads on first render.
+import {
+  defineExperimentalWebFeature,
+  type ExperimentalWebThreadAccessoryProps,
+  type ExperimentalWebThreadRowAccessoryProps,
+} from "../../../apps/web/src/product/WebFeature.ts";
+import { TasksWebRpcGroup } from "./rpc/tasksRpcGroup.ts";
 
-export {
-  readTasksWebAccess,
-  readTasksWebClient,
-  useTasksWebAccessRevision,
-} from "./environmentApi.ts";
+const LazyNavigationRunCounts = lazy(() =>
+  import("./ui/TaskNavigationRunCounts.tsx").then((module) => ({
+    default: module.TaskNavigationRunCounts,
+  })),
+);
+const LazyThreadRunCounts = lazy(() =>
+  import("./ui/TaskThreadRunCounts.tsx").then((module) => ({
+    default: module.TaskThreadRunCounts,
+  })),
+);
+
+function NavigationRunCounts() {
+  return (
+    <Suspense fallback={null}>
+      <LazyNavigationRunCounts />
+    </Suspense>
+  );
+}
+
+function ThreadRowRunCounts(props: ExperimentalWebThreadRowAccessoryProps) {
+  return (
+    <Suspense fallback={props.fallback}>
+      <LazyThreadRunCounts {...props} />
+    </Suspense>
+  );
+}
+
+/** The open chat's run counts after its title; nothing while it has none. */
+function ChatHeaderRunCounts(props: ExperimentalWebThreadAccessoryProps) {
+  return (
+    <Suspense fallback={null}>
+      <LazyThreadRunCounts {...props} fallback={null} />
+    </Suspense>
+  );
+}
 
 /**
  * Trusted build-time registration for the bundled first-party Tasks UI. Each
@@ -19,8 +55,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   id: "upcomputer.tasks.web",
   version: 1,
   rpcGroups: [TasksWebRpcGroup],
-  threadRowAccessory: TaskThreadRunCounts,
-  chatHeaderAccessory: TaskChatHeaderRunCounts,
+  threadRowAccessory: ThreadRowRunCounts,
+  chatHeaderAccessory: ChatHeaderRunCounts,
   settings: [
     {
       id: "instructions",
@@ -43,7 +79,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       path: "/tasks",
       order: 20,
       icon: ListTodoIcon,
-      accessory: TaskNavigationRunCounts,
+      accessory: NavigationRunCounts,
     },
     { id: "agents", label: "Agents", path: "/agents", order: 30, icon: BotIcon },
     {

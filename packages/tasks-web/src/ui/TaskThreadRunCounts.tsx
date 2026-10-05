@@ -10,10 +10,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { TaskThreadTasksResult } from "@t3tools/tasks-contracts/v1";
-import type {
-  ExperimentalWebThreadAccessoryProps,
-  ExperimentalWebThreadRowAccessoryProps,
-} from "../../../../apps/web/src/extensionApi.ts";
+import type { ExperimentalWebThreadRowAccessoryProps } from "../../../../apps/web/src/extensionApi.ts";
 import {
   Menu,
   MenuItem,
@@ -148,9 +145,4 @@ export function TaskThreadRunCounts(props: ExperimentalWebThreadRowAccessoryProp
   if (!readTasksWebAccess(props.environmentId).canReadTasks) return props.fallback;
   const client = readTasksWebClient(props.environmentId);
   return <Counts {...props} client={client} store={threadRunCountsStore(client)} />;
-}
-
-/** The open chat's run counts after its title; nothing while it has none. */
-export function TaskChatHeaderRunCounts(props: ExperimentalWebThreadAccessoryProps) {
-  return <TaskThreadRunCounts {...props} fallback={null} />;
 }
