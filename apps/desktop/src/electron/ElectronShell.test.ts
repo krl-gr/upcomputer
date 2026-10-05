@@ -72,6 +72,21 @@ describe("ElectronShell", () => {
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
+  it.effect("opens the Privacy panes computer use needs", () =>
+    Effect.gen(function* () {
+      openExternalMock.mockResolvedValue(undefined);
+
+      const electronShell = yield* ElectronShell.ElectronShell;
+      yield* electronShell.openSystemSettings("accessibility");
+      yield* electronShell.openSystemSettings("screen-recording");
+
+      assert.deepEqual(openExternalMock.mock.calls, [
+        ["x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+        ["x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"],
+      ]);
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
   it.effect("opens remote SSH editor URLs", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);
