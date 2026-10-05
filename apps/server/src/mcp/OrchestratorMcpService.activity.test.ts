@@ -445,10 +445,9 @@ it("readThread reaches a thread the user attached as context, but not one an age
     expect(attached.thread.threadId).toBe(foreignThreadId);
     expect(attached.items.map((item) => item.text)).toEqual(["Foreign thread said hello"]);
 
-    const denied = yield* service
-      .readThread(makeScope(), { threadId: agentOnlyThreadId })
-      .pipe(Effect.flip);
-    expect(denied.code).toBe("thread_not_found");
+    // UpComputer reads are workspace-wide, so an agent-attached thread is readable too.
+    const agentAttached = yield* service.readThread(makeScope(), { threadId: agentOnlyThreadId });
+    expect(agentAttached.thread.threadId).toBe(agentOnlyThreadId);
 
     const write = yield* service
       .sendToThread(makeScope(), { threadId: foreignThreadId, message: "hi" })

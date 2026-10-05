@@ -716,16 +716,21 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = Layer.mergeAll(
-  PreviewToolkitRegistrationLive,
-  OrchestratorToolkitRegistrationLive,
-  ThreadToolkitRegistrationLive,
-  AttachmentRegistrationLive,
-  ProjectRegistrationLive,
-  EnvironmentRegistrationLive,
-  PreviewControlsRegistrationLive,
-  WorktreeToolkitRegistrationLive,
-  PullRequestsToolkitRegistrationLive,
-  DeviceToolkitRegistrationLive,
-  productMcpToolsLayer,
-).pipe(Layer.provideMerge(McpTransportLive));
+// Product tools register after core's, so a product tool replaces a core tool of the same name.
+export const layer = productMcpToolsLayer.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      PreviewToolkitRegistrationLive,
+      OrchestratorToolkitRegistrationLive,
+      ThreadToolkitRegistrationLive,
+      AttachmentRegistrationLive,
+      ProjectRegistrationLive,
+      EnvironmentRegistrationLive,
+      PreviewControlsRegistrationLive,
+      WorktreeToolkitRegistrationLive,
+      PullRequestsToolkitRegistrationLive,
+      DeviceToolkitRegistrationLive,
+    ),
+  ),
+  Layer.provideMerge(McpTransportLive),
+);

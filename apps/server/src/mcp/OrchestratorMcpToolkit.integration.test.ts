@@ -2335,12 +2335,12 @@ describe("orchestrator MCP toolkit", () => {
             });
             expect((yield* orchestrator.getThreadShell(foreignThreadId))?.pinnedAt).toBeNull();
 
+            // UpComputer reads are workspace-wide; writes stay in the calling project.
             const foreignReadCall = yield* invoke("t3_thread_read", {
               threadId: foreignThreadId,
             });
             expect(foreignReadCall.structuredContent).toMatchObject({
-              _tag: "OrchestratorMcpFailure",
-              code: "thread_not_found",
+              thread: { threadId: foreignThreadId },
             });
             const foreignUpdateCall = yield* invoke("t3_thread_update", {
               threadId: foreignThreadId,

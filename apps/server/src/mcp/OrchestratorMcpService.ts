@@ -76,6 +76,11 @@ const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
 const TASK_POLL_INTERVAL_MS = 50;
 const DEFAULT_THREAD_LIST_LIMIT = 50;
+/**
+ * UpComputer: agents read any thread of the environment with t3_thread_read,
+ * as the V1 workspace tools did. Search is workspace-wide too (linkedProjects).
+ */
+const WORKSPACE_THREAD_READS = true;
 const DEFAULT_THREAD_READ_LIMIT = 50;
 const DEFAULT_THREAD_RUN_LIMIT = 10;
 const DEFAULT_THREAD_ITEM_MAX_CHARS = 20_000;
@@ -865,7 +870,8 @@ const make = Effect.gen(function* () {
           Effect.mapError(threadManagementFailure),
           Effect.catchIf(
             (error) =>
-              error.code === "thread_not_found" && userAttachedThreadIds(parent).has(threadId),
+              error.code === "thread_not_found" &&
+              (WORKSPACE_THREAD_READS || userAttachedThreadIds(parent).has(threadId)),
             loadTarget,
           ),
         );
