@@ -1,0 +1,36 @@
+name: Branding
+
+# Fails when a merge from upstream brings back T3 identity or copy.
+# See docs/branding.md. The check uses only Node built-ins, so it needs no install.
+
+on:
+  push:
+    branches:
+      - main
+      - next/v2
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check_branding:
+    name: Check Up.computer branding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+
+      - name: Check branding
+        run: node scripts/check-branding.ts

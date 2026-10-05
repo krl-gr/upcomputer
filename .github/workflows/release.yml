@@ -168,6 +168,9 @@ jobs:
             fi
           fi
 
+      - name: Check Up.computer branding
+        run: node scripts/check-branding.ts
+
       - name: Check
         run: vp check
 
