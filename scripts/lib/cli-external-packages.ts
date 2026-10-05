@@ -36,6 +36,12 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "@clerk/electron-passkeys",
   "node-gyp-build",
   "node-addon-api",
+  // Computer use runs the native sidecar this package ships, found by resolving
+  // its package.json at runtime; the desktop unpacks it from app.asar.
+  "open-computer-use",
+  // The managed Chrome host. It reads its own files by resolving
+  // playwright-core/package.json, as the desktop main process does.
+  "playwright-core",
   // ws's optional accelerators. Nothing in this repo declares them, so they are
   // not in the staged production install and the packaged app does not ship
   // them either way -- ws wraps the require in try/catch and falls back to its

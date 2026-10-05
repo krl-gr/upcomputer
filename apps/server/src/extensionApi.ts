@@ -14,6 +14,8 @@ export * from "./product/ServerProduct.ts";
 export type { AnyProviderDriver, ProviderDriver } from "./provider/ProviderDriver.ts";
 export type { BuiltInDriversEnv } from "./provider/builtInDrivers.ts";
 export { McpInvocationContext } from "./mcp/McpInvocationContext.ts";
+export { PreviewAutomationBroker } from "./mcp/PreviewAutomationBroker.ts";
+export { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 export { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 export {
   isActiveRun,

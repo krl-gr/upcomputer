@@ -1,0 +1,30 @@
+{
+  "name": "@t3tools/computer-use-server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./feature": {
+      "types": "./src/serverFeature.ts",
+      "import": "./src/serverFeature.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@t3tools/computer-use-contracts": "workspace:*",
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "effect": "catalog:",
+    "open-computer-use": "0.3.5",
+    "playwright-core": "1.60.0"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

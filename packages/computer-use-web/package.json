@@ -1,0 +1,28 @@
+{
+  "name": "@t3tools/computer-use-web",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./feature": {
+      "types": "./src/feature.tsx",
+      "import": "./src/feature.tsx"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@t3tools/computer-use-contracts": "workspace:*",
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:",
+    "lucide-react": "^0.564.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "~19.3.0",
+    "@types/react-dom": "~19.2.3",
+    "vite": "catalog:"
+  }
+}

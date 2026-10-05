@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ESNext", "esnext.disposable"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // These rules report existing code at suggestion level; tighten them
+        // as the code is cleaned up.
+        "diagnosticSeverity": {
+          "anyUnknownInErrorContext": "suggestion",
+          "deterministicKeys": "suggestion",
+          "globalConsoleInEffect": "suggestion",
+          "globalDate": "suggestion",
+          "globalDateInEffect": "suggestion",
+          "globalErrorInEffectFailure": "suggestion",
+          "instanceOfSchema": "suggestion",
+          "missingReturnYieldStar": "suggestion",
+          "multipleEffectProvide": "suggestion",
+          "nodeBuiltinImport": "suggestion",
+          "preferSchemaOverJson": "suggestion",
+          "unknownInEffectCatch": "suggestion"
+        }
+      }
+    ]
+  },
+  "include": ["src", "vite.config.ts"]
+}
