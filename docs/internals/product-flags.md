@@ -33,10 +33,16 @@ The web composition carries the flags too. Upstream files call `apps/web/src/pro
 
 Web unit tests alias `product/productEntry` to `apps/web/test/coreProductEntry.ts`, so upstream's tests run with upstream's flags. Tests for a hidden feature mock the entry, as `product/productFlags.test.tsx` does.
 
+## Surfaces
+
+Some upstream UI is replaced rather than hidden. `ProductSurfaces` in the same module names each replaceable surface, and its value is `upstream` (exactly upstream's UI) or `upcomputer` (the product's version). `UPSTREAM_PRODUCT_SURFACES` is core's default; the public build passes `UPCOMPUTER_PRODUCT_SURFACES` to the web composition. The product's version lives in its own files, and upstream's file gets a minimal hook through `productSurface` in `apps/web/src/product/productFlags.ts`:
+
+- `sidebarProjects`: the sidebar's Projects section (`apps/web/src/sidebarProjects/`) under the navigation entries, and no project scope button in the sidebar header (`components/sidebar/SidebarThreadHeader.tsx`). The section reads and writes upstream's persisted project scope, so the thread list filters exactly as upstream's scope menu does.
+
 ## Mobile app
 
 The mobile app is not a flag: `pnpm-workspace.yaml` excludes `apps/mobile` from install and build, and `allowUnusedPatches` keeps its patch entries valid. Upstream's mobile CI workflows filter on `@t3tools/mobile` and would fail; this fork does not run them.
 
 ## Sync rule
 
-Every hook goes through `productFlags`, `whenProductFeature` or `isProductFeatureShown`. After an upstream sync, `git grep -n -e productFlags -e whenProductFeature -e isProductFeatureShown` lists the hooks to re-check. When upstream adds a new entry point to a hidden feature, gate it the same way.
+Every hook goes through `productFlags`, `whenProductFeature` or `isProductFeatureShown`. After an upstream sync, `git grep -n -e productFlags -e whenProductFeature -e isProductFeatureShown -e productSurface` lists the hooks to re-check. When upstream adds a new entry point to a hidden feature, gate it the same way.

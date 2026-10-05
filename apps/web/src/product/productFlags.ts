@@ -3,6 +3,8 @@ import {
   isProductRightPanelSurfaceShown,
   isProductSettingsSearchItemShown,
   type ProductFlag,
+  type ProductSurface,
+  type ProductSurfaceVariant,
 } from "@t3tools/shared/productFlags";
 
 import { WEB_PRODUCT } from "./productEntry";
@@ -15,6 +17,11 @@ import { WEB_PRODUCT } from "./productEntry";
 
 export function isProductFeatureShown(flag: ProductFlag): boolean {
   return WEB_PRODUCT.flags[flag];
+}
+
+/** Which version of a replaceable UI surface this build shows. */
+export function productSurface(surface: ProductSurface): ProductSurfaceVariant {
+  return WEB_PRODUCT.surfaces[surface];
 }
 
 /** Drops the keybindings of hidden features, so their shortcuts, labels and settings rows go too. */

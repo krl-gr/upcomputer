@@ -154,7 +154,7 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
-import { isProductFeatureShown } from "../product/productFlags";
+import { isProductFeatureShown, productSurface } from "../product/productFlags";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
@@ -219,6 +219,7 @@ import {
   type SidebarSection,
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
+import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -5007,6 +5008,9 @@ export default function Sidebar() {
               onClearSearch={clearThreadSearch}
             />
             <ProductSidebarNavigation />
+            {productSurface("sidebarProjects") === "upcomputer" ? (
+              <SidebarProjectsSection projectGroups={projectGroups} />
+            ) : null}
           </SidebarGroup>
         }
       >

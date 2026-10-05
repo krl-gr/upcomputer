@@ -1,6 +1,11 @@
 import { RpcScopeAuthorization, WsRpcGroup } from "@t3tools/contracts";
 import { makeWsRpcProtocolClient } from "@t3tools/client-runtime/rpc";
-import { UPSTREAM_PRODUCT_FLAGS, type ProductFlags } from "@t3tools/shared/productFlags";
+import {
+  UPSTREAM_PRODUCT_FLAGS,
+  UPSTREAM_PRODUCT_SURFACES,
+  type ProductFlags,
+  type ProductSurfaces,
+} from "@t3tools/shared/productFlags";
 import type * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -27,11 +32,15 @@ export interface ExperimentalWebProductComposition {
   readonly makeRpcClient: typeof makeWsRpcProtocolClient;
   /** Upstream features this build shows; see `@t3tools/shared/productFlags`. */
   readonly flags: ProductFlags;
+  /** Which version of each replaceable UI surface this build shows. */
+  readonly surfaces: ProductSurfaces;
 }
 
 export interface ExperimentalWebProductOptions {
   /** Defaults to upstream's: every upstream feature shown. */
   readonly flags?: ProductFlags;
+  /** Defaults to upstream's: every surface as upstream ships it. */
+  readonly surfaces?: ProductSurfaces;
 }
 
 const byOrder = <T extends { readonly id: string; readonly order?: number }>(left: T, right: T) =>
@@ -113,6 +122,7 @@ export function composeExperimentalWebFeatures(
     rpcGroup,
     makeRpcClient: rpcGroup === WsRpcGroup ? makeWsRpcProtocolClient : RpcClient.make(rpcGroup),
     flags: Object.freeze({ ...(options.flags ?? UPSTREAM_PRODUCT_FLAGS) }),
+    surfaces: Object.freeze({ ...(options.surfaces ?? UPSTREAM_PRODUCT_SURFACES) }),
   });
 }
 

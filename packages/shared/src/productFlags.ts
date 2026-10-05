@@ -37,6 +37,29 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   devices: false,
 });
 
+/**
+ * UI surfaces a product can replace with its own version. Each one is either
+ * `upstream` (exactly upstream's UI) or `upcomputer` (the product's version,
+ * in the product's own files, behind a minimal hook in upstream's file). Web
+ * reads them through `productSurface` in `apps/web/src/product/productFlags.ts`.
+ */
+export type ProductSurfaceVariant = "upstream" | "upcomputer";
+
+export interface ProductSurfaces {
+  /** The sidebar's Projects section, in place of the header's project scope button. */
+  readonly sidebarProjects: ProductSurfaceVariant;
+}
+
+export type ProductSurface = keyof ProductSurfaces;
+
+export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
+  sidebarProjects: "upstream",
+});
+
+export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
+  sidebarProjects: "upcomputer",
+});
+
 type CapabilityKey = {
   [K in keyof ExecutionEnvironmentCapabilities]-?: NonNullable<
     ExecutionEnvironmentCapabilities[K]

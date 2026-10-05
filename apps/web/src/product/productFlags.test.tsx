@@ -6,26 +6,36 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { RightPanelTabs } from "../components/RightPanelTabs";
+import { SidebarThreadHeader } from "../components/sidebar/SidebarThreadHeader";
+import { SidebarProvider } from "../components/ui/sidebar";
 import { filterAvailableSettingsSearchItems } from "../components/settings/settingsSearch";
 import {
   isProductFeatureShown,
   isProductKeybindingShown,
   isProductSettingsSearchItemVisible,
+  productSurface,
   withoutHiddenProductKeybindings,
 } from "./productFlags";
 
-// Unit tests see core with upstream's flags; this file switches to the
-// UpComputer product's flags per test.
+// Unit tests see core with upstream's flags and surfaces; this file switches
+// to the UpComputer product's per test.
 const product = vi.hoisted(() => ({ hidden: false }));
 vi.mock("./productEntry", async () => {
   const { composeExperimentalWebFeatures } = await import("./WebProduct");
-  const { UPCOMPUTER_PRODUCT_FLAGS, UPSTREAM_PRODUCT_FLAGS } =
-    await import("@t3tools/shared/productFlags");
+  const {
+    UPCOMPUTER_PRODUCT_FLAGS,
+    UPCOMPUTER_PRODUCT_SURFACES,
+    UPSTREAM_PRODUCT_FLAGS,
+    UPSTREAM_PRODUCT_SURFACES,
+  } = await import("@t3tools/shared/productFlags");
   return {
     WEB_PRODUCT: {
       ...composeExperimentalWebFeatures([]),
       get flags() {
         return product.hidden ? UPCOMPUTER_PRODUCT_FLAGS : UPSTREAM_PRODUCT_FLAGS;
+      },
+      get surfaces() {
+        return product.hidden ? UPCOMPUTER_PRODUCT_SURFACES : UPSTREAM_PRODUCT_SURFACES;
       },
     },
   };
@@ -141,5 +151,45 @@ describe("hidden upstream features in the web app", () => {
     expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(10);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
+  });
+});
+
+function renderSidebarHeader() {
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <SidebarThreadHeader
+        hasProjects
+        projectScope={<span>project-scope-menu</span>}
+        onNewProject={() => undefined}
+        onNewThread={() => undefined}
+        newThreadDisabled={false}
+        newThreadShortcutLabel={null}
+        newThreadInProjectShortcutLabel={null}
+        showNewThreadInProjectHint={false}
+        searchInputRef={{ current: null }}
+        searchQuery=""
+        onSearchQueryChange={() => undefined}
+        onSearchKeyDown={() => undefined}
+        isSearching={false}
+        searchResultCount={0}
+        activeSearchResultIndex={0}
+        onClearSearch={() => undefined}
+      />
+    </SidebarProvider>,
+  );
+}
+
+describe("replaceable surfaces in the web app", () => {
+  it("keeps upstream's project scope button in the sidebar header with upstream's surfaces", () => {
+    expect(productSurface("sidebarProjects")).toBe("upstream");
+    expect(renderSidebarHeader()).toContain("project-scope-menu");
+  });
+
+  it("drops the header's project scope button for the UpComputer Projects section", () => {
+    product.hidden = true;
+    expect(productSurface("sidebarProjects")).toBe("upcomputer");
+    const html = renderSidebarHeader();
+    expect(html).not.toContain("project-scope-menu");
+    expect(html).toContain('aria-label="Add project"');
   });
 });
