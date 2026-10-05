@@ -6,6 +6,7 @@
 export * from "./product/FeatureRpc";
 export * from "./product/WebFeature";
 export * from "./product/WebProduct";
+export { WorkspacePageHeader } from "./components/WorkspacePageHeader";
 export {
   UPCOMPUTER_PRODUCT_FLAGS,
   UPCOMPUTER_PRODUCT_SURFACES,

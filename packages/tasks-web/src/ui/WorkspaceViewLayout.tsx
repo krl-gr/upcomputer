@@ -3,9 +3,8 @@ import { useCallback, useEffect, type ReactNode } from "react";
 import { PlusIcon } from "lucide-react";
 
 import { isElectron } from "../../../../apps/web/src/env.ts";
-import { cn } from "../../../../apps/web/src/lib/utils.ts";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../../../apps/web/src/workspaceTitlebar.ts";
-import { SidebarInset, SidebarTrigger } from "../../../../apps/web/src/components/ui/sidebar.tsx";
+import { WorkspacePageHeader } from "../../../../apps/web/src/extensionApi.ts";
+import { SidebarInset } from "../../../../apps/web/src/components/ui/sidebar.tsx";
 
 export interface WorkspaceViewAction {
   readonly ariaLabel: string;
@@ -17,7 +16,17 @@ export interface WorkspaceViewAction {
   readonly title?: string;
 }
 
-/** Shared main-area shell used by the Tasks and Agents routes. */
+/**
+ * The horizontal gutters of upstream's `WorkspacePageHeader`, so page content
+ * starts under the page title and ends under the header's last control.
+ */
+const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)";
+
+/**
+ * Shared main-area shell of the Tasks, Agents and Automations routes: upstream's
+ * page header (title or back control on the left, controls on the right) over
+ * content inside the same gutters. The sidebar toggle is upstream's shared one.
+ */
 export function WorkspaceViewLayout({
   title,
   titleDetail,
@@ -51,15 +60,7 @@ export function WorkspaceViewLayout({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground">
-        <header
-          className={cn(
-            "flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
-            isElectron &&
-              "drag-region wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
-            isElectron && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
-          <SidebarTrigger className="size-8 rounded-full !bg-transparent text-muted-foreground hover:!bg-transparent hover:text-foreground focus-visible:!ring-0 focus-visible:ring-offset-0 active:!bg-transparent data-pressed:!bg-transparent dark:text-white/50 dark:hover:text-white/86" />
+        <WorkspacePageHeader electron={isElectron}>
           {leadingAction ? (
             <button
               aria-label={leadingAction.ariaLabel}
@@ -74,7 +75,7 @@ export function WorkspaceViewLayout({
             </button>
           ) : null}
           {title ? (
-            <span
+            <h1
               className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
             >
               {title}
@@ -87,10 +88,10 @@ export function WorkspaceViewLayout({
                   {titleDetail}
                 </span>
               ) : null}
-            </span>
+            </h1>
           ) : null}
           {toolbar ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-webkit-app-region:no-drag] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {toolbar}
             </div>
           ) : null}
@@ -107,8 +108,12 @@ export function WorkspaceViewLayout({
               {action.label ? <span className="text-sm">{action.label}</span> : null}
             </button>
           ) : null}
-        </header>
-        <div className="min-h-0 flex flex-1 flex-col overflow-auto">{children}</div>
+        </WorkspacePageHeader>
+        <div
+          className={`min-h-0 flex flex-1 flex-col overflow-auto ${WORKSPACE_CONTENT_GUTTER_CLASS}`}
+        >
+          {children}
+        </div>
       </div>
     </SidebarInset>
   );

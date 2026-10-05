@@ -719,7 +719,7 @@ export function TasksView(props: TasksViewProps) {
       }
     >
       {selectedTask ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
               <DetailSidebarSection
@@ -1027,7 +1027,7 @@ export function TasksView(props: TasksViewProps) {
           </div>
         </div>
       ) : createModeOpen ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <textarea
@@ -1131,7 +1131,7 @@ export function TasksView(props: TasksViewProps) {
           </div>
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-[1600px] min-w-0 flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-5 py-6">
           {environmentCount > 1 ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               Task order is global within each connected environment. Environments are grouped
@@ -1173,7 +1173,7 @@ export function TasksView(props: TasksViewProps) {
               <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-12 px-2 py-3 font-medium">
+                    <th className="w-12 py-3 pr-2 font-medium">
                       <span className="sr-only">Order</span>
                     </th>
                     <th className="px-4 py-3 font-medium">Title</th>
@@ -1204,7 +1204,7 @@ export function TasksView(props: TasksViewProps) {
                         }}
                         onClick={() => openTask(task)}
                       >
-                        <td className="px-2 py-3 align-top">
+                        <td className="py-3 pr-2 align-top">
                           <TaskReorderHandle
                             task={task}
                             enabled={props.canMutateEnvironment(task.environmentId)}

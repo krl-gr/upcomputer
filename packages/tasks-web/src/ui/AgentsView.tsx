@@ -234,7 +234,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
         if (!eventTargetsInteractiveRowDescendant(event)) onOpen();
       }}
     >
-      <td className="truncate px-4 py-4 font-medium text-foreground">
+      <td className="truncate py-4 pr-4 font-medium text-foreground">
         <button
           type="button"
           className="block max-w-full truncate text-left font-medium text-foreground"
@@ -720,15 +720,19 @@ export function AgentsView(props: AgentsViewProps) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {editingAgent.name}
             </span>
-            <Switch
-              checked={form.enabled}
-              disabled={!canEditAgent}
-              aria-label={`${form.enabled ? "Pause" : "Enable"} ${editingAgent.name}`}
-              onCheckedChange={(checked) => {
-                const enabled = Boolean(checked);
-                if (enabled !== form.enabled) commitForm({ ...form, enabled });
-              }}
-            />
+            {/* Base UI's Switch is a span, which the header's drag region would
+                otherwise swallow in Electron. */}
+            <span className="flex shrink-0 [-webkit-app-region:no-drag]">
+              <Switch
+                checked={form.enabled}
+                disabled={!canEditAgent}
+                aria-label={`${form.enabled ? "Pause" : "Enable"} ${editingAgent.name}`}
+                onCheckedChange={(checked) => {
+                  const enabled = Boolean(checked);
+                  if (enabled !== form.enabled) commitForm({ ...form, enabled });
+                }}
+              />
+            </span>
           </>
         ) : undefined
       }
@@ -743,7 +747,7 @@ export function AgentsView(props: AgentsViewProps) {
       }
     >
       {editingAgent ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               {canEditAgent ? (
@@ -1092,7 +1096,7 @@ export function AgentsView(props: AgentsViewProps) {
           </div>
         </div>
       ) : isCreateMode ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <textarea
@@ -1321,7 +1325,7 @@ export function AgentsView(props: AgentsViewProps) {
           </div>
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-[1600px] min-w-0 flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-5 py-6">
           {hasReadOnlyProjects ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               Some projects are read-only or do not currently have an available default provider and
@@ -1347,7 +1351,7 @@ export function AgentsView(props: AgentsViewProps) {
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-[18%] px-4 py-3 font-medium">Name</th>
+                    <th className="w-[18%] py-3 pr-4 font-medium">Name</th>
                     <th className="w-[15%] px-4 py-3 font-medium">Project</th>
                     <th className="w-[25%] px-4 py-3 font-medium">Model</th>
                     <th className="px-4 py-3 font-medium">Triggers</th>

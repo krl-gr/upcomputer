@@ -562,15 +562,19 @@ export function AutomationsView(props: AutomationsViewProps) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {editingAutomation.name}
             </span>
-            <Switch
-              checked={detailStatus === "enabled"}
-              disabled={!canEditAutomation}
-              aria-label={`${detailStatus === "enabled" ? "Pause" : "Enable"} ${editingAutomation.name}`}
-              onCheckedChange={(checked) => {
-                const nextStatus = checked ? "enabled" : "disabled";
-                if (nextStatus !== detailStatus) void setStatus(editingAutomation, nextStatus);
-              }}
-            />
+            {/* Base UI's Switch is a span, which the header's drag region would
+                otherwise swallow in Electron. */}
+            <span className="flex shrink-0 [-webkit-app-region:no-drag]">
+              <Switch
+                checked={detailStatus === "enabled"}
+                disabled={!canEditAutomation}
+                aria-label={`${detailStatus === "enabled" ? "Pause" : "Enable"} ${editingAutomation.name}`}
+                onCheckedChange={(checked) => {
+                  const nextStatus = checked ? "enabled" : "disabled";
+                  if (nextStatus !== detailStatus) void setStatus(editingAutomation, nextStatus);
+                }}
+              />
+            </span>
           </>
         ) : undefined
       }
@@ -585,7 +589,7 @@ export function AutomationsView(props: AutomationsViewProps) {
       }
     >
       {editingAutomation ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               {canEditAutomation ? (
@@ -997,7 +1001,7 @@ export function AutomationsView(props: AutomationsViewProps) {
           </div>
         </div>
       ) : isCreateMode ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 p-5">
+        <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <textarea
@@ -1300,7 +1304,7 @@ export function AutomationsView(props: AutomationsViewProps) {
           </div>
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-[1600px] min-w-0 flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-5 py-6">
           {drafts.length > 0 ? (
             <div className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-sm text-foreground">
               {drafts.length === 1
@@ -1326,7 +1330,7 @@ export function AutomationsView(props: AutomationsViewProps) {
               <table className="w-full min-w-[1200px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-[17%] px-4 py-3 font-medium">Name</th>
+                    <th className="w-[17%] py-3 pr-4 font-medium">Name</th>
                     <th className="w-[14%] px-4 py-3 font-medium">Project</th>
                     <th className="w-[20%] px-4 py-3 font-medium">Schedule</th>
                     <th className="px-4 py-3 font-medium">Creates</th>
@@ -1352,7 +1356,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                         className="cursor-pointer border-b border-border transition-colors hover:bg-muted/20"
                         onClick={() => openEdit(automation)}
                       >
-                        <td className="truncate px-4 py-4 font-medium text-foreground">
+                        <td className="truncate py-4 pr-4 font-medium text-foreground">
                           <button
                             type="button"
                             className="inline-block max-w-full truncate text-left font-medium text-foreground"

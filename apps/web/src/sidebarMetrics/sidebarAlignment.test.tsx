@@ -86,6 +86,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { chromium, type Browser } from "playwright-core";
 import { createServer } from "vite-plus";
 
+import type { ReactElement } from "react";
+
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import type { SidebarCompactThreadRowProps } from "../sidebarThreadRow/SidebarCompactThreadRow";
 
@@ -97,6 +99,8 @@ const { ProductSidebarNavigation } = await import("../product/ProductSlots");
 const { SidebarProjectsSection } = await import("../sidebarProjects/SidebarProjectsSection");
 const { SidebarThreadsSectionHeader } = await import("../sidebarProjects/SidebarThreadsSection");
 const { SidebarCompactThreadRow } = await import("../sidebarThreadRow/SidebarCompactThreadRow");
+const { WorkspaceViewLayout } =
+  await import("../../../../packages/tasks-web/src/ui/WorkspaceViewLayout.tsx");
 
 const WEB_ROOT = NodeURL.fileURLToPath(new URL("../..", import.meta.url));
 
@@ -216,12 +220,12 @@ function SidebarUnderTest() {
   );
 }
 
-async function renderSidebarMarkup(): Promise<string> {
+async function renderMarkup(element: ReactElement): Promise<string> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<SidebarUnderTest />);
+    root.render(element);
   });
   const html = container.innerHTML;
   await act(async () => root.unmount());
@@ -248,6 +252,9 @@ async function compileAppCss(): Promise<string> {
     await server.close();
   }
 }
+
+let appCss: Promise<string> | undefined;
+const compiledAppCss = () => (appCss ??= compileAppCss());
 
 /** Prefers the installed Chrome, then Playwright's Chromium. */
 async function launchBrowser(): Promise<Browser | null> {
@@ -324,11 +331,15 @@ const expectWithinPixel = (what: string, actual: number, expected: number) =>
 
 const browser = await launchBrowser();
 
+afterAll(async () => {
+  await browser?.close();
+});
+
 describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)", () => {
   let rows: Map<string, MeasuredRow>;
 
   beforeAll(async () => {
-    const [markup, css] = await Promise.all([renderSidebarMarkup(), compileAppCss()]);
+    const [markup, css] = await Promise.all([renderMarkup(<SidebarUnderTest />), compiledAppCss()]);
     const page = await browser!.newPage({ viewport: { width: 800, height: 900 } });
     await page.setContent(
       `<!doctype html><html><head><style>${css}</style></head><body>${markup}</body></html>`,
@@ -336,10 +347,6 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
     rows = new Map((await page.evaluate(measureRows, ROWS)).map((row) => [row.name, row]));
     await page.close();
   }, 60_000);
-
-  afterAll(async () => {
-    await browser?.close();
-  });
 
   const row = (name: string) => rows.get(name)!;
 
@@ -374,5 +381,107 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
       .concat(gapsBetween([row("More"), row("Threads")]));
     expect(sectionGaps).toEqual([sectionGaps[0], sectionGaps[0], sectionGaps[0]]);
     expect(sectionGaps[0]).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The Tasks feature's page shell (`WorkspaceViewLayout`) with a title, a
+ * control on the right like the Tasks filters, and a table as its content.
+ */
+function TasksPageUnderTest({ sidebarOpen }: { readonly sidebarOpen: boolean }) {
+  return (
+    <SidebarProvider defaultOpen={sidebarOpen}>
+      <WorkspaceViewLayout
+        title="Tasks"
+        toolbar={
+          <>
+            <span className="min-w-0 flex-1" />
+            <button type="button">All statuses</button>
+          </>
+        }
+        onNavigateBack={() => undefined}
+      >
+        <table data-page-content className="w-full">
+          <tbody>
+            <tr>
+              <td>Row</td>
+            </tr>
+          </tbody>
+        </table>
+      </WorkspaceViewLayout>
+    </SidebarProvider>
+  );
+}
+
+interface MeasuredPage {
+  readonly headerHeight: number;
+  readonly topbarHeight: number;
+  readonly titleLeft: number;
+  readonly titlebarContentLeft: number;
+  readonly controlRight: number;
+  readonly contentLeft: number;
+  readonly contentRight: number;
+}
+
+/** Runs in the page: the page header, its title and control, and the content's edges. */
+function measurePage(): MeasuredPage {
+  const header = document.querySelector("header")!;
+  const content = document.querySelector("[data-page-content]")!.getBoundingClientRect();
+  const probe = document.createElement("div");
+  probe.style.width = "var(--workspace-titlebar-content-left)";
+  header.append(probe);
+  const titlebarContentLeft = probe.getBoundingClientRect().width;
+  probe.style.width = "var(--workspace-topbar-height)";
+  const topbarHeight = probe.getBoundingClientRect().width;
+  probe.remove();
+  return {
+    headerHeight: header.getBoundingClientRect().height,
+    topbarHeight,
+    titleLeft: header.querySelector("h1")!.getBoundingClientRect().left,
+    titlebarContentLeft,
+    controlRight: header.querySelector("button")!.getBoundingClientRect().right,
+    contentLeft: content.left,
+    contentRight: content.right,
+  };
+}
+
+describe.skipIf(browser === null)("Tasks page header alignment (real layout in Chromium)", () => {
+  const pages = new Map<"open" | "collapsed", MeasuredPage>();
+
+  beforeAll(async () => {
+    const css = await compiledAppCss();
+    for (const state of ["open", "collapsed"] as const) {
+      const markup = await renderMarkup(<TasksPageUnderTest sidebarOpen={state === "open"} />);
+      const page = await browser!.newPage({ viewport: { width: 1200, height: 800 } });
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body>${markup}</body></html>`,
+      );
+      pages.set(state, await page.evaluate(measurePage));
+      await page.close();
+    }
+  }, 60_000);
+
+  it("uses the shared top bar height", () => {
+    const open = pages.get("open")!;
+    expect(open.topbarHeight).toBeGreaterThan(0);
+    expectWithinPixel("header height", open.headerHeight, open.topbarHeight);
+  });
+
+  it("starts the content under the page title and ends it under the last control", () => {
+    const open = pages.get("open")!;
+    expect(open.contentLeft).toBeGreaterThan(0);
+    expectWithinPixel("content left edge", open.contentLeft, open.titleLeft);
+    expectWithinPixel("content right edge", open.contentRight, open.controlRight);
+  });
+
+  it("moves the title clear of the shared sidebar toggle when the sidebar is collapsed", () => {
+    const collapsed = pages.get("collapsed")!;
+    expect(collapsed.titlebarContentLeft).toBeGreaterThan(collapsed.contentLeft);
+    expectWithinPixel("collapsed title", collapsed.titleLeft, collapsed.titlebarContentLeft);
+    expectWithinPixel(
+      "collapsed content left edge",
+      collapsed.contentLeft,
+      pages.get("open")!.contentLeft,
+    );
   });
 });
