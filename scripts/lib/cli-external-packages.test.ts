@@ -90,6 +90,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
         "node-pty",
         "open-computer-use",
         "playwright-core",
+        "zod",
       ],
     );
   });

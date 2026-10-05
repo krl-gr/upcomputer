@@ -56,6 +56,9 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
 
 // These are Cursor's disk-backed dependency closure. Match package boundaries
 // so "zod" does not also externalize unrelated packages such as zod-to-json-schema.
+// Externalizing one is global: bundled code that imports it (the MCP SDK behind
+// computer use imports zod) resolves it from apps/server, so the server declares
+// such a package itself.
 const CURSOR_RUNTIME_DEPENDENCIES = [
   "@bufbuild/protobuf",
   "@connectrpc/connect",
