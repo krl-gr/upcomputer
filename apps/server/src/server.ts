@@ -174,7 +174,12 @@ import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
-import { productFeatureLayer, productHttpRoutesLayer } from "./product/ServerProduct.ts";
+import {
+  isProductFeatureShown,
+  productFeatureLayer,
+  productHttpRoutesLayer,
+  whenProductFeature,
+} from "./product/ServerProduct.ts";
 import * as UserInstructions from "./provider/UserInstructions.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
@@ -509,13 +514,14 @@ const ProviderInstallationRefreshLive = Layer.effectDiscard(
 
 const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   AgentAwarenessRelay.layer,
-  ThreadSettlementWorkerLive,
+  whenProductFeature("threadSettlement", ThreadSettlementWorkerLive),
   Layer.effectDiscard(StorageCleanup.make.pipe(Effect.flatMap((service) => service.start()))).pipe(
     Layer.provide(ProjectionStoreV2.layer),
   ),
-  ThreadPullRequestWorkerLive,
+  whenProductFeature("pullRequests", ThreadPullRequestWorkerLive),
   Layer.effectDiscard(
     Effect.gen(function* () {
+      if (!(yield* isProductFeatureShown("pullRequests"))) return;
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       yield* service.start();
     }),
@@ -526,6 +532,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ),
   Layer.effectDiscard(
     Effect.gen(function* () {
+      if (!(yield* isProductFeatureShown("pullRequests"))) return;
       const service = yield* PullRequestWatchReactor.PullRequestWatchReactor;
       yield* service.start();
     }),

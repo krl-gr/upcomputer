@@ -3,6 +3,8 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
+import { UPCOMPUTER_PRODUCT_FLAGS, UPSTREAM_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -14,6 +16,7 @@ import {
   eraseExperimentalServerLayer,
   productFeatureLayer,
   productMcpToolsLayer,
+  whenProductFeature,
   withProductDefaultInstances,
   withProductProviderDrivers,
 } from "./ServerProduct.ts";
@@ -185,5 +188,34 @@ describe("server product composition", () => {
         ),
       ),
     ),
+  );
+
+  it("keeps upstream's flags unless the product sets its own", () => {
+    expect(composeExperimentalServerFeatures([]).flags).toEqual(UPSTREAM_PRODUCT_FLAGS);
+    expect(
+      composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }).flags,
+    ).toEqual(UPCOMPUTER_PRODUCT_FLAGS);
+  });
+
+  it.effect("builds a flagged layer only when the product shows that feature", () =>
+    Effect.gen(function* () {
+      const started = yield* Ref.make<ReadonlyArray<string>>([]);
+      const job = (name: string) =>
+        Layer.effectDiscard(Ref.update(started, (names) => [...names, name]));
+      const startJobs = (product?: ReturnType<typeof composeExperimentalServerFeatures>) =>
+        Layer.build(
+          Layer.mergeAll(
+            whenProductFeature("pullRequests", job("pull-request-sync")),
+            whenProductFeature("threadSettlement", job("settlement")),
+          ).pipe(product ? Layer.provide(Layer.succeed(ServerProduct, product)) : (layer) => layer),
+        ).pipe(Effect.scoped);
+
+      // Core without a product: upstream behaviour, every job starts.
+      yield* startJobs();
+      expect(yield* Ref.getAndSet(started, [])).toEqual(["pull-request-sync", "settlement"]);
+
+      yield* startJobs(composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }));
+      expect(yield* Ref.get(started)).toEqual([]);
+    }),
   );
 });

@@ -16,6 +16,11 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import {
+  UPSTREAM_PRODUCT_FLAGS,
+  type ProductFlag,
+  type ProductFlags,
+} from "@t3tools/shared/productFlags";
 
 import type { AnyProviderDriver } from "../provider/ProviderDriver.ts";
 import type { BuiltInDriversEnv } from "../provider/builtInDrivers.ts";
@@ -88,6 +93,13 @@ export interface ExperimentalServerProductComposition {
   readonly httpRoutesLayer: ExperimentalOpaqueServerLayer;
   readonly rpc: ReadonlyArray<AnyNamespacedRpcContribution>;
   readonly providerDrivers: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>>;
+  /** Upstream features this product shows; see `@t3tools/shared/productFlags`. */
+  readonly flags: ProductFlags;
+}
+
+export interface ExperimentalServerProductOptions {
+  /** Defaults to upstream's: every upstream feature shown. */
+  readonly flags?: ProductFlags;
 }
 
 export class ServerProductCompositionError extends Error {
@@ -167,6 +179,7 @@ export function defineExperimentalServerFeature<
 /** Validates the features once at build time and precomputes what each hook point reads. */
 export function composeExperimentalServerFeatures(
   input: ReadonlyArray<ExperimentalServerFeatureContribution>,
+  options: ExperimentalServerProductOptions = {},
 ): ExperimentalServerProductComposition {
   const features = [...input].sort((left, right) => left.id.localeCompare(right.id));
   const featureIds = new Set<string>();
@@ -253,6 +266,7 @@ export function composeExperimentalServerFeatures(
     httpRoutesLayer: eraseExperimentalServerLayer(httpRouteContributionsLayer(httpRoutes)),
     rpc: createRpcContributionPlan(rpc),
     providerDrivers: Object.freeze(drivers.map(({ driver }) => driver)),
+    flags: Object.freeze({ ...(options.flags ?? UPSTREAM_PRODUCT_FLAGS) }),
   });
 }
 
@@ -284,6 +298,25 @@ export const productHttpRoutesLayer = Layer.unwrap(
     return (yield* ServerProduct).httpRoutesLayer;
   }),
 );
+
+/** Whether the running product shows an upstream feature; see `@t3tools/shared/productFlags`. */
+export const isProductFeatureShown = (flag: ProductFlag) =>
+  Effect.gen(function* () {
+    return (yield* ServerProduct).flags[flag];
+  });
+
+/**
+ * Hook for upstream background work and tools behind a product flag: the
+ * layer runs only when the product shows that feature.
+ */
+export function whenProductFeature<E, R>(
+  flag: ProductFlag,
+  layer: Layer.Layer<never, E, R>,
+): Layer.Layer<never, E, R> {
+  return Layer.unwrap(
+    Effect.map(isProductFeatureShown(flag), (shown) => (shown ? layer : Layer.empty)),
+  );
+}
 
 /** Built-in drivers followed by the product's; a product cannot replace a built-in kind. */
 export function withProductProviderDrivers(

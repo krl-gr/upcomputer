@@ -207,6 +207,10 @@
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
     },
+    "./productFlags": {
+      "types": "./src/productFlags.ts",
+      "import": "./src/productFlags.ts"
+    },
     "./threadReference": {
       "types": "./src/threadReference.ts",
       "import": "./src/threadReference.ts"

@@ -17,6 +17,7 @@ import {
   HostProcessPlatform,
 } from "@t3tools/shared/hostProcess";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
@@ -25,6 +26,7 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
+import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
 const isServerEnvironmentIdPersistenceError = Schema.is(
@@ -228,6 +230,39 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.serverResolvedCommandContext).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
+      expect(second.capabilities.threadSettlement).toBe(true);
+      expect(second.capabilities.threadAutoSettlement).toBe(true);
+    }),
+  );
+
+  it.effect("stops advertising the upstream features the product hides", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-environment-test-",
+      });
+
+      const { capabilities } = yield* Effect.gen(function* () {
+        const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* serverEnvironment.getDescriptor;
+      }).pipe(
+        Effect.provide(makeServerEnvironmentLayer(baseDir)),
+        Effect.provideService(
+          ServerProduct,
+          composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }),
+        ),
+      );
+
+      expect(capabilities.pullRequests).toBe(false);
+      expect(capabilities.threadPullRequests).toBe(false);
+      expect(capabilities.threadPullRequestWatch).toBe(false);
+      expect(capabilities.threadSettlement).toBe(false);
+      expect(capabilities.threadAutoSettlement).toBe(false);
+      expect(capabilities.threadAutoSettleOptOut).toBe(false);
+      // Snooze and the rest of core stay.
+      expect(capabilities.threadSnooze).toBe(true);
+      expect(capabilities.threadPinning).toBe(true);
+      expect(capabilities.repositoryIdentity).toBe(true);
     }),
   );
 

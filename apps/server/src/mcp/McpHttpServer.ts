@@ -58,7 +58,7 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
-import { productMcpToolsLayer } from "../product/ServerProduct.ts";
+import { productMcpToolsLayer, whenProductFeature } from "../product/ServerProduct.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -728,8 +728,8 @@ export const layer = productMcpToolsLayer.pipe(
       EnvironmentRegistrationLive,
       PreviewControlsRegistrationLive,
       WorktreeToolkitRegistrationLive,
-      PullRequestsToolkitRegistrationLive,
-      DeviceToolkitRegistrationLive,
+      whenProductFeature("pullRequests", PullRequestsToolkitRegistrationLive),
+      whenProductFeature("devices", DeviceToolkitRegistrationLive),
     ),
   ),
   Layer.provideMerge(McpTransportLive),
