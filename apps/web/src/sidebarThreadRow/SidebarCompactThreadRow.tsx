@@ -3,16 +3,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  CircleAlertIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  EllipsisIcon,
-  MessageCircleQuestionIcon,
-  PinIcon,
-  ShieldQuestionIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { EllipsisIcon, PinIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -29,10 +20,8 @@ import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
   resolveSidebarThreadStatus,
-  resolveSidebarV2TopStatus,
   resolveThreadLastVisitedAt,
   type SidebarDropVerb,
-  type SidebarV2TopStatusKind,
 } from "../components/Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
@@ -41,6 +30,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
+import { resolveThreadStatusLabel, ThreadStatusLabel } from "./ThreadStatusLabel";
 
 type SweepAction = "settle" | "unsettle" | "unsnooze";
 
@@ -82,25 +72,6 @@ export interface SidebarCompactThreadRowProps {
   readonly onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
   readonly onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
 }
-
-// Upstream's status icons and hues (see the card row in Sidebar.tsx), reduced
-// to an icon so the row stays on one line.
-const STATUS_INDICATORS: Record<
-  Exclude<SidebarV2TopStatusKind, "woke">,
-  { readonly label: string; readonly icon: LucideIcon; readonly className: string }
-> = {
-  working: { label: "Working", icon: CircleDashedIcon, className: "text-info" },
-  waiting: { label: "Waiting", icon: CircleDashedIcon, className: "text-muted-foreground" },
-  approval: { label: "Approval", icon: ShieldQuestionIcon, className: "text-warning-foreground" },
-  input: {
-    label: "Input",
-    icon: MessageCircleQuestionIcon,
-    className: "text-indigo-600 dark:text-indigo-300",
-  },
-  limited: { label: "Limited", icon: CircleAlertIcon, className: "text-warning" },
-  failed: { label: "Failed", icon: CircleAlertIcon, className: "text-error" },
-  done: { label: "Done", icon: CircleCheckIcon, className: "text-success" },
-};
 
 const DROP_VERB_LABELS: Record<SidebarDropVerb, string> = {
   pin: "Pin",
@@ -161,16 +132,14 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const topStatus = resolveSidebarV2TopStatus({
+  const statusLabel = resolveThreadStatusLabel({
     status: resolveSidebarThreadStatus(thread),
     isUnread,
     isWoke: false,
   });
-  const indicator =
-    topStatus === null || topStatus === "woke" ? null : STATUS_INDICATORS[topStatus];
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: indicator?.label ?? null,
+    statusLabel: statusLabel?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -265,7 +234,6 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
       ? "wake"
       : props.sweepAction;
   const isSnoozedRow = props.variantAction === "unsnooze" && props.snoozeWakeLabelText !== null;
-  const StatusIcon = indicator?.icon;
 
   return (
     <li
@@ -288,7 +256,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               aria-busy={thread.titleRegeneration != null || undefined}
               data-testid="sidebar-row-compact"
               className={cn(
-                "group/sidebar-row relative flex h-8 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                "group/sidebar-row relative flex h-8 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 props.isActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : isSelected || props.sweepAction !== null
@@ -326,14 +294,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
           {props.project ? (
             <ProjectFavicon project={props.project} className="size-4 shrink-0" />
           ) : null}
-          {indicator && StatusIcon ? (
-            <StatusIcon
-              role="img"
-              aria-label={indicator.label}
-              data-testid="sidebar-row-status"
-              className={cn("size-3.5 shrink-0", indicator.className)}
-            />
-          ) : null}
+          <ThreadStatusLabel status={statusLabel} />
           {isRenaming ? (
             <input
               autoFocus
@@ -356,11 +317,12 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               ref={titleRef}
               aria-hidden
               className={cn(
+                // One tone for every title, as V1: unread and statuses show
+                // only through the status label.
                 "min-w-0 flex-1 truncate text-sm",
-                props.isActive || isUnread || indicator !== null
+                props.isActive
                   ? "text-foreground"
-                  : "text-secondary-label group-hover/sidebar-row:text-foreground",
-                isUnread && "font-medium",
+                  : "text-foreground/72 group-hover/sidebar-row:text-foreground dark:text-foreground/82",
                 thread.titleRegeneration != null && "opacity-55",
               )}
             >
@@ -380,7 +342,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                   the time (task runs) stays, and the block moves left instead. */}
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 text-xs tabular-nums text-secondary-label transition-[padding] motion-reduce:transition-none",
+                  "inline-flex items-center gap-1 text-sm tabular-nums text-secondary-label",
                   menuOpen ? "pr-6" : MAKE_ROOM_WHEN_REVEALED,
                 )}
               >
@@ -395,7 +357,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                   <span
                     data-fading-label
                     className={cn(
-                      "text-info-foreground transition-opacity",
+                      "text-info-foreground",
                       menuOpen ? "opacity-0" : FADE_WHEN_REVEALED,
                     )}
                   >
@@ -408,10 +370,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                     fallback={
                       <span
                         data-fading-label
-                        className={cn(
-                          "transition-opacity",
-                          menuOpen ? "opacity-0" : FADE_WHEN_REVEALED,
-                        )}
+                        className={menuOpen ? "opacity-0" : FADE_WHEN_REVEALED}
                       >
                         {threadTimeLabel(thread)}
                       </span>
@@ -424,7 +383,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                 data-thread-selection-safe
                 aria-label={`Thread actions for ${thread.title}`}
                 className={cn(
-                  "absolute inset-y-0 right-0 my-auto inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-opacity hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                  "absolute inset-y-0 right-0 my-auto inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   menuOpen ? "opacity-100" : SHOW_WHEN_REVEALED,
                 )}
                 onPointerDown={(event) => event.stopPropagation()}

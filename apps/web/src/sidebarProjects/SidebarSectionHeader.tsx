@@ -33,7 +33,7 @@ export function SidebarSectionHeader(props: {
         <ChevronRightIcon
           aria-hidden
           data-testid="sidebar-section-chevron"
-          className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")}
+          className={cn("size-3.5 shrink-0", open && "rotate-90")}
         />
         {accessory ? (
           <span className="ml-auto flex min-w-0 max-w-[50%] items-center gap-1.5 pl-2 text-xs">

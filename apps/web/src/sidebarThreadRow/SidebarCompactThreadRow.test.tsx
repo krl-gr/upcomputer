@@ -198,23 +198,68 @@ describe("SidebarCompactThreadRow", () => {
     expect(row?.querySelector("[data-testid='sidebar-row-status']")).toBeNull();
   });
 
-  it("marks working, needs input, failed and unread threads with upstream's statuses", async () => {
+  it("shows upstream's statuses as V1's text labels before the title, without an icon", async () => {
     const completedAt = new Date().toISOString();
     await render([
       rowProps({ thread: thread("working", { runtime: { status: "running" } }) }),
+      rowProps({ thread: thread("waiting", { runtime: { status: "idle" } }) }),
       rowProps({ thread: thread("input", { hasPendingUserInput: true }) }),
       rowProps({ thread: thread("approval", { hasPendingApprovals: true }) }),
       rowProps({ thread: thread("failed", { runtime: { status: "failed" } }) }),
+      rowProps({
+        thread: thread("limited", {
+          runtime: { status: "failed", lastErrorClass: "usage_limit" },
+        }),
+      }),
       rowProps({ thread: thread("unread", { latestRun: { completedAt } }) }),
       rowProps({ thread: thread("read") }),
     ]);
-    expect(
-      compactRows().map(
-        (row) =>
-          row.querySelector("[data-testid='sidebar-row-status']")?.getAttribute("aria-label") ??
-          null,
-      ),
-    ).toEqual(["Working", "Input", "Approval", "Failed", "Done", null]);
+    const labels = compactRows().map((row) =>
+      row.querySelector<HTMLElement>("[data-testid='sidebar-row-status']"),
+    );
+    expect(labels.map((label) => label?.textContent ?? null)).toEqual([
+      "Working",
+      "Waiting",
+      "Awaiting Input",
+      "Pending Approval",
+      "Failed",
+      "Limited",
+      "Completed",
+      null,
+    ]);
+    // Waiting stays visible in gray; Limited is amber.
+    expect(labels[1]?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(labels[5]?.classList.contains("text-warning-foreground")).toBe(true);
+    for (const [index, row] of compactRows().entries()) {
+      // The only icon left is the actions button's.
+      expect(
+        [...row.querySelectorAll("svg")].every((icon) =>
+          icon.closest("button[aria-label^='Thread actions']"),
+        ),
+      ).toBe(true);
+      // V1's placement: the label sits right before the title.
+      if (labels[index]) {
+        expect(labels[index]?.nextElementSibling?.textContent).toMatch(/^Thread /);
+      }
+    }
+  });
+
+  it("keeps every title one tone: unread and statuses show only through the label", async () => {
+    const completedAt = new Date().toISOString();
+    await render([
+      rowProps({ thread: thread("read") }),
+      rowProps({ thread: thread("unread", { latestRun: { completedAt } }) }),
+      rowProps({ thread: thread("working", { runtime: { status: "running" } }) }),
+      rowProps({ thread: thread("open"), isActive: true }),
+    ]);
+    const titles = compactRows().map((row) => row.querySelector("span[aria-hidden]")!.className);
+    expect(titles[1]).toBe(titles[0]);
+    expect(titles[2]).toBe(titles[0]);
+    expect(titles[0]).toContain("text-foreground/72");
+    expect(titles[0]).not.toContain("font-medium");
+    // Only the open thread is brighter.
+    expect(titles[3]).not.toBe(titles[0]);
+    expect(titles[3]).not.toContain("text-foreground/72");
   });
 
   it("renders the shelves' rows compactly: pinned, snoozed and working", async () => {
@@ -232,7 +277,9 @@ describe("SidebarCompactThreadRow", () => {
     // Snoozed rows show when they come back, not when they were last touched.
     expect(snoozed?.textContent).toContain("2h");
     expect(snoozed?.textContent).not.toContain("3h");
-    expect(working?.querySelector("[aria-label='Working']")).not.toBeNull();
+    expect(working?.querySelector("[data-testid='sidebar-row-status']")?.textContent).toBe(
+      "Working",
+    );
   });
 
   it("opens upstream's thread actions from the … button and keeps the row highlighted", async () => {
@@ -280,9 +327,16 @@ describe("SidebarCompactThreadRow", () => {
   it("keeps the task-run badge in place of the time", async () => {
     await render([rowProps({ thread: thread("with-runs") }), rowProps()]);
     const [withRuns, plain] = compactRows();
-    expect(withRuns?.querySelector("[data-testid='task-runs']")?.textContent).toBe("2 runs");
+    const badge = withRuns?.querySelector("[data-testid='task-runs']");
+    expect(badge?.textContent).toBe("2 runs");
     expect(withRuns?.textContent).not.toContain("3h");
     expect(plain?.querySelector("[data-testid='task-runs']")).toBeNull();
+    // The time and the badge take the title's size, as in V1.
+    const time = [...(plain?.querySelectorAll("span") ?? [])].find(
+      (span) => span.textContent === "3h",
+    );
+    expect(time?.closest(".text-sm, .text-xs")?.classList.contains("text-sm")).toBe(true);
+    expect(badge?.closest(".text-sm, .text-xs")?.classList.contains("text-sm")).toBe(true);
   });
 
   it("opens and renames the thread like upstream's row", async () => {

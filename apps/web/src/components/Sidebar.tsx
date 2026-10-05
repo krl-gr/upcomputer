@@ -225,7 +225,11 @@ import {
   useSidebarThreadListShown,
 } from "../sidebarProjects/SidebarThreadsSection";
 import { SidebarCompactThreadRow } from "../sidebarThreadRow/SidebarCompactThreadRow";
-import { useSidebarThreadRowSurface } from "../sidebarThreadRow/threadListSetting";
+import {
+  isThreadListSettingShown,
+  useSidebarThreadRowSurface,
+} from "../sidebarThreadRow/threadListSetting";
+import { resolveThreadStatusLabel, ThreadStatusLabel } from "../sidebarThreadRow/ThreadStatusLabel";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -1081,7 +1085,7 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   ),
 };
 
-const SidebarThreadRow = memo(function SidebarThreadRow(props: {
+export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
   // Settled rows un-settle, snoozed rows wake, and cards settle.
@@ -2017,6 +2021,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           />
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
+                      ) : isThreadListSettingShown() ? (
+                        <ThreadStatusLabel
+                          status={resolveThreadStatusLabel({ status, isUnread, isWoke })}
+                        />
                       ) : (
                         <span
                           className={cn(
