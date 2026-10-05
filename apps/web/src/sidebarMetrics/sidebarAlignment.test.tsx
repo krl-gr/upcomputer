@@ -469,6 +469,65 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
     expect(header.topbarHeight).toBeGreaterThan(0);
     expectWithinPixel("header height", header.headerHeight, header.topbarHeight);
   });
+
+  /** The computed colour of an element in the sidebar. */
+  const colorOf = (selector: string) =>
+    page.$eval(selector, (element) => getComputedStyle(element).color);
+  const opacityOf = (selector: string) =>
+    page.$eval(selector, (element) => getComputedStyle(element).opacity);
+  /** The colour `text-foreground` gives, read off a probe in the sidebar. */
+  const brightColor = () =>
+    page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.className = "text-foreground";
+      document.querySelector('[data-slot="sidebar-inner"]')!.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+  const pointAt = async (selector: string) => {
+    const box = (await page.locator(selector).first().boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  };
+
+  it("keeps every icon button dim until the pointer is on that button", async () => {
+    // The section titles' dim tone, read while nothing is hovered.
+    await page.mouse.move(1100, 800);
+    const dim = await colorOf('[data-testid="sidebar-threads-toggle"]');
+    const bright = await brightColor();
+    expect(dim).not.toBe(bright);
+    const buttons = [
+      {
+        reveal: '[data-testid="sidebar-threads-toggle"]',
+        button: 'button[aria-label="New thread"]',
+      },
+      {
+        reveal: '[data-testid="sidebar-projects-toggle"]',
+        button: 'button[aria-label="Add project"]',
+      },
+      {
+        reveal: '[data-sidebar="menu-button"]:has-text("UpComputer")',
+        button:
+          '[data-sidebar="menu-button"]:has-text("UpComputer") [data-testid="sidebar-project-row-actions"] button >> nth=0',
+      },
+      {
+        reveal: '[data-sidebar="menu-button"]:has-text("UpComputer")',
+        button:
+          '[data-sidebar="menu-button"]:has-text("UpComputer") [data-testid="sidebar-project-row-actions"] button >> nth=1',
+      },
+      {
+        reveal: '[data-testid="sidebar-row-compact"]:has-text("Port the sidebar")',
+        button: 'button[aria-label="Thread actions for Port the sidebar"]',
+      },
+    ];
+    for (const { reveal, button } of buttons) {
+      await pointAt(reveal);
+      expect(await opacityOf(button), `${button} revealed`).toBe("1");
+      expect(await colorOf(button), `${button} with its row hovered`).toBe(dim);
+      await pointAt(button);
+      expect(await colorOf(button), `${button} hovered`).toBe(bright);
+    }
+  });
 });
 
 /**

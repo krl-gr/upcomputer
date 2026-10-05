@@ -4,6 +4,7 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import {
+  SIDEBAR_ACTION_BUTTON,
   SIDEBAR_ROW_HEIGHT,
   SIDEBAR_ROW_INSET,
   SIDEBAR_ROW_INSET_END,
@@ -81,7 +82,10 @@ export function SidebarSectionHeaderAction(props: {
             type="button"
             aria-label={label}
             onClick={onClick}
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground opacity-0 outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/sidebar-section-header:opacity-100 group-any-hover/sidebar-section-header:opacity-100 pointer-coarse:opacity-100"
+            className={cn(
+              SIDEBAR_ACTION_BUTTON,
+              "opacity-0 focus-visible:opacity-100 group-focus-within/sidebar-section-header:opacity-100 group-any-hover/sidebar-section-header:opacity-100 pointer-coarse:opacity-100",
+            )}
           />
         }
       >

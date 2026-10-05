@@ -27,6 +27,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "../lib/utils";
 import { ProductThreadRowAccessory } from "../product/ProductSlots";
 import {
+  SIDEBAR_ACTION_BUTTON,
   SIDEBAR_ICON_GAP,
   SIDEBAR_ICON_SIZE,
   SIDEBAR_LIST_ROW_INTRINSIC_SIZE,
@@ -396,7 +397,8 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                 data-thread-selection-safe
                 aria-label={`Thread actions for ${thread.title}`}
                 className={cn(
-                  "absolute inset-y-0 right-0 my-auto inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  "absolute inset-y-0 right-0 my-auto",
+                  SIDEBAR_ACTION_BUTTON,
                   menuOpen ? "opacity-100" : SHOW_WHEN_REVEALED,
                 )}
                 onPointerDown={(event) => event.stopPropagation()}

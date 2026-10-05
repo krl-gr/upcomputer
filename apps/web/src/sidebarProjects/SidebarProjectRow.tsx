@@ -10,9 +10,7 @@ import { Menu, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { SidebarMenuButton } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
-
-const actionButtonClassName =
-  "inline-flex size-5 cursor-pointer items-center justify-center rounded-md bg-transparent text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+import { SIDEBAR_ACTION_BUTTON } from "../sidebarMetrics/sidebarMetrics";
 
 /**
  * A row of the Projects section. Hover or keyboard focus reveals its actions
@@ -90,7 +88,7 @@ export function SidebarProjectRow(props: {
                       <button
                         type="button"
                         aria-label={menuLabel}
-                        className={actionButtonClassName}
+                        className={SIDEBAR_ACTION_BUTTON}
                       />
                     }
                   />
@@ -111,7 +109,7 @@ export function SidebarProjectRow(props: {
               <button
                 type="button"
                 aria-label={newChatLabel}
-                className={actionButtonClassName}
+                className={SIDEBAR_ACTION_BUTTON}
                 onClick={onNewChat}
               />
             }
