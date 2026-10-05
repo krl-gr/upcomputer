@@ -6,3 +6,8 @@
 export * from "./product/FeatureRpc";
 export * from "./product/WebFeature";
 export * from "./product/WebProduct";
+export {
+  UPCOMPUTER_PRODUCT_FLAGS,
+  UPSTREAM_PRODUCT_FLAGS,
+  type ProductFlags,
+} from "@t3tools/shared/productFlags";

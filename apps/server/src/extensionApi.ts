@@ -25,3 +25,8 @@ export {
 export { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
+export {
+  UPCOMPUTER_PRODUCT_FLAGS,
+  UPSTREAM_PRODUCT_FLAGS,
+  type ProductFlags,
+} from "@t3tools/shared/productFlags";
