@@ -338,6 +338,8 @@ const listPiSessionCursors = Effect.gen(function* () {
  * Where each Pi session file lives for v2. V1 stored absolute paths; a file
  * missing there is looked up by name in the V1 home's `userdata*` folders
  * (earlier backups keep them) and copied back to the path its thread names.
+ * A path outside V1's userdata (another home) is copied into this home's
+ * sessions folder, so the moved home never depends on, or writes to, another.
  */
 function resolvePiSessions(input: {
   readonly cursors: ReadonlyArray<PiSessionCursor>;
@@ -355,10 +357,13 @@ function resolvePiSessions(input: {
   const missing: Array<PiSessionCursor> = [];
   let inPlace = 0;
   let recovered = 0;
+  const sessionsDir = NodePath.join(input.homeDir, "userdata", "provider", "pi", "sessions");
   for (const cursor of input.cursors) {
+    // Files only ever land inside the home being moved: a path under V1's
+    // userdata keeps its place there, any other (another home) goes to its sessions folder.
     const target = cursor.sessionFile.startsWith(v1Userdata)
       ? NodePath.join(input.homeDir, "userdata", cursor.sessionFile.slice(v1Userdata.length))
-      : cursor.sessionFile;
+      : NodePath.join(sessionsDir, NodePath.basename(cursor.sessionFile));
     if (target !== cursor.sessionFile) {
       rewrites.push({ threadId: cursor.threadId, sessionFile: target });
     }
@@ -366,9 +371,12 @@ function resolvePiSessions(input: {
       inPlace += 1;
       continue;
     }
-    const source = searchDirs
-      .map((directory) => NodePath.join(directory, NodePath.basename(cursor.sessionFile)))
-      .find((candidate) => NodeFS.existsSync(candidate));
+    const source = [
+      cursor.sessionFile,
+      ...searchDirs.map((directory) =>
+        NodePath.join(directory, NodePath.basename(cursor.sessionFile)),
+      ),
+    ].find((candidate) => NodeFS.existsSync(candidate));
     if (source === undefined) {
       missing.push(cursor);
       continue;

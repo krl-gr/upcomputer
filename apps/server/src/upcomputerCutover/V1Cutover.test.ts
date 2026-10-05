@@ -29,7 +29,7 @@ const decodeJson = Schema.decodeUnknownSync(JsonText);
 const fromJson = (text: string) => decodeJson(text) as Record<string, unknown>;
 
 /** An UpComputer V1 home: its schema, a few threads, one in-flight task run. */
-const seedV1 = (sessionFile: string) =>
+const seedV1 = (sessionFile: string, otherHomeSessionFile: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* runMigrations({ toMigrationInclusive: 32 });
@@ -71,6 +71,7 @@ const seedV1 = (sessionFile: string) =>
     yield* thread("thread-run", "codex", "default", 0, "[]");
     yield* thread("thread-chat", "claudeAgent", "ask", 1, '["project-b"]');
     yield* thread("thread-up", "up", "default", 1, "[]");
+    yield* thread("thread-up-local-test", "up", "default", 1, "[]");
     const message = (id: string, threadId: string, role: string, createdAt: string) =>
       sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
         VALUES (${id}, ${threadId}, ${role}, ${`Text of ${id}`}, 0, ${createdAt}, ${createdAt})`;
@@ -88,7 +89,9 @@ const seedV1 = (sessionFile: string) =>
     yield* sql`INSERT INTO provider_session_runtime (thread_id, provider_name, adapter_key, provider_instance_id,
         runtime_mode, status, last_seen_at, resume_cursor_json)
       VALUES ('thread-up', 'up', 'up', 'up', 'full-access', 'stopped', ${at},
-        ${toJson({ sessionFile, sessionId: "s" })})`;
+        ${toJson({ sessionFile, sessionId: "s" })}),
+        ('thread-up-local-test', 'up', 'up', 'up', 'full-access', 'stopped', ${at},
+        ${toJson({ sessionFile: otherHomeSessionFile, sessionId: "t" })})`;
 
     yield* sql`INSERT INTO tasks (id, rank, project_id, title, description, status, created_by, metadata_json,
         created_at, updated_at, trigger_changed_at, assignee_worker_id)
@@ -143,6 +146,10 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
   return Effect.gen(function* () {
     NodeFS.mkdirSync(olderSessions, { recursive: true });
     NodeFS.writeFileSync(NodePath.join(olderSessions, sessionName), '{"type":"session"}\n');
+    // A thread started in another home (local test builds) keeps its file there.
+    const otherHomeSession = NodePath.join(root, "other-home", "sessions", "other.jsonl");
+    NodeFS.mkdirSync(NodePath.dirname(otherHomeSession), { recursive: true });
+    NodeFS.writeFileSync(otherHomeSession, '{"type":"session"}\n');
     NodeFS.mkdirSync(NodePath.join(userdata, "secrets"), { recursive: true });
     NodeFS.writeFileSync(NodePath.join(userdata, "secrets", "key"), "secret");
     NodeFS.writeFileSync(NodePath.join(userdata, "environment-id"), "environment-1\n");
@@ -153,7 +160,9 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     });
     NodeFS.writeFileSync(NodePath.join(userdata, "settings.json"), settings);
     const v1Path = NodePath.join(userdata, "state.sqlite");
-    yield* seedV1(v1SessionFile).pipe(Effect.provide(NodeSqliteClient.layer({ filename: v1Path })));
+    yield* seedV1(v1SessionFile, otherHomeSession).pipe(
+      Effect.provide(NodeSqliteClient.layer({ filename: v1Path })),
+    );
     const v1Bytes = NodeFS.readFileSync(v1Path);
     const v1Rows = dumpV1(v1Path);
 
@@ -173,8 +182,12 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     assert.equal(report.before.threads.askLiveThreads, 1);
     assert.equal(report.after.threads.linkedLiveThreads, 1);
     assert.deepStrictEqual(report.contextBindings, { mapped: 1, skipped: 1, messages: 1 });
-    assert.deepStrictEqual(report.piSessions, { inPlace: 0, recovered: 1, missing: [] });
-    assert.equal(report.after.threads.resumablePiThreads, 1);
+    assert.deepStrictEqual(report.piSessions, { inPlace: 0, recovered: 2, missing: [] });
+    assert.equal(report.after.threads.resumablePiThreads, 2);
+    assert.isTrue(
+      NodeFS.existsSync(NodePath.join(userdata, "provider", "pi", "sessions", "other.jsonl")),
+    );
+    assert.deepStrictEqual(NodeFS.readdirSync(NodePath.dirname(otherHomeSession)), ["other.jsonl"]);
     assert.deepStrictEqual(
       report.tasks.interruptedRuns.map((run) => run.runId),
       ["run-1"],
