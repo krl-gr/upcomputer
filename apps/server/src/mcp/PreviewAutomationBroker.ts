@@ -51,11 +51,20 @@ export interface PreviewAutomationInvokeInput {
   readonly onTargetTab?: (tabId: PreviewTabId | undefined) => void;
 }
 
+/**
+ * A host running inside the server, such as a product's managed browser. It
+ * serves after desktop hosts, and claims every call while `preferred` is true.
+ */
+export interface PreviewAutomationServerHost {
+  readonly preferred: Effect.Effect<boolean>;
+}
+
 export class PreviewAutomationBroker extends Context.Service<
   PreviewAutomationBroker,
   {
     readonly connect: (
       host: PreviewAutomationHost,
+      serverHost?: PreviewAutomationServerHost,
     ) => Effect.Effect<Stream.Stream<PreviewAutomationStreamEvent>>;
     readonly focusHost: (host: PreviewAutomationHostFocus) => Effect.Effect<void>;
     readonly respond: (
@@ -76,6 +85,7 @@ interface ClientConnection {
   readonly liveTabs: NonNullable<PreviewAutomationHostFocus["liveTabs"]>;
   readonly focusOrder: number;
   readonly queue: Queue.Queue<PreviewAutomationStreamEvent, Cause.Done>;
+  readonly serverHost?: PreviewAutomationServerHost;
 }
 
 interface PendingRequest {
@@ -366,6 +376,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
 
   const acquireConnection = Effect.fn("PreviewAutomationBroker.acquireConnection")(function* (
     host: PreviewAutomationHost,
+    serverHost?: PreviewAutomationServerHost,
   ) {
     const clientId = host.clientId;
     const queue = yield* Queue.unbounded<PreviewAutomationStreamEvent, Cause.Done>();
@@ -380,6 +391,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       liveTabs: [],
       focusOrder: 0,
       queue,
+      ...(serverHost === undefined ? {} : { serverHost }),
     };
     const registration = yield* SynchronizedRef.modify(state, (current) => {
       const previousConnection = current.clients.get(clientId);
@@ -407,10 +419,10 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
 
   const connect: PreviewAutomationBroker["Service"]["connect"] = Effect.fn(
     "PreviewAutomationBroker.connect",
-  )((host) =>
+  )((host, serverHost) =>
     Effect.succeed(
       Stream.unwrap(
-        Effect.acquireRelease(acquireConnection(host), (connection) =>
+        Effect.acquireRelease(acquireConnection(host, serverHost), (connection) =>
           disconnect(connection.clientId, connection.queue),
         ).pipe(Effect.map((connection) => Stream.fromQueue(connection.queue))),
       ),
@@ -475,6 +487,18 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
   ): Effect.fn.Return<A, PreviewAutomationError> {
     const timeoutMs = input.timeoutMs ?? 15_000;
     const deferred = yield* Deferred.make<unknown, PreviewAutomationError>();
+    let preferredClientId: string | undefined;
+    for (const host of (yield* SynchronizedRef.get(state)).clients.values()) {
+      if (
+        host.serverHost !== undefined &&
+        host.environmentId === input.scope.environmentId &&
+        supportsOperation(host, input.operation) &&
+        (yield* host.serverHost.preferred)
+      ) {
+        preferredClientId = host.clientId;
+        break;
+      }
+    }
     const route = yield* SynchronizedRef.modify(state, (current) => {
       const assignments = new Map(
         Array.from(current.assignments).filter(([, assignment]) => {
@@ -502,8 +526,11 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
             (!visibleOnly || tab.visible === true) &&
             (input.tabId === undefined || tab.tabId === input.tabId),
         );
-      const connection =
-        hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
+      const preferredConnection =
+        preferredClientId === undefined ? undefined : current.clients.get(preferredClientId);
+      const connection = preferredConnection
+        ? preferredConnection
+        : hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
           ? assignedConnection
           : hasLiveAssignment
             ? undefined
@@ -517,6 +544,8 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
                   (left, right) =>
                     Number(ownsTargetTab(right, true)) - Number(ownsTargetTab(left, true)) ||
                     Number(ownsTargetTab(right)) - Number(ownsTargetTab(left)) ||
+                    Number(left.serverHost !== undefined) -
+                      Number(right.serverHost !== undefined) ||
                     Number(right.focused) - Number(left.focused) ||
                     right.focusOrder - left.focusOrder,
                 )[0];

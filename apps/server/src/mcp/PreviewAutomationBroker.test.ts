@@ -853,6 +853,57 @@ it.effect("prefers a focused host over unrelated extra capabilities for a new se
   ),
 );
 
+it.effect("serves from a server-side host only while no desktop host takes the call", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      let preferred = false;
+      const answer = (clientId: string, events: Stream.Stream<PreviewAutomationStreamEvent>) =>
+        Stream.runForEach(requestsFrom(events), (request) =>
+          broker.respond({
+            clientId,
+            connectionId: request.connectionId,
+            requestId: request.requestId,
+            ok: true,
+            result: clientId,
+          }),
+        ).pipe(Effect.forkScoped);
+      const session = (providerSessionId: string) => ({ ...scope, providerSessionId });
+      const status = (providerSessionId: string) =>
+        broker.invoke<string>({
+          scope: session(providerSessionId),
+          operation: "status",
+          input: {},
+        });
+
+      yield* answer(
+        "server",
+        yield* broker.connect(makeHost({ clientId: "server" }), {
+          preferred: Effect.sync(() => preferred),
+        }),
+      );
+      yield* Effect.yieldNow;
+      expect(yield* status("session-1")).toBe("server");
+
+      // A desktop host serves new sessions even when the server host connected later.
+      yield* answer("desktop", yield* broker.connect(makeHost({ clientId: "desktop" })));
+      yield* answer(
+        "server",
+        yield* broker.connect(makeHost({ clientId: "server" }), {
+          preferred: Effect.sync(() => preferred),
+        }),
+      );
+      yield* Effect.yieldNow;
+      expect(yield* status("session-2")).toBe("desktop");
+
+      // While preferred, the server host claims every call, also from sessions on the desktop.
+      preferred = true;
+      expect(yield* status("session-2")).toBe("server");
+      expect(yield* status("session-3")).toBe("server");
+    }),
+  ),
+);
+
 it.effect("does not route new operations to legacy hosts that did not advertise support", () =>
   Effect.scoped(
     Effect.gen(function* () {
