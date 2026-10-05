@@ -6,6 +6,7 @@ import {
   ProjectId,
   ThreadId as ThreadIdBrand,
   CommandId,
+  MessageId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
@@ -82,6 +83,8 @@ const projectId = ProjectId.make("project:task-agents-v2");
 
 /** A message containing this marker keeps its turn running until it is interrupted. */
 const HOLD = "[hold-turn]";
+/** A message containing this marker fails its turn. */
+const FAIL = "[fail-turn]";
 
 interface StartedTurn {
   readonly threadId: ThreadId;
@@ -92,7 +95,7 @@ interface StartedTurn {
 
 /**
  * A scripted provider: each turn replies with a task_agent_result block and
- * completes, unless its message holds the turn open for a stop.
+ * completes, unless its message holds the turn open for a stop or fails it.
  */
 function makeTaskAgentAdapter(
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
@@ -110,7 +113,7 @@ function makeTaskAgentAdapter(
         const providerTurn = (
           input: ProviderAdapterV2TurnInput,
           id: ProviderTurnId,
-          status: "running" | "completed" | "interrupted",
+          status: "running" | "completed" | "interrupted" | "failed",
           at: DateTime.Utc,
         ): ProviderAdapterV2Event => ({
           type: "provider_turn.updated",
@@ -186,6 +189,26 @@ function makeTaskAgentAdapter(
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
+                return;
+              }
+              if (input.message.text.includes(FAIL)) {
+                yield* Queue.offer(events, providerTurn(input, id, "failed", at));
+                yield* Queue.offer(events, {
+                  type: "turn.terminal",
+                  driver,
+                  providerThreadId: input.providerThread.id,
+                  providerTurnId: id,
+                  runOrdinal: input.runOrdinal,
+                  failureItemOrdinal: input.runOrdinal * 100 + 2,
+                  status: "failed",
+                  failure: {
+                    class: "provider_error",
+                    message: "Scripted provider failure.",
+                    code: "scripted_failure",
+                    retryable: false,
+                  },
+                  threadDisposition: "reusable",
+                });
                 return;
               }
               const summary = `Handled ${input.runOrdinal}`;
@@ -343,6 +366,8 @@ const eventually = <A, E, R>(label: string, read: Effect.Effect<Option.Option<A>
     return yield* Effect.die(`Timed out waiting for ${label}.`);
   });
 
+let personMessages = 0;
+
 const slice = Effect.gen(function* () {
   const repository = yield* TaskRepository;
   const taskAgents = yield* TaskAgentService;
@@ -364,17 +389,49 @@ const slice = Effect.gen(function* () {
           ),
         ),
       );
-  /** Creates the agent and a task in its start status, and waits for the run to start. */
-  const createTask = Effect.gen(function* () {
-    yield* repository.upsertAgent(agent);
-    const created = yield* repository.upsert(task);
-    yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
-    return yield* eventually(
-      "the first run to start",
-      runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
-    );
-  });
-  return { repository, taskAgents, threads, runsOf, runWithStatus, v2Runs, createTask };
+  /**
+   * Creates the agent and a task in its start status, and waits for the run to
+   * start. The description reaches the run's first turn, so it can carry a marker.
+   */
+  const createTaskWith = (description: string) =>
+    Effect.gen(function* () {
+      yield* repository.upsertAgent(agent);
+      const created = yield* repository.upsert({ ...task, description });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      return yield* eventually(
+        "the first run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+    });
+  const createTask = createTaskWith(task.description);
+  /** A message a person types into the thread, as the web client sends it. */
+  const sendAsPerson = (threadId: ThreadId, text: string, mode: "auto" | "queue" = "auto") =>
+    Effect.gen(function* () {
+      personMessages += 1;
+      const id = `${threadId}:${personMessages}`;
+      return yield* threads.sendToThread({
+        projectId,
+        commandId: CommandId.make(`command:person:${id}`),
+        threadId,
+        messageId: MessageId.make(`message:person:${id}`),
+        text,
+        attachments: [],
+        mode,
+        createdBy: "user",
+        creationSource: "web",
+      });
+    });
+  return {
+    repository,
+    taskAgents,
+    threads,
+    runsOf,
+    runWithStatus,
+    v2Runs,
+    createTask,
+    createTaskWith,
+    sendAsPerson,
+  };
 });
 
 const runSlice = <A, E>(
@@ -527,6 +584,140 @@ it.live("stopping an active run interrupts its v2 run and records it as stopped"
       assert.include(stopEvents[0]?.payload_json ?? "", "stop-requested");
     }),
   ),
+);
+
+it.live("a person's message in a failed run's thread continues it as a new run", () =>
+  runSlice(
+    "task-agent-v2-person-continue",
+    ({ createTaskWith, runWithStatus, runsOf, repository, v2Runs, started, sendAsPerson }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
+        yield* eventually("the first run to fail", runWithStatus(first.id, "failed"));
+        yield* sendAsPerson(first.threadId, "continue");
+        const continuation = yield* eventually(
+          "the continuation to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.continuesRunId === first.id && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        assert.strictEqual(continuation.threadId, first.threadId);
+        assert.strictEqual(continuation.agentId, agent.id);
+        assert.lengthOf(yield* runsOf, 2);
+        assert.deepStrictEqual(
+          (yield* v2Runs(first.threadId)).map((run) => run.status),
+          ["failed", "completed"],
+        );
+        // The person's message is the continuation's turn; nothing else is sent.
+        const turns = yield* Ref.get(started);
+        assert.deepStrictEqual(
+          turns.map((turn) => turn.text.includes(FAIL) || turn.text),
+          [true, "continue"],
+        );
+        const updated = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+        assert.strictEqual(updated.status, "Needs Review");
+        assert.strictEqual(updated.output, "Handled 2");
+        const sql = yield* SqlClient.SqlClient;
+        const results = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM task_events
+          WHERE task_id = ${task.id} AND kind = 'task.agent-result'
+        `;
+        assert.lengthOf(results, 1);
+        assert.include(results[0]?.payload_json ?? "", continuation.id);
+      }),
+  ),
+);
+
+it.live("a person's message to an active run's thread goes to that run without a new run", () =>
+  runSlice(
+    "task-agent-v2-person-active",
+    ({
+      createTaskWith,
+      runWithStatus,
+      runsOf,
+      repository,
+      threads,
+      v2Runs,
+      sendAsPerson,
+      started,
+    }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(`Keep working. ${HOLD}`);
+        yield* eventually(
+          "the held provider turn",
+          Ref.get(started).pipe(Effect.map((turns) => Option.fromNullishOr(turns[0]))),
+        );
+        // Queued behind the held turn, so it starts a v2 run of its own.
+        yield* sendAsPerson(first.threadId, "Also do this.", "queue");
+        yield* threads.interruptThread({
+          projectId,
+          commandId: CommandId.make("command:person-active:interrupt"),
+          threadId: first.threadId,
+          reason: "Let the queued message run.",
+        });
+        // The run owns the person's turn and finishes with its result.
+        yield* eventually("the run to complete", runWithStatus(first.id, "completed"));
+        assert.lengthOf(yield* runsOf, 1);
+        assert.deepStrictEqual(
+          (yield* v2Runs(first.threadId)).map((run) => run.status),
+          ["interrupted", "completed"],
+        );
+        const updated = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+        assert.strictEqual(updated.output, "Handled 2");
+      }),
+  ),
+);
+
+it.live(
+  "a person's message on a closed task or with the agent disabled stays a plain turn until reopened",
+  () =>
+    runSlice(
+      "task-agent-v2-person-refused",
+      ({ createTaskWith, runWithStatus, runsOf, repository, v2Runs, sendAsPerson }) =>
+        Effect.gen(function* () {
+          const first = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
+          yield* eventually("the first run to fail", runWithStatus(first.id, "failed"));
+          const v2RunCompleted = (ordinal: number) =>
+            v2Runs(first.threadId).pipe(
+              Effect.map((runs) =>
+                Option.fromNullishOr(
+                  runs.find((run) => run.ordinal === ordinal && run.status === "completed"),
+                ),
+              ),
+            );
+
+          yield* repository.update({ id: task.id, closedAt: timestamp });
+          yield* sendAsPerson(first.threadId, "Closed task: just answer.");
+          yield* eventually("the closed-task turn to complete", v2RunCompleted(2));
+
+          yield* repository.update({ id: task.id, closedAt: null });
+          yield* repository.upsertAgent({ ...agent, enabled: false });
+          yield* sendAsPerson(first.threadId, "Disabled agent: just answer.");
+          yield* eventually("the disabled-agent turn to complete", v2RunCompleted(3));
+
+          // v2 events are handled in order: once this message's continuation
+          // exists, the two earlier messages were handled without one.
+          yield* repository.upsertAgent(agent);
+          yield* sendAsPerson(first.threadId, "continue");
+          const continuation = yield* eventually(
+            "the continuation to complete",
+            runsOf.pipe(
+              Effect.map((runs) =>
+                Option.fromNullishOr(runs.find((run) => run.status === "completed")),
+              ),
+            ),
+          );
+          assert.strictEqual(continuation.continuesRunId, first.id);
+          assert.lengthOf(yield* runsOf, 2);
+          assert.deepStrictEqual(
+            (yield* v2Runs(first.threadId)).map((run) => run.status),
+            ["failed", "completed", "completed", "completed"],
+          );
+        }),
+    ),
 );
 
 const mcpClient = McpSchema.McpServerClient.of({
@@ -683,6 +874,54 @@ it.live("a chat creates a task through the task MCP tools and the started run re
           ),
       );
     }),
+  ),
+);
+
+it.live("a run a person's message continued claims the task with the earlier run's id", () =>
+  runSlice(
+    "task-agent-v2-person-claim",
+    ({ createTaskWith, runWithStatus, runsOf, repository, taskAgents, sendAsPerson, started }) =>
+      Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const first = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
+        yield* eventually("the first run to fail", runWithStatus(first.id, "failed"));
+        yield* sendAsPerson(first.threadId, `continue ${HOLD}`);
+        const continuation = yield* eventually(
+          "the continuation to start",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(runs.find((run) => run.continuesRunId === first.id)),
+            ),
+          ),
+        );
+        yield* eventually(
+          "the held provider turn",
+          Ref.get(started).pipe(Effect.map((turns) => Option.fromNullishOr(turns[1]))),
+        );
+        // The agent was only told the first run's id; claiming with it must not
+        // release the continuation.
+        const claimed = yield* server
+          .callTool({
+            name: "task_update",
+            arguments: { id: task.id, assigneeAgentRunId: first.id },
+          })
+          .pipe(
+            Effect.provideService(McpInvocationContext, {
+              environmentId: EnvironmentId.make("environment:task-agents-v2"),
+              threadId: first.threadId,
+              providerSessionId: "session:task-agents-v2",
+              providerInstanceId: instanceId,
+              capabilities: new Set<never>(),
+              issuedAt: 0,
+            }),
+            Effect.provideService(McpSchema.McpServerClient, mcpClient),
+          );
+        assert.isFalse(claimed.isError);
+        const updated = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+        assert.strictEqual(updated.assigneeAgentRunId, continuation.id);
+        const stopped = yield* taskAgents.stopRun({ id: continuation.id });
+        assert.strictEqual(Option.getOrThrow(stopped).status, "stopped");
+      }),
   ),
 );
 

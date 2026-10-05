@@ -286,11 +286,29 @@ type ThreadRunState =
   | { readonly type: "active" }
   | { readonly type: "ended"; readonly latest: OrchestrationV2Run };
 
+/**
+ * The v2 run a task-agent run started with: the one its first message started.
+ * A continuation that a person's message started has no message of its own; it
+ * starts at that person's v2 run, whose requestedAt is its startedAt.
+ */
+function startingV2Run(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  run: Pick<TaskAgentRun, "id" | "startedAt" | "continuesRunId">,
+): OrchestrationV2Run | undefined {
+  const startMessageId = taskAgentRunMessageId(run.id);
+  const started = runs.find((candidate) => candidate.userMessageId === startMessageId);
+  if (started !== undefined || run.continuesRunId === null) return started;
+  const startedAtMs = Date.parse(run.startedAt);
+  return runs
+    .filter((candidate) => DateTime.toEpochMillis(candidate.requestedAt) >= startedAtMs)
+    .toSorted((left, right) => left.ordinal - right.ordinal)[0];
+}
+
 function threadRunState(
   runs: ReadonlyArray<OrchestrationV2Run>,
-  startMessageId: MessageId,
+  run: Pick<TaskAgentRun, "id" | "startedAt" | "continuesRunId">,
 ): ThreadRunState {
-  const start = runs.find((run) => run.userMessageId === startMessageId);
+  const start = startingV2Run(runs, run);
   if (start === undefined) return { type: "not-started" };
   const owned = runs
     .filter((run) => run.ordinal >= start.ordinal)
@@ -593,7 +611,7 @@ const make = Effect.gen(function* () {
       const records = yield* readThreadRuns(run.threadId);
       const state: ThreadRunState = Option.isNone(records)
         ? { type: "missing-thread" }
-        : threadRunState(records.value.runs, taskAgentRunMessageId(run.id));
+        : threadRunState(records.value.runs, run);
       const runAgeMs = Date.parse(timestamp) - Date.parse(run.startedAt);
       switch (state.type) {
         case "active":
@@ -919,7 +937,17 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const messageRun: TaskAgentServiceShape["messageRun"] = ({ id, text }) =>
+  /**
+   * Message delivery for `messageRun`: `send` delivers the text as a turn;
+   * `adopted` means a person's message already started the thread's next v2
+   * run, at `startedAt`, so an active run is left alone and a continuation
+   * starts from that v2 run instead of sending a turn of its own.
+   */
+  type RunMessage =
+    | { readonly type: "send"; readonly text: string }
+    | { readonly type: "adopted"; readonly startedAt: string };
+
+  const continueRun = (id: TaskAgentRunId, message: RunMessage) =>
     Effect.gen(function* () {
       const refuse = (error: string, activeRunId?: TaskAgentRunId): MessageRunResult => ({
         ok: false,
@@ -979,7 +1007,8 @@ const make = Effect.gen(function* () {
               return refuse(
                 `Agent run '${id}' is finishing (${run.status}). Message it again once it has ended; it then continues as a new run.`,
               );
-            yield* sendTurn(MessageId.make(yield* randomId("task-agent-message")), text);
+            if (message.type === "send")
+              yield* sendTurn(MessageId.make(yield* randomId("task-agent-message")), message.text);
             return { ok: true, run, continued: false } satisfies MessageRunResult;
           }
 
@@ -994,7 +1023,7 @@ const make = Effect.gen(function* () {
           });
           const active = yield* findActive;
           if (Option.isSome(active)) return activeRefusal(active.value);
-          const timestamp = yield* now;
+          const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
           // Open task and enabled agent are re-checked inside the insert, so a
           // close, disable or delete committed since the checks above wins.
           const created = yield* repository
@@ -1035,24 +1064,26 @@ const make = Effect.gen(function* () {
               `Task '${task.id}' was closed, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
             );
 
-          pending.current = { continuation, task };
-          const sent = yield* Effect.exit(
-            sendTurn(
-              taskAgentRunMessageId(continuation.id),
-              `Task-agent run continued:
+          if (message.type === "send") {
+            pending.current = { continuation, task };
+            const sent = yield* Effect.exit(
+              sendTurn(
+                taskAgentRunMessageId(continuation.id),
+                `Task-agent run continued:
 This thread continues ended run ${run.id} (status "${run.status}") as a new run.
 - agentRunId: ${continuation.id}
 Claim the task with this agentRunId and finish with a fenced task_agent_result JSON block, as before.
 
-${text}`,
-            ),
-          );
-          if (sent._tag === "Failure") {
-            return {
-              sendFailure: `Sending the continuation message failed: ${String(sent.cause)}`,
-            } as const;
+${message.text}`,
+              ),
+            );
+            if (sent._tag === "Failure") {
+              return {
+                sendFailure: `Sending the continuation message failed: ${String(sent.cause)}`,
+              } as const;
+            }
+            pending.current = null;
           }
-          pending.current = null;
           yield* appendEvent(task, "task.agent-started", {
             agentId: agent.id,
             agentRunId: continuation.id,
@@ -1091,6 +1122,34 @@ ${text}`,
       return outcome;
     });
 
+  const messageRun: TaskAgentServiceShape["messageRun"] = ({ id, text }) =>
+    continueRun(id, { type: "send", text });
+
+  /**
+   * A person's message that starts a v2 run in a task-agent run's thread
+   * continues the thread's latest run as agent_run_message would. Where that
+   * refuses (closed task, disabled agent, another active run), or the run is
+   * still active, the message stays a plain chat turn.
+   */
+  const continueFromPersonMessage = (v2Run: OrchestrationV2Run) =>
+    Effect.gen(function* () {
+      const latest = yield* repository.findLatestAgentRunByThreadId({ threadId: v2Run.threadId });
+      if (Option.isNone(latest) || latest.value.completedAt === null) return;
+      const { messages } = yield* threads.getThreadRecords(v2Run.threadId, ["messages"], {
+        messageIds: [v2Run.userMessageId],
+      });
+      if (messages[0]?.createdBy !== "user") return;
+      const result = yield* continueRun(latest.value.id, {
+        type: "adopted",
+        startedAt: iso(v2Run.requestedAt),
+      });
+      if (!result.ok)
+        yield* Effect.logInfo("A person's message did not continue a task-agent run", {
+          agentRunId: latest.value.id,
+          reason: result.error,
+        });
+    });
+
   const stopRun: TaskAgentServiceShape["stopRun"] = ({ id }) =>
     Effect.gen(function* () {
       const run = yield* repository.getAgentRunById({ id });
@@ -1101,23 +1160,29 @@ ${text}`,
 
   // A v2 run reaching a terminal status settles the task-agent run on its
   // thread right away; the periodic pass below covers missed events and
-  // grace periods.
+  // grace periods. A v2 run a person's message starts may continue an ended
+  // run first; events are handled in order, so it is recorded before it ends.
   yield* threads.streamDomainEvents.pipe(
     Stream.filter(
       (event) =>
-        event.type === "run.updated" &&
-        !isActiveRun(event.payload) &&
-        event.payload.status !== "queued",
+        event.type === "run.created" ||
+        (event.type === "run.updated" &&
+          !isActiveRun(event.payload) &&
+          event.payload.status !== "queued"),
     ),
     Stream.runForEach((event) =>
       Effect.gen(function* () {
+        if (event.type === "run.created") {
+          yield* continueFromPersonMessage(event.payload);
+          return;
+        }
         const active = yield* repository.findActiveAgentRunByThreadId({
           threadId: event.threadId,
         });
         if (Option.isSome(active)) yield* reconcileRun(active.value, yield* now);
       }).pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("Failed to settle a task-agent run from a v2 run event", { cause }),
+          Effect.logWarning("Failed to handle a v2 run event for task-agent runs", { cause }),
         ),
       ),
     ),

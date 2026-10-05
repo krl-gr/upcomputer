@@ -62,7 +62,7 @@ export const TaskAgentRun = Schema.Struct({
   completedAt: Schema.NullOr(IsoDateTime),
   /** The run whose terminal status started this one; null for task-state starts. */
   triggerRunId: Schema.NullOr(TaskAgentRunId),
-  /** The ended run this one continues in the same thread (agent_run_message); null otherwise. */
+  /** The ended run this one continues in the same thread (agent_run_message or a person's message there); null otherwise. */
   continuesRunId: Schema.NullOr(TaskAgentRunId),
 });
 export type TaskAgentRun = typeof TaskAgentRun.Type;

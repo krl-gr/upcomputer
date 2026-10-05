@@ -29,6 +29,7 @@ import {
   TaskGetInput,
   TaskId,
   TaskAgentId,
+  TaskAgentRunId,
   TaskAutomationId,
   TaskReorderInput,
   TaskSearchInput,
@@ -509,10 +510,28 @@ const make = Effect.gen(function* () {
               : { isError: true, text: `Task '${input.id}' was not found.` };
           }
           const before = yield* repository.getById({ id: input.id });
-          const task = yield* repository.update(input);
           const callerRun = context.threadId
-            ? yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId })
-            : Option.none<TaskAgentRun>();
+            ? Option.getOrNull(
+                yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
+              )
+            : null;
+          // A run a person's message continued was told only the earlier runs'
+          // ids of its thread; claiming with one of them claims for itself.
+          const requestedRun =
+            callerRun !== null &&
+            input.assigneeAgentRunId != null &&
+            input.assigneeAgentRunId !== callerRun.id
+              ? Option.getOrNull(
+                  yield* repository.getAgentRunById({
+                    id: TaskAgentRunId.make(input.assigneeAgentRunId),
+                  }),
+                )
+              : null;
+          const update =
+            callerRun !== null && requestedRun?.threadId === callerRun.threadId
+              ? { ...input, assigneeAgentRunId: callerRun.id }
+              : input;
+          const task = yield* repository.update(update);
           yield* taskAgents.scheduleTaskChanged({
             task,
             reason: "updated",
@@ -520,8 +539,8 @@ const make = Effect.gen(function* () {
               ? releasedRunId({
                   before: before.value,
                   after: task,
-                  requestedAssignee: input.assigneeAgentRunId,
-                  callerRun: Option.getOrNull(callerRun),
+                  requestedAssignee: update.assigneeAgentRunId,
+                  callerRun,
                 })
               : null,
           });
