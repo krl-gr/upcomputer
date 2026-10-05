@@ -126,6 +126,8 @@ export interface EnvironmentThreadShell {
   readonly pinnedAt: string | null;
   /** Kept out of thread lists, still opens by link. */
   readonly sidebarHidden?: boolean;
+  /** Other projects this thread also shows under. */
+  readonly linkedProjectIds?: ReadonlyArray<import("@t3tools/contracts").ProjectId>;
   readonly autoSettleDisabledAt?: string | null;
   /** Slot in the user-arranged pinned order; null for keyless (legacy) pins. */
   readonly pinOrderKey: string | null;
@@ -269,6 +271,9 @@ export function presentThreadShell(
     limitRecovery: thread.limitRecovery ?? null,
     pinnedAt: nullableIso(thread.pinnedAt ?? null),
     ...(thread.sidebarHidden === true ? { sidebarHidden: true } : {}),
+    ...(thread.linkedProjectIds === undefined || thread.linkedProjectIds.length === 0
+      ? {}
+      : { linkedProjectIds: thread.linkedProjectIds }),
     autoSettleDisabledAt: nullableIso(thread.autoSettleDisabledAt ?? null),
     pinOrderKey: thread.pinOrderKey ?? null,
     activeOrderKey: thread.activeOrderKey ?? null,

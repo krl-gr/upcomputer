@@ -22,6 +22,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.Array(ProjectScript),
+  /** Projects every thread of this one also belongs to; optional for older servers. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

@@ -68,6 +68,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "./ProjectStore.ts";
+import { isOnlyThreadProjectLinksUpdate, resolveThreadProjectLinks } from "./linkedProjects.ts";
 import {
   isCheckpointRestoreIsolated,
   SHARED_WORKSPACE_RESTORE_MESSAGE,
@@ -2380,6 +2381,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} worktree changed before the metadata update could be applied.`,
       });
     }
+    const projectLinks =
+      command.type === "thread.metadata.update"
+        ? yield* resolveThreadProjectLinks({ thread, update: command, projects }).pipe(
+            mapDispatchError(command),
+          )
+        : undefined;
     if (command.type === "thread.metadata.update" && command.expectedEmpty === true) {
       const records = yield* projectionStore
         .getThreadRecords(command.threadId, ["runs"])
@@ -2863,7 +2870,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
-            updatedAt: now,
+            ...projectLinks,
+            // Linking projects is not thread activity.
+            updatedAt: isOnlyThreadProjectLinksUpdate(command) ? thread.updatedAt : now,
           };
         }
         case "thread.pull-request.link":

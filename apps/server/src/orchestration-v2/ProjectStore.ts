@@ -39,6 +39,8 @@ export const ProjectRow = Schema.Struct({
   faviconPath: Schema.NullOr(Schema.String),
   projectIcon: Schema.NullOr(ProjectIconOverride),
   scripts: Schema.Array(ProjectScript),
+  /** Projects every thread of this one also belongs to (UpComputer). */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -51,6 +53,7 @@ const ProjectDbRow = Schema.Struct({
   autoPull: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(ProjectIconOverride)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+  linkedProjectIds: Schema.fromJsonString(Schema.Array(ProjectId)),
 });
 
 /** Shell fields without workspace-derived enrichment such as repository identity. */
@@ -66,6 +69,9 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     faviconPath: row.faviconPath,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
+    ...(row.linkedProjectIds === undefined || row.linkedProjectIds.length === 0
+      ? {}
+      : { linkedProjectIds: row.linkedProjectIds }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -123,6 +129,7 @@ export const make = Effect.gen(function* () {
         favicon_path AS "faviconPath",
         project_icon_json AS "projectIcon",
         scripts_json AS "scripts",
+        linked_project_ids_json AS "linkedProjectIds",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -140,7 +147,7 @@ export const make = Effect.gen(function* () {
   });
 
   const upsertRow = (row: ProjectRow) =>
-    encodeRow(row).pipe(
+    encodeRow({ ...row, linkedProjectIds: row.linkedProjectIds ?? [] }).pipe(
       Effect.flatMap(
         (encoded) => sql`
           INSERT INTO projection_projects (
@@ -153,6 +160,7 @@ export const make = Effect.gen(function* () {
             favicon_path,
             project_icon_json,
             scripts_json,
+            linked_project_ids_json,
             created_at,
             updated_at,
             deleted_at
@@ -167,6 +175,7 @@ export const make = Effect.gen(function* () {
             ${encoded.faviconPath},
             ${encoded.projectIcon},
             ${encoded.scripts},
+            ${encoded.linkedProjectIds},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -181,6 +190,7 @@ export const make = Effect.gen(function* () {
             favicon_path = excluded.favicon_path,
             project_icon_json = excluded.project_icon_json,
             scripts_json = excluded.scripts_json,
+            linked_project_ids_json = excluded.linked_project_ids_json,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -227,6 +237,7 @@ export const make = Effect.gen(function* () {
           faviconPath: payload.faviconPath ?? null,
           projectIcon: payload.projectIcon ?? null,
           scripts: payload.scripts,
+          linkedProjectIds: [],
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -257,6 +268,9 @@ export const make = Effect.gen(function* () {
         ...(payload.faviconPath === undefined ? {} : { faviconPath: payload.faviconPath }),
         ...(payload.projectIcon === undefined ? {} : { projectIcon: payload.projectIcon }),
         ...(payload.scripts === undefined ? {} : { scripts: payload.scripts }),
+        ...(payload.linkedProjectIds === undefined
+          ? {}
+          : { linkedProjectIds: payload.linkedProjectIds }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

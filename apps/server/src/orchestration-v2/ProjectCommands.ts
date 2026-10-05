@@ -37,6 +37,7 @@ export interface ProjectMetaUpdateCommand {
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly linkedProjectIds?: ReadonlyArray<ProjectId>;
 }
 
 export interface ProjectDeleteCommand {
@@ -107,6 +108,8 @@ export interface ProjectCommandState {
   readonly project: ProjectRow | undefined;
   /** The active project that holds the command's requested workspace root, if any. */
   readonly workspaceOwner: ProjectRow | undefined;
+  /** Active rows among the command's linked project ids, read for link updates. */
+  readonly linkTargets?: ReadonlyArray<ProjectRow>;
 }
 
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -206,6 +209,18 @@ export function planProjectCommand(input: {
         const conflict = requireWorkspaceAvailable(command.workspaceRoot);
         if (conflict !== undefined) return Result.fail(conflict);
       }
+      const linkedProjectIds =
+        command.linkedProjectIds === undefined
+          ? undefined
+          : [...new Set(command.linkedProjectIds)].filter((id) => id !== command.projectId);
+      const missingLinks = (linkedProjectIds ?? []).filter(
+        (id) => !state.linkTargets?.some((row) => row.projectId === id && row.deletedAt === null),
+      );
+      if (missingLinks.length > 0) {
+        return invariant(
+          `Linked projects ${missingLinks.join(", ")} do not exist or were deleted.`,
+        );
+      }
       return Result.succeed({
         ...base,
         type: "project.meta-updated",
@@ -223,6 +238,7 @@ export function planProjectCommand(input: {
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
+          ...(linkedProjectIds === undefined ? {} : { linkedProjectIds }),
           updatedAt: occurredAt,
         },
       });

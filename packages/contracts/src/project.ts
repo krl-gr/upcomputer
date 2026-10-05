@@ -146,6 +146,8 @@ export const Project = Schema.Struct({
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
   scripts: Schema.Array(ProjectScript),
+  /** Projects every thread of this one also belongs to. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -186,6 +188,8 @@ export const ProjectUpdatePayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  /** The complete new list of linked projects; the project itself is dropped. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 

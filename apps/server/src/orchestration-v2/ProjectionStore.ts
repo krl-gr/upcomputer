@@ -1422,6 +1422,9 @@ export function threadShellFromProjection(
     snoozedAt: projection.thread.snoozedAt ?? null,
     pinnedAt: projection.thread.pinnedAt ?? null,
     ...(projection.thread.sidebarHidden === true ? { sidebarHidden: true } : {}),
+    ...(projection.thread.linkedProjectIds === undefined
+      ? {}
+      : { linkedProjectIds: projection.thread.linkedProjectIds }),
 
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: projection.thread.pinOrderKey ?? null,
@@ -1649,6 +1652,9 @@ function shellFromState(input: {
     snoozedAt: input.state.thread.snoozedAt ?? null,
     pinnedAt: input.state.thread.pinnedAt ?? null,
     ...(input.state.thread.sidebarHidden === true ? { sidebarHidden: true } : {}),
+    ...(input.state.thread.linkedProjectIds === undefined
+      ? {}
+      : { linkedProjectIds: input.state.thread.linkedProjectIds }),
 
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: input.state.thread.pinOrderKey ?? null,

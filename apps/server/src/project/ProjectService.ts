@@ -172,6 +172,9 @@ export const make = Effect.gen(function* () {
     autoPull: row.autoPull,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
+    ...(row.linkedProjectIds === undefined || row.linkedProjectIds.length === 0
+      ? {}
+      : { linkedProjectIds: row.linkedProjectIds }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -238,9 +241,15 @@ export const make = Effect.gen(function* () {
       const eventId = yield* idAllocator.allocate
         .event({ commandId: command.commandId })
         .pipe(Effect.mapError(dispatchError));
+      const linkTargets =
+        command.type === "project.meta.update" && command.linkedProjectIds !== undefined
+          ? yield* projects
+              .list({ projectIds: command.linkedProjectIds })
+              .pipe(Effect.mapError(dispatchError))
+          : undefined;
       const planned = planProjectCommand({
         command,
-        state: { project, workspaceOwner },
+        state: { project, workspaceOwner, ...(linkTargets === undefined ? {} : { linkTargets }) },
         eventId,
         now,
       });
@@ -384,6 +393,9 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+        ...(input.linkedProjectIds === undefined
+          ? {}
+          : { linkedProjectIds: input.linkedProjectIds }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

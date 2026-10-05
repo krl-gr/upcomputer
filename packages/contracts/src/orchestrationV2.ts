@@ -367,6 +367,10 @@ export const OrchestrationV2AppThread = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   /** Machine-created threads (task-agent runs) stay out of thread lists but open by link. */
   sidebarHidden: Schema.optional(Schema.Boolean),
+  /** Other projects this thread also belongs to; their folders reach its agent. */
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  /** Set once a person unlinked a project, so auto-linking no longer adds any. */
+  projectLinksPinned: Schema.optional(Schema.Boolean),
   /** Pull request the user linked to this thread (#8160); optional so
       pre-linking servers still decode. */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
@@ -1726,6 +1730,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   sidebarHidden: Schema.optional(Schema.Boolean),
+  linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -2628,6 +2633,10 @@ export const OrchestrationV2Command = Schema.Union([
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request (#8160); absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    /** Projects to add to the thread's linked projects; its own project is skipped. */
+    linkProjectIds: Schema.optional(Schema.Array(ProjectId)),
+    /** Projects to remove from the thread's linked projects. */
+    unlinkProjectIds: Schema.optional(Schema.Array(ProjectId)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),
