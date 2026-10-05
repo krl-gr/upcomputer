@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - one existence check per imported Pi session file
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+
 import {
   threadPullRequestKeysEqual,
   threadPullRequestsOf,
@@ -13,8 +17,10 @@ import {
   OrchestrationV2AppThreadJson,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   ThreadLinkedPullRequest,
@@ -30,6 +36,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as EventSink from "../EventSink.ts";
+import { deriveProviderThread } from "../IdAllocator.ts";
 import { makeKeyedSerialExecutor } from "../KeyedSerialExecutor.ts";
 import { randomUuidV4 } from "../RandomUuid.ts";
 
@@ -61,6 +68,12 @@ interface LegacyThreadRow {
   readonly branch_pull_request_json: string | null;
   readonly active_order_key: string | null;
   readonly deleted_at: string | null;
+  /** UpComputer V1 columns; NULL on upstream V1 databases. */
+  readonly sidebar_visible?: number | null;
+  readonly linked_project_ids_json?: string | null;
+  readonly project_links_pinned?: number | null;
+  /** The V1 provider runtime's resume cursor, when it ran on the thread's current provider. */
+  readonly resume_cursor_json?: string | null;
 }
 
 interface LegacyRepairRow extends LegacyThreadRow {
@@ -186,6 +199,55 @@ function nullableDateTime(value: string | null): DateTime.Utc | null {
   return value === null ? null : dateTime(value);
 }
 
+function linkedProjectIdsFor(row: LegacyThreadRow): ReadonlyArray<ProjectId> {
+  const parsed = row.linked_project_ids_json ? parseJson(row.linked_project_ids_json) : undefined;
+  if (!Array.isArray(parsed)) return [];
+  const ids = parsed.filter(
+    (id): id is string => typeof id === "string" && id.trim() !== "" && id !== row.project_id,
+  );
+  return Array.from(new Set(ids), (id) => ProjectId.make(id));
+}
+
+const PI_DRIVER = ProviderDriverKind.make("pi");
+
+/**
+ * The Pi session file a V1 thread can resume natively. Pi-based providers
+ * (UpComputer V1 `pi` and `up`) recorded `resumeCursor.sessionFile`, and the
+ * v2 Pi adapter resumes by that path. A missing file would fail the resume, so
+ * such threads keep upstream's transcript handoff instead.
+ */
+function legacyPiSessionFileFor(row: LegacyThreadRow): string | null {
+  const cursor = row.resume_cursor_json ? parseJson(row.resume_cursor_json) : undefined;
+  if (typeof cursor !== "object" || cursor === null || !("sessionFile" in cursor)) return null;
+  const sessionFile = cursor.sessionFile;
+  if (typeof sessionFile !== "string" || !NodePath.isAbsolute(sessionFile)) return null;
+  return NodeFS.existsSync(sessionFile) ? sessionFile : null;
+}
+
+function importedPiProviderThread(
+  thread: OrchestrationV2AppThread,
+  sessionFile: string,
+): OrchestrationV2ProviderThread {
+  return {
+    id: deriveProviderThread({ driver: PI_DRIVER, nativeThreadId: sessionFile }),
+    driver: PI_DRIVER,
+    providerInstanceId: thread.providerInstanceId,
+    providerSessionId: null,
+    appThreadId: thread.id,
+    ownerNodeId: null,
+    nativeThreadRef: { driver: PI_DRIVER, nativeId: sessionFile, strength: "strong" },
+    nativeConversationHeadRef: null,
+    status: "idle",
+    firstRunOrdinal: null,
+    lastRunOrdinal: null,
+    handoffIds: [],
+    forkedFrom: null,
+    pendingBackgroundTasks: [],
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+  };
+}
+
 function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
   const threadId = ThreadId.make(row.thread_id);
   const modelSelection = modelSelectionFor(row);
@@ -202,6 +264,7 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
     !pullRequests.some((link) => threadPullRequestKeysEqual(link, legacyLink))
       ? [...pullRequests, legacyLink]
       : pullRequests;
+  const linkedProjectIds = linkedProjectIdsFor(row);
   return {
     createdBy: "system",
     creationSource: "server",
@@ -239,6 +302,10 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
     pinOrderKey: row.pin_order_key?.trim() || null,
     lastVisitedAt: null,
     deletedAt: nullableDateTime(row.deleted_at),
+    // UpComputer V1: task-run threads hidden from lists, and linked projects.
+    ...(row.sidebar_visible === 0 ? { sidebarHidden: true } : {}),
+    ...(linkedProjectIds.length > 0 ? { linkedProjectIds } : {}),
+    ...(row.project_links_pinned === 1 ? { projectLinksPinned: true } : {}),
   };
 }
 
@@ -440,6 +507,21 @@ const make = Effect.gen(function* () {
       );
     });
 
+  // UpComputer V1 added these thread columns; upstream V1 databases lack them.
+  const upComputerV1Columns = Effect.gen(function* () {
+    const columns = new Set(
+      (yield* sql<{ readonly name: string }>`
+        SELECT name FROM pragma_table_info('projection_threads')
+      `).map((column) => column.name),
+    );
+    const column = (name: string) => sql.literal(columns.has(name) ? `thread.${name}` : "NULL");
+    return sql`
+      ${column("sidebar_visible")} AS sidebar_visible,
+      ${column("linked_project_ids_json")} AS linked_project_ids_json,
+      ${column("project_links_pinned")} AS project_links_pinned
+    `;
+  });
+
   const reconcileShellsBase = Effect.gen(function* () {
     const now = DateTime.formatIso(yield* DateTime.now);
     const repairRows = yield* sql<LegacyRepairRow>`
@@ -571,7 +653,16 @@ const make = Effect.gen(function* () {
         thread.linked_pull_request_json,
         thread.branch_pull_request_json,
         thread.active_order_key,
-        thread.deleted_at
+        thread.deleted_at,
+        ${yield* upComputerV1Columns},
+        (
+          SELECT runtime.resume_cursor_json
+          FROM provider_session_runtime AS runtime
+          WHERE runtime.thread_id = thread.thread_id
+            AND json_valid(thread.model_selection_json)
+            AND runtime.provider_instance_id =
+              json_extract(thread.model_selection_json, '$.instanceId')
+        ) AS resume_cursor_json
       FROM projection_threads AS thread
       WHERE NOT EXISTS (
         SELECT 1
@@ -586,7 +677,14 @@ const make = Effect.gen(function* () {
     let importedThreadCount = repairedThreadCount;
     let importedMessageCount = 0;
     for (const row of rows) {
-      const thread = importedThread(row);
+      const sessionFile = legacyPiSessionFileFor(row);
+      const legacyThread = importedThread(row);
+      const providerThread =
+        sessionFile === null ? null : importedPiProviderThread(legacyThread, sessionFile);
+      const thread: OrchestrationV2AppThread =
+        providerThread === null
+          ? legacyThread
+          : { ...legacyThread, activeProviderThreadId: providerThread.id };
       const previews = yield* listShellMessages(thread.id);
       const events: Array<OrchestrationV2DomainEvent> = [
         {
@@ -598,6 +696,19 @@ const make = Effect.gen(function* () {
           payload: thread,
         },
         ...previews.flatMap(messageEvents),
+        ...(providerThread === null
+          ? []
+          : [
+              {
+                id: EventId.make(`${IMPORT_EVENT_PREFIX}:thread:${row.thread_id}:provider-thread`),
+                type: "provider-thread.updated" as const,
+                threadId: thread.id,
+                driver: providerThread.driver,
+                providerInstanceId: thread.providerInstanceId,
+                occurredAt: thread.updatedAt,
+                payload: providerThread,
+              },
+            ]),
         {
           id: EventId.make(`${IMPORT_EVENT_PREFIX}:thread:${row.thread_id}:shell`),
           type: "thread.metadata-updated",

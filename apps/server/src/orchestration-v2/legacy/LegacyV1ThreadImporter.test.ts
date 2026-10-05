@@ -1,5 +1,10 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import { assert, it } from "@effect/vitest";
-import { EventId, ThreadId } from "@t3tools/contracts";
+import { EventId, ProjectId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -527,6 +532,132 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         ORDER BY sequence
       `;
       assert.deepStrictEqual(eventsAfterRestart, eventsBeforeRetry);
+    }),
+  );
+});
+
+it.layer(TestLayer)("LegacyV1ThreadImporter with UpComputer V1 columns", (it) => {
+  it.effect("carries hidden runs, Ask mode, linked projects and Pi sessions", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "v1-pi-sessions-"));
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      );
+      const sessionFile = NodePath.join(directory, "2026-07-17_session.jsonl");
+      NodeFS.writeFileSync(sessionFile, "{}\n");
+
+      // What UpComputer V1 added to the shared V1 tables.
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN sidebar_visible INTEGER NOT NULL DEFAULT 1`;
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN linked_project_ids_json TEXT`;
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN project_links_pinned INTEGER NOT NULL DEFAULT 0`;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at
+        ) VALUES
+          ('project:a', 'A', '/tmp/a', '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+          ('project:b', 'B', '/tmp/b', '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      `;
+      const insertThread = (input: {
+        readonly id: string;
+        readonly instanceId: string;
+        readonly interactionMode: string;
+        readonly sidebarVisible: number;
+        readonly links: string | null;
+        readonly pinned: number;
+      }) => sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+          created_at, updated_at, sidebar_visible, linked_project_ids_json, project_links_pinned
+        ) VALUES (
+          ${input.id}, 'project:a', ${input.id},
+          ${JSON.stringify({ instanceId: input.instanceId, model: "pi/default" })},
+          'full-access', ${input.interactionMode},
+          '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z',
+          ${input.sidebarVisible}, ${input.links}, ${input.pinned}
+        )
+      `;
+      yield* insertThread({
+        id: "thread:task-run",
+        instanceId: "codex",
+        interactionMode: "ask",
+        sidebarVisible: 0,
+        links: null,
+        pinned: 0,
+      });
+      yield* insertThread({
+        id: "thread:linked",
+        instanceId: "codex",
+        interactionMode: "default",
+        sidebarVisible: 1,
+        links: '["project:b","project:a","project:b"]',
+        pinned: 1,
+      });
+      yield* insertThread({
+        id: "thread:up",
+        instanceId: "up",
+        interactionMode: "default",
+        sidebarVisible: 1,
+        links: null,
+        pinned: 0,
+      });
+      yield* insertThread({
+        id: "thread:up-missing-session",
+        instanceId: "up",
+        interactionMode: "default",
+        sidebarVisible: 1,
+        links: null,
+        pinned: 0,
+      });
+      const insertRuntime = (threadId: string, instanceId: string, file: string) => sql`
+        INSERT INTO provider_session_runtime (
+          thread_id, provider_name, adapter_key, provider_instance_id, runtime_mode, status,
+          last_seen_at, resume_cursor_json
+        ) VALUES (
+          ${threadId}, ${instanceId}, ${instanceId}, ${instanceId}, 'full-access', 'stopped',
+          '2026-01-02T00:00:00.000Z', ${JSON.stringify({ sessionFile: file, sessionId: "s" })}
+        )
+      `;
+      yield* insertRuntime("thread:up", "up", sessionFile);
+      yield* insertRuntime(
+        "thread:up-missing-session",
+        "up",
+        NodePath.join(directory, "missing.jsonl"),
+      );
+      // A runtime of a provider the thread has since left is not resumed.
+      yield* insertRuntime("thread:linked", "pi", sessionFile);
+
+      yield* importer.reconcileShells;
+
+      const taskRun = yield* projections.getThreadProjection(ThreadId.make("thread:task-run"));
+      assert.isTrue(taskRun.thread.sidebarHidden);
+      assert.equal(taskRun.thread.interactionMode, "default");
+
+      const linked = yield* projections.getThreadProjection(ThreadId.make("thread:linked"));
+      assert.isUndefined(linked.thread.sidebarHidden);
+      assert.deepStrictEqual(linked.thread.linkedProjectIds, [ProjectId.make("project:b")]);
+      assert.isTrue(linked.thread.projectLinksPinned);
+      assert.isNull(linked.thread.activeProviderThreadId);
+
+      const up = yield* projections.getThreadProjection(ThreadId.make("thread:up"));
+      const providerThread = up.providerThreads.find(
+        (candidate) => candidate.id === up.thread.activeProviderThreadId,
+      );
+      assert.equal(providerThread?.providerInstanceId, "up");
+      assert.deepStrictEqual(providerThread?.nativeThreadRef, {
+        driver: ProviderDriverKind.make("pi"),
+        nativeId: sessionFile,
+        strength: "strong",
+      });
+      assert.isNull(providerThread?.lastRunOrdinal);
+
+      const missing = yield* projections.getThreadProjection(
+        ThreadId.make("thread:up-missing-session"),
+      );
+      assert.isNull(missing.thread.activeProviderThreadId);
+      assert.lengthOf(missing.providerThreads, 0);
     }),
   );
 });
