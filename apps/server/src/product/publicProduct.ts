@@ -1,6 +1,8 @@
 import { COMPUTER_USE_SERVER_FEATURE } from "@t3tools/computer-use-server/feature";
 import { TASKS_SERVER_FEATURE } from "@t3tools/tasks-server/feature";
 
+import { LINKED_PROJECTS_SERVER_FEATURE } from "../linkedProjects/serverFeature.ts";
+
 import { composeExperimentalServerFeatures } from "./ServerProduct.ts";
 
 /**
@@ -10,5 +12,6 @@ import { composeExperimentalServerFeatures } from "./ServerProduct.ts";
  */
 export const PUBLIC_SERVER_PRODUCT = composeExperimentalServerFeatures([
   COMPUTER_USE_SERVER_FEATURE,
+  LINKED_PROJECTS_SERVER_FEATURE,
   TASKS_SERVER_FEATURE,
 ]);
