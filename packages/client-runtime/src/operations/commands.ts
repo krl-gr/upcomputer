@@ -130,6 +130,9 @@ export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly regenerateTitle?: boolean;
   /** Link (object) or unlink (null) a pull request (#8160). */
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
+  /** Add or remove the thread's linked projects. */
+  readonly linkProjectIds?: ReadonlyArray<import("@t3tools/contracts").ProjectId>;
+  readonly unlinkProjectIds?: ReadonlyArray<import("@t3tools/contracts").ProjectId>;
 }
 
 export interface SetThreadRuntimeModeInput extends ThreadCommandInput {
@@ -566,7 +569,9 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
       input.worktreePath !== undefined ||
       input.regenerateTitle !== undefined ||
       input.linkedPullRequest !== undefined ||
-      input.limitRecovery !== undefined
+      input.limitRecovery !== undefined ||
+      input.linkProjectIds !== undefined ||
+      input.unlinkProjectIds !== undefined
     ) {
       result = yield* dispatch({
         type: "thread.metadata.update",
@@ -580,6 +585,10 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
         ...(input.linkedPullRequest === undefined
           ? {}
           : { linkedPullRequest: input.linkedPullRequest }),
+        ...(input.linkProjectIds === undefined ? {} : { linkProjectIds: input.linkProjectIds }),
+        ...(input.unlinkProjectIds === undefined
+          ? {}
+          : { unlinkProjectIds: input.unlinkProjectIds }),
       });
     }
     if (input.modelSelection !== undefined) {

@@ -217,6 +217,7 @@ import {
   type SidebarListMarker,
   type SidebarSection,
 } from "./Sidebar.logic";
+import { projectLinksByKey } from "../linkedProjects/projectScope";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -2598,6 +2599,7 @@ export default function Sidebar() {
         : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
     [projectGroups, projectScopeKey],
   );
+  const projectLinks = useMemo(() => projectLinksByKey(projects), [projects]);
   const scopedProjectKeys = useMemo(
     () =>
       scopedProjectGroup === null
@@ -2717,7 +2719,7 @@ export default function Sidebar() {
     const preciseNow = new Date().toISOString();
     // Subagent child threads live in the parent's Agents surface, not the
     // sidebar roster (v2 models them as real threads with lineage).
-    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);
+    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, projectLinks);
     inboxReturns.observe(workingShelfEnabled ? threads : null);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
@@ -2820,6 +2822,7 @@ export default function Sidebar() {
   }, [
     nowMinute,
     optimisticDrop,
+    projectLinks,
     scopedProjectKeys,
     serverConfigs,
     snoozeWakeTick,

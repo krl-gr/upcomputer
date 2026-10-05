@@ -26,6 +26,10 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
+import {
+  isThreadInProjectScope,
+  type LinkedProjectScopeThread,
+} from "../linkedProjects/projectScope";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -562,18 +566,19 @@ export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "line
 }
 
 export function filterSidebarV2VisibleThreads<
-  T extends Pick<SidebarThreadSummary, "archivedAt" | "lineage" | "sidebarHidden"> & {
-    environmentId: string;
-    projectId: string;
-  },
->(threads: readonly T[], scopedProjectKeys: ReadonlySet<string> | null): T[] {
+  T extends Pick<SidebarThreadSummary, "archivedAt" | "lineage" | "sidebarHidden"> &
+    LinkedProjectScopeThread,
+>(
+  threads: readonly T[],
+  scopedProjectKeys: ReadonlySet<string> | null,
+  projectLinks?: ReadonlyMap<string, ReadonlyArray<string>>,
+): T[] {
   return threads.filter(
     (thread) =>
       thread.archivedAt === null &&
       !isSidebarSubagentThread(thread) &&
       thread.sidebarHidden !== true &&
-      (scopedProjectKeys === null ||
-        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+      isThreadInProjectScope(thread, scopedProjectKeys, projectLinks),
   );
 }
 

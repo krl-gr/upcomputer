@@ -1,6 +1,7 @@
 import { COMPUTER_USE_WEB_FEATURE } from "@t3tools/computer-use-web/feature";
 import { TASKS_WEB_FEATURE } from "@t3tools/tasks-web/feature";
 
+import { LINKED_PROJECTS_WEB_FEATURE } from "../linkedProjects/feature";
 import { composeExperimentalWebFeatures } from "./WebProduct";
 
 /**
@@ -9,5 +10,6 @@ import { composeExperimentalWebFeatures } from "./WebProduct";
  */
 export const WEB_PRODUCT = composeExperimentalWebFeatures([
   COMPUTER_USE_WEB_FEATURE,
+  LINKED_PROJECTS_WEB_FEATURE,
   TASKS_WEB_FEATURE,
 ]);
