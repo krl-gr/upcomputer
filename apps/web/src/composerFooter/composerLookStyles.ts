@@ -46,8 +46,11 @@ export const COMPOSER_BODY_PADDING_CLASS = "sm:px-6 sm:pt-6";
 /** V1's one-line prompt minimum: the card grows with the text from there. */
 export const COMPOSER_EDITOR_CLASS = "min-h-8";
 
-/** V1's placeholder tone. */
-export const COMPOSER_PLACEHOLDER_CLASS = "text-muted-foreground/35";
+/**
+ * V1's placeholder: its tone, on one line that ends in an ellipsis when the
+ * composer is narrow, so it never wraps into the footer row. Typed text wraps.
+ */
+export const COMPOSER_PLACEHOLDER_CLASS = "truncate text-muted-foreground/35";
 
 /** V1's composer card: opaque, 32px corners, a border in light and an inset highlight in dark. */
 export const COMPOSER_CARD_CLASS =

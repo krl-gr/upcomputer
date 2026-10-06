@@ -12,6 +12,7 @@ vi.mock("~/hooks/useSettings", () => ({
 }));
 
 import { ComposerPrimaryActions } from "../components/chat/ComposerPrimaryActions";
+import { cn } from "../lib/utils";
 import { ComposerBackdropFade } from "./ComposerBackdropFade";
 import {
   composerBottomSpaceClass,
@@ -133,6 +134,22 @@ describe("V1's composer card, fade and full form", () => {
     for (const part of ["shell", "card", "body", "editor", "placeholder"] as const) {
       expect(composerLookClass(part)).toBeUndefined();
     }
+  });
+
+  it("keeps V1's placeholder on one line with an ellipsis, while typed text wraps", () => {
+    // The placeholder element's classes as the prompt editor joins them.
+    const placeholder = new Set(
+      cn(
+        "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
+        composerLookClass("placeholder"),
+      ).split(" "),
+    );
+    // V1's `truncate`: overflow-hidden, text-ellipsis and whitespace-nowrap.
+    expect(placeholder.has("truncate")).toBe(true);
+    expect(composerLookClass("editor")?.split(" ")).not.toContain("truncate");
+
+    surface.composerFooter = "upstream";
+    expect(composerLookClass("placeholder")).toBeUndefined();
   });
 
   it("never lets a timeline scroll collapse the composer with its surface", () => {
