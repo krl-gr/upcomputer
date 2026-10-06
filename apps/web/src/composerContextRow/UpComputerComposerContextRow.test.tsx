@@ -207,6 +207,12 @@ function visibleText(element: Element | null) {
   return copy?.textContent;
 }
 
+function buttonByText(text: string) {
+  return Array.from(document.querySelectorAll<HTMLElement>("button")).find(
+    (button) => button.textContent?.trim() === text,
+  );
+}
+
 function optionByText(text: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[role=option]")).find((option) =>
     option.textContent?.includes(text),
@@ -282,7 +288,7 @@ describe("the row under the composer", () => {
     });
   });
 
-  it("shows only + for a chat without a project, and choosing moves the draft there", async () => {
+  it('shows V1\'s "Add project" for a chat without a project, and choosing moves the draft there', async () => {
     state.draftThread = {
       environmentId: ENV,
       projectId: SCRATCH.id,
@@ -291,15 +297,51 @@ describe("the row under the composer", () => {
     const draftId = "draft-1" as UpComputerComposerContextRowProps["draftId"] & string;
     await render(<UpComputerComposerContextRow {...rowProps({ draftId })} />);
 
+    // Text, not the bare `+`.
     expect(projectIcons()).toEqual(["Add project"]);
+    const addProject = container.querySelector<HTMLElement>("[data-context-row-project-picker]")!;
+    expect(visibleText(addProject)).toBe("Add project");
+    expect(addProject.querySelector("svg")).toBeNull();
     // No checkout or branch: the scratch folder is not a project checkout.
     expect(container.querySelector("[data-context-row-workspace]")?.childElementCount).toBe(0);
     expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
 
-    await click(byLabel("Add project")!);
+    // The same menu `+` opens, with "New project…" for a project not added yet.
+    await click(addProject);
+    expect(
+      Array.from(document.querySelectorAll("[role=option]"))
+        .map((o) => o.textContent)
+        .toSorted(),
+    ).toEqual(["KVKv store", "RERelay", "UPUpComputer"]);
+    expect(buttonByText("New project…")).toBeDefined();
     await click(optionByText("Kv store")!);
     expect(state.retargetDraft).toHaveBeenCalledWith(draftId, KV);
     expect(state.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the project icons and + once a chat without a project links one", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: SCRATCH.id,
+      worktreePath: null,
+      linkedProjectIds: [],
+    };
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(visibleText(container.querySelector("[data-context-row-projects]"))).toBe("Add project");
+    await click(container.querySelector("[data-context-row-project-picker]")!);
+    await click(optionByText("Kv store")!);
+    expect(state.updateMetadata).toHaveBeenCalledWith({
+      environmentId: ENV,
+      input: { threadId: THREAD, linkProjectIds: [KV.id] },
+    });
+
+    state.serverThread = { ...state.serverThread, linkedProjectIds: [KV.id] };
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(projectIcons()).toEqual(["Unlink Kv store", "Add project"]);
+    expect(
+      container.querySelector("[data-context-row-project-picker]")?.querySelector("svg"),
+    ).not.toBeNull();
   });
 
   it("hides + in an unsent chat that already has a project", async () => {

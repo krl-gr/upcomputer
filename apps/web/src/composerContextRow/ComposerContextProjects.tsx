@@ -19,7 +19,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "../lib/utils";
 import { useThreadShells } from "../state/entities";
 import { searchProjectsByTitle } from "./contextRowProjects";
-import { CONTEXT_ROW_ICON_BUTTON_CLASS } from "./contextRowStyles";
+import { CONTEXT_ROW_ICON_BUTTON_CLASS, CONTEXT_ROW_TEXT_BUTTON_CLASS } from "./contextRowStyles";
 
 type RowProject = Pick<
   EnvironmentProject,
@@ -27,16 +27,18 @@ type RowProject = Pick<
 >;
 
 /**
- * The searchable project menu V1 opened from `+` under the composer, with
- * "New project…" at the bottom (the command palette's Add project).
+ * The searchable project menu V1 opened from `+` or "Add project" under the
+ * composer, with "New project…" at the bottom (the command palette's Add
+ * project). An icon trigger names itself in a tooltip; a text one is its label.
  */
 function ProjectPickerInner<Project extends RowProject>(props: {
   readonly projects: ReadonlyArray<Project>;
   readonly onSelect: (project: Project) => void;
   readonly label: string;
+  readonly trigger: "icon" | "text";
   readonly children: ReactNode;
 }) {
-  const { projects, onSelect, label, children } = props;
+  const { projects, onSelect, label, trigger, children } = props;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const threads = useThreadShells();
@@ -74,20 +76,29 @@ function ProjectPickerInner<Project extends RowProject>(props: {
         onSelect(project);
       }}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComboboxTrigger
-              render={<button type="button" className={CONTEXT_ROW_ICON_BUTTON_CLASS} />}
-              aria-label={label}
-              data-context-row-project-picker=""
-            />
-          }
+      {trigger === "text" ? (
+        <ComboboxTrigger
+          render={<button type="button" className={CONTEXT_ROW_TEXT_BUTTON_CLASS} />}
+          data-context-row-project-picker=""
         >
           {children}
-        </TooltipTrigger>
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
+        </ComboboxTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ComboboxTrigger
+                render={<button type="button" className={CONTEXT_ROW_ICON_BUTTON_CLASS} />}
+                aria-label={label}
+                data-context-row-project-picker=""
+              />
+            }
+          >
+            {children}
+          </TooltipTrigger>
+          <TooltipPopup side="top">{label}</TooltipPopup>
+        </Tooltip>
+      )}
       <ComboboxPopup align="start" side="top" className="w-72" {...floatingLayerProps}>
         <ComboboxSearchInput
           placeholder="Search projects"
@@ -177,8 +188,8 @@ export interface ComposerContextProjectsProps<Project extends RowProject> {
 
 /**
  * The start of the row: the chat's own project, its linked projects, then
- * `+` to link another one. A chat without a project shows only its links
- * and `+`.
+ * `+` to link another one. A chat without a project shows its links and `+`,
+ * or V1's "Add project" while it has none.
  */
 function ComposerContextProjectsInner<Project extends RowProject>(
   props: ComposerContextProjectsProps<Project>,
@@ -209,13 +220,25 @@ function ComposerContextProjectsInner<Project extends RowProject>(
         />
       ))}
       {onChooseProject ? (
-        <ProjectPicker
-          projects={linkableProjects}
-          onSelect={onChooseProject}
-          label={ownProject ? "Link a project" : "Add project"}
-        >
-          <PlusIcon className="size-4" />
-        </ProjectPicker>
+        !ownProject && linkedProjects.length === 0 ? (
+          <ProjectPicker
+            projects={linkableProjects}
+            onSelect={onChooseProject}
+            label="Add project"
+            trigger="text"
+          >
+            Add project
+          </ProjectPicker>
+        ) : (
+          <ProjectPicker
+            projects={linkableProjects}
+            onSelect={onChooseProject}
+            label={ownProject ? "Link a project" : "Add project"}
+            trigger="icon"
+          >
+            <PlusIcon className="size-4" />
+          </ProjectPicker>
+        )
       ) : null}
     </div>
   );

@@ -40,6 +40,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { showsDraftHeroNoProjectPicker } from "~/composerContextRow/composerContextRowSurface";
 
 // Menu value for "No project"; real entries are keyed by logical project key.
 const NO_PROJECT_VALUE = "no-project";
@@ -377,7 +378,11 @@ export function DraftHeroHeadline({
           move. Without a project, the picker moves here to choose one. */}
       {scratchWorkspaceRoot === null ? null : (
         <p className="mt-2 flex h-6 items-center text-sm">
-          {isScratchDraft ? projectSelector : orStartWithoutProject}
+          {isScratchDraft
+            ? showsDraftHeroNoProjectPicker()
+              ? projectSelector
+              : null
+            : orStartWithoutProject}
         </p>
       )}
     </div>
