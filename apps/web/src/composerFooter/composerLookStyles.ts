@@ -8,8 +8,14 @@
 /** V1's `SIDEBAR_LABEL_TEXT_CLASS`: the controls read at the sidebar rows' text size. */
 const V1_LABEL_TEXT_CLASS = "text-sm font-normal leading-relaxed tracking-normal";
 
-/** V1's `SIDEBAR_MUTED_TEXT_CLASS`, the quiet tone of every control at rest. */
-const V1_MUTED_TEXT_CLASS = "text-muted-foreground dark:text-white/50";
+/**
+ * V1's `SIDEBAR_MUTED_TEXT_CLASS`, the quiet tone of every control at rest, and
+ * its bright tone on hover, while open or pressed. The colors are the theme's
+ * composer tokens (`theme.upcomputer.css`), as is every color in this file.
+ */
+const V1_MUTED_TEXT_CLASS = "text-(--composer-muted)";
+const V1_BRIGHT_TEXT_CLASS =
+  "hover:!text-(--composer-bright) data-pressed:!text-(--composer-bright) aria-expanded:!text-(--composer-bright)";
 
 // The row clips instead of scrolling: hidden blocks and labels stay mounted out
 // of flow for measurement and must not make the row scrollable.
@@ -17,22 +23,23 @@ export const COMPOSER_CONTROL_ROW_CLASS =
   "relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-clip";
 
 /**
- * V1's separator. In dark V1 drew it in its `--border`, white at 6%. This
- * palette's border is almost the card's own color (#222 on #1e1e1e), which
- * left the separators next to invisible, so the dark value is V1's own.
+ * V1's separator. It sits the row's gap from its neighbours, whose content
+ * starts 8px inside them, so it has 10px on both sides.
  */
-export const COMPOSER_CONTROL_SEPARATOR_CLASS =
-  "h-3 w-px shrink-0 bg-foreground/35 dark:bg-white/6";
+export const COMPOSER_CONTROL_SEPARATOR_CLASS = "h-3 w-px shrink-0 bg-(--composer-separator)";
 
 /** The paperclip and the overflow menu: an icon with no fill, bright on hover or while open. */
-export const COMPOSER_CONTROL_ICON_TRIGGER_CLASS = `flex size-8 shrink-0 items-center justify-center rounded-full border-transparent !bg-transparent p-2 ${V1_MUTED_TEXT_CLASS} shadow-none transition-colors hover:!bg-transparent hover:!text-foreground dark:hover:!text-white/86 focus-visible:!ring-0 focus-visible:ring-offset-0 data-pressed:!bg-transparent data-pressed:!text-foreground dark:data-pressed:!text-white/86 aria-expanded:!bg-transparent aria-expanded:!text-foreground dark:aria-expanded:!text-white/86 before:hidden [&_svg]:mx-0`;
+export const COMPOSER_CONTROL_ICON_TRIGGER_CLASS = `flex size-8 shrink-0 items-center justify-center rounded-full border-transparent !bg-transparent p-2 ${V1_MUTED_TEXT_CLASS} ${V1_BRIGHT_TEXT_CLASS} shadow-none transition-colors hover:!bg-transparent focus-visible:!ring-0 focus-visible:ring-offset-0 data-pressed:!bg-transparent aria-expanded:!bg-transparent before:hidden [&_svg]:mx-0`;
 
 /**
  * Mode, provider and model, effort and context, access: text with no fill and
  * no chevron, bright on hover or while open. Beyond V1: Plan is a pressed
- * toggle here (V1 had a menu), and icons follow the text tone.
+ * toggle here (V1 had a menu), and icons follow the text tone. No border, so
+ * the content starts 8px in, as in the icon triggers: upstream's control has
+ * a transparent 1px one. A chevron's own wrapper goes with it, or its flex
+ * gap would stay.
  */
-export const COMPOSER_CONTROL_TEXT_TRIGGER_CLASS = `h-8 min-h-0 min-w-0 shrink-0 justify-start gap-1 overflow-hidden rounded-lg border-transparent !bg-transparent px-2 py-[7px] text-left ${V1_LABEL_TEXT_CLASS} ${V1_MUTED_TEXT_CLASS} shadow-none transition-colors hover:!bg-transparent hover:!text-foreground dark:hover:!text-white/86 focus-visible:!ring-0 focus-visible:ring-offset-0 data-pressed:!bg-transparent data-pressed:!text-foreground dark:data-pressed:!text-white/86 aria-expanded:!bg-transparent aria-expanded:!text-foreground dark:aria-expanded:!text-white/86 aria-pressed:!bg-transparent aria-pressed:!text-foreground dark:aria-pressed:!text-white/86 before:hidden [&_svg]:mx-0 [&_svg:not([class*='text-'])]:text-current [&_[data-composer-control-chevron]]:hidden`;
+export const COMPOSER_CONTROL_TEXT_TRIGGER_CLASS = `h-8 min-h-0 min-w-0 shrink-0 justify-start gap-1 overflow-hidden rounded-lg border-0 !bg-transparent px-2 py-[7px] text-left ${V1_LABEL_TEXT_CLASS} ${V1_MUTED_TEXT_CLASS} ${V1_BRIGHT_TEXT_CLASS} aria-pressed:!text-(--composer-bright) shadow-none transition-colors hover:!bg-transparent focus-visible:!ring-0 focus-visible:ring-offset-0 data-pressed:!bg-transparent aria-expanded:!bg-transparent aria-pressed:!bg-transparent before:hidden [&_svg]:mx-0 [&_svg:not([class*='text-'])]:text-current [&_[data-composer-control-chevron]]:hidden [&>[aria-hidden]:has(>[data-composer-control-chevron])]:hidden`;
 
 /** V1's model picker trigger width. */
 export const COMPOSER_MODEL_PICKER_TRIGGER_CLASS = `${COMPOSER_CONTROL_TEXT_TRIGGER_CLASS} max-w-52 shrink sm:max-w-60`;
@@ -54,7 +61,7 @@ export const COMPOSER_PLACEHOLDER_CLASS = "truncate text-muted-foreground/35";
 
 /** V1's composer card: opaque, 32px corners, a border in light and an inset highlight in dark. */
 export const COMPOSER_CARD_CLASS =
-  "rounded-[32px] bg-card shadow-[0_4px_14.4px_rgba(9,9,9,0.035)] not-dark:border not-dark:border-border dark:bg-[#1e1e1e] dark:shadow-[inset_-1px_-1px_1px_rgba(255,255,255,0.06),inset_1px_1px_1px_rgba(255,255,255,0.12),0_4px_14.4px_rgba(9,9,9,0.08)]";
+  "rounded-[32px] bg-(--composer-surface) shadow-(--composer-shadow) not-dark:border not-dark:border-border";
 
 /**
  * On upstream's composer shell: its translucent glass backdrop and the host's
@@ -66,10 +73,11 @@ export const COMPOSER_SHELL_CLASS =
 /** V1's send button; `canSend` is whether a click would act. */
 export function composerSendButtonClass(canSend: boolean): string {
   return [
-    "flex size-8 shrink-0 items-center justify-center rounded-full bg-[#d4d4d4] text-[#171717] not-dark:bg-[#c4c4c4] not-dark:text-white",
-    "shadow-[inset_0_-1px_1px_rgba(0,0,0,0.17),inset_0_1px_1px_white] not-dark:shadow-[inset_0_-1px_1px_rgba(255,255,255,0.2),inset_0_1px_1px_rgba(255,255,255,0.2)]",
+    "flex size-8 shrink-0 items-center justify-center rounded-full text-(--composer-send-foreground) shadow-(--composer-send-shadow)",
     "transition-opacity duration-150 disabled:pointer-events-none [&_svg]:pointer-events-none",
-    canSend ? "enabled:cursor-pointer opacity-100 not-dark:bg-[#222222]" : "opacity-40",
+    canSend
+      ? "enabled:cursor-pointer bg-(--composer-send) opacity-100"
+      : "bg-(--composer-send-idle) opacity-40",
   ].join(" ");
 }
 

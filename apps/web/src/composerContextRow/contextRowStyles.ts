@@ -1,8 +1,9 @@
 // V1's context bar look (`BranchToolbar.styles.ts` there): regular text-sm,
-// muted, no fills, brighter on hover or while open.
+// muted, no fills, brighter on hover or while open, in the composer's text
+// tokens (`theme.upcomputer.css`).
 
 const CONTEXT_ROW_TONE =
-  "text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/86 aria-expanded:text-foreground dark:aria-expanded:text-white/86";
+  "text-(--composer-muted) hover:text-(--composer-bright) aria-expanded:text-(--composer-bright)";
 
 export const CONTEXT_ROW_ICON_BUTTON_CLASS = `inline-flex size-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
 
@@ -10,7 +11,7 @@ export const CONTEXT_ROW_ICON_BUTTON_CLASS = `inline-flex size-8 shrink-0 items-
 export const CONTEXT_ROW_TEXT_BUTTON_CLASS = `inline-flex h-8 shrink-0 items-center rounded-lg px-2 text-sm font-normal leading-relaxed outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
 
 /** The right-panel toggle: the icon button, bright while the panel is open. */
-export const CONTEXT_ROW_TOGGLE_CLASS = `${CONTEXT_ROW_ICON_BUTTON_CLASS} aria-pressed:text-foreground dark:aria-pressed:text-white/86`;
+export const CONTEXT_ROW_TOGGLE_CLASS = `${CONTEXT_ROW_ICON_BUTTON_CLASS} aria-pressed:text-(--composer-bright)`;
 
 /**
  * Upstream's checkout, environment and branch controls inside the row, in
@@ -18,6 +19,9 @@ export const CONTEXT_ROW_TOGGLE_CLASS = `${CONTEXT_ROW_ICON_BUTTON_CLASS} aria-p
  * fill. The selectors and their menus stay upstream's.
  */
 export const CONTEXT_ROW_QUIET_CONTROLS_CLASS =
-  "flex min-w-0 items-center [&_[data-composer-context-control]_svg]:hidden [&_button_svg]:hidden [&_[data-composer-context-control]]:text-sm [&_button]:text-sm [&_[data-composer-context-control]]:font-normal [&_button]:font-normal [&_[data-composer-context-control]]:text-muted-foreground dark:[&_[data-composer-context-control]]:text-white/50 [&_button]:text-muted-foreground dark:[&_button]:text-white/50 [&_button:hover]:bg-transparent [&_button:hover]:text-foreground dark:[&_button:hover]:text-white/86 [&_button[data-popup-open]]:bg-transparent [&_button[data-popup-open]]:text-foreground dark:[&_button[data-popup-open]]:text-white/86 [&_button]:h-8 [&_button]:px-2";
+  "flex min-w-0 items-center [&_[data-composer-context-control]_svg]:hidden [&_button_svg]:hidden [&_[data-composer-context-control]]:text-sm [&_button]:text-sm [&_[data-composer-context-control]]:font-normal [&_button]:font-normal [&_[data-composer-context-control]]:text-(--composer-muted) [&_button]:text-(--composer-muted) [&_button:hover]:bg-transparent [&_button:hover]:text-(--composer-bright) [&_button[data-popup-open]]:bg-transparent [&_button[data-popup-open]]:text-(--composer-bright) [&_button]:h-8 [&_button]:px-2";
 
-export const CONTEXT_ROW_SEPARATOR_CLASS = "h-3 w-px shrink-0 bg-foreground/35 dark:bg-border";
+export const CONTEXT_ROW_SEPARATOR_CLASS = "h-3 w-px shrink-0 bg-(--composer-separator)";
+
+/** The `/` between the projects and the workspace controls. */
+export const CONTEXT_ROW_SLASH_CLASS = "h-3 w-1.5 shrink-0 text-(--composer-separator)";

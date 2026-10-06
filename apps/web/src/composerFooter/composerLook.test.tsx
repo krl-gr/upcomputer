@@ -20,6 +20,8 @@ import {
   composerLookClass,
   composerWidthStyle,
 } from "./composerFooterSurface";
+import * as ContextRowStyles from "../composerContextRow/contextRowStyles";
+import * as ComposerLookStyles from "./composerLookStyles";
 import {
   COMPOSER_BACKDROP_FADE_CLASS,
   COMPOSER_CARD_CLASS,
@@ -113,7 +115,7 @@ describe("V1's send button", () => {
     for (const state of Object.values(STATES)) {
       const button = primaryActions(state);
       expect(button.classes.has("bg-message-action")).toBe(true);
-      expect(button.classes.has("bg-[#d4d4d4]")).toBe(false);
+      expect(button.classes.has("bg-(--composer-send-idle)")).toBe(false);
     }
   });
 });
@@ -200,5 +202,31 @@ describe("V1's composer width and bottom space", () => {
     );
     surface.composerFooter = "upstream";
     expect(composerBottomSpaceClass(true)).toBeNull();
+  });
+});
+
+describe("the composer look's colors", () => {
+  /**
+   * Color literals: hex, color functions, white and black, and Tailwind's
+   * fixed palettes. Every color comes from a theme token instead, so the
+   * composer follows the theme (`theme.upcomputer.css`). Nothing is allowed.
+   */
+  const LITERAL =
+    /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b|-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d/i;
+
+  it("takes every color from theme tokens, in the composer and the row under it", () => {
+    const classes = [
+      ...Object.entries(ComposerLookStyles),
+      ...Object.entries(ContextRowStyles),
+      ["composerSendButtonClass(true)", composerSendButtonClass(true)],
+      ["composerSendButtonClass(false)", composerSendButtonClass(false)],
+    ].filter((entry): entry is [string, string] => typeof entry[1] === "string");
+    expect(classes.length).toBeGreaterThan(10);
+    for (const [name, value] of classes) {
+      expect(
+        value.split(" ").filter((name) => LITERAL.test(name)),
+        name,
+      ).toEqual([]);
+    }
   });
 });

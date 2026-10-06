@@ -9,7 +9,9 @@ import { COMPOSER_MODEL_PICKER_TRIGGER_CLASS } from "./composerLookStyles";
 /**
  * Upstream's model picker for the composer. With the UpComputer footer its
  * trigger reads "Provider · Model" in V1's text style, as V1's did; a
- * multi-model selection keeps upstream's label.
+ * multi-model selection keeps upstream's label. Upstream's composer pulls the
+ * picker to its row's edge (`-ms-2.5`); in our row a separator comes first,
+ * so the margin goes and the separator keeps its gap.
  */
 export function ComposerFooterModelPicker(props: ComponentProps<typeof ProviderModelPicker>) {
   if (productSurface("composerFooter") !== "upcomputer") return <ProviderModelPicker {...props} />;
@@ -18,7 +20,7 @@ export function ComposerFooterModelPicker(props: ComponentProps<typeof ProviderM
     <ProviderModelPicker
       {...props}
       {...(label === null ? {} : { triggerLabel: label })}
-      triggerClassName={cn(COMPOSER_MODEL_PICKER_TRIGGER_CLASS, props.triggerClassName)}
+      triggerClassName={cn(COMPOSER_MODEL_PICKER_TRIGGER_CLASS, props.triggerClassName, "ms-0")}
     />
   );
 }

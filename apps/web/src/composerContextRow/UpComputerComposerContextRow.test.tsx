@@ -492,8 +492,8 @@ describe("the row under the composer", () => {
       ),
     ).toEqual(["Toggle thread details panel", "Toggle right panel"]);
     // Drawn like the row's other icons, dim until hovered, bright while open.
-    expect(details.className).toContain("text-muted-foreground");
-    expect(details.className).toContain("hover:text-foreground");
+    expect(details.className).toContain("text-(--composer-muted)");
+    expect(details.className).toContain("hover:text-(--composer-bright)");
     expect(details.getAttribute("aria-pressed")).toBe("true");
     expect(details.nextElementSibling?.textContent).toBe("Toggle thread details (⌘I)");
     await click(details);

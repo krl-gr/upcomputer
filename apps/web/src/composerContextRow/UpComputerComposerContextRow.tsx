@@ -42,6 +42,7 @@ import {
 import {
   CONTEXT_ROW_QUIET_CONTROLS_CLASS,
   CONTEXT_ROW_SEPARATOR_CLASS,
+  CONTEXT_ROW_SLASH_CLASS,
   CONTEXT_ROW_TOGGLE_CLASS,
 } from "./contextRowStyles";
 import { useRetargetDraftToProject } from "./useRetargetDraftToProject";
@@ -89,12 +90,7 @@ export interface ThreadPanelToggleProps {
 
 function ContextRowSlash() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 6 12"
-      className="h-3 w-1.5 shrink-0 text-foreground/35 dark:text-border"
-      fill="none"
-    >
+    <svg aria-hidden="true" viewBox="0 0 6 12" className={CONTEXT_ROW_SLASH_CLASS} fill="none">
       <path d="M5.25 0.5L0.75 11.5" stroke="currentColor" strokeWidth="1" />
     </svg>
   );

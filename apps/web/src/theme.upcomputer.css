@@ -1,7 +1,67 @@
 /* Up.computer theme tokens that are not color roles. Colors live in the
- * palette (packages/shared/src/upcomputerTheme.ts); this file only sets
- * existing upstream variables, scoped to the theme id so upstream themes and
- * the stock look stay untouched. */
+ * palette (packages/shared/src/upcomputerTheme.ts); this file sets existing
+ * upstream variables, scoped to the theme id so upstream themes and the stock
+ * look stay untouched, and the composer tokens below. */
+
+/* The composer look of the `composerFooter` and `composerContextRow`
+ * surfaces (`composerFooter/composerLookStyles.ts`,
+ * `composerContextRow/contextRowStyles.ts`), which read every color from
+ * here. Any theme derives them from its own tokens, as upstream's composer
+ * does: the card is the raised surface in dark (upstream's
+ * `--chat-composer-glass-surface`), separators and the send button are the
+ * theme's ink. Separators are not the theme's border: some themes draw it
+ * darker than their raised surface. The Up.computer theme pins V1's values
+ * below. Shadow ink and bevels are V1's in every theme: they are lighting,
+ * not a theme color. */
+:root {
+  --composer-surface: var(--card);
+  --composer-shadow: 0 4px 14.4px rgb(9 9 9 / 3.5%);
+  /* Controls at rest, and on hover, while open or pressed. */
+  --composer-muted: var(--muted-foreground);
+  --composer-bright: var(--foreground);
+  --composer-separator: color-mix(in srgb, var(--foreground) 35%, transparent);
+  /* The send button when a click would send, and when it would not (at 40% opacity). */
+  --composer-send: var(--foreground);
+  --composer-send-idle: color-mix(in srgb, var(--foreground) 27%, var(--composer-surface));
+  --composer-send-foreground: var(--composer-surface);
+  --composer-send-shadow:
+    inset 0 -1px 1px rgb(255 255 255 / 20%), inset 0 1px 1px rgb(255 255 255 / 20%);
+
+  @variant dark {
+    --composer-surface: var(--surface-raised);
+    --composer-shadow:
+      inset -1px -1px 1px color-mix(in srgb, var(--foreground) 6%, transparent),
+      inset 1px 1px 1px color-mix(in srgb, var(--foreground) 12%, transparent),
+      0 4px 14.4px rgb(9 9 9 / 8%);
+    --composer-separator: color-mix(in srgb, var(--foreground) 12%, transparent);
+    --composer-send: color-mix(in srgb, var(--foreground) 85%, var(--composer-surface));
+    --composer-send-idle: var(--composer-send);
+    --composer-send-shadow: inset 0 -1px 1px rgb(0 0 0 / 17%), inset 0 1px 1px rgb(255 255 255);
+  }
+}
+
+/* V1's composer, exactly: its grey send button in light, and in dark its
+ * #1e1e1e card, white text tones and white separators (its dark border, which
+ * on this canvas is the palette's border too). */
+html[data-theme-id="upcomputer"] {
+  --composer-send: #222222;
+  --composer-send-idle: #c4c4c4;
+  --composer-send-foreground: #ffffff;
+
+  @variant dark {
+    --composer-surface: #1e1e1e;
+    --composer-shadow:
+      inset -1px -1px 1px rgb(255 255 255 / 6%), inset 1px 1px 1px rgb(255 255 255 / 12%),
+      0 4px 14.4px rgb(9 9 9 / 8%);
+    --composer-muted: rgb(255 255 255 / 50%);
+    --composer-bright: rgb(255 255 255 / 86%);
+    --composer-separator: rgb(255 255 255 / 6%);
+    --composer-send: #d4d4d4;
+    --composer-send-idle: #d4d4d4;
+    --composer-send-foreground: #171717;
+  }
+}
+
 html[data-theme-id="upcomputer"] {
   /* The Up.computer look has no fractal-noise grain on its surfaces. */
   --surface-grain: none;
