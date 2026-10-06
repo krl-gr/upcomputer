@@ -165,6 +165,8 @@ export type TaskRunCount = typeof TaskRunCount.Type;
 export const TaskListItem = Schema.Struct({
   ...Task.fields,
   runCounts: Schema.Array(TaskRunCount),
+  /** Raw status of the task's latest run (latest start); null without runs. Absent from older servers. */
+  latestRunStatus: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export const TaskPageResult = Schema.Struct({
   tasks: Schema.Array(TaskListItem),

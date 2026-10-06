@@ -210,6 +210,10 @@ function triggerFieldsChanged(
   );
 }
 
+const decodeLatestRunRows = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ taskId: TaskId, status: Schema.NullOr(Schema.String) })),
+);
+
 function filterTasksByTags(tasks: ReadonlyArray<Task>, tags: ReadonlyArray<TaskTag> | undefined) {
   if (!tags || tags.length === 0) {
     return tasks;
@@ -1821,7 +1825,15 @@ const makeTaskRepository = Effect.gen(function* () {
         yield* sql`SELECT r.task_id AS "taskId", ${countedRunStatus} AS status, COUNT(*) AS count
         FROM task_agent_runs r WHERE r.task_id IN (SELECT value FROM json_each(${ids}))
         GROUP BY r.task_id, 2 ORDER BY 2`;
+      // The latest run in the run lists' order (started_at DESC, id ASC).
+      const latest = yield* sql`SELECT t.value AS "taskId", (
+          SELECT r.status FROM task_agent_runs r WHERE r.task_id = t.value
+          ORDER BY r.started_at DESC, r.id ASC LIMIT 1
+        ) AS status
+        FROM json_each(${ids}) t`;
       const decodedTags = yield* Schema.decodeUnknownEffect(Schema.Array(TaskTagDbRow))(tagRows);
+      const decodedLatest = yield* decodeLatestRunRows(latest);
+      const latestByTask = new Map(decodedLatest.map(({ taskId, status }) => [taskId, status]));
       const decodedCounts = yield* Schema.decodeUnknownEffect(
         Schema.Array(
           Schema.Struct({
@@ -1839,6 +1851,7 @@ const makeTaskRepository = Effect.gen(function* () {
       return attachTags(rows, decodedTags).map((task) => ({
         ...task,
         runCounts: countsByTask.get(task.id) ?? [],
+        latestRunStatus: latestByTask.get(task.id) ?? null,
       }));
     });
 
