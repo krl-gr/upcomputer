@@ -70,58 +70,55 @@ html[data-theme-id="upcomputer"] {
   --sidebar-icon-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 60%, var(--sidebar));
 }
 
-/* Sidebar vibrancy, as in V1. The macOS desktop window paints native vibrancy
- * behind the page (`apps/desktop/src/window/UpcomputerWindowVibrancy.ts`), and
- * `sidebarVibrancy/sidebarVibrancy.ts` marks the document there. Only with this
- * theme, and only while the app's sidebar is mounted, the page lets it show
+/* Sidebar vibrancy, with V1's values. The macOS desktop window paints native
+ * vibrancy behind the page (`apps/desktop/src/window/UpcomputerWindowVibrancy.ts`),
+ * and `sidebarVibrancy/sidebarVibrancy.ts` marks the document there. Only with
+ * this theme, and only while the app's sidebar is mounted, the page lets it show
  * through the sidebar: html and body drop their opaque chrome (the boot script
- * and the theme set it inline, hence `!important`), and the sidebar wears its
- * palette color with alpha. The chat area and every other surface keep their
- * own opaque backgrounds. Another theme drops the whole block, so the page
- * paints opaque again at once. The native material does the blur and
- * saturation: CSS `backdrop-filter` cannot sample it and would only blur the
- * transparent page.
- *
- * Opacity: text keeps the theme's 4.5:1 floor over any backdrop, even a black
- * one in light and a white one in dark with no native material at all. Rows use
- * the sidebar text color with alpha, which flattens to the palette's row tone
- * over the opaque sidebar. */
-html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has(
-    [data-app-sidebar]
-  ) {
-  --upcomputer-sidebar-opacity: 94%;
-  --upcomputer-sidebar-row-tint: 6%;
-  background: transparent !important;
-}
-
-html.dark.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has(
-    [data-app-sidebar]
-  ) {
-  --upcomputer-sidebar-opacity: 80%;
-  --upcomputer-sidebar-row-tint: 7.5%;
-}
-
+ * and the theme set it inline, hence `!important`), and the sidebar wears V1's
+ * tint: white 25% in light, the #131313 canvas at 34% in dark. Rows and
+ * borders are V1's black or white ink with alpha: the sidebar border token at
+ * 10%, and the outer edge at V1's fainter 4% (light) and 3% (dark). Text stays
+ * the theme's foreground. Legibility leans on the native material, as it did in V1. The
+ * chat area and every other surface keep their own opaque backgrounds. Another
+ * theme drops the whole block, so the page paints opaque again at once, and
+ * coming back restores it. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has([data-app-sidebar]),
 html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has([data-app-sidebar])
   body {
   background: transparent !important;
 }
 
-html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
-  [data-app-sidebar]
-  [data-slot="sidebar-inner"] {
-  --sidebar-row-hover: color-mix(
-    in srgb,
-    var(--sidebar-foreground) var(--upcomputer-sidebar-row-tint),
-    transparent
-  );
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"] [data-app-sidebar] {
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: rgb(0 0 0 / 10%);
+  --sidebar-row-hover: rgb(0 0 0 / 5%);
   --sidebar-row-active: var(--sidebar-row-hover);
   --sidebar-row-selected: var(--sidebar-row-hover);
   --sidebar-control-surface: var(--sidebar-row-hover);
-  background-color: color-mix(
-    in srgb,
-    var(--sidebar) var(--upcomputer-sidebar-opacity),
-    transparent
-  );
+  border-color: rgb(0 0 0 / 4%);
+
+  @variant dark {
+    --sidebar-border: rgb(255 255 255 / 10%);
+    --sidebar-row-hover: rgb(255 255 255 / 7%);
+    border-color: rgb(255 255 255 / 3%);
+  }
+}
+
+/* V1's `.upcomputer-sidebar-glass`, on the same element. The filter is kept for
+ * V1 parity only: it cannot sample the native material behind the transparent
+ * page, so the material alone does the blur, and in a vibrant window the filter
+ * changes no pixel. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"] {
+  background-color: rgb(255 255 255 / 25%);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+  backdrop-filter: blur(28px) saturate(1.25);
+
+  @variant dark {
+    background-color: color-mix(in srgb, var(--background) 34%, transparent);
+  }
 }
 
 /* Nothing in the translucent sidebar animates: no status pulses, spinners or

@@ -105,6 +105,7 @@ const LAYOUT = renderToStaticMarkup(
               <span className="size-2 rounded-full bg-info animate-status-pulse" data-pulse />
               <span>Review the release</span>
             </SidebarMenuButton>
+            <div className="border-l border-sidebar-border" data-sub-border />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarContent>
@@ -132,30 +133,50 @@ function documentHtml(css: string, input: Document): string {
   return `<!doctype html><html data-theme-id="${input.theme.id}" class="${classes.join(" ")}" ${vibrancy} style="${variables};${chrome}"><head><style>${css}</style></head><body style="${chrome}"><div id="root">${LAYOUT}</div></body></html>`;
 }
 
+/** A computed color as 0-255 channels and alpha. */
+type Rgba = readonly [number, number, number, number];
+
 interface Painted {
   readonly htmlAlpha: number;
   readonly bodyAlpha: number;
-  readonly sidebarAlpha: number;
-  readonly rowAlpha: number;
+  readonly sidebar: Rgba;
+  readonly sidebarFilter: string;
+  readonly row: Rgba;
+  readonly edge: Rgba;
+  readonly border: Rgba;
+  readonly text: Rgba;
   readonly insetAlpha: number;
   readonly pulseAnimation: string;
 }
 
-/** Runs in the page: the alpha of each layer's own background, and the pulse's animation. */
+/** Runs in the page: each layer's own colors, the sidebar filter, and the pulse's animation. */
 function measurePainted(): Painted {
-  const alphaOf = (selector: string) => {
-    const color = getComputedStyle(document.querySelector(selector)!).backgroundColor;
-    const alpha = /\/\s*([\d.]+)\)$/.exec(color) ?? /rgba\([^)]*,\s*([\d.]+)\)$/.exec(color);
-    return alpha ? Number(alpha[1]) : color === "transparent" ? 0 : 1;
+  // Chromium keeps a computed color in its own space (oklch, srgb, rgb); mixing
+  // it in srgb normalizes it to `color(srgb r g b / a)`.
+  const probe = document.body.appendChild(document.createElement("i"));
+  const toRgba = (color: string): Rgba => {
+    probe.style.color = `color-mix(in srgb, ${color} 100%, transparent)`;
+    const [, r, g, b, a] = /^color\(srgb (\S+) (\S+) (\S+)(?: \/ (\S+))?\)$/.exec(
+      getComputedStyle(probe).color,
+    )!;
+    return [Number(r) * 255, Number(g) * 255, Number(b) * 255, a === undefined ? 1 : Number(a)];
   };
-  return {
-    htmlAlpha: alphaOf("html"),
-    bodyAlpha: alphaOf("body"),
-    sidebarAlpha: alphaOf('[data-slot="sidebar-inner"]'),
-    rowAlpha: alphaOf('[data-sidebar="menu-button"]'),
-    insetAlpha: alphaOf('[data-slot="sidebar-inset"]'),
-    pulseAnimation: getComputedStyle(document.querySelector("[data-pulse]")!).animationName,
+  const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+  const sidebar = style('[data-slot="sidebar-inner"]');
+  const painted: Painted = {
+    htmlAlpha: toRgba(style("html").backgroundColor)[3],
+    bodyAlpha: toRgba(style("body").backgroundColor)[3],
+    sidebar: toRgba(sidebar.backgroundColor),
+    sidebarFilter: sidebar.backdropFilter,
+    row: toRgba(style('[data-sidebar="menu-button"]').backgroundColor),
+    edge: toRgba(style("[data-app-sidebar]").borderRightColor),
+    border: toRgba(style("[data-sub-border]").borderLeftColor),
+    text: toRgba(style('[data-sidebar="menu-button"]').color),
+    insetAlpha: toRgba(style('[data-slot="sidebar-inset"]').backgroundColor)[3],
+    pulseAnimation: style("[data-pulse]").animationName,
   };
+  probe.remove();
+  return painted;
 }
 
 /** The alpha the page leaves at a point, over a transparent window: what the vibrancy shows through. */
@@ -175,22 +196,43 @@ async function windowAlphaAt(page: Page, x: number, y: number): Promise<number> 
   return NodeZlib.inflateSync(Buffer.concat(chunks))[4]! / 255;
 }
 
-function contrastRatio(first: readonly number[], second: readonly number[]): number {
-  const luminance = (rgb: readonly number[]) =>
-    rgb
-      .map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
-      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
-  const lighter = Math.max(luminance(first), luminance(second));
-  const darker = Math.min(luminance(first), luminance(second));
-  return (lighter + 0.05) / (darker + 0.05);
+const rgbaOf = (value: string, alpha = 1): Rgba => {
+  const hex = themeColorToHex(value)!;
+  const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+  return [r!, g!, b!, alpha];
+};
+
+/** Within one 8-bit step: Chromium stores a computed alpha in 1/255 steps. */
+function expectColor(actual: Rgba, expected: Rgba): void {
+  actual.forEach((channel, index) => {
+    const step = index === 3 ? 1 / 255 : 1;
+    expect(Math.abs(channel - expected[index]!)).toBeLessThanOrEqual(step);
+  });
 }
 
-const rgbOf = (value: string) =>
-  [1, 3, 5].map(
-    (offset) => Number.parseInt(themeColorToHex(value)!.slice(offset, offset + 2), 16) / 255,
-  );
-const over = (top: readonly number[], alpha: number, bottom: readonly number[]) =>
-  top.map((channel, index) => alpha * channel + (1 - alpha) * bottom[index]!);
+/** V1's sidebar (`upcomputer` checkout, theme.upcomputer.css) in each mode. */
+const V1_SIDEBAR = {
+  light: { sidebar: [255, 255, 255, 0.25], ink: [0, 0, 0] },
+  dark: {
+    sidebar: rgbaOf(getThemeColorsForMode(UPCOMPUTER_THEME, "dark")!.canvas, 0.34),
+    ink: [255, 255, 255],
+  },
+} as const;
+
+function expectV1Sidebar(painted: Painted, mode: "light" | "dark"): void {
+  const v1 = V1_SIDEBAR[mode];
+  const [r, g, b] = v1.ink;
+  expect(painted.htmlAlpha).toBe(0);
+  expect(painted.bodyAlpha).toBe(0);
+  expect(painted.insetAlpha).toBe(1);
+  expectColor(painted.sidebar, v1.sidebar);
+  expect(painted.sidebarFilter).toBe("blur(28px) saturate(1.25)");
+  expectColor(painted.row, [r, g, b, mode === "light" ? 0.05 : 0.07]);
+  expectColor(painted.edge, [r, g, b, mode === "light" ? 0.04 : 0.03]);
+  expectColor(painted.border, [r, g, b, 0.1]);
+  expectColor(painted.text, rgbaOf(getThemeColorsForMode(UPCOMPUTER_THEME, mode)!.text));
+  expect(painted.pulseAnimation).toBe("none");
+}
 
 const browser = await launchBrowser();
 
@@ -216,42 +258,55 @@ describe.skipIf(browser === null)("sidebar vibrancy CSS (real styles in Chromium
     return page.evaluate(measurePainted);
   }
 
-  it.each(["light", "dark"] as const)(
-    "lets the %s Up.computer sidebar show the window through, and only the sidebar",
-    async (mode) => {
-      const painted = await paint({ theme: UPCOMPUTER_THEME, mode });
-      expect(painted.htmlAlpha).toBe(0);
-      expect(painted.bodyAlpha).toBe(0);
-      expect(painted.insetAlpha).toBe(1);
-      expect(painted.sidebarAlpha).toBe(mode === "light" ? 0.94 : 0.8);
-      expect(painted.pulseAnimation).toBe("none");
-      expect(await windowAlphaAt(page, 100, 400)).toBeCloseTo(painted.sidebarAlpha, 1);
-      expect(await windowAlphaAt(page, 800, 400)).toBe(1);
-    },
-  );
-
-  it("paints the page opaque again when another theme is chosen at runtime", async () => {
-    await paint({ theme: UPCOMPUTER_THEME, mode: "light" });
-    // What applyThemePalette does on a theme switch.
+  /** What useTheme does on a theme switch: applyThemePalette's id and variables, and the mode class. */
+  async function switchTheme(theme: ThemeDefinition, mode: "light" | "dark"): Promise<Painted> {
     await page.evaluate(
-      ({ id, variables }) => {
-        document.documentElement.dataset.themeId = id;
-        for (const [name, value] of variables) {
-          document.documentElement.style.setProperty(name, value);
-        }
+      ({ id, dark, variables }) => {
+        const root = document.documentElement;
+        root.dataset.themeId = id;
+        root.classList.toggle("dark", dark);
+        for (const [name, value] of variables) root.style.setProperty(name, value);
       },
       {
-        id: T3_CHAT_THEME.id,
-        variables: Object.entries(getThemeColorsForMode(T3_CHAT_THEME, "light")!).map(
+        id: theme.id,
+        dark: mode === "dark",
+        variables: Object.entries(getThemeColorsForMode(theme, mode)!).map(
           ([role, value]) => [getThemeColorVariable(role as never), value] as const,
         ),
       },
     );
-    const painted = await page.evaluate(measurePainted);
-    expect(painted).toMatchObject({ htmlAlpha: 1, bodyAlpha: 1, sidebarAlpha: 1 });
-    expect(painted.pulseAnimation).not.toBe("none");
-    expect(await windowAlphaAt(page, 100, 400)).toBe(1);
-  });
+    return page.evaluate(measurePainted);
+  }
+
+  it.each(["light", "dark"] as const)(
+    "paints the %s Up.computer sidebar with V1's values, and only the sidebar shows the window",
+    async (mode) => {
+      const painted = await paint({ theme: UPCOMPUTER_THEME, mode });
+      expectV1Sidebar(painted, mode);
+      expect(await windowAlphaAt(page, 100, 400)).toBeCloseTo(painted.sidebar[3], 1);
+      expect(await windowAlphaAt(page, 800, 400)).toBe(1);
+    },
+  );
+
+  it.each([
+    ["light", "dark"],
+    ["dark", "light"],
+  ] as const)(
+    "paints opaque on another theme and restores V1's values on the way back (%s, then %s)",
+    async (first, second) => {
+      await paint({ theme: UPCOMPUTER_THEME, mode: first });
+      const other = await switchTheme(T3_CHAT_THEME, first);
+      expect(other).toMatchObject({ htmlAlpha: 1, bodyAlpha: 1, sidebarFilter: "none" });
+      expect(other.sidebar[3]).toBe(1);
+      expect(other.pulseAnimation).not.toBe("none");
+      expect(await windowAlphaAt(page, 100, 400)).toBe(1);
+
+      for (const mode of [first, second]) {
+        expectV1Sidebar(await switchTheme(UPCOMPUTER_THEME, mode), mode);
+        expect(await windowAlphaAt(page, 100, 400)).toBeCloseTo(V1_SIDEBAR[mode].sidebar[3], 1);
+      }
+    },
+  );
 
   it("keeps the sidebar opaque outside the macOS desktop app", async () => {
     for (const input of [
@@ -259,30 +314,9 @@ describe.skipIf(browser === null)("sidebar vibrancy CSS (real styles in Chromium
       { theme: UPCOMPUTER_THEME, mode: "dark", vibrancy: false },
     ] as const) {
       const painted = await paint(input);
-      expect(painted).toMatchObject({ htmlAlpha: 1, bodyAlpha: 1, sidebarAlpha: 1 });
+      expect(painted).toMatchObject({ htmlAlpha: 1, bodyAlpha: 1, sidebarFilter: "none" });
+      expect(painted.sidebar[3]).toBe(1);
       expect(await windowAlphaAt(page, 100, 400)).toBe(1);
     }
   });
-
-  // The theme's sidebar contrast floors (upcomputerTheme.test.ts), over the
-  // worst backdrop: black and white, with no native material in between.
-  it.each(["light", "dark"] as const)(
-    "keeps the %s sidebar text at 4.5:1 over any backdrop",
-    async (mode) => {
-      const { sidebarAlpha, rowAlpha } = await paint({ theme: UPCOMPUTER_THEME, mode });
-      const colors = getThemeColorsForMode(UPCOMPUTER_THEME, mode)!;
-      for (const backdrop of [
-        [0, 0, 0],
-        [1, 1, 1],
-      ]) {
-        const sidebar = over(rgbOf(colors.sidebar), sidebarAlpha, backdrop);
-        const row = over(rgbOf(colors.sidebarForeground), rowAlpha, sidebar);
-        for (const text of [colors.sidebarForeground, colors.sidebarMutedForeground]) {
-          for (const background of [sidebar, row]) {
-            expect(contrastRatio(rgbOf(text), background)).toBeGreaterThanOrEqual(4.5);
-          }
-        }
-      }
-    },
-  );
 });
