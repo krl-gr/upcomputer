@@ -21,6 +21,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { productSurface } from "~/product/productFlags";
+import { SIDEBAR_SEARCH_ROW_TEXT } from "~/sidebarMetrics/sidebarMetrics";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -82,7 +83,10 @@ export function SidebarThreadHeader({
     <div className="flex items-center gap-1">
       <div
         ref={searchFieldRef}
-        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+        className={cn(
+          "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+          productSurface("sidebarProjects") === "upcomputer" && SIDEBAR_SEARCH_ROW_TEXT,
+        )}
       >
         <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
         <SidebarInput

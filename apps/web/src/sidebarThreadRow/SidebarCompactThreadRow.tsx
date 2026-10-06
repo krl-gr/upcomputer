@@ -34,6 +34,7 @@ import {
   SIDEBAR_LIST_ROW_SPACING,
   SIDEBAR_ROW_HEIGHT,
   SIDEBAR_ROW_INSET,
+  SIDEBAR_ROW_TEXT,
 } from "../sidebarMetrics/sidebarMetrics";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -336,7 +337,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                 "min-w-0 flex-1 truncate text-sm",
                 props.isActive
                   ? "text-foreground"
-                  : "text-foreground/72 group-hover/sidebar-row:text-foreground dark:text-foreground/82",
+                  : cn(SIDEBAR_ROW_TEXT, "group-hover/sidebar-row:text-foreground"),
                 thread.titleRegeneration != null && "opacity-55",
               )}
             >

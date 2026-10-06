@@ -255,11 +255,11 @@ describe("SidebarCompactThreadRow", () => {
     const titles = compactRows().map((row) => row.querySelector("span[aria-hidden]")!.className);
     expect(titles[1]).toBe(titles[0]);
     expect(titles[2]).toBe(titles[0]);
-    expect(titles[0]).toContain("text-foreground/72");
+    expect(titles[0]).toContain("text-sidebar-muted-foreground");
     expect(titles[0]).not.toContain("font-medium");
     // Only the open thread is brighter.
     expect(titles[3]).not.toBe(titles[0]);
-    expect(titles[3]).not.toContain("text-foreground/72");
+    expect(titles[3]).not.toContain("text-sidebar-muted-foreground");
   });
 
   it("renders the shelves' rows compactly: pinned, snoozed and working", async () => {

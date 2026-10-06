@@ -146,12 +146,15 @@ describe("Up.computer theme", () => {
     expect(asHex(light.codeBackground)).toBe("#f0f0f0");
     expect(asHex(dark.codeBackground)).toBe("#1c1c1c");
     for (const colors of [light, dark]) {
-      // One tone for every row state, and sidebar labels at full strength.
+      // One tone for every row state.
       expect(colors.sidebarRowHover).toBe(colors.sidebarRowSelected);
       expect(colors.sidebarRowActive).toBe(colors.sidebarRowSelected);
       expect(colors.sidebarControlSurface).toBe(colors.sidebarRowSelected);
-      expect(colors.sidebarMutedForeground).toBe(colors.sidebarForeground);
     }
+    // Muted sidebar text is V1's row text: the foreground at 72% (light) and
+    // 82% (dark) over the sidebar.
+    expect(asHex(light.sidebarMutedForeground)).toBe("#636365");
+    expect(asHex(dark.sidebarMutedForeground)).toBe("#cccccc");
   });
 
   it("passes the contrast floors upstream holds its built-in palettes to", () => {
@@ -171,6 +174,7 @@ describe("Up.computer theme", () => {
         ["accentSurfaceForeground", "accentSurface"],
         ["sidebarForeground", "sidebar"],
         ["sidebarMutedForeground", "sidebar"],
+        ["sidebarMutedForeground", "sidebarRowSelected"],
         ["sidebarForeground", "sidebarRowSelected"],
         ["codeForeground", "codeBackground"],
         ["errorForeground", "errorSurface"],

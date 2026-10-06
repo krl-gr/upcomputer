@@ -4,10 +4,12 @@ export const UPCOMPUTER_THEME_ID = "upcomputer";
 
 /**
  * The Up.computer look as a built-in palette: neutral zinc light, a flat
- * #131313 dark, one shared tone for every sidebar row state, and sidebar
- * labels at full strength. Translucent V1 tokens are flattened over the
- * backdrop they were painted on (content: white 80% over zinc-25; sidebar:
- * white 25% over zinc-25; rows: black 5% / white 7%), and dark surfaces
+ * #131313 dark, one shared tone for every sidebar row state, and the sidebar
+ * muted foreground at V1's row text tone, so upstream's muted sidebar text
+ * (the Search row) matches our rows. Translucent V1 tokens are flattened over
+ * the backdrop they were painted on (content: white 80% over zinc-25; sidebar:
+ * white 25% over zinc-25; rows: black 5% / white 7%; row text: foreground 72%
+ * / 82% over the sidebar), and dark surfaces
  * recompute upstream's own mixes on the #131313 canvas. Web and desktop only:
  * it is not part of BUILT_IN_THEME_IDS, which the mobile app renders.
  */
@@ -61,7 +63,7 @@ export const UPCOMPUTER_THEME: ThemeDefinition = {
     codeForeground: "oklch(0.273936 0.005477 286.033)",
     sidebar: "oklch(0.994048 0 0)",
     sidebarForeground: "oklch(0.273936 0.005477 286.033)",
-    sidebarMutedForeground: "oklch(0.273936 0.005477 286.033)",
+    sidebarMutedForeground: "oklch(0.500364 0.003131 286.286)",
     sidebarControlSurface: "oklch(0.95514 0 0)",
     sidebarRowHover: "oklch(0.95514 0 0)",
     sidebarRowActive: "oklch(0.95514 0 0)",
@@ -123,7 +125,7 @@ export const UPCOMPUTER_THEME: ThemeDefinition = {
       codeForeground: "oklch(0.970151 0 0)",
       sidebar: "oklch(0.186741 0 0)",
       sidebarForeground: "oklch(0.970151 0 0)",
-      sidebarMutedForeground: "oklch(0.970151 0 0)",
+      sidebarMutedForeground: "oklch(0.845222 0 0)",
       sidebarControlSurface: "oklch(0.260325 0 0)",
       sidebarRowHover: "oklch(0.260325 0 0)",
       sidebarRowActive: "oklch(0.260325 0 0)",

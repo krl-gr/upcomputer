@@ -39,28 +39,36 @@ await vi.hoisted(async () => {
 // The UpComputer build: its flags and surfaces, and the Tasks feature's
 // navigation. Its run count badges load data, so they stay out; they sit at
 // the right end of a row and do not move the left edges measured here.
+// `product.upstreamSurfaces` switches to upstream's surfaces for one render.
+const product = vi.hoisted(() => ({ upstreamSurfaces: false }));
 vi.mock("../product/productEntry", async () => {
   const { composeExperimentalWebFeatures } = await import("../product/WebProduct");
   const { TASKS_WEB_FEATURE } = await import("@t3tools/tasks-web/feature");
-  const { UPCOMPUTER_PRODUCT_FLAGS, UPCOMPUTER_PRODUCT_SURFACES } =
+  const { UPCOMPUTER_PRODUCT_FLAGS, UPCOMPUTER_PRODUCT_SURFACES, UPSTREAM_PRODUCT_SURFACES } =
     await import("@t3tools/shared/productFlags");
   const { threadRowAccessory: _row, chatHeaderAccessory: _header, ...tasks } = TASKS_WEB_FEATURE;
+  const composed = composeExperimentalWebFeatures(
+    [
+      {
+        ...tasks,
+        navigation: (tasks.navigation ?? []).map(({ id, label, path, order, icon }) => ({
+          id,
+          label,
+          path,
+          order,
+          icon,
+        })),
+      },
+    ],
+    { flags: UPCOMPUTER_PRODUCT_FLAGS, surfaces: UPCOMPUTER_PRODUCT_SURFACES },
+  );
   return {
-    WEB_PRODUCT: composeExperimentalWebFeatures(
-      [
-        {
-          ...tasks,
-          navigation: (tasks.navigation ?? []).map(({ id, label, path, order, icon }) => ({
-            id,
-            label,
-            path,
-            order,
-            icon,
-          })),
-        },
-      ],
-      { flags: UPCOMPUTER_PRODUCT_FLAGS, surfaces: UPCOMPUTER_PRODUCT_SURFACES },
-    ),
+    WEB_PRODUCT: {
+      ...composed,
+      get surfaces() {
+        return product.upstreamSurfaces ? UPSTREAM_PRODUCT_SURFACES : composed.surfaces;
+      },
+    },
   };
 });
 vi.mock("@tanstack/react-router", () => ({
@@ -127,6 +135,8 @@ const { SidebarProjectsSection } = await import("../sidebarProjects/SidebarProje
 const { SidebarThreadsSectionHeader } = await import("../sidebarProjects/SidebarThreadsSection");
 const { SidebarCompactThreadRow } = await import("../sidebarThreadRow/SidebarCompactThreadRow");
 const { WorkspaceViewLayout } = await import("@t3tools/tasks-web");
+const { getThemeColorsForMode, getThemeColorVariable, UPCOMPUTER_THEME } =
+  await import("../themePalette");
 
 const WEB_ROOT = NodeURL.fileURLToPath(new URL("../..", import.meta.url));
 
@@ -247,6 +257,32 @@ function ThreadSidebarUnderTest() {
 }
 
 threadSidebar.render = () => <ThreadSidebarUnderTest />;
+
+function SearchRowUnderTest() {
+  const noop = () => undefined;
+  return (
+    <SidebarProvider>
+      <SidebarThreadHeader
+        hasProjects
+        projectScope={null}
+        onNewProject={noop}
+        onNewThread={noop}
+        newThreadDisabled={false}
+        newThreadShortcutLabel={null}
+        newThreadInProjectShortcutLabel={null}
+        showNewThreadInProjectHint={false}
+        searchInputRef={{ current: null }}
+        searchQuery=""
+        onSearchQueryChange={noop}
+        onSearchKeyDown={noop}
+        isSearching={false}
+        searchResultCount={0}
+        activeSearchResultIndex={0}
+        onClearSearch={noop}
+      />
+    </SidebarProvider>
+  );
+}
 
 function SidebarUnderTest() {
   return (
@@ -526,6 +562,168 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
       expect(await colorOf(button), `${button} with its row hovered`).toBe(dim);
       await pointAt(button);
       expect(await colorOf(button), `${button} hovered`).toBe(bright);
+    }
+  });
+});
+
+/** The `<html>` attributes `applyThemePalette` sets for the Up.computer theme in `mode`. */
+function upcomputerThemeRoot(mode: "light" | "dark"): string {
+  const colors = getThemeColorsForMode(UPCOMPUTER_THEME, mode)!;
+  const variables = Object.entries(colors)
+    .map(([role, value]) => `${getThemeColorVariable(role as keyof typeof colors)}:${value}`)
+    .join(";");
+  return `data-theme-id="${UPCOMPUTER_THEME.id}" class="${mode}" style="${variables}"`;
+}
+
+interface MeasuredText {
+  readonly color: string;
+  readonly weight: string;
+  /** The colour as painted on the sidebar background, in sRGB channels. */
+  readonly painted: ReadonlyArray<number>;
+  /** WCAG contrast of `painted` against the sidebar background. */
+  readonly contrast: number;
+}
+
+/**
+ * Runs in the page: the text colour and weight of each named row label, the
+ * Search row's placeholder for "Search", and V1's row tone (`text-foreground`
+ * at `alpha`), each painted on the sidebar background.
+ */
+function measureText(input: { readonly names: ReadonlyArray<string>; readonly alpha: number }) {
+  const sidebar = document.querySelector('[data-slot="sidebar-inner"]')!;
+  const background = getComputedStyle(sidebar).backgroundColor;
+  const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+  const paint = (color: string, alpha = 1) => {
+    context.globalAlpha = 1;
+    context.fillStyle = background;
+    context.fillRect(0, 0, 1, 1);
+    context.globalAlpha = alpha;
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    return Array.from(context.getImageData(0, 0, 1, 1).data.subarray(0, 3));
+  };
+  const luminance = (channels: ReadonlyArray<number>) =>
+    channels
+      .map((channel) => channel / 255)
+      .map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  const backgroundLuminance = luminance(paint(background));
+  const measure = (style: CSSStyleDeclaration): MeasuredText => {
+    const painted = paint(style.color);
+    const [lighter, darker] = [luminance(painted), backgroundLuminance].toSorted((a, b) => b - a);
+    return {
+      color: style.color,
+      weight: style.fontWeight,
+      painted,
+      contrast: (lighter! + 0.05) / (darker! + 0.05),
+    };
+  };
+  const leaves = [...document.querySelectorAll("span")].filter(
+    (element) => element.childElementCount === 0,
+  );
+  const probe = document.createElement("span");
+  probe.className = "text-foreground";
+  sidebar.append(probe);
+  const v1Row = paint(getComputedStyle(probe).color, input.alpha);
+  probe.remove();
+  const text = Object.fromEntries(
+    input.names.map((name) => {
+      if (name === "Search") {
+        const search = document.querySelector('input[aria-label="Search threads"]')!;
+        return [name, measure(getComputedStyle(search, "::placeholder"))];
+      }
+      const label = leaves.find((element) => element.textContent === name);
+      if (label === undefined) throw new Error(`No row labelled "${name}"`);
+      return [name, measure(getComputedStyle(label))];
+    }),
+  );
+  return { text, v1Row };
+}
+
+// Inactive rows of each kind; "Tasks", "All projects" and the first thread are active.
+const RESTING_ROWS = ["Agents", "Automations", "UpComputer", "Site", "No project", "More"];
+const RESTING_THREADS = THREAD_TITLES.slice(1);
+
+describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chromium)", () => {
+  // V1's row text: `text-foreground/72`, and `/82` in dark.
+  it.each([
+    ["light", 0.72],
+    ["dark", 0.82],
+  ] as const)(
+    "gives Search and every resting row one tone and weight, in %s",
+    async (mode, alpha) => {
+      const [markup, css] = await Promise.all([
+        renderMarkup(<SidebarUnderTest />),
+        compiledAppCss(),
+      ]);
+      const page = await browser!.newPage({ viewport: { width: 1200, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html ${upcomputerThemeRoot(mode)}><head><style>${css}</style></head><body>${markup}</body></html>`,
+        );
+        await page.mouse.move(1100, 800);
+        const { text, v1Row } = await page.evaluate(measureText, {
+          names: ["Search", ...RESTING_ROWS, ...RESTING_THREADS, "Projects", "Threads"],
+          alpha,
+        });
+        const search = text.Search!;
+        for (const name of [...RESTING_ROWS, ...RESTING_THREADS]) {
+          expect(text[name]!.color, `${name} colour`).toBe(search.color);
+          expect(text[name]!.weight, `${name} weight`).toBe(search.weight);
+        }
+        expect(search.weight).toBe("400");
+        // The theme's sidebar muted foreground is V1's row tone.
+        search.painted.forEach((channel, index) =>
+          expect(Math.abs(channel - v1Row[index]!), `channel ${index}`).toBeLessThanOrEqual(2),
+        );
+        // Section titles stay a step dimmer than the rows.
+        for (const title of ["Projects", "Threads"]) {
+          expect(text[title]!.contrast, `${title} title`).toBeLessThan(search.contrast);
+        }
+        // Hover and active keep the menu buttons' own look.
+        const agents = '[data-sidebar="menu-button"]:has-text("Agents")';
+        await page.hover(agents);
+        expect(await page.$eval(agents, (row) => getComputedStyle(row).color)).not.toBe(
+          search.color,
+        );
+        const active = await page.$eval(
+          '[data-sidebar="menu-button"][data-active="true"]',
+          (row) => {
+            const style = getComputedStyle(row);
+            return { color: style.color, weight: style.fontWeight };
+          },
+        );
+        expect(active.color).not.toBe(search.color);
+        expect(active.weight).toBe("500");
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it("keeps upstream's medium Search row with upstream's surfaces", async () => {
+    const css = await compiledAppCss();
+    const weight = async () => {
+      const markup = await renderMarkup(<SearchRowUnderTest />);
+      const page = await browser!.newPage();
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><style>${css}</style></head><body>${markup}</body></html>`,
+        );
+        return await page.$eval(
+          'input[aria-label="Search threads"]',
+          (input) => getComputedStyle(input, "::placeholder").fontWeight,
+        );
+      } finally {
+        await page.close();
+      }
+    };
+    expect(await weight()).toBe("400");
+    product.upstreamSurfaces = true;
+    try {
+      expect(await weight()).toBe("500");
+    } finally {
+      product.upstreamSurfaces = false;
     }
   });
 });

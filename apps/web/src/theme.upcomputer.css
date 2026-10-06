@@ -5,4 +5,7 @@
 html[data-theme-id="upcomputer"] {
   /* The Up.computer look has no fractal-noise grain on its surfaces. */
   --surface-grain: none;
+  /* Sidebar icons keep 60% of the sidebar foreground. Upstream mixes them from
+   * the muted foreground, which this palette dims to the row text tone. */
+  --sidebar-icon-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 60%, var(--sidebar));
 }
