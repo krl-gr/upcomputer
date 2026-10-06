@@ -106,7 +106,10 @@ function Counts({
   const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
   return (
     <Menu>
+      {/* Its own slot: the themed chat header fills every `menu-trigger` as a
+          toolbar control, while these counts stay bare numbers as in the sidebar. */}
       <MenuTrigger
+        data-slot="task-run-counts"
         className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
         data-task-run-counts={threadId}
         aria-label={summary}
