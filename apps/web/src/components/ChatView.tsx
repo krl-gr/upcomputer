@@ -282,7 +282,11 @@ import { isProductFeatureShown } from "~/product/productFlags";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
-import { composerLookClass } from "~/composerFooter/composerFooterSurface";
+import {
+  composerBottomSpaceClass,
+  composerLookClass,
+  composerWidthStyle,
+} from "~/composerFooter/composerFooterSurface";
 import { DeviceSetup } from "./device/DeviceSetup";
 import { Dialog } from "./ui/dialog";
 import { WizardPopup } from "./ui/wizard";
@@ -4165,6 +4169,8 @@ export default function ChatView(props: ChatViewProps) {
   // top-level parent thread.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
+  // Our row under the composer holds the right-panel and thread details toggles.
+  const panelControlsInComposerRow = showsUpComputerComposerContextRow() && composerMounted;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report a dated id or alias (claude-haiku-4-5-20251001).
   const providerSubagentModelSlug = selectedProviderEntry
@@ -10789,8 +10795,8 @@ export default function ChatView(props: ChatViewProps) {
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
-      showRightPanelControl={!showsUpComputerComposerContextRow()}
+      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow}
+      showRightPanelControl={!panelControlsInComposerRow}
     />
   );
   const threadPanelHeaderControl = (
@@ -10905,7 +10911,9 @@ export default function ChatView(props: ChatViewProps) {
             />
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-          {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
+          {inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow
+            ? threadPanelHeaderControl
+            : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -11103,11 +11111,13 @@ export default function ChatView(props: ChatViewProps) {
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
+              style={composerWidthStyle("overlay")}
             >
               {isDraftHeroState ? null : <ComposerBackdropFade />}
               <div
                 ref={draftHeroTransition.transitionGroupRef}
                 className="chat-composer-lane w-full"
+                style={composerWidthStyle("lane")}
               >
                 <div
                   data-chat-composer-stack="true"
@@ -11413,7 +11423,7 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
-                    {showsUpComputerComposerContextRow() && !showProviderSubagentBar ? (
+                    {panelControlsInComposerRow ? (
                       <div className="pointer-events-auto">
                         <UpComputerComposerContextRow
                           ref={branchToolbarRef}
@@ -11452,12 +11462,23 @@ export default function ChatView(props: ChatViewProps) {
                           rightPanelAvailable={panelToggleControlProps.rightPanelAvailable}
                           rightPanelShortcutLabel={panelToggleControlProps.rightPanelShortcutLabel}
                           onToggleRightPanel={toggleRightPanel}
+                          threadPanel={{
+                            open: threadPanelOpen,
+                            presentation: threadPanelPresentation,
+                            popoverHandle: threadPanelPopoverHandle,
+                            shortcutLabel: panelToggleControlProps.threadPanelShortcutLabel,
+                            hasAttention: panelToggleControlProps.threadPanelHasAttention,
+                            onToggle: toggleThreadPanel,
+                          }}
                         />
                       </div>
                     ) : null}
                     <div
                       aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                      className={
+                        composerBottomSpaceClass(panelControlsInComposerRow) ??
+                        "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                      }
                     />
                   </div>
                 </div>

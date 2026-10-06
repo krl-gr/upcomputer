@@ -13,10 +13,16 @@ vi.mock("~/hooks/useSettings", () => ({
 
 import { ComposerPrimaryActions } from "../components/chat/ComposerPrimaryActions";
 import { ComposerBackdropFade } from "./ComposerBackdropFade";
-import { composerCollapsesOnScroll, composerLookClass } from "./composerFooterSurface";
+import {
+  composerBottomSpaceClass,
+  composerCollapsesOnScroll,
+  composerLookClass,
+  composerWidthStyle,
+} from "./composerFooterSurface";
 import {
   COMPOSER_BACKDROP_FADE_CLASS,
   COMPOSER_CARD_CLASS,
+  V1_COMPOSER_EXTRA_WIDTH,
   composerSendButtonClass,
 } from "./composerLookStyles";
 
@@ -133,5 +139,49 @@ describe("V1's composer card, fade and full form", () => {
     expect(composerCollapsesOnScroll()).toBe(false);
     surface.composerFooter = "upstream";
     expect(composerCollapsesOnScroll()).toBe(true);
+  });
+});
+
+describe("V1's composer width and bottom space", () => {
+  /** Resolves `var()` the way the cascade does: from the element up through its ancestors. */
+  function resolve(value: string, chain: ReadonlyArray<Record<string, string>>): string {
+    return value.replace(/var\((--[\w-]+)\)/g, (_, name: string) => {
+      const index = chain.findIndex((declarations) => name in declarations);
+      return resolve(chain[index]![name]!, chain.slice(index + 1));
+    });
+  }
+
+  it("makes the composer V1's 4rem wider than the messages at every chat width", () => {
+    // V1: the composer form at max-w-208 (52rem), the timeline at max-w-3xl (48rem).
+    expect(V1_COMPOSER_EXTRA_WIDTH).toBe(`${52 - 48}rem`);
+    const overlay = composerWidthStyle("overlay") as Record<string, string>;
+    const lane = composerWidthStyle("lane") as Record<string, string>;
+    // Upstream's chat width setting: comfortable, wide and full.
+    for (const contentWidth of ["46rem", "72rem", "100%"]) {
+      const root = { "--chat-content-max-width": contentWidth };
+      // Inside the lane, upstream's composer pieces read `--chat-content-max-width`.
+      expect(resolve("var(--chat-content-max-width)", [lane, overlay, root])).toBe(
+        `calc(${contentWidth} + 4rem)`,
+      );
+      // The fade sits in the overlay, beside the lane, and reads the composer width.
+      expect(COMPOSER_BACKDROP_FADE_CLASS).toContain("max-w-(--chat-composer-max-width)");
+      expect(resolve("var(--chat-composer-max-width)", [overlay, root])).toBe(
+        `calc(${contentWidth} + 4rem)`,
+      );
+    }
+
+    surface.composerFooter = "upstream";
+    expect(composerWidthStyle("overlay")).toBeUndefined();
+    expect(composerWidthStyle("lane")).toBeUndefined();
+  });
+
+  it("leaves V1's space under the composer stack", () => {
+    // V1's ChatView: pb safe-area + 0.25rem under its context bar, else 0.75rem and 1rem from sm.
+    expect(composerBottomSpaceClass(true)).toBe("h-[calc(env(safe-area-inset-bottom)+0.25rem)]");
+    expect(composerBottomSpaceClass(false)).toBe(
+      "h-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:h-[calc(env(safe-area-inset-bottom)+1rem)]",
+    );
+    surface.composerFooter = "upstream";
+    expect(composerBottomSpaceClass(true)).toBeNull();
   });
 });

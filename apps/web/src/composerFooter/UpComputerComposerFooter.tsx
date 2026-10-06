@@ -157,7 +157,11 @@ function InteractionModeControl(props: {
   );
 }
 
-/** A lock, open for full access; the label is in its tooltip, the menu is upstream's access list. */
+/**
+ * The access label ("Full access", "Supervised"), as V1's runtime control
+ * showed it, with upstream's access list as its menu. When the row runs out
+ * of room it folds to a lock first (open for full access), as V1's did.
+ */
 function AccessControl(props: {
   runtimeMode: RuntimeMode;
   options: ReadonlyArray<RuntimeModeOption>;
@@ -169,6 +173,8 @@ function AccessControl(props: {
   const option = props.options.find((candidate) => candidate.mode === props.runtimeMode);
   const label = option?.label ?? props.runtimeMode;
   const Icon = props.runtimeMode === "full-access" ? LockOpenIcon : LockIcon;
+  // Both stay mounted: the footer's measurement reads the label's width while
+  // the lock stands in for it (`data-composer-block-icon-only`).
   return (
     <Tooltip>
       <Select
@@ -189,7 +195,13 @@ function AccessControl(props: {
             />
           }
         >
-          <ComposerControlIcon icon={Icon} />
+          <span
+            data-composer-control-compact-icon
+            className="pointer-events-none invisible absolute"
+          >
+            <ComposerControlIcon icon={Icon} />
+          </span>
+          <span data-composer-control-label>{label}</span>
         </TooltipTrigger>
         <SelectPopup alignItemWithTrigger={false} {...floatingLayerProps}>
           {props.options.map((candidate) => {
@@ -215,7 +227,7 @@ function AccessControl(props: {
           })}
         </SelectPopup>
       </Select>
-      <TooltipPopup side="top">{label}</TooltipPopup>
+      <TooltipPopup side="top">{option?.description ?? label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -230,7 +242,8 @@ type FooterBlockId = "mode" | "traits" | "access";
 export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
   const { attachRow, hiddenCount, iconOnlyCount } = useComposerFooterControlsLayout();
   const hasTraits = renderProviderTraitsPicker(props.traitsPickerInput) !== null;
-  // Priority order: the last block loses its label and folds first.
+  // Priority order, V1's: the last block loses its label and folds first, so
+  // access goes to its lock first, then effort and context, then the mode.
   const blocks: FooterBlockId[] = [
     ...(props.showInteractionModeToggle ? (["mode"] as const) : []),
     ...(hasTraits ? (["traits"] as const) : []),

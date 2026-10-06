@@ -1,4 +1,5 @@
 import type { ProviderInstanceId } from "@t3tools/contracts";
+import type { CSSProperties } from "react";
 
 import { resolveModelPickerSelectedModel } from "../components/chat/ModelPickerContent";
 import { getTriggerDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
@@ -6,10 +7,13 @@ import type { ProviderInstanceEntry } from "../providerInstances";
 import { productSurface } from "../product/productFlags";
 import {
   COMPOSER_BODY_PADDING_CLASS,
+  COMPOSER_BOTTOM_SPACE_CLASS,
+  COMPOSER_BOTTOM_SPACE_WITH_ROW_CLASS,
   COMPOSER_CARD_CLASS,
   COMPOSER_EDITOR_CLASS,
   COMPOSER_PLACEHOLDER_CLASS,
   COMPOSER_SHELL_CLASS,
+  V1_COMPOSER_EXTRA_WIDTH,
   composerSendButtonClass,
 } from "./composerLookStyles";
 
@@ -54,6 +58,31 @@ export function composerLookClass(part: keyof typeof COMPOSER_LOOK_CLASSES): str
   return productSurface("composerFooter") === "upcomputer"
     ? COMPOSER_LOOK_CLASSES[part]
     : undefined;
+}
+
+/**
+ * The composer's width, V1's amount wider than the messages. Upstream sizes
+ * the timeline and every composer piece from `--chat-content-max-width` (the
+ * chat width setting). The overlay derives `--chat-composer-max-width` from
+ * it, and the lane inside sets `--chat-content-max-width` to that, so
+ * upstream's composer, the row under it and the fade all follow. Two
+ * elements, because a custom property cannot refer to itself.
+ */
+export function composerWidthStyle(element: "overlay" | "lane"): CSSProperties | undefined {
+  if (productSurface("composerFooter") !== "upcomputer") return undefined;
+  const properties: Record<string, string> =
+    element === "overlay"
+      ? {
+          "--chat-composer-max-width": `calc(var(--chat-content-max-width) + ${V1_COMPOSER_EXTRA_WIDTH})`,
+        }
+      : { "--chat-content-max-width": "var(--chat-composer-max-width)" };
+  return properties as CSSProperties;
+}
+
+/** V1's space under the composer stack; null keeps upstream's. */
+export function composerBottomSpaceClass(hasContextRow: boolean): string | null {
+  if (productSurface("composerFooter") !== "upcomputer") return null;
+  return hasContextRow ? COMPOSER_BOTTOM_SPACE_WITH_ROW_CLASS : COMPOSER_BOTTOM_SPACE_CLASS;
 }
 
 /** V1's send button for upstream's send, steer and queue states; null keeps upstream's. */

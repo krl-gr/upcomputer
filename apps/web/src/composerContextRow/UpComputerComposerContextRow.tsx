@@ -2,7 +2,7 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { PanelRightIcon } from "lucide-react";
+import { PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { type Ref, memo, useCallback, useImperativeHandle, useMemo, useRef } from "react";
 
 import type { BranchToolbarHandle } from "../components/BranchToolbar";
@@ -19,9 +19,12 @@ import {
 } from "../components/BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "../components/BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "../components/BranchToolbarEnvModeSelector";
+import { PopoverTrigger, type PopoverCreateHandle } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
+import type { ThreadPanelPresentation } from "../rightPanelLayout";
 import { useScratchProject } from "../hooks/useScratchProject";
+import { cn } from "../lib/utils";
 import {
   useProject,
   useProjects,
@@ -71,6 +74,17 @@ export interface UpComputerComposerContextRowProps {
   rightPanelAvailable: boolean;
   rightPanelShortcutLabel: string | null;
   onToggleRightPanel: () => void;
+  /** Upstream's thread details toggle, as ChatView hands it to its header controls. */
+  threadPanel: ThreadPanelToggleProps;
+}
+
+export interface ThreadPanelToggleProps {
+  open: boolean;
+  presentation: ThreadPanelPresentation;
+  popoverHandle: ReturnType<typeof PopoverCreateHandle>;
+  shortcutLabel: string | null;
+  hasAttention: boolean;
+  onToggle: () => void;
 }
 
 function ContextRowSlash() {
@@ -122,6 +136,44 @@ function RightPanelToggle(props: {
 }
 
 /**
+ * Upstream's "Toggle thread details panel" (`PanelLayoutControls`), moved from
+ * the header into the row and drawn like its other icons. As upstream's: a
+ * popover trigger while the card is a popover, a toggle while it is inline.
+ */
+function ThreadPanelToggle(props: ThreadPanelToggleProps) {
+  const popover = props.presentation === "popover";
+  const button = (
+    <button
+      type="button"
+      aria-label="Toggle thread details panel"
+      aria-pressed={props.open}
+      className={cn(CONTEXT_ROW_TOGGLE_CLASS, "relative")}
+      onClick={popover ? undefined : props.onToggle}
+      data-context-row-thread-panel-toggle=""
+    >
+      <SquareMenuIcon className="size-4" />
+      {props.hasAttention ? (
+        <span
+          className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-background"
+          aria-hidden="true"
+        />
+      ) : null}
+    </button>
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={popover ? <PopoverTrigger handle={props.popoverHandle} render={button} /> : button}
+      />
+      <TooltipPopup side="top">
+        Toggle thread details
+        {props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/**
  * The row under the composer, as V1 had it: the chat's projects and `+`, then
  * `/` upstream's checkout mode, `|` upstream's branch, and the right-panel
  * toggle at the right. The workspace state and actions are upstream's
@@ -151,6 +203,7 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
   rightPanelAvailable,
   rightPanelShortcutLabel,
   onToggleRightPanel,
+  threadPanel,
 }: UpComputerComposerContextRowProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = useMemo(
@@ -367,12 +420,15 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
           ) : null}
         </div>
       </div>
-      <RightPanelToggle
-        open={rightPanelOpen}
-        available={rightPanelAvailable}
-        shortcutLabel={rightPanelShortcutLabel}
-        onToggle={onToggleRightPanel}
-      />
+      <div className="flex shrink-0 items-center">
+        <ThreadPanelToggle {...threadPanel} />
+        <RightPanelToggle
+          open={rightPanelOpen}
+          available={rightPanelAvailable}
+          shortcutLabel={rightPanelShortcutLabel}
+          onToggle={onToggleRightPanel}
+        />
+      </div>
     </div>
   );
 });

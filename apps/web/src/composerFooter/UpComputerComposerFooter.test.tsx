@@ -253,10 +253,16 @@ function click(element: Element) {
   });
 }
 
-/** Lay the row out at a fixed width: blocks 80px, the picker 160px, other controls 30px. */
+/**
+ * Lay the row out at a fixed width: blocks 80px, the picker 160px, other
+ * controls 30px. Control labels are 50px and the icons standing in for them
+ * 16px, so a labelled block is 46px as an icon.
+ */
 function stubLayout(rowWidth: number) {
   const widthOf = (element: HTMLElement) => {
     if (element.dataset.testid === "tooltip" || element.matches("input")) return 0;
+    if (element.dataset.composerControlLabel !== undefined) return 50;
+    if (element.dataset.composerControlCompactIcon !== undefined) return 16;
     if (element.dataset.composerFooterBlock !== undefined) return 80;
     if (element.matches("[data-chat-provider-model-picker]")) return 160;
     if (element.parentElement?.dataset.chatComposerControls === "left") return 30;
@@ -266,6 +272,11 @@ function stubLayout(rowWidth: number) {
     this: HTMLElement,
   ) {
     return { width: widthOf(this), height: 0, top: 0, left: 0, right: 0, bottom: 0 } as DOMRect;
+  });
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.dataset.composerControlLabel !== undefined ? 50 : 0;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
     this: HTMLElement,
@@ -399,20 +410,30 @@ describe("UpComputerComposerFooter", () => {
     expect(block("mode")).toBeNull();
   });
 
-  it("shows access as a lock with the label in its tooltip and upstream's access menu", async () => {
+  it("shows access as its text label, with upstream's access menu", async () => {
     await render(footerProps());
     const access = container.querySelector<HTMLElement>("[data-composer-footer-access]")!;
-    expect(access.querySelector("svg")?.classList.contains("lucide-lock-open")).toBe(true);
+    expect(access.querySelector("[data-composer-control-label]")?.textContent).toBe("Full access");
+    // The open lock waits, out of sight, for the row to run out of room.
+    const lock = access.querySelector<HTMLElement>("[data-composer-control-compact-icon]")!;
+    expect(lock.querySelector("svg")?.classList.contains("lucide-lock-open")).toBe(true);
+    expect(lock.className).toContain("invisible");
+    expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("false");
+    // V1's tooltip: what the mode allows.
     expect(block("access")?.querySelector('[data-testid="tooltip"]')?.textContent).toBe(
-      "Full access",
+      "Allow commands and edits without prompts.",
     );
 
     await render(footerProps({ runtimeMode: "approval-required" }));
     const supervised = container.querySelector<HTMLElement>("[data-composer-footer-access]")!;
-    expect(supervised.querySelector("svg")?.classList.contains("lucide-lock")).toBe(true);
-    expect(block("access")?.querySelector('[data-testid="tooltip"]')?.textContent).toBe(
+    expect(supervised.querySelector("[data-composer-control-label]")?.textContent).toBe(
       "Supervised",
     );
+    expect(
+      supervised
+        .querySelector("[data-composer-control-compact-icon] svg")
+        ?.classList.contains("lucide-lock"),
+    ).toBe(true);
 
     await click(supervised);
     const options = Array.from(document.querySelectorAll("[role=option]")).map((option) =>
@@ -451,6 +472,43 @@ describe("UpComputerComposerFooter", () => {
     expect(
       container.querySelector("[data-composer-footer-overflow]")?.getAttribute("aria-hidden"),
     ).toBe("true");
+  });
+
+  it("folds access to its lock first when the row runs short, as V1 did", async () => {
+    // 220px of fixed controls and three 80px blocks need 460px. Access as a
+    // lock saves 34px; effort and context fold to an icon next.
+    stubLayout(600);
+    await render(footerProps());
+    for (const id of ["mode", "traits", "access"]) {
+      expect(block(id)?.getAttribute("data-composer-block-icon-only")).toBe("false");
+    }
+
+    // A fresh row per width: the stubs change no size a ResizeObserver would see.
+    const remount = async () => {
+      await act(async () => root.unmount());
+      root = createRoot(container);
+    };
+    await remount();
+    stubLayout(440);
+    await render(footerProps({ runtimeMode: "approval-required" }));
+    expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("true");
+    expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
+    expect(block("traits")?.getAttribute("data-composer-block-icon-only")).toBe("false");
+    expect(block("mode")?.getAttribute("data-composer-block-icon-only")).toBe("false");
+    // The icon-only class swaps the label for the lock; the label stays mounted to be measured.
+    expect(block("access")?.className).toContain("[&_[data-composer-control-label]]:invisible");
+    expect(block("access")?.className).toContain(
+      "[&_[data-composer-control-compact-icon]]:[visibility:inherit]",
+    );
+    expect(block("traits")?.className).not.toContain("[&_[data-composer-control-label]]:invisible");
+
+    await remount();
+    stubLayout(400);
+    await render(footerProps({ runtimeMode: "full-access" }));
+    expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("true");
+    expect(block("traits")?.getAttribute("data-composer-block-icon-only")).toBe("true");
+    expect(block("mode")?.getAttribute("data-composer-block-icon-only")).toBe("false");
+    expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
   });
 
   it("folds trailing controls into upstream's overflow menu at a narrow width", async () => {

@@ -71,4 +71,21 @@ export function composerSendButtonClass(canSend: boolean): string {
  * fifth of the way down, still behind the card.
  */
 export const COMPOSER_BACKDROP_FADE_CLASS =
-  "mx-auto h-full w-full max-w-(--chat-content-max-width) bg-linear-to-b from-background/80 to-background to-20%";
+  "mx-auto h-full w-full max-w-(--chat-composer-max-width) bg-linear-to-b from-background/80 to-background to-20%";
+
+/**
+ * How much wider than the messages V1's composer was: `max-w-208` (52rem) in
+ * `ChatComposer.tsx` against the timeline's `max-w-3xl` (48rem) in
+ * `MessagesTimeline.tsx`. Added to upstream's chat width setting, so the
+ * composer stays this much wider at every width.
+ */
+export const V1_COMPOSER_EXTRA_WIDTH = "4rem";
+
+/**
+ * V1's space from the bottom of the composer stack to the window
+ * (`ChatView.tsx`): a quarter rem under the row, which has its own `pb-1`,
+ * and 0.75rem, 1rem from `sm`, when no row is shown.
+ */
+export const COMPOSER_BOTTOM_SPACE_WITH_ROW_CLASS = "h-[calc(env(safe-area-inset-bottom)+0.25rem)]";
+export const COMPOSER_BOTTOM_SPACE_CLASS =
+  "h-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:h-[calc(env(safe-area-inset-bottom)+1rem)]";

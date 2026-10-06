@@ -132,6 +132,7 @@ import type { UpComputerComposerContextRowProps } from "./UpComputerComposerCont
 const { UpComputerComposerContextRow } = await import("./UpComputerComposerContextRow");
 const { BranchToolbar } = await import("../components/BranchToolbar");
 const { PanelLayoutControls } = await import("../components/chat/PanelLayoutControls");
+const { Popover, PopoverCreateHandle, PopoverPopup } = await import("../components/ui/popover");
 const { composerShortcutScope, showsUpComputerComposerContextRow } =
   await import("./composerContextRowSurface");
 
@@ -166,6 +167,14 @@ function rowProps(
     rightPanelAvailable: true,
     rightPanelShortcutLabel: "⌘B",
     onToggleRightPanel: vi.fn(),
+    threadPanel: {
+      open: false,
+      presentation: "inline",
+      popoverHandle: PopoverCreateHandle(),
+      shortcutLabel: "⌘I",
+      hasAttention: false,
+      onToggle: vi.fn(),
+    },
     ...overrides,
   };
 }
@@ -389,6 +398,103 @@ describe("the row under the composer", () => {
     state.surface = "upstream";
     await render(header());
     expect(container.querySelectorAll('[aria-label="Toggle right panel"]')).toHaveLength(1);
+  });
+
+  it("moves upstream's thread details toggle into the row, just left of the panel toggle", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: UPCOMPUTER.id,
+      worktreePath: null,
+    };
+    const onToggle = vi.fn();
+    const header = () => (
+      <PanelLayoutControls
+        terminalAvailable
+        terminalOpen={false}
+        terminalShortcutLabel={null}
+        threadPanelOpen={false}
+        threadPanelPresentation="inline"
+        threadPanelShortcutLabel={null}
+        threadPanelHasAttention={false}
+        rightPanelAvailable
+        rightPanelOpen={false}
+        rightPanelShortcutLabel={null}
+        onToggleTerminal={vi.fn()}
+        onToggleThreadPanel={vi.fn()}
+        onToggleRightPanel={vi.fn()}
+        // As ChatView passes them while the row is shown.
+        showThreadPanelControl={!showsUpComputerComposerContextRow()}
+        showRightPanelControl={!showsUpComputerComposerContextRow()}
+      />
+    );
+    const threadPanel = { ...rowProps().threadPanel, open: true, onToggle };
+    await render(
+      <>
+        {header()}
+        <UpComputerComposerContextRow {...rowProps({ threadPanel })} />
+      </>,
+    );
+    const toggles = container.querySelectorAll<HTMLElement>(
+      '[aria-label="Toggle thread details panel"]',
+    );
+    expect(toggles).toHaveLength(1);
+    const details = toggles[0]!;
+    expect(details.closest("[data-composer-context-row]")).not.toBeNull();
+    // Immediately left of the right-panel toggle, at the row's right edge.
+    const row = container.querySelector("[data-composer-context-row]")!;
+    const rightCluster = row.lastElementChild!;
+    expect(
+      Array.from(rightCluster.querySelectorAll("button")).map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Toggle thread details panel", "Toggle right panel"]);
+    // Drawn like the row's other icons, dim until hovered, bright while open.
+    expect(details.className).toContain("text-muted-foreground");
+    expect(details.className).toContain("hover:text-foreground");
+    expect(details.getAttribute("aria-pressed")).toBe("true");
+    expect(details.nextElementSibling?.textContent).toBe("Toggle thread details (⌘I)");
+    await click(details);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    state.surface = "upstream";
+    await render(header());
+    expect(container.querySelectorAll('[aria-label="Toggle thread details panel"]')).toHaveLength(
+      1,
+    );
+  });
+
+  it("opens upstream's thread details popover from the row while the card is a popover", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: UPCOMPUTER.id,
+      worktreePath: null,
+    };
+    const popoverHandle = PopoverCreateHandle();
+    const onToggle = vi.fn();
+    await render(
+      <>
+        <Popover handle={popoverHandle}>
+          <PopoverPopup>
+            <span data-testid="thread-details">Thread details</span>
+          </PopoverPopup>
+        </Popover>
+        <UpComputerComposerContextRow
+          {...rowProps({
+            threadPanel: {
+              ...rowProps().threadPanel,
+              presentation: "popover",
+              popoverHandle,
+              onToggle,
+            },
+          })}
+        />
+      </>,
+    );
+    await click(byLabel("Toggle thread details panel")!);
+    expect(document.querySelector('[data-testid="thread-details"]')).not.toBeNull();
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });
 
