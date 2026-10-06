@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { test } from "vite-plus/test";
 
 import type { ScopedTaskAgent, ScopedTaskAutomation } from "../state/index.ts";
+import { assertTableRowsOneSize } from "./tableRows.testing.ts";
 
 /** Loads modules through Vite, as the app does (aliases, Base UI, lucide). */
 async function loadModules(context: { onTestFinished: (fn: () => Promise<void>) => void }) {
@@ -122,6 +123,7 @@ test("Agents show the project as an icon, a global agent as All projects, none f
     projectRow.indexOf("data-project-icon=") < projectRow.indexOf(">Reviewer<"),
     "the project icon is the first column",
   );
+  assertTableRowsOneSize(projectRow.replace("<table>", '<table class="text-sm">'));
 
   const globalRow = row({ agent: agent(null, null), showProject: true });
   NodeAssert.match(globalRow, /aria-label="All projects"[^>]*data-project-icon="all"/);
@@ -146,7 +148,7 @@ test("Automations show the project icon column unless one project is selected", 
     template: { title: "Triage", description: "", status: "To Do", tags: [], priority: null },
     catchUpPolicy: "skip",
     skipIfOpen: true,
-    createdBy: "user",
+    createdBy: "agent",
     sourceThreadId: null,
     nextRunAt: null,
     lastFiredAt: null,
@@ -184,6 +186,8 @@ test("Automations show the project icon column unless one project is selected", 
   NodeAssert.doesNotMatch(all, /<th[^>]*>Project<\/th>/, "no Project text column");
   NodeAssert.match(all, /aria-label="UpComputer"[^>]*data-project-icon="project"/);
   NodeAssert.ok(all.indexOf("data-project-icon=") < all.indexOf(">Nightly triage<"));
+  assertTableRowsOneSize(all);
+  NodeAssert.match(all, /data-table-pill="neutral">Proposed</, "a proposed automation's pill");
 
   const one = render(oneProject);
   NodeAssert.match(one, /Nightly triage/);

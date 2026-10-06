@@ -250,7 +250,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
           allProjects={agent.projectId === null}
         />
       ) : null}
-      <td className="truncate py-4 pr-4 font-medium text-foreground">
+      <td className="align-middle truncate py-4 pr-4 font-medium text-foreground">
         <button
           type="button"
           className="block max-w-full truncate text-left font-medium text-foreground"
@@ -263,16 +263,16 @@ export function AgentTableRow(props: AgentTableRowProps) {
         </button>
       </td>
       <td
-        className="truncate px-4 py-4 text-muted-foreground"
+        className="align-middle truncate px-4 py-4 text-muted-foreground"
         title={agent.config.interactionMode ?? "default"}
       >
         {modelLabel}
       </td>
-      <td className="truncate px-4 py-4 text-muted-foreground" title={triggerLabel}>
+      <td className="align-middle truncate px-4 py-4 text-muted-foreground" title={triggerLabel}>
         {triggerLabel}
       </td>
       <td
-        className="px-4 py-3 text-center"
+        className="align-middle px-4 py-3 text-center"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
@@ -1370,7 +1370,7 @@ export function AgentsView(props: AgentsViewProps) {
           ) : (
             <div className="min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
-                <thead className="border-b border-border text-xs text-muted-foreground">
+                <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     {projectFilter === null ? <ProjectIconHeader /> : null}
                     <th className="w-[22%] py-3 pr-4 font-medium">Name</th>

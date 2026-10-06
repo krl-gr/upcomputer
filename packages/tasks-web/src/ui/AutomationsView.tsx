@@ -54,6 +54,7 @@ import {
 } from "./automationCalendarSchedule.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
+import { TablePill } from "./TablePill.tsx";
 
 const CATCH_UP_POLICIES: ReadonlyArray<{
   readonly value: TaskAutomationCatchUpPolicy;
@@ -1335,7 +1336,7 @@ export function AutomationsView(props: AutomationsViewProps) {
           ) : (
             <div className="min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1200px] table-fixed border-collapse text-left text-sm">
-                <thead className="border-b border-border text-xs text-muted-foreground">
+                <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     {projectFilter === null ? <ProjectIconHeader /> : null}
                     <th className="w-[24%] py-3 pr-4 font-medium">Name</th>
@@ -1369,42 +1370,42 @@ export function AutomationsView(props: AutomationsViewProps) {
                             name={automation.projectName}
                           />
                         ) : null}
-                        <td className="truncate py-4 pr-4 font-medium text-foreground">
-                          <button
-                            type="button"
-                            className="inline-block max-w-full truncate text-left font-medium text-foreground"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEdit(automation);
-                            }}
-                          >
-                            {automation.name}
-                          </button>
-                          {automation.createdBy === "agent" ? (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              Proposed
-                            </span>
-                          ) : null}
+                        <td className="py-4 pr-4 align-middle font-medium text-foreground">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <button
+                              type="button"
+                              className="min-w-0 truncate text-left font-medium text-foreground"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEdit(automation);
+                              }}
+                            >
+                              {automation.name}
+                            </button>
+                            {automation.createdBy === "agent" ? (
+                              <TablePill>Proposed</TablePill>
+                            ) : null}
+                          </div>
                         </td>
                         <td
-                          className="truncate px-4 py-4 text-muted-foreground"
+                          className="align-middle truncate px-4 py-4 text-muted-foreground"
                           title={scheduleLabel}
                         >
                           {scheduleLabel}
                         </td>
                         <td
-                          className="truncate px-4 py-4 text-muted-foreground"
+                          className="align-middle truncate px-4 py-4 text-muted-foreground"
                           title={createsLabel}
                         >
                           {createsLabel}
                         </td>
                         <td
-                          className="truncate px-4 py-4 text-muted-foreground"
+                          className="align-middle truncate px-4 py-4 text-muted-foreground"
                           title={`${formatTimestamp(automation.lastFiredAt)}${lastRun && lastRun.outcome !== "created" ? ` (${lastRun.outcome})` : ""}`}
                         >
                           {formatListTimestamp(automation.lastFiredAt)}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="align-middle px-4 py-3 text-center">
                           <Switch
                             checked={automation.status === "enabled"}
                             disabled={!editable || savingKey !== null}

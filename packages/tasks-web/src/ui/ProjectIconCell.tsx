@@ -37,7 +37,7 @@ export function ProjectIconCell(props: {
 }) {
   const label = props.allProjects ? "All projects" : (props.name ?? "Unknown project");
   return (
-    <td className="py-4 pr-3 align-top">
+    <td className="py-4 pr-3 align-middle">
       <Tooltip>
         <TooltipTrigger
           render={

@@ -1,9 +1,9 @@
-import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import {
   Tooltip,
   TooltipPopup,
   TooltipTrigger,
 } from "../../../../apps/web/src/components/ui/tooltip.tsx";
+import { TablePill } from "./TablePill.tsx";
 
 /** Tags shown as chips before the rest collapse into "+N". */
 export const VISIBLE_TAG_CHIPS = 2;
@@ -13,7 +13,7 @@ export function splitTagChips(tags: ReadonlyArray<string>, limit = VISIBLE_TAG_C
 }
 
 /**
- * A task's tags as small chips: the first ones, then "+N", with every tag in
+ * A task's tags as table pills: the first ones, then "+N", with every tag in
  * the tooltip. Agent trigger tags are dimmer than the task's own labels.
  */
 export function TaskTagChips(props: {
@@ -30,19 +30,18 @@ export function TaskTagChips(props: {
         {visible.map((tag) => (
           <span
             key={tag}
-            className={`flex min-w-0 ${props.triggerTags.has(tag) ? "opacity-50" : ""}`}
+            className="flex min-w-0"
             data-trigger-tag={props.triggerTags.has(tag) ? "" : undefined}
           >
-            <Badge size="sm" variant="secondary" className="min-w-0 max-w-32 shrink justify-start">
+            <TablePill
+              tone={props.triggerTags.has(tag) ? "dim" : "neutral"}
+              className="min-w-0 max-w-32 shrink justify-start"
+            >
               <span className="truncate">{tag}</span>
-            </Badge>
+            </TablePill>
           </span>
         ))}
-        {hidden > 0 ? (
-          <Badge size="sm" variant="secondary">
-            +{hidden}
-          </Badge>
-        ) : null}
+        {hidden > 0 ? <TablePill>+{hidden}</TablePill> : null}
       </TooltipTrigger>
       <TooltipPopup>{props.tags.join(", ")}</TooltipPopup>
     </Tooltip>

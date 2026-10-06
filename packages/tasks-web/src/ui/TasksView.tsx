@@ -48,6 +48,7 @@ import {
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
+import { TablePill } from "./TablePill.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
@@ -1175,7 +1176,7 @@ export function TasksView(props: TasksViewProps) {
           ) : (
             <div className="min-w-0 overflow-x-auto">
               <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
-                <thead className="border-b border-border text-xs text-muted-foreground">
+                <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     <th className="w-12 py-3 pr-2 font-medium">
                       <span className="sr-only">Order</span>
@@ -1209,7 +1210,7 @@ export function TasksView(props: TasksViewProps) {
                         }}
                         onClick={() => openTask(task)}
                       >
-                        <td className="py-3 pr-2 align-top">
+                        <td className="py-3 pr-2 align-middle">
                           <TaskReorderHandle
                             task={task}
                             enabled={props.canMutateEnvironment(task.environmentId)}
@@ -1226,7 +1227,7 @@ export function TasksView(props: TasksViewProps) {
                             name={task.projectName}
                           />
                         ) : null}
-                        <td className="py-4 pr-4 align-top">
+                        <td className="py-4 pr-4 align-middle">
                           <button
                             type="button"
                             className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
@@ -1238,40 +1239,38 @@ export function TasksView(props: TasksViewProps) {
                             {task.title}
                           </button>
                           {taskMetadataLabel(task) ? (
-                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                            <div className="truncate text-muted-foreground">
                               {taskMetadataLabel(task)}
                             </div>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 align-top">
+                        <td className="px-4 py-4 align-middle">
                           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
                         </td>
-                        <td className="px-4 py-4 align-top whitespace-nowrap">{task.status}</td>
-                        <td className="px-4 py-4 align-top text-sm text-muted-foreground">
-                          <div className="flex flex-wrap gap-1.5">
-                            {task.runCounts.length === 0
-                              ? "—"
-                              : task.runCounts
-                                  .toSorted((left, right) =>
-                                    compareTaskRunStatuses(left.status, right.status),
-                                  )
-                                  .map(({ status, count }) => {
-                                    const presentation = taskRunPresentation(status, false);
-                                    return (
-                                      <button
-                                        key={status}
-                                        type="button"
-                                        className={`rounded-md border border-current/20 px-2 py-0.5 text-xs hover:bg-muted ${presentation?.className ?? ""}`}
-                                        title={`Show ${status} runs`}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          openTask(task, status);
-                                        }}
-                                      >
-                                        {presentation?.label ?? status} {count}
-                                      </button>
-                                    );
-                                  })}
+                        <td className="px-4 py-4 align-middle whitespace-nowrap">{task.status}</td>
+                        <td className="px-4 py-4 align-middle">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {task.runCounts
+                              .toSorted((left, right) =>
+                                compareTaskRunStatuses(left.status, right.status),
+                              )
+                              .map(({ status, count }) => {
+                                const presentation = taskRunPresentation(status, false);
+                                return (
+                                  <TablePill
+                                    key={status}
+                                    tone="status"
+                                    className={presentation?.className}
+                                    title={`Show ${status} runs`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openTask(task, status);
+                                    }}
+                                  >
+                                    {presentation?.label ?? status} {count}
+                                  </TablePill>
+                                );
+                              })}
                           </div>
                         </td>
                       </tr>

@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import { assertTableRowsOneSize } from "./tableRows.testing.ts";
 
 const source = NodeFS.readFileSync(new URL("./TasksView.tsx", import.meta.url), "utf8");
 const selectedDetail = source.slice(
@@ -227,8 +228,17 @@ test("the rendered table preserves global order and exposes accessible isolated 
   NodeAssert.equal(tagged.match(/data-trigger-tag=""/g)?.length, 1);
   NodeAssert.match(
     tagged,
-    /class="flex min-w-0 opacity-50" data-trigger-tag=""><span[^>]*><span class="truncate">browser-use</,
+    /data-trigger-tag=""><span class="[^"]*\bopacity-50\b[^"]*" data-table-pill="dim"><span class="truncate">browser-use</,
   );
+
+  // One text size: tags, "+N" and run counts are the same pill at text-sm, cells centred.
+  assertTableRowsOneSize(tagged);
+  NodeAssert.equal(tagged.match(/data-table-pill="(neutral|dim)"/g)?.length, 3, "2 tags and +2");
+  NodeAssert.match(
+    tagged,
+    /<button type="button" class="[^"]*" data-table-pill="status" title="Show running runs">Working 1</,
+  );
+  NodeAssert.match(tagged, /data-table-pill="status" title="Show failed runs">Failed 1</);
 
   // Last run: only each task's latest run counts.
   const runs = [
