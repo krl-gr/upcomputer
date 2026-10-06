@@ -18,6 +18,10 @@ const setup = vi.hoisted(() => ({
   configs: new Map<string, unknown>(),
   // The project key the scope sentence has selected; undefined is "All projects".
   selectedProject: undefined as string | undefined,
+  // The scope's representative environment: the primary one while it is connected.
+  environmentId: "environment-1",
+  // Every save, with the environment whose Tasks server received it.
+  writes: [] as Array<{ environmentId: string; input: TaskPromptSettingsUpdateInput }>,
   blocker: undefined as
     | { disabled: boolean; enableBeforeUnload: boolean; shouldBlockFn: () => Promise<boolean> }
     | undefined,
@@ -43,12 +47,24 @@ const groups = vi.hoisted(() => [
   },
 ]);
 
-const api = vi.hoisted(() => ({
-  tasks: {
-    getPromptSettings: setup.getPromptSettings,
-    updatePromptSettings: setup.updatePromptSettings,
-  },
-}));
+/** One client per environment, kept like the real client cache. */
+const clientFor = vi.hoisted(() => {
+  const clients = new Map<string, unknown>();
+  return (environmentId: string) => {
+    if (!clients.has(environmentId)) {
+      clients.set(environmentId, {
+        tasks: {
+          getPromptSettings: setup.getPromptSettings,
+          updatePromptSettings: (input: TaskPromptSettingsUpdateInput) => {
+            setup.writes.push({ environmentId, input });
+            return setup.updatePromptSettings(input);
+          },
+        },
+      });
+    }
+    return clients.get(environmentId);
+  };
+});
 
 vi.mock("../../../../apps/web/src/components/ui/button.tsx", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) =>
@@ -75,7 +91,8 @@ vi.mock("../../../../apps/web/src/components/settings/SettingsScopeContext.tsx",
         ? { kind: "project", group, members: group.memberProjects }
         : { kind: "all", members: [] },
       environment: {
-        environmentId: "environment-1",
+        environmentId: setup.environmentId,
+        label: setup.environmentId === "environment-1" ? "Primary" : "Laptop",
         serverConfig: { settings: { customInstructions: setup.allChats } },
       },
     };
@@ -106,7 +123,7 @@ vi.mock("@t3tools/client-runtime/state/runtime", () => ({
 }));
 vi.mock("../environmentApi.ts", () => ({
   readTasksWebAccess: () => ({ canReadTasks: true }),
-  readTasksWebClient: () => api,
+  readTasksWebClient: (environmentId: string) => clientFor(environmentId),
   useTasksWebAccessRevision: () => 0,
 }));
 
@@ -209,7 +226,10 @@ describe("InstructionsSettingsPage reloads", () => {
     setup.projectServer = {
       "project-a": { ...EMPTY_TASK_PROMPT_SETTINGS },
       "project-b": { ...EMPTY_TASK_PROMPT_SETTINGS, taskCreation: "Beta rule" },
+      "project-elsewhere": { ...EMPTY_TASK_PROMPT_SETTINGS },
     };
+    setup.environmentId = "environment-1";
+    setup.writes = [];
     setup.allChats = "Original all chats";
     setup.configs = new Map([["environment-1", {}]]);
     setup.selectedProject = undefined;
@@ -386,5 +406,44 @@ describe("InstructionsSettingsPage reloads", () => {
       base: { taskCreation: "Original creation" },
     });
     expect(setup.server.taskCreation).toBe(DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+  });
+
+  it("keeps an unsaved project edit bound to its checkout when the scope's environment changes", async () => {
+    await render();
+    await chooseScope("key-a");
+    await type("Alpha draft");
+
+    // The primary environment disconnects without a scope change: Alpha now
+    // resolves to its checkout on the other environment.
+    setup.environmentId = "environment-2";
+    await deliverConfigs();
+    expect(editorText()).toBe("Alpha draft");
+    const page = () => JSON.stringify(renderer.toJSON());
+    expect(page()).toContain("This scope now reads from Laptop.");
+    expect(page()).toContain("Your unsaved changes still save to");
+
+    await save();
+    expect(setup.writes).toEqual([
+      {
+        environmentId: "environment-1",
+        input: { projectId: "project-a", taskCreation: "Alpha draft", base: { taskCreation: "" } },
+      },
+    ]);
+    expect(setup.projectServer["project-a"]!.taskCreation).toBe("Alpha draft");
+    expect(setup.projectServer["project-elsewhere"]!.taskCreation).toBe("");
+    // Nothing is unsaved now, so the editor follows the scope to the other checkout.
+    expect(page()).not.toContain("This scope now reads from");
+    expect(setup.getPromptSettings).toHaveBeenLastCalledWith({});
+    expect(setup.getPromptSettings).toHaveBeenCalledWith({ projectId: "project-elsewhere" });
+
+    // An edit there, then the primary comes back: the person chooses to drop it.
+    await type("Elsewhere draft");
+    setup.environmentId = "environment-1";
+    await deliverConfigs();
+    expect(editorText()).toBe("Elsewhere draft");
+    await act(async () => button("Discard and switch").props.onClick());
+    expect(editorText()).toBe("Alpha draft");
+    expect(page()).not.toContain("This scope now reads from");
+    expect(setup.writes).toHaveLength(1);
   });
 });

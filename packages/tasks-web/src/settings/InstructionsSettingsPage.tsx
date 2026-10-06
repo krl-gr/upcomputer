@@ -12,7 +12,7 @@ import {
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { useBlocker } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
@@ -72,6 +72,20 @@ function errorMessage(cause: unknown): string {
     : "Instructions could not be loaded.";
 }
 
+/** Where the editor reads and saves: an environment, and the project's checkout on it. */
+interface InstructionsTarget {
+  readonly environmentId: EnvironmentId | null;
+  readonly environmentLabel: string | null;
+  readonly savedCustomInstructions: string;
+  // null edits the global texts. A project's `id` is its checkout on the
+  // environment, null only while no environment is connected.
+  readonly project: { readonly id: string | null; readonly title: string } | null;
+}
+
+function sameTarget(left: InstructionsTarget, right: InstructionsTarget): boolean {
+  return left.environmentId === right.environmentId && left.project?.id === right.project?.id;
+}
+
 /**
  * The settings scope sentence picks what this page edits: "All projects" is the
  * global texts, a project is that project's additions. Instructions live on one
@@ -81,26 +95,82 @@ function errorMessage(cause: unknown): string {
 function InstructionsSettingsPage() {
   const { scope, search, environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
+  const environmentLabel = environment?.label ?? null;
+  const savedCustomInstructions =
+    environment?.serverConfig?.settings.customInstructions ??
+    DEFAULT_SERVER_SETTINGS.customInstructions;
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   // Tasks keys a project's additions by its checkout on that environment.
-  const member = isProjectScope
-    ? scope.members.find((candidate) => candidate.environmentId === environmentId)
-    : undefined;
-  const project = isProjectScope
-    ? { id: member?.id ?? null, title: scope.group.displayName }
+  const memberId = isProjectScope
+    ? (scope.members.find((candidate) => candidate.environmentId === environmentId)?.id ?? null)
     : null;
+  const projectTitle = isProjectScope ? scope.group.displayName : null;
+  const target = useMemo<InstructionsTarget>(
+    () => ({
+      environmentId,
+      environmentLabel,
+      savedCustomInstructions,
+      project: projectTitle === null ? null : { id: memberId, title: projectTitle },
+    }),
+    [environmentId, environmentLabel, memberId, projectTitle, savedCustomInstructions],
+  );
+  const searchKey = JSON.stringify(search);
+
+  // The editor keeps the target it loaded from. A new selection in the scope
+  // sentence (the router asks before dropping edits) or a resolved target that
+  // changes while nothing is unsaved starts a fresh editor there. While edits
+  // are unsaved they stay bound to their target until the person discards them.
+  const [dirty, setDirty] = useState(false);
+  const [bound, setBound] = useState({ searchKey, target });
+  const retargeted = bound.searchKey === searchKey && !sameTarget(bound.target, target);
+  if (
+    bound.searchKey !== searchKey ||
+    (retargeted && !dirty) ||
+    (!retargeted && bound.target !== target)
+  ) {
+    setBound({ searchKey, target });
+    if (bound.searchKey !== searchKey) setDirty(false);
+  }
+  const editorTarget = retargeted ? bound.target : target;
   return (
     <SettingsPageContainer>
-      {/* A new selection starts a fresh editor, so a save and its conflict check
-          never mix two scopes. */}
+      {retargeted ? (
+        <div
+          role="status"
+          className="mx-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground sm:mx-4"
+        >
+          <p className="min-w-0 flex-1">
+            {target.environmentLabel === null
+              ? "No environment for this scope is connected now."
+              : `This scope now reads from ${target.environmentLabel}.`}{" "}
+            Your unsaved changes still save to{" "}
+            {bound.target.environmentLabel ?? "the environment you were editing"}.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDirty(false);
+              setBound({ searchKey, target });
+            }}
+          >
+            Discard and switch
+          </Button>
+        </div>
+      ) : null}
+      {/* A new target starts a fresh editor, so a save and its conflict check
+          never mix two scopes or two checkouts. */}
       <InstructionsEditor
-        key={JSON.stringify(search)}
-        environmentId={environmentId}
-        savedCustomInstructions={
-          environment?.serverConfig?.settings.customInstructions ??
-          DEFAULT_SERVER_SETTINGS.customInstructions
-        }
-        project={project}
+        key={JSON.stringify([
+          bound.searchKey,
+          bound.target.environmentId,
+          bound.target.project?.id ?? null,
+        ])}
+        environmentId={editorTarget.environmentId}
+        savedCustomInstructions={editorTarget.savedCustomInstructions}
+        project={editorTarget.project}
+        onDirtyChange={setDirty}
       />
     </SettingsPageContainer>
   );
@@ -112,12 +182,9 @@ function InstructionsEditor({
   environmentId,
   savedCustomInstructions,
   project,
-}: {
-  environmentId: EnvironmentId | null;
-  savedCustomInstructions: string;
-  // null edits the global texts. A project's `id` is its checkout on the
-  // environment, null only while no environment is connected.
-  project: { id: string | null; title: string } | null;
+  onDirtyChange,
+}: Omit<InstructionsTarget, "environmentLabel"> & {
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const serverConfigs = useServerConfigs();
   useTasksWebAccessRevision();
@@ -155,6 +222,8 @@ function InstructionsEditor({
   const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
   const promptDefaults = promptDefaultsFor(project);
+
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   // Config events (provider status, keybindings, settings) reload the texts
   // without disabling the editor or replacing fields edited on the page.
