@@ -64,6 +64,12 @@ export interface ProductSurfaces {
    * then the context ring and send. The resting (scroll-collapsed) row stays upstream's.
    */
   readonly composerFooter: ProductSurfaceVariant;
+  /**
+   * The row under the composer. With `upcomputer` it is V1's quiet row: the
+   * chat's project icons and `+`, upstream's checkout mode and branch, and the
+   * right-panel toggle, which then leaves the header.
+   */
+  readonly composerContextRow: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -73,6 +79,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarThreadRow: "upstream",
   sidebarHeader: "upstream",
   composerFooter: "upstream",
+  composerContextRow: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -80,6 +87,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarThreadRow: "upcomputer",
   sidebarHeader: "upcomputer",
   composerFooter: "upcomputer",
+  composerContextRow: "upcomputer",
 });
 
 type CapabilityKey = {

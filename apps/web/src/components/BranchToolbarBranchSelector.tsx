@@ -75,6 +75,8 @@ interface BranchToolbarBranchSelectorProps {
   ref?: Ref<BranchToolbarBranchSelectorHandle>;
   className?: string;
   displayMode?: "toolbar" | "panel";
+  /** The toolbar's pull request badge; the UpComputer row leaves it out. */
+  showPullRequestBadge?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
@@ -97,6 +99,7 @@ export function BranchToolbarBranchSelector({
   ref,
   className,
   displayMode = "toolbar",
+  showPullRequestBadge = true,
   environmentId,
   threadId,
   draftId,
@@ -695,7 +698,7 @@ export function BranchToolbarBranchSelector({
           className,
         )}
       >
-        {displayMode !== "panel" ? (
+        {displayMode !== "panel" && showPullRequestBadge ? (
           <ThreadPullRequestBadgeControl
             render={<ComposerControl size="xs" />}
             badge={prBadge}

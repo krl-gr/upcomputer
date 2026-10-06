@@ -279,6 +279,8 @@ import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";
 import { isProductFeatureShown } from "~/product/productFlags";
+import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
+import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import { DeviceSetup } from "./device/DeviceSetup";
 import { Dialog } from "./ui/dialog";
 import { WizardPopup } from "./ui/wizard";
@@ -4187,7 +4189,8 @@ export default function ChatView(props: ChatViewProps) {
   const mountComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
-    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+    hasActiveProject:
+      activeProject !== null && !showProviderSubagentBar && !showsUpComputerComposerContextRow(),
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server",
@@ -4195,7 +4198,8 @@ export default function ChatView(props: ChatViewProps) {
   const showComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
-    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+    hasActiveProject:
+      activeProject !== null && !showProviderSubagentBar && !showsUpComputerComposerContextRow(),
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
@@ -10784,6 +10788,7 @@ export default function ChatView(props: ChatViewProps) {
     <PanelLayoutControls
       {...panelToggleControlProps}
       showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+      showRightPanelControl={!showsUpComputerComposerContextRow()}
     />
   );
   const threadPanelHeaderControl = (
@@ -11404,6 +11409,48 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {showsUpComputerComposerContextRow() && !showProviderSubagentBar ? (
+                      <div className="pointer-events-auto">
+                        <UpComputerComposerContextRow
+                          ref={branchToolbarRef}
+                          environmentId={activeThread.environmentId}
+                          threadId={activeThread.id}
+                          {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                          isGitRepo={isGitRepo}
+                          forceNewWorktree={multipleModelSelections !== null}
+                          envMode={envMode}
+                          onEnvModeChange={onEnvModeChange}
+                          envLocked={envLocked}
+                          {...(canOverrideServerThreadEnvMode
+                            ? {
+                                activeThreadBranchOverride: activeThreadBranch,
+                                onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
+                              }
+                            : {})}
+                          startFromOrigin={startFromOrigin}
+                          onStartFromOriginChange={onStartFromOriginChange}
+                          {...(canCheckoutPullRequestIntoThread
+                            ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                            : {})}
+                          onComposerFocusRequest={scheduleComposerFocus}
+                          availableEnvironments={logicalProjectEnvironments}
+                          {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                          autoEnvironmentLabel={autoEnvironmentLabel}
+                          onAutoEnvironment={
+                            draftId &&
+                            !envLocked &&
+                            canAutoBalanceEnvironments &&
+                            loadBalancingSettings.loadBalancingEnabled
+                              ? onAutoEnvironment
+                              : undefined
+                          }
+                          rightPanelOpen={rightPanelOpen}
+                          rightPanelAvailable={panelToggleControlProps.rightPanelAvailable}
+                          rightPanelShortcutLabel={panelToggleControlProps.rightPanelShortcutLabel}
+                          onToggleRightPanel={toggleRightPanel}
+                        />
+                      </div>
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

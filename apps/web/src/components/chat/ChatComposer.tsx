@@ -1137,6 +1137,7 @@ import {
   showsUpComputerComposerFooter,
 } from "../../composerFooter/composerFooterSurface";
 import { UpComputerComposerFooter } from "../../composerFooter/UpComputerComposerFooter";
+import { composerShortcutScope } from "../../composerContextRow/composerContextRowSurface";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
@@ -6366,7 +6367,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           setIsComposerScrollCollapsed(false);
           setIsComposerFocused(true);
         });
-        const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
+        const shell = composerShortcutScope(composerFormRef.current);
         const trigger = Array.from(
           shell?.querySelectorAll<HTMLButtonElement>(
             `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
