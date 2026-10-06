@@ -15,7 +15,6 @@ import {
 } from "react";
 
 import { makeWorkspaceFileDropHandlers } from "../components/chat/workspaceFileDrop";
-import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
@@ -29,7 +28,6 @@ import { ProductThreadRowAccessory } from "../product/ProductSlots";
 import {
   SIDEBAR_ACTION_BUTTON,
   SIDEBAR_ICON_GAP,
-  SIDEBAR_ICON_SIZE,
   SIDEBAR_LIST_ROW_INTRINSIC_SIZE,
   SIDEBAR_LIST_ROW_SPACING,
   SIDEBAR_ROW_HEIGHT,
@@ -40,6 +38,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
+import { SidebarThreadProjectIcons } from "./SidebarThreadProjectIcons";
 import { resolveThreadStatusLabel, ThreadStatusLabel } from "./ThreadStatusLabel";
 
 type SweepAction = "settle" | "unsettle" | "unsnooze";
@@ -110,7 +109,7 @@ function threadTimeLabel(thread: SidebarThreadSummary): string {
 }
 
 /**
- * A one-line sidebar thread row: project icon, status, title, and the time,
+ * A one-line sidebar thread row: project icons, status, title, and the time,
  * which hover or keyboard focus swaps for a "…" button that opens upstream's
  * thread actions. The thread row accessory (task runs) keeps its place next
  * to the time. Selection, rename, drag and drop and jump hints work as on
@@ -306,9 +305,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
             />
           }
         >
-          {props.project ? (
-            <ProjectFavicon project={props.project} className={cn(SIDEBAR_ICON_SIZE, "shrink-0")} />
-          ) : null}
+          <SidebarThreadProjectIcons thread={thread} project={props.project} />
           <ThreadStatusLabel status={statusLabel} />
           {isRenaming ? (
             <input

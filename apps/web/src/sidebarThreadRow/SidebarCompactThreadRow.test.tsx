@@ -43,6 +43,10 @@ vi.mock("../product/ProductSlots", () => ({
 vi.mock("../components/ProjectFavicon", () => ({
   ProjectFavicon: () => <span data-testid="project-favicon" />,
 }));
+vi.mock("../state/entities", () => ({
+  useProjects: () => [],
+  useServerConfigs: () => new Map(),
+}));
 
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import type { SidebarCompactThreadRowProps } from "./SidebarCompactThreadRow";
@@ -95,7 +99,12 @@ function rowProps(
     snoozeWakeLabelText: null,
     isActive: false,
     jumpLabel: null,
-    project: { id: "project" } as unknown as SidebarCompactThreadRowProps["project"],
+    project: {
+      id: "project",
+      environmentId,
+      title: "UpComputer",
+      workspaceRoot: "/work/upcomputer",
+    } as unknown as SidebarCompactThreadRowProps["project"],
     projectDisplayName: "UpComputer",
     isRenaming: false,
     renamingTitle: "",
