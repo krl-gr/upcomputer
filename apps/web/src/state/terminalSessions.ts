@@ -163,7 +163,7 @@ export function useKnownTerminalSessions(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<KnownTerminalSession> {
   const metadata = useEnvironmentQuery(
-    input.environmentId === null || !isProductFeatureShown("terminal")
+    input.environmentId === null || !isProductFeatureShown("terminalSurface")
       ? null
       : terminalEnvironment.metadata({
           environmentId: input.environmentId,
@@ -180,6 +180,9 @@ export function useThreadRunningTerminalIds(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<string> {
-  const sessions = useKnownTerminalSessions(input);
+  // Running terminals show on thread rows, which the terminal surface alone leaves out.
+  const sessions = useKnownTerminalSessions(
+    isProductFeatureShown("terminal") ? input : { environmentId: null, threadId: null },
+  );
   return useMemo(() => selectRunningSubprocessTerminalIds(sessions), [sessions]);
 }

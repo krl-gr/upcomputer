@@ -4,9 +4,9 @@ UpComputer ships on upstream core but does not ship every upstream feature. It h
 
 `packages/shared/src/productFlags.ts` is the one place that says what a product shows:
 
-- `ProductFlags` lists the hideable features: `pullRequests`, `terminal`, `threadSettlement`, `devices`.
+- `ProductFlags` lists the hideable features: `pullRequests`, `terminalSurface`, `terminal`, `threadSettlement`, `devices`. The terminal is split in two: `terminalSurface` is the terminal as a right-panel surface (its launcher entry and `+` menu item, its tab, the `terminal.*` shortcuts that only act while a terminal has focus, and the terminal font setting); `terminal` is everything else (the bottom drawer and its `terminal.toggle` shortcut, project scripts and `script.*`, "Run in terminal", the worktree setup terminal, the running-terminal badge on thread rows).
 - `UPSTREAM_PRODUCT_FLAGS` shows everything. Core without a product composition uses it, so stock core and upstream's own tests behave as upstream.
-- `UPCOMPUTER_PRODUCT_FLAGS` hides all four. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
+- `UPCOMPUTER_PRODUCT_FLAGS` shows `terminalSurface` and hides the other four. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
 - A table in the same module maps each flag to the capabilities, keybinding commands, settings search items and right-panel launchers it hides.
 
 ## Server hooks
@@ -23,13 +23,13 @@ The terminal and device services stay: worktree setup scripts run in a server te
 
 The web composition carries the flags too. Upstream files call `apps/web/src/product/productFlags.ts`, which reads them lazily because upstream state modules import it:
 
-- The resolved keybindings (`state/server.ts`, the Keybindings settings page) drop terminal, project script, pull request and settle commands, so their shortcuts, labels and rows go with them.
-- Settings search filters the hidden rows; the rows themselves are gated where they render (terminal font and its preview, device settings, PR merge method, GitHub routing).
-- The right-panel launchers drop the Terminal, Pull request, Linked pull requests and Device entries.
-- Chat view: no terminal toggle, project scripts, "Run in terminal" or setup-terminal button, and no device state subscription.
+- The resolved keybindings (`state/server.ts`, the Keybindings settings page) drop the drawer toggle, project script, pull request and settle commands, so their shortcuts, labels and rows go with them. Without `terminalSurface` every `terminal.*` command goes.
+- Settings search filters the hidden rows; the rows themselves are gated where they render (terminal font and its preview, behind `terminalSurface`; device settings, PR merge method, GitHub routing).
+- The right-panel launchers drop the Pull request, Linked pull requests and Device entries, and the Terminal entry without `terminalSurface`.
+- Chat view: no terminal drawer toggle, project scripts, "Run in terminal" or setup-terminal button, and no device state subscription.
 - No PR badges or PR summary reads (`useLinkedThreadPullRequest`), no `#` pull request menu in the composer, and `/pull-requests` redirects home.
 - The sidebar has no Settled section and no bulk Settle.
-- No terminal metadata subscription per thread row.
+- Terminal metadata (`state/terminalSessions.ts`): `useKnownTerminalSessions` subscribes with `terminalSurface`, since the panel tab takes its labels and working directories from it and ChatView allocates terminal ids from it; `useThreadRunningTerminalIds`, the thread rows' running-terminal badge, needs `terminal` too.
 
 Web unit tests alias `product/productEntry` to `apps/web/test/coreProductEntry.ts`, so upstream's tests run with upstream's flags. Tests for a hidden feature mock the entry, as `product/productFlags.test.tsx` does.
 

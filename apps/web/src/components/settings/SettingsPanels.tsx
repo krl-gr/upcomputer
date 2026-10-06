@@ -1742,7 +1742,7 @@ function FontSettingsGroup() {
       <InterfaceFontRow />
       <PromptFontRow />
       <CodeFontRow />
-      {isProductFeatureShown("terminal") ? <TerminalFontRow /> : null}
+      {isProductFeatureShown("terminalSurface") ? <TerminalFontRow /> : null}
       <FontSmoothingRow />
     </>
   );
@@ -1761,14 +1761,14 @@ function SimpleFontRows() {
       <CodeFontRow
         title="Monospace font"
         description={
-          isProductFeatureShown("terminal")
+          isProductFeatureShown("terminalSurface")
             ? "Code blocks, diffs, file previews, and the terminal."
             : "Code blocks, diffs, and file previews."
         }
         preview={
           <>
             <CodeFontPreview />
-            {isProductFeatureShown("terminal") ? (
+            {isProductFeatureShown("terminalSurface") ? (
               <TerminalFontPreview
                 family={resolveTerminalFontPreference({
                   advanced: false,

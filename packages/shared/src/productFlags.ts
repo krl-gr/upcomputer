@@ -13,7 +13,15 @@ import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 export interface ProductFlags {
   /** Pull requests: the PR page, panels, badges, PR watch and sync, the PR agent tools. */
   readonly pullRequests: boolean;
-  /** The integrated terminal, with project scripts and "Run in terminal". */
+  /**
+   * The terminal as a right-panel surface: its launcher entry, its tab, the
+   * shortcuts used while a terminal has focus, and the terminal font setting.
+   */
+  readonly terminalSurface: boolean;
+  /**
+   * The rest of the integrated terminal: the bottom drawer and its toggle,
+   * project scripts, "Run in terminal", and the worktree setup terminal.
+   */
   readonly terminal: boolean;
   /** The settled-thread lifecycle: settle, auto-settle, the Settled section. Snooze stays. */
   readonly threadSettlement: boolean;
@@ -25,6 +33,7 @@ export type ProductFlag = keyof ProductFlags;
 
 export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   pullRequests: true,
+  terminalSurface: true,
   terminal: true,
   threadSettlement: true,
   devices: true,
@@ -32,6 +41,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   pullRequests: false,
+  terminalSurface: true,
   terminal: false,
   threadSettlement: false,
   devices: false,
@@ -136,12 +146,19 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
   },
-  terminal: {
+  terminalSurface: {
     capabilities: [],
-    // Project scripts run in the terminal, so their commands go with it.
-    keybindingCommands: ["terminal.", "script."],
+    keybindingCommands: ["terminal."],
     settingsSearchIds: ["terminal-font"],
     rightPanelSurfaces: ["Terminal"],
+  },
+  terminal: {
+    capabilities: [],
+    // The surface keeps the shortcuts that only work while a terminal has
+    // focus. Project scripts run in the drawer, so their commands go with it.
+    keybindingCommands: ["terminal.toggle", "script."],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
   },
   threadSettlement: {
     capabilities: ["threadSettlement", "threadAutoSettlement", "threadAutoSettleOptOut"],

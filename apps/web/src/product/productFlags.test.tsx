@@ -83,8 +83,8 @@ function renderLauncher() {
   );
 }
 
-const HIDDEN_SURFACES = [">Terminal<", ">Pull request<", ">Linked pull requests<", ">Device<"];
-const KEPT_SURFACES = [">Browser<", ">Files<", ">Diff<"];
+const HIDDEN_SURFACES = [">Pull request<", ">Linked pull requests<", ">Device<"];
+const KEPT_SURFACES = [">Browser<", ">Terminal<", ">Files<", ">Diff<"];
 
 describe("hidden upstream features in the web app", () => {
   it("keeps every upstream entry point with upstream's flags", () => {
@@ -96,7 +96,7 @@ describe("hidden upstream features in the web app", () => {
     );
   });
 
-  it("leaves the terminal, pull request and device surfaces out of the right-panel launcher", () => {
+  it("leaves the pull request and device surfaces out of the right-panel launcher", () => {
     product.hidden = true;
     const html = renderLauncher();
     for (const label of HIDDEN_SURFACES) expect(html).not.toContain(label);
@@ -108,7 +108,7 @@ describe("hidden upstream features in the web app", () => {
     const commands = withoutHiddenProductKeybindings(mergeWithDefaultKeybindings([])).map(
       (binding) => binding.command,
     );
-    for (const command of ["terminal.toggle", "terminal.new", "pullRequest.copyNumber"]) {
+    for (const command of ["terminal.toggle", "pullRequest.copyNumber"]) {
       expect(commands).not.toContain(command);
     }
     expect(commands).not.toContain("thread.settle");
@@ -133,7 +133,6 @@ describe("hidden upstream features in the web app", () => {
     // Every id the flags name must still exist upstream, so a renamed row fails here.
     expect(hidden).toEqual(
       expect.arrayContaining([
-        "terminal-font",
         "pull-request-merge-method",
         "github-routing",
         "auto-settle-inactive-threads",
@@ -149,7 +148,7 @@ describe("hidden upstream features in the web app", () => {
         "composer-collapse",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(11);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(10);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
