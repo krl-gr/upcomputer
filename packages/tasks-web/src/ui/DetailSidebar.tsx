@@ -7,6 +7,20 @@ import {
   CollapsibleTrigger,
 } from "../../../../apps/web/src/components/ui/collapsible.tsx";
 
+/**
+ * The right Details column of the task, agent and automation views. It has no
+ * surface of its own: it sits on the page background with the regular
+ * foreground, separated from the main content by a hairline as upstream's
+ * docked panels are.
+ */
+export function DetailColumn({ children }: { readonly children: ReactNode }) {
+  return (
+    <aside className="min-h-0 w-[380px] shrink-0 overflow-y-auto border-l border-border pl-3 text-foreground">
+      {children}
+    </aside>
+  );
+}
+
 export function DetailSidebarSection({
   title,
   count,

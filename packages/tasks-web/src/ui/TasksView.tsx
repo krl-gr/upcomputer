@@ -25,6 +25,7 @@ import { persistPlannedTaskMove, planVisibleTaskMove } from "./taskReorder.ts";
 import {
   DETAIL_INPUT_CLASS,
   DETAIL_SELECT_TRIGGER_CLASS,
+  DetailColumn,
   DetailSidebarRow,
   DetailSidebarSection,
 } from "./DetailSidebar.tsx";
@@ -771,10 +772,7 @@ export function TasksView(props: TasksViewProps) {
                 </DetailSidebarSection>
               ) : null}
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1024,7 +1022,7 @@ export function TasksView(props: TasksViewProps) {
                   </button>
                 ) : null}
               </DetailSidebarSection>
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : createModeOpen ? (
@@ -1041,10 +1039,7 @@ export function TasksView(props: TasksViewProps) {
                 }
               />
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label="Title" controlSelector="input">
@@ -1128,7 +1123,7 @@ export function TasksView(props: TasksViewProps) {
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : (

@@ -32,6 +32,7 @@ import { Toggle } from "../../../../apps/web/src/components/ui/toggle.tsx";
 import {
   DETAIL_INPUT_CLASS,
   DETAIL_SELECT_TRIGGER_CLASS,
+  DetailColumn,
   DetailSidebarRow,
   DetailSidebarSection,
 } from "./DetailSidebar.tsx";
@@ -633,10 +634,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                 </p>
               )}
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1005,7 +1003,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                   </Button>
                 </div>
               ) : null}
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : isCreateMode ? (
@@ -1022,10 +1020,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                 }
               />
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label="Name" controlSelector="input">
@@ -1308,7 +1303,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : (

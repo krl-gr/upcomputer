@@ -50,6 +50,7 @@ import { DetailAutocompleteInput } from "./DetailAutocompleteInput.tsx";
 import {
   DETAIL_INPUT_CLASS,
   DETAIL_SELECT_TRIGGER_CLASS,
+  DetailColumn,
   DetailSidebarRow,
   DetailSidebarSection,
 } from "./DetailSidebar.tsx";
@@ -802,10 +803,7 @@ export function AgentsView(props: AgentsViewProps) {
                 </p>
               )}
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1113,7 +1111,7 @@ export function AgentsView(props: AgentsViewProps) {
                   )}
                 </div>
               </DetailSidebarSection>
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : isCreateMode ? (
@@ -1130,10 +1128,7 @@ export function AgentsView(props: AgentsViewProps) {
                 }
               />
             </main>
-            <aside
-              className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"
-              style={{ width: 380 }}
-            >
+            <DetailColumn>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label="Name" controlSelector="input">
@@ -1342,7 +1337,7 @@ export function AgentsView(props: AgentsViewProps) {
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-            </aside>
+            </DetailColumn>
           </div>
         </div>
       ) : (
