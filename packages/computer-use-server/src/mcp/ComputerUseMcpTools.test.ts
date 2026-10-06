@@ -117,9 +117,13 @@ const callAs = (calledThreadId: ThreadId) =>
     return yield* server.callTool({ name, arguments: args }).pipe(
       Effect.provideService(McpInvocationContext, {
         environmentId: EnvironmentId.make("environment-1"),
-        threadId: calledThreadId,
-        providerSessionId: "session-1",
-        providerInstanceId: ProviderInstanceId.make("codex"),
+        requestNamespace: "session-1",
+        thread: {
+          threadId: calledThreadId,
+          providerSessionId: "session-1",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
         capabilities: new Set<never>(),
         issuedAt: 0,
       }),

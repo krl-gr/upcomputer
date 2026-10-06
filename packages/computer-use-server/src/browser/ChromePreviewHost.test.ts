@@ -373,13 +373,21 @@ test("agents reach Chrome through the preview broker unless a desktop app serves
   const environmentId = EnvironmentId.make("environment-1");
   const scope = {
     environmentId,
-    threadId: ThreadId.make("thread-1"),
-    providerSessionId: "codex-session-1",
-    providerInstanceId: ProviderInstanceId.make("codex"),
+    requestNamespace: "codex-session-1",
+    thread: {
+      threadId: ThreadId.make("thread-1"),
+      providerSessionId: "codex-session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
+    client: undefined,
     capabilities: new Set(["preview"] as const),
     issuedAt: 0,
   };
-  const laterSession = { ...scope, providerSessionId: "codex-session-2" };
+  const laterSession = {
+    ...scope,
+    requestNamespace: "codex-session-2",
+    thread: { ...scope.thread, providerSessionId: "codex-session-2" },
+  };
 
   // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- The Chrome host is Promise-based.
   await Effect.runPromise(

@@ -220,6 +220,12 @@ const changeThreadLinks = Effect.fn("WorkspaceMcpTools.changeThreadLinks")(funct
   },
 ) {
   const { threads, caller } = yield* readMutationCaller();
+  if (caller === undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "thread_credential_required",
+      message: `thread_${mode}_project changes the calling thread, so it needs an agent running inside a thread.`,
+    });
+  }
   // Linking widens what the agent may write, so it needs the same caller as project changes.
   if (
     mode === "link" &&
@@ -326,7 +332,7 @@ export const WorkspaceToolkitHandlersLive = WorkspaceToolkit.toLayer({
         query,
         projectId,
         includeArchived: input.includeArchived ?? true,
-        excludeThreadId: input.includeCurrentThread === true ? undefined : caller.id,
+        excludeThreadId: input.includeCurrentThread === true ? undefined : caller?.id,
         limit,
       }).pipe(Effect.mapError(unavailable));
       const matches = yield* Effect.forEach(rows.slice(0, limit), (row) =>

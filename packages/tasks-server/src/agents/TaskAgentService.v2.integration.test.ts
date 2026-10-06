@@ -783,9 +783,13 @@ it.live("a chat creates a task through the task MCP tools and the started run re
         server.callTool({ name, arguments: args }).pipe(
           Effect.provideService(McpInvocationContext, {
             environmentId: EnvironmentId.make("environment:task-agents-v2"),
-            threadId: chatThreadId,
-            providerSessionId: "session:task-agents-v2",
-            providerInstanceId: instanceId,
+            requestNamespace: "session:task-agents-v2",
+            thread: {
+              threadId: chatThreadId,
+              providerSessionId: "session:task-agents-v2",
+              providerInstanceId: instanceId,
+            },
+            client: undefined,
             capabilities: new Set<never>(),
             issuedAt: 0,
           }),
@@ -908,9 +912,13 @@ it.live("a run a person's message continued claims the task with the earlier run
           .pipe(
             Effect.provideService(McpInvocationContext, {
               environmentId: EnvironmentId.make("environment:task-agents-v2"),
-              threadId: first.threadId,
-              providerSessionId: "session:task-agents-v2",
-              providerInstanceId: instanceId,
+              requestNamespace: "session:task-agents-v2",
+              thread: {
+                threadId: first.threadId,
+                providerSessionId: "session:task-agents-v2",
+                providerInstanceId: instanceId,
+              },
+              client: undefined,
               capabilities: new Set<never>(),
               issuedAt: 0,
             }),

@@ -15,20 +15,23 @@ import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
 /**
  * Builds the task tools' invocation context from the calling MCP session: its
  * thread, and the thread's active run, model and modes. Plan mode denies writes,
- * as the V1 fork's interaction-mode safety did.
+ * as the V1 fork's interaction-mode safety did. A client signed in from outside
+ * a thread only reads.
  */
 const invocationContext = Effect.gen(function* () {
   const invocation = yield* McpInvocationContext;
+  const caller = invocation.thread;
+  if (caller === undefined) {
+    return { source: "mcp", mutationPolicy: "deny" } satisfies TaskToolInvocationContext;
+  }
   const threads = yield* ThreadManagementService;
-  const records = yield* threads
-    .getThreadRecords(invocation.threadId, ["runs"])
-    .pipe(Effect.option);
+  const records = yield* threads.getThreadRecords(caller.threadId, ["runs"]).pipe(Effect.option);
   if (records._tag === "None") {
     return {
       source: "provider",
       mutationPolicy: "deny",
-      threadId: invocation.threadId,
-      providerInstanceId: invocation.providerInstanceId,
+      threadId: caller.threadId,
+      providerInstanceId: caller.providerInstanceId,
     } satisfies TaskToolInvocationContext;
   }
   const { thread } = records.value;
@@ -36,9 +39,9 @@ const invocationContext = Effect.gen(function* () {
   return {
     source: "provider",
     mutationPolicy: thread.interactionMode === "plan" ? "deny" : "allow",
-    threadId: invocation.threadId,
+    threadId: caller.threadId,
     ...(run === undefined ? {} : { turnId: run.id }),
-    providerInstanceId: invocation.providerInstanceId,
+    providerInstanceId: caller.providerInstanceId,
     modelSelection: run?.modelSelection ?? thread.modelSelection,
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,

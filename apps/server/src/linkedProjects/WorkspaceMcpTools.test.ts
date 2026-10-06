@@ -87,9 +87,9 @@ const makeDependencies = (callerOverrides: Partial<OrchestrationV2ThreadShell> =
     ProjectStore.layer.pipe(Layer.provide(database)),
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
-      threadId: callerId,
-      providerSessionId: "session",
-      providerInstanceId: instanceId,
+      requestNamespace: "session",
+      thread: { threadId: callerId, providerSessionId: "session", providerInstanceId: instanceId },
+      client: undefined,
       issuedAt: 0,
       capabilities: new Set(["orchestration" as const]),
     }),

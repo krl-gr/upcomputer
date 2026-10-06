@@ -4,6 +4,7 @@ import {
   PullRequestState,
   ThreadPullRequestLinkSource,
   TrimmedNonEmptyString,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/unstable/ai/Tool";
@@ -28,6 +29,11 @@ const REGISTER_EVERY_PR =
  * the host CLI handed back.
  */
 export const PullRequestTargetInput = Schema.Struct({
+  threadId: Schema.optional(
+    ThreadId.annotate({
+      description: "Thread to act on. Omit for this thread.",
+    }),
+  ),
   url: Schema.optional(
     TrimmedNonEmptyString.annotate({
       description:
@@ -78,6 +84,24 @@ export class PullRequestHostRequiredError extends Schema.TaggedError<PullRequest
 ) {
   override get message(): string {
     return "This thread's project has no recognised remote. Pass host or url.";
+  }
+}
+
+export class PullRequestThreadRequiredError extends Schema.TaggedError<PullRequestThreadRequiredError>()(
+  "PullRequestThreadRequiredError",
+  {},
+) {
+  override get message(): string {
+    return "Pass threadId: this MCP client is not running inside an Up.computer thread.";
+  }
+}
+
+export class PullRequestThreadAboveLimitsError extends Schema.TaggedError<PullRequestThreadAboveLimitsError>()(
+  "PullRequestThreadAboveLimitsError",
+  { threadId: Schema.String },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} cannot be changed from here: it runs with broader permissions than this caller, or the calling thread has no active run.`;
   }
 }
 
@@ -140,6 +164,8 @@ export const PullRequestToolError = Schema.Union([
   PullRequestUrlInvalidError,
   PullRequestTargetIncompleteError,
   PullRequestHostRequiredError,
+  PullRequestThreadRequiredError,
+  PullRequestThreadAboveLimitsError,
   PullRequestThreadNotFoundError,
   PullRequestLinkFailedError,
   PullRequestUnlinkFailedError,
@@ -245,7 +271,12 @@ const UnlinkPullRequestTool = Tool.make("unlink_pull_request", {
   .annotate(Tool.OpenWorld, false);
 
 const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
-  description: `List the pull requests linked to this thread with their last known host state, and how they chain into stacks (bottom to top). ${REGISTER_EVERY_PR}`,
+  description: `List the pull requests linked to a thread (omit threadId for this thread) with their last known host state, and how they chain into stacks (bottom to top). ${REGISTER_EVERY_PR}`,
+  parameters: Schema.Struct({
+    threadId: Schema.optional(
+      ThreadId.annotate({ description: "Thread to list. Omit for this thread." }),
+    ),
+  }),
   success: ListThreadPullRequestsResult,
   failure: PullRequestToolError,
   dependencies,
@@ -258,7 +289,7 @@ const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
 
 const WatchPullRequestTool = Tool.make("watch_pull_request", {
   description:
-    "Have Up.computer watch an open pull request for this thread, linking it first if needed. Up.computer checks it every minute and wakes you with a message when a check fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict with its base. Use this to monitor or babysit a pull request instead of polling, sleeping, or running a watcher. Only comments posted after this call wake you, so handle the existing ones first, then end your turn. A wake is news, not a merge decision: check readiness yourself before merging. Watching ends when the pull request merges or closes, when Up.computer cannot read it for 15 minutes, or when you call unwatch_pull_request.",
+    "Have Up.computer watch an open pull request for this thread, linking it first if needed. Up.computer checks it every minute and wakes you with a message when a check fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict with its base. Use this to monitor or babysit a pull request instead of polling, sleeping, or running a watcher. Only comments posted after this call wake you, so handle the existing ones first, then end your turn. A wake is news, not a merge decision: check readiness yourself before merging. Watching ends when the pull request merges or closes, when its thread settles, when Up.computer cannot read it for 15 minutes, or when you call unwatch_pull_request. Unsettle the thread before starting a new watch.",
   parameters: PullRequestTargetInput,
   success: WatchPullRequestResult,
   failure: PullRequestToolError,

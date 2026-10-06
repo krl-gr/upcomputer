@@ -89,9 +89,13 @@ export const callComputerUseTool = Effect.fn("ComputerUseMcpTools.call")(functio
 const resolveSession = Effect.gen(function* () {
   const invocation = yield* McpInvocationContext;
   const threads = yield* ThreadManagementService;
-  const thread = yield* threads
-    .getThreadShell(invocation.threadId)
-    .pipe(Effect.orElseSucceed(() => null));
+  // A client signed in from outside a thread has no modes, so it is denied.
+  const thread =
+    invocation.thread === undefined
+      ? null
+      : yield* threads
+          .getThreadShell(invocation.thread.threadId)
+          .pipe(Effect.orElseSucceed(() => null));
   return {
     interactionMode:
       thread === null ? undefined : computerUseInteractionMode(thread.interactionMode),
