@@ -58,6 +58,12 @@ export interface ProductSurfaces {
    * stage badge, and the sidebar toggle lines up with the sidebar's row icons.
    */
   readonly sidebarHeader: ProductSurfaceVariant;
+  /**
+   * The composer's footer row. With `upcomputer` it lays upstream's own controls
+   * out as V1 did: attach, mode, provider and model, effort and context, access,
+   * then the context ring and send. The resting (scroll-collapsed) row stays upstream's.
+   */
+  readonly composerFooter: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -66,12 +72,14 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upstream",
   sidebarThreadRow: "upstream",
   sidebarHeader: "upstream",
+  composerFooter: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarProjects: "upcomputer",
   sidebarThreadRow: "upcomputer",
   sidebarHeader: "upcomputer",
+  composerFooter: "upcomputer",
 });
 
 type CapabilityKey = {
