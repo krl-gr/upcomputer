@@ -146,9 +146,10 @@ describe("hidden upstream features in the web app", () => {
         "keybinding-terminal.toggle",
         "keybinding-pullRequest.copyNumber",
         "keybinding-thread.settle",
+        "composer-collapse",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(10);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(11);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
@@ -157,6 +158,12 @@ describe("hidden upstream features in the web app", () => {
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(false);
     product.hidden = true;
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(true);
+  });
+
+  it("leaves Collapse composer on scroll to upstream's composer, which can collapse", () => {
+    expect(isProductSettingsSearchItemVisible({ id: "composer-collapse" })).toBe(true);
+    product.hidden = true;
+    expect(isProductSettingsSearchItemVisible({ id: "composer-collapse" })).toBe(false);
   });
 });
 

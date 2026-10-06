@@ -61,6 +61,10 @@ import type { DraftId } from "../composerDraftStore";
 import type { ContextWindowSnapshot } from "../lib/contextWindow";
 import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
 import type { UpComputerComposerFooterProps } from "./UpComputerComposerFooter";
+import {
+  COMPOSER_CONTROL_ICON_TRIGGER_CLASS,
+  COMPOSER_CONTROL_TEXT_TRIGGER_CLASS,
+} from "./composerLookStyles";
 
 const { deriveProviderInstanceEntries } = await import("../providerInstances");
 const { ContextWindowMeter } = await import("../components/chat/ContextWindowMeter");
@@ -144,6 +148,7 @@ const spies = {
   onRuntimeModeChange: vi.fn(),
   onCompact: vi.fn(),
   onModelChange: vi.fn(),
+  onAttach: vi.fn(),
 };
 
 function modelPicker(
@@ -181,7 +186,7 @@ function footerProps(
     isComposerOwned: true,
   };
   return {
-    attachAction: <button type="button" aria-label="Attach files" />,
+    attach: { input: <input type="file" className="hidden" />, open: spies.onAttach },
     modelPicker: modelPicker(),
     providerUnavailableControl: null,
     traitsPickerInput: traitsInput,
@@ -462,5 +467,54 @@ describe("UpComputerComposerFooter", () => {
     expect(document.querySelector('[data-testid="traits-menu-content"]')).not.toBeNull();
     expect(buttonByText("Full access")).toBeDefined();
     expect(buttonByText("Plan")).toBeUndefined();
+  });
+
+  it("draws every control in V1's text style, with no chevron", async () => {
+    await render(footerProps());
+    const textTriggers = [
+      buttonByText("Build")!,
+      container.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!,
+      block("traits")!.querySelector<HTMLElement>('[aria-label^="High"]')!,
+      container.querySelector<HTMLElement>("[data-composer-footer-access]")!,
+    ];
+    // tailwind-merge drops the classes V1's trigger replaces, so compare V1's own.
+    const v1Text = COMPOSER_CONTROL_TEXT_TRIGGER_CLASS.split(" ").filter(
+      (name) => !["shrink-0"].includes(name),
+    );
+    for (const trigger of textTriggers) {
+      expect(Array.from(trigger.classList)).toEqual(expect.arrayContaining(v1Text));
+      expect(trigger.classList.contains("font-medium")).toBe(false);
+    }
+    // Upstream's chevrons stay mounted for its own layout; V1's class hides each one.
+    const chevrons = Array.from(leftRow().querySelectorAll("[data-composer-control-chevron]"));
+    expect(chevrons.length).toBeGreaterThan(0);
+    for (const chevron of chevrons) {
+      expect(
+        textTriggers.some(
+          (trigger) =>
+            trigger.contains(chevron) &&
+            trigger.classList.contains("[&_[data-composer-control-chevron]]:hidden"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("draws the paperclip and the overflow menu as V1's icon triggers", async () => {
+    await render(footerProps());
+    const attach = container.querySelector<HTMLElement>('[aria-label="Attach files"]')!;
+    expect(attach.className).toBe(COMPOSER_CONTROL_ICON_TRIGGER_CLASS);
+    await click(attach);
+    expect(spies.onAttach).toHaveBeenCalledTimes(1);
+
+    const overflow = container.querySelector<HTMLElement>('[aria-label="More composer controls"]')!;
+    expect(Array.from(overflow.classList)).toEqual(
+      expect.arrayContaining(COMPOSER_CONTROL_ICON_TRIGGER_CLASS.split(" ")),
+    );
+  });
+
+  it("leaves out the paperclip and its separator without attachments", async () => {
+    await render(footerProps({ attach: null }));
+    expect(container.querySelector('[aria-label="Attach files"]')).toBeNull();
+    expect(leftRow().firstElementChild?.getAttribute("data-composer-footer-block")).toBe("mode");
   });
 });

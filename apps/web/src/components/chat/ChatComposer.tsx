@@ -1134,6 +1134,8 @@ import { isProductFeatureShown } from "../../product/productFlags";
 import { ComposerFooterModelPicker } from "../../composerFooter/ComposerFooterModelPicker";
 import {
   composerIdlePlaceholder,
+  composerCollapsesOnScroll,
+  composerLookClass,
   showsUpComputerComposerFooter,
 } from "../../composerFooter/composerFooterSurface";
 import { UpComputerComposerFooter } from "../../composerFooter/UpComputerComposerFooter";
@@ -5231,6 +5233,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const canScrollCollapseComposer =
     canTrackComposerScrollGesture &&
     settings.composerCollapseOnScroll &&
+    composerCollapsesOnScroll() &&
     !hasMultilinePrompt &&
     !composerHasExpandedChrome &&
     !showInlineTasksBadge;
@@ -6533,24 +6536,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
+  const composerAttachmentInput = (
+    <input
+      ref={attachmentInputRef}
+      type="file"
+      multiple
+      className="hidden"
+      onChange={(event) => {
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        // Inserting a chip refocuses the editor after the draft renders;
+        // focusing synchronously here would report the editor's stale text
+        // over the prompt that was just written.
+        void addComposerAttachments(files).then((inserted) => {
+          if (!inserted) focusComposer();
+        });
+      }}
+    />
+  );
   const composerAttachAction = showComposerAttachAction ? (
     <>
-      <input
-        ref={attachmentInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          const files = Array.from(event.currentTarget.files ?? []);
-          event.currentTarget.value = "";
-          // Inserting a chip refocuses the editor after the draft renders;
-          // focusing synchronously here would report the editor's stale text
-          // over the prompt that was just written.
-          void addComposerAttachments(files).then((inserted) => {
-            if (!inserted) focusComposer();
-          });
-        }}
-      />
+      {composerAttachmentInput}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -6885,6 +6891,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
             className={cn(
               "rounded-3xl transition-[background-color] duration-200",
+              composerLookClass("card"),
               "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-primary/70",
               isDragOverComposer ? "bg-accent/45 ring-1 ring-primary/70" : null,
               projectSelectionRequired ? "opacity-75" : null,
@@ -6954,6 +6961,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               className={cn(
                 "relative px-3 pb-2 sm:px-4",
                 "pt-3.5 sm:pt-4",
+                composerLookClass("body"),
                 isComposerApprovalState && "pb-3 sm:pb-4",
                 isComposerCollapsedMobile && "hidden",
                 isComposerResting && "py-2 sm:py-2",
@@ -7441,12 +7449,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     skills={selectedProviderSkills}
                     containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
                     className={cn(
+                      composerLookClass("editor"),
                       showMobilePendingAnswerActions && "max-sm:pb-12",
                       isComposerResting &&
                         "my-0 max-h-8 min-h-8 overflow-hidden py-0 whitespace-pre! leading-8",
                       isComposerApprovalState && "min-h-10",
                     )}
                     placeholderClassName={cn(
+                      composerLookClass("placeholder"),
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
                     )}
@@ -7525,7 +7535,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {isComposerCollapsedMobile ||
             isComposerApprovalState ? null : showsUpComputerComposerFooter(isComposerResting) ? (
               <UpComputerComposerFooter
-                attachAction={composerAttachAction}
+                attach={
+                  showComposerAttachAction
+                    ? {
+                        input: composerAttachmentInput,
+                        open: () => attachmentInputRef.current?.click(),
+                      }
+                    : null
+                }
                 modelPicker={composerModelPicker}
                 providerUnavailableControl={showProviderUnavailable ? composerControls : null}
                 traitsPickerInput={providerTraitsPickerInput}

@@ -1,5 +1,5 @@
 import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
-import { LockIcon, LockOpenIcon } from "lucide-react";
+import { LockIcon, LockOpenIcon, PaperclipIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 import { CompactComposerControlsMenu } from "../components/chat/CompactComposerControlsMenu";
@@ -17,12 +17,19 @@ import { Select, SelectItem, SelectPopup } from "../components/ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { measureComposerFooterControls } from "./composerFooterMeasurement";
+import {
+  COMPOSER_CONTROL_ICON_TRIGGER_CLASS,
+  COMPOSER_CONTROL_ROW_CLASS,
+  COMPOSER_CONTROL_SEPARATOR_CLASS,
+  COMPOSER_CONTROL_TEXT_TRIGGER_CLASS,
+  COMPOSER_FOOTER_PADDING_CLASS,
+} from "./composerLookStyles";
 
 type RuntimeModeOption = { readonly mode: RuntimeMode } & (typeof runtimeModeConfig)[RuntimeMode];
 
 export interface UpComputerComposerFooterProps {
-  /** Upstream's attach action (its hidden file input and paperclip), or null. */
-  attachAction: ReactNode;
+  /** Upstream's hidden file input and the click that opens it, or null without attachments. */
+  attach: { input: ReactNode; open: () => void } | null;
   /** Upstream's model picker, labelled "Provider · Model" through `composerModelPickerSurfaceProps`. */
   modelPicker: ReactNode;
   /** Upstream's "Open provider settings" control, shown instead of the controls when set. */
@@ -41,15 +48,33 @@ export interface UpComputerComposerFooterProps {
   className?: string | undefined;
 }
 
-// V1's quiet text controls: regular weight, muted, no fill and no chevrons.
-const QUIET_CONTROLS_CLASS =
-  "[&_[data-composer-control-chevron]]:hidden [&_button]:font-normal [&_button]:text-muted-foreground [&_button:hover]:bg-transparent [&_button:hover]:text-foreground [&_button[data-pressed]]:bg-transparent [&_button[data-pressed]]:text-foreground [&_button[aria-expanded=true]]:text-foreground [&_button[aria-pressed=true]]:bg-transparent [&_[data-chat-provider-model-picker]]:ms-0";
-
 const ICON_ONLY_BLOCK_CLASS =
   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative";
 
 function FooterSeparator() {
-  return <span aria-hidden="true" className="h-3 w-px shrink-0 bg-foreground/35 dark:bg-border" />;
+  return <span aria-hidden="true" className={COMPOSER_CONTROL_SEPARATOR_CLASS} />;
+}
+
+/** V1's paperclip: opens upstream's file input and keeps the prompt focused. */
+function AttachControl(props: { open: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Attach files"
+            className={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={props.open}
+          />
+        }
+      >
+        <PaperclipIcon aria-hidden="true" className="size-4" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Attach files</TooltipPopup>
+    </Tooltip>
+  );
 }
 
 /**
@@ -116,7 +141,7 @@ function InteractionModeControl(props: {
         render={
           <ComposerControl
             type="button"
-            className="shrink-0"
+            className={COMPOSER_CONTROL_TEXT_TRIGGER_CLASS}
             aria-pressed={plan}
             data-composer-footer-mode={props.interactionMode}
             onClick={props.onToggle}
@@ -157,6 +182,7 @@ function AccessControl(props: {
         <TooltipTrigger
           render={
             <ComposerSelectControl
+              className={COMPOSER_CONTROL_TEXT_TRIGGER_CLASS}
               data-composer-shortcut="composer.mode"
               data-composer-footer-access={props.runtimeMode}
               aria-label={`Access: ${label}`}
@@ -237,7 +263,8 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
       data-chat-composer-footer="true"
       data-composer-footer-surface="upcomputer"
       className={cn(
-        "flex min-w-0 flex-nowrap items-center gap-2 px-3 pb-3 sm:px-4 sm:pb-4",
+        "flex min-w-0 flex-nowrap items-center justify-between gap-2",
+        COMPOSER_FOOTER_PADDING_CLASS,
         props.className,
       )}
     >
@@ -245,15 +272,17 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
         ref={attachRow}
         data-chat-composer-controls="left"
         data-chat-composer-footer-controls="true"
-        className={cn(
-          "relative -ms-1.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-clip",
-          QUIET_CONTROLS_CLASS,
-        )}
+        className={COMPOSER_CONTROL_ROW_CLASS}
       >
         {props.providerUnavailableControl ?? (
           <>
-            {props.attachAction}
-            {props.attachAction ? <FooterSeparator /> : null}
+            {props.attach ? (
+              <>
+                {props.attach.input}
+                <AttachControl open={props.attach.open} />
+                <FooterSeparator />
+              </>
+            ) : null}
             {props.showInteractionModeToggle
               ? renderBlock(
                   "mode",
@@ -275,6 +304,7 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
                     {renderProviderTraitsPicker({
                       ...props.traitsPickerInput,
                       hidden: hiddenBlocks.has("traits"),
+                      triggerClassName: COMPOSER_CONTROL_TEXT_TRIGGER_CLASS,
                     })}
                   </>,
                 )
@@ -305,6 +335,7 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
                 runtimeMode={props.runtimeMode}
                 runtimeModeOptions={props.runtimeModeOptions}
                 hidden={hiddenBlocks.size === 0}
+                triggerClassName={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
                 showInteractionModeToggle={hiddenBlocks.has("mode")}
                 traitsMenuContent={hiddenBlocks.has("traits") ? props.traitsMenuContent : undefined}
                 onToggleInteractionMode={props.onToggleInteractionMode}

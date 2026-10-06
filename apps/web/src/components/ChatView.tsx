@@ -281,6 +281,8 @@ import { useDeviceState } from "~/state/device";
 import { isProductFeatureShown } from "~/product/productFlags";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
+import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
+import { composerLookClass } from "~/composerFooter/composerFooterSurface";
 import { DeviceSetup } from "./device/DeviceSetup";
 import { Dialog } from "./ui/dialog";
 import { WizardPopup } from "./ui/wizard";
@@ -11102,6 +11104,7 @@ export default function ChatView(props: ChatViewProps) {
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
+              {isDraftHeroState ? null : <ComposerBackdropFade />}
               <div
                 ref={draftHeroTransition.transitionGroupRef}
                 className="chat-composer-lane w-full"
@@ -11139,6 +11142,7 @@ export default function ChatView(props: ChatViewProps) {
                   >
                     <ComposerSurface.Shell
                       contextStrip={showComposerContextStrip || showComposerModelStrip}
+                      className={composerLookClass("shell")}
                     >
                       <ComposerSurface.Host
                         inert={isSavingQueuedEdit}

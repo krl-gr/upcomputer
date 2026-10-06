@@ -59,9 +59,11 @@ export interface ProductSurfaces {
    */
   readonly sidebarHeader: ProductSurfaceVariant;
   /**
-   * The composer's footer row. With `upcomputer` it lays upstream's own controls
-   * out as V1 did: attach, mode, provider and model, effort and context, access,
-   * then the context ring and send. The resting (scroll-collapsed) row stays upstream's.
+   * The composer. With `upcomputer` it looks like V1's: its footer lays
+   * upstream's own controls out as V1 did (attach, mode, provider and model,
+   * effort and context, access, then the context ring and send) in V1's
+   * text-only style, the card, send button and backdrop fade are V1's, and a
+   * timeline scroll never collapses it.
    */
   readonly composerFooter: ProductSurfaceVariant;
   /**

@@ -4,6 +4,14 @@ import { resolveModelPickerSelectedModel } from "../components/chat/ModelPickerC
 import { getTriggerDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
 import type { ProviderInstanceEntry } from "../providerInstances";
 import { productSurface } from "../product/productFlags";
+import {
+  COMPOSER_BODY_PADDING_CLASS,
+  COMPOSER_CARD_CLASS,
+  COMPOSER_EDITOR_CLASS,
+  COMPOSER_PLACEHOLDER_CLASS,
+  COMPOSER_SHELL_CLASS,
+  composerSendButtonClass,
+} from "./composerLookStyles";
 
 /*
  * The `composerFooter` surface's decisions, read by the hooks in upstream's
@@ -17,10 +25,42 @@ export const FOLLOW_UP_COMPOSER_PLACEHOLDER = "Ask for follow-up changes or atta
 
 /**
  * Whether the composer renders the UpComputer footer row. The resting row a
- * timeline scroll collapses the composer into stays upstream's.
+ * timeline scroll collapses the composer into stays upstream's; with the
+ * UpComputer surface the composer never rests (`composerCollapsesOnScroll`).
  */
 export function showsUpComputerComposerFooter(isComposerResting: boolean): boolean {
   return !isComposerResting && productSurface("composerFooter") === "upcomputer";
+}
+
+/**
+ * Whether a timeline scroll may rest the composer into upstream's one-line
+ * form, as upstream's "Collapse composer on scroll" setting asks. V1's
+ * composer always stays whole, so with its surface the setting is hidden too.
+ */
+export function composerCollapsesOnScroll(): boolean {
+  return productSurface("composerFooter") !== "upcomputer";
+}
+
+const COMPOSER_LOOK_CLASSES = {
+  shell: COMPOSER_SHELL_CLASS,
+  card: COMPOSER_CARD_CLASS,
+  body: COMPOSER_BODY_PADDING_CLASS,
+  editor: COMPOSER_EDITOR_CLASS,
+  placeholder: COMPOSER_PLACEHOLDER_CLASS,
+} as const;
+
+/** V1's classes for one part of upstream's composer; nothing with `upstream`. */
+export function composerLookClass(part: keyof typeof COMPOSER_LOOK_CLASSES): string | undefined {
+  return productSurface("composerFooter") === "upcomputer"
+    ? COMPOSER_LOOK_CLASSES[part]
+    : undefined;
+}
+
+/** V1's send button for upstream's send, steer and queue states; null keeps upstream's. */
+export function composerSendButtonSurfaceClass(canSend: boolean): string | null {
+  return productSurface("composerFooter") === "upcomputer"
+    ? composerSendButtonClass(canSend)
+    : null;
 }
 
 /** The prompt's idle placeholder; V1 asked for follow-ups in an existing thread. */

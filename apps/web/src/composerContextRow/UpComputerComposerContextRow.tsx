@@ -302,7 +302,8 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
 
   return (
     <div
-      className="flex w-full min-w-0 items-center justify-between gap-2 px-3 pt-1"
+      // V1's context bar spacing.
+      className="flex w-full min-w-0 items-center justify-between gap-2 ps-3 pe-4 pt-1 pb-1"
       data-composer-context-row=""
     >
       <div className="flex min-w-0 flex-1 items-center overflow-hidden">
