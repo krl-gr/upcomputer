@@ -80,6 +80,8 @@ export function compareTaskRunStatuses(left: string, right: string): number {
 
 export interface TaskRunCountGroup extends TaskRunPresentation {
   readonly count: number;
+  /** The group's first run status in badge order: the run filter a click on its count opens. */
+  readonly status: string;
 }
 
 /** Nonzero run counts merged by label, in badge order. Shared by sidebar rows and their task menu. */
@@ -94,6 +96,7 @@ export function groupTaskRunCounts(
     result.set(presentation.label, {
       ...presentation,
       count: (previous?.count ?? 0) + count.count,
+      status: previous?.status ?? count.status,
     });
   }
   return [...result.values()];

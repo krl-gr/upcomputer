@@ -170,8 +170,8 @@ test("the rendered table preserves global order and exposes accessible isolated 
   const html = renderToStaticMarkup(createElement(SidebarProvider as never, null, view));
 
   NodeAssert.doesNotMatch(html, />ID<|>Assignee<|All assignees/);
-  NodeAssert.match(html, /Working 1/);
-  NodeAssert.match(html, /Failed 1/);
+  NodeAssert.match(html, /data-run-count="Working" aria-label="Show Working runs \(1\)">1</);
+  NodeAssert.match(html, /data-run-count="Failed" aria-label="Show Failed runs \(1\)">1</);
   NodeAssert.match(html, /Load more tasks/);
   NodeAssert.doesNotMatch(html, /tasks loaded|More available/);
   NodeAssert.match(html, /in progress/);
@@ -231,14 +231,13 @@ test("the rendered table preserves global order and exposes accessible isolated 
     /data-trigger-tag=""><span class="[^"]*\bopacity-50\b[^"]*" data-table-pill="dim"><span class="truncate">browser-use</,
   );
 
-  // One text size: tags, "+N" and run counts are the same pill at text-sm, cells centred.
+  // One text size: tags and "+N" are pills at text-sm, run counts the sidebar's bare numbers.
   assertTableRowsOneSize(tagged);
-  NodeAssert.equal(tagged.match(/data-table-pill="(neutral|dim)"/g)?.length, 3, "2 tags and +2");
-  NodeAssert.match(
-    tagged,
-    /<button type="button" class="[^"]*" data-table-pill="status" title="Show running runs">Working 1</,
+  NodeAssert.equal(tagged.match(/data-table-pill=/g)?.length, 3, "2 tags and +2, no run pills");
+  NodeAssert.ok(
+    tagged.indexOf('data-run-count="Working"') < tagged.indexOf('data-run-count="Failed"'),
+    "run counts in badge order",
   );
-  NodeAssert.match(tagged, /data-table-pill="status" title="Show failed runs">Failed 1</);
 
   // Last run: only each task's latest run counts.
   const runs = [

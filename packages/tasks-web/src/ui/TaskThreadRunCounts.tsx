@@ -25,7 +25,8 @@ import {
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import { threadRunCountsStore, type ThreadRunCountsStore } from "../state/threadRunCounts.ts";
 import { taskKey } from "./shared.ts";
-import { groupTaskRunCounts, type TaskRunCountGroup } from "./taskRunPresentation.ts";
+import { RunCountNumbers } from "./RunCountNumbers.tsx";
+import { groupTaskRunCounts } from "./taskRunPresentation.ts";
 
 const THREAD_TASKS_LIMIT = 50;
 const MENU_NOTE_CLASS = "px-2 py-1.5 text-muted-foreground text-sm";
@@ -37,14 +38,6 @@ const stopRowEvent = (event: SyntheticEvent) => event.stopPropagation();
 const stopRowKeyActivation = (event: KeyboardEvent) => {
   if (event.key === "Enter" || event.key === " ") event.stopPropagation();
 };
-
-function RunCountNumbers({ groups }: { groups: readonly TaskRunCountGroup[] }) {
-  return groups.map((group) => (
-    <span key={group.label} className={group.className}>
-      {group.count}
-    </span>
-  ));
-}
 
 /** Mounted only while the menu is open: one request per opening, no subscription. */
 function ThreadTasksMenuItems({

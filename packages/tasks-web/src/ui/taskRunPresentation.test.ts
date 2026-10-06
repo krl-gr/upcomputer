@@ -51,13 +51,14 @@ test("row and task-menu counts merge statuses by label in badge order and drop e
       { status: "blocked:superseded", count: 3 },
       { status: "running", count: 2 },
       { status: "interrupted", count: 0 },
-    ]).map(({ label, count }) => [label, count]),
+    ]).map(({ label, count, status }) => [label, count, status]),
     [
-      ["Working", 2],
-      ["Failed", 3],
-      ["Blocked", 3],
-      ["Completed", 141],
+      ["Working", 2, "running"],
+      ["Failed", 3, "failed"],
+      ["Blocked", 3, "blocked:superseded"],
+      ["Completed", 141, "completed"],
     ],
+    "a count opens the runs of its group's first status",
   );
   NodeAssert.equal(
     groupTaskRunCounts([{ status: "blocked:superseded", count: 1 }])[0]?.className,

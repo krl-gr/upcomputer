@@ -2,11 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
 import { TaskId } from "@t3tools/tasks-contracts/v1";
-import {
-  taskRunPresentation,
-  compareTaskRunStatuses,
-  runSearchStatus,
-} from "./taskRunPresentation.ts";
+import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 
@@ -48,7 +44,7 @@ import {
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
-import { TablePill } from "./TablePill.tsx";
+import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
@@ -1249,29 +1245,10 @@ export function TasksView(props: TasksViewProps) {
                         </td>
                         <td className="px-4 py-4 align-middle whitespace-nowrap">{task.status}</td>
                         <td className="px-4 py-4 align-middle">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {task.runCounts
-                              .toSorted((left, right) =>
-                                compareTaskRunStatuses(left.status, right.status),
-                              )
-                              .map(({ status, count }) => {
-                                const presentation = taskRunPresentation(status, false);
-                                return (
-                                  <TablePill
-                                    key={status}
-                                    tone="status"
-                                    className={presentation?.className}
-                                    title={`Show ${status} runs`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openTask(task, status);
-                                    }}
-                                  >
-                                    {presentation?.label ?? status} {count}
-                                  </TablePill>
-                                );
-                              })}
-                          </div>
+                          <TableRunCounts
+                            groups={groupTaskRunCounts(task.runCounts)}
+                            onSelect={(group) => openTask(task, group.status)}
+                          />
                         </td>
                       </tr>
                     );
