@@ -110,6 +110,8 @@ export class DesktopWindow extends Context.Service<
     // mode), before the WSL backend that acts as the primary is ready. It is
     // dismissed automatically once the real main window reveals.
     readonly showConnectingSplash: Effect.Effect<void>;
+    // Shows the splash with another status, or switches the open splash to it.
+    readonly showSplash: (status: DesktopSplashStatus) => Effect.Effect<void>;
     // Marks the primary backend as ready so `createMainIfBackendReady` and the
     // macOS "activate without windows" path may open the real main window. The
     // renderer now always loads the local client URL (getDesktopUrl) and connects
@@ -203,15 +205,26 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
+export interface DesktopSplashStatus {
+  readonly label: string;
+  // Shows the spinner; a status that waits on the person has none.
+  readonly busy: boolean;
+}
+
+const CONNECTING_TO_WSL: DesktopSplashStatus = { label: "Connecting to WSL…", busy: true };
+
 // A self-contained "Connecting to WSL" splash, shown immediately in wsl-only
 // mode while the WSL backend (which serves the renderer) cold-boots. Inlined as
 // a data URL so it needs no bundled asset and no backend — pure CSS, no JS.
-function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
+function buildConnectingSplashDataUrl(
+  shouldUseDarkColors: boolean,
+  status: DesktopSplashStatus,
+): string {
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
   const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body>${status.busy ? '<div class="spinner"></div>' : ""}<div class="label">${status.label}</div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -343,6 +356,7 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  const splashStatusRef = yield* Ref.make(CONNECTING_TO_WSL);
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -929,7 +943,9 @@ export const make = Effect.gen(function* () {
         splash.show();
       }
     });
-    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors));
+    void splash.loadURL(
+      buildConnectingSplashDataUrl(shouldUseDarkColors, yield* Ref.get(splashStatusRef)),
+    );
     yield* logWindowInfo("connecting splash shown");
   }).pipe(
     // The splash is best-effort UX — never let it fail startup.
@@ -938,6 +954,17 @@ export const make = Effect.gen(function* () {
     ),
     Effect.withSpan("desktop.window.showConnectingSplash"),
   );
+
+  const showSplash = Effect.fn("desktop.window.showSplash")(function* (
+    status: DesktopSplashStatus,
+  ) {
+    yield* Ref.set(splashStatusRef, status);
+    const existingSplash = yield* Ref.get(splashWindowRef);
+    if (Option.isNone(existingSplash)) return yield* showConnectingSplash;
+    if (existingSplash.value.isDestroyed()) return;
+    const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    void existingSplash.value.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, status));
+  });
 
   const dispatchRendererEvent = Effect.fn("desktop.window.dispatchRendererEvent")(function* (
     channel: string,
@@ -996,6 +1023,7 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
+    showSplash,
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });

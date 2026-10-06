@@ -29,6 +29,7 @@ import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopV1Upgrade from "./DesktopV1Upgrade.ts";
 import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
@@ -249,7 +250,10 @@ const bootstrap = Effect.gen(function* () {
     if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;
     }
-    yield* primaryBackend.start;
+    // Up.computer: shows the V1 data upgrade the backend runs on its first start.
+    yield* DesktopV1Upgrade.startPrimaryBackend(primaryBackend, {
+      wslPrimary: settings.wslOnly === true && settings.wslBackendEnabled === true,
+    });
     yield* logBootstrapInfo("bootstrap backend start requested");
     yield* appActivation.start.pipe(
       Effect.tap(() => logBootstrapInfo("desktop app control socket ready")),
