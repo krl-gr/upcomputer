@@ -52,7 +52,13 @@ const ICON_ONLY_BLOCK_CLASS =
   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative";
 
 function FooterSeparator() {
-  return <span aria-hidden="true" className={COMPOSER_CONTROL_SEPARATOR_CLASS} />;
+  return (
+    <span
+      aria-hidden="true"
+      data-composer-footer-separator=""
+      className={COMPOSER_CONTROL_SEPARATOR_CLASS}
+    />
+  );
 }
 
 /** V1's paperclip: opens upstream's file input and keeps the prompt focused. */
@@ -238,6 +244,13 @@ type FooterBlockId = "mode" | "traits" | "access";
  * The composer footer in V1's layout, built from upstream's controls: attach,
  * mode, provider and model, effort and context, access, then the context ring
  * and send on the right. Trailing blocks fold into upstream's overflow menu.
+ *
+ * Separators: exactly one between neighbours that are shown. Each one belongs
+ * to the item that can be missing, on the side facing the model picker (which
+ * is always there): the paperclip and the mode carry one after them, effort,
+ * access and the overflow trigger one before them. An absent or folded item
+ * takes its separator along, and the measured widths include it. V1 drew no
+ * separator before the overflow trigger.
  */
 export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
   const { attachRow, hiddenCount, iconOnlyCount } = useComposerFooterControlsLayout();
@@ -339,10 +352,11 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
               aria-hidden={hiddenBlocks.size === 0 || undefined}
               inert={hiddenBlocks.size === 0 || undefined}
               className={cn(
-                "shrink-0",
+                "flex shrink-0 items-center gap-0.5",
                 hiddenBlocks.size === 0 && "pointer-events-none invisible absolute",
               )}
             >
+              <FooterSeparator />
               <CompactComposerControlsMenu
                 interactionMode={props.interactionMode}
                 runtimeMode={props.runtimeMode}

@@ -511,6 +511,100 @@ describe("UpComputerComposerFooter", () => {
     expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
   });
 
+  /**
+   * What the row shows, left to right: a control's name, or `|` for a
+   * separator. Folded blocks and the unused overflow trigger are left out.
+   */
+  function visibleSequence() {
+    const sequence: string[] = [];
+    const visit = (element: Element) => {
+      if (
+        element.getAttribute("aria-hidden") === "true" &&
+        !element.matches("[data-composer-footer-separator]")
+      )
+        return;
+      if (element.matches("[data-testid=tooltip], input")) return;
+      if (element.matches("[data-composer-footer-separator]")) {
+        sequence.push("|");
+        return;
+      }
+      if (element.matches("button, [role=combobox]")) {
+        sequence.push(
+          element.getAttribute("aria-label") ??
+            element.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent ??
+            element.textContent ??
+            "",
+        );
+        return;
+      }
+      for (const child of Array.from(element.children)) visit(child);
+    };
+    for (const child of Array.from(leftRow().children)) visit(child);
+    return sequence;
+  }
+
+  function hasOneSeparatorBetweenNeighbours(sequence: ReadonlyArray<string>) {
+    return (
+      sequence[0] !== "|" &&
+      sequence.at(-1) !== "|" &&
+      sequence.slice(1).every((item, index) => (item === "|") !== (sequence[index] === "|"))
+    );
+  }
+
+  it("puts one separator between shown neighbours, also without the mode control", async () => {
+    await render(footerProps());
+    expect(visibleSequence()).toEqual([
+      "Attach files",
+      "|",
+      "Build",
+      "|",
+      "Claude · Claude Opus 5.5",
+      "|",
+      "High · 1M",
+      "|",
+      "Access: Full access",
+    ]);
+
+    // A provider without plan mode: still a separator after the paperclip.
+    await render(footerProps({ showInteractionModeToggle: false }));
+    expect(visibleSequence()).toEqual([
+      "Attach files",
+      "|",
+      "Claude · Claude Opus 5.5",
+      "|",
+      "High · 1M",
+      "|",
+      "Access: Full access",
+    ]);
+
+    await render(footerProps({ showInteractionModeToggle: false, attach: null, descriptors: [] }));
+    expect(visibleSequence()).toEqual(["Claude · Claude Opus 5.5", "|", "Access: Full access"]);
+  });
+
+  it("never doubles, leads or trails a separator while controls fold", async () => {
+    for (const showInteractionModeToggle of [true, false]) {
+      for (const attach of [true, false]) {
+        for (const width of [600, 440, 400, 360, 330, 300, 200]) {
+          await act(async () => root.unmount());
+          root = createRoot(container);
+          stubLayout(width);
+          await render(
+            footerProps({
+              showInteractionModeToggle,
+              ...(attach ? {} : { attach: null }),
+            }),
+          );
+          const sequence = visibleSequence();
+          expect(
+            hasOneSeparatorBetweenNeighbours(sequence),
+            `${sequence.join(" ")} (mode ${showInteractionModeToggle}, attach ${attach}, ${width}px)`,
+          ).toBe(true);
+          vi.restoreAllMocks();
+        }
+      }
+    }
+  });
+
   it("folds trailing controls into upstream's overflow menu at a narrow width", async () => {
     // 220px of fixed controls and three 80px blocks: 340px keeps only the mode block.
     stubLayout(340);

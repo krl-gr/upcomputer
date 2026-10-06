@@ -16,7 +16,13 @@ const V1_MUTED_TEXT_CLASS = "text-muted-foreground dark:text-white/50";
 export const COMPOSER_CONTROL_ROW_CLASS =
   "relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-clip";
 
-export const COMPOSER_CONTROL_SEPARATOR_CLASS = "h-3 w-px shrink-0 bg-foreground/35 dark:bg-border";
+/**
+ * V1's separator. In dark V1 drew it in its `--border`, white at 6%. This
+ * palette's border is almost the card's own color (#222 on #1e1e1e), which
+ * left the separators next to invisible, so the dark value is V1's own.
+ */
+export const COMPOSER_CONTROL_SEPARATOR_CLASS =
+  "h-3 w-px shrink-0 bg-foreground/35 dark:bg-white/6";
 
 /** The paperclip and the overflow menu: an icon with no fill, bright on hover or while open. */
 export const COMPOSER_CONTROL_ICON_TRIGGER_CLASS = `flex size-8 shrink-0 items-center justify-center rounded-full border-transparent !bg-transparent p-2 ${V1_MUTED_TEXT_CLASS} shadow-none transition-colors hover:!bg-transparent hover:!text-foreground dark:hover:!text-white/86 focus-visible:!ring-0 focus-visible:ring-offset-0 data-pressed:!bg-transparent data-pressed:!text-foreground dark:data-pressed:!text-white/86 aria-expanded:!bg-transparent aria-expanded:!text-foreground dark:aria-expanded:!text-white/86 before:hidden [&_svg]:mx-0`;
