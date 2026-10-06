@@ -144,6 +144,7 @@ function makeFakeBrowserWindow() {
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
+    setBackgroundColor: window.setBackgroundColor,
     webContentsListeners,
     webContentsOnce: webContents.once,
     windowListeners,
@@ -829,6 +830,36 @@ describe("DesktopWindow", () => {
         assert.equal(createdWindowOptions[0]?.height, 880);
         assert.equal(createdWindowOptions[0]?.x, 120);
         assert.equal(createdWindowOptions[0]?.y, 80);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("opens the macOS window over the sidebar vibrancy and keeps it transparent", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        createdWindowOptions,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        assert.deepInclude(createdWindowOptions[0], {
+          backgroundColor: "#00000000",
+          transparent: true,
+          vibrancy: "sidebar",
+          visualEffectState: "active",
+        });
+
+        // An OS appearance change must not paint the vibrant window opaque.
+        yield* desktopWindow.syncAppearance;
+        assert.deepEqual(fakeWindow.setBackgroundColor.mock.calls, [["#00000000"]]);
       }).pipe(Effect.provide(layer));
     }),
   );

@@ -9,3 +9,74 @@ html[data-theme-id="upcomputer"] {
    * the muted foreground, which this palette dims to the row text tone. */
   --sidebar-icon-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 60%, var(--sidebar));
 }
+
+/* Sidebar vibrancy, as in V1. The macOS desktop window paints native vibrancy
+ * behind the page (`apps/desktop/src/window/UpcomputerWindowVibrancy.ts`), and
+ * `sidebarVibrancy/sidebarVibrancy.ts` marks the document there. Only with this
+ * theme, and only while the app's sidebar is mounted, the page lets it show
+ * through the sidebar: html and body drop their opaque chrome (the boot script
+ * and the theme set it inline, hence `!important`), and the sidebar wears its
+ * palette color with alpha. The chat area and every other surface keep their
+ * own opaque backgrounds. Another theme drops the whole block, so the page
+ * paints opaque again at once. The native material does the blur and
+ * saturation: CSS `backdrop-filter` cannot sample it and would only blur the
+ * transparent page.
+ *
+ * Opacity: text keeps the theme's 4.5:1 floor over any backdrop, even a black
+ * one in light and a white one in dark with no native material at all. Rows use
+ * the sidebar text color with alpha, which flattens to the palette's row tone
+ * over the opaque sidebar. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has(
+    [data-app-sidebar]
+  ) {
+  --upcomputer-sidebar-opacity: 94%;
+  --upcomputer-sidebar-row-tint: 6%;
+  background: transparent !important;
+}
+
+html.dark.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has(
+    [data-app-sidebar]
+  ) {
+  --upcomputer-sidebar-opacity: 80%;
+  --upcomputer-sidebar-row-tint: 7.5%;
+}
+
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has([data-app-sidebar])
+  body {
+  background: transparent !important;
+}
+
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"] {
+  --sidebar-row-hover: color-mix(
+    in srgb,
+    var(--sidebar-foreground) var(--upcomputer-sidebar-row-tint),
+    transparent
+  );
+  --sidebar-row-active: var(--sidebar-row-hover);
+  --sidebar-row-selected: var(--sidebar-row-hover);
+  --sidebar-control-surface: var(--sidebar-row-hover);
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar) var(--upcomputer-sidebar-opacity),
+    transparent
+  );
+}
+
+/* Nothing in the translucent sidebar animates: no status pulses, spinners or
+ * hover fades. Drag and drop keeps its motion (dnd-kit sets it inline while a
+ * row moves) and the drag label keeps its one-step reveal. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"]
+  *:not(.sidebar-drag-boundary-label) {
+  animation: none;
+}
+
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"]
+  *:not([style*="transition"]) {
+  transition: none;
+}

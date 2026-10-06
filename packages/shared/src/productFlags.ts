@@ -70,6 +70,11 @@ export interface ProductSurfaces {
    * right-panel toggle, which then leaves the header.
    */
   readonly composerContextRow: ProductSurfaceVariant;
+  /**
+   * The sidebar on the macOS desktop app. With `upcomputer` and the Up.computer
+   * theme it is translucent over the window's native vibrancy, as in V1.
+   */
+  readonly sidebarVibrancy: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -80,6 +85,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarHeader: "upstream",
   composerFooter: "upstream",
   composerContextRow: "upstream",
+  sidebarVibrancy: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -88,6 +94,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarHeader: "upcomputer",
   composerFooter: "upcomputer",
   composerContextRow: "upcomputer",
+  sidebarVibrancy: "upcomputer",
 });
 
 type CapabilityKey = {
