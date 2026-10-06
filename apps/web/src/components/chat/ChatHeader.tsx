@@ -32,6 +32,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 import { ProductChatHeaderAccessory } from "~/product/ProductSlots";
+import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -244,7 +245,7 @@ export const ChatHeader = memo(function ChatHeader({
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-        {activeProject ? (
+        {activeProject && !showsUpComputerComposerContextRow() ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>

@@ -3,6 +3,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { LinkIcon } from "lucide-react";
 import { useMemo } from "react";
 
+import { showsUpComputerComposerContextRow } from "../composerContextRow/composerContextRowSurface";
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import { Button } from "../components/ui/button";
 import {
@@ -21,11 +22,20 @@ import { useAtomCommand } from "../state/use-atom-command";
 const MAX_HEADER_ICONS = 3;
 
 /**
+ * The thread's linked projects in the chat header. With the UpComputer row
+ * under the composer, that row shows and changes them instead.
+ */
+export default function ThreadLinkedProjects(props: ExperimentalWebThreadAccessoryProps) {
+  if (showsUpComputerComposerContextRow()) return null;
+  return <ThreadLinkedProjectsMenu {...props} />;
+}
+
+/**
  * The thread's linked projects as icons, and a menu of the environment's other
  * projects to link or unlink. Links put the thread under those projects in the
  * sidebar and give its agent their folders from its next turn.
  */
-export default function ThreadLinkedProjects(props: ExperimentalWebThreadAccessoryProps) {
+function ThreadLinkedProjectsMenu(props: ExperimentalWebThreadAccessoryProps) {
   const thread = useThreadShell(
     useMemo(() => scopeThreadRef(props.environmentId, props.threadId), [props]),
   );
