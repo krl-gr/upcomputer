@@ -16,9 +16,32 @@ const setup = vi.hoisted(() => ({
   projectServer: {} as Record<string, Record<string, string>>,
   allChats: "",
   configs: new Map<string, unknown>(),
+  // The project key the scope sentence has selected; undefined is "All projects".
+  selectedProject: undefined as string | undefined,
+  blocker: undefined as
+    | { disabled: boolean; enableBeforeUnload: boolean; shouldBlockFn: () => Promise<boolean> }
+    | undefined,
+  confirm: vi.fn(),
   getPromptSettings: vi.fn(),
   updatePromptSettings: vi.fn(),
 }));
+
+/** The settings scope sentence's project groups; each has a checkout on two environments. */
+const groups = vi.hoisted(() => [
+  {
+    projectKey: "key-a",
+    displayName: "Alpha",
+    memberProjects: [
+      { environmentId: "environment-2", id: "project-elsewhere" },
+      { environmentId: "environment-1", id: "project-a" },
+    ],
+  },
+  {
+    projectKey: "key-b",
+    displayName: "Beta",
+    memberProjects: [{ environmentId: "environment-1", id: "project-b" }],
+  },
+]);
 
 const api = vi.hoisted(() => ({
   tasks: {
@@ -31,19 +54,6 @@ vi.mock("../../../../apps/web/src/components/ui/button.tsx", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) =>
     createElement("button", props, children),
 }));
-vi.mock("../../../../apps/web/src/components/ui/select.tsx", () => {
-  const passthrough = ({ children }: { children: ReactNode }) =>
-    createElement("div", null, children);
-  return {
-    Select: ({ children, ...props }: { children: ReactNode }) =>
-      createElement("div", { ...props, "data-scope": true }, children),
-    SelectItem: ({ children, value }: { children: ReactNode; value: string }) =>
-      createElement("div", { "data-value": value }, children),
-    SelectPopup: passthrough,
-    SelectTrigger: passthrough,
-    SelectValue: passthrough,
-  };
-});
 vi.mock("../../../../apps/web/src/components/ui/toast.tsx", () => ({
   toastManager: { add: () => {} },
 }));
@@ -51,23 +61,39 @@ vi.mock("../../../../apps/web/src/components/settings/settingsLayout.tsx", () =>
   SettingsPageContainer: ({ children }: { children: ReactNode }) =>
     createElement("div", null, children),
 }));
-vi.mock("../../../../apps/web/src/hooks/useSettings.ts", () => ({
-  usePrimarySettings: (select: (settings: { customInstructions: string }) => string) =>
-    select({ customInstructions: setup.allChats }),
+vi.mock("../../../../apps/web/src/components/settings/SettingsGroup.tsx", () => ({
+  SettingsGroup: ({ children }: { children: ReactNode }) => createElement("div", null, children),
+}));
+// The scope sentence's selection, resolved like the settings route: the primary
+// environment is the representative one.
+vi.mock("../../../../apps/web/src/components/settings/SettingsScopeContext.tsx", () => ({
+  useSettingsScope: () => {
+    const group = groups.find(({ projectKey }) => projectKey === setup.selectedProject);
+    return {
+      search: group ? { project: group.projectKey } : {},
+      scope: group
+        ? { kind: "project", group, members: group.memberProjects }
+        : { kind: "all", members: [] },
+      environment: {
+        environmentId: "environment-1",
+        serverConfig: { settings: { customInstructions: setup.allChats } },
+      },
+    };
+  },
+}));
+vi.mock("@tanstack/react-router", () => ({
+  useBlocker: (options: typeof setup.blocker) => {
+    setup.blocker = options;
+  },
+}));
+vi.mock("../../../../apps/web/src/localApi.ts", () => ({
+  ensureLocalApi: () => ({ dialogs: { confirm: setup.confirm } }),
 }));
 vi.mock("../../../../apps/web/src/lib/utils.ts", () => ({
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
 }));
-vi.mock("../../../../apps/web/src/state/environments.ts", () => ({
-  usePrimaryEnvironmentId: () => "environment-1",
-}));
 vi.mock("../../../../apps/web/src/state/entities.ts", () => ({
   useServerConfigs: () => setup.configs,
-  useProjects: () => [
-    { environmentId: "environment-1", id: "project-a", title: "Alpha" },
-    { environmentId: "environment-1", id: "project-b", title: "Beta" },
-    { environmentId: "environment-2", id: "project-elsewhere", title: "Elsewhere" },
-  ],
 }));
 vi.mock("../../../../apps/web/src/state/server.ts", () => ({
   serverEnvironment: { updateSettings: "updateSettings" },
@@ -154,12 +180,12 @@ async function save() {
   await act(async () => button("Save changes").props.onClick());
 }
 
-function scopeSelect(): ReactTestInstance {
-  return renderer.root.find((node) => node.props["data-scope"] === true);
-}
-
-async function chooseScope(value: string) {
-  await act(async () => scopeSelect().props.onValueChange(value));
+/** Picks a project in the scope sentence; undefined is "All projects". */
+async function chooseScope(projectKey: string | undefined) {
+  setup.selectedProject = projectKey;
+  await act(async () => {
+    renderer.update(createElement(InstructionsSettingsPage));
+  });
 }
 
 function tabLabels(): string[] {
@@ -186,6 +212,7 @@ describe("InstructionsSettingsPage reloads", () => {
     };
     setup.allChats = "Original all chats";
     setup.configs = new Map([["environment-1", {}]]);
+    setup.selectedProject = undefined;
     setup.getPromptSettings.mockImplementation(async (input: { projectId?: string }) =>
       input.projectId === undefined
         ? { ...setup.server }
@@ -278,17 +305,18 @@ describe("InstructionsSettingsPage reloads", () => {
     expect(errorText()).toBeUndefined();
   });
 
-  it("switches to a project's additions, saves them there, and refuses a project field changed elsewhere", async () => {
+  it("follows the scope sentence: a project shows its additions, saves them there, and refuses a project field changed elsewhere", async () => {
     await render();
     expect(tabLabels()).toContain("All chats");
-    // "All projects" plus this environment's projects.
+    // The scope sentence is the only project picker.
     expect(
-      scopeSelect()
-        .findAll((node) => node.props["data-value"] !== undefined)
-        .map((node) => node.props["data-value"]),
-    ).toEqual(["all-projects", "project-a", "project-b"]);
+      renderer.root.findAll(
+        (node) => node.type === "select" || node.props["aria-label"] === "Instructions scope",
+      ),
+    ).toEqual([]);
 
-    await chooseScope("project-a");
+    await chooseScope("key-a");
+    // Alpha's checkout on the representative environment, not the one elsewhere.
     expect(setup.getPromptSettings).toHaveBeenLastCalledWith({});
     expect(setup.getPromptSettings).toHaveBeenCalledWith({ projectId: "project-a" });
     expect(tabLabels()).toEqual([
@@ -302,7 +330,12 @@ describe("InstructionsSettingsPage reloads", () => {
     expect(JSON.stringify(renderer.toJSON())).toContain("Original creation");
 
     await type("Alpha rule");
-    expect(scopeSelect().props.disabled).toBe(true);
+    // Leaving with unsaved edits, a scope change included, asks first.
+    expect(setup.blocker?.disabled).toBe(false);
+    setup.confirm.mockResolvedValueOnce(false);
+    await expect(setup.blocker!.shouldBlockFn()).resolves.toBe(true);
+    setup.confirm.mockResolvedValueOnce(true);
+    await expect(setup.blocker!.shouldBlockFn()).resolves.toBe(false);
     await save();
     expect(setup.updatePromptSettings).toHaveBeenLastCalledWith({
       projectId: "project-a",
@@ -311,7 +344,7 @@ describe("InstructionsSettingsPage reloads", () => {
     });
     expect(setup.projectServer["project-a"]!.taskCreation).toBe("Alpha rule");
     expect(setup.server.taskCreation).toBe("Original creation");
-    expect(scopeSelect().props.disabled).toBe(false);
+    expect(setup.blocker?.disabled).toBe(true);
 
     // A chat edits the project's field while the page has an unsaved edit of it.
     await type("Alpha page edit");
@@ -330,11 +363,28 @@ describe("InstructionsSettingsPage reloads", () => {
     await act(async () => button("Cancel").props.onClick());
     expect(editorText()).toBe("Alpha chat rule");
 
-    await chooseScope("project-b");
+    await chooseScope("key-b");
     expect(editorText()).toBe("Beta rule");
-    await chooseScope("all-projects");
+    await chooseScope(undefined);
     expect(tabLabels()).toContain("All chats");
+    expect(editorText()).toBe("Original all chats");
     await openTab("Task creation");
     expect(editorText()).toBe("Chat creation");
+  });
+
+  it("restores a field's default and shows the editor at the settings text size", async () => {
+    await render();
+    expect(renderer.root.findByType("textarea").props.className).toContain("text-sm");
+    expect(renderer.root.findByType("textarea").props.className).not.toMatch(/text-(base|lg)/);
+
+    await openTab("Task creation");
+    await act(async () => button("Restore default").props.onClick());
+    expect(editorText()).toBe(DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+    await save();
+    expect(setup.updatePromptSettings).toHaveBeenLastCalledWith({
+      taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+      base: { taskCreation: "Original creation" },
+    });
+    expect(setup.server.taskCreation).toBe(DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
   });
 });
