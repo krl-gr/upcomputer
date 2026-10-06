@@ -26,7 +26,7 @@ The web composition carries the flags too. Upstream files call `apps/web/src/pro
 - The resolved keybindings (`state/server.ts`, the Keybindings settings page) drop the drawer toggle, project script, pull request and settle commands, so their shortcuts, labels and rows go with them. Without `terminalSurface` every `terminal.*` command goes.
 - Settings search filters the hidden rows; the rows themselves are gated where they render (terminal font and its preview, behind `terminalSurface`; device settings, PR merge method, GitHub routing).
 - The right-panel launchers drop the Pull request, Linked pull requests and Device entries, and the Terminal entry without `terminalSurface`.
-- Chat view: no terminal drawer toggle, project scripts, "Run in terminal" or setup-terminal button, and no device state subscription.
+- Chat view: no terminal drawer toggle, project scripts, "Run in terminal" or setup-terminal button, and no device state subscription. Without `terminal` the drawer never renders, and `terminal.new`, `terminal.split*` and `terminal.close` act on the right-panel terminal (`terminalCommandTarget`), since a custom shortcut can drop the default's `terminalFocus` condition.
 - No PR badges or PR summary reads (`useLinkedThreadPullRequest`), no `#` pull request menu in the composer, and `/pull-requests` redirects home.
 - The sidebar has no Settled section and no bulk Settle.
 - Terminal metadata (`state/terminalSessions.ts`): `useKnownTerminalSessions` subscribes with `terminalSurface`, since the panel tab takes its labels and working directories from it and ChatView allocates terminal ids from it; `useThreadRunningTerminalIds`, the thread rows' running-terminal badge, needs `terminal` too.

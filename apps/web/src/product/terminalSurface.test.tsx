@@ -1,4 +1,7 @@
-import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
+import {
+  compileResolvedKeybindingRule,
+  mergeWithDefaultKeybindings,
+} from "@t3tools/shared/keybindings";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -61,8 +64,10 @@ const {
   isProductFeatureShown,
   isProductKeybindingShown,
   isProductSettingsSearchItemVisible,
+  terminalCommandTarget,
   withoutHiddenProductKeybindings,
 } = await import("./productFlags");
+const { resolveShortcutCommand } = await import("../keybindings");
 
 // Unit tests see core with upstream's flags; this file switches to the
 // UpComputer product's per test.
@@ -251,7 +256,35 @@ describe("the terminal surface in the UpComputer product", () => {
     expect(isProductSettingsSearchItemVisible({ id: "keybinding-terminal.toggle" })).toBe(false);
   });
 
+  it("sends a custom terminal shortcut to the right-panel terminal, never the hidden drawer", () => {
+    product.hidden = true;
+    // A person's own binding for terminal.new, without the default's terminalFocus condition.
+    const custom = compileResolvedKeybindingRule({ key: "mod+shift+u", command: "terminal.new" });
+    expect(custom).not.toBeNull();
+    const keybindings = withoutHiddenProductKeybindings(mergeWithDefaultKeybindings([custom!]));
+    const command = resolveShortcutCommand(
+      {
+        key: "u",
+        code: "KeyU",
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+      },
+      keybindings,
+      { platform: "MacIntel", context: { terminalFocus: false } },
+    );
+    expect(command).toBe("terminal.new");
+    // Chat has focus: the command still goes to the right panel, not the drawer.
+    expect(terminalCommandTarget(null)).toBe("right-panel");
+    expect(terminalCommandTarget("right-panel")).toBe("right-panel");
+    expect(terminalCommandTarget("drawer")).toBe("right-panel");
+  });
+
   it("keeps upstream's flags unchanged", () => {
+    expect(terminalCommandTarget(null)).toBe("drawer");
+    expect(terminalCommandTarget("drawer")).toBe("drawer");
+    expect(terminalCommandTarget("right-panel")).toBe("right-panel");
     expect(isProductFeatureShown("terminalSurface")).toBe(true);
     expect(isProductFeatureShown("terminal")).toBe(true);
     const onAddTerminal = vi.fn();

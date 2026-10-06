@@ -19,6 +19,21 @@ export function isProductFeatureShown(flag: ProductFlag): boolean {
   return WEB_PRODUCT.flags[flag];
 }
 
+/**
+ * Where `terminal.new`, `terminal.split*` and `terminal.close` act, whatever
+ * the shortcut's `when` says: a focused right-panel terminal, else the drawer,
+ * and without the drawer the right panel, so a shortcut never opens a hidden
+ * drawer. null when neither terminal is shown.
+ */
+export function terminalCommandTarget(
+  focusOwner: "drawer" | "right-panel" | null,
+): "drawer" | "right-panel" | null {
+  const { terminal, terminalSurface } = WEB_PRODUCT.flags;
+  if (focusOwner === "right-panel" && terminalSurface) return "right-panel";
+  if (terminal) return "drawer";
+  return terminalSurface ? "right-panel" : null;
+}
+
 /** Which version of a replaceable UI surface this build shows. */
 export function productSurface(surface: ProductSurface): ProductSurfaceVariant {
   return WEB_PRODUCT.surfaces[surface];

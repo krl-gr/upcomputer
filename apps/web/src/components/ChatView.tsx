@@ -278,7 +278,7 @@ import { RightPanelTabs } from "./RightPanelTabs";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";
-import { isProductFeatureShown } from "~/product/productFlags";
+import { isProductFeatureShown, terminalCommandTarget } from "~/product/productFlags";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
@@ -1987,12 +1987,15 @@ export default function ChatView(props: ChatViewProps) {
     [draftThreadsByThreadKey],
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
+  // The drawers to render. Up.computer: none in a product without the drawer, whatever opened one.
   const mountedTerminalThreadRefs = useMemo(
     () =>
-      mountedTerminalThreadKeys.flatMap((mountedThreadKey) => {
-        const mountedThreadRef = parseScopedThreadKey(mountedThreadKey);
-        return mountedThreadRef ? [{ key: mountedThreadKey, threadRef: mountedThreadRef }] : [];
-      }),
+      (isProductFeatureShown("terminal") ? mountedTerminalThreadKeys : []).flatMap(
+        (mountedThreadKey) => {
+          const mountedThreadRef = parseScopedThreadKey(mountedThreadKey);
+          return mountedThreadRef ? [{ key: mountedThreadKey, threadRef: mountedThreadRef }] : [];
+        },
+      ),
     [mountedTerminalThreadKeys],
   );
 
@@ -7713,10 +7716,14 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      // Up.computer: products without the drawer send these to the right-panel terminal.
+      const terminalTarget = terminalCommandTarget(terminalFocusOwner);
+
       if (command === "terminal.split") {
+        if (terminalTarget === null) return;
         event.preventDefault();
         event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
+        if (terminalTarget === "right-panel") {
           splitPanelTerminal();
           return;
         }
@@ -7728,9 +7735,10 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.splitVertical") {
+        if (terminalTarget === null) return;
         event.preventDefault();
         event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
+        if (terminalTarget === "right-panel") {
           splitPanelTerminal("vertical");
           return;
         }
@@ -7742,10 +7750,13 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.close") {
+        if (terminalTarget === null) return;
         event.preventDefault();
         event.stopPropagation();
-        if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
-          requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
+        if (terminalTarget === "right-panel") {
+          if (activeRightPanelSurface?.kind === "terminal") {
+            requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
+          }
           return;
         }
         if (!terminalUiState.terminalOpen) return;
@@ -7754,9 +7765,10 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.new") {
+        if (terminalTarget === null) return;
         event.preventDefault();
         event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
+        if (terminalTarget === "right-panel") {
           addTerminalSurface();
           return;
         }
