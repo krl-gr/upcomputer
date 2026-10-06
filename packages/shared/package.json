@@ -215,6 +215,10 @@
       "types": "./src/productFlags.ts",
       "import": "./src/productFlags.ts"
     },
+    "./upcomputerV1Cutover": {
+      "types": "./src/upcomputerV1Cutover.ts",
+      "import": "./src/upcomputerV1Cutover.ts"
+    },
     "./upcomputerEnv": {
       "types": "./src/upcomputerEnv.ts",
       "import": "./src/upcomputerEnv.ts"

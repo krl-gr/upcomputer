@@ -182,6 +182,7 @@ import {
   whenProductFeature,
 } from "./product/ServerProduct.ts";
 import * as UserInstructions from "./provider/UserInstructions.ts";
+import { cutoverV1OnServerStart } from "./upcomputerCutover/V1Cutover.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -689,6 +690,8 @@ const makeRoutesLayer = Layer.mergeAll(
 const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    // Up.computer: a V1 home moves onto v2 before anything opens the v2 database.
+    yield* cutoverV1OnServerStart;
     const activation = yield* Deferred.make<void>();
     const awaitActivation = Deferred.await(activation);
     const activationLayer = Layer.succeed(ServerActivation.ServerActivation, awaitActivation);

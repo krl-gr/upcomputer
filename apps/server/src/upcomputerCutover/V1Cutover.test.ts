@@ -9,8 +9,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { TASK_MIGRATION_CONTRIBUTION } from "@t3tools/tasks-server/persistence";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -20,7 +22,7 @@ import Migration0033 from "../persistence/Migrations/033_ProjectionThreadsSettle
 import Migration0034 from "../persistence/Migrations/034_ProjectionThreadsSnoozed.ts";
 import Migration0044 from "../persistence/Migrations/044_ClearAutomaticProjectModelDefaults.ts";
 import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
-import { runV1Cutover } from "./V1Cutover.ts";
+import { readV1CutoverState, runV1Cutover, runV1CutoverOnStart } from "./V1Cutover.ts";
 
 const at = "2026-10-01T00:00:00.000Z";
 const JsonText = Schema.fromJsonString(Schema.Unknown);
@@ -72,6 +74,8 @@ const seedV1 = (sessionFile: string, otherHomeSessionFile: string) =>
     yield* thread("thread-chat", "claudeAgent", "ask", 1, '["project-b"]');
     yield* thread("thread-up", "up", "default", 1, "[]");
     yield* thread("thread-up-local-test", "up", "default", 1, "[]");
+    yield* sql`UPDATE projection_threads SET settled_override = 'settled', settled_at = ${at}
+      WHERE thread_id = 'thread-chat'`;
     const message = (id: string, threadId: string, role: string, createdAt: string) =>
       sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
         VALUES (${id}, ${threadId}, ${role}, ${`Text of ${id}`}, 0, ${createdAt}, ${createdAt})`;
@@ -181,6 +185,8 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     assert.equal(report.after.threads.hiddenLiveThreads, 1);
     assert.equal(report.before.threads.askLiveThreads, 1);
     assert.equal(report.after.threads.linkedLiveThreads, 1);
+    assert.equal(report.before.threads.settledLiveThreads, 1);
+    assert.equal(report.after.threads.settledLiveThreads, 0);
     assert.deepStrictEqual(report.contextBindings, { mapped: 1, skipped: 1, messages: 1 });
     assert.deepStrictEqual(report.piSessions, { inPlace: 0, recovered: 2, missing: [] });
     assert.equal(report.after.threads.resumablePiThreads, 2);
@@ -208,6 +214,10 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     assert.equal(settingsAfter.enableAssistantStreaming, true);
     // V1's own database was never written.
     assert.isTrue(NodeFS.readFileSync(v1Path).equals(v1Bytes));
+    // The finished cutover is recorded, and only the published database is left.
+    assert.equal(readV1CutoverState(userdata)?.status, "completed");
+    assert.equal(readV1CutoverState(userdata)?.reportPath, reportPath);
+    assert.isFalse(NodeFS.readdirSync(userdata).some((file) => file.includes(".cutover")));
 
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -256,6 +266,23 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     );
     // The backup API copies pages, not bytes: compare what V1 reads.
     assert.deepStrictEqual(dumpV1(v1Path), v1Rows);
+    assert.isNull(readV1CutoverState(userdata));
+
+    // Updating again moves the restored home once more and keeps the earlier
+    // backup, with the v2 database the restore set aside.
+    const second = yield* runV1Cutover({
+      homeDir: home,
+      v1HomeDir: v1Home,
+      featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      now: DateTime.makeUnsafe("2026-10-06T10:00:00.000Z"),
+      log: () => Effect.void,
+    });
+    assert.notEqual(second.report.backupDir, report.backupDir);
+    assert.isTrue(
+      NodeFS.readdirSync(report.backupDir).some((file) =>
+        file.startsWith("statev2.sqlite.after-v2-"),
+      ),
+    );
   }).pipe(
     Effect.provide(NodeServices.layer),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
@@ -287,4 +314,154 @@ it.effect("refuses while the app is running", () => {
     Effect.provide(NodeServices.layer),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
   );
+});
+
+/** A V1 home of the seeded fixture; its Pi session files are missing, which the cutover allows. */
+function makeV1Home(prefix: string) {
+  const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), prefix));
+  const userdata = NodePath.join(home, "userdata");
+  const v1Path = NodePath.join(userdata, "state.sqlite");
+  NodeFS.mkdirSync(userdata, { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(userdata, "environment-id"), "environment-1\n");
+  return {
+    home,
+    userdata,
+    v1Path,
+    v2Path: NodePath.join(userdata, "statev2.sqlite"),
+    seed: seedV1(
+      NodePath.join(home, "missing-a.jsonl"),
+      NodePath.join(home, "missing-b.jsonl"),
+    ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: v1Path }))),
+    backups: () =>
+      NodeFS.readdirSync(userdata).filter((file) => file.startsWith("v1-cutover-backup-")),
+    cleanup: Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true })),
+  };
+}
+
+const onStart = (
+  home: ReturnType<typeof makeV1Home>,
+  now: string,
+  options: {
+    readonly featureMigrations?: Parameters<typeof runV1Cutover>[0]["featureMigrations"];
+    readonly log?: (line: string) => Effect.Effect<void>;
+  } = {},
+) =>
+  runV1CutoverOnStart({
+    baseDir: home.home,
+    dbPath: home.v2Path,
+    featureMigrations: options.featureMigrations ?? [TASK_MIGRATION_CONTRIBUTION],
+    now: DateTime.makeUnsafe(now),
+    log: options.log ?? (() => Effect.void),
+  });
+
+it.effect("runs on the first server start on a V1 home, and only then", () => {
+  const home = makeV1Home("upcomputer-cutover-start-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    assert.equal(yield* onStart(home, "2026-10-06T08:00:00.000Z"), "completed");
+    assert.isTrue(NodeFS.existsSync(home.v2Path));
+    assert.equal(readV1CutoverState(home.userdata)?.status, "completed");
+
+    // A restart finds v2's database and leaves the home alone.
+    assert.equal(yield* onStart(home, "2026-10-06T09:00:00.000Z"), "not-needed");
+    assert.equal(home.backups().length, 1);
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});
+
+it.effect("a failing check keeps V1 as it was and the server down until a retry", () => {
+  const home = makeV1Home("upcomputer-cutover-fail-");
+  // A broken step: the copy loses a message, so the message count differs.
+  const losesAMessage = {
+    ownerId: "test",
+    namespace: "test-break",
+    migrations: [
+      {
+        version: 1,
+        name: "LoseAMessage",
+        run: Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`DELETE FROM projection_thread_messages WHERE message_id = 'm-up-1'`;
+        }),
+      },
+    ],
+  };
+  return Effect.gen(function* () {
+    yield* home.seed;
+    const v1Rows = dumpV1(home.v1Path);
+    const error = yield* onStart(home, "2026-10-06T08:00:00.000Z", {
+      featureMigrations: [TASK_MIGRATION_CONTRIBUTION, losesAMessage],
+    }).pipe(Effect.flip);
+    assert.include(error.message, "1 check(s) differ (messages)");
+    assert.include(error.message, "Your V1 data was not changed.");
+
+    const state = readV1CutoverState(home.userdata);
+    assert.equal(state?.status, "failed");
+    assert.include(error.message, `Report: ${state?.reportPath}`);
+    assert.include(error.message, `Backup: ${state?.backupDir}`);
+    assert.include(
+      NodeFS.readFileSync(state?.reportPath ?? "", "utf8"),
+      "| messages | 5 | 4 | NO |",
+    );
+    // No v2 database, published or half built; V1 reads exactly what it had.
+    assert.isFalse(NodeFS.existsSync(home.v2Path));
+    assert.isFalse(NodeFS.readdirSync(home.userdata).some((file) => file.includes(".cutover")));
+    assert.deepStrictEqual(dumpV1(home.v1Path), v1Rows);
+
+    // The next start reports the same failure without running again.
+    const again = yield* onStart(home, "2026-10-06T09:00:00.000Z").pipe(Effect.flip);
+    assert.equal(again.message, error.message);
+    assert.equal(home.backups().length, 1);
+
+    // A retry by hand (or the desktop's Try Again) runs it afresh.
+    const retried = yield* runV1Cutover({
+      homeDir: home.home,
+      featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      now: DateTime.makeUnsafe("2026-10-06T10:00:00.000Z"),
+      log: () => Effect.void,
+    });
+    assert.deepStrictEqual(
+      retried.report.checks.filter((check) => !check.ok),
+      [],
+    );
+    assert.equal(readV1CutoverState(home.userdata)?.status, "completed");
+    assert.isTrue(NodeFS.existsSync(home.v2Path));
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});
+
+it.effect("a cutover cut short starts over on the next start", () => {
+  const home = makeV1Home("upcomputer-cutover-crash-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    // The app closes while threads are imported.
+    const exit = yield* onStart(home, "2026-10-06T08:00:00.000Z", {
+      log: (line) => (line === "Importing thread shells" ? Effect.interrupt : Effect.void),
+    }).pipe(Effect.exit);
+    assert.isTrue(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
+    const cutShort = readV1CutoverState(home.userdata);
+    assert.equal(cutShort?.status, "running");
+    assert.isTrue(NodeFS.existsSync(NodePath.join(home.userdata, "statev2.sqlite.cutover")));
+    assert.isFalse(NodeFS.existsSync(home.v2Path));
+
+    assert.equal(yield* onStart(home, "2026-10-06T08:05:00.000Z"), "completed");
+    // The partial backup and staging copy are gone; the new run's backup is the only one.
+    assert.deepStrictEqual(home.backups(), ["v1-cutover-backup-20261006T080500Z"]);
+    assert.isFalse(NodeFS.existsSync(cutShort?.backupDir ?? ""));
+    assert.isFalse(NodeFS.readdirSync(home.userdata).some((file) => file.includes(".cutover")));
+    assert.equal(readV1CutoverState(home.userdata)?.status, "completed");
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});
+
+it.effect("leaves homes without UpComputer V1 data to the server", () => {
+  const home = makeV1Home("upcomputer-cutover-skip-");
+  return Effect.gen(function* () {
+    // No V1 database at all.
+    assert.equal(yield* onStart(home, "2026-10-06T08:00:00.000Z"), "not-needed");
+    // A T3 Code V1 database, which upstream's own import handles.
+    yield* runMigrations({ toMigrationInclusive: 32 }).pipe(
+      Effect.provide(NodeSqliteClient.layer({ filename: home.v1Path })),
+    );
+    assert.equal(yield* onStart(home, "2026-10-06T08:00:00.000Z"), "not-needed");
+    assert.deepStrictEqual(home.backups(), []);
+    assert.isNull(readV1CutoverState(home.userdata));
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
 });
