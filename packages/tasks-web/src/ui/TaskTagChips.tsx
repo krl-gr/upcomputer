@@ -14,7 +14,7 @@ export function splitTagChips(tags: ReadonlyArray<string>, limit = VISIBLE_TAG_C
 
 /**
  * A task's tags as table pills: the first ones, then "+N", with every tag in
- * the tooltip. Agent trigger tags are dimmer than the task's own labels.
+ * the tooltip. Agent trigger tags are dimmer than the task's own tags.
  */
 export function TaskTagChips(props: {
   readonly tags: ReadonlyArray<string>;

@@ -239,6 +239,24 @@ test("the rendered table preserves global order and exposes accessible isolated 
     "run counts in badge order",
   );
 
+  // Columns: Status before Tags; Runs as narrow as its numbers, right-aligned at the edge.
+  const headers = [...html.matchAll(/<th class="([^"]*)">([^<]*)<\/th>/g)];
+  NodeAssert.deepEqual(
+    headers.map((match) => match[2]),
+    ["Title", "Status", "Tags", "Runs"],
+  );
+  const columnClass = (name: string) => headers.find((match) => match[2] === name)![1]!;
+  NodeAssert.doesNotMatch(columnClass("Title"), /(^|\s)w-/, "Title takes the remaining width");
+  NodeAssert.match(columnClass("Runs"), /(^|\s)w-px(\s|$)/, "Runs shrinks to its content");
+  NodeAssert.doesNotMatch(columnClass("Runs"), /(^|\s)w-(?!px\b)/, "no wide fixed Runs width");
+  NodeAssert.match(columnClass("Runs"), /(^|\s)text-right(\s|$)/);
+  NodeAssert.doesNotMatch(html, /<table[^>]*\btable-fixed\b/, "fixed layout would ignore w-px");
+  const runCells = [...html.matchAll(/<td class="([^"]*)"><span[^>]*data-table-run-counts=/g)];
+  NodeAssert.equal(runCells.length, 3);
+  for (const [, className] of runCells) {
+    NodeAssert.match(className!, /(^|\s)text-right(\s|$)/, "run counts sit at the right edge");
+  }
+
   // Last run: only each task's latest run counts.
   const runs = [
     makeTask("task-1", "0000000000000010", "Retried", {
@@ -334,4 +352,20 @@ test("source thread link preserves its target and open behavior", () => {
     /className="min-h-0 shrink-0 overflow-y-auto bg-sidebar text-sidebar-foreground"/,
   );
   NodeAssert.match(sidebar, /style=\{\{ width: 380 \}\}/);
+});
+
+test("task details caption tags as Tags, with no Labels left in tasks-web text", () => {
+  NodeAssert.equal(
+    source.match(/<DetailSidebarRow\s+label="Tags"/g)?.length,
+    2,
+    "detail and create",
+  );
+  NodeAssert.equal(source.match(/placeholder="Add tags…"/g)?.length, 2);
+  NodeAssert.equal(source.match(/aria-label="Task tags"/g)?.length, 2);
+  const uiDir = new URL("./", import.meta.url);
+  for (const file of NodeFS.readdirSync(uiDir)) {
+    if (!file.endsWith(".tsx")) continue;
+    const text = NodeFS.readFileSync(new URL(file, uiDir), "utf8");
+    NodeAssert.doesNotMatch(text, /\bLabels\b|"[^"\n]*\blabels\b[^"\n]*"/, file);
+  }
 });

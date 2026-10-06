@@ -873,7 +873,7 @@ export function TasksView(props: TasksViewProps) {
                     </span>
                   </DetailSidebarRow>
                   <DetailSidebarRow
-                    label="Labels"
+                    label="Tags"
                     controlSelector={
                       props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
                     }
@@ -884,8 +884,8 @@ export function TasksView(props: TasksViewProps) {
                         className={DETAIL_INPUT_CLASS}
                         defaultValue={selectedTask.tags.join(", ")}
                         disabled={updatingField === "tags"}
-                        placeholder="Add labels…"
-                        aria-label="Task labels"
+                        placeholder="Add tags…"
+                        aria-label="Task tags"
                         onBlur={(event) => {
                           const tags = splitListInput(event.currentTarget.value);
                           if (tags.join("\u0000") !== selectedTask.tags.join("\u0000"))
@@ -1115,12 +1115,12 @@ export function TasksView(props: TasksViewProps) {
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Labels" controlSelector="input">
+                  <DetailSidebarRow label="Tags" controlSelector="input">
                     <input
                       className={DETAIL_INPUT_CLASS}
                       value={form.tags}
-                      placeholder="Add labels…"
-                      aria-label="Task labels"
+                      placeholder="Add tags…"
+                      aria-label="Task tags"
                       onChange={(event) =>
                         setForm((current) => ({ ...current, tags: event.target.value }))
                       }
@@ -1171,17 +1171,21 @@ export function TasksView(props: TasksViewProps) {
             </div>
           ) : (
             <div className="min-w-0 overflow-x-auto">
-              <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
+              {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
+                  and takes the width the other columns leave. */}
+              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     <th className="w-12 py-3 pr-2 font-medium">
                       <span className="sr-only">Order</span>
                     </th>
                     {showProjectColumn ? <ProjectIconHeader /> : null}
-                    <th className="py-3 pr-4 font-medium">Title</th>
-                    <th className="w-56 px-4 py-3 font-medium">Tags</th>
+                    <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
                     <th className="w-40 px-4 py-3 font-medium">Status</th>
-                    <th className="w-72 px-4 py-3 font-medium">Runs</th>
+                    <th className="w-56 px-4 py-3 font-medium">Tags</th>
+                    <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
+                      Runs
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1223,7 +1227,7 @@ export function TasksView(props: TasksViewProps) {
                             name={task.projectName}
                           />
                         ) : null}
-                        <td className="py-4 pr-4 align-middle">
+                        <td className="max-w-0 py-4 pr-4 align-middle">
                           <button
                             type="button"
                             className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
@@ -1240,11 +1244,11 @@ export function TasksView(props: TasksViewProps) {
                             </div>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 align-middle">
+                        <td className="px-4 py-4 align-middle whitespace-nowrap">{task.status}</td>
+                        <td className="max-w-56 px-4 py-4 align-middle">
                           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
                         </td>
-                        <td className="px-4 py-4 align-middle whitespace-nowrap">{task.status}</td>
-                        <td className="px-4 py-4 align-middle">
+                        <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
                           <TableRunCounts
                             groups={groupTaskRunCounts(task.runCounts)}
                             onSelect={(group) => openTask(task, group.status)}
