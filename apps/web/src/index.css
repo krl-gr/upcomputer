@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "./theme.upcomputer.css";
+/* Tailwind scans only apps/web by default; these feature packages render here too. */
+@source "../../../packages/tasks-web/src";
+@source "../../../packages/computer-use-web/src";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
