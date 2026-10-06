@@ -10,8 +10,16 @@ const forbiddenImport =
 // The V1 read model tables. `projection_projects` is not listed: it is the V2 project store.
 const legacyTable =
   /\bprojection_(?:threads|thread_messages|thread_activities|thread_proposed_plans|thread_pull_requests|thread_sessions|turns|pending_approvals|state)\b/;
-/** Directories whose files may read the V1 tables: the importer and the schema history. */
-const legacyReaders = ["orchestration-v2/legacy/", "persistence/Migrations/"] as const;
+/**
+ * Directories whose files may read the V1 tables: the importer, the schema
+ * history, and Up.computer's one-time V1 cutover, which prepares V1's rows on
+ * its staging copy before the importer reads them.
+ */
+const legacyReaders = [
+  "orchestration-v2/legacy/",
+  "persistence/Migrations/",
+  "upcomputerCutover/",
+] as const;
 /**
  * Individual files allowed to read the V1 tables, each with its reason. Keep this
  * list short; new V1 reads belong in the importer.
@@ -80,12 +88,14 @@ it("keeps the legacy importer out of reach of new code", () => {
     )
     .map(({ path }) => path)
     .toSorted();
-  // Startup imports pending transcripts, the V2 runtime wires the importer, and
-  // thread and project services hydrate a V1 transcript before they act on it.
+  // Startup imports pending transcripts, the V2 runtime wires the importer,
+  // thread and project services hydrate a V1 transcript before they act on it,
+  // and Up.computer's V1 cutover imports every thread on its staging copy.
   assert.deepEqual(importers, [
     "orchestration-v2/ThreadManagementService.ts",
     "orchestration-v2/runtimeLayer.ts",
     "project/ProjectService.ts",
     "serverRuntimeStartup.ts",
+    "upcomputerCutover/V1Cutover.ts",
   ]);
 });
