@@ -177,6 +177,8 @@ it.layer(TestLayer)("runTaskV1Cutover", (it) => {
       );
       assert.deepStrictEqual(agent.config.tools, ["read", "t3_thread_search", "task_get"]);
       assert.deepStrictEqual(agent.startTags, ["dev"]);
+      // A rename is not an edit that lets the agent run its finished tasks again.
+      assert.equal(agent.updatedAt, timestamp);
 
       const state = yield* instructions.getState;
       assert.equal(state.allChats, "Call mcp__t3-code__task_context first.");

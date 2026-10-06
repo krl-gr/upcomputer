@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, test } from "vite-plus/test";
 
 import {
@@ -32,6 +33,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
   ProjectStoreV2,
@@ -39,10 +41,14 @@ import {
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { ThreadManagementSendInput } from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
+import { runTaskV1Cutover } from "../cutover/V1Cutover.ts";
+import { AllChatsInstructionsLive } from "../persistence/AllChatsInstructions.ts";
 import { TaskRepository, type TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import {
   TaskPromptSettingsStore,
+  TaskPromptSettingsStoreLive,
   type TaskPromptSettingsStoreShape,
 } from "../persistence/TaskPromptSettingsStore.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
@@ -86,7 +92,7 @@ async function database(legacy?: (db: NodeSqlite.DatabaseSync) => void) {
     }
   }
   await migrate(TASK_MIGRATION_CONTRIBUTION.migrations.length);
-  return TaskRepositoryLive.pipe(Layer.provide(sql));
+  return TaskRepositoryLive.pipe(Layer.provideMerge(sql));
 }
 
 const isoNow = () => new Date().toISOString();
@@ -527,7 +533,7 @@ function fakeThreads() {
 }
 
 async function withScheduler(
-  use: (harness: Harness) => Effect.Effect<void, unknown>,
+  use: (harness: Harness) => Effect.Effect<void, unknown, SqlClient.SqlClient>,
   legacy?: (db: NodeSqlite.DatabaseSync) => void,
   /** Wraps the scheduler's repository, e.g. to pause a call and force an interleaving. */
   wrapRepository?: (repository: TaskRepositoryShape) => TaskRepositoryShape,
@@ -894,6 +900,65 @@ test("after the upgrade, finished work in a start status is not replayed and uns
         at(5),
       );
     },
+  );
+});
+
+test("the V1 cutover's tool-name rewrite does not replay completed work on the first v2 start", async () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls } = harness;
+      // A V1 agent naming V1 tools, with finished work on tasks still in its start status.
+      yield* repository.upsertAgent(
+        agentInput("dev", {
+          config: {
+            role: "Dev",
+            modelSelection,
+            tools: ["thread_search"],
+            instructions: "Claim with mcp__upcomputer_tasks__task_update.",
+          },
+          createdAt: minutesAgo(30),
+          updatedAt: minutesAgo(30),
+        }),
+      );
+      for (const id of ["done-1", "done-2"]) {
+        yield* repository.upsert(
+          taskInput(id, { createdAt: minutesAgo(20), updatedAt: minutesAgo(20) }),
+        );
+        yield* repository.createAgentRun(
+          runInput(`run-${id}`, id, "dev", {
+            status: "completed",
+            startedAt: minutesAgo(15),
+            completedAt: minutesAgo(10),
+          }),
+        );
+      }
+
+      const report = yield* runTaskV1Cutover({ now: minutesAgo(1) }).pipe(
+        Effect.provide(
+          TaskPromptSettingsStoreLive.pipe(
+            Layer.provide(AllChatsInstructionsLive),
+            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(NodeServices.layer),
+          ),
+        ),
+      );
+      NodeAssert.deepEqual(
+        report.rewrittenAgents.map((agent) => agent.agentId),
+        ["dev"],
+      );
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getAgentById({ id: TaskAgentId.make("dev") })).config
+          .instructions,
+        "Claim with mcp__t3-code__task_update.",
+      );
+
+      yield* service.recover;
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "done-1")).length, 1);
+      NodeAssert.equal((yield* runsOf(repository, "done-2")).length, 1);
+      NodeAssert.deepEqual(calls, []);
+    }),
   );
 });
 

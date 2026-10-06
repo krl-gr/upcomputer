@@ -171,7 +171,9 @@ export const runTaskV1Cutover = Effect.fn("runTaskV1Cutover")(function* (input: 
         instructions: rewrite.text,
         ...(tools === undefined ? {} : { tools: tools.map((tool) => tool.text) }),
       },
-      updatedAt: input.now,
+      // A mechanical rename, not an edit: a newer updatedAt would let the agent
+      // run again on every matching task it already finished (see runsAgain).
+      updatedAt: agent.updatedAt,
     });
     rewrittenAgents.push({ agentId: agent.id, name: agent.name, replacements });
   }
@@ -251,7 +253,11 @@ export interface TaskSystemCounts {
   readonly activeRuns: number;
   readonly agents: number;
   readonly enabledAgents: number;
-  /** Every agent's id, enabled flag and triggers, in id order. */
+  /**
+   * Every agent's id, enabled flag, triggers and updatedAt, in id order. An
+   * agent edited after its last run runs again (see runsAgain), so updatedAt
+   * is part of what decides whether it starts.
+   */
   readonly agentTriggers: string;
   readonly automations: number;
   readonly instructionHistory: number;
@@ -267,7 +273,7 @@ export const countTaskSystem = Effect.gen(function* () {
   const triggers = yield* sql<{ readonly triggers: string | null }>`
     SELECT group_concat(entry, '\n') AS triggers FROM (
       SELECT id || ' ' || enabled || ' ' || start_statuses_json || ' ' || start_tags_json || ' ' ||
-        start_run_statuses_json AS entry
+        start_run_statuses_json || ' ' || updated_at AS entry
       FROM task_agents ORDER BY id
     )
   `;
