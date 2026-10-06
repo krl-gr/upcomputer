@@ -4,13 +4,10 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { TasksStateTarget } from "../state/tasksState.ts";
 import {
-  ALL_PROJECTS_FILTER,
   filterByProjectFilter,
   orderedProjectFilterKeys,
   planTaskQueryLanes,
   preferredProject,
-  resolveTaskProjectFilter,
-  SIDEBAR_PROJECTS_FILTER,
   type ViewProjectFilter,
 } from "./projectFilter.ts";
 
@@ -69,32 +66,6 @@ test("create forms preselect the first available member project in sidebar order
   NodeAssert.equal(preferredProject([], keys), undefined);
 });
 
-test("the Tasks dropdown follows the sidebar and a local choice lasts until the sidebar changes", () => {
-  NodeAssert.equal(resolveTaskProjectFilter(null, null), ALL_PROJECTS_FILTER);
-  NodeAssert.equal(resolveTaskProjectFilter(null, repoFilter), SIDEBAR_PROJECTS_FILTER);
-
-  const local = { sidebarKey: repoFilter.key, value: "laptop:p-worktree" };
-  NodeAssert.equal(resolveTaskProjectFilter(local, repoFilter), "laptop:p-worktree");
-  NodeAssert.equal(
-    resolveTaskProjectFilter(
-      { sidebarKey: repoFilter.key, value: ALL_PROJECTS_FILTER },
-      repoFilter,
-    ),
-    ALL_PROJECTS_FILTER,
-    "All projects is a valid local widening of the sidebar scope",
-  );
-  // Selecting another sidebar project (or All projects) discards the local choice.
-  NodeAssert.equal(
-    resolveTaskProjectFilter(local, { ...repoFilter, key: "repo:other" }),
-    SIDEBAR_PROJECTS_FILTER,
-  );
-  NodeAssert.equal(resolveTaskProjectFilter(local, null), ALL_PROJECTS_FILTER);
-  NodeAssert.equal(
-    resolveTaskProjectFilter({ sidebarKey: null, value: SIDEBAR_PROJECTS_FILTER }, null),
-    ALL_PROJECTS_FILTER,
-  );
-});
-
 test("task queries run one lane per member project, scoped to its environment", () => {
   const targets = [
     target("laptop", ["p-main", "p-worktree", "p-other"]),
@@ -102,36 +73,53 @@ test("task queries run one lane per member project, scoped to its environment", 
     target("ci", ["p-ci"]),
   ];
   const lanes = (
-    projectFilter: string,
-    sidebarFilter: ViewProjectFilter | null,
+    projectFilter: ViewProjectFilter | null,
     statusFilter = "__all__",
+    tags: string[] = [],
   ) =>
-    planTaskQueryLanes({ targets, projectFilter, statusFilter, sidebarFilter, pageSize: 100 }).map(
+    planTaskQueryLanes({ targets, projectFilter, statusFilter, tags, pageSize: 100 }).map(
       (lane) => [lane.target.environmentId, lane.search],
     );
 
-  NodeAssert.deepEqual(lanes(SIDEBAR_PROJECTS_FILTER, repoFilter, "Backlog"), [
+  NodeAssert.deepEqual(lanes(repoFilter, "Backlog"), [
     ["laptop", { projectId: "p-main", status: "Backlog", limit: 100 }],
     ["laptop", { projectId: "p-worktree", status: "Backlog", limit: 100 }],
     ["remote", { projectId: "p-remote", status: "Backlog", limit: 100 }],
   ]);
-  NodeAssert.deepEqual(lanes(ALL_PROJECTS_FILTER, repoFilter), [
+  NodeAssert.deepEqual(lanes(null), [
     ["laptop", { limit: 100 }],
     ["remote", { limit: 100 }],
     ["ci", { limit: 100 }],
   ]);
-  NodeAssert.deepEqual(lanes("laptop:p-other", repoFilter), [
-    ["laptop", { projectId: "p-other", limit: 100 }],
-  ]);
-  // Without a sidebar selection the sidebar value degrades to all projects.
-  NodeAssert.equal(lanes(SIDEBAR_PROJECTS_FILTER, null).length, 3);
 
   const keys = planTaskQueryLanes({
     targets,
-    projectFilter: SIDEBAR_PROJECTS_FILTER,
+    projectFilter: repoFilter,
     statusFilter: "__all__",
-    sidebarFilter: repoFilter,
     pageSize: 100,
   }).map((lane) => lane.key);
   NodeAssert.equal(new Set(keys).size, keys.length, "lane keys are unique per project");
+});
+
+test("the tag filter asks the server for tasks with every selected tag", () => {
+  const lanes = planTaskQueryLanes({
+    targets: [target("laptop", ["p-main"])],
+    projectFilter: null,
+    statusFilter: "To Do",
+    tags: ["browser-use", "ui"],
+    pageSize: 100,
+  });
+  // The server's task page requires every tag in `tags` (AND), see TaskRepositoryLive.
+  NodeAssert.deepEqual(
+    lanes.map((lane) => lane.search),
+    [{ status: "To Do", tags: ["browser-use", "ui"], limit: 100 }],
+  );
+  const withoutTags = planTaskQueryLanes({
+    targets: [target("laptop", ["p-main"])],
+    projectFilter: null,
+    statusFilter: "To Do",
+    tags: [],
+    pageSize: 100,
+  });
+  NodeAssert.notEqual(withoutTags[0]?.key, lanes[0]?.key, "a tag change replaces the query");
 });

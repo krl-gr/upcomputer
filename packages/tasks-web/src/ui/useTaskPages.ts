@@ -2,36 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
 import type { TaskPageState, ScopedTaskListItem } from "../state/taskPages.ts";
-import {
-  ALL_FILTER,
-  planTaskQueryLanes,
-  resolveTaskProjectFilter,
-  type ViewProjectFilter,
-} from "./projectFilter.ts";
+import { planTaskQueryLanes, type ViewProjectFilter } from "./projectFilter.ts";
 
-const ALL_TASKS_FILTER = ALL_FILTER;
 const PAGE_SIZE = 100;
 
 /**
- * Paged task queries for the Tasks view. The project dropdown defaults to the
- * sidebar's project filter; a local dropdown choice overrides it until the
- * sidebar selection changes.
+ * Paged task queries for the Tasks view: the header's project, task status and
+ * tags (every tag required), all applied by the server.
  */
 export function useTaskPages(
   targets: readonly TasksStateTarget[],
-  sidebarFilter: ViewProjectFilter | null = null,
+  projectFilter: ViewProjectFilter | null,
+  statusFilter: string,
+  tags: readonly string[],
 ) {
-  const [projectOverride, setProjectOverride] = useState<{
-    readonly sidebarKey: string | null;
-    readonly value: string;
-  } | null>(null);
-  const projectFilter = resolveTaskProjectFilter(projectOverride, sidebarFilter);
-  const sidebarKey = sidebarFilter?.key ?? null;
-  const setProjectFilter = useCallback(
-    (value: string) => setProjectOverride({ sidebarKey, value }),
-    [sidebarKey],
-  );
-  const [statusFilter, setStatusFilter] = useState(ALL_TASKS_FILTER);
   const [byLane, setByLane] = useState<Record<string, TaskPageLoadState>>({});
   const loaders = useRef<TaskPageLoader[]>([]);
   const pageCache = useRef<Record<string, TaskPageState>>({});
@@ -43,10 +27,10 @@ export function useTaskPages(
         targets,
         projectFilter,
         statusFilter,
-        sidebarFilter,
+        tags,
         pageSize: PAGE_SIZE,
       }),
-    [targets, projectFilter, statusFilter, sidebarFilter],
+    [targets, projectFilter, statusFilter, tags],
   );
 
   useEffect(() => {
@@ -155,10 +139,6 @@ export function useTaskPages(
       : errors.length > 0
         ? ("error" as const)
         : ("ready" as const),
-    projectFilter,
-    setProjectFilter,
-    statusFilter,
-    setStatusFilter,
     reload: useCallback(() => {
       for (const loader of loaders.current) loader.refresh();
     }, []),

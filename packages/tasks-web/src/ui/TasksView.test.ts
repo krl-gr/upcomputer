@@ -72,6 +72,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
           export const SelectPopup = ({ children }) => React.createElement("span", null, children);
           export const SelectTrigger = ({ children, ...props }) => React.createElement("button", props, children);
           export const SelectValue = ({ children }) => React.createElement(React.Fragment, null, children);
+          export const SelectButton = ({ children, ...props }) => React.createElement("button", props, children);
         `;
         },
       },
@@ -102,7 +103,12 @@ test("the rendered table preserves global order and exposes accessible isolated 
   const { SidebarProvider } = (await vite.ssrLoadModule(
     `/@fs/${publicWebSource}/components/ui/sidebar.tsx`,
   )) as { SidebarProvider: (props: { children: unknown }) => unknown };
-  const makeTask = (id: string, rank: string, title: string): ScopedTaskListItem =>
+  const makeTask = (
+    id: string,
+    rank: string,
+    title: string,
+    extra: Partial<ScopedTaskListItem> = {},
+  ): ScopedTaskListItem =>
     ({
       id,
       rank,
@@ -132,6 +138,8 @@ test("the rendered table preserves global order and exposes accessible isolated 
         { status: "running", count: 1 },
         { status: "failed", count: 1 },
       ],
+      latestRunStatus: "running",
+      ...extra,
     }) as unknown as ScopedTaskListItem;
   const view = createElement(TasksView, {
     projects: [],
@@ -145,10 +153,10 @@ test("the rendered table preserves global order and exposes accessible isolated 
     providerEntriesByEnvironment: new Map(),
     status: "ready",
     statuses: ["Backlog", "in progress"],
-    projectFilter: "__all__",
-    statusFilter: "__all__",
-    onProjectFilterChange: () => undefined,
-    onStatusFilterChange: () => undefined,
+    projectFilter: null,
+    projectSelect: createElement("button", { "aria-label": "Filter by project" }, "All projects"),
+    filters: { status: "__all__", lastRun: "__all__", tags: [] },
+    onFiltersChange: () => undefined,
     hasMore: true,
     loadingMore: false,
     onLoadMore: () => undefined,
@@ -171,33 +179,88 @@ test("the rendered table preserves global order and exposes accessible isolated 
   NodeAssert.match(html, /draggable="true"[^>]*aria-label="Reorder First"/);
   NodeAssert.equal(html.match(/aria-label="Reorder /g)?.length, 3);
   NodeAssert.doesNotMatch(html, /draggable="true"[^>]*>First/);
-  NodeAssert.match(
-    html,
-    /aria-label="Filter by project">All projects<\/button><span><span>All projects</,
-    "no sidebar option without a sidebar filter",
+  NodeAssert.match(html, /aria-label="Filter by project">All projects</);
+  NodeAssert.match(html, /aria-label="Filter by last run"/);
+  NodeAssert.match(html, /aria-label="Filter by tags"/);
+  NodeAssert.doesNotMatch(html, /<th[^>]*>Project<\/th>/, "no Project text column");
+  NodeAssert.equal(html.match(/data-project-icon=/g)?.length, 3, "a project icon per row");
+  NodeAssert.ok(
+    html.indexOf('aria-label="Reorder First"') < html.indexOf("data-project-icon="),
+    "the project icon comes right after the drag handle",
   );
 
-  const sidebarScoped = renderToStaticMarkup(
-    createElement(
-      SidebarProvider as never,
-      null,
-      createElement(TasksView, {
-        ...view.props,
-        projectFilter: "__sidebar__",
-        sidebarProjectFilter: {
-          key: "repo:upcomputer",
-          label: "UpComputer repo",
-          projectRefs: [{ environmentId: "local", projectId: "project-1" }],
-        },
-      } as never),
-    ),
-  );
-  NodeAssert.match(sidebarScoped, /aria-label="Filter by project"[^>]*>UpComputer repo</);
+  const render = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      createElement(
+        SidebarProvider as never,
+        null,
+        createElement(TasksView, { ...view.props, ...props } as never),
+      ),
+    );
+  const oneProject = render({
+    projectFilter: {
+      key: "repo:upcomputer",
+      label: "UpComputer",
+      projectRefs: [{ environmentId: "local", projectId: "project-1" }],
+    },
+  });
+  NodeAssert.doesNotMatch(oneProject, /data-project-icon=/, "one project: no icon column");
+  NodeAssert.doesNotMatch(oneProject, /<span class="sr-only">Project<\/span>/);
+
+  // Tags: two chips, then +N; an enabled agent's trigger tag is dimmer.
+  const tagged = render({
+    tasks: [
+      makeTask("task-1", "0000000000000010", "First", {
+        tags: ["ui", "browser-use", "dev-2", "extra"],
+      }),
+    ],
+    agents: [
+      { enabled: true, startTags: ["browser-use"] },
+      { enabled: false, startTags: ["ui"] },
+    ],
+  });
+  NodeAssert.match(tagged, />Tags<\/th>/);
+  NodeAssert.match(tagged, />ui<\/span>/);
+  NodeAssert.match(tagged, />browser-use<\/span>/);
+  NodeAssert.doesNotMatch(tagged, />dev-2<\/span>/, "tags past the first two collapse");
+  NodeAssert.match(tagged, />\+2</);
+  NodeAssert.equal(tagged.match(/data-trigger-tag=""/g)?.length, 1);
   NodeAssert.match(
-    sidebarScoped,
-    /<span><span>UpComputer repo<\/span><span>All projects<\/span>/,
-    "the sidebar project leads the options and All projects stays available as a local override",
+    tagged,
+    /class="flex min-w-0 opacity-50" data-trigger-tag=""><span[^>]*><span class="truncate">browser-use</,
   );
+
+  // Last run: only each task's latest run counts.
+  const runs = [
+    makeTask("task-1", "0000000000000010", "Retried", {
+      runCounts: [
+        { status: "failed", count: 1 },
+        { status: "completed", count: 1 },
+      ],
+      latestRunStatus: "completed",
+    } as Partial<ScopedTaskListItem>),
+    makeTask("task-2", "0000000000000020", "Broken", {
+      runCounts: [{ status: "failed", count: 2 }],
+      latestRunStatus: "failed",
+    } as Partial<ScopedTaskListItem>),
+    makeTask("task-3", "0000000000000030", "Fresh", {
+      runCounts: [],
+      latestRunStatus: null,
+    } as Partial<ScopedTaskListItem>),
+  ];
+  const lastRun = (value: string) => {
+    const markup = render({
+      tasks: runs,
+      filters: { status: "__all__", lastRun: value, tags: [] },
+    });
+    return ["Retried", "Broken", "Fresh"].filter((title) =>
+      markup.includes(`aria-label="Reorder ${title}"`),
+    );
+  };
+  NodeAssert.deepEqual(lastRun("completed"), ["Retried"]);
+  NodeAssert.deepEqual(lastRun("failed"), ["Broken"], "an older failed run does not count");
+  NodeAssert.deepEqual(lastRun("__none__"), ["Fresh"]);
+  NodeAssert.deepEqual(lastRun("__all__"), ["Retried", "Broken", "Fresh"]);
 
   const moves: string[] = [];
   let dragStarts = 0;

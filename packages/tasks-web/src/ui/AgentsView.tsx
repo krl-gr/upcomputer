@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import { ArrowLeftIcon } from "lucide-react";
 import type {
@@ -60,6 +61,7 @@ import {
   preferredProject,
   type ViewProjectFilter,
 } from "./projectFilter.ts";
+import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
 
 const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
@@ -75,12 +77,16 @@ export interface AgentProject extends TasksWebProject {
 
 export interface AgentsViewProps {
   readonly projects: readonly AgentProject[];
+  /** Every project, for the project icon of agents whose project has no default model. */
+  readonly allProjects?: readonly TasksWebProject[];
   readonly agents: readonly ScopedTaskAgent[];
   /**
-   * The sidebar's selected project: the list shows that project's agents plus
-   * global agents. Deep links still resolve agents outside the filter.
+   * The header's shared project choice: the list shows that project's agents
+   * plus global agents. Deep links still resolve agents outside the filter.
    */
   readonly projectFilter?: ViewProjectFilter | null;
+  /** The shared project select, shown at the right of the header. */
+  readonly projectSelect?: ReactNode;
   readonly tasks: readonly ScopedTask[];
   readonly runs: readonly ScopedTaskAgentRun[];
   readonly status: "loading" | "ready" | "error";
@@ -204,7 +210,9 @@ function eventTargetsInteractiveRowDescendant(
 
 interface AgentTableRowProps {
   readonly agent: ScopedTaskAgent;
-  readonly agentProject: AgentProject | null;
+  readonly agentProject: TasksWebProject | null;
+  /** Off when the header's project select is set to one project. */
+  readonly showProject: boolean;
   readonly editable: boolean;
   readonly saving: boolean;
   readonly triggerLabel: string;
@@ -218,6 +226,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
   const {
     agent,
     agentProject,
+    showProject,
     editable,
     saving,
     triggerLabel,
@@ -234,6 +243,13 @@ export function AgentTableRow(props: AgentTableRowProps) {
         if (!eventTargetsInteractiveRowDescendant(event)) onOpen();
       }}
     >
+      {showProject ? (
+        <ProjectIconCell
+          project={agentProject?.favicon ?? null}
+          name={agent.projectName}
+          allProjects={agent.projectId === null}
+        />
+      ) : null}
       <td className="truncate py-4 pr-4 font-medium text-foreground">
         <button
           type="button"
@@ -245,14 +261,6 @@ export function AgentTableRow(props: AgentTableRowProps) {
         >
           {agent.name}
         </button>
-      </td>
-      <td className="px-4 py-4 text-muted-foreground">
-        <span className="flex min-w-0 items-center gap-2">
-          {agentProject ? (
-            <ProjectFavicon project={agentProject.favicon} className="size-4 shrink-0" />
-          ) : null}
-          <span className="truncate">{agent.projectName ?? "All projects"}</span>
-        </span>
       </td>
       <td
         className="truncate px-4 py-4 text-muted-foreground"
@@ -322,6 +330,15 @@ export function AgentsView(props: AgentsViewProps) {
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
+  );
+  const iconProjectsByKey = useMemo(
+    () =>
+      new Map(
+        (props.allProjects ?? props.projects).map(
+          (project) => [projectKey(project), project] as const,
+        ),
+      ),
+    [props.allProjects, props.projects],
   );
   const mutableProjects = props.projects.filter((project) => {
     if (!props.canMutateEnvironment(project.environmentId)) return false;
@@ -678,7 +695,6 @@ export function AgentsView(props: AgentsViewProps) {
   return (
     <WorkspaceViewLayout
       title={editingAgent ? "" : isCreateMode ? "New agent" : "Agents"}
-      titleDetail={editingAgent || isCreateMode ? undefined : projectFilter?.label}
       action={
         editingAgent
           ? undefined
@@ -734,7 +750,12 @@ export function AgentsView(props: AgentsViewProps) {
               />
             </span>
           </>
-        ) : undefined
+        ) : isCreateMode ? undefined : (
+          <>
+            <span className="min-w-0 flex-1" />
+            {props.projectSelect}
+          </>
+        )
       }
       onNavigateBack={
         editingAgent
@@ -1351,8 +1372,8 @@ export function AgentsView(props: AgentsViewProps) {
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-[18%] py-3 pr-4 font-medium">Name</th>
-                    <th className="w-[15%] px-4 py-3 font-medium">Project</th>
+                    {projectFilter === null ? <ProjectIconHeader /> : null}
+                    <th className="w-[22%] py-3 pr-4 font-medium">Name</th>
                     <th className="w-[25%] px-4 py-3 font-medium">Model</th>
                     <th className="px-4 py-3 font-medium">Triggers</th>
                     <th className="w-28 px-4 py-3 text-center font-medium">Status</th>
@@ -1362,7 +1383,7 @@ export function AgentsView(props: AgentsViewProps) {
                   {visibleAgents.map((agent) => {
                     const editable = props.canMutateEnvironment(agent.environmentId);
                     const agentProject = agent.projectId
-                      ? (projectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
+                      ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
                       : null;
                     const triggerLabel = [
                       agent.startStatuses.length > 0
@@ -1378,6 +1399,7 @@ export function AgentsView(props: AgentsViewProps) {
                         key={`${agent.environmentId}:${agent.id}`}
                         agent={agent}
                         agentProject={agentProject}
+                        showProject={projectFilter === null}
                         editable={editable}
                         saving={savingKey !== null}
                         triggerLabel={triggerLabel}

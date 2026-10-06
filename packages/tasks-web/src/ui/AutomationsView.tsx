@@ -1,5 +1,5 @@
 /* oxlint-disable t3code/no-native-title-tooltip -- ported V1 Tasks UI; moves to Tooltip with the product UI phase. */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeftIcon } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -52,6 +52,7 @@ import {
   type CalendarSchedule,
   type CalendarScheduleMode,
 } from "./automationCalendarSchedule.ts";
+import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
 
 const CATCH_UP_POLICIES: ReadonlyArray<{
@@ -78,10 +79,12 @@ export interface AutomationsViewProps {
   readonly projects: readonly TasksWebProject[];
   readonly automations: readonly ScopedTaskAutomation[];
   /**
-   * The sidebar's selected project: the list shows only its automations. Deep
-   * links still resolve automations outside the filter.
+   * The header's shared project choice: the list shows only its automations.
+   * Deep links still resolve automations outside the filter.
    */
   readonly projectFilter?: ViewProjectFilter | null;
+  /** The shared project select, shown at the right of the header. */
+  readonly projectSelect?: ReactNode;
   readonly tasks: readonly ScopedTask[];
   readonly runs: readonly ScopedTaskAutomationRun[];
   readonly status: "loading" | "ready" | "error";
@@ -520,7 +523,6 @@ export function AutomationsView(props: AutomationsViewProps) {
   return (
     <WorkspaceViewLayout
       title={editingAutomation ? "" : isCreateMode ? "New automation" : "Automations"}
-      titleDetail={editingAutomation || isCreateMode ? undefined : projectFilter?.label}
       action={
         editingAutomation
           ? undefined
@@ -576,7 +578,12 @@ export function AutomationsView(props: AutomationsViewProps) {
               />
             </span>
           </>
-        ) : undefined
+        ) : isCreateMode ? undefined : (
+          <>
+            <span className="min-w-0 flex-1" />
+            {props.projectSelect}
+          </>
+        )
       }
       onNavigateBack={
         editingAutomation
@@ -1330,8 +1337,8 @@ export function AutomationsView(props: AutomationsViewProps) {
               <table className="w-full min-w-[1200px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
-                    <th className="w-[17%] py-3 pr-4 font-medium">Name</th>
-                    <th className="w-[14%] px-4 py-3 font-medium">Project</th>
+                    {projectFilter === null ? <ProjectIconHeader /> : null}
+                    <th className="w-[24%] py-3 pr-4 font-medium">Name</th>
                     <th className="w-[20%] px-4 py-3 font-medium">Schedule</th>
                     <th className="px-4 py-3 font-medium">Creates</th>
                     <th className="w-32 px-4 py-3 font-medium">Last run</th>
@@ -1356,6 +1363,12 @@ export function AutomationsView(props: AutomationsViewProps) {
                         className="cursor-pointer border-b border-border transition-colors hover:bg-muted/20"
                         onClick={() => openEdit(automation)}
                       >
+                        {projectFilter === null ? (
+                          <ProjectIconCell
+                            project={automationProject?.favicon ?? null}
+                            name={automation.projectName}
+                          />
+                        ) : null}
                         <td className="truncate py-4 pr-4 font-medium text-foreground">
                           <button
                             type="button"
@@ -1372,19 +1385,6 @@ export function AutomationsView(props: AutomationsViewProps) {
                               Proposed
                             </span>
                           ) : null}
-                        </td>
-                        <td className="px-4 py-4 text-muted-foreground">
-                          <span className="flex min-w-0 items-center gap-2">
-                            {automationProject ? (
-                              <ProjectFavicon
-                                project={automationProject.favicon}
-                                className="size-4 shrink-0"
-                              />
-                            ) : null}
-                            <span className="truncate">
-                              {automation.projectName ?? "Unknown project"}
-                            </span>
-                          </span>
                         </td>
                         <td
                           className="truncate px-4 py-4 text-muted-foreground"

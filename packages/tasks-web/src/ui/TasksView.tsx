@@ -1,5 +1,5 @@
 /* oxlint-disable t3code/no-native-title-tooltip -- ported V1 Tasks UI; moves to Tooltip with the product UI phase. */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
 import { TaskId } from "@t3tools/tasks-contracts/v1";
 import {
@@ -35,14 +35,22 @@ import {
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
+  orderedProjectFilterKeys,
   preferredProject,
-  SIDEBAR_PROJECTS_FILTER,
-  taskProjectFilterKeys,
   type ViewProjectFilter,
 } from "./projectFilter.ts";
+import {
+  agentTriggerTags,
+  ALL_FILTER,
+  LAST_RUN_OPTIONS,
+  matchesLastRunFilter,
+  type TasksPageFilters,
+} from "./pageFilters.ts";
+import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
+import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
+import { TaskTagChips } from "./TaskTagChips.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
-const ALL_FILTER = "__all__";
 const STATUS_ORDER = [
   "new",
   "to do",
@@ -57,11 +65,6 @@ type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "closedAt">
 >;
 
-interface FilterOption {
-  readonly value: string;
-  readonly label: string;
-}
-
 interface TaskFormState {
   readonly title: string;
   readonly environmentId: EnvironmentId | null;
@@ -75,13 +78,13 @@ export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
   readonly tasks: readonly ScopedTaskListItem[];
   readonly statuses: readonly string[];
-  /** `__all__`, `__sidebar__` (the sidebar's project), or `${environmentId}:${projectId}`. */
-  readonly projectFilter: string;
-  /** The sidebar's selected project; drives the default project filter. */
-  readonly sidebarProjectFilter?: ViewProjectFilter | null;
-  readonly statusFilter: string;
-  readonly onProjectFilterChange: (value: string) => void;
-  readonly onStatusFilterChange: (value: string) => void;
+  /** The header's shared project choice; null is All projects. */
+  readonly projectFilter: ViewProjectFilter | null;
+  /** The shared project select, shown at the right of the header. */
+  readonly projectSelect?: ReactNode;
+  /** Task status (server), last run (client) and tags (server, all required). */
+  readonly filters: TasksPageFilters;
+  readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
   readonly onLoadMore: () => void;
@@ -197,12 +200,8 @@ export function TasksView(props: TasksViewProps) {
   const [saving, setSaving] = useState(false);
   const createInFlightRef = useRef(false);
   const [updatingField, setUpdatingField] = useState<string | null>(null);
-  const {
-    projectFilter,
-    statusFilter,
-    onProjectFilterChange: setProjectFilter,
-    onStatusFilterChange: setStatusFilter,
-  } = props;
+  const { projectFilter, filters, onFiltersChange } = props;
+  const statusFilter = filters.status;
   const [optimisticTasks, setOptimisticTasks] = useState<readonly ScopedTaskListItem[]>(
     props.tasks,
   );
@@ -246,10 +245,6 @@ export function TasksView(props: TasksViewProps) {
     props.canMutateEnvironment(project.environmentId),
   );
   const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
-  const projectOptions = useMemo<FilterOption[]>(
-    () => props.projects.map((project) => ({ value: projectKey(project), label: project.name })),
-    [props.projects],
-  );
   const statusOptions = useMemo(
     () =>
       [
@@ -261,7 +256,20 @@ export function TasksView(props: TasksViewProps) {
       ].sort(compareStatuses),
     [props.statuses, selectedTask, statusFilter],
   );
-  const filteredTasks = optimisticTasks;
+  // The last-run filter is applied here, to the rows the server returned.
+  const filteredTasks = useMemo(
+    () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
+    [filters.lastRun, optimisticTasks],
+  );
+  const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
+  const tagOptions = useMemo(
+    () =>
+      [
+        ...new Set([...props.tasks.flatMap((task) => task.tags), ...triggerTags, ...filters.tags]),
+      ].sort((left, right) => left.localeCompare(right)),
+    [filters.tags, props.tasks, triggerTags],
+  );
+  const showProjectColumn = projectFilter === null;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
   const persistVisibleMove = useCallback(
@@ -315,17 +323,10 @@ export function TasksView(props: TasksViewProps) {
     setDetailRuns([]);
     setDetailRunsStatus("idle");
     selectTaskKey(null);
-    // Preselect the filtered project (the sidebar's members, in their order).
-    setForm(
-      emptyForm(
-        preferredProject(
-          mutableProjects,
-          taskProjectFilterKeys(projectFilter, props.sidebarProjectFilter ?? null),
-        ),
-      ),
-    );
+    // Preselect the filtered project (its members, in the sidebar's order).
+    setForm(emptyForm(preferredProject(mutableProjects, orderedProjectFilterKeys(projectFilter))));
     setCreateModeOpen(true);
-  }, [mutableProjects, projectFilter, props.sidebarProjectFilter, selectTaskKey]);
+  }, [mutableProjects, projectFilter, selectTaskKey]);
 
   // Details subscribe to their own task, including deep links outside loaded pages.
   useEffect(() => {
@@ -654,41 +655,11 @@ export function TasksView(props: TasksViewProps) {
         ) : createModeOpen ? undefined : (
           <>
             <span className="min-w-0 flex-1" />
-            <Select
-              value={projectFilter}
-              onValueChange={(value) => value && setProjectFilter(value)}
-            >
-              <SelectTrigger className="w-40 shrink-0" size="sm" aria-label="Filter by project">
-                <SelectValue>
-                  {projectFilter === ALL_FILTER
-                    ? "All projects"
-                    : projectFilter === SIDEBAR_PROJECTS_FILTER
-                      ? (props.sidebarProjectFilter?.label ?? "Project")
-                      : (projectOptions.find((option) => option.value === projectFilter)?.label ??
-                        "Project")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {props.sidebarProjectFilter ? (
-                  <SelectItem
-                    value={SIDEBAR_PROJECTS_FILTER}
-                    title="Project selected in the sidebar"
-                  >
-                    {props.sidebarProjectFilter.label}
-                  </SelectItem>
-                ) : null}
-                <SelectItem value={ALL_FILTER}>All projects</SelectItem>
-                {projectOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+            {props.projectSelect}
             <Select
               value={statusFilter}
               onValueChange={(value) => {
-                if (value) setStatusFilter(value);
+                if (value) onFiltersChange({ ...filters, status: value });
               }}
             >
               <SelectTrigger className="w-40 shrink-0" size="sm" aria-label="Filter by status">
@@ -705,6 +676,39 @@ export function TasksView(props: TasksViewProps) {
                 ))}
               </SelectPopup>
             </Select>
+            <Select
+              value={filters.lastRun}
+              onValueChange={(value) => {
+                if (value) onFiltersChange({ ...filters, lastRun: value });
+              }}
+            >
+              <SelectTrigger
+                className="w-36 shrink-0"
+                size="sm"
+                aria-label="Filter by last run"
+                title="Status of each task's latest run"
+              >
+                <SelectValue>
+                  {filters.lastRun === ALL_FILTER
+                    ? "Any last run"
+                    : (LAST_RUN_OPTIONS.find((option) => option.value === filters.lastRun)?.label ??
+                      filters.lastRun)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value={ALL_FILTER}>Any last run</SelectItem>
+                {LAST_RUN_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <TagFilterCombobox
+              tags={tagOptions}
+              value={filters.tags}
+              onChange={(tags) => onFiltersChange({ ...filters, tags })}
+            />
           </>
         )
       }
@@ -1160,7 +1164,7 @@ export function TasksView(props: TasksViewProps) {
             <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
               {props.status === "loading"
                 ? "Loading tasks..."
-                : projectFilter !== ALL_FILTER || statusFilter !== ALL_FILTER
+                : projectFilter !== null || statusFilter !== ALL_FILTER || filters.tags.length > 0
                   ? "No tasks match the current filters."
                   : "No tasks yet"}
             </div>
@@ -1176,9 +1180,10 @@ export function TasksView(props: TasksViewProps) {
                     <th className="w-12 py-3 pr-2 font-medium">
                       <span className="sr-only">Order</span>
                     </th>
-                    <th className="px-4 py-3 font-medium">Title</th>
-                    <th className="w-44 px-4 py-3 font-medium">Project</th>
-                    <th className="w-48 px-4 py-3 font-medium">Status</th>
+                    {showProjectColumn ? <ProjectIconHeader /> : null}
+                    <th className="py-3 pr-4 font-medium">Title</th>
+                    <th className="w-56 px-4 py-3 font-medium">Tags</th>
+                    <th className="w-40 px-4 py-3 font-medium">Status</th>
                     <th className="w-72 px-4 py-3 font-medium">Runs</th>
                   </tr>
                 </thead>
@@ -1215,7 +1220,13 @@ export function TasksView(props: TasksViewProps) {
                             }}
                           />
                         </td>
-                        <td className="px-4 py-4 align-top">
+                        {showProjectColumn ? (
+                          <ProjectIconCell
+                            project={taskProject?.favicon ?? null}
+                            name={task.projectName}
+                          />
+                        ) : null}
+                        <td className="py-4 pr-4 align-top">
                           <button
                             type="button"
                             className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
@@ -1232,13 +1243,8 @@ export function TasksView(props: TasksViewProps) {
                             </div>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 align-top text-foreground">
-                          <span className="inline-flex max-w-full items-center gap-2">
-                            {taskProject ? (
-                              <ProjectFavicon project={taskProject.favicon} className="size-4" />
-                            ) : null}
-                            <span className="truncate">{task.projectName ?? "—"}</span>
-                          </span>
+                        <td className="px-4 py-4 align-top">
+                          <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
                         </td>
                         <td className="px-4 py-4 align-top whitespace-nowrap">{task.status}</td>
                         <td className="px-4 py-4 align-top text-sm text-muted-foreground">

@@ -52,6 +52,7 @@ test("agent row isolates switch activation while preserving row and name navigat
   const row = AgentTableRow({
     agent,
     agentProject: null,
+    showProject: false,
     editable: true,
     saving: false,
     triggerLabel: "To Do · review",
@@ -64,7 +65,8 @@ test("agent row isolates switch activation while preserving row and name navigat
     },
   }) as ReactElement<Record<string, unknown>>;
   const cells = row.props.children as ReactElement<Record<string, unknown>>[];
-  const nameButton = cells[0]?.props.children as ReactElement<Record<string, unknown>>;
+  NodeAssert.equal(cells[0], null, "no project cell while one project is selected");
+  const nameButton = cells[1]?.props.children as ReactElement<Record<string, unknown>>;
   NodeAssert.equal(cells[2]?.props.children, "Codex · Model One", "the model cell shows names");
   const switchCell = cells[4];
   const enabledSwitch = switchCell?.props.children as ReactElement<Record<string, unknown>>;

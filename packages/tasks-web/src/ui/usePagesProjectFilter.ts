@@ -1,19 +1,21 @@
 import { useMemo } from "react";
 
-import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import type { ViewProjectFilter } from "./projectFilter.ts";
+import { usePagesProjectKey } from "./pageFilters.ts";
 import { useSidebarProjectSnapshots } from "./useWorkspaceData.ts";
 
 /**
- * The sidebar's selected project scope with an identity that only changes when
- * the selection or its member projects change (the snapshots are recomputed
- * whenever any project changes, which would otherwise restart queries).
+ * The project chosen in the Tasks, Agents and Automations headers, shared by
+ * the three pages and kept across visits. It neither reads nor sets the
+ * sidebar's project scope. The filter's identity only changes when the choice
+ * or its member projects change (the snapshots are recomputed whenever any
+ * project changes, which would otherwise restart queries).
  */
-export function useViewProjectFilter(): ViewProjectFilter | null {
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const snapshots = useSidebarProjectSnapshots();
+export function usePagesProjectFilter() {
+  const [projectKey, setProjectKey] = usePagesProjectKey();
+  const projectGroups = useSidebarProjectSnapshots();
   const snapshot =
-    scopeKey === null ? undefined : snapshots.find((item) => item.projectKey === scopeKey);
+    projectKey === null ? undefined : projectGroups.find((item) => item.projectKey === projectKey);
   const signature = snapshot
     ? JSON.stringify([
         snapshot.projectKey,
@@ -21,7 +23,7 @@ export function useViewProjectFilter(): ViewProjectFilter | null {
         snapshot.memberProjectRefs.map((ref) => [ref.environmentId, ref.projectId]),
       ])
     : null;
-  return useMemo<ViewProjectFilter | null>(
+  const projectFilter = useMemo<ViewProjectFilter | null>(
     () =>
       snapshot
         ? {
@@ -30,7 +32,8 @@ export function useViewProjectFilter(): ViewProjectFilter | null {
             projectRefs: snapshot.memberProjectRefs,
           }
         : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value, not identity
+    // Keyed by value, not identity.
     [signature],
   );
+  return { projectFilter, projectGroups, setProjectKey };
 }

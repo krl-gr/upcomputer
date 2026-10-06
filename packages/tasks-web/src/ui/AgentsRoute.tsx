@@ -15,7 +15,8 @@ import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 
 import { AgentsView } from "./AgentsView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { useViewProjectFilter } from "./useViewProjectFilter.ts";
+import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
+import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
 export default function AgentsRoute() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function AgentsRoute() {
     },
   });
   const data = useTasksWorkspaceData();
-  const projectFilter = useViewProjectFilter();
+  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const serverConfigs = useServerConfigs();
   const settings = usePrimarySettings();
   const providerCatalogByEnvironment = useMemo(() => {
@@ -69,8 +70,16 @@ export default function AgentsRoute() {
   return (
     <AgentsView
       projects={data.agentProjects}
+      allProjects={data.projects}
       agents={data.agents.agents}
       projectFilter={projectFilter}
+      projectSelect={
+        <ProjectFilterSelect
+          projectGroups={projectGroups}
+          value={projectFilter?.key ?? null}
+          onChange={setProjectKey}
+        />
+      }
       tasks={data.tasks.tasks}
       runs={data.agents.runs}
       status={data.agentsStatus}

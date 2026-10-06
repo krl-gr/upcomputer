@@ -13,8 +13,6 @@ test("task project labels use the primary foreground tone", () => {
     tasksSource,
     /aria-label="Task project"[\s\S]*?justify-end gap-2 text-foreground/,
   );
-  NodeAssert.match(
-    tasksSource,
-    /<td className="px-4 py-4 align-top text-foreground">[\s\S]*?task\.projectName/,
-  );
+  // The table shows the project as an icon, named in its tooltip.
+  NodeAssert.match(tasksSource, /<ProjectIconCell[\s\S]*?name=\{task\.projectName\}/);
 });

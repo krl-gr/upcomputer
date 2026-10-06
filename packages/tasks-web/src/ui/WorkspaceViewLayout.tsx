@@ -29,7 +29,6 @@ const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--work
  */
 export function WorkspaceViewLayout({
   title,
-  titleDetail,
   action,
   leadingAction,
   toolbar,
@@ -37,8 +36,6 @@ export function WorkspaceViewLayout({
   onNavigateBack,
 }: {
   readonly title: string;
-  /** Muted context after the title, e.g. the sidebar's project filter ("Agents · Repo"). */
-  readonly titleDetail?: string | undefined;
   readonly action?: WorkspaceViewAction | undefined;
   readonly leadingAction?: WorkspaceViewAction | undefined;
   readonly toolbar?: ReactNode | undefined;
@@ -79,15 +76,6 @@ export function WorkspaceViewLayout({
               className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
             >
               {title}
-              {titleDetail ? (
-                <span
-                  className="font-normal text-muted-foreground"
-                  title={`Filtered to ${titleDetail}`}
-                >
-                  {" · "}
-                  {titleDetail}
-                </span>
-              ) : null}
             </h1>
           ) : null}
           {toolbar ? (

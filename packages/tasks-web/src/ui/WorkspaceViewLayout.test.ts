@@ -49,12 +49,39 @@ test("page content sits inside the header's gutters", () => {
   }
 });
 
-test("the Tasks header keeps its project and status filters", () => {
+test("the Tasks header keeps its project, status, last-run and tag filters", () => {
   const tasksView = NodeFS.readFileSync(new URL("./TasksView.tsx", import.meta.url), "utf8");
   const toolbar = tasksView.slice(
     tasksView.indexOf("toolbar={"),
     tasksView.indexOf("onNavigateBack={"),
   );
-  NodeAssert.match(toolbar, /aria-label="Filter by project"/);
+  NodeAssert.match(toolbar, /\{props\.projectSelect\}/);
   NodeAssert.match(toolbar, /aria-label="Filter by status"/);
+  NodeAssert.match(toolbar, /aria-label="Filter by last run"/);
+  NodeAssert.match(toolbar, /<TagFilterCombobox/);
+});
+
+test("Tasks, Agents and Automations share one project select, apart from the sidebar's scope", () => {
+  for (const route of ["TasksRoute.tsx", "AgentsRoute.tsx", "AutomationsRoute.tsx"]) {
+    const routeSource = NodeFS.readFileSync(new URL(`./${route}`, import.meta.url), "utf8");
+    NodeAssert.match(routeSource, /usePagesProjectFilter\(\)/);
+    NodeAssert.match(routeSource, /<ProjectFilterSelect/);
+  }
+  for (const view of ["AgentsView.tsx", "AutomationsView.tsx"]) {
+    const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
+    NodeAssert.match(viewSource, /\{props\.projectSelect\}/);
+  }
+  // The pages neither read nor change the sidebar's project filter.
+  for (const file of sourceFiles(new URL("../", import.meta.url))) {
+    NodeAssert.doesNotMatch(file, /sidebarProjectScopeKey|setSidebarProjectScopeKey/);
+  }
+});
+
+test("no muted context label follows the page title", () => {
+  NodeAssert.doesNotMatch(source, /titleDetail|context/);
+  NodeAssert.doesNotMatch(source, /" · "/);
+  for (const view of ["TasksView.tsx", "AgentsView.tsx", "AutomationsView.tsx"]) {
+    const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
+    NodeAssert.doesNotMatch(viewSource, /titleDetail=/);
+  }
 });

@@ -7,7 +7,9 @@ import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { useTaskPages } from "./useTaskPages.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { useViewProjectFilter } from "./useViewProjectFilter.ts";
+import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
+import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
+import { useTasksPageFilters } from "./pageFilters.ts";
 
 export default function TasksRoute() {
   const navigate = useNavigate();
@@ -19,8 +21,9 @@ export default function TasksRoute() {
     },
   });
   const data = useTasksWorkspaceData(false);
-  const sidebarProjectFilter = useViewProjectFilter();
-  const pages = useTaskPages(data.taskTargets, sidebarProjectFilter);
+  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
+  const [filters, setFilters] = useTasksPageFilters();
+  const pages = useTaskPages(data.taskTargets, projectFilter, filters.status, filters.tags);
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useMemo(
     () =>
@@ -48,11 +51,16 @@ export default function TasksRoute() {
       projects={data.projects}
       tasks={pages.tasks}
       statuses={pages.statuses}
-      projectFilter={pages.projectFilter}
-      sidebarProjectFilter={sidebarProjectFilter}
-      statusFilter={pages.statusFilter}
-      onProjectFilterChange={pages.setProjectFilter}
-      onStatusFilterChange={pages.setStatusFilter}
+      projectFilter={projectFilter}
+      projectSelect={
+        <ProjectFilterSelect
+          projectGroups={projectGroups}
+          value={projectFilter?.key ?? null}
+          onChange={setProjectKey}
+        />
+      }
+      filters={filters}
+      onFiltersChange={setFilters}
       hasMore={pages.hasMore}
       loadingMore={pages.loadingMore}
       onLoadMore={pages.loadMore}

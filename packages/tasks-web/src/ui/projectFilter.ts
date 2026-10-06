@@ -2,25 +2,19 @@ import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contra
 import type { TaskPageInput } from "@t3tools/tasks-contracts/v1";
 
 import type { TasksStateTarget } from "../state/tasksState.ts";
+import { ALL_FILTER } from "./pageFilters.ts";
 
 /**
- * The sidebar's selected logical project as seen by the Tasks, Agents, and
- * Automations views (structurally the host's `SidebarProjectFilter`). A
- * logical project may group several physical projects, possibly across
- * environments. `null` everywhere means "All projects".
+ * The logical project chosen in the Tasks, Agents and Automations headers
+ * (grouped as the sidebar groups projects). A logical project may group
+ * several physical projects, possibly across environments. `null` everywhere
+ * means "All projects".
  */
 export interface ViewProjectFilter {
   readonly key: string;
   readonly label: string;
   readonly projectRefs: ReadonlyArray<ScopedProjectRef>;
 }
-
-/** "No restriction" value shared by the Tasks project and status dropdowns. */
-export const ALL_FILTER = "__all__";
-/** Task-view project dropdown values besides a concrete `${environmentId}:${projectId}` key. */
-export const ALL_PROJECTS_FILTER = ALL_FILTER;
-/** Follow the sidebar's selected logical project (every member project). */
-export const SIDEBAR_PROJECTS_FILTER = "__sidebar__";
 
 function viewProjectKey(environmentId: EnvironmentId, projectId: ProjectId): string {
   return `${environmentId}:${projectId}`;
@@ -80,32 +74,6 @@ export function preferredProject<
   return projects[0];
 }
 
-/**
- * Effective Tasks dropdown value: a local choice made while the current sidebar
- * selection was active, otherwise the sidebar selection itself. Changing the
- * sidebar selection therefore always takes effect, discarding the local choice.
- */
-export function resolveTaskProjectFilter(
-  override: { readonly sidebarKey: string | null; readonly value: string } | null,
-  sidebarFilter: ViewProjectFilter | null,
-): string {
-  const sidebarKey = sidebarFilter?.key ?? null;
-  if (override && override.sidebarKey === sidebarKey) {
-    if (override.value !== SIDEBAR_PROJECTS_FILTER || sidebarFilter) return override.value;
-  }
-  return sidebarFilter ? SIDEBAR_PROJECTS_FILTER : ALL_PROJECTS_FILTER;
-}
-
-/** Project keys the effective Tasks dropdown value covers; `null` = all projects. */
-export function taskProjectFilterKeys(
-  projectFilter: string,
-  sidebarFilter: ViewProjectFilter | null,
-): readonly string[] | null {
-  if (projectFilter === ALL_PROJECTS_FILTER) return null;
-  if (projectFilter === SIDEBAR_PROJECTS_FILTER) return orderedProjectFilterKeys(sidebarFilter);
-  return [projectFilter];
-}
-
 export interface TaskQueryLane {
   /** Stable identity of the query lane (environment + optional project + search). */
   readonly key: string;
@@ -115,37 +83,34 @@ export interface TaskQueryLane {
 
 /**
  * Task page queries for the current filters. The task search API takes a single
- * `projectId`, so a scope with several member projects in one environment gets
+ * `projectId`, so a project with several member projects in one environment gets
  * one lane per project; "all projects" is one unscoped lane per environment.
- * Environments without a matching project get no lane.
+ * Environments without a matching project get no lane. Tags are matched by the
+ * server, which requires every given tag.
  */
 export function planTaskQueryLanes(input: {
   readonly targets: ReadonlyArray<TasksStateTarget>;
-  readonly projectFilter: string;
+  readonly projectFilter: ViewProjectFilter | null;
   readonly statusFilter: string;
-  readonly sidebarFilter: ViewProjectFilter | null;
+  readonly tags?: ReadonlyArray<string>;
   readonly pageSize: number;
 }): TaskQueryLane[] {
-  const keys = taskProjectFilterKeys(input.projectFilter, input.sidebarFilter);
-  const statusSearch = input.statusFilter === ALL_FILTER ? {} : { status: input.statusFilter };
+  const keys = orderedProjectFilterKeys(input.projectFilter);
+  const filterSearch = {
+    ...(input.statusFilter === ALL_FILTER ? {} : { status: input.statusFilter }),
+    ...(input.tags && input.tags.length > 0 ? { tags: [...input.tags] } : {}),
+  };
   return input.targets.flatMap((target) => {
     if (keys === null) {
-      const search: TaskPageInput = { ...statusSearch, limit: input.pageSize };
+      const search: TaskPageInput = { ...filterSearch, limit: input.pageSize };
       return [{ key: JSON.stringify([target.environmentId, null, search]), target, search }];
     }
     const projectIds = new Set<ProjectId>();
-    for (const ref of input.sidebarFilter?.projectRefs ?? []) {
-      if (
-        ref.environmentId === target.environmentId &&
-        keys.includes(viewProjectKey(ref.environmentId, ref.projectId))
-      )
-        projectIds.add(ref.projectId);
-    }
-    for (const projectId of target.projectNameById?.keys() ?? []) {
-      if (keys.includes(viewProjectKey(target.environmentId, projectId))) projectIds.add(projectId);
+    for (const ref of input.projectFilter?.projectRefs ?? []) {
+      if (ref.environmentId === target.environmentId) projectIds.add(ref.projectId);
     }
     return [...projectIds].map((projectId) => {
-      const search: TaskPageInput = { projectId, ...statusSearch, limit: input.pageSize };
+      const search: TaskPageInput = { projectId, ...filterSearch, limit: input.pageSize };
       return { key: JSON.stringify([target.environmentId, projectId, search]), target, search };
     });
   });

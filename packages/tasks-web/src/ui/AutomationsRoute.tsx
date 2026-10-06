@@ -3,7 +3,8 @@ import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { AutomationsView } from "./AutomationsView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { useViewProjectFilter } from "./useViewProjectFilter.ts";
+import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
+import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
 export default function AutomationsRoute() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function AutomationsRoute() {
     },
   });
   const data = useTasksWorkspaceData();
-  const projectFilter = useViewProjectFilter();
+  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const navigateBack = useCallback(() => {
     if (canGoBack) {
       window.history.back();
@@ -32,6 +33,13 @@ export default function AutomationsRoute() {
       projects={data.projects}
       automations={data.automations.automations}
       projectFilter={projectFilter}
+      projectSelect={
+        <ProjectFilterSelect
+          projectGroups={projectGroups}
+          value={projectFilter?.key ?? null}
+          onChange={setProjectKey}
+        />
+      }
       tasks={data.tasks.tasks}
       runs={data.automations.runs}
       status={data.automationsStatus}
