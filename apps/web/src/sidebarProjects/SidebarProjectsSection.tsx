@@ -1,15 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import {
-  CopyIcon,
-  EllipsisIcon,
-  LayoutGridIcon,
-  MessageSquareDashedIcon,
-  PlusIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useMemo, useReducer } from "react";
 
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -39,21 +31,22 @@ import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { projectIconColorClassName } from "../projectIconColors";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
-import { useServerConfigs } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
 import { useUiStateStore } from "../uiStateStore";
 import { cn } from "../lib/utils";
 import {
-  SIDEBAR_ICON_SIZE,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
-import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
+import {
+  AllProjectsIcon,
+  NoProjectIcon,
+  ProjectRowIcon,
+  useSidebarProjectsRows,
+} from "./sidebarProjectIcons";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
 
@@ -79,26 +72,11 @@ export function SidebarProjectsSection(props: {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
-  const serverConfigs = useServerConfigs();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
 
-  const rows = useMemo(
-    () =>
-      buildSidebarProjectsRows({
-        projects: projectGroups,
-        selectedProjectKey: scopeKey,
-        isScratch: (group) =>
-          group.memberProjects.some((member) =>
-            isScratchProject(member, serverConfigs.get(member.environmentId)?.scratchWorkspaceRoot),
-          ),
-        isPrimary: (group) =>
-          group.memberProjects.some((member) => member.environmentId === primaryEnvironmentId),
-      }),
-    [primaryEnvironmentId, projectGroups, scopeKey, serverConfigs],
-  );
+  const rows = useSidebarProjectsRows(projectGroups, scopeKey);
   const selectedProject = useMemo(
     () => projectGroups.find((group) => group.projectKey === scopeKey) ?? null,
     [projectGroups, scopeKey],
@@ -171,7 +149,7 @@ export function SidebarProjectsSection(props: {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
-                <LayoutGridIcon />
+                <AllProjectsIcon />
                 <span className="flex-1 truncate">All projects</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -179,12 +157,7 @@ export function SidebarProjectsSection(props: {
               <SidebarMenuItem key={project.projectKey}>
                 <SidebarProjectRow
                   label={project.displayName}
-                  icon={
-                    // Wrapped so the button's svg color rule leaves the project's own icon color.
-                    <span className="flex shrink-0">
-                      <ProjectFavicon project={project} className={SIDEBAR_ICON_SIZE} />
-                    </span>
-                  }
+                  icon={<ProjectRowIcon project={project} />}
                   isActive={scopeKey === project.projectKey}
                   onSelect={() => setScopeKey(project.projectKey)}
                   newChatLabel={`New chat in ${project.displayName}`}
@@ -215,17 +188,7 @@ export function SidebarProjectsSection(props: {
               <SidebarMenuItem>
                 <SidebarProjectRow
                   label="No project"
-                  icon={
-                    <span
-                      className={cn(
-                        "flex shrink-0",
-                        SIDEBAR_ICON_SIZE,
-                        projectIconColorClassName("gray"),
-                      )}
-                    >
-                      <MessageSquareDashedIcon className="size-full" />
-                    </span>
-                  }
+                  icon={<NoProjectIcon />}
                   isActive={scopeKey === rows.scratch.projectKey}
                   onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
                   newChatLabel="New chat without a project"
