@@ -1254,6 +1254,12 @@ const makeTaskRepository = Effect.gen(function* () {
       `,
   });
 
+  /**
+   * A finalizer of the same kind may claim again (crash recovery). A result
+   * finalization only reads and writes task storage, and its commit checks the
+   * status it claimed, so any finalizer may also take one over: recovery
+   * replays or rolls back an abandoned one, and a stop can end its run.
+   */
   const claimAgentRunFinalizationRow = SqlSchema.findAll({
     Request: ClaimTaskAgentRunFinalizationInput,
     Result: Schema.Struct({ id: TaskAgentRunId }),
@@ -1263,7 +1269,11 @@ const makeTaskRepository = Effect.gen(function* () {
         SET status = ${finalizingStatus}
         WHERE id = ${id}
           AND completed_at IS NULL
-          AND (status = ${finalizingStatus} OR status NOT LIKE 'finalizing:%')
+          AND (
+            status = ${finalizingStatus}
+            OR status = 'finalizing:result'
+            OR status NOT LIKE 'finalizing:%'
+          )
         RETURNING id
       `,
   });

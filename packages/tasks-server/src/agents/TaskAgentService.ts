@@ -584,7 +584,9 @@ const make = Effect.gen(function* () {
       const taskOption = yield* repository.getById({ id: run.taskId });
       const agentOption = yield* repository.getAgentById({ id: run.agentId });
       const currentTask = Option.getOrNull(taskOption);
-      if (run.status === "finalizing:result") return;
+      // A "finalizing:result" run was left by a result finalization that did not
+      // commit. It is decided like a running one below: its result is consumed
+      // again, or it ends without one; any finalizer may take it over.
       if (run.status === "finalizing:stopped") {
         yield* stopActiveRun(run, null);
         return;

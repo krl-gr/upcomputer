@@ -1032,6 +1032,75 @@ test("a person interrupting the turn stops the run after its grace period withou
 
 // --- agent_run_message --------------------------------------------------------
 
+test("an abandoned result finalization is replayed or rolled back by recovery, and stop resolves it", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, endRun } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const started = new Map<string, TaskAgentRun>();
+      for (const id of ["replayed", "rolled-back", "stopped"]) {
+        const task = yield* repository.upsert(taskInput(id));
+        yield* service.scheduleTaskChanged({ task, reason: "created" });
+        started.set(
+          id,
+          yield* waitFor(
+            `the ${id} run to start`,
+            runsOf(repository, id).pipe(Effect.map((runs) => runs[0])),
+          ),
+        );
+      }
+      // The state a crash leaves between claiming the result and committing it.
+      for (const run of started.values()) {
+        NodeAssert.ok(
+          yield* repository.claimAgentRunFinalization({
+            id: run.id,
+            finalizingStatus: "finalizing:result",
+          }),
+        );
+      }
+      endRun(started.get("replayed")!.threadId, "completed", {
+        reply: { status: "Needs Review", summary: "replayed result" },
+      });
+      // Ended long ago without a result: nothing to replay.
+      endRun(started.get("rolled-back")!.threadId, "completed", { endedAt: pastGrace() });
+
+      yield* service.recover;
+      const runStatus = (id: string) =>
+        repository
+          .getAgentRunById({ id: started.get(id)!.id })
+          .pipe(Effect.map((run) => Option.getOrThrow(run)));
+      const replayed = yield* waitFor(
+        "the replayed result",
+        runStatus("replayed").pipe(Effect.map((run) => (run.completedAt ? run : undefined))),
+      );
+      NodeAssert.equal(replayed.status, "completed");
+      const replayedTask = Option.getOrThrow(
+        yield* repository.getById({ id: TaskId.make("replayed") }),
+      );
+      NodeAssert.equal(replayedTask.status, "Needs Review");
+      NodeAssert.equal(replayedTask.output, "replayed result");
+      NodeAssert.equal(replayedTask.assigneeAgentRunId, null);
+
+      const rolledBack = yield* waitFor(
+        "the rolled-back run",
+        runStatus("rolled-back").pipe(Effect.map((run) => (run.completedAt ? run : undefined))),
+      );
+      NodeAssert.equal(rolledBack.status, "failed");
+      NodeAssert.match(
+        Option.getOrThrow(yield* repository.getById({ id: TaskId.make("rolled-back") })).output ??
+          "",
+        /without a valid task-agent result/,
+      );
+
+      // Still running in v2: a person's stop ends it.
+      NodeAssert.equal((yield* runStatus("stopped")).status, "finalizing:result");
+      const stopped = yield* service.stopRun({ id: started.get("stopped")!.id });
+      NodeAssert.equal(Option.getOrThrow(stopped).status, "stopped");
+      NodeAssert.notEqual(Option.getOrThrow(stopped).completedAt, null);
+    }),
+  );
+});
+
 /** An agent no task state starts, so every run in these tests is explicit. */
 const idleAgent = (id: string, overrides: Partial<TaskAgent> = {}) =>
   agentInput(id, { startStatuses: ["Never"], ...overrides });
