@@ -7,8 +7,17 @@ import * as Schema from "effect/Schema";
  */
 export const V1_CUTOVER_STATE_FILE = "v1-cutover.json";
 
+/** The process running a cutover: its pid, and when it started, so a reused pid is told apart. */
+export const V1CutoverOwner = Schema.Struct({
+  pid: Schema.Number,
+  startedAt: Schema.String,
+});
+
 export const V1CutoverState = Schema.Struct({
   status: Schema.Literals(["running", "completed", "failed"]),
+  /** One attempt; its staging database is named after it. Absent in states older builds wrote. */
+  runId: Schema.optionalKey(Schema.String),
+  owner: Schema.optionalKey(V1CutoverOwner),
   startedAt: Schema.String,
   finishedAt: Schema.optionalKey(Schema.String),
   backupDir: Schema.String,

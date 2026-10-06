@@ -12,8 +12,10 @@ import { COMPUTER_USE_SERVER_FEATURE } from "@t3tools/computer-use-server/featur
 import { TASK_MIGRATION_CONTRIBUTION } from "@t3tools/tasks-server/persistence";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -347,6 +349,7 @@ it.effect("refuses while the app is running", () => {
     assert.deepStrictEqual(NodeFS.readdirSync(userdata).toSorted(), [
       "server-runtime.json",
       "state.sqlite",
+      "v1-cutover.lock",
     ]);
   }).pipe(
     Effect.provide(NodeServices.layer),
@@ -477,7 +480,12 @@ it.effect("a cutover cut short starts over on the next start", () => {
     assert.isTrue(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
     const cutShort = readV1CutoverState(home.userdata);
     assert.equal(cutShort?.status, "running");
-    assert.isTrue(NodeFS.existsSync(NodePath.join(home.userdata, "statev2.sqlite.cutover")));
+    assert.deepStrictEqual(cutShort?.owner?.pid, process.pid);
+    assert.isTrue(
+      NodeFS.existsSync(
+        NodePath.join(home.userdata, `statev2.sqlite.cutover-${cutShort?.runId ?? ""}`),
+      ),
+    );
     assert.isFalse(NodeFS.existsSync(home.v2Path));
 
     assert.equal(yield* onStart(home, "2026-10-06T08:05:00.000Z"), "completed");
@@ -532,3 +540,75 @@ it.effect(
     );
   },
 );
+
+/** Starts a cutover on the home and pauses it while it imports threads. */
+const startPaused = (home: ReturnType<typeof makeV1Home>, now: string) =>
+  Effect.gen(function* () {
+    const paused = yield* Deferred.make<void>();
+    const resume = yield* Deferred.make<void>();
+    const fiber = yield* onStart(home, now, {
+      log: (line) =>
+        line === "Importing thread shells"
+          ? Deferred.succeed(paused, undefined).pipe(Effect.andThen(Deferred.await(resume)))
+          : Effect.void,
+    }).pipe(Effect.forkChild);
+    yield* Deferred.await(paused);
+    return { fiber, resume: Deferred.succeed(resume, undefined) };
+  });
+
+it.effect("a second starter is refused while a cutover runs, and leaves its files alone", () => {
+  const home = makeV1Home("upcomputer-cutover-concurrent-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    const first = yield* startPaused(home, "2026-10-06T08:00:00.000Z");
+    const running = readV1CutoverState(home.userdata);
+    assert.equal(running?.status, "running");
+    const staging = NodePath.join(home.userdata, `statev2.sqlite.cutover-${running?.runId ?? ""}`);
+    assert.isTrue(NodeFS.existsSync(staging));
+
+    // The server starting again, and the cutover by hand, while the first one runs.
+    const onStartError = yield* onStart(home, "2026-10-06T08:01:00.000Z").pipe(Effect.flip);
+    const manualError = yield* runV1Cutover({
+      homeDir: home.home,
+      featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      now: DateTime.makeUnsafe("2026-10-06T08:02:00.000Z"),
+      log: () => Effect.void,
+    }).pipe(Effect.flip);
+    for (const error of [onStartError, manualError]) {
+      assert.include(error.message, "Another V1 data cutover is running on this home");
+      assert.include(error.message, `pid ${process.pid}`);
+    }
+    // Nothing of the first run was touched.
+    assert.deepStrictEqual(readV1CutoverState(home.userdata), running);
+    assert.isTrue(NodeFS.existsSync(running?.backupDir ?? ""));
+    assert.isTrue(NodeFS.existsSync(staging));
+    assert.deepStrictEqual(home.backups(), ["v1-cutover-backup-20261006T080000Z"]);
+
+    yield* first.resume;
+    assert.equal(yield* Fiber.join(first.fiber), "completed");
+    const done = readV1CutoverState(home.userdata);
+    assert.equal(done?.status, "completed");
+    assert.equal(done?.runId, running?.runId);
+    assert.isTrue(NodeFS.existsSync(home.v2Path));
+    assert.isTrue(NodeFS.existsSync(running?.backupDir ?? ""));
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});
+
+it.effect("a run records its outcome only over its own state", () => {
+  const home = makeV1Home("upcomputer-cutover-own-state-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    const first = yield* startPaused(home, "2026-10-06T08:00:00.000Z");
+    const newer = {
+      status: "running",
+      runId: "20261006T090000Z-1",
+      owner: { pid: 1, startedAt: "2026-10-06T09:00:00.000Z" },
+      startedAt: "2026-10-06T09:00:00.000Z",
+      backupDir: NodePath.join(home.userdata, "v1-cutover-backup-20261006T090000Z"),
+    } as const;
+    NodeFS.writeFileSync(NodePath.join(home.userdata, "v1-cutover.json"), toJson(newer));
+    yield* first.resume;
+    yield* Fiber.join(first.fiber);
+    assert.deepStrictEqual(readV1CutoverState(home.userdata), newer);
+  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});

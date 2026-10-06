@@ -18,6 +18,7 @@
  *
  * Its progress is kept in `v1-cutover.json` (see `@t3tools/shared/upcomputerV1Cutover`):
  * a run that never finished starts over, a failed one is not retried on start.
+ * One run at a time holds the home's cutover lock (`v1-cutover.lock`).
  */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -108,6 +109,14 @@ export function readV1CutoverState(userdata: string): V1CutoverState | null {
 
 function writeV1CutoverState(userdata: string, state: V1CutoverState) {
   writeFileAtomic(NodePath.join(userdata, V1_CUTOVER_STATE_FILE), `${encodeCutoverState(state)}\n`);
+}
+
+/** Records a run's outcome unless the state file names another run, so an older run never overwrites a newer one's. */
+function writeOwnV1CutoverState(userdata: string, state: V1CutoverState & { runId: string }) {
+  const current = readV1CutoverState(userdata);
+  if (current !== null && current.runId !== state.runId) return false;
+  writeV1CutoverState(userdata, state);
+  return true;
 }
 
 /** What the person sees when a cutover stopped: the reason, and that nothing was lost. */
@@ -222,14 +231,71 @@ export interface V1CutoverReport {
 }
 
 const SQLITE_SIDE_FILES = ["-wal", "-shm", "-journal"];
-/** The v2 database while it is built; it becomes `statev2.sqlite` once every check passed. */
-const STAGING_NAME = "statev2.sqlite.cutover";
+/**
+ * The v2 database while a run builds it, `statev2.sqlite.cutover-<run id>`;
+ * it becomes `statev2.sqlite` once every check passed.
+ */
+const STAGING_PREFIX = "statev2.sqlite.cutover";
 const BACKUP_PREFIX = "v1-cutover-backup-";
+const LOCK_NAME = "v1-cutover.lock";
 
-function removeStaging(userdata: string) {
+function removeStaging(stagingPath: string) {
   for (const suffix of ["", ...SQLITE_SIDE_FILES]) {
-    NodeFS.rmSync(NodePath.join(userdata, `${STAGING_NAME}${suffix}`), { force: true });
+    NodeFS.rmSync(`${stagingPath}${suffix}`, { force: true });
   }
+}
+
+/** Staging files of runs that died; only called under the lock, so none is live. */
+function removeAbandonedStaging(userdata: string) {
+  for (const name of NodeFS.readdirSync(userdata)) {
+    if (name.startsWith(STAGING_PREFIX))
+      NodeFS.rmSync(NodePath.join(userdata, name), { force: true });
+  }
+}
+
+/** This process, as the owner a running state names. */
+const currentOwner = Effect.map(DateTime.now, (now) => ({
+  pid: process.pid,
+  startedAt: DateTime.formatIso(
+    DateTime.makeUnsafe(DateTime.toEpochMillis(now) - Math.round(process.uptime() * 1000)),
+  ),
+}));
+
+/**
+ * Runs the effect holding the home's cutover lock. It is SQLite's exclusive
+ * lock on `v1-cutover.lock`, an OS file lock: a second starter, in another
+ * process or this one, is refused, and the lock goes away with a process that
+ * dies. A `running` state found under the lock therefore belongs to a dead run.
+ */
+function withCutoverLock<A, E, R>(userdata: string, effect: Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        const lock = new NodeSqlite.DatabaseSync(NodePath.join(userdata, LOCK_NAME));
+        try {
+          lock.exec("PRAGMA journal_mode = OFF; BEGIN EXCLUSIVE");
+        } catch (cause) {
+          lock.close();
+          throw cause;
+        }
+        return lock;
+      },
+      catch: (cause) => {
+        if ((cause as { errcode?: unknown }).errcode !== 5) {
+          return new V1CutoverError({ message: `Could not lock ${userdata}: ${cause}` });
+        }
+        const owner = readV1CutoverState(userdata)?.owner;
+        return new V1CutoverError({
+          message:
+            "Another V1 data cutover is running on this home" +
+            (owner === undefined ? "" : ` (pid ${owner.pid}, started ${owner.startedAt})`) +
+            ". Wait for it to finish, then start Up.computer again.",
+        });
+      },
+    }),
+    () => effect,
+    (lock) => Effect.sync(() => lock.close()),
+  );
 }
 
 function stamp(date: DateTime.Utc): string {
@@ -598,14 +664,24 @@ function settingsKeys(settingsPath: string) {
   return { keys, droppedByV2: keys.filter((key) => !known.has(key)) };
 }
 
+/** The cutover by hand (`t3 cutover-v1`), or a retry after a failed one. */
 export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1CutoverInput) {
+  const userdata = NodePath.join(NodePath.resolve(input.homeDir), "userdata");
+  const v1Path = NodePath.join(userdata, "state.sqlite");
+  if (!NodeFS.existsSync(v1Path)) return yield* fail(`No V1 database at ${v1Path}.`);
+  return yield* withCutoverLock(userdata, cutoverHoldingLock(input));
+});
+
+/** The cutover itself; the caller holds the home's cutover lock. */
+const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
+  input: V1CutoverInput,
+) {
   const startedAt = DateTime.formatIso(input.now);
   const homeDir = NodePath.resolve(input.homeDir);
   const v1HomeDir = NodePath.resolve(input.v1HomeDir ?? homeDir);
   const userdata = NodePath.join(homeDir, "userdata");
   const v1Path = NodePath.join(userdata, "state.sqlite");
   const v2Path = NodePath.join(userdata, "statev2.sqlite");
-  const stagingPath = NodePath.join(userdata, STAGING_NAME);
   const settingsPath = NodePath.join(userdata, "settings.json");
 
   if (!NodeFS.existsSync(v1Path)) return yield* fail(`No V1 database at ${v1Path}.`);
@@ -631,6 +707,7 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
 
   // A run that never finished (the app was closed or crashed) changed nothing
   // V1 reads, so its partial backup and staging copy go and it starts over.
+  // Its owner is dead: a live one would still hold the lock this run holds.
   // A folder the restore script kept a v2 database in is never removed.
   const previous = readV1CutoverState(userdata);
   if (
@@ -640,14 +717,25 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
     NodeFS.existsSync(previous.backupDir) &&
     !NodeFS.readdirSync(previous.backupDir).some((name) => name.startsWith("statev2.sqlite"))
   ) {
-    yield* input.log(`Removing the backup of a cutover that did not finish: ${previous.backupDir}`);
+    yield* input.log(
+      `Removing the backup of a cutover that did not finish` +
+        `${previous.owner === undefined ? "" : ` (pid ${previous.owner.pid})`}: ${previous.backupDir}`,
+    );
     NodeFS.rmSync(previous.backupDir, { recursive: true, force: true });
   }
-  removeStaging(userdata);
+  removeAbandonedStaging(userdata);
 
+  const runId = `${stamp(input.now)}-${process.pid}`;
+  const stagingPath = NodePath.join(userdata, `${STAGING_PREFIX}-${runId}`);
   const backupDir = NodePath.join(userdata, `${BACKUP_PREFIX}${stamp(input.now)}`);
   const reportPath = NodePath.join(userdata, `v1-cutover-report-${stamp(input.now)}.md`);
-  writeV1CutoverState(userdata, { status: "running", startedAt, backupDir });
+  writeV1CutoverState(userdata, {
+    status: "running",
+    runId,
+    owner: yield* currentOwner,
+    startedAt,
+    backupDir,
+  });
   const allChats = settingsFileAllChats(settingsPath);
 
   const attempt = Effect.gen(function* () {
@@ -809,7 +897,7 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
     }
     // The only step V1 data cannot come back from without the restore script.
     NodeFS.linkSync(stagingPath, v2Path);
-    removeStaging(userdata);
+    removeStaging(stagingPath);
     return report;
   });
 
@@ -820,22 +908,23 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
         if (Cause.hasInterruptsOnly(cause)) return yield* Effect.failCause(cause);
         const error = Cause.squash(cause);
         const message = error instanceof Error ? error.message : String(error);
-        removeStaging(userdata);
+        removeStaging(stagingPath);
         if (!NodeFS.existsSync(reportPath)) {
           NodeFS.writeFileSync(
             reportPath,
             formatFailedV1Cutover({ homeDir, startedAt, backupDir, message }),
           );
         }
-        const state: V1CutoverState = {
+        const state: V1CutoverState & { runId: string } = {
           status: "failed",
+          runId,
           startedAt,
           finishedAt: DateTime.formatIso(yield* DateTime.now),
           backupDir,
           reportPath,
           message,
         };
-        writeV1CutoverState(userdata, state);
+        writeOwnV1CutoverState(userdata, state);
         return yield* fail(describeFailedV1Cutover(state));
       }),
     ),
@@ -866,8 +955,9 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
     ),
     Effect.catch((error) => input.log(`Could not move feature settings: ${error.message}`)),
   );
-  writeV1CutoverState(userdata, {
+  writeOwnV1CutoverState(userdata, {
     status: "completed",
+    runId,
     startedAt,
     finishedAt: report.finishedAt,
     backupDir,
@@ -901,12 +991,19 @@ export const runV1CutoverOnStart = Effect.fn("runV1CutoverOnStart")(function* (
   ) {
     return "not-needed" as const;
   }
-  const state = readV1CutoverState(userdata);
-  if (state?.status === "failed") return yield* fail(describeFailedV1Cutover(state));
-  yield* input.log("This home holds UpComputer V1 data; moving it to v2");
-  const { reportPath } = yield* runV1Cutover({ ...input, homeDir });
-  yield* input.log(`Done. Report: ${reportPath}`);
-  return "completed" as const;
+  return yield* withCutoverLock(
+    userdata,
+    Effect.gen(function* () {
+      const state = readV1CutoverState(userdata);
+      if (state?.status === "failed") return yield* fail(describeFailedV1Cutover(state));
+      // Another starter may have published it between the checks above and the lock.
+      if (NodeFS.existsSync(v2Path)) return "not-needed" as const;
+      yield* input.log("This home holds UpComputer V1 data; moving it to v2");
+      const { reportPath } = yield* cutoverHoldingLock({ ...input, homeDir });
+      yield* input.log(`Done. Report: ${reportPath}`);
+      return "completed" as const;
+    }),
+  );
 });
 
 /**
