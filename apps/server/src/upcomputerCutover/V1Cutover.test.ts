@@ -18,6 +18,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import { CORE_FEATURE_MIGRATIONS } from "../persistence/CoreFeatureMigrations.ts";
@@ -34,6 +35,40 @@ import {
   runV1Cutover,
   runV1CutoverOnStart,
 } from "./V1Cutover.ts";
+
+/** A full disk, from the step that first meets it on. */
+const disk = vi.hoisted(() => ({
+  /** Writes to a path this matches fail with ENOSPC. */
+  rejects: null as ((path: string) => boolean) | null,
+  /** Free bytes the disk reports, when set. */
+  freeBytes: null as number | null,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  const check = (path: unknown) => {
+    if (disk.rejects?.(String(path))) {
+      throw Object.assign(new Error(`ENOSPC: no space left on device, write '${path}'`), {
+        code: "ENOSPC",
+      });
+    }
+  };
+  return {
+    ...actual,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      check(args[0]);
+      return actual.writeFileSync(...args);
+    },
+    mkdirSync: (...args: Parameters<typeof actual.mkdirSync>) => {
+      check(args[0]);
+      return actual.mkdirSync(...args);
+    },
+    statfsSync: (...args: Parameters<typeof actual.statfsSync>) => {
+      const stats = actual.statfsSync(args[0]);
+      return disk.freeBytes === null ? stats : { ...stats, bavail: disk.freeBytes, bsize: 1 };
+    },
+  };
+});
 
 const at = "2026-10-01T00:00:00.000Z";
 const JsonText = Schema.fromJsonString(Schema.Unknown);
@@ -611,4 +646,72 @@ it.effect("a run records its outcome only over its own state", () => {
     yield* Fiber.join(first.fiber);
     assert.deepStrictEqual(readV1CutoverState(home.userdata), newer);
   }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+});
+
+it.effect("a full disk during the backup still records the failure for the desktop", () => {
+  const home = makeV1Home("upcomputer-cutover-enospc-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    // The disk fills up when the backup starts; the report cannot be written either.
+    let full = false;
+    disk.rejects = (path) => {
+      if (path.includes("v1-cutover-backup-")) full = true;
+      return full && !path.includes("v1-cutover.json");
+    };
+    const error = yield* onStart(home, "2026-10-06T08:00:00.000Z").pipe(Effect.flip);
+    disk.rejects = null;
+    assert.include(error.message, "ENOSPC");
+    const state = readV1CutoverState(home.userdata);
+    assert.equal(state?.status, "failed");
+    assert.include(state?.message ?? "", "ENOSPC");
+    assert.isUndefined(state?.reportPath);
+    assert.isFalse(NodeFS.existsSync(home.v2Path));
+    assert.isFalse(NodeFS.readdirSync(home.userdata).some((file) => file.includes(".cutover")));
+  }).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.ensuring(Effect.sync(() => void (disk.rejects = null))),
+    Effect.ensuring(home.cleanup),
+  );
+});
+
+it.effect("a disk too full to record anything still fails the start with the reason", () => {
+  const home = makeV1Home("upcomputer-cutover-enospc-all-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    let full = false;
+    disk.rejects = (path) => {
+      if (path.includes("v1-cutover-backup-")) full = true;
+      return full;
+    };
+    const error = yield* onStart(home, "2026-10-06T08:00:00.000Z").pipe(Effect.flip);
+    disk.rejects = null;
+    assert.include(error.message, "ENOSPC");
+    // The desktop learns of it from the server's exit; the state still says running.
+    assert.equal(readV1CutoverState(home.userdata)?.status, "running");
+    assert.isFalse(NodeFS.existsSync(home.v2Path));
+  }).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.ensuring(Effect.sync(() => void (disk.rejects = null))),
+    Effect.ensuring(home.cleanup),
+  );
+});
+
+it.effect("stops before the backup when the disk cannot hold the upgrade", () => {
+  const home = makeV1Home("upcomputer-cutover-free-space-");
+  return Effect.gen(function* () {
+    yield* home.seed;
+    const v1Bytes = NodeFS.statSync(home.v1Path).size;
+    disk.freeBytes = v1Bytes * 2;
+    const error = yield* onStart(home, "2026-10-06T08:00:00.000Z").pipe(Effect.flip);
+    disk.freeBytes = null;
+    assert.include(error.message, "Not enough free disk space");
+    assert.include(error.message, `about ${Math.ceil((v1Bytes * 3) / 1e6)} MB free`);
+    assert.equal(readV1CutoverState(home.userdata)?.status, "failed");
+    assert.deepStrictEqual(home.backups(), []);
+    assert.isFalse(NodeFS.existsSync(home.v2Path));
+  }).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.ensuring(Effect.sync(() => void (disk.freeBytes = null))),
+    Effect.ensuring(home.cleanup),
+  );
 });

@@ -3,7 +3,9 @@
  * (see `apps/server/src/upcomputerCutover/V1Cutover.ts`). The server does the
  * work before it listens, so the desktop shows "Upgrading your data…" until
  * the v2 database exists, and turns a failed cutover into a choice to try
- * again or quit instead of a window that never opens.
+ * again or quit instead of a window that never opens. A backend that exits
+ * during the upgrade is a failure too, even when its disk was too full to
+ * record one.
  */
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -32,7 +34,8 @@ const STOPPED: DesktopWindow.DesktopSplashStatus = {
   label: "Your data could not be upgraded",
   busy: false,
 };
-const POLL_INTERVAL = Duration.seconds(1);
+// Shorter than the backend's first restart delay, so an exit is seen before a restart.
+const POLL_INTERVAL = Duration.millis(250);
 
 const decodeState = Schema.decodeUnknownEffect(fromLenientJson(V1CutoverState));
 
@@ -59,20 +62,28 @@ export const readV1Upgrade = Effect.fn("desktop.v1Upgrade.read")(function* (stat
     : { _tag: "pending" }) satisfies V1Upgrade as V1Upgrade;
 });
 
+/** A backend that stopped during the upgrade without recording a failure. */
+export function describeV1UpgradeStop(logPath: string): string {
+  return [
+    "What stopped it: the upgrade ended before it could record why, for example because the disk is full.",
+    "Nothing was lost: your data is as it was before the update.",
+    `Details: ${logPath}`,
+  ].join("\n\n");
+}
+
 export function describeV1UpgradeFailure(state: V1CutoverState): string {
   return [
     `What stopped it: ${state.message ?? "unknown error"}.`,
-    "Nothing was lost: your data is as it was before the update, and a backup was made.",
+    "Nothing was lost: your data is as it was before the update.",
     ...(state.reportPath === undefined ? [] : [`Report: ${state.reportPath}`]),
     `Backup: ${state.backupDir}`,
   ].join("\n\n");
 }
 
 /** Asks until the person picks Try Again (true) or Quit (false). */
-const askToRetry = Effect.fn("desktop.v1Upgrade.askToRetry")(function* (state: V1CutoverState) {
+const askToRetry = Effect.fn("desktop.v1Upgrade.askToRetry")(function* (detail: string) {
   const dialog = yield* ElectronDialog.ElectronDialog;
   const shell = yield* ElectronShell.ElectronShell;
-  const detail = describeV1UpgradeFailure(state);
   while (true) {
     const { response } = yield* dialog.showMessageBox({
       type: "error",
@@ -99,7 +110,7 @@ export const startPrimaryBackend = Effect.fn("desktop.v1Upgrade.startPrimaryBack
   backend: DesktopBackendInstance,
   options: { readonly wslPrimary: boolean },
 ) {
-  const { stateDir, path } = yield* DesktopEnvironment.DesktopEnvironment;
+  const { stateDir, logDir, path } = yield* DesktopEnvironment.DesktopEnvironment;
   const upgrade = options.wslPrimary ? { _tag: "none" as const } : yield* readV1Upgrade(stateDir);
   if (upgrade._tag === "none") return yield* backend.start;
 
@@ -108,17 +119,31 @@ export const startPrimaryBackend = Effect.fn("desktop.v1Upgrade.startPrimaryBack
   const shutdown = yield* DesktopShutdown.DesktopShutdown;
   const electronApp = yield* ElectronApp.ElectronApp;
 
-  // Until the v2 database exists: a failure stops the backend, which would
-  // otherwise restart into the same recorded failure, and waits for the person.
+  // The backend counts its exits as restart attempts until it is ready; the
+  // count is taken before each start, so an exit right after it is not missed.
+  const backendExits = Effect.map(backend.snapshot, (snapshot) => snapshot.restartAttempt);
+  let exitsAtStart = yield* backendExits;
+
+  // Until the v2 database exists: a recorded failure, or the backend exiting
+  // without one, stops the backend, which would otherwise restart into the
+  // same failure, and waits for the person.
   const supervise = Effect.gen(function* () {
     while (true) {
       const current = yield* readV1Upgrade(stateDir);
       if (current._tag === "none") return;
-      if (current._tag === "failed") {
-        yield* logWarning("V1 data cutover failed", { message: current.state.message });
+      const snapshot = yield* backend.snapshot;
+      const exited = snapshot.restartAttempt > exitsAtStart || !snapshot.desiredRunning;
+      if (current._tag === "failed" || exited) {
+        const detail =
+          current._tag === "failed"
+            ? describeV1UpgradeFailure(current.state)
+            : describeV1UpgradeStop(path.join(logDir, "server-child.log"));
+        yield* logWarning("V1 data cutover failed", {
+          message: current._tag === "failed" ? current.state.message : "the backend exited",
+        });
         yield* backend.stop();
         yield* desktopWindow.showSplash(STOPPED);
-        if (!(yield* askToRetry(current.state))) {
+        if (!(yield* askToRetry(detail))) {
           yield* shutdown.request;
           yield* electronApp.quit;
           return;
@@ -128,6 +153,7 @@ export const startPrimaryBackend = Effect.fn("desktop.v1Upgrade.startPrimaryBack
           .pipe(Effect.ignore);
         yield* logInfo("retrying the V1 data cutover");
         yield* desktopWindow.showSplash(UPGRADING);
+        exitsAtStart = yield* backendExits;
         yield* backend.start;
       }
       yield* Effect.sleep(POLL_INTERVAL);

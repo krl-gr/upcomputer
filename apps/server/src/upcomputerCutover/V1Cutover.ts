@@ -238,6 +238,11 @@ const SQLITE_SIDE_FILES = ["-wal", "-shm", "-journal"];
 const STAGING_PREFIX = "statev2.sqlite.cutover";
 const BACKUP_PREFIX = "v1-cutover-backup-";
 const LOCK_NAME = "v1-cutover.lock";
+/**
+ * Free space the cutover needs, in V1 database sizes: the backup, the staging
+ * copy, and what the import adds to it with its write-ahead log.
+ */
+const FREE_SPACE_FACTOR = 3;
 
 function removeStaging(stagingPath: string) {
   for (const suffix of ["", ...SQLITE_SIDE_FILES]) {
@@ -251,6 +256,27 @@ function removeAbandonedStaging(userdata: string) {
     if (name.startsWith(STAGING_PREFIX))
       NodeFS.rmSync(NodePath.join(userdata, name), { force: true });
   }
+}
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.ceil(bytes / 1e6)} MB`;
+}
+
+/** Fails before the backup when the disk cannot hold the backup and the v2 copy. */
+function checkFreeSpace(userdata: string, v1Path: string) {
+  const v1Bytes = [v1Path, `${v1Path}-wal`]
+    .filter((path) => NodeFS.existsSync(path))
+    .reduce((total, path) => total + NodeFS.statSync(path).size, 0);
+  const needed = v1Bytes * FREE_SPACE_FACTOR;
+  const disk = NodeFS.statfsSync(userdata);
+  const free = disk.bavail * disk.bsize;
+  return free >= needed
+    ? Effect.void
+    : fail(
+        `Not enough free disk space. The upgrade needs about ${formatBytes(needed)} free on the disk ` +
+          `that holds ${userdata} (${FREE_SPACE_FACTOR} times the ${formatBytes(v1Bytes)} V1 database), ` +
+          `and ${formatBytes(free)} is free. Free up space, then try again`,
+      );
 }
 
 /** This process, as the owner a running state names. */
@@ -729,16 +755,23 @@ const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
   const stagingPath = NodePath.join(userdata, `${STAGING_PREFIX}-${runId}`);
   const backupDir = NodePath.join(userdata, `${BACKUP_PREFIX}${stamp(input.now)}`);
   const reportPath = NodePath.join(userdata, `v1-cutover-report-${stamp(input.now)}.md`);
-  writeV1CutoverState(userdata, {
-    status: "running",
-    runId,
-    owner: yield* currentOwner,
-    startedAt,
-    backupDir,
+  const owner = yield* currentOwner;
+  yield* Effect.try({
+    try: () =>
+      writeV1CutoverState(userdata, {
+        status: "running",
+        runId,
+        owner,
+        startedAt,
+        backupDir,
+      }),
+    catch: (cause) =>
+      new V1CutoverError({ message: `Could not record the cutover in ${userdata}: ${cause}` }),
   });
   const allChats = settingsFileAllChats(settingsPath);
 
   const attempt = Effect.gen(function* () {
+    yield* checkFreeSpace(userdata, v1Path);
     yield* input.log(`Backing up V1 data to ${backupDir}`);
     const backup = yield* backUp(userdata, backupDir);
     yield* input.log(`Backup done. To undo the cutover later: ${backup.restoreCommand}`);
@@ -908,23 +941,41 @@ const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
         if (Cause.hasInterruptsOnly(cause)) return yield* Effect.failCause(cause);
         const error = Cause.squash(cause);
         const message = error instanceof Error ? error.message : String(error);
-        removeStaging(stagingPath);
-        if (!NodeFS.existsSync(reportPath)) {
-          NodeFS.writeFileSync(
-            reportPath,
-            formatFailedV1Cutover({ homeDir, startedAt, backupDir, message }),
+        // Each step below may meet the full disk that stopped the run, so none
+        // of them can keep the next from running, or the failure from being returned.
+        const bestEffort = (what: string, run: () => void) =>
+          Effect.try({ try: run, catch: (reason) => `Could not ${what}: ${reason}` }).pipe(
+            Effect.as(true),
+            Effect.catch((line) => input.log(line).pipe(Effect.as(false))),
           );
-        }
+        yield* bestEffort("remove the staging database", () => removeStaging(stagingPath));
+        // The failure state comes first: the desktop reads it to stop and offer Try Again.
         const state: V1CutoverState & { runId: string } = {
           status: "failed",
           runId,
           startedAt,
           finishedAt: DateTime.formatIso(yield* DateTime.now),
           backupDir,
-          reportPath,
+          ...(NodeFS.existsSync(reportPath) ? { reportPath } : {}),
           message,
         };
-        writeOwnV1CutoverState(userdata, state);
+        yield* bestEffort("record the failed cutover", () =>
+          writeOwnV1CutoverState(userdata, state),
+        );
+        if (state.reportPath === undefined) {
+          const reported = yield* bestEffort("write the cutover report", () =>
+            NodeFS.writeFileSync(
+              reportPath,
+              formatFailedV1Cutover({ homeDir, startedAt, backupDir, message }),
+            ),
+          );
+          if (reported) {
+            yield* bestEffort("record the cutover report", () =>
+              writeOwnV1CutoverState(userdata, { ...state, reportPath }),
+            );
+            return yield* fail(describeFailedV1Cutover({ ...state, reportPath }));
+          }
+        }
         return yield* fail(describeFailedV1Cutover(state));
       }),
     ),
@@ -946,24 +997,33 @@ const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
       Effect.gen(function* () {
         for (const line of lines) yield* input.log(`Feature settings: ${line}`);
         if (lines.length > 0) {
-          NodeFS.appendFileSync(
-            reportPath,
-            ["## Feature settings", "", ...lines.map((line) => `- ${line}`), ""].join("\n"),
-          );
+          yield* Effect.try({
+            try: () =>
+              NodeFS.appendFileSync(
+                reportPath,
+                ["## Feature settings", "", ...lines.map((line) => `- ${line}`), ""].join("\n"),
+              ),
+            catch: (cause) => `Could not add feature settings to the report: ${cause}`,
+          }).pipe(Effect.catch((line) => input.log(line)));
         }
       }),
     ),
     Effect.catch((error) => input.log(`Could not move feature settings: ${error.message}`)),
   );
-  writeOwnV1CutoverState(userdata, {
-    status: "completed",
-    runId,
-    startedAt,
-    finishedAt: report.finishedAt,
-    backupDir,
-    restoreCommand: report.restoreCommand,
-    reportPath,
-  });
+  // Published already: a state that cannot be written is logged, and v2 starts.
+  yield* Effect.try({
+    try: () =>
+      writeOwnV1CutoverState(userdata, {
+        status: "completed",
+        runId,
+        startedAt,
+        finishedAt: report.finishedAt,
+        backupDir,
+        restoreCommand: report.restoreCommand,
+        reportPath,
+      }),
+    catch: (cause) => `Could not record the finished cutover: ${cause}`,
+  }).pipe(Effect.catch((line) => input.log(line)));
   return { report, reportPath };
 });
 

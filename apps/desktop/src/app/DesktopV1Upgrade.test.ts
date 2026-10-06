@@ -43,16 +43,24 @@ function makeHarness(stateDir: string, dialogResponses: Array<number>) {
     const started = yield* Deferred.make<void>();
     const quit = yield* Deferred.make<void>();
     const path = yield* Path.Path;
+    // What the backend manager reports: a run that exits counts a restart attempt.
+    const snapshot = { desiredRunning: false, restartAttempt: 0 };
     const backend = {
-      start: Effect.sync(() => events.push("start")).pipe(
-        Effect.andThen(Deferred.succeed(started, undefined)),
-        Effect.asVoid,
-      ),
-      stop: () => Effect.sync(() => void events.push("stop")),
+      start: Effect.sync(() => {
+        events.push("start");
+        snapshot.desiredRunning = true;
+      }).pipe(Effect.andThen(Deferred.succeed(started, undefined)), Effect.asVoid),
+      stop: () =>
+        Effect.sync(() => {
+          events.push("stop");
+          snapshot.desiredRunning = false;
+        }),
+      snapshot: Effect.sync(() => ({ ...snapshot })),
     } as unknown as DesktopBackendInstance;
     const layer = Layer.mergeAll(
       Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         stateDir,
+        logDir: path.join(stateDir, "logs"),
         path,
       } as DesktopEnvironment.DesktopEnvironment["Service"]),
       Layer.succeed(DesktopWindow.DesktopWindow, {
@@ -77,7 +85,7 @@ function makeHarness(stateDir: string, dialogResponses: Array<number>) {
       } as unknown as ElectronApp.ElectronApp["Service"]),
       DesktopShutdown.layer,
     );
-    return { events, backend, started, quit, layer };
+    return { events, backend, snapshot, started, quit, layer };
   });
 }
 
@@ -188,4 +196,45 @@ describe("DesktopV1Upgrade", () => {
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(stateDir, { recursive: true, force: true }))),
     );
   });
+
+  it.live(
+    "a backend that exits during the upgrade without a recorded failure stops for the person",
+    () => {
+      // The disk was too full for the server to record its failure: the state still says running.
+      const stateDir = makeStateDir({
+        "state.sqlite": "",
+        "v1-cutover.json": JSON.stringify({ ...failedState, status: "running" }),
+      });
+      return Effect.gen(function* () {
+        // Copy Details first, then Quit.
+        const harness = yield* makeHarness(stateDir, [1, 2]);
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* DesktopV1Upgrade.startPrimaryBackend(harness.backend, { wslPrimary: false });
+            // The server exits; the manager schedules a restart.
+            harness.snapshot.restartAttempt += 1;
+            yield* Deferred.await(harness.quit);
+          }).pipe(Effect.provide(harness.layer)),
+        );
+        const detail = DesktopV1Upgrade.describeV1UpgradeStop(
+          NodePath.join(stateDir, "logs", "server-child.log"),
+        );
+        assert.deepStrictEqual(harness.events, [
+          "splash: Upgrading your data…",
+          "start",
+          "stop",
+          "splash: Your data could not be upgraded",
+          "dialog",
+          `copy: ${detail}`,
+          "dialog",
+          "quit",
+        ]);
+      }).pipe(
+        Effect.provide(NodeServices.layer),
+        Effect.ensuring(
+          Effect.sync(() => NodeFS.rmSync(stateDir, { recursive: true, force: true })),
+        ),
+      );
+    },
+  );
 });
