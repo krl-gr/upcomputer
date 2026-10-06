@@ -32,6 +32,12 @@ export interface TaskToolInvocationContext {
   readonly modelSelection?: ModelSelection;
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
+  /**
+   * The calling thread has an active run of the provider that called, as core
+   * requires before a thread acts on other threads. Tools that start or
+   * continue a run refuse a caller that is not live.
+   */
+  readonly live?: boolean;
 }
 
 export interface TaskToolCallResult {

@@ -16,7 +16,8 @@ import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
  * Builds the task tools' invocation context from the calling MCP session: its
  * thread, and the thread's active run, model and modes. Plan mode denies writes,
  * as the V1 fork's interaction-mode safety did. A client signed in from outside
- * a thread only reads.
+ * a thread only reads. Tools that start or continue a run also check that the
+ * caller is live and that the run stays within the caller's modes.
  */
 const invocationContext = Effect.gen(function* () {
   const invocation = yield* McpInvocationContext;
@@ -37,6 +38,10 @@ const invocationContext = Effect.gen(function* () {
   const { thread } = records.value;
   const run = latestActiveRun(records.value);
   return {
+    live:
+      thread.archivedAt === null &&
+      run !== undefined &&
+      run.providerInstanceId === caller.providerInstanceId,
     source: "provider",
     mutationPolicy: thread.interactionMode === "plan" ? "deny" : "allow",
     threadId: caller.threadId,

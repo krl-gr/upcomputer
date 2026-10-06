@@ -53,9 +53,13 @@ import * as Schema from "effect/Schema";
 
 import {
   CUSTOM_INSTRUCTIONS_MAX_CHARS,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
   ProjectId,
   type ModelSelection,
   type OrchestrationV2ThreadProjection,
+  type ProviderInteractionMode,
+  type RuntimeMode,
 } from "@t3tools/contracts";
 
 import {
@@ -262,6 +266,52 @@ function dryRun(context: TaskToolInvocationContext): boolean {
   // The host resolves the active interaction mode and supplies its effective
   // safety policy. Missing policy fails closed for older or unknown callers.
   return context.mutationPolicy !== "allow";
+}
+
+const RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
+  "approval-required": 0,
+  "auto-accept-edits": 1,
+  auto: 2,
+  "full-access": 3,
+};
+const INTERACTION_MODE_RANK: Record<ProviderInteractionMode, number> = { plan: 0, default: 1 };
+
+interface RunModes {
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
+function agentRunModes(config: TaskAgent["config"]): RunModes {
+  return {
+    runtimeMode: config.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+    interactionMode: config.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+  };
+}
+
+/**
+ * Why the caller may not start or continue a run in these modes, or null. The
+ * ceiling core puts on a thread sending to another thread (`resolveRuntimeMode`
+ * in OrchestratorMcpService): the calling thread's run must be live, and the
+ * run it starts may not have a broader runtime or interaction mode than the
+ * caller's own. People acting in the app are not limited.
+ */
+function runStartRefusal(
+  context: TaskToolInvocationContext,
+  target: RunModes,
+  action: string,
+): string | null {
+  const byPerson = "A person can do this in the Tasks view.";
+  if (context.live !== true || context.runtimeMode === undefined) {
+    return `${action} needs an active run in the calling thread. ${byPerson}`;
+  }
+  if (RUNTIME_MODE_RANK[target.runtimeMode] > RUNTIME_MODE_RANK[context.runtimeMode]) {
+    return `${action} would run in ${target.runtimeMode} mode, broader than this thread's ${context.runtimeMode} mode. ${byPerson}`;
+  }
+  const interactionMode = context.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
+  if (INTERACTION_MODE_RANK[target.interactionMode] > INTERACTION_MODE_RANK[interactionMode]) {
+    return `${action} would run in ${target.interactionMode} interaction mode, broader than this thread's ${interactionMode} mode. ${byPerson}`;
+  }
+  return null;
 }
 
 function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedAt: string): Task {
@@ -654,6 +704,11 @@ const make = Effect.gen(function* () {
             updatedAt: timestamp,
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          // An enabled agent starts runs on every matching task right away.
+          const createRefusal = agent.enabled
+            ? runStartRefusal(context, agentRunModes(agent.config), "Creating an enabled agent")
+            : null;
+          if (createRefusal !== null) return { isError: true, text: createRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
           return { isError: false, text: json({ agent: saved, resolution }) };
@@ -719,6 +774,12 @@ const make = Effect.gen(function* () {
             updatedAt: yield* now,
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          // Any edit of an enabled agent lets it run again on its matching tasks
+          // (see runsAgain); disabling it starts nothing.
+          const updateRefusal = agent.enabled
+            ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
+            : null;
+          if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
           return { isError: false, text: json({ agent: saved, resolution }) };
@@ -811,6 +872,20 @@ const make = Effect.gen(function* () {
                 }
               : { isError: true, text: `Agent run '${input.runId}' was not found.` };
           }
+          const target = yield* repository.getAgentRunById({ id: input.runId });
+          if (Option.isNone(target))
+            return { isError: true, text: `Agent run '${input.runId}' was not found.` };
+          // The message runs in the run's thread, in that thread's modes.
+          const targetThread = yield* threads
+            .getThreadShell(target.value.threadId)
+            .pipe(Effect.orElseSucceed(() => null));
+          const messageRefusal = runStartRefusal(
+            context,
+            // A missing thread is refused by messageRun; until then, fail closed.
+            targetThread ?? { runtimeMode: "full-access", interactionMode: "default" },
+            "Messaging an agent run",
+          );
+          if (messageRefusal !== null) return { isError: true, text: messageRefusal };
           const result = yield* taskAgents.messageRun({ id: input.runId, text: input.text });
           return result.ok
             ? {

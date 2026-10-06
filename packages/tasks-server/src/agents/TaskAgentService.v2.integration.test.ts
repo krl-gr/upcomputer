@@ -933,6 +933,140 @@ it.live("a run a person's message continued claims the task with the earlier run
   ),
 );
 
+/** Calls a task tool as the provider session of `threadId`. */
+const callTaskTool = (threadId: ThreadId, name: string, args: Record<string, unknown>) =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server.callTool({ name, arguments: args }).pipe(
+      Effect.provideService(McpInvocationContext, {
+        environmentId: EnvironmentId.make("environment:task-agents-v2"),
+        requestNamespace: "session:task-agents-v2",
+        thread: {
+          threadId,
+          providerSessionId: "session:task-agents-v2",
+          providerInstanceId: instanceId,
+        },
+        client: undefined,
+        capabilities: new Set<never>(),
+        issuedAt: 0,
+      }),
+      Effect.provideService(McpSchema.McpServerClient, mcpClient),
+    );
+    return {
+      isError: result.isError === true,
+      text: result.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+    };
+  });
+
+it.live("task tools start or continue runs only within the calling thread's modes", () =>
+  runSlice(
+    "task-agent-v2-escalation",
+    ({ createTask, runWithStatus, runsOf, repository, threads, started, sendAsPerson }) =>
+      Effect.gen(function* () {
+        const first = yield* createTask;
+        yield* eventually("the first run to complete", runWithStatus(first.id, "completed"));
+        const createChat = (id: string, runtimeMode: "approval-required" | "full-access") =>
+          Effect.gen(function* () {
+            const threadId = ThreadIdBrand.make(id);
+            yield* threads.dispatch({
+              type: "thread.create",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:${id}`),
+              threadId,
+              projectId,
+              title: "Chat",
+              modelSelection: agentModel,
+              runtimeMode,
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+            });
+            return threadId;
+          });
+        /** Holds a turn open in the chat, so its provider session is live. */
+        const goLive = (threadId: ThreadId) =>
+          Effect.gen(function* () {
+            yield* sendAsPerson(threadId, `Work on something. ${HOLD}`);
+            yield* eventually(
+              "the chat's held turn",
+              Ref.get(started).pipe(
+                Effect.map((turns) =>
+                  Option.fromNullishOr(turns.find((turn) => turn.threadId === threadId)),
+                ),
+              ),
+            );
+          });
+
+        // A Supervised chat without a live run.
+        const supervised = yield* createChat("thread:escalation:supervised", "approval-required");
+        const idle = yield* callTaskTool(supervised, "agent_run_message", {
+          runId: first.id,
+          text: "Do something with full access.",
+        });
+        assert.isTrue(idle.isError, idle.text);
+        assert.include(idle.text, "needs an active run");
+
+        // Live, but the full-access run is broader than the chat.
+        yield* goLive(supervised);
+        const live = yield* callTaskTool(supervised, "agent_run_message", {
+          runId: first.id,
+          text: "Do something with full access.",
+        });
+        assert.isTrue(live.isError, live.text);
+        assert.include(live.text, "broader than this thread's approval-required mode");
+        assert.lengthOf(yield* runsOf, 1);
+
+        // Agent writes that start runs are held to the same ceiling.
+        const created = yield* callTaskTool(supervised, "agent_create", {
+          name: "Escalated",
+          projectId: null,
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          startStatuses: ["To Do"],
+        });
+        assert.isTrue(created.isError, created.text);
+        assert.include(created.text, "broader than this thread's approval-required mode");
+        const updated = yield* callTaskTool(supervised, "agent_update", {
+          id: agent.id,
+          instructions: "New instructions.",
+        });
+        assert.isTrue(updated.isError, updated.text);
+        assert.include(updated.text, "broader than this thread's approval-required mode");
+        assert.strictEqual(
+          Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.instructions,
+          agent.config.instructions,
+        );
+        // Within the ceiling, or disabled, an agent can still be written.
+        const disabled = yield* callTaskTool(supervised, "agent_create", {
+          name: "Drafted",
+          projectId: null,
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          enabled: false,
+        });
+        assert.isFalse(disabled.isError, disabled.text);
+        const narrow = yield* callTaskTool(supervised, "agent_create", {
+          name: "Narrow",
+          projectId: null,
+          modelSelection: agentModel,
+          runtimeMode: "approval-required",
+        });
+        assert.isFalse(narrow.isError, narrow.text);
+
+        // A live full-access chat may continue the run.
+        const fullAccess = yield* createChat("thread:escalation:full-access", "full-access");
+        yield* goLive(fullAccess);
+        const continued = yield* callTaskTool(fullAccess, "agent_run_message", {
+          runId: first.id,
+          text: "Please continue.",
+        });
+        assert.isFalse(continued.isError, continued.text);
+        assert.isTrue(JSON.parse(continued.text).continued);
+      }),
+  ),
+);
+
 /** The tasks RPC group as the WebSocket server serves it: with core's scope middleware. */
 const servedTasksGroup = TasksRpcGroup.middleware(RpcScopeAuthorization);
 const tasksRpcClient = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
