@@ -233,7 +233,7 @@ export function htmlRenderTheme(
 
 /** Agent-facing reference for the injected variables, used in tool descriptions. */
 export const HTML_RENDER_THEME_GUIDE = [
-  "T3 injects its active theme as CSS custom properties on :root, and they follow the user's theme and light/dark mode live:",
+  "Up.computer injects its active theme as CSS custom properties on :root, and they follow the user's theme and light/dark mode live:",
   "--background (page background, identical to the thread around the frame), --foreground, --muted, --muted-foreground,",
   "--card, --card-foreground, --popover, --popover-foreground, --secondary, --secondary-foreground, --border, --input, --ring,",
   "--primary, --primary-foreground (solid buttons), --accent, --accent-foreground (brand accent), --accent-surface, --accent-surface-foreground,",

@@ -47,9 +47,10 @@ literals against it and against the electron-builder config.
 ## User-visible copy and artwork
 
 - **Copy:** `scripts/apply-branding.ts` rewrites "T3 Code" to "Up.computer", "T3 Connect" to
-  "UpComputer Connect", and a few "T3 thread/server/home" phrases in the web app, desktop shell,
-  server, shared packages and the relay's push text. Rules, scope and the protocol lines it keeps
-  are in `scripts/lib/branding.ts`. Comments are left as upstream wrote them.
+  "UpComputer Connect", a few "T3 thread/server/home" phrases, and the bare "T3" in the HTML
+  render tools' descriptions and errors, in the web app, desktop shell, server, shared packages and
+  the relay's push text. Rules, scope and the protocol lines it keeps are in
+  `scripts/lib/branding.ts`. Comments are left as upstream wrote them.
 - **Names in code:** `APP_BASE_NAME` in `apps/web/src/branding.ts` and
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
   welcome wizard (`SidebarChrome.tsx`, `WelcomeWizard.tsx`), `apps/web/index.html`,

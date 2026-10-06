@@ -19,6 +19,12 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   { pattern: /\ba T3 thread\b/g, replacement: "an Up.computer thread" },
   { pattern: /\bT3 (thread|threads|server|home)\b/g, replacement: "Up.computer $1" },
   { pattern: /\bT3 Connect\b/g, replacement: "UpComputer Connect" },
+  // The HTML render tools and their errors, which agents read and repeat to the user.
+  {
+    pattern:
+      /\bT3('s (?:headless browser|home directory)| (?:is (?:still )?installing|could not install|fits the frame|injects its)\b)/g,
+    replacement: "Up.computer$1",
+  },
   // Markdown links to the site. Other t3.codes URLs are upstream's schemas,
   // install scripts and test data.
   { pattern: /\]\(https:\/\/t3\.codes\)/g, replacement: "](https://up.computer)" },

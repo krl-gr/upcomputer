@@ -58,6 +58,16 @@ describe("apply-branding rules", () => {
     );
   });
 
+  it("rewrites the HTML render tool copy", () => {
+    expect(
+      rebrandText(
+        'const text = "T3 fits the frame. T3 is still installing its browser in T3\'s home directory.";',
+      ),
+    ).toBe(
+      'const text = "Up.computer fits the frame. Up.computer is still installing its browser in Up.computer\'s home directory.";',
+    );
+  });
+
   it("is idempotent", () => {
     const once = rebrandText('const text = "Read a T3 thread in T3 Code";');
     expect(rebrandText(once)).toBe(once);

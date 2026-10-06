@@ -172,7 +172,7 @@ it.layer(NodeServices.layer)("PreviewBrowser", (it) => {
 
       expect(error._tag).toBe("PreviewBrowserInstallError");
       expect(error.message).toMatch(
-        /^T3 could not install its HTML preview browser: .+ Call html_preview again to retry\.$/,
+        /^Up.computer could not install its HTML preview browser: .+ Call html_preview again to retry\.$/,
       );
       expect(yield* fs.readDirectory(installRoot)).toEqual([]);
       yield* browser.executable.pipe(Effect.flip);
@@ -291,6 +291,6 @@ it("tells the agent how far the install has come", () => {
       unpacking: false,
     }).message,
   ).toBe(
-    "T3 is installing its HTML preview browser (37 of 120 MB downloaded). Call html_preview again in a minute.",
+    "Up.computer is installing its HTML preview browser (37 of 120 MB downloaded). Call html_preview again in a minute.",
   );
 });
