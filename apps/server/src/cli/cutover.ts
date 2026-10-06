@@ -42,6 +42,7 @@ export const cutoverV1Command = Command.make("cutover-v1", {
         homeDir,
         v1HomeDir,
         featureMigrations: product.features.flatMap((feature) => feature.migrations ?? []),
+        features: product.features,
         now: yield* DateTime.now,
         log: (line) => Console.log(line),
       }).pipe(Effect.result);

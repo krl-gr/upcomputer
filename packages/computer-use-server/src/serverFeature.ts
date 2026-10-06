@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
@@ -9,6 +10,10 @@ import { ChromePreviewHostLive } from "./browser/ChromePreviewHost.ts";
 import { ComputerUseServiceLive } from "./computerUse/ComputerUseService.ts";
 import { ComputerUseMcpToolsLive } from "./mcp/ComputerUseMcpTools.ts";
 import { COMPUTER_USE_RPC_CONTRIBUTION } from "./rpc/ComputerUseRpc.ts";
+import {
+  computerUseSettingsPath,
+  moveLegacySettingsSections,
+} from "./settings/ComputerUseSettingsFile.ts";
 
 const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use";
 
@@ -20,6 +25,19 @@ const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use";
 export const COMPUTER_USE_SERVER_FEATURE = defineExperimentalServerFeature({
   id: COMPUTER_USE_FEATURE_ID,
   version: 1,
+  // V1 kept these settings in settings.json, which core rewrites without them.
+  prepareHome: ({ settingsPath, fromV1Cutover }) =>
+    Effect.try({
+      try: () => moveLegacySettingsSections(settingsPath, { replace: fromV1Cutover }),
+      catch: (cause) =>
+        new Error(`Could not write ${computerUseSettingsPath(settingsPath)}: ${String(cause)}`),
+    }).pipe(
+      Effect.map((moved) =>
+        moved.length === 0
+          ? []
+          : [`moved ${moved.join(", ")} from settings.json to computer-use.json`],
+      ),
+    ),
   layers: [
     {
       id: "computer-use-services",

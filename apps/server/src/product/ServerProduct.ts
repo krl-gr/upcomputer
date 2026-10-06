@@ -74,9 +74,29 @@ export interface ExperimentalProviderDriverContribution extends OwnedContributio
   readonly driver: AnyProviderDriver<BuiltInDriversEnv>;
 }
 
+/** What a feature's `prepareHome` is given. */
+export interface ExperimentalPrepareHomeInput {
+  /** Core's `settings.json`; feature files sit next to it. */
+  readonly settingsPath: string;
+  /**
+   * The V1 cutover just published the v2 database: V1's files are the truth
+   * and replace anything an earlier v2 start left. Otherwise a normal start,
+   * which only fills in what is missing.
+   */
+  readonly fromV1Cutover: boolean;
+}
+
 export interface ExperimentalServerFeatureContribution {
   readonly id: string;
   readonly version: number;
+  /**
+   * Moves the feature's files in the server's home before the server opens
+   * anything, so nothing core writes at startup can drop them: on every start,
+   * and in the V1 cutover. Must be idempotent. Returns one line per change.
+   */
+  readonly prepareHome?: (
+    input: ExperimentalPrepareHomeInput,
+  ) => Effect.Effect<ReadonlyArray<string>, Error>;
   readonly layers?: ReadonlyArray<ExperimentalServerLayerContribution>;
   readonly migrations?: ReadonlyArray<ExperimentalFeatureMigrationContribution<Error>>;
   readonly rpc?: ReadonlyArray<AnyNamespacedRpcContribution>;
@@ -277,6 +297,19 @@ export class ServerProduct extends Context.Reference<ExperimentalServerProductCo
   "t3/product/ServerProduct",
   { defaultValue: () => CORE_SERVER_PRODUCT_COMPOSITION },
 ) {}
+
+/** Runs every feature's `prepareHome`; each line names its feature. */
+export const prepareFeatureHomes = (
+  features: ReadonlyArray<Pick<ExperimentalServerFeatureContribution, "id" | "prepareHome">>,
+  input: ExperimentalPrepareHomeInput,
+) =>
+  Effect.forEach(features, (feature) =>
+    feature.prepareHome === undefined
+      ? Effect.succeed([])
+      : feature
+          .prepareHome(input)
+          .pipe(Effect.map((lines) => lines.map((line) => `${feature.id}: ${line}`))),
+  ).pipe(Effect.map((lines) => lines.flat()));
 
 /** Hook for the runtime services: feature migrations and feature layers. */
 export const productFeatureLayer = Layer.unwrap(

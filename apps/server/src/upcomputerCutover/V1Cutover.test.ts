@@ -8,6 +8,7 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { COMPUTER_USE_SERVER_FEATURE } from "@t3tools/computer-use-server/feature";
 import { TASK_MIGRATION_CONTRIBUTION } from "@t3tools/tasks-server/persistence";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -16,19 +17,35 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import * as ServerConfig from "../config.ts";
 import { CORE_FEATURE_MIGRATIONS } from "../persistence/CoreFeatureMigrations.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import Migration0033 from "../persistence/Migrations/033_ProjectionThreadsSettled.ts";
 import Migration0034 from "../persistence/Migrations/034_ProjectionThreadsSnoozed.ts";
 import Migration0044 from "../persistence/Migrations/044_ClearAutomaticProjectModelDefaults.ts";
 import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
-import { readV1CutoverState, runV1Cutover, runV1CutoverOnStart } from "./V1Cutover.ts";
+import { PUBLIC_SERVER_PRODUCT } from "../product/publicProduct.ts";
+import { ServerProduct } from "../product/ServerProduct.ts";
+import {
+  cutoverV1OnServerStart,
+  readV1CutoverState,
+  runV1Cutover,
+  runV1CutoverOnStart,
+} from "./V1Cutover.ts";
 
 const at = "2026-10-01T00:00:00.000Z";
 const JsonText = Schema.fromJsonString(Schema.Unknown);
 const toJson = Schema.encodeSync(JsonText);
 const decodeJson = Schema.decodeUnknownSync(JsonText);
 const fromJson = (text: string) => decodeJson(text) as Record<string, unknown>;
+
+/** V1 computer-use settings a person narrowed; v2's settings schema does not know them. */
+const restrictedComputerUse = {
+  enabled: false,
+  mode: "observe",
+  requireActionApproval: true,
+  allowedApps: ["Notes"],
+};
 
 /** An UpComputer V1 home: its schema, a few threads, one in-flight task run. */
 const seedV1 = (sessionFile: string, otherHomeSessionFile: string) =>
@@ -161,6 +178,8 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
       customInstructions: "Start with mcp__upcomputer_tasks__task_context.",
       enableAssistantStreaming: true,
       providers: { cursor: { enabled: true } },
+      browser: { alwaysUseChrome: true },
+      computerUse: restrictedComputerUse,
     });
     NodeFS.writeFileSync(NodePath.join(userdata, "settings.json"), settings);
     const v1Path = NodePath.join(userdata, "state.sqlite");
@@ -174,6 +193,7 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
       homeDir: home,
       v1HomeDir: v1Home,
       featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      features: [COMPUTER_USE_SERVER_FEATURE],
       now: DateTime.makeUnsafe("2026-10-06T08:00:00.000Z"),
       log: () => Effect.void,
     });
@@ -198,7 +218,18 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
       report.tasks.interruptedRuns.map((run) => run.runId),
       ["run-1"],
     );
-    assert.deepStrictEqual(report.settings.droppedByV2, ["enableAssistantStreaming"]);
+    assert.deepStrictEqual(report.settings.droppedByV2, [
+      "browser",
+      "computerUse",
+      "enableAssistantStreaming",
+    ]);
+    // Computer use keeps its V1 restrictions in its own file, which core's saves never touch.
+    const computerUsePath = NodePath.join(userdata, "computer-use.json");
+    assert.deepStrictEqual(fromJson(NodeFS.readFileSync(computerUsePath, "utf8")), {
+      browser: { alwaysUseChrome: true },
+      computerUse: restrictedComputerUse,
+    });
+    assert.include(NodeFS.readFileSync(reportPath, "utf8"), "moved browser, computerUse");
     assert.isTrue(NodeFS.existsSync(reportPath));
     assert.isTrue(NodeFS.existsSync(reportPath.replace(/\.md$/, ".json")));
 
@@ -269,14 +300,21 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
     assert.isNull(readV1CutoverState(userdata));
 
     // Updating again moves the restored home once more and keeps the earlier
-    // backup, with the v2 database the restore set aside.
+    // backup, with the v2 database the restore set aside. V1's computer-use
+    // settings replace the file the earlier v2 period left.
+    NodeFS.writeFileSync(computerUsePath, toJson({ computerUse: { enabled: true } }));
     const second = yield* runV1Cutover({
       homeDir: home,
       v1HomeDir: v1Home,
       featureMigrations: [TASK_MIGRATION_CONTRIBUTION],
+      features: [COMPUTER_USE_SERVER_FEATURE],
       now: DateTime.makeUnsafe("2026-10-06T10:00:00.000Z"),
       log: () => Effect.void,
     });
+    assert.deepStrictEqual(
+      fromJson(NodeFS.readFileSync(computerUsePath, "utf8")).computerUse,
+      restrictedComputerUse,
+    );
     assert.notEqual(second.report.backupDir, report.backupDir);
     assert.isTrue(
       NodeFS.readdirSync(report.backupDir).some((file) =>
@@ -465,3 +503,32 @@ it.effect("leaves homes without UpComputer V1 data to the server", () => {
     assert.isNull(readV1CutoverState(home.userdata));
   }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
 });
+
+it.effect(
+  "moves feature settings out of settings.json on every start, before core writes it",
+  () => {
+    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-feature-home-"));
+    return Effect.gen(function* () {
+      const { settingsPath } = yield* ServerConfig.ServerConfig;
+      const computerUsePath = NodePath.join(NodePath.dirname(settingsPath), "computer-use.json");
+      // A home the cutover never ran on: no V1 database, V1 sections in settings.json.
+      NodeFS.writeFileSync(settingsPath, toJson({ computerUse: restrictedComputerUse }));
+      yield* cutoverV1OnServerStart;
+      assert.deepStrictEqual(fromJson(NodeFS.readFileSync(computerUsePath, "utf8")), {
+        computerUse: restrictedComputerUse,
+      });
+      // Later starts keep the feature's own file, whatever settings.json says.
+      NodeFS.writeFileSync(settingsPath, toJson({ computerUse: { enabled: true } }));
+      yield* cutoverV1OnServerStart;
+      assert.deepStrictEqual(
+        fromJson(NodeFS.readFileSync(computerUsePath, "utf8")).computerUse,
+        restrictedComputerUse,
+      );
+    }).pipe(
+      Effect.provide(ServerConfig.layerTest(home, home)),
+      Effect.provideService(ServerProduct, PUBLIC_SERVER_PRODUCT),
+      Effect.provide(NodeServices.layer),
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
+    );
+  },
+);

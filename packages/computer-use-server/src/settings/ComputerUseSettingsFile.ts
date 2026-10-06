@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
@@ -46,6 +47,51 @@ export async function readSettingsSections(settingsPath: string): Promise<Settin
   if (own !== undefined) return sectionsOf(own) ?? {};
   const legacy = await NodeFSP.readFile(settingsPath, "utf8").catch(() => "");
   return sectionsOf(legacy) ?? {};
+}
+
+const SECTIONS = ["browser", "computerUse"] as const satisfies ReadonlyArray<SettingsSection>;
+
+/**
+ * Moves V1's sections from `settings.json` into the own file before core's
+ * next settings save drops them, so restrictive settings (disabled, observe
+ * only, action approval, app allowlist) survive it. `settings.json` keeps its
+ * copy until that save; it is no longer read once the own file exists.
+ *
+ * On a normal start an existing own file wins. Right after the V1 cutover,
+ * V1's sections replace one an earlier v2 start left behind (a home restored
+ * to V1 and moved again). Returns the sections it moved.
+ */
+export function moveLegacySettingsSections(
+  settingsPath: string,
+  options: { readonly replace: boolean },
+): ReadonlyArray<SettingsSection> {
+  const filePath = computerUseSettingsPath(settingsPath);
+  if (!options.replace && NodeFS.existsSync(filePath)) return [];
+  let legacy: string;
+  try {
+    legacy = NodeFS.readFileSync(settingsPath, "utf8");
+  } catch {
+    return [];
+  }
+  const sections = sectionsOf(legacy) ?? {};
+  const moved = SECTIONS.filter((section) => sections[section] !== undefined);
+  if (moved.length === 0) return [];
+  const temporaryPath = `${filePath}.move-${process.pid}`;
+  NodeFS.writeFileSync(temporaryPath, `${JSON.stringify(sections, null, 2)}\n`);
+  try {
+    if (options.replace) {
+      NodeFS.renameSync(temporaryPath, filePath);
+    } else {
+      // Creates the file only if it is still missing.
+      NodeFS.linkSync(temporaryPath, filePath);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return [];
+  } finally {
+    NodeFS.rmSync(temporaryPath, { force: true });
+  }
+  return moved;
 }
 
 /** Atomically replaces one section, keeping the other. */

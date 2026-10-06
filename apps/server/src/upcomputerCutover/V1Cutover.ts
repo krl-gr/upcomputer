@@ -64,7 +64,11 @@ import {
   type ExperimentalFeatureMigrationContribution,
   runExperimentalFeatureMigrations,
 } from "../product/FeatureMigrations.ts";
-import { ServerProduct } from "../product/ServerProduct.ts";
+import {
+  type ExperimentalServerFeatureContribution,
+  prepareFeatureHomes,
+  ServerProduct,
+} from "../product/ServerProduct.ts";
 
 export class V1CutoverError extends Schema.TaggedError<V1CutoverError>()("V1CutoverError", {
   message: Schema.String,
@@ -143,6 +147,10 @@ export interface V1CutoverInput {
    */
   readonly v1HomeDir?: string | undefined;
   readonly featureMigrations: ReadonlyArray<ExperimentalFeatureMigrationContribution<Error>>;
+  /** Features whose `prepareHome` moves their V1 files once the database is published. */
+  readonly features?: ReadonlyArray<
+    Pick<ExperimentalServerFeatureContribution, "id" | "prepareHome">
+  >;
   readonly now: DateTime.Utc;
   readonly log: (line: string) => Effect.Effect<void>;
 }
@@ -841,6 +849,23 @@ export const runV1Cutover = Effect.fn("runV1Cutover")(function* (input: V1Cutove
         message: `Could not update the all-chats instructions in ${settingsPath}: ${cause}`,
       }),
   }).pipe(Effect.catch((error) => input.log(error.message)));
+  // Feature settings kept in V1's settings.json, such as computer-use
+  // restrictions, move to their own files before v2's first settings save
+  // could drop them. The next start retries a failure.
+  yield* prepareFeatureHomes(input.features ?? [], { settingsPath, fromV1Cutover: true }).pipe(
+    Effect.flatMap((lines) =>
+      Effect.gen(function* () {
+        for (const line of lines) yield* input.log(`Feature settings: ${line}`);
+        if (lines.length > 0) {
+          NodeFS.appendFileSync(
+            reportPath,
+            ["## Feature settings", "", ...lines.map((line) => `- ${line}`), ""].join("\n"),
+          );
+        }
+      }),
+    ),
+    Effect.catch((error) => input.log(`Could not move feature settings: ${error.message}`)),
+  );
   writeV1CutoverState(userdata, {
     status: "completed",
     startedAt,
@@ -884,7 +909,10 @@ export const runV1CutoverOnStart = Effect.fn("runV1CutoverOnStart")(function* (
   return "completed" as const;
 });
 
-/** The server's first step: nothing may open the v2 database before this. */
+/**
+ * The server's first step: nothing may open the v2 database before this, and
+ * nothing may write `settings.json` before features moved their files out of it.
+ */
 export const cutoverV1OnServerStart = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const product = yield* ServerProduct;
@@ -892,9 +920,22 @@ export const cutoverV1OnServerStart = Effect.gen(function* () {
     baseDir: config.baseDir,
     dbPath: config.dbPath,
     featureMigrations: product.features.flatMap((feature) => feature.migrations ?? []),
+    features: product.features,
     now: yield* DateTime.now,
     log: (line) => Effect.logInfo(`V1 data cutover: ${line}`),
   }).pipe(Effect.tapError((error) => Effect.logError(error.message)));
+  // Also for homes the cutover never ran on; a no-op once the files moved.
+  const lines = yield* prepareFeatureHomes(product.features, {
+    settingsPath: config.settingsPath,
+    fromV1Cutover: false,
+  }).pipe(
+    Effect.mapError(
+      (error) =>
+        new V1CutoverError({ message: `Could not move feature settings: ${error.message}` }),
+    ),
+    Effect.tapError((error) => Effect.logError(error.message)),
+  );
+  for (const line of lines) yield* Effect.logInfo(`Feature settings: ${line}`);
 });
 
 function formatFailedV1Cutover(input: {
