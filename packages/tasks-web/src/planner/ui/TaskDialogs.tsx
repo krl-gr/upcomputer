@@ -51,6 +51,41 @@ export function ConfirmDeleteDialog(props: {
 }
 
 /**
+ * Confirms handing a person task to agents: from then on every agent whose
+ * triggers match starts on it, as on any agent task.
+ */
+export function ConfirmHandOffDialog(props: {
+  readonly open: boolean;
+  readonly title: string;
+  readonly onConfirm: () => void;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
+      <AlertDialogPopup>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hand to agents</AlertDialogTitle>
+          <AlertDialogDescription>
+            {`"${props.title}" becomes an agent task and leaves Mine. An enabled agent whose status, tags and project match starts on it now. Take it back from its window under Agents or All.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <Button
+            onClick={() => {
+              props.onConfirm();
+              props.onOpenChange(false);
+            }}
+          >
+            Hand to agents
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogPopup>
+    </AlertDialog>
+  );
+}
+
+/**
  * Wande's "Move below another task" and "Move tasks under…": pick the task
  * the moved ones go under. The last loaded row is not offered while more rows
  * are unloaded, since "under it" would land among the unloaded ones.

@@ -3,10 +3,11 @@ import { useDroppable } from "@dnd-kit/core";
 import { ArchiveIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import type { PaginatedTasks } from "../data/hooks.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
-import { scrollMemory } from "../data/preferences.ts";
+import { scrollMemory, type PlannerAudience } from "../data/preferences.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";
@@ -14,6 +15,16 @@ import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";
 import { ConfirmDeleteDialog, MoveBelowDialog } from "./TaskDialogs.tsx";
 import { TaskRow } from "./TaskRow.tsx";
+
+/** The planner creates tasks for the person; under Agents they are not listed. */
+export function noteCreatedInMine(audience: PlannerAudience) {
+  if (audience === "agent")
+    toastManager.add({
+      type: "info",
+      title: "Created in Mine",
+      description: "New tasks are yours. Hand one to agents from its window.",
+    });
+}
 
 export interface ListDropIndicator {
   readonly taskId: string;
@@ -42,7 +53,7 @@ export function TaskList(props: {
   readonly onToggleWeek: () => void;
   readonly centered: boolean;
 }) {
-  const { store, windows } = usePlanner();
+  const { store, windows, audience } = usePlanner();
   const { results, status } = props.tasks;
   const hasMore = status === "CanLoadMore" || status === "LoadingMore";
   const hiddenActive = !props.showArchived && hasMore;
@@ -76,13 +87,15 @@ export function TaskList(props: {
       (task) => !moving.includes(task.id) && !(hiddenActive && task.id === lastId),
     );
   }, [moving, props.activeTasks, props.selectMode, results, hiddenActive, lastId]);
-  const createNear = (task: PlannerTask, where: "above" | "below") =>
-    void store.createTask({
+  const createNear = async (task: PlannerTask, where: "above" | "below") => {
+    const created = await store.createTask({
       title: "New task",
       description: "",
       projectId: task.projectId,
       ...(where === "above" ? { beforeTaskId: task.id } : { afterTaskId: task.id }),
     });
+    if (created) noteCreatedInMine(audience);
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -169,10 +182,12 @@ export function TaskList(props: {
       <PointMenu point={menu?.point ?? null} onClose={() => setMenu(null)}>
         {menu ? (
           <>
-            <MenuItem onClick={() => createNear(menu.task, "above")}>Create task above</MenuItem>
+            <MenuItem onClick={() => void createNear(menu.task, "above")}>
+              Create task above
+            </MenuItem>
             <MenuItem
               disabled={hiddenActive && menu.task.id === lastId}
-              onClick={() => createNear(menu.task, "below")}
+              onClick={() => void createNear(menu.task, "below")}
             >
               Create task below
             </MenuItem>

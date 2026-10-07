@@ -7,6 +7,7 @@ import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { useStoredTasksView, type TasksViewMode } from "../planner/data/preferences.ts";
 import { PlannerView } from "../planner/ui/PlannerView.tsx";
 import { TasksViewSwitch } from "../planner/ui/TasksViewSwitch.tsx";
+import { taskKey } from "./shared.ts";
 import { useTaskPages } from "./useTaskPages.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
@@ -72,7 +73,14 @@ function PlannerRoute(props: { readonly viewSwitch: ReactNode; readonly onShowTa
       projects={data.projects}
       taskTargets={data.taskTargets}
       projectFilter={projectFilter}
+      agents={data.agents.agents}
       onShowTable={props.onShowTable}
+      onOpenTask={(environmentId, taskId) => {
+        void navigate({
+          to: "/tasks",
+          search: { task: taskKey({ environmentId, id: taskId }) },
+        } as never);
+      }}
       onNavigateBack={navigateBack}
     />
   );

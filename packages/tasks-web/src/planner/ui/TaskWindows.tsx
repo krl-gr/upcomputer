@@ -39,7 +39,10 @@ import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { ScheduleTable } from "./ScheduleTable.tsx";
-import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";
+import { RunSummary } from "./RunSummary.tsx";
+import { ConfirmDeleteDialog, ConfirmHandOffDialog } from "./TaskDialogs.tsx";
+import { noteCreatedInMine } from "./TaskList.tsx";
+import { TagsField } from "./TagsField.tsx";
 import { isFinished } from "./TaskRow.tsx";
 
 /** The window header's title: a growing textarea, as wande's DetailHeader. */
@@ -107,7 +110,7 @@ export function TaskDetailWindow(
     readonly queueDate: string | null;
   },
 ) {
-  const { store, windows, projects, preferences, markdownCwd } = usePlanner();
+  const { store, windows, projects, preferences, markdownCwd, openInTable } = usePlanner();
   const window = props.window;
   const viewMode = window.kind === "detail" ? window.viewMode : "description";
   const task = useTaskById(store, props.snapshot, props.taskId);
@@ -116,6 +119,7 @@ export function TaskDetailWindow(
   const draftKey = `task:${props.taskId}`;
   const [draft, updateDraft] = useDraft(draftKey);
   const [menuDelete, setMenuDelete] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const title = draft.title ?? task?.title ?? "";
   const description = draft.description ?? task?.description ?? "";
@@ -188,6 +192,28 @@ export function TaskDetailWindow(
               >
                 Open full screen
               </MenuItem>
+              <MenuItem disabled={!task} onClick={() => openInTable(props.taskId)}>
+                Open in table (runs)
+              </MenuItem>
+              <MenuSeparator />
+              {task?.audience === "agent" ? (
+                <MenuItem
+                  onClick={() => {
+                    void store.updateTask(task.id, { audience: "person" });
+                    toastManager.add({
+                      type: "info",
+                      title: "Taken back from agents",
+                      description: "It is in Mine now. Runs already started keep running.",
+                    });
+                  }}
+                >
+                  Take back from agents
+                </MenuItem>
+              ) : (
+                <MenuItem disabled={!task} onClick={() => setHandingOff(true)}>
+                  Hand to agents
+                </MenuItem>
+              )}
               <MenuSeparator />
               <MenuItem variant="destructive" disabled={!task} onClick={() => setMenuDelete(true)}>
                 Delete task
@@ -246,6 +272,7 @@ export function TaskDetailWindow(
               </>
             )}
             {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
+            <RunSummary task={task} showTags={false} />
             {props.queueDate && preferences.weekViewMode === "queue" ? (
               <IconAction
                 label={`Add to queue for ${props.queueDate}`}
@@ -273,6 +300,11 @@ export function TaskDetailWindow(
               {progress ? <span>{progress}</span> : null}
             </IconAction>
           </div>
+          <TagsField
+            key={task.tags.join("\u0000")}
+            tags={task.tags}
+            onSave={(tags) => void store.updateTask(task.id, { tags })}
+          />
           {viewMode === "description" ? (
             <DescriptionField
               value={description}
@@ -290,6 +322,12 @@ export function TaskDetailWindow(
         value={description}
         onChange={(value) => updateDraft({ description: value })}
         onOpenChange={setFullScreen}
+      />
+      <ConfirmHandOffDialog
+        open={handingOff}
+        title={task?.title ?? "This task"}
+        onOpenChange={setHandingOff}
+        onConfirm={() => void store.updateTask(props.taskId, { audience: "agent" })}
       />
       <ConfirmDeleteDialog
         open={menuDelete}
@@ -309,7 +347,7 @@ export function TaskDetailWindow(
 export function CreateTaskWindow(
   props: WindowFrameProps & { readonly defaultProjectId: string | null },
 ) {
-  const { store, windows, projects, markdownCwd } = usePlanner();
+  const { store, windows, projects, markdownCwd, audience } = usePlanner();
   const window = props.window;
   const initial = window.kind === "create" ? window.initial : {};
   const [draft, updateDraft] = useDraft(window.id);
@@ -338,7 +376,10 @@ export function CreateTaskWindow(
       ...(initial.afterTaskId ? { afterTaskId: initial.afterTaskId } : {}),
     });
     setSaving(false);
-    if (created) close();
+    if (created) {
+      close();
+      noteCreatedInMine(audience);
+    }
   };
   return (
     <FloatingWindow

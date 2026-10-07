@@ -31,6 +31,7 @@ import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
+import type { PlannerAudience } from "./preferences.ts";
 import {
   addEntries,
   moveEntries,
@@ -72,6 +73,8 @@ export interface PlannerQuery {
   /** Projects the lists show; null for all. */
   readonly projectIds: readonly ProjectId[] | null;
   readonly archiveVisible: boolean;
+  /** Whose tasks the lists show. */
+  readonly audience: PlannerAudience;
 }
 
 export interface PlannerStoreOptions {
@@ -109,7 +112,7 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
 
 function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search: TaskPageInput }> {
   const projects: ReadonlyArray<ProjectId | undefined> = query.projectIds ?? [undefined];
-  const base = { audience: "person", kind: "task" } as const;
+  const base = { audience: query.audience, kind: "task" } as const;
   return projects.flatMap((projectId) => {
     const scope = projectId === undefined ? {} : { projectId };
     return [
@@ -141,10 +144,11 @@ function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search:
 export function belongsToList(
   task: PlannerTask,
   list: PlannerListKey,
-  projectIds: readonly string[] | null,
+  query: Pick<PlannerQuery, "projectIds" | "audience">,
 ): boolean {
-  if (task.audience !== "person" || task.kind !== "task") return false;
-  if (projectIds !== null && !projectIds.includes(task.projectId)) return false;
+  if (task.kind !== "task") return false;
+  if (query.audience !== "all" && task.audience !== query.audience) return false;
+  if (query.projectIds !== null && !query.projectIds.includes(task.projectId)) return false;
   const finished = task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
   return list === "archive" ? finished : !finished;
 }
@@ -179,7 +183,7 @@ export class PlannerStore {
   private nextOpId = 1;
   private nextTempId = 1;
 
-  private query: PlannerQuery = { projectIds: null, archiveVisible: false };
+  private query: PlannerQuery = { projectIds: null, archiveVisible: false, audience: "person" };
   private lanes: Lane[] = [];
   private readonly lanePages = new Map<string, NonNullable<TaskPageLoadState["page"]>>();
   /** Tasks created here, shown before their list's next page includes them. */
@@ -297,6 +301,7 @@ export class PlannerStore {
   setQuery(query: PlannerQuery) {
     const same =
       query.archiveVisible === this.query.archiveVisible &&
+      query.audience === this.query.audience &&
       JSON.stringify(query.projectIds) === JSON.stringify(this.query.projectIds);
     if (same) return;
     this.query = query;
@@ -626,7 +631,7 @@ export class PlannerStore {
       return {
         ids: (view.lists.get(list) ?? []).filter((id) => {
           const task = view.tasks.get(id);
-          return task !== undefined && belongsToList(task, list, this.query.projectIds);
+          return task !== undefined && belongsToList(task, list, this.query);
         }),
         status: listStatus(lanes),
         error: lanes.find((lane) => lane.state.error)?.state.error ?? null,

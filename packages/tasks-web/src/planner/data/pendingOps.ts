@@ -25,7 +25,10 @@ export interface PendingOp {
 }
 
 export type TaskPatch = Partial<
-  Pick<PlannerTask, "title" | "description" | "projectId" | "status" | "archivedAt">
+  Pick<
+    PlannerTask,
+    "title" | "description" | "projectId" | "status" | "archivedAt" | "audience" | "tags"
+  >
 >;
 
 export function patchTask(view: PlannerView, id: string, patch: TaskPatch): PlannerView {

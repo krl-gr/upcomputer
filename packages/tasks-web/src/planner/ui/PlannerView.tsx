@@ -18,6 +18,7 @@ import {
 } from "../../../../../apps/web/src/state/environments.ts";
 import { readPlannerAvailability, useTasksWebAccessRevision } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
+import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { ViewProjectFilter } from "../../ui/projectFilter.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
 import { WorkspaceViewLayout } from "../../ui/WorkspaceViewLayout.tsx";
@@ -33,10 +34,13 @@ import {
 import {
   usePlannerPreferences,
   usePlannerViewState,
+  useStoredPlannerAudience,
   useStoredPlannerEnvironment,
+  type PlannerAudience,
 } from "../data/preferences.ts";
 import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
+import { AudienceSwitch } from "./AudienceSwitch.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
@@ -55,6 +59,9 @@ function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
   readonly projects: readonly PlannerProject[];
   readonly projectIds: readonly string[] | null;
+  readonly audience: PlannerAudience;
+  readonly triggerTags: ReadonlySet<string>;
+  readonly onOpenTask: (taskId: string) => void;
 }) {
   const store = plannerStoreFor(props.environmentId);
   const windows = windowStoreFor(props.environmentId);
@@ -77,8 +84,9 @@ function PlannerBody(props: {
     store.setQuery({
       projectIds: props.projectIds as never,
       archiveVisible: showArchived,
+      audience: props.audience,
     });
-  }, [store, props.projectIds, showArchived]);
+  }, [store, props.projectIds, showArchived, props.audience]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
@@ -136,8 +144,20 @@ function PlannerBody(props: {
       projectById: new Map(props.projects.map((project) => [project.id, project])),
       preferences,
       markdownCwd: undefined,
+      audience: props.audience,
+      triggerTags: props.triggerTags,
+      openInTable: props.onOpenTask,
     }),
-    [props.environmentId, store, windows, props.projects, preferences],
+    [
+      props.environmentId,
+      store,
+      windows,
+      props.projects,
+      preferences,
+      props.audience,
+      props.triggerTags,
+      props.onOpenTask,
+    ],
   );
 
   const navigate = (to: "previous-week" | "previous-day" | "today" | "next-day" | "next-week") => {
@@ -349,7 +369,15 @@ export function PlannerView(props: {
   readonly projects: readonly TasksWebProject[];
   readonly taskTargets: readonly TasksStateTarget[];
   readonly projectFilter: ViewProjectFilter | null;
+  /** Every environment's agents; the planner suggests and marks their trigger tags. */
+  readonly agents: ReadonlyArray<{
+    readonly environmentId: string;
+    readonly enabled: boolean;
+    readonly startTags: ReadonlyArray<string>;
+  }>;
   readonly onShowTable: () => void;
+  /** Opens a task in the table, where its runs are listed. */
+  readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
 }) {
   useTasksWebAccessRevision();
@@ -376,6 +404,18 @@ export function PlannerView(props: {
     [props.projectFilter, environmentId],
   );
   const availability = environmentId ? readPlannerAvailability(environmentId) : null;
+  const [audience, setAudience] = useStoredPlannerAudience();
+  const triggerTags = useMemo(
+    () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),
+    [props.agents, environmentId],
+  );
+  const { onOpenTask } = props;
+  const openTask = useCallback(
+    (taskId: string) => {
+      if (environmentId) onOpenTask(environmentId, taskId);
+    },
+    [environmentId, onOpenTask],
+  );
 
   return (
     <WorkspaceViewLayout
@@ -405,6 +445,7 @@ export function PlannerView(props: {
               </SelectPopup>
             </Select>
           ) : null}
+          <AudienceSwitch value={audience} onChange={setAudience} />
           {props.projectSelect}
         </>
       }
@@ -430,6 +471,9 @@ export function PlannerView(props: {
             environmentId={environmentId}
             projects={plannerProjects}
             projectIds={projectIds}
+            audience={audience}
+            triggerTags={triggerTags}
+            onOpenTask={openTask}
           />
         </div>
       )}

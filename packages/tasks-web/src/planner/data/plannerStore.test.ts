@@ -409,3 +409,50 @@ describe("planner store: optimistic writes", () => {
     NodeAssert.deepEqual([ids[0], ids[1], ids[3]], ["e1", "e2", "e3"]);
   });
 });
+
+describe("planner store: whose tasks", () => {
+  const ids = (h: ReturnType<typeof harness>) => h.store.getSnapshot().active.ids;
+  const pageAudiences = (h: ReturnType<typeof harness>) =>
+    h.calls.filter((call) => call.method === "page").map((call) => call.input.audience);
+
+  test("Mine, Agents and All ask the server for their audience and list only it", async () => {
+    const h = harness();
+    h.setPage([
+      task("mine", "0000000000000001"),
+      task("theirs", "0000000000000002", { audience: "agent", status: "Needs Review" }),
+    ]);
+    await started(h);
+    NodeAssert.deepEqual(ids(h), ["mine"]);
+
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent" });
+    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
+    NodeAssert.deepEqual(pageAudiences(h), ["agent"]);
+    NodeAssert.deepEqual(ids(h), ["theirs"]);
+
+    h.reset();
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "all" });
+    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
+    NodeAssert.deepEqual(pageAudiences(h), ["all"]);
+    NodeAssert.deepEqual(ids(h), ["mine", "theirs"]);
+  });
+
+  test("handing a task to agents moves it from Mine to Agents at once", async () => {
+    const h = harness();
+    const response = deferred<PlannerTask>();
+    h.handlers.update = () => response.promise;
+    await started(h);
+    void h.store.updateTask("a", { audience: "agent" });
+    NodeAssert.deepEqual(ids(h), ["b"]);
+    NodeAssert.deepEqual(h.calls.at(-1), {
+      method: "update",
+      input: { id: "a", audience: "agent" },
+    });
+
+    response.resolve(task("a", "0000000000000001", { audience: "agent" }));
+    await NodeTimersPromises.setTimeout(10);
+    NodeAssert.deepEqual(ids(h), ["b"]);
+    h.setPage([task("a", "0000000000000001", { audience: "agent" })]);
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent" });
+    await until(() => ids(h).length === 1 && ids(h)[0] === "a");
+  });
+});

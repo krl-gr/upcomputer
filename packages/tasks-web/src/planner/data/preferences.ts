@@ -66,6 +66,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 export const PLANNER_PREFERENCES_KEY = "tasks.planner.preferences";
 export const PLANNER_VIEW_KEY = "tasks.planner.view";
 export const PLANNER_ENVIRONMENT_KEY = "tasks.planner.environment";
+export const PLANNER_AUDIENCE_KEY = "tasks.planner.audience";
 export const TASKS_VIEW_KEY = "tasks.view";
 
 export function usePlannerPreferences() {
@@ -126,6 +127,18 @@ const PlannerEnvironmentSchema = Schema.NullOr(Schema.String);
 /** The environment the planner shows when several serve Tasks. */
 export function useStoredPlannerEnvironment() {
   return useLocalStorage(PLANNER_ENVIRONMENT_KEY, null, PlannerEnvironmentSchema);
+}
+
+const PlannerAudienceSchema = Schema.Literals(["person", "agent", "all"]);
+/** Whose tasks the planner lists: Mine (person), Agents (agent) or All. */
+export type PlannerAudience = typeof PlannerAudienceSchema.Type;
+
+export function useStoredPlannerAudience() {
+  return useLocalStorage<PlannerAudience, PlannerAudience>(
+    PLANNER_AUDIENCE_KEY,
+    "person",
+    PlannerAudienceSchema,
+  );
 }
 
 /** A scroll position kept per device, written at most every 150 ms (wande's behavior). */

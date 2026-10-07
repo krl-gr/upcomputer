@@ -21,6 +21,7 @@ import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
+import { RunSummary } from "./RunSummary.tsx";
 
 export function isFinished(task: PlannerTask) {
   return task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
@@ -196,6 +197,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
               </>
             )}
             {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
+            <RunSummary task={task} />
             {props.queueDate && preferences.weekViewMode === "queue" ? (
               <IconAction
                 label={`Add to queue for ${props.queueDate}`}
