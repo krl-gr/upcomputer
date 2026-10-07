@@ -52,6 +52,10 @@ import {
   type TaskPromptSettingsStoreShape,
 } from "../persistence/TaskPromptSettingsStore.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
+import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
+import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
+import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
+import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
 import {
   TaskAgentService,
   TaskAgentServiceLive,
@@ -887,6 +891,80 @@ test("an unarchive keeps its caller's ceiling until the agent starts", async () 
         startCeiling: ceiling,
       });
       yield* waitFor("run on t", runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])));
+    }),
+  );
+});
+
+test("an agent made broader just before an agent's unarchive commits keeps the task archived, also after recovery", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls } = harness;
+      const withMode = (runtimeMode: "approval-required" | "full-access") =>
+        agentInput("dev", { config: { ...agentInput("dev").config, runtimeMode } });
+      yield* repository.upsertAgent(withMode("approval-required"));
+      const task = yield* archiveTask(repository, (yield* repository.upsert(taskInput("t"))).id);
+      // Another writer makes the agent full-access after the tool's own reads
+      // and right before the unarchive's transaction opens.
+      const racing: TaskRepositoryShape = {
+        ...repository,
+        withChangeTransaction: (effect) =>
+          repository
+            .upsertAgent(withMode("full-access"))
+            .pipe(Effect.andThen(repository.withChangeTransaction(effect))),
+      };
+      const tools = yield* Effect.provide(
+        Effect.gen(function* () {
+          return yield* TaskToolService;
+        }),
+        TaskToolServiceLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(TaskRepository, racing),
+              Layer.succeed(TaskAgentService, service),
+              Layer.succeed(TaskPromptSettingsStore, {} as never),
+              Layer.succeed(TaskToolContextResolver, {} as never),
+              Layer.succeed(ThreadManagementService, {} as never),
+              Layer.succeed(ProjectStoreV2, {} as never),
+              deterministicCrypto(),
+            ),
+          ),
+        ),
+      );
+      const caller: TaskToolInvocationContext = {
+        source: "provider",
+        mutationPolicy: "allow",
+        threadId: ThreadId.make("thread-caller"),
+        live: true,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+      };
+      const unarchive = (context: TaskToolInvocationContext) =>
+        tools
+          .call({ name: "task_unarchive", args: { ids: [task.id] }, context })
+          .pipe(Effect.map((result) => JSON.parse(result.text)));
+
+      // The agent is within the caller's modes when the call starts.
+      const preview = yield* unarchive({ ...caller, mutationPolicy: "deny" });
+      NodeAssert.equal(preview.results[0].outcome, "unarchived");
+      const result = yield* unarchive(caller);
+      NodeAssert.equal(result.results[0].outcome, "refused");
+      NodeAssert.match(result.results[0].reason, /full-access/);
+      const stored = () =>
+        repository.getById({ id: task.id }).pipe(Effect.map((found) => Option.getOrThrow(found)));
+      NodeAssert.notEqual((yield* stored()).archivedAt, null);
+
+      // Jobs run in order: once the next task's run starts, any queued job is done.
+      const next = yield* repository.upsert(taskInput("u"));
+      yield* service.scheduleTaskChanged({ task: next, reason: "created" });
+      yield* waitFor("run on u", runsOf(repository, "u").pipe(Effect.map((runs) => runs[0])));
+      // A restart reconciles every task without a ceiling: it starts the
+      // full-access agent on an active task, but not on the archived one.
+      yield* repository.upsert(taskInput("w"));
+      yield* service.recover;
+      NodeAssert.equal((yield* runsOf(repository, "w")).length, 1);
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      NodeAssert.equal(calls.filter((call) => call.type === "thread.create").length, 2);
+      NodeAssert.notEqual((yield* stored()).archivedAt, null);
     }),
   );
 });

@@ -465,7 +465,8 @@ const make = Effect.gen(function* () {
    * Archived tasks an agent may not unarchive, with the reason: unarchiving
    * would start an enabled agent that this caller may not start (see
    * `runStartRefusal`). Checked as if notBefore had passed, since a postponed
-   * task starts its agents later without asking again.
+   * task starts its agents later without asking again. Outside a dry run it
+   * runs inside the unarchive's transaction (see `setTasksArchived`).
    */
   const unarchiveRefusals = (ids: ReadonlyArray<TaskId>, context: TaskToolInvocationContext) =>
     Effect.gen(function* () {
@@ -680,10 +681,10 @@ const make = Effect.gen(function* () {
             ? decoders.task_archive(args)
             : decoders.task_unarchive(args);
           const archived = name === "task_archive";
-          const refusals = archived
-            ? new Map<TaskId, string>()
-            : yield* unarchiveRefusals(input.ids, context);
           if (isDryRun) {
+            const refusals = archived
+              ? new Map<TaskId, string>()
+              : yield* unarchiveRefusals(input.ids, context);
             const results = [];
             for (const id of input.ids) {
               const refusal = refusals.get(id);
@@ -716,22 +717,19 @@ const make = Effect.gen(function* () {
           const changed = yield* setTasksArchived(
             { repository, agents: taskAgents },
             {
-              ids: input.ids.filter((id) => !refusals.has(id)),
+              ids: input.ids,
               archived,
               reason: input.reason,
               actor: toolActor(context, callerRun),
-              ...(archived ? {} : { startCeiling: callerRunModes(context) }),
+              ...(archived
+                ? {}
+                : {
+                    startCeiling: callerRunModes(context),
+                    refusals: (ids: ReadonlyArray<TaskId>) => unarchiveRefusals(ids, context),
+                  }),
             },
           );
-          // Back in request order, with the refused ids in place.
-          const remaining = changed.results.values();
-          const results = input.ids.map((id) => {
-            const refusal = refusals.get(id);
-            return refusal !== undefined
-              ? { id, outcome: "refused" as const, reason: refusal }
-              : remaining.next().value!;
-          });
-          return { isError: false, text: json({ results }) };
+          return { isError: false, text: json(changed) };
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);
