@@ -855,6 +855,42 @@ test("no agent starts on an archived task, and unarchiving lets a matching agent
   );
 });
 
+test("an unarchive keeps its caller's ceiling until the agent starts", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls } = harness;
+      const withMode = (runtimeMode: "approval-required" | "full-access") =>
+        agentInput("dev", { config: { ...agentInput("dev").config, runtimeMode } });
+      yield* repository.upsertAgent(withMode("approval-required"));
+      const ceiling = { runtimeMode: "approval-required", interactionMode: "default" } as const;
+      // The agent was within the ceiling when the caller unarchived, and became
+      // broader before its reconciliation ran.
+      yield* repository.upsertAgent(withMode("full-access"));
+      const blocked = yield* archiveTask(repository, (yield* repository.upsert(taskInput("t"))).id);
+      yield* service.scheduleTaskChanged({
+        task: yield* archiveTask(repository, blocked.id, false),
+        reason: "unarchived",
+        startCeiling: ceiling,
+      });
+      // Jobs run in order: once the next task's run starts, the first job is done.
+      const allowed = yield* repository.upsert(taskInput("u"));
+      yield* service.scheduleTaskChanged({ task: allowed, reason: "created" });
+      yield* waitFor("run on u", runsOf(repository, "u").pipe(Effect.map((runs) => runs[0])));
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      NodeAssert.equal(calls.filter((call) => call.type === "thread.create").length, 1);
+
+      // Within the ceiling it starts.
+      yield* repository.upsertAgent(withMode("approval-required"));
+      yield* service.scheduleTaskChanged({
+        task: blocked,
+        reason: "unarchived",
+        startCeiling: ceiling,
+      });
+      yield* waitFor("run on t", runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])));
+    }),
+  );
+});
+
 test("after the upgrade, finished work in a start status is not replayed and unstarted work still starts", async () => {
   const at = (minute: number) => `2026-09-30T10:${String(minute).padStart(2, "0")}:00.000Z`;
   await withScheduler(

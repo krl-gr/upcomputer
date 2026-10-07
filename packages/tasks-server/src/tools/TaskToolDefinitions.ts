@@ -191,7 +191,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_unarchive",
     description:
-      "Unarchive tasks by id, up to 500 per call, with an optional reason. Unarchive only when a person asks you to. The task keeps its status and shows by default again, and an agent whose triggers match can start on it (see task_context triggerRules). Returns one result per id: unarchived, not-archived or not-found.",
+      "Unarchive tasks by id, up to 500 per call, with an optional reason. Unarchive only when a person asks you to. The task keeps its status and shows by default again, and an agent whose triggers match can start on it (see task_context triggerRules). A task is refused, and stays archived, when that agent would run in a broader runtime or interaction mode than this thread, or this thread has no active run; a person can unarchive it in the Tasks view. Returns one result per id: unarchived, not-archived, not-found, or refused with a reason.",
     inputSchema: object(
       { ids: { type: "array", items: id, minItems: 1, maxItems: 500 }, reason: id },
       ["ids"],

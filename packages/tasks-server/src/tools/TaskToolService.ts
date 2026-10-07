@@ -56,12 +56,9 @@ import * as Schema from "effect/Schema";
 import {
   CUSTOM_INSTRUCTIONS_MAX_CHARS,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  DEFAULT_RUNTIME_MODE,
   ProjectId,
   type ModelSelection,
   type OrchestrationV2ThreadProjection,
-  type ProviderInteractionMode,
-  type RuntimeMode,
 } from "@t3tools/contracts";
 
 import {
@@ -70,7 +67,8 @@ import {
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
-import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
+import { agentRunModes, broaderRunMode, type RunModes } from "../agents/runModes.ts";
+import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAgentService.ts";
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
@@ -273,26 +271,6 @@ function dryRun(context: TaskToolInvocationContext): boolean {
   return context.mutationPolicy !== "allow";
 }
 
-const RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
-  "approval-required": 0,
-  "auto-accept-edits": 1,
-  auto: 2,
-  "full-access": 3,
-};
-const INTERACTION_MODE_RANK: Record<ProviderInteractionMode, number> = { plan: 0, default: 1 };
-
-interface RunModes {
-  readonly runtimeMode: RuntimeMode;
-  readonly interactionMode: ProviderInteractionMode;
-}
-
-function agentRunModes(config: TaskAgent["config"]): RunModes {
-  return {
-    runtimeMode: config.runtimeMode ?? DEFAULT_RUNTIME_MODE,
-    interactionMode: config.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-  };
-}
-
 /**
  * Why the caller may not start or continue a run in these modes, or null. The
  * ceiling core puts on a thread sending to another thread (`resolveRuntimeMode`
@@ -306,17 +284,27 @@ function runStartRefusal(
   action: string,
 ): string | null {
   const byPerson = "A person can do this in the Tasks view.";
-  if (context.live !== true || context.runtimeMode === undefined) {
+  const ceiling = callerRunModes(context);
+  if (ceiling === null) {
     return `${action} needs an active run in the calling thread. ${byPerson}`;
   }
-  if (RUNTIME_MODE_RANK[target.runtimeMode] > RUNTIME_MODE_RANK[context.runtimeMode]) {
-    return `${action} would run in ${target.runtimeMode} mode, broader than this thread's ${context.runtimeMode} mode. ${byPerson}`;
+  switch (broaderRunMode(target, ceiling)) {
+    case "runtimeMode":
+      return `${action} would run in ${target.runtimeMode} mode, broader than this thread's ${ceiling.runtimeMode} mode. ${byPerson}`;
+    case "interactionMode":
+      return `${action} would run in ${target.interactionMode} interaction mode, broader than this thread's ${ceiling.interactionMode} mode. ${byPerson}`;
+    case null:
+      return null;
   }
-  const interactionMode = context.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
-  if (INTERACTION_MODE_RANK[target.interactionMode] > INTERACTION_MODE_RANK[interactionMode]) {
-    return `${action} would run in ${target.interactionMode} interaction mode, broader than this thread's ${interactionMode} mode. ${byPerson}`;
-  }
-  return null;
+}
+
+/** The modes of the caller's live run: the most a run it starts may use. Null when not live. */
+function callerRunModes(context: TaskToolInvocationContext): RunModes | null {
+  if (context.live !== true || context.runtimeMode === undefined) return null;
+  return {
+    runtimeMode: context.runtimeMode,
+    interactionMode: context.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+  };
 }
 
 /** Who a tool call acts as in task history: the calling task-agent run, else the calling thread. */
@@ -472,6 +460,37 @@ const make = Effect.gen(function* () {
                 },
           ),
         );
+
+  /**
+   * Archived tasks an agent may not unarchive, with the reason: unarchiving
+   * would start an enabled agent that this caller may not start (see
+   * `runStartRefusal`). Checked as if notBefore had passed, since a postponed
+   * task starts its agents later without asking again.
+   */
+  const unarchiveRefusals = (ids: ReadonlyArray<TaskId>, context: TaskToolInvocationContext) =>
+    Effect.gen(function* () {
+      const refusals = new Map<TaskId, string>();
+      const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+      if (agents.length === 0) return refusals;
+      for (const id of new Set(ids)) {
+        const task = Option.getOrNull(yield* repository.getById({ id }));
+        if (task === null || task.archivedAt === null) continue;
+        for (const agent of agents) {
+          if (!startsForTask(agent, { ...task, archivedAt: null }, Number.POSITIVE_INFINITY))
+            continue;
+          const refusal = runStartRefusal(
+            context,
+            agentRunModes(agent.config),
+            `Unarchiving it starts agent '${agent.name}' (${agent.id}), which`,
+          );
+          if (refusal !== null) {
+            refusals.set(id, refusal);
+            break;
+          }
+        }
+      }
+      return refusals;
+    });
 
   const call: TaskToolServiceShape["call"] = ({ name, args, context }) =>
     Effect.gen(function* () {
@@ -655,9 +674,17 @@ const make = Effect.gen(function* () {
             ? decoders.task_archive(args)
             : decoders.task_unarchive(args);
           const archived = name === "task_archive";
+          const refusals = archived
+            ? new Map<TaskId, string>()
+            : yield* unarchiveRefusals(input.ids, context);
           if (isDryRun) {
             const results = [];
             for (const id of input.ids) {
+              const refusal = refusals.get(id);
+              if (refusal !== undefined) {
+                results.push({ id, outcome: "refused", reason: refusal });
+                continue;
+              }
               const task = Option.getOrNull(yield* repository.getById({ id }));
               results.push({
                 id,
@@ -680,16 +707,25 @@ const make = Effect.gen(function* () {
                 yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
               )
             : null;
-          const result = yield* setTasksArchived(
+          const changed = yield* setTasksArchived(
             { repository, agents: taskAgents },
             {
-              ids: input.ids,
+              ids: input.ids.filter((id) => !refusals.has(id)),
               archived,
               reason: input.reason,
               actor: toolActor(context, callerRun),
+              ...(archived ? {} : { startCeiling: callerRunModes(context) }),
             },
           );
-          return { isError: false, text: json(result) };
+          // Back in request order, with the refused ids in place.
+          const remaining = changed.results.values();
+          const results = input.ids.map((id) => {
+            const refusal = refusals.get(id);
+            return refusal !== undefined
+              ? { id, outcome: "refused" as const, reason: refusal }
+              : remaining.next().value!;
+          });
+          return { isError: false, text: json({ results }) };
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);

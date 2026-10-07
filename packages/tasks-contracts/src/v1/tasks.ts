@@ -311,16 +311,27 @@ export const TaskArchiveInput = Schema.Struct({
   reason: Schema.optional(TrimmedNonEmptyString),
 });
 export type TaskArchiveInput = typeof TaskArchiveInput.Type;
+/**
+ * `refused`: an agent asked to unarchive a task that would start an agent it
+ * may not start (see `reason`). The task stays archived.
+ */
 export const TaskArchiveOutcome = Schema.Literals([
   "archived",
   "already-archived",
   "unarchived",
   "not-archived",
   "not-found",
+  "refused",
 ]);
 export type TaskArchiveOutcome = typeof TaskArchiveOutcome.Type;
 export const TaskArchiveResult = Schema.Struct({
-  results: Schema.Array(Schema.Struct({ id: TaskId, outcome: TaskArchiveOutcome })),
+  results: Schema.Array(
+    Schema.Struct({
+      id: TaskId,
+      outcome: TaskArchiveOutcome,
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type TaskArchiveResult = typeof TaskArchiveResult.Type;
 

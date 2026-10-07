@@ -459,3 +459,92 @@ it.effect("a result that keeps the status records no status event", () => {
     assert.deepStrictEqual(yield* historyOf("t"), []);
   }).pipe(Effect.provide(layer));
 });
+
+const agent = (id: string, startTag: string, runtimeMode: "approval-required" | "full-access") => ({
+  id: TaskAgentId.make(id),
+  projectId: null,
+  name: id,
+  enabled: true,
+  startStatuses: [],
+  startTags: [startTag],
+  startRunStatuses: [],
+  config: { role: id, modelSelection, instructions: "Work.", runtimeMode },
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+it.effect("an agent cannot unarchive a task to start an agent broader than itself", () => {
+  const { layer, scheduled, call, rpc } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    yield* repository.upsertAgent(agent("wide-agent", "wide", "full-access"));
+    yield* repository.upsertAgent(agent("narrow-agent", "narrow", "approval-required"));
+    yield* repository.upsert(task("wide", { tags: ["wide"] }));
+    yield* repository.upsert(task("narrow", { tags: ["narrow"] }));
+    yield* repository.upsert(task("plain"));
+    const ids = ["wide", "narrow", "plain"].map((id) => TaskId.make(id));
+    yield* repository.setArchived({ ids, archived: true, actor: person });
+    scheduled.length = 0;
+    const archivedIds = Effect.map(repository.search({ archive: "archived" }), (tasks) =>
+      tasks.map(({ id }) => id).toSorted(),
+    );
+
+    const live: TaskToolInvocationContext = {
+      ...chat,
+      live: true,
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+    };
+    const preview = yield* call(
+      "task_unarchive",
+      { ids: ["wide", "narrow"] },
+      { ...live, mutationPolicy: "deny" },
+    );
+    assert.deepStrictEqual(
+      preview.results.map(({ outcome }: { outcome: string }) => outcome),
+      ["refused", "unarchived"],
+    );
+
+    const result = yield* call("task_unarchive", { ids: ["wide", "narrow", "plain"] }, live);
+    assert.deepStrictEqual(
+      result.results.map(({ id, outcome }: { id: string; outcome: string }) => [id, outcome]),
+      [
+        ["wide", "refused"],
+        ["narrow", "unarchived"],
+        ["plain", "unarchived"],
+      ],
+    );
+    assert.include(result.results[0].reason, "full-access");
+    assert.deepStrictEqual(yield* archivedIds, ["wide"]);
+    // The started agents stay within the caller's modes when they actually start.
+    const ceiling = { runtimeMode: "approval-required", interactionMode: "default" } as const;
+    assert.deepStrictEqual(
+      scheduled.map(({ task, startCeiling }) => ({ id: task.id, startCeiling })),
+      [
+        { id: TaskId.make("narrow"), startCeiling: ceiling },
+        { id: TaskId.make("plain"), startCeiling: ceiling },
+      ],
+    );
+
+    // A caller without an active run starts nothing.
+    const notLive = yield* call("task_unarchive", { ids: ["wide"] });
+    assert.deepStrictEqual(
+      notLive.results.map(({ outcome }: { outcome: string }) => outcome),
+      ["refused"],
+    );
+    assert.include(notLive.results[0].reason, "active run");
+    assert.deepStrictEqual(yield* archivedIds, ["wide"]);
+
+    // A person in the Tasks view is not limited.
+    scheduled.length = 0;
+    const byPerson = yield* rpc((client) =>
+      client[TASKS_RPC_METHODS.unarchive]({ ids: [TaskId.make("wide")] }),
+    );
+    assert.deepStrictEqual(byPerson.results, [{ id: TaskId.make("wide"), outcome: "unarchived" }]);
+    assert.deepStrictEqual(yield* archivedIds, []);
+    assert.deepStrictEqual(
+      scheduled.map(({ task, startCeiling }) => ({ id: task.id, startCeiling })),
+      [{ id: TaskId.make("wide"), startCeiling: undefined }],
+    );
+  }).pipe(Effect.provide(layer));
+});

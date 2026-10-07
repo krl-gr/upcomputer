@@ -6,14 +6,7 @@ import {
   type TaskAgentRun,
   type TaskPromptSettings,
 } from "@t3tools/tasks-contracts/v1";
-import {
-  CommandId,
-  DEFAULT_PROVIDER_INTERACTION_MODE,
-  DEFAULT_RUNTIME_MODE,
-  MessageId,
-  ThreadId,
-  type OrchestrationV2Run,
-} from "@t3tools/contracts";
+import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -32,6 +25,7 @@ import {
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
+import { agentRunModes, broaderRunMode, type RunModes } from "./runModes.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import {
   composeTaskPromptSettings,
@@ -59,6 +53,12 @@ export interface TaskChangedInput {
   readonly reason: TaskChangedReason;
   /** A run that gave up its claim in this change; it ends as completed. */
   readonly releasedRunId?: TaskAgentRunId | null;
+  /**
+   * The broadest modes an agent this change starts may run in, checked against
+   * the agent as stored when it starts; null starts none. Set when an agent's
+   * tool call caused the change; absent for a person or the server.
+   */
+  readonly startCeiling?: RunModes | null;
 }
 
 export interface TaskAgentChangedInput {
@@ -143,7 +143,7 @@ const PENDING_RESULT_CONSUMPTION_TIMEOUT_MS = 2 * 60 * 1_000;
  * Task-state part of an agent's trigger. Whether a matching agent actually
  * starts also depends on its previous runs (see `startAgent`).
  */
-function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
+export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
   if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
@@ -706,7 +706,11 @@ const make = Effect.gen(function* () {
    * Run-status agents start for an unhandled terminal run of another agent;
    * every other agent starts on task state, subject to `runsAgain`.
    */
-  const startAgent = (queuedAgent: TaskAgent, queuedTask: Task) =>
+  const startAgent = (
+    queuedAgent: TaskAgent,
+    queuedTask: Task,
+    startCeiling: RunModes | null | undefined,
+  ) =>
     Effect.gen(function* () {
       // Jobs carry the state from when they were queued; a later close, disable,
       // delete or notBefore must win, so decide on the stored state.
@@ -716,6 +720,17 @@ const make = Effect.gen(function* () {
       const task = currentTask.value;
       const agent = currentAgent.value;
       if (!startsForTask(agent, task, Date.parse(yield* now))) return;
+      if (
+        startCeiling !== undefined &&
+        (startCeiling === null ||
+          broaderRunMode(agentRunModes(agent.config), startCeiling) !== null)
+      ) {
+        yield* Effect.logInfo("Task agent not started: broader than the change's caller allows", {
+          taskId: task.id,
+          agentId: agent.id,
+        });
+        return;
+      }
       if (
         Option.isSome(
           yield* repository.findActiveAgentRunForTaskAgent({
@@ -761,8 +776,7 @@ const make = Effect.gen(function* () {
       const settings = yield* runPromptSettings(task);
       const threadId = ThreadId.make(yield* randomId("task-agent"));
       const runId = TaskAgentRunId.make(yield* randomId("task-agent-run"));
-      const runtimeMode = agent.config.runtimeMode ?? DEFAULT_RUNTIME_MODE;
-      const interactionMode = agent.config.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
+      const { runtimeMode, interactionMode } = agentRunModes(agent.config);
       const modelSelection = agent.config.modelSelection;
       const title = `${agent.name}: ${task.title}`;
 
@@ -870,17 +884,26 @@ const make = Effect.gen(function* () {
       );
     });
 
-  const startMatchingAgents = (agents: ReadonlyArray<TaskAgent>, task: Task) =>
+  const startMatchingAgents = (
+    agents: ReadonlyArray<TaskAgent>,
+    task: Task,
+    startCeiling?: RunModes | null,
+  ) =>
     Effect.gen(function* () {
       const nowMs = Date.parse(yield* now);
       yield* Effect.forEach(
         agents.filter((agent) => startsForTask(agent, task, nowMs)),
-        (agent) => startAgent(agent, task),
+        (agent) => startAgent(agent, task, startCeiling),
         { discard: true, concurrency: 1 },
       );
     });
 
-  const reconcileTask = ({ task: queuedTask, reason, releasedRunId }: TaskChangedInput) =>
+  const reconcileTask = ({
+    task: queuedTask,
+    reason,
+    releasedRunId,
+    startCeiling,
+  }: TaskChangedInput) =>
     Effect.gen(function* () {
       // Archive and unarchive record their own history events in the repository.
       if (reason !== "run-finished" && reason !== "archived" && reason !== "unarchived") {
@@ -907,7 +930,7 @@ const make = Effect.gen(function* () {
         { discard: true, concurrency: 1 },
       );
       if (current === null) return;
-      yield* startMatchingAgents(yield* repository.listAllAgents(), task);
+      yield* startMatchingAgents(yield* repository.listAllAgents(), task, startCeiling);
     });
 
   const reconcileAgent = ({ agent, reason }: TaskAgentChangedInput) =>
