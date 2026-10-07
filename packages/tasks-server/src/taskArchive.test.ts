@@ -21,6 +21,8 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import type * as RpcClient from "effect/unstable/rpc/RpcClient";
+import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { afterEach } from "vite-plus/test";
@@ -133,7 +135,7 @@ function harness() {
     });
   /** The Tasks view goes through the RPC. */
   const rpc = <A, E>(
-    use: (client: RpcTest.FromGroup<typeof TasksRpcGroup>) => Effect.Effect<A, E>,
+    use: (client: RpcClient.RpcClient<RpcGroup.Rpcs<typeof TasksRpcGroup>>) => Effect.Effect<A, E>,
   ) =>
     Effect.gen(function* () {
       return yield* use(yield* RpcTest.makeClient(TasksRpcGroup));
@@ -342,7 +344,7 @@ it.effect("the Tasks view archives and unarchives through the RPC and reads the 
     const archived = yield* rpc((client) =>
       client[TASKS_RPC_METHODS.archive]({ ids: [TaskId.make("t")] }),
     );
-    assert.deepStrictEqual(archived.results, [{ id: "t", outcome: "archived" }]);
+    assert.deepStrictEqual(archived.results, [{ id: TaskId.make("t"), outcome: "archived" }]);
     yield* rpc((client) =>
       client[TASKS_RPC_METHODS.unarchive]({ ids: [TaskId.make("t")], reason: "Still needed" }),
     );
