@@ -16,7 +16,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../../../../../apps/web/src/state/environments.ts";
-import { readPlannerAvailability, useTasksWebAccessRevision } from "../../environmentApi.ts";
+import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { ViewProjectFilter } from "../../ui/projectFilter.ts";
@@ -380,7 +380,6 @@ export function PlannerView(props: {
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
 }) {
-  useTasksWebAccessRevision();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const environmentLabel = (id: string) =>
@@ -403,7 +402,7 @@ export function PlannerView(props: {
     () => filterProjectIds(props.projectFilter, environmentId),
     [props.projectFilter, environmentId],
   );
-  const availability = environmentId ? readPlannerAvailability(environmentId) : null;
+  const availability = usePlannerAvailability(environmentId);
   const [audience, setAudience] = useStoredPlannerAudience();
   const triggerTags = useMemo(
     () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),

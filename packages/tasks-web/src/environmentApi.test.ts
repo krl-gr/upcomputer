@@ -1,5 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import { createElement } from "react";
+import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const rpc = vi.hoisted(() => ({ request: vi.fn() }));
@@ -8,7 +10,11 @@ vi.mock("../../../apps/web/src/extensionApi.ts", () => ({
   requestExperimentalFeatureRpc: rpc.request,
 }));
 
-import { readPlannerAvailability, readTasksWebAccess } from "./environmentApi.ts";
+import {
+  readPlannerAvailability,
+  readTasksWebAccess,
+  usePlannerAvailability,
+} from "./environmentApi.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -72,5 +78,23 @@ describe("Planner availability", () => {
     expect(readPlannerAvailability(current)).toBe("enabled");
     expect(readPlannerAvailability(older)).toBe("unavailable");
     expect(rpc.request).toHaveBeenCalledTimes(2);
+  });
+
+  it("reaches a view when the probe answers before the view subscribes", async () => {
+    rpc.request.mockResolvedValueOnce({ entries: [], tasks: [] });
+    const environmentId = EnvironmentId.make("planner-answers-before-subscribe");
+    const seen: Array<string | null> = [];
+    function View() {
+      seen.push(usePlannerAvailability(environmentId));
+      return null;
+    }
+    // Outside act, as in the browser: the render starts the probe, its answer
+    // lands in a microtask, and React subscribes later in a passive effect.
+    const view = create(createElement(View));
+    await settle();
+    await settle();
+    expect(seen[0]).toBe("loading");
+    expect(seen.at(-1)).toBe("enabled");
+    view.unmount();
   });
 });

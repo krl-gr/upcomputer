@@ -120,6 +120,18 @@ function subscribe(listener: () => void) {
   };
 }
 
+/**
+ * The planner availability as a store snapshot. A plain render-time call to
+ * `readPlannerAvailability` is cached by the React Compiler on its argument,
+ * so a probe that settles later would never reach the view.
+ */
+export function usePlannerAvailability(
+  environmentId: EnvironmentId | null,
+): TasksWebAvailability | null {
+  const read = () => (environmentId ? readPlannerAvailability(environmentId) : null);
+  return useSyncExternalStore(subscribe, read, read);
+}
+
 /** Changes whenever an environment's Tasks access is decided; use it as a memo dependency. */
 export function useTasksWebAccessRevision(): number {
   return useSyncExternalStore(
