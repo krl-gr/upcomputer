@@ -35,13 +35,14 @@ const dateTime = {
 
 /** Server trigger semantics returned by task_context; not user-editable guidance. */
 export const TASK_TRIGGER_RULES = [
-  "An enabled agent starts on an open task when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
+  "An enabled agent starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
   "Setting a matching status or adding a matching tag starts the agent immediately. Park work in a status no agent starts on (for example Backlog), or set notBefore to delay it.",
-  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore or closedAt really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
+  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
   "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
-  "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is closed or deleted, or when the agent is disabled or deleted.",
+  "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is archived or deleted, or when the agent is disabled or deleted.",
   "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
-  "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is closed, the agent is disabled, or the agent has another active run on the task.",
+  "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is archived, the agent is disabled, or the agent has another active run on the task.",
+  "Archiving is separate from status: no status archives a task. An archived task keeps its status, is hidden by default, never starts agents, and its active runs end. Unarchiving it is a trigger change, so a matching agent can start again.",
   "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
 
@@ -96,8 +97,19 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_search",
     description:
-      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment.",
-    inputSchema: object({ projectId: id, status: id, tags, limit: { type: "number" } }),
+      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise.",
+    inputSchema: object({
+      projectId: id,
+      status: id,
+      tags,
+      archive: {
+        type: "string",
+        enum: ["active", "archived", "all"],
+        description:
+          "active (default): tasks that are not archived. archived: only archived tasks. all: both.",
+      },
+      limit: { type: "number" },
+    }),
   },
   {
     type: "function",
@@ -131,7 +143,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_update",
     description:
-      "Update task fields, status, output, and tags without changing its global rank. Status, tag and notBefore changes can start agents (see task_context triggerRules).",
+      "Update task fields, status, output, and tags without changing its global rank. Status, tag and notBefore changes can start agents (see task_context triggerRules). Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive.",
     inputSchema: object(
       {
         id,
@@ -143,7 +155,6 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         assigneeAgentRunId: { type: ["string", "null"] },
         metadata: {},
         tags,
-        closedAt: { type: ["string", "null"] },
         notBefore: dateTime,
       },
       ["id"],
@@ -163,6 +174,28 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     name: "task_delete",
     description: "Delete one task.",
     inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_archive",
+    description:
+      "Archive tasks by id, up to 500 per call, with an optional reason. Archive only when a person asks you to; never archive on your own initiative, for example because a task looks done or stale. An archived task keeps its status, is hidden from task_search and the Tasks view by default, its active agent runs end, and no agent starts on it until it is unarchived. Returns one result per id: archived, already-archived or not-found.",
+    inputSchema: object(
+      { ids: { type: "array", items: id, minItems: 1, maxItems: 500 }, reason: id },
+      ["ids"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_unarchive",
+    description:
+      "Unarchive tasks by id, up to 500 per call, with an optional reason. Unarchive only when a person asks you to. The task keeps its status and shows by default again, and an agent whose triggers match can start on it (see task_context triggerRules). Returns one result per id: unarchived, not-archived or not-found.",
+    inputSchema: object(
+      { ids: { type: "array", items: id, minItems: 1, maxItems: 500 }, reason: id },
+      ["ids"],
+    ),
   },
   {
     type: "function",
@@ -298,7 +331,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_run_message",
     description:
-      "Send a message to a task-agent run's thread. An active run receives it as its next turn (queued or steered by the provider). An ended run of any status continues in the same thread, with its context, as a new run whose continuesRunId is the messaged run. Triggers and notBefore do not apply. Fails while the task is closed, the agent is disabled, or the agent already has another active run on the task (message that one instead).",
+      "Send a message to a task-agent run's thread. An active run receives it as its next turn (queued or steered by the provider). An ended run of any status continues in the same thread, with its context, as a new run whose continuesRunId is the messaged run. Triggers and notBefore do not apply. Fails while the task is archived, the agent is disabled, or the agent already has another active run on the task (message that one instead).",
     inputSchema: object({ runId: id, text: id }, ["runId", "text"]),
   },
   {

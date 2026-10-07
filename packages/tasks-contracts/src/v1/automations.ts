@@ -62,7 +62,7 @@ export const TaskAutomation = Schema.Struct({
   schedule: TaskAutomationSchedule,
   template: TaskAutomationTemplate,
   catchUpPolicy: TaskAutomationCatchUpPolicy,
-  /** Suppresses a fire while the previously created task is still open. */
+  /** Suppresses a fire while a task this automation created is not archived. */
   skipIfOpen: Schema.Boolean,
   createdBy: TrimmedNonEmptyString,
   sourceThreadId: Schema.NullOr(ThreadId),

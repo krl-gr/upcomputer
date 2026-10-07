@@ -32,6 +32,7 @@ import {
 } from "../automations/automationWrites.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
+import { setTasksArchived } from "../taskArchive.ts";
 
 const OWNER_ID = "upcomputer.tasks" as const;
 const now = Effect.map(DateTime.now, DateTime.formatIso);
@@ -73,6 +74,9 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.addTag]: operate,
     [TASKS_RPC_METHODS.removeTag]: operate,
     [TASKS_RPC_METHODS.appendEvent]: operate,
+    [TASKS_RPC_METHODS.events]: read,
+    [TASKS_RPC_METHODS.archive]: operate,
+    [TASKS_RPC_METHODS.unarchive]: operate,
     [TASKS_RPC_METHODS.getPromptSettings]: read,
     [TASKS_RPC_METHODS.updatePromptSettings]: operate,
   },
@@ -104,7 +108,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 notBefore: input.notBefore ?? null,
                 createdAt: timestamp,
                 updatedAt: timestamp,
-                closedAt: null,
+                archivedAt: null,
               });
               yield* agents.scheduleTaskChanged({ task, reason: "created" });
               return task;
@@ -167,7 +171,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const agents = yield* TaskAgentService;
               const before = yield* repository.getById({ id: input.id });
-              const task = yield* repository.update(input);
+              const task = yield* repository.update({ ...input, actor: { type: "person" } });
               yield* agents.scheduleTaskChanged({
                 task,
                 reason: "updated",
@@ -233,6 +237,30 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 payload: input.payload ?? null,
                 createdAt: yield* now,
               });
+            }),
+          ),
+        [TASKS_RPC_METHODS.events]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              return yield* (yield* TaskRepository).events(input);
+            }),
+          ),
+        [TASKS_RPC_METHODS.archive]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              return yield* setTasksArchived(
+                { repository: yield* TaskRepository, agents: yield* TaskAgentService },
+                { ...input, archived: true, actor: { type: "person" } },
+              );
+            }),
+          ),
+        [TASKS_RPC_METHODS.unarchive]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              return yield* setTasksArchived(
+                { repository: yield* TaskRepository, agents: yield* TaskAgentService },
+                { ...input, archived: false, actor: { type: "person" } },
+              );
             }),
           ),
         [TASKS_RPC_METHODS.getPromptSettings]: (input) =>

@@ -96,6 +96,13 @@ async function database(legacy?: (db: NodeSqlite.DatabaseSync) => void) {
 }
 
 const isoNow = () => new Date().toISOString();
+const actor = { type: "person" } as const;
+
+/** Archives one task the way the Tasks view does and returns it. */
+const archiveTask = (repository: TaskRepositoryShape, id: TaskId, archived = true) =>
+  repository
+    .setArchived({ ids: [id], archived, actor })
+    .pipe(Effect.map(([result]) => result!.task!));
 
 function taskInput(id: string, overrides: Partial<Task> = {}) {
   const at = isoNow();
@@ -115,7 +122,7 @@ function taskInput(id: string, overrides: Partial<Task> = {}) {
     tags: [],
     createdAt: at,
     updatedAt: at,
-    closedAt: null,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -200,14 +207,26 @@ test("only real changes to trigger fields advance triggerChangedAt", async () =>
       };
 
       yield* tick;
-      expectUnchanged(yield* repository.update({ id: created.id, output: "progress" }), "output");
       expectUnchanged(
-        yield* repository.update({ id: created.id, assigneeAgentRunId: "run-x" }),
+        yield* repository.update({ actor, id: created.id, output: "progress" }),
+        "output",
+      );
+      expectUnchanged(
+        yield* repository.update({ actor, id: created.id, assigneeAgentRunId: "run-x" }),
         "assignment",
       );
-      expectUnchanged(yield* repository.update({ id: created.id, metadata: { a: 1 } }), "metadata");
-      expectUnchanged(yield* repository.update({ id: created.id, priority: "high" }), "priority");
-      expectUnchanged(yield* repository.update({ id: created.id, status: "To Do" }), "same status");
+      expectUnchanged(
+        yield* repository.update({ actor, id: created.id, metadata: { a: 1 } }),
+        "metadata",
+      );
+      expectUnchanged(
+        yield* repository.update({ actor, id: created.id, priority: "high" }),
+        "priority",
+      );
+      expectUnchanged(
+        yield* repository.update({ actor, id: created.id, status: "To Do" }),
+        "same status",
+      );
       expectUnchanged(
         yield* repository.addTag({ taskId: created.id, tag: "a", updatedAt: isoNow() }),
         "re-adding a present tag",
@@ -217,7 +236,10 @@ test("only real changes to trigger fields advance triggerChangedAt", async () =>
         "removing an absent tag",
       );
 
-      expectChanged(yield* repository.update({ id: created.id, status: "Backlog" }), "status");
+      expectChanged(
+        yield* repository.update({ actor, id: created.id, status: "Backlog" }),
+        "status",
+      );
       yield* tick;
       expectChanged(
         yield* repository.addTag({ taskId: created.id, tag: "b", updatedAt: isoNow() }),
@@ -230,11 +252,12 @@ test("only real changes to trigger fields advance triggerChangedAt", async () =>
       );
       yield* tick;
       expectChanged(
-        yield* repository.update({ id: created.id, description: "more" }),
+        yield* repository.update({ actor, id: created.id, description: "more" }),
         "description",
       );
       yield* tick;
       const delayed = yield* repository.update({
+        actor,
         id: created.id,
         notBefore: "2030-01-01T12:00:00+02:00",
       });
@@ -328,7 +351,7 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
   );
 });
 
-test("notBefore wakes only open tasks inside the swept window", async () => {
+test("notBefore wakes only unarchived tasks inside the swept window", async () => {
   const layer = await database();
   await Effect.runPromise(
     Effect.gen(function* () {
@@ -336,7 +359,7 @@ test("notBefore wakes only open tasks inside the swept window", async () => {
       yield* repository.upsert(taskInput("due", { notBefore: "2030-01-01T10:00:00.000Z" }));
       yield* repository.upsert(taskInput("later", { notBefore: "2030-01-01T11:00:00.000Z" }));
       yield* repository.upsert(
-        taskInput("closed", { notBefore: "2030-01-01T10:00:00.000Z", closedAt: isoNow() }),
+        taskInput("archived", { notBefore: "2030-01-01T10:00:00.000Z", archivedAt: isoNow() }),
       );
       const due = yield* repository.listTasksReachingNotBefore({
         after: "2030-01-01T09:59:59.000Z",
@@ -632,6 +655,7 @@ test("several agents keep running on one task; a release completes only the rele
       yield* change(
         harness,
         yield* repository.update({
+          actor,
           id: task.id,
           status: "In Progress",
           assigneeAgentRunId: runA.id,
@@ -644,7 +668,7 @@ test("several agents keep running on one task; a release completes only the rele
       // B releases after A overwrote the assignment; only B ends, as completed.
       yield* change(
         harness,
-        yield* repository.update({ id: task.id, assigneeAgentRunId: null }),
+        yield* repository.update({ actor, id: task.id, assigneeAgentRunId: null }),
         runB.id,
       );
       const endedB = yield* waitFor(
@@ -663,8 +687,8 @@ test("several agents keep running on one task; a release completes only the rele
         null,
       );
 
-      // Closing the task stops the rest.
-      yield* change(harness, yield* repository.update({ id: task.id, closedAt: isoNow() }));
+      // Archiving the task stops the rest.
+      yield* change(harness, yield* archiveTask(repository, task.id));
       const endedA = yield* waitFor(
         "A to stop",
         repository
@@ -676,7 +700,16 @@ test("several agents keep running on one task; a release completes only the rele
           ),
       );
       NodeAssert.equal(endedA.status, "stopped");
-      NodeAssert.equal((yield* runsOf(repository, "t")).length, 2, "a closed task starts nothing");
+      const stops = yield* repository.events({ taskId: task.id, kinds: ["task.agent-stopped"] });
+      NodeAssert.deepEqual(
+        stops.events.map(({ payload }) => (payload as { reason: string }).reason),
+        ["task-archived"],
+      );
+      NodeAssert.equal(
+        (yield* runsOf(repository, "t")).length,
+        2,
+        "an archived task starts nothing",
+      );
     }),
   );
 });
@@ -699,15 +732,15 @@ test("an agent restarts only after a trigger change, and an explicit stop is not
       // Output and assignment changes leave the stopped run alone.
       yield* change(
         harness,
-        yield* repository.update({ id: task.id, output: "note", assigneeAgentRunId: null }),
+        yield* repository.update({ actor, id: task.id, output: "note", assigneeAgentRunId: null }),
       );
       yield* Effect.sleep("150 millis");
       NodeAssert.equal((yield* runsOf(repository, "t")).length, 1);
 
       // Re-entering the trigger status after the stop starts it again.
       yield* tick;
-      yield* change(harness, yield* repository.update({ id: task.id, status: "Backlog" }));
-      yield* change(harness, yield* repository.update({ id: task.id, status: "To Do" }));
+      yield* change(harness, yield* repository.update({ actor, id: task.id, status: "Backlog" }));
+      yield* change(harness, yield* repository.update({ actor, id: task.id, status: "To Do" }));
       yield* waitFor(
         "second run",
         runsOf(repository, "t").pipe(Effect.map((runs) => (runs.length === 2 ? runs : undefined))),
@@ -769,7 +802,7 @@ test("a run-status agent handles each failure once and a failed run is not repla
       ]);
 
       // The doctor's retry is a trigger change; the developer then runs again.
-      yield* change(harness, yield* repository.update({ id: task.id, notBefore: isoNow() }));
+      yield* change(harness, yield* repository.update({ actor, id: task.id, notBefore: isoNow() }));
       yield* waitFor(
         "developer retry",
         runsOf(repository, "t").pipe(
@@ -797,6 +830,26 @@ test("notBefore holds a matching task until its time", async () => {
         "run after notBefore",
         runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
         8_000,
+      );
+    }),
+  );
+});
+
+test("no agent starts on an archived task, and unarchiving lets a matching agent start", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const created = yield* repository.upsert(taskInput("t"));
+      const archived = yield* archiveTask(repository, created.id);
+      yield* service.scheduleTaskChanged({ task: archived, reason: "archived" });
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      const restored = yield* archiveTask(repository, created.id, false);
+      yield* service.scheduleTaskChanged({ task: restored, reason: "unarchived" });
+      yield* waitFor(
+        "run after unarchive",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
       );
     }),
   );
@@ -1203,7 +1256,7 @@ test("messaging an ended run continues it in its thread, and its own result fini
   );
 });
 
-test("messaging refuses another active run of the agent, a closed task, and a disabled agent", async () => {
+test("messaging refuses another active run of the agent, an archived task, and a disabled agent", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {
       const { repository, service, calls } = harness;
@@ -1220,12 +1273,12 @@ test("messaging refuses another active run of the agent, a closed task, and a di
       NodeAssert.match(busy.error, /active run 'r2'.*Message that run instead/);
 
       yield* finish(repository, active, "completed");
-      yield* repository.update({ id: TaskId.make("t"), closedAt: isoNow() });
-      const closed = yield* service.messageRun({ id: ended.id, text: "go" });
-      NodeAssert.ok(!closed.ok);
-      NodeAssert.match(closed.error, /is closed/);
+      yield* archiveTask(repository, TaskId.make("t"));
+      const archived = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!archived.ok);
+      NodeAssert.match(archived.error, /is archived/);
 
-      yield* repository.update({ id: TaskId.make("t"), closedAt: null });
+      yield* archiveTask(repository, TaskId.make("t"), false);
       yield* repository.upsertAgent(idleAgent("dev", { enabled: false }));
       const disabled = yield* service.messageRun({ id: ended.id, text: "go" });
       NodeAssert.ok(!disabled.ok);
@@ -1285,14 +1338,14 @@ test("a failed continuation triggers a run-status agent once", async () => {
   );
 });
 
-test("a queued change uses the stored task, so closing or disabling before it is processed starts nothing", async () => {
+test("a queued change uses the stored task, so archiving or disabling before it is processed starts nothing", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {
       const { repository, service, calls } = harness;
       yield* repository.upsertAgent(agentInput("dev"));
-      // The job carries the task as it was when queued; the task is closed before it runs.
+      // The job carries the task as it was when queued; the task is archived before it runs.
       const queued = yield* repository.upsert(taskInput("closed-later"));
-      yield* repository.update({ id: queued.id, closedAt: isoNow() });
+      yield* archiveTask(repository, queued.id);
       yield* service.scheduleTaskChanged({ task: queued, reason: "created" });
       yield* Effect.sleep("300 millis");
       NodeAssert.equal((yield* runsOf(repository, "closed-later")).length, 0);
@@ -1386,7 +1439,7 @@ test("a delayed duplicate stop of a finished run leaves the continuation on its 
   );
 });
 
-test("a close, postponement or agent deletion between the start checks and the run insert prevents the start", async () => {
+test("an archive, postponement or agent deletion between the start checks and the run insert prevents the start", async () => {
   const pause: { taskId: string | null; reached: boolean; release: () => void } = {
     taskId: null,
     reached: false,
@@ -1398,13 +1451,14 @@ test("a close, postponement or agent deletion between the start checks and the r
         const { repository, service, calls } = harness;
         const cases = [
           {
-            id: "closed-meanwhile",
-            cancel: (taskId: TaskId) => repository.update({ id: taskId, closedAt: isoNow() }),
+            id: "archived-meanwhile",
+            cancel: (taskId: TaskId) => archiveTask(repository, taskId),
           },
           {
             id: "postponed-meanwhile",
             cancel: (taskId: TaskId) =>
               repository.update({
+                actor,
                 id: taskId,
                 notBefore: new Date(Date.now() + 3_600_000).toISOString(),
               }),
@@ -1463,7 +1517,7 @@ test("a close, postponement or agent deletion between the start checks and the r
   );
 });
 
-test("a close, disable or agent deletion just before a continuation is inserted refuses the message", async () => {
+test("an archive, disable or agent deletion just before a continuation is inserted refuses the message", async () => {
   const pause: { armed: boolean; reached: boolean; release: () => void } = {
     armed: false,
     reached: false,
@@ -1475,8 +1529,8 @@ test("a close, disable or agent deletion just before a continuation is inserted 
         const { repository, service, calls } = harness;
         const cases = [
           {
-            id: "closed-before-continue",
-            cancel: (taskId: TaskId) => repository.update({ id: taskId, closedAt: isoNow() }),
+            id: "archived-before-continue",
+            cancel: (taskId: TaskId) => archiveTask(repository, taskId),
           },
           {
             id: "disabled-before-continue",

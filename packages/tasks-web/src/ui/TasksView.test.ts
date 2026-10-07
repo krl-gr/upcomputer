@@ -130,7 +130,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
       tags: [],
       createdAt: "2026-08-12T00:00:00.000Z",
       updatedAt: "2026-08-12T00:00:00.000Z",
-      closedAt: null,
+      archivedAt: null,
       notBefore: null,
       triggerChangedAt: "2026-08-12T00:00:00.000Z",
       environmentId: "local",

@@ -953,11 +953,11 @@ export function AutomationsView(props: AutomationsViewProps) {
                       CATCH_UP_POLICIES.find(({ value }) => value === form.catchUpPolicy)?.label
                     )}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Skip if open">
+                  <DetailSidebarRow label="Skip if not archived">
                     <Switch
                       checked={form.skipIfOpen}
                       disabled={!canEditAutomation}
-                      aria-label="Skip while previous task is open"
+                      aria-label="Skip while a previous task is not archived"
                       onCheckedChange={(checked) =>
                         commitForm({ ...form, skipIfOpen: Boolean(checked) })
                       }
@@ -1292,10 +1292,10 @@ export function AutomationsView(props: AutomationsViewProps) {
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Skip if open">
+                  <DetailSidebarRow label="Skip if not archived">
                     <Switch
                       checked={form.skipIfOpen}
-                      aria-label="Skip while previous task is open"
+                      aria-label="Skip while a previous task is not archived"
                       onCheckedChange={(checked) =>
                         setForm((current) => ({ ...current, skipIfOpen: Boolean(checked) }))
                       }

@@ -53,11 +53,16 @@ export const Task = Schema.Struct({
   tags: Schema.Array(TaskTag),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
-  closedAt: Schema.NullOr(IsoDateTime),
+  /**
+   * Set while the task is archived. Independent of status: archived tasks are
+   * hidden by default, no agent starts on them, and their active runs end.
+   * Changed only through archive and unarchive.
+   */
+  archivedAt: Schema.NullOr(IsoDateTime),
   /** No agent run starts on this task before this time. */
   notBefore: Schema.NullOr(IsoDateTime),
   /**
-   * Last real change to title, description, status, tags, notBefore or closedAt,
+   * Last real change to title, description, status, tags, notBefore or archivedAt,
    * computed by the server. An agent runs again only after such a change.
    */
   triggerChangedAt: IsoDateTime,
@@ -136,15 +141,19 @@ export const TaskUpdateInput = Schema.Struct({
   sourceRunId: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   metadata: Schema.optional(Schema.Unknown),
   tags: Schema.optional(Schema.Array(TaskTag)),
-  closedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
 });
 export type TaskUpdateInput = typeof TaskUpdateInput.Type;
+
+/** Which tasks a list returns: not archived (the default), archived only, or both. */
+export const TaskArchiveFilter = Schema.Literals(["active", "archived", "all"]);
+export type TaskArchiveFilter = typeof TaskArchiveFilter.Type;
 
 export const TaskSearchInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   status: Schema.optional(TrimmedNonEmptyString),
   tags: Schema.optional(Schema.Array(TaskTag)),
+  archive: Schema.optional(TaskArchiveFilter),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(500))),
 });
 export type TaskSearchInput = typeof TaskSearchInput.Type;
@@ -222,6 +231,76 @@ export const TaskAppendEventInput = Schema.Struct({
 });
 export type TaskAppendEventInput = typeof TaskAppendEventInput.Type;
 
+/**
+ * Who made a recorded change: a person in the app, a task-agent run, a chat
+ * thread (an agent outside a task-agent run), or the server itself.
+ * Automations only create tasks, so they never appear here.
+ */
+export const TaskActor = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("person") }),
+  Schema.Struct({ type: Schema.Literal("server") }),
+  Schema.Struct({ type: Schema.Literal("agent-run"), agentRunId: TrimmedNonEmptyString }),
+  Schema.Struct({ type: Schema.Literal("thread"), threadId: ThreadId }),
+]);
+export type TaskActor = typeof TaskActor.Type;
+
+/**
+ * Server-recorded history kinds in `task_events`. The event's createdAt is the
+ * time of the change. Payloads stay compact: never a snapshot of the task.
+ */
+export const TASK_STATUS_CHANGED_EVENT = "task.status-changed" as const;
+export const TASK_ARCHIVED_EVENT = "task.archived" as const;
+export const TASK_UNARCHIVED_EVENT = "task.unarchived" as const;
+export const TASK_HISTORY_EVENT_KINDS = [
+  TASK_STATUS_CHANGED_EVENT,
+  TASK_ARCHIVED_EVENT,
+  TASK_UNARCHIVED_EVENT,
+] as const;
+
+export const TaskStatusChangedPayload = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+  actor: TaskActor,
+});
+export type TaskStatusChangedPayload = typeof TaskStatusChangedPayload.Type;
+
+export const TaskArchiveChangedPayload = Schema.Struct({
+  actor: TaskActor,
+  reason: Schema.optional(Schema.String),
+});
+export type TaskArchiveChangedPayload = typeof TaskArchiveChangedPayload.Type;
+
+export const TASK_ARCHIVE_MAX_IDS = 500;
+
+/** Archive or unarchive up to 500 tasks. Neither changes a task's status. */
+export const TaskArchiveInput = Schema.Struct({
+  ids: Schema.Array(TaskId).check(Schema.isMinLength(1), Schema.isMaxLength(TASK_ARCHIVE_MAX_IDS)),
+  reason: Schema.optional(TrimmedNonEmptyString),
+});
+export type TaskArchiveInput = typeof TaskArchiveInput.Type;
+export const TaskArchiveOutcome = Schema.Literals([
+  "archived",
+  "already-archived",
+  "unarchived",
+  "not-archived",
+  "not-found",
+]);
+export type TaskArchiveOutcome = typeof TaskArchiveOutcome.Type;
+export const TaskArchiveResult = Schema.Struct({
+  results: Schema.Array(Schema.Struct({ id: TaskId, outcome: TaskArchiveOutcome })),
+});
+export type TaskArchiveResult = typeof TaskArchiveResult.Type;
+
+/** A task's events, newest first, optionally limited to some kinds. */
+export const TaskEventsInput = Schema.Struct({
+  taskId: TaskId,
+  kinds: Schema.optional(Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(20))),
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+});
+export type TaskEventsInput = typeof TaskEventsInput.Type;
+export const TaskEventsResult = Schema.Struct({ events: Schema.Array(TaskEvent) });
+export type TaskEventsResult = typeof TaskEventsResult.Type;
+
 export class TaskError extends Schema.TaggedError<TaskError>()("TaskError", {
   message: TrimmedNonEmptyString,
   cause: Schema.optional(Schema.Defect()),
@@ -244,7 +323,7 @@ export type TaskRunCountsInput = typeof TaskRunCountsInput.Type;
 export const TaskRunCountsResult = Schema.Struct({ runCounts: Schema.Array(TaskRunCount) });
 export type TaskRunCountsResult = typeof TaskRunCountsResult.Type;
 
-/** Tasks whose chain started in one thread: open first, then closed, each in global order. */
+/** Tasks whose chain started in one thread that are not archived, in global order. */
 export const TaskThreadTasksInput = Schema.Struct({
   threadId: ThreadId,
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(50))),

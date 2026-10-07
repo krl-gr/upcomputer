@@ -95,7 +95,7 @@ function task(overrides: Partial<Task> = {}): Task {
     tags: ["test"],
     createdAt: now,
     updatedAt: now,
-    closedAt: null,
+    archivedAt: null,
     notBefore: null,
     triggerChangedAt: now,
     ...overrides,
@@ -123,7 +123,7 @@ test("a started run keeps running while its task's status and tags change", () =
 });
 
 test("closing the task or disabling the agent ends a run", () => {
-  NodeAssert.equal(continuesTaskAgentRun(agent(), task({ closedAt: now })), false);
+  NodeAssert.equal(continuesTaskAgentRun(agent(), task({ archivedAt: now })), false);
   NodeAssert.equal(continuesTaskAgentRun(agent({ enabled: false }), task()), false);
 });
 

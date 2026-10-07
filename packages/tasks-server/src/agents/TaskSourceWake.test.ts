@@ -195,7 +195,7 @@ const finishedRun = (id: string, sourceThreadId: string) =>
       tags: [],
       createdAt: at,
       updatedAt: at,
-      closedAt: null,
+      archivedAt: null,
     });
     yield* repository.createAgentRun({
       id: TaskAgentRunId.make(id),

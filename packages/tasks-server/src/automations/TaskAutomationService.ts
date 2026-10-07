@@ -146,7 +146,7 @@ const make = Effect.gen(function* () {
         tags: automation.template.tags,
         createdAt: timestamp,
         updatedAt: timestamp,
-        closedAt: null,
+        archivedAt: null,
       };
       const saved = yield* repository.upsert(task);
       // Agents pick the task up through the existing reconciler; automations
@@ -181,7 +181,7 @@ const make = Effect.gen(function* () {
           slot,
           "skipped-open",
           null,
-          "A task from this automation is still open.",
+          "A task from this automation is not archived yet.",
         );
         yield* persistSchedule(automation, { nextRunAt });
         return;

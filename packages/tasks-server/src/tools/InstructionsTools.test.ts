@@ -406,7 +406,7 @@ async function seedAgentRuns(
         tags: [],
         createdAt: at,
         updatedAt: at,
-        closedAt: null,
+        archivedAt: null,
       });
       for (const [id, tools] of [
         ["worker", undefined],
@@ -787,7 +787,7 @@ test("allChats rejects a stale revision, dry-runs under a read-only policy, and 
         tags: [],
         createdAt: at,
         updatedAt: at,
-        closedAt: null,
+        archivedAt: null,
       });
       yield* repository.upsertAgent({
         id: TaskAgentId.make("worker"),

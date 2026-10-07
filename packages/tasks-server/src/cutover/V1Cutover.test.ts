@@ -90,7 +90,7 @@ it.layer(TestLayer)("runTaskV1Cutover", (it) => {
         tags: ["dev"],
         createdAt: timestamp,
         updatedAt: timestamp,
-        closedAt: null,
+        archivedAt: null,
         notBefore: null,
         triggerChangedAt: timestamp,
       };

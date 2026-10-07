@@ -59,9 +59,7 @@ const STATUS_ORDER = [
   "closed",
 ];
 
-type InlineTaskUpdate = Partial<
-  Pick<ScopedTask, "title" | "description" | "status" | "tags" | "closedAt">
->;
+type InlineTaskUpdate = Partial<Pick<ScopedTask, "title" | "description" | "status" | "tags">>;
 
 interface TaskFormState {
   readonly title: string;
@@ -817,13 +815,7 @@ export function TasksView(props: TasksViewProps) {
                         value={selectedTask.status}
                         onValueChange={(status) => {
                           if (!status || status === selectedTask.status) return;
-                          void updateTaskInline(selectedTask, "status", {
-                            status,
-                            closedAt:
-                              status === "done"
-                                ? (selectedTask.closedAt ?? new Date().toISOString())
-                                : null,
-                          });
+                          void updateTaskInline(selectedTask, "status", { status });
                         }}
                       >
                         <SelectTrigger

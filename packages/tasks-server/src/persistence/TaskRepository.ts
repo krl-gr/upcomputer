@@ -7,6 +7,8 @@ import {
   TaskAgentRunId,
   TaskAgentRunSearchInput,
   TaskAgentSearchInput,
+  TaskActor,
+  TaskArchiveOutcome,
   TaskAutomation,
   TaskAutomationId,
   TaskAutomationRun,
@@ -14,6 +16,8 @@ import {
   TaskAutomationSearchInput,
   TaskDeleteInput,
   TaskEvent,
+  TaskEventsInput,
+  TaskEventsResult,
   TaskId,
   TaskReorderInput,
   TaskSearchInput,
@@ -47,12 +51,33 @@ export const PersistTaskInput = Schema.Struct({
   parentTaskId: Schema.optional(Task.fields.parentTaskId),
   parentRunId: Schema.optional(Task.fields.parentRunId),
   notBefore: Schema.optional(Task.fields.notBefore),
+  /** Kept on existing tasks: only setArchived changes it. */
+  archivedAt: Schema.optional(Task.fields.archivedAt),
   /** Server-computed on every write; any supplied value is ignored. */
   triggerChangedAt: Schema.optional(Task.fields.triggerChangedAt),
   /** Trusted invocation context; never exposed as a tool argument. */
   originThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  /** Recorded on a status change; the server itself when absent. */
+  actor: Schema.optional(TaskActor),
 });
 export type PersistTaskInput = typeof PersistTaskInput.Type;
+
+/** A task update from a trusted caller, who is recorded on a status change. */
+export type UpdateTaskInput = TaskUpdateInput & { readonly actor: TaskActor };
+
+export interface SetTasksArchivedInput {
+  readonly ids: ReadonlyArray<TaskId>;
+  readonly archived: boolean;
+  readonly reason?: string | undefined;
+  readonly actor: TaskActor;
+}
+
+/** Per requested id, in request order; `task` is set when this call changed it. */
+export type SetTasksArchivedResult = ReadonlyArray<{
+  readonly id: TaskId;
+  readonly outcome: TaskArchiveOutcome;
+  readonly task: Task | null;
+}>;
 
 export const PersistTaskEventInput = TaskEvent;
 export type PersistTaskEventInput = typeof PersistTaskEventInput.Type;
@@ -195,12 +220,19 @@ export interface TaskRepositoryShape {
     input: TaskThreadTasksInput,
   ) => Effect.Effect<TaskThreadTasksResult, TaskRepositoryError>;
   readonly listAllTasks: () => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
-  /** Open tasks whose notBefore falls in (after, until]. */
+  /** Unarchived tasks whose notBefore falls in (after, until]. */
   readonly listTasksReachingNotBefore: (input: {
     readonly after: IsoDateTime;
     readonly until: IsoDateTime;
   }) => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
-  readonly update: (input: TaskUpdateInput) => Effect.Effect<Task, TaskRepositoryError>;
+  readonly update: (input: UpdateTaskInput) => Effect.Effect<Task, TaskRepositoryError>;
+  /**
+   * Archives or unarchives tasks in one transaction and records one event per
+   * changed task. Never changes a status.
+   */
+  readonly setArchived: (
+    input: SetTasksArchivedInput,
+  ) => Effect.Effect<SetTasksArchivedResult, TaskRepositoryError>;
   readonly reorder: (input: TaskReorderInput) => Effect.Effect<Task, TaskRepositoryError>;
   readonly deleteTask: (input: TaskDeleteInput) => Effect.Effect<void, TaskRepositoryError>;
   readonly replaceTags: (input: ReplaceTaskTagsInput) => Effect.Effect<Task, TaskRepositoryError>;
@@ -213,6 +245,7 @@ export interface TaskRepositoryShape {
   readonly appendEvent: (
     input: PersistTaskEventInput,
   ) => Effect.Effect<TaskEvent, TaskRepositoryError>;
+  readonly events: (input: TaskEventsInput) => Effect.Effect<TaskEventsResult, TaskRepositoryError>;
   readonly upsertAgent: (
     input: PersistTaskAgentInput,
   ) => Effect.Effect<TaskAgent, TaskRepositoryError>;
@@ -228,9 +261,9 @@ export interface TaskRepositoryShape {
     input: PersistTaskAgentRunInput,
   ) => Effect.Effect<TaskAgentRun, TaskRepositoryError>;
   /**
-   * Creates a run only if, at insert time, its task is open and its agent exists
+   * Creates a run only if, at insert time, its task is not archived and its agent exists
    * and is enabled, and, unless `startableAt` is null, the task is past its
-   * notBefore at that time. None when a close, postponement, disable or delete
+   * notBefore at that time. None when an archive, postponement, disable or delete
    * won the race. Explicit continuations pass null: they ignore notBefore.
    */
   readonly startAgentRun: (
@@ -289,7 +322,7 @@ export interface TaskRepositoryShape {
   readonly parkAutomation: (
     input: ParkTaskAutomationInput,
   ) => Effect.Effect<boolean, TaskRepositoryError>;
-  /** Open tasks this automation produced, matched on durable task metadata. */
+  /** Unarchived tasks this automation produced, matched on durable task metadata. */
   readonly countOpenAutomationTasks: (
     input: GetTaskAutomationInput,
   ) => Effect.Effect<number, TaskRepositoryError>;

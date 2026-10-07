@@ -24,6 +24,7 @@ import {
   INSTRUCTIONS_FIELDS,
   TASK_PROMPT_FIELDS,
   TaskAppendEventInput,
+  TaskArchiveInput,
   TaskDeleteInput,
   TaskEventId,
   TaskGetInput,
@@ -37,6 +38,7 @@ import {
   TaskToolCreateInput,
   TaskUpdateInput,
   type Task,
+  type TaskActor,
   type TaskAgent,
   type TaskAgentRun,
   type TaskAutomation,
@@ -81,6 +83,7 @@ import {
 } from "../persistence/TaskPromptSettingsStore.ts";
 import { PROMPT_GUIDANCE_EDITING, TASK_TRIGGER_RULES } from "./TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
+import { setTasksArchived } from "../taskArchive.ts";
 
 export { TaskToolService } from "./TaskToolServiceTag.ts";
 export type { TaskToolServiceShape } from "./TaskToolServiceTag.ts";
@@ -94,6 +97,8 @@ const decoders = {
   task_reorder: Schema.decodeUnknownEffect(TaskReorderInput),
   task_delete: Schema.decodeUnknownEffect(TaskDeleteInput),
   task_event_append: Schema.decodeUnknownEffect(TaskAppendEventInput),
+  task_archive: Schema.decodeUnknownEffect(TaskArchiveInput),
+  task_unarchive: Schema.decodeUnknownEffect(TaskArchiveInput),
   agent_get: Schema.decodeUnknownEffect(AgentGetInput),
   agent_search: Schema.decodeUnknownEffect(AgentSearchInput),
   agent_create: Schema.decodeUnknownEffect(AgentCreateInput),
@@ -314,6 +319,12 @@ function runStartRefusal(
   return null;
 }
 
+/** Who a tool call acts as in task history: the calling task-agent run, else the calling thread. */
+function toolActor(context: TaskToolInvocationContext, callerRun: TaskAgentRun | null): TaskActor {
+  if (callerRun !== null) return { type: "agent-run", agentRunId: callerRun.id };
+  return context.threadId ? { type: "thread", threadId: context.threadId } : { type: "server" };
+}
+
 function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedAt: string): Task {
   return {
     ...existing,
@@ -329,7 +340,6 @@ function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedA
     ...(update.sourceRunId !== undefined ? { sourceRunId: update.sourceRunId } : {}),
     ...(update.metadata !== undefined ? { metadata: update.metadata } : {}),
     ...(update.tags !== undefined ? { tags: update.tags } : {}),
-    ...(update.closedAt !== undefined ? { closedAt: update.closedAt } : {}),
     ...(update.notBefore !== undefined ? { notBefore: update.notBefore } : {}),
     updatedAt,
   };
@@ -541,7 +551,7 @@ const make = Effect.gen(function* () {
             notBefore: input.notBefore ?? null,
             createdAt: timestamp,
             updatedAt: timestamp,
-            closedAt: null,
+            archivedAt: null,
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
           const saved = yield* repository.upsert(task);
@@ -581,7 +591,10 @@ const make = Effect.gen(function* () {
             callerRun !== null && requestedRun?.threadId === callerRun.threadId
               ? { ...input, assigneeAgentRunId: callerRun.id }
               : input;
-          const task = yield* repository.update(update);
+          const task = yield* repository.update({
+            ...update,
+            actor: toolActor(context, callerRun),
+          });
           yield* taskAgents.scheduleTaskChanged({
             task,
             reason: "updated",
@@ -635,6 +648,48 @@ const make = Effect.gen(function* () {
           return isDryRun
             ? { isError: false, text: json({ dryRun: true, event }) }
             : { isError: false, text: json({ event: yield* repository.appendEvent(event) }) };
+        }
+        case "task_archive":
+        case "task_unarchive": {
+          const input = yield* name === "task_archive"
+            ? decoders.task_archive(args)
+            : decoders.task_unarchive(args);
+          const archived = name === "task_archive";
+          if (isDryRun) {
+            const results = [];
+            for (const id of input.ids) {
+              const task = Option.getOrNull(yield* repository.getById({ id }));
+              results.push({
+                id,
+                outcome:
+                  task === null
+                    ? "not-found"
+                    : (task.archivedAt !== null) === archived
+                      ? archived
+                        ? "already-archived"
+                        : "not-archived"
+                      : archived
+                        ? "archived"
+                        : "unarchived",
+              });
+            }
+            return { isError: false, text: json({ dryRun: true, results }) };
+          }
+          const callerRun = context.threadId
+            ? Option.getOrNull(
+                yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
+              )
+            : null;
+          const result = yield* setTasksArchived(
+            { repository, agents: taskAgents },
+            {
+              ids: input.ids,
+              archived,
+              reason: input.reason,
+              actor: toolActor(context, callerRun),
+            },
+          );
+          return { isError: false, text: json(result) };
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);

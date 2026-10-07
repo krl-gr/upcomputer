@@ -315,7 +315,7 @@ const task: Task = {
   tags: [],
   createdAt: timestamp,
   updatedAt: timestamp,
-  closedAt: null,
+  archivedAt: null,
   notBefore: null,
   triggerChangedAt: timestamp,
 };
@@ -689,11 +689,12 @@ it.live(
               ),
             );
 
-          yield* repository.update({ id: task.id, closedAt: timestamp });
-          yield* sendAsPerson(first.threadId, "Closed task: just answer.");
-          yield* eventually("the closed-task turn to complete", v2RunCompleted(2));
+          const person = { type: "person" } as const;
+          yield* repository.setArchived({ ids: [task.id], archived: true, actor: person });
+          yield* sendAsPerson(first.threadId, "Archived task: just answer.");
+          yield* eventually("the archived-task turn to complete", v2RunCompleted(2));
 
-          yield* repository.update({ id: task.id, closedAt: null });
+          yield* repository.setArchived({ ids: [task.id], archived: false, actor: person });
           yield* repository.upsertAgent({ ...agent, enabled: false });
           yield* sendAsPerson(first.threadId, "Disabled agent: just answer.");
           yield* eventually("the disabled-agent turn to complete", v2RunCompleted(3));

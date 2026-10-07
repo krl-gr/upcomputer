@@ -7,10 +7,15 @@ import {
   TaskAutomation,
   TaskAutomationId,
   TaskAutomationRun,
+  TaskArchiveFilter,
   TaskEvent,
   TaskEventId,
   TaskId,
   TaskTag,
+  TASK_ARCHIVED_EVENT,
+  TASK_STATUS_CHANGED_EVENT,
+  TASK_UNARCHIVED_EVENT,
+  type TaskActor,
   type TaskSearchInput,
   type TaskPageInput,
   type TaskThreadTasksInput,
@@ -50,6 +55,8 @@ import {
   PersistTaskEventInput,
   TaskRepository,
   TouchTaskInput,
+  type SetTasksArchivedInput,
+  type SetTasksArchivedResult,
   type TaskRepositoryShape,
 } from "./TaskRepository.ts";
 import {
@@ -78,7 +85,7 @@ const TaskDbRow = Schema.Struct({
   metadata: Schema.fromJsonString(Schema.Unknown),
   createdAt: Task.fields.createdAt,
   updatedAt: Task.fields.updatedAt,
-  closedAt: Task.fields.closedAt,
+  archivedAt: Task.fields.archivedAt,
   notBefore: Task.fields.notBefore,
   triggerChangedAt: Task.fields.triggerChangedAt,
 });
@@ -195,7 +202,7 @@ function attachTags(
 /** Whether a write changes what agent triggers react to (see Task.triggerChangedAt). */
 function triggerFieldsChanged(
   previous: Task,
-  next: Pick<Task, "title" | "description" | "status" | "tags" | "notBefore" | "closedAt">,
+  next: Pick<Task, "title" | "description" | "status" | "tags" | "notBefore" | "archivedAt">,
 ): boolean {
   const previousTags = new Set(previous.tags);
   const nextTags = new Set(next.tags);
@@ -203,7 +210,7 @@ function triggerFieldsChanged(
     previous.title !== next.title ||
     previous.description !== next.description ||
     previous.status !== next.status ||
-    previous.closedAt !== next.closedAt ||
+    previous.archivedAt !== next.archivedAt ||
     previous.notBefore !== next.notBefore ||
     previousTags.size !== nextTags.size ||
     [...nextTags].some((tag) => !previousTags.has(tag))
@@ -394,13 +401,44 @@ const makeTaskRepository = Effect.gen(function* () {
         AND (n.started_at > r.started_at OR (n.started_at = r.started_at AND n.id < r.id))
     ) THEN 'blocked:superseded' ELSE r.status END`);
 
+  const archiveCondition = (archive: TaskArchiveFilter) =>
+    sql.literal(
+      archive === "all"
+        ? "1 = 1"
+        : archive === "archived"
+          ? "archived_at IS NOT NULL"
+          : "archived_at IS NULL",
+    );
+
+  /**
+   * History events the server records itself. A caller-supplied id makes the
+   * insert idempotent; otherwise SQLite generates one.
+   */
+  const insertHistoryEvent = (event: {
+    readonly id?: string;
+    readonly taskId: TaskId;
+    readonly kind: string;
+    readonly payload: unknown;
+    readonly createdAt: string;
+  }) => sql`
+    INSERT INTO task_events (id, task_id, kind, payload_json, created_at)
+    VALUES (
+      COALESCE(${event.id ?? null}, 'task-event-' || lower(hex(randomblob(16)))),
+      ${event.taskId},
+      ${event.kind},
+      ${stringifyJsonColumn(event.payload)},
+      ${event.createdAt}
+    )
+    ON CONFLICT (id) DO NOTHING
+  `;
+
   const threadRunCountRows = SqlSchema.findAll({
     Request: Schema.Struct({ ids: Schema.String }),
     Result: Schema.Struct({ threadId: ThreadId, ...TaskRunCount.fields }),
     execute: ({ ids }) => sql`
       SELECT t.root_thread_id AS "threadId", ${countedRunStatus} AS status, COUNT(*) AS count
       FROM tasks t JOIN task_agent_runs r ON r.task_id = t.id
-      WHERE t.root_thread_id IN (SELECT value FROM json_each(${ids}))
+      WHERE t.root_thread_id IN (SELECT value FROM json_each(${ids})) AND t.archived_at IS NULL
       GROUP BY t.root_thread_id, 2 ORDER BY t.root_thread_id, 2`,
   });
   const threadRunCounts: TaskRepositoryShape["threadRunCounts"] = Effect.fn(
@@ -435,6 +473,7 @@ const makeTaskRepository = Effect.gen(function* () {
     execute: () => sql`
       SELECT ${countedRunStatus} AS status, COUNT(*) AS count
       FROM tasks t JOIN task_agent_runs r ON r.task_id = t.id
+      WHERE t.archived_at IS NULL
       GROUP BY 1 ORDER BY 1`,
   });
   const runCounts: TaskRepositoryShape["runCounts"] = Effect.fn("TaskRepository.runCounts")(
@@ -543,7 +582,7 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json,
           created_at,
           updated_at,
-          closed_at,
+          archived_at,
           not_before,
           trigger_changed_at
         )
@@ -566,7 +605,7 @@ const makeTaskRepository = Effect.gen(function* () {
           ${stringifyJsonColumn(task.metadata)},
           ${task.createdAt},
           ${task.updatedAt},
-          ${task.closedAt},
+          ${task.archivedAt},
           ${task.notBefore},
           ${task.triggerChangedAt}
         )
@@ -586,7 +625,7 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json = excluded.metadata_json,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
-          closed_at = excluded.closed_at,
+          archived_at = excluded.archived_at,
           not_before = excluded.not_before,
           trigger_changed_at = excluded.trigger_changed_at
       `,
@@ -676,7 +715,7 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json AS "metadata",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
-          closed_at AS "closedAt",
+          archived_at AS "archivedAt",
           not_before AS "notBefore",
           trigger_changed_at AS "triggerChangedAt"
         FROM tasks
@@ -710,7 +749,7 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json AS "metadata",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
-          closed_at AS "closedAt",
+          archived_at AS "archivedAt",
           not_before AS "notBefore",
           trigger_changed_at AS "triggerChangedAt"
       FROM tasks WHERE id IN (SELECT value FROM json_each(${idsJson}))
@@ -724,12 +763,13 @@ const makeTaskRepository = Effect.gen(function* () {
       status: Schema.NullOr(Task.fields.status),
       tagsJson: Schema.String,
       tagCount: Schema.Number,
+      archive: TaskArchiveFilter,
       afterRank: Schema.NullOr(Task.fields.rank),
       afterId: Schema.NullOr(TaskId),
       limit: Schema.Number,
     }),
     Result: TaskDbRow,
-    execute: ({ projectId, status, tagsJson, tagCount, afterRank, afterId, limit }) =>
+    execute: ({ projectId, status, tagsJson, tagCount, archive, afterRank, afterId, limit }) =>
       sql`
         SELECT
           id,
@@ -750,12 +790,13 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json AS "metadata",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
-          closed_at AS "closedAt",
+          archived_at AS "archivedAt",
           not_before AS "notBefore",
           trigger_changed_at AS "triggerChangedAt"
         FROM tasks
         WHERE (${projectId} IS NULL OR project_id = ${projectId})
           AND (${status} IS NULL OR status = ${status})
+          AND ${archiveCondition(archive)}
           AND (
             ${tagCount} = 0
             OR id IN (
@@ -797,7 +838,7 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json AS "metadata",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
-          closed_at AS "closedAt",
+          archived_at AS "archivedAt",
           not_before AS "notBefore",
           trigger_changed_at AS "triggerChangedAt"
         FROM tasks
@@ -805,7 +846,7 @@ const makeTaskRepository = Effect.gen(function* () {
       `,
   });
 
-  // Uses `tasks_root_thread_id`; open tasks first, then closed, each in global order.
+  // Uses `tasks_root_thread_id`; unarchived tasks only, in global order.
   const threadTaskRows = SqlSchema.findAll({
     Request: Schema.Struct({ threadId: ThreadId, limit: Schema.Number }),
     Result: TaskDbRow,
@@ -830,12 +871,12 @@ const makeTaskRepository = Effect.gen(function* () {
           metadata_json AS "metadata",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
-          closed_at AS "closedAt",
+          archived_at AS "archivedAt",
           not_before AS "notBefore",
           trigger_changed_at AS "triggerChangedAt"
         FROM tasks
-        WHERE root_thread_id = ${threadId}
-        ORDER BY closed_at IS NOT NULL, rank ASC, id ASC
+        WHERE root_thread_id = ${threadId} AND archived_at IS NULL
+        ORDER BY rank ASC, id ASC
         LIMIT ${limit}
       `,
   });
@@ -1107,7 +1148,7 @@ const makeTaskRepository = Effect.gen(function* () {
         WHERE EXISTS (
             SELECT 1 FROM tasks
             WHERE id = ${run.taskId}
-              AND closed_at IS NULL
+              AND archived_at IS NULL
               AND (${run.startableAt} IS NULL OR not_before IS NULL OR not_before <= ${run.startableAt})
           )
           AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
@@ -1380,7 +1421,7 @@ const makeTaskRepository = Effect.gen(function* () {
     Result: Schema.Struct({ id: TaskId }),
     execute: ({ after, until }) => sql`
       SELECT id FROM tasks
-      WHERE not_before > ${after} AND not_before <= ${until} AND closed_at IS NULL
+      WHERE not_before > ${after} AND not_before <= ${until} AND archived_at IS NULL
       ORDER BY rank ASC, id ASC
     `,
   });
@@ -1559,7 +1600,7 @@ const makeTaskRepository = Effect.gen(function* () {
       sql`
         SELECT COUNT(*) AS "count"
         FROM tasks
-        WHERE closed_at IS NULL
+        WHERE archived_at IS NULL
           AND json_extract(metadata_json, '$.automationId') = ${id}
       `,
   });
@@ -1752,7 +1793,7 @@ const makeTaskRepository = Effect.gen(function* () {
       }),
     );
 
-  const upsert: TaskRepositoryShape["upsert"] = (task) =>
+  const upsert: TaskRepositoryShape["upsert"] = ({ actor, ...task }) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
@@ -1771,20 +1812,34 @@ const makeTaskRepository = Effect.gen(function* () {
           // Stored as UTC so SQL range scans compare correctly.
           const notBefore =
             requestedNotBefore === null ? null : new Date(requestedNotBefore).toISOString();
+          const archivedAt = previous ? previous.archivedAt : (task.archivedAt ?? null);
           const persisted: Task = {
             ...task,
             rank,
             ...origin,
             notBefore,
+            archivedAt,
             sourceRunId:
               Option.isNone(existing) && origin.parentRunId ? origin.parentRunId : task.sourceRunId,
             triggerChangedAt: !previous
               ? task.updatedAt
-              : triggerFieldsChanged(previous, { ...task, notBefore })
+              : triggerFieldsChanged(previous, { ...task, notBefore, archivedAt })
                 ? yield* nowIso
                 : previous.triggerChangedAt,
           };
           yield* upsertTaskRow(persisted);
+          if (previous && previous.status !== persisted.status) {
+            yield* insertHistoryEvent({
+              taskId: task.id,
+              kind: TASK_STATUS_CHANGED_EVENT,
+              payload: {
+                from: previous.status,
+                to: persisted.status,
+                actor: actor ?? ({ type: "server" } satisfies TaskActor),
+              },
+              createdAt: persisted.updatedAt,
+            });
+          }
           yield* writeTaskTags(task.id, task.tags);
           const saved = yield* getById({ id: task.id });
           return yield* Option.match(saved, {
@@ -1811,6 +1866,7 @@ const makeTaskRepository = Effect.gen(function* () {
         status: input.status ?? null,
         tagsJson: JSON.stringify(tags),
         tagCount: tags.length,
+        archive: input.archive ?? "active",
         afterRank: null,
         afterId: null,
         limit,
@@ -1910,15 +1966,18 @@ const makeTaskRepository = Effect.gen(function* () {
             status: input.status ?? null,
             tagsJson: JSON.stringify(tags),
             tagCount: tags.length,
+            archive: input.archive ?? "active",
             afterRank: input.cursor?.rank ?? null,
             afterId: input.cursor?.id ?? null,
             limit: limit + 1,
           });
           const visible = rows.slice(0, limit);
           const tasks = yield* decorateTaskRows(visible);
-          // Status facets intentionally ignore the selected status and page cursor.
+          // Status facets follow the project and archive filters only, never the
+          // selected status or the page cursor.
           const statuses = yield* sql<{ status: string }>`SELECT DISTINCT status FROM tasks
         WHERE (${input.projectId ?? null} IS NULL OR project_id = ${input.projectId ?? null})
+          AND ${archiveCondition(input.archive ?? "active")}
         ORDER BY status`;
           const last = visible.at(-1);
           return {
@@ -1970,14 +2029,98 @@ const makeTaskRepository = Effect.gen(function* () {
                   ...(input.sourceRunId !== undefined ? { sourceRunId: input.sourceRunId } : {}),
                   ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
                   ...(input.tags !== undefined ? { tags: input.tags } : {}),
-                  ...(input.closedAt !== undefined ? { closedAt: input.closedAt } : {}),
                   ...(input.notBefore !== undefined ? { notBefore: input.notBefore } : {}),
                   updatedAt,
                 } satisfies Task;
-                return upsert(next);
+                return upsert({ ...next, actor: input.actor });
               }),
             ),
         }),
+      ),
+    );
+
+  const setArchived = (input: SetTasksArchivedInput) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const timestamp = yield* nowIso;
+          const results: Array<SetTasksArchivedResult[number]> = [];
+          for (const id of input.ids) {
+            const existing = yield* getById({ id });
+            if (Option.isNone(existing)) {
+              results.push({ id, outcome: "not-found", task: null });
+              continue;
+            }
+            if ((existing.value.archivedAt !== null) === input.archived) {
+              results.push({
+                id,
+                outcome: input.archived ? "already-archived" : "not-archived",
+                task: null,
+              });
+              continue;
+            }
+            // Archiving is a trigger change, as closing was: an agent
+            // whose triggers match may run again after an unarchive.
+            yield* sql`
+              UPDATE tasks
+              SET archived_at = ${input.archived ? timestamp : null},
+                updated_at = ${timestamp},
+                trigger_changed_at = ${timestamp}
+              WHERE id = ${id}
+            `;
+            yield* insertHistoryEvent({
+              taskId: id,
+              kind: input.archived ? TASK_ARCHIVED_EVENT : TASK_UNARCHIVED_EVENT,
+              payload: {
+                actor: input.actor,
+                ...(input.reason !== undefined ? { reason: input.reason } : {}),
+              },
+              createdAt: timestamp,
+            });
+            results.push({
+              id,
+              outcome: input.archived ? "archived" : "unarchived",
+              task: Option.getOrNull(yield* getById({ id })),
+            });
+          }
+          return results;
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.setArchived:query",
+            "TaskRepository.setArchived:decodeRows",
+          ),
+        ),
+      );
+
+  const taskEventRows = SqlSchema.findAll({
+    Request: Schema.Struct({
+      taskId: TaskId,
+      kindsJson: Schema.NullOr(Schema.String),
+      limit: Schema.Number,
+    }),
+    Result: TaskEventDbRow,
+    execute: ({ taskId, kindsJson, limit }) => sql`
+      SELECT id, task_id AS "taskId", kind, payload_json AS "payload", created_at AS "createdAt"
+      FROM task_events
+      WHERE task_id = ${taskId}
+        AND (${kindsJson} IS NULL OR kind IN (SELECT value FROM json_each(${kindsJson})))
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT ${limit}
+    `,
+  });
+
+  const listTaskEvents: TaskRepositoryShape["events"] = (input) =>
+    taskEventRows({
+      taskId: input.taskId,
+      kindsJson: input.kinds === undefined ? null : JSON.stringify(input.kinds),
+      limit: Math.min(input.limit ?? 50, 200),
+    }).pipe(
+      Effect.map((rows) => ({ events: rows })),
+      Effect.mapError(
+        toSqlOrDecodeError("TaskRepository.events:query", "TaskRepository.events:decodeRows"),
       ),
     );
 
@@ -2380,6 +2523,10 @@ const makeTaskRepository = Effect.gen(function* () {
           });
           if (completed.length === 0) return false;
 
+          const statusBefore =
+            input.taskStatus === undefined
+              ? []
+              : yield* sql<{ status: string }>`SELECT status FROM tasks WHERE id = ${input.taskId}`;
           if (
             input.taskStatus !== undefined ||
             input.taskOutput !== undefined ||
@@ -2409,6 +2556,20 @@ const makeTaskRepository = Effect.gen(function* () {
               updated_at = ${input.completedAt}
             WHERE id = ${input.taskId}
           `;
+          }
+          const from = statusBefore[0]?.status;
+          if (from !== undefined && input.taskStatus !== undefined && from !== input.taskStatus) {
+            yield* insertHistoryEvent({
+              id: `${input.id}:task-status-changed`,
+              taskId: input.taskId,
+              kind: TASK_STATUS_CHANGED_EVENT,
+              payload: {
+                from,
+                to: input.taskStatus,
+                actor: { type: "agent-run", agentRunId: input.id } satisfies TaskActor,
+              },
+              createdAt: input.completedAt,
+            });
           }
           yield* Effect.forEach(input.events, insertTaskEvent, {
             discard: true,
@@ -2681,12 +2842,19 @@ const makeTaskRepository = Effect.gen(function* () {
     listAllTasks,
     listTasksReachingNotBefore,
     update: (input) => withChanges(update(input), () => [input.id]),
+    setArchived: (input) =>
+      withChanges(
+        setArchived(input),
+        (results) => results.flatMap(({ id, task }) => (task === null ? [] : [id])),
+        true,
+      ),
     reorder: (input) => withChanges(reorder(input), () => [input.id]),
     deleteTask: (input) => withChanges(deleteTask(input), () => [input.id], true, input.id),
     replaceTags: (input) => withChanges(replaceTags(input), () => [input.taskId]),
     addTag: (input) => withChanges(addTag(input), () => [input.taskId]),
     removeTag: (input) => withChanges(removeTag(input), () => [input.taskId]),
     appendEvent,
+    events: listTaskEvents,
     upsertAgent,
     getAgentById,
     searchAgents,

@@ -30,10 +30,14 @@ import {
 import {
   Task,
   TaskAppendEventInput,
+  TaskArchiveInput,
+  TaskArchiveResult,
   TaskCreateInput,
   TaskDeleteInput,
   TaskError,
   TaskEvent,
+  TaskEventsInput,
+  TaskEventsResult,
   TaskReorderInput,
   TaskGetInput,
   TaskPageInput,
@@ -53,7 +57,7 @@ import {
   TaskUpdateInput,
 } from "./tasks.ts";
 
-export const TASKS_RPC_CONTRACT_VERSION = 11 as const;
+export const TASKS_RPC_CONTRACT_VERSION = 12 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {
@@ -93,6 +97,9 @@ export const TASKS_RPC_METHODS = {
   addTag: `${TASKS_RPC_NAMESPACE}.addTag`,
   removeTag: `${TASKS_RPC_NAMESPACE}.removeTag`,
   appendEvent: `${TASKS_RPC_NAMESPACE}.appendEvent`,
+  events: `${TASKS_RPC_NAMESPACE}.events`,
+  archive: `${TASKS_RPC_NAMESPACE}.archive`,
+  unarchive: `${TASKS_RPC_NAMESPACE}.unarchive`,
   getPromptSettings: `${TASKS_RPC_NAMESPACE}.getPromptSettings`,
   updatePromptSettings: `${TASKS_RPC_NAMESPACE}.updatePromptSettings`,
 } as const;
@@ -172,6 +179,21 @@ export const TasksAppendEventRpc = Rpc.make(TASKS_RPC_METHODS.appendEvent, {
   success: TaskEvent,
   error: TaskError,
 });
+export const TasksEventsRpc = Rpc.make(TASKS_RPC_METHODS.events, {
+  payload: TaskEventsInput,
+  success: TaskEventsResult,
+  error: TaskError,
+});
+export const TasksArchiveRpc = Rpc.make(TASKS_RPC_METHODS.archive, {
+  payload: TaskArchiveInput,
+  success: TaskArchiveResult,
+  error: TaskError,
+});
+export const TasksUnarchiveRpc = Rpc.make(TASKS_RPC_METHODS.unarchive, {
+  payload: TaskArchiveInput,
+  success: TaskArchiveResult,
+  error: TaskError,
+});
 export const TasksGetPromptSettingsRpc = Rpc.make(TASKS_RPC_METHODS.getPromptSettings, {
   payload: TaskPromptSettingsGetInput,
   success: TaskPromptSettings,
@@ -217,6 +239,9 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksAddTagRpc,
   TasksRemoveTagRpc,
   TasksAppendEventRpc,
+  TasksEventsRpc,
+  TasksArchiveRpc,
+  TasksUnarchiveRpc,
   TasksGetPromptSettingsRpc,
   TasksUpdatePromptSettingsRpc,
 );

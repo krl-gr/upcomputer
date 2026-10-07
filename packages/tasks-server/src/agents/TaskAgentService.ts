@@ -48,6 +48,8 @@ export type TaskChangedReason =
   | "deleted"
   | "tag-added"
   | "tag-removed"
+  | "archived"
+  | "unarchived"
   | "not-before-reached"
   | "run-finished";
 export type TaskAgentChangedReason = "upserted" | "deleted";
@@ -145,7 +147,7 @@ function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
   if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
-  if (task.closedAt !== null) return false;
+  if (task.archivedAt !== null) return false;
   if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return false;
   if (agent.startStatuses.length > 0 && !agent.startStatuses.includes(task.status)) return false;
   if (agent.startTags.length === 0) return true;
@@ -159,7 +161,7 @@ function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
  * change underneath it, for example when several agents work on one task.
  */
 export function continuesTaskAgentRun(agent: TaskAgent, task: Task): boolean {
-  return agent.enabled && task.closedAt === null;
+  return agent.enabled && task.archivedAt === null;
 }
 
 type StopReason =
@@ -167,7 +169,7 @@ type StopReason =
   | "stop-requested"
   | "session-stopped"
   | "turn-interrupted"
-  | "task-closed"
+  | "task-archived"
   | "task-deleted"
   | "agent-disabled"
   | "agent-deleted";
@@ -177,7 +179,7 @@ function endingStopReason(agent: TaskAgent | null, task: Task | null): StopReaso
   if (task === null) return "task-deleted";
   if (agent === null) return "agent-deleted";
   if (!agent.enabled) return "agent-disabled";
-  return continuesTaskAgentRun(agent, task) ? null : "task-closed";
+  return continuesTaskAgentRun(agent, task) ? null : "task-archived";
 }
 
 /**
@@ -795,7 +797,9 @@ const make = Effect.gen(function* () {
       if (run === null) return;
 
       yield* Effect.gen(function* () {
-        const globallyOrderedTasks = yield* repository.listAllTasks();
+        const globallyOrderedTasks = (yield* repository.listAllTasks()).filter(
+          ({ archivedAt }) => archivedAt === null,
+        );
         const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
         const globalPosition = {
           index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
@@ -878,7 +882,8 @@ const make = Effect.gen(function* () {
 
   const reconcileTask = ({ task: queuedTask, reason, releasedRunId }: TaskChangedInput) =>
     Effect.gen(function* () {
-      if (reason !== "run-finished") {
+      // Archive and unarchive record their own history events in the repository.
+      if (reason !== "run-finished" && reason !== "archived" && reason !== "unarchived") {
         yield* appendEvent(queuedTask, `task.${reason}`, {
           status: queuedTask.status,
           tags: queuedTask.tags,
@@ -977,8 +982,8 @@ const make = Effect.gen(function* () {
           const taskOption = yield* repository.getById({ id: run.taskId });
           if (Option.isNone(taskOption)) return refuse(`Task '${run.taskId}' was not found.`);
           const task = taskOption.value;
-          if (task.closedAt !== null)
-            return refuse(`Task '${task.id}' is closed. Reopen it before messaging its runs.`);
+          if (task.archivedAt !== null)
+            return refuse(`Task '${task.id}' is archived. Unarchive it before messaging its runs.`);
           const agentOption = yield* repository.getAgentById({ id: run.agentId });
           if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
           const agent = agentOption.value;
@@ -1026,7 +1031,7 @@ const make = Effect.gen(function* () {
           const active = yield* findActive;
           if (Option.isSome(active)) return activeRefusal(active.value);
           const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
-          // Open task and enabled agent are re-checked inside the insert, so a
+          // Unarchived task and enabled agent are re-checked inside the insert, so a
           // close, disable or delete committed since the checks above wins.
           const created = yield* repository
             .startAgentRun({
@@ -1063,7 +1068,7 @@ const make = Effect.gen(function* () {
           const continuation = created.continuation;
           if (continuation === null)
             return refuse(
-              `Task '${task.id}' was closed, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
+              `Task '${task.id}' was archived, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
             );
 
           if (message.type === "send") {
@@ -1130,7 +1135,7 @@ ${message.text}`,
   /**
    * A person's message that starts a v2 run in a task-agent run's thread
    * continues the thread's latest run as agent_run_message would. Where that
-   * refuses (closed task, disabled agent, another active run), or the run is
+   * refuses (archived task, disabled agent, another active run), or the run is
    * still active, the message stays a plain chat turn.
    */
   const continueFromPersonMessage = (v2Run: OrchestrationV2Run) =>

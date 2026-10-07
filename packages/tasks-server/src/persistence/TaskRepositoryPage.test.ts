@@ -35,7 +35,7 @@ const task = (id: string, tags: string[] = []) => ({
   tags,
   createdAt: timestamp,
   updatedAt: timestamp,
-  closedAt: null,
+  archivedAt: null,
 });
 
 const run = (id: string, taskId: string, status: string, startedAt: string) => ({

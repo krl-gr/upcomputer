@@ -72,7 +72,7 @@ test("finalization ownership and task truth commit atomically and idempotently",
     tags: ["upcomputer-dev"],
     createdAt: timestamp,
     updatedAt: timestamp,
-    closedAt: null,
+    archivedAt: null,
     notBefore: null,
     triggerChangedAt: timestamp,
   };
