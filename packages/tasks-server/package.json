@@ -18,6 +18,10 @@
     "./cutover": {
       "types": "./src/cutover/V1Cutover.ts",
       "import": "./src/cutover/V1Cutover.ts"
+    },
+    "./import": {
+      "types": "./src/import/WandeImport.ts",
+      "import": "./src/import/WandeImport.ts"
     }
   },
   "scripts": {

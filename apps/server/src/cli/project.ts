@@ -196,7 +196,8 @@ const projectCommandUuid = Crypto.Crypto.pipe(
   ),
 );
 
-const ProjectCliRuntimeLive = ProjectServiceLayerLive.pipe(
+/** Core projects on a home whose server is not running; needs ServerConfig. */
+export const ProjectCliRuntimeLive = ProjectServiceLayerLive.pipe(
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(
