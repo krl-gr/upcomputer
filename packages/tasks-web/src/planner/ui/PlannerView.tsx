@@ -50,6 +50,7 @@ import { AudienceSwitch } from "./AudienceSwitch.tsx";
 import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
+import { KindSwitch } from "./KindSwitch.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
 import { PlannerLayout } from "./PlannerLayout.tsx";
 import { isInboxRoot, type PlannerProject } from "./ProjectChip.tsx";
@@ -68,7 +69,6 @@ function PlannerBody(props: {
   readonly projectIds: readonly string[] | null;
   readonly audience: PlannerAudience;
   readonly kind: PlannerKind;
-  readonly onKindChange: (kind: PlannerKind) => void;
   readonly triggerTags: ReadonlySet<string>;
   readonly onOpenTask: (taskId: string) => void;
 }) {
@@ -105,6 +105,12 @@ function PlannerBody(props: {
     active: false,
     ids: new Set(),
   });
+  // A selection belongs to one list: switching Tasks / Routines leaves select mode.
+  const [selectionKind, setSelectionKind] = useState(props.kind);
+  if (selectionKind !== props.kind) {
+    setSelectionKind(props.kind);
+    setListSelect({ active: false, ids: new Set() });
+  }
   const [weekSelection, setWeekSelection] = useState<WeekSelection>(NO_SELECTION);
   const [entryMenu, setEntryMenu] = useState<EntryMenuTarget | null>(null);
 
@@ -309,10 +315,6 @@ function PlannerBody(props: {
                 setShowArchived((current) => !current);
                 setListSelect({ active: false, ids: new Set() });
               }}
-              onKindChange={(kind) => {
-                props.onKindChange(kind);
-                setListSelect({ active: false, ids: new Set() });
-              }}
               automations={showsAutomations ? automations : null}
               automationIndicator={dnd.indicators.automation}
               progress={progress}
@@ -495,6 +497,7 @@ export function PlannerView(props: {
               </SelectPopup>
             </Select>
           ) : null}
+          <KindSwitch value={kind} onChange={setKind} />
           <AudienceSwitch value={audience} onChange={setAudience} />
           {props.projectSelect}
         </>
@@ -523,7 +526,6 @@ export function PlannerView(props: {
             projectIds={projectIds}
             audience={audience}
             kind={kind}
-            onKindChange={setKind}
             triggerTags={triggerTags}
             onOpenTask={openTask}
           />

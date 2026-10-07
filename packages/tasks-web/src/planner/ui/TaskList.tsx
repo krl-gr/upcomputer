@@ -6,10 +6,6 @@ import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { AutomationSnapshot } from "../data/automationStore.ts";
 import type { PaginatedTasks } from "../data/hooks.ts";
 import { plannerListShows } from "../data/plannerStore.ts";
@@ -32,26 +28,6 @@ export function noteCreatedInMine(audience: PlannerAudience, kind: PlannerKind) 
       title: "Created in Mine",
       description: "New tasks are yours. Hand one to agents from its window.",
     });
-}
-
-/** Tasks / Routines: wande's two tabs, as a toggle in the list header. */
-function KindSwitch(props: {
-  readonly value: PlannerKind;
-  readonly onChange: (kind: PlannerKind) => void;
-}) {
-  return (
-    <ToggleGroup
-      aria-label="Tasks or routines"
-      value={[props.value]}
-      onValueChange={(value) => {
-        const next = value[0];
-        if (next === "task" || next === "routine") props.onChange(next);
-      }}
-    >
-      <ToggleGroupItem value="task">Tasks</ToggleGroupItem>
-      <ToggleGroupItem value="routine">Routines</ToggleGroupItem>
-    </ToggleGroup>
-  );
 }
 
 export interface ListDropIndicator {
@@ -151,7 +127,6 @@ export function TaskList(props: {
   readonly activeTasks: readonly PlannerTask[];
   readonly showArchived: boolean;
   readonly onToggleArchived: () => void;
-  readonly onKindChange: (kind: PlannerKind) => void;
   /** The automations when the list shows them (Routines, Agents or All). */
   readonly automations: AutomationSnapshot | null;
   readonly automationIndicator: ListDropIndicator | null;
@@ -242,7 +217,6 @@ export function TaskList(props: {
                   {kind === "routine" ? "New Routine" : "New Task"}
                 </Button>
               )}
-              <KindSwitch value={kind} onChange={props.onKindChange} />
             </div>
             <div className="flex items-center gap-1">
               {automationsOnly ? null : (

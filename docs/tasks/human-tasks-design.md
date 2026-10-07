@@ -694,6 +694,7 @@ Positions are wande's. "Toolbar" is `WorkspaceViewLayout`'s toolbar row.
 | -------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
 | Planner / Table switch                                               | none                                    | toolbar, left                                             |
 | project filter                                                       | none (wande has no list filters)        | toolbar, right (existing `ProjectFilterSelect`)           |
+| Tasks / Routines (phase 4)                                           | top-level tabs                          | toolbar, left of Mine / Agents / All                      |
 | Mine / Agents / All (phase 3)                                        | none                                    | toolbar, next to the project filter                       |
 | environment select                                                   | none                                    | toolbar, only with more than one environment              |
 | New Task                                                             | list header, left                       | list header, left                                         |
@@ -864,7 +865,7 @@ request, using a dev database seeded with `vp run migrate-dev-db`.
 ### Phase 4: routines and reminders
 
 - Routines: `kind: "routine"` creation and a Tasks / Routines switch in the
-  list header (open question 13); weekly progress; default routine duration.
+  toolbar (open question 13); weekly progress; default routine duration.
 - Reminders: migration 022 (`remind_at`, `reminder_sent_at`, partial index);
   `scheduleTimeZone` and lead-minute settings; a sweeper in tasks-server that
   claims due entries in a transaction (port of `claimDueReminders` without
@@ -927,8 +928,9 @@ request, using a dev database seeded with `vp run migrate-dev-db`.
 12. **Wande's Projects tab and project creation from the planner.**
     Recommendation: drop both. Projects are created and arranged in the
     sidebar; the planner shows them and Inbox.
-13. **Routines entry point.** Recommendation: a Tasks / Routines toggle in
-    the planner list header (wande had a separate tab), phase 4.
+13. **Routines entry point.** Decided: a Tasks / Routines toggle in the
+    planner toolbar, left of Mine / Agents / All (wande had a separate tab),
+    phase 4. The two switches are the list's two axes, what and whose.
 14. **Calendar drop ordering.** Recommendation: insert by time (5.2) rather
     than wande's full re-sort of the day, which reorders hand-arranged
     untimed entries.

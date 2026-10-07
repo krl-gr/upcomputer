@@ -72,7 +72,8 @@ export function ProjectFilterSelect(props: {
         if (next) props.onChange(next === ALL_FILTER ? null : next);
       }}
     >
-      <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Filter by project">
+      {/* Shrinks toward its icon when the header runs short, so it stays in reach. */}
+      <SelectTrigger className="w-44 min-w-16 shrink" size="sm" aria-label="Filter by project">
         <SelectValue>
           <OptionLabel option={selected} />
         </SelectValue>
