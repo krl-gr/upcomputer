@@ -24,6 +24,7 @@ import {
   type TaskSearchInput,
   type TaskPageInput,
   type TaskThreadTasksInput,
+  TaskRank,
   TaskRunCount,
   type TaskChange,
   type TaskReminder,
@@ -156,7 +157,7 @@ const TaskAgentRunDbRow = Schema.Struct({
 
 const TaskAutomationDbRow = Schema.Struct({
   id: TaskAutomationId,
-  rank: TaskAutomation.fields.rank,
+  rank: Schema.NullOr(TaskRank),
   projectId: TaskAutomation.fields.projectId,
   name: TaskAutomation.fields.name,
   status: TaskAutomation.fields.status,
@@ -299,9 +300,10 @@ function mapAgentRow(row: typeof TaskAgentDbRow.Type): TaskAgent {
   };
 }
 
-function mapAutomationRow(row: typeof TaskAutomationDbRow.Type): TaskAutomation {
+function mapAutomationRow({ rank, ...row }: typeof TaskAutomationDbRow.Type): TaskAutomation {
   return {
     ...row,
+    ...(rank === null ? {} : { rank }),
     skipIfOpen: row.skipIfOpen !== 0,
   };
 }
@@ -1726,9 +1728,10 @@ const makeTaskRepository = Effect.gen(function* () {
     execute: ({ id, rank }) => sql`UPDATE task_automations SET rank = ${rank} WHERE id = ${id}`,
   });
 
+  // Unranked rows (written by a build from before migration 024) come first.
   const listAutomationRankRows = SqlSchema.findAll({
     Request: Schema.Void,
-    Result: Schema.Struct({ id: TaskAutomationId, rank: Task.fields.rank }),
+    Result: Schema.Struct({ id: TaskAutomationId, rank: Schema.NullOr(TaskRank) }),
     execute: () => sql`SELECT id, rank FROM task_automations ORDER BY rank ASC, id ASC`,
   });
 
@@ -3127,9 +3130,20 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
+  /** The automations in order, every one ranked (unranked rows are ranked first). */
+  const rankedAutomationRows = () =>
+    listAutomationRankRows().pipe(
+      Effect.flatMap((rows) =>
+        rows.some(({ rank }) => rank === null)
+          ? rebalanceAutomationRows(rows).pipe(Effect.andThen(listAutomationRankRows()))
+          : Effect.succeed(rows),
+      ),
+      Effect.map((rows) => rows.map(({ id, rank }) => ({ id, rank: rank ?? "" }))),
+    );
+
   /** A new automation goes first, as a new task does. */
   const prependAutomationRank = () =>
-    listAutomationRankRows().pipe(
+    rankedAutomationRows().pipe(
       Effect.flatMap((rows) => {
         const first = rows[0];
         if (first === undefined) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
@@ -3181,7 +3195,7 @@ const makeTaskRepository = Effect.gen(function* () {
               upper: ordered[index]?.rank ?? null,
             };
           };
-          let rows = yield* listAutomationRankRows();
+          let rows = yield* rankedAutomationRows();
           let insertion = resolveInsertion(rows);
           if (!insertion)
             return yield* fail(
@@ -3190,7 +3204,7 @@ const makeTaskRepository = Effect.gen(function* () {
           let rank = taskRankBetween(insertion.lower, insertion.upper);
           if (rank === null) {
             yield* rebalanceAutomationRows(rows);
-            rows = yield* listAutomationRankRows();
+            rows = yield* rankedAutomationRows();
             insertion = resolveInsertion(rows);
             rank = insertion ? taskRankBetween(insertion.lower, insertion.upper) : null;
           }

@@ -6,6 +6,10 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * environment, so every device lists them the same way. The backfill keeps
  * the order the Automations page showed (latest update first). The tasks
  * index serves the planner's lists of one automation's tasks and their counts.
+ *
+ * Unlike tasks, no trigger requires a rank: code from before this migration
+ * (a rolled-back build) inserts automations without one. Such rows list first
+ * and are ranked on the next automation write.
  */
 export const TaskAutomationRankMigration = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -26,13 +30,5 @@ export const TaskAutomationRankMigration = Effect.gen(function* () {
     )
   `;
   yield* sql`CREATE UNIQUE INDEX task_automations_rank_unique ON task_automations(rank)`;
-  yield* sql`
-    CREATE TRIGGER task_automations_rank_required_before_insert
-    BEFORE INSERT ON task_automations
-    WHEN NEW.rank IS NULL
-    BEGIN
-      SELECT RAISE(ABORT, 'task_automations.rank is required');
-    END
-  `;
   yield* sql`CREATE INDEX tasks_created_by_rank ON tasks(created_by, rank)`;
 });
