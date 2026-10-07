@@ -4,6 +4,7 @@ import { ArchiveIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-rea
 import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import type { AutomationSnapshot } from "../data/automationStore.ts";
@@ -192,7 +193,14 @@ export function TaskList(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3">
+      {/* The outer side follows the page header's gutter, so the header's edges
+          line up with the toolbar's; the side towards the week keeps px-3. */}
+      <div
+        className={cn(
+          "flex h-12 shrink-0 items-center justify-between gap-2 border-b pl-(--workspace-gutter-start)",
+          props.canHideWeek && !props.weekHidden ? "pr-3" : "pr-(--workspace-gutter-end)",
+        )}
+      >
         {props.selectMode ? (
           <BulkActions
             selected={selected}

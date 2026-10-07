@@ -261,6 +261,7 @@ function PlannerBody(props: {
           void store.deleteEntries(selectedWeekIds);
           exitWeekSelection();
         }}
+        fullWidth={!wide}
       />
       {snapshot.rangeError ? (
         <p className="border-b px-3 py-1.5 text-xs text-destructive-foreground">
@@ -504,34 +505,37 @@ export function PlannerView(props: {
         </>
       }
     >
-      {environmentId === null ? (
-        <Notice>No connected environment serves Tasks.</Notice>
-      ) : availability === "loading" ? (
-        <Notice>Loading the planner…</Notice>
-      ) : availability === "unavailable" ? (
-        <Notice
-          action={
-            <Button size="sm" variant="outline" onClick={props.onShowTable}>
-              Open the table
-            </Button>
-          }
-        >
-          This environment runs an older server without the planner. The table shows its tasks.
-        </Notice>
-      ) : (
-        <div className="relative min-h-0 flex-1">
-          <PlannerBody
-            key={environmentId}
-            environmentId={environmentId}
-            projects={plannerProjects}
-            projectIds={projectIds}
-            audience={audience}
-            kind={kind}
-            triggerTags={triggerTags}
-            onOpenTask={openTask}
-          />
-        </div>
-      )}
+      {/* A divider under the toolbar, edge to edge like the planner's pane borders. */}
+      <div className="flex min-h-0 flex-1 flex-col border-t">
+        {environmentId === null ? (
+          <Notice>No connected environment serves Tasks.</Notice>
+        ) : availability === "loading" ? (
+          <Notice>Loading the planner…</Notice>
+        ) : availability === "unavailable" ? (
+          <Notice
+            action={
+              <Button size="sm" variant="outline" onClick={props.onShowTable}>
+                Open the table
+              </Button>
+            }
+          >
+            This environment runs an older server without the planner. The table shows its tasks.
+          </Notice>
+        ) : (
+          <div className="relative min-h-0 flex-1">
+            <PlannerBody
+              key={environmentId}
+              environmentId={environmentId}
+              projects={plannerProjects}
+              projectIds={projectIds}
+              audience={audience}
+              kind={kind}
+              triggerTags={triggerTags}
+              onOpenTask={openTask}
+            />
+          </div>
+        )}
+      </div>
     </WorkspaceViewLayout>
   );
 }

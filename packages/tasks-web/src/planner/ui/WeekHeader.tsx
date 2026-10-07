@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { Calendar } from "../../../../../apps/web/src/components/ui/calendar.tsx";
 import { Label } from "../../../../../apps/web/src/components/ui/label.tsx";
 import {
@@ -188,8 +189,16 @@ export function WeekHeader(props: {
   readonly onMoveSelected: (date: string) => void;
   readonly onCopySelected: (dates: readonly string[], at: "top" | "bottom") => void;
   readonly onDeleteSelected: () => void;
+  /** The stacked layout: the week spans the page, so both sides meet its edges. */
+  readonly fullWidth: boolean;
 }) {
   const { preferences } = usePlanner();
+  // The outer sides follow the page header's gutter, so the header's edges line
+  // up with the toolbar's; the side towards the list keeps px-3.
+  const headerClass = cn(
+    "flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-(--workspace-gutter-end)",
+    props.fullWidth ? "pl-(--workspace-gutter-start)" : "pl-3",
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -203,7 +212,7 @@ export function WeekHeader(props: {
 
   if (props.selectionMode)
     return (
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3">
+      <div className={headerClass}>
         <h2 className="text-sm font-semibold text-foreground">
           Selected{" "}
           <span className="font-medium text-muted-foreground tabular-nums">
@@ -312,7 +321,7 @@ export function WeekHeader(props: {
     );
 
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3">
+    <div className={headerClass}>
       <h2 className="truncate text-sm font-semibold text-foreground">
         {monthFormatter.format(first)}{" "}
         <span className="text-muted-foreground">{first.getFullYear()}</span>
