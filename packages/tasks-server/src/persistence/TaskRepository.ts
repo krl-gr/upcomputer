@@ -13,6 +13,7 @@ import {
   TaskArchiveOutcome,
   TaskAutomation,
   TaskAutomationId,
+  TaskAutomationReorderInput,
   TaskAutomationRun,
   TaskAutomationRunSearchInput,
   TaskAutomationSearchInput,
@@ -405,6 +406,14 @@ export interface TaskRepositoryShape {
   readonly getAutomationById: (
     input: GetTaskAutomationInput,
   ) => Effect.Effect<Option.Option<TaskAutomation>, TaskRepositoryError>;
+  /** Moves an automation in the person's order; without a neighbor it goes first. */
+  readonly reorderAutomation: (
+    input: TaskAutomationReorderInput,
+  ) => Effect.Effect<TaskAutomation, TaskRepositoryError>;
+  /** How many tasks each automation created that still exist (`createdBy`). */
+  readonly countAutomationTasks: (input: {
+    readonly ids: ReadonlyArray<TaskAutomationId>;
+  }) => Effect.Effect<ReadonlyMap<TaskAutomationId, number>, TaskRepositoryError>;
   readonly searchAutomations: (
     input: TaskAutomationSearchInput,
   ) => Effect.Effect<ReadonlyArray<TaskAutomation>, TaskRepositoryError>;

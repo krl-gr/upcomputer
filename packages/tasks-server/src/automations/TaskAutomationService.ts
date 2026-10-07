@@ -1,4 +1,5 @@
 import {
+  automationTaskCreator,
   TaskId,
   type TaskAutomation,
   type TaskAutomationRunOutcome,
@@ -133,7 +134,7 @@ const make = Effect.gen(function* () {
         output: null,
         status: automation.template.status,
         priority: automation.template.priority,
-        createdBy: `automation:${automation.id}`,
+        createdBy: automationTaskCreator(automation.id),
         assigneeAgentRunId: null,
         sourceThreadId: null,
         sourceRunId: null,

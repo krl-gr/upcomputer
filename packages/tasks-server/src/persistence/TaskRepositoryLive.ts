@@ -4,6 +4,8 @@ import {
   TaskAgentId,
   TaskAgentRun,
   TaskAgentRunId,
+  AUTOMATION_TASK_CREATOR_PREFIX,
+  automationTaskCreator,
   TaskAutomation,
   TaskAutomationId,
   TaskAutomationRun,
@@ -154,6 +156,7 @@ const TaskAgentRunDbRow = Schema.Struct({
 
 const TaskAutomationDbRow = Schema.Struct({
   id: TaskAutomationId,
+  rank: TaskAutomation.fields.rank,
   projectId: TaskAutomation.fields.projectId,
   name: TaskAutomation.fields.name,
   status: TaskAutomation.fields.status,
@@ -284,6 +287,8 @@ function listFilters(input: TaskSearchInput) {
     audience: input.audience ?? "all",
     kind: input.kind ?? "task",
     excludeStatusesJson: excluded.length > 0 ? JSON.stringify(excluded) : null,
+    createdBy: input.createdBy ?? null,
+    excludeAutomationTasks: input.excludeAutomationTasks === true ? 1 : 0,
   } as const;
 }
 
@@ -829,6 +834,8 @@ const makeTaskRepository = Effect.gen(function* () {
       audience: TaskAudienceFilter,
       kind: TaskKind,
       excludeStatusesJson: Schema.NullOr(Schema.String),
+      createdBy: Schema.NullOr(Schema.String),
+      excludeAutomationTasks: Schema.Number,
       afterRank: Schema.NullOr(Task.fields.rank),
       afterId: Schema.NullOr(TaskId),
       limit: Schema.Number,
@@ -843,6 +850,8 @@ const makeTaskRepository = Effect.gen(function* () {
       audience,
       kind,
       excludeStatusesJson,
+      createdBy,
+      excludeAutomationTasks,
       afterRank,
       afterId,
       limit,
@@ -857,6 +866,9 @@ const makeTaskRepository = Effect.gen(function* () {
           AND ${membershipCondition(audience, kind)}
           AND (${excludeStatusesJson} IS NULL
             OR status NOT IN (SELECT value FROM json_each(${excludeStatusesJson})))
+          AND (${createdBy} IS NULL OR created_by = ${createdBy})
+          AND (${excludeAutomationTasks} = 0
+            OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
           AND (
             ${tagCount} = 0
             OR id IN (
@@ -1465,6 +1477,7 @@ const makeTaskRepository = Effect.gen(function* () {
 
   const AUTOMATION_COLUMNS = sql`
     id,
+    rank,
     project_id AS "projectId",
     name,
     status,
@@ -1490,6 +1503,7 @@ const makeTaskRepository = Effect.gen(function* () {
       sql`
         INSERT INTO task_automations (
           id,
+          rank,
           project_id,
           name,
           status,
@@ -1510,6 +1524,7 @@ const makeTaskRepository = Effect.gen(function* () {
         )
         VALUES (
           ${automation.id},
+          ${automation.rank},
           ${automation.projectId},
           ${automation.name},
           ${automation.status},
@@ -1555,6 +1570,7 @@ const makeTaskRepository = Effect.gen(function* () {
       sql`
         INSERT INTO task_automations (
           id,
+          rank,
           project_id,
           name,
           status,
@@ -1575,6 +1591,7 @@ const makeTaskRepository = Effect.gen(function* () {
         )
         VALUES (
           ${automation.id},
+          ${automation.rank},
           ${automation.projectId},
           ${automation.name},
           ${automation.status},
@@ -1667,7 +1684,7 @@ const makeTaskRepository = Effect.gen(function* () {
         FROM task_automations
         WHERE (${projectId} IS NULL OR project_id = ${projectId})
           AND (${status} IS NULL OR status = ${status})
-        ORDER BY updated_at DESC, created_at DESC, id ASC
+        ORDER BY rank ASC, id ASC
         LIMIT ${limit}
       `,
   });
@@ -1702,6 +1719,28 @@ const makeTaskRepository = Effect.gen(function* () {
         DELETE FROM task_automations
         WHERE id = ${id}
       `,
+  });
+
+  const setAutomationRank = SqlSchema.void({
+    Request: Schema.Struct({ id: TaskAutomationId, rank: Task.fields.rank }),
+    execute: ({ id, rank }) => sql`UPDATE task_automations SET rank = ${rank} WHERE id = ${id}`,
+  });
+
+  const listAutomationRankRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({ id: TaskAutomationId, rank: Task.fields.rank }),
+    execute: () => sql`SELECT id, rank FROM task_automations ORDER BY rank ASC, id ASC`,
+  });
+
+  const automationTaskCountRows = SqlSchema.findAll({
+    Request: Schema.Struct({ creatorsJson: Schema.String }),
+    Result: Schema.Struct({ createdBy: Schema.String, count: Schema.Number }),
+    execute: ({ creatorsJson }) => sql`
+      SELECT created_by AS "createdBy", COUNT(*) AS "count"
+      FROM tasks
+      WHERE created_by IN (SELECT value FROM json_each(${creatorsJson}))
+      GROUP BY created_by
+    `,
   });
 
   const insertAutomationRunRow = SqlSchema.void({
@@ -3076,6 +3115,121 @@ const makeTaskRepository = Effect.gen(function* () {
       ),
     );
 
+  const rebalanceAutomationRows = (rows: ReadonlyArray<{ readonly id: TaskAutomationId }>) => {
+    const ranks = rebalancedTaskRanks(rows.map(({ id }) => id));
+    return sql`UPDATE task_automations SET rank = NULL`.pipe(
+      Effect.andThen(
+        Effect.forEach(rows, ({ id }) => setAutomationRank({ id, rank: ranks.get(id)! }), {
+          discard: true,
+          concurrency: 1,
+        }),
+      ),
+    );
+  };
+
+  /** A new automation goes first, as a new task does. */
+  const prependAutomationRank = () =>
+    listAutomationRankRows().pipe(
+      Effect.flatMap((rows) => {
+        const first = rows[0];
+        if (first === undefined) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
+        const candidate = taskRankBetween(null, first.rank);
+        if (candidate) return Effect.succeed(candidate);
+        return rebalanceAutomationRows(rows).pipe(Effect.as(encodeTaskRank(TASK_RANK_STEP / 2n)));
+      }),
+    );
+
+  /** The stored rank of an existing automation, or a new first one. */
+  const automationRankFor = (input: PersistTaskAutomationInput) =>
+    getAutomationRow({ id: input.id }).pipe(
+      Effect.flatMap((existing) => {
+        const rank = Option.getOrUndefined(existing)?.rank;
+        return rank ? Effect.succeed(rank) : prependAutomationRank();
+      }),
+    );
+
+  const reorderAutomation: TaskRepositoryShape["reorderAutomation"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const fail = (detail: string) =>
+            Effect.fail(toTaskPersistenceSqlError("TaskRepository.reorderAutomation")(detail));
+          if (input.beforeAutomationId === input.id || input.afterAutomationId === input.id)
+            return yield* fail("An automation cannot be its own reorder neighbor");
+          const resolveInsertion = (
+            rows: ReadonlyArray<{ id: TaskAutomationId; rank: string }>,
+          ) => {
+            if (!rows.some(({ id }) => id === input.id)) return null;
+            const ordered = rows.filter(({ id }) => id !== input.id);
+            const beforeIndex =
+              input.beforeAutomationId === undefined
+                ? -1
+                : ordered.findIndex(({ id }) => id === input.beforeAutomationId);
+            const afterIndex =
+              input.afterAutomationId === undefined
+                ? -1
+                : ordered.findIndex(({ id }) => id === input.afterAutomationId);
+            if (
+              (input.beforeAutomationId !== undefined && beforeIndex < 0) ||
+              (input.afterAutomationId !== undefined && afterIndex < 0) ||
+              (beforeIndex >= 0 && afterIndex >= beforeIndex)
+            )
+              return null;
+            const index = beforeIndex >= 0 ? beforeIndex : afterIndex >= 0 ? afterIndex + 1 : 0;
+            return {
+              lower: ordered[index - 1]?.rank ?? null,
+              upper: ordered[index]?.rank ?? null,
+            };
+          };
+          let rows = yield* listAutomationRankRows();
+          let insertion = resolveInsertion(rows);
+          if (!insertion)
+            return yield* fail(
+              "The automation and its neighbors must exist, in after/before order",
+            );
+          let rank = taskRankBetween(insertion.lower, insertion.upper);
+          if (rank === null) {
+            yield* rebalanceAutomationRows(rows);
+            rows = yield* listAutomationRankRows();
+            insertion = resolveInsertion(rows);
+            rank = insertion ? taskRankBetween(insertion.lower, insertion.upper) : null;
+          }
+          if (rank === null) return yield* fail("Unable to allocate an automation rank");
+          yield* setAutomationRank({ id: input.id, rank });
+          const saved = yield* getAutomationRow({ id: input.id });
+          return yield* Option.match(saved, {
+            onNone: () => fail("Automation not found"),
+            onSome: (row) => Effect.succeed(mapAutomationRow(row)),
+          });
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.reorderAutomation:query",
+            "TaskRepository.reorderAutomation:decodeRows",
+          ),
+        ),
+      );
+
+  const countAutomationTasks: TaskRepositoryShape["countAutomationTasks"] = (input) =>
+    automationTaskCountRows({
+      creatorsJson: JSON.stringify(input.ids.map(automationTaskCreator)),
+    }).pipe(
+      Effect.map((rows) => {
+        const byCreator = new Map(rows.map((row) => [row.createdBy, row.count]));
+        return new Map(
+          input.ids.map((id) => [id, byCreator.get(automationTaskCreator(id)) ?? 0] as const),
+        );
+      }),
+      Effect.mapError(
+        toSqlOrDecodeError(
+          "TaskRepository.countAutomationTasks:query",
+          "TaskRepository.countAutomationTasks:decodeRows",
+        ),
+      ),
+    );
+
   const getAutomationById: TaskRepositoryShape["getAutomationById"] = (input) =>
     getAutomationRow(input).pipe(
       Effect.map(Option.map(mapAutomationRow)),
@@ -3090,7 +3244,8 @@ const makeTaskRepository = Effect.gen(function* () {
   const upsertAutomation: TaskRepositoryShape["upsertAutomation"] = (input) =>
     sql
       .withTransaction(
-        upsertAutomationRow(input).pipe(
+        automationRankFor(input).pipe(
+          Effect.flatMap((rank) => upsertAutomationRow({ ...input, rank })),
           Effect.andThen(getAutomationRow({ id: input.id })),
           Effect.flatMap(
             Option.match({
@@ -3117,7 +3272,8 @@ const makeTaskRepository = Effect.gen(function* () {
   const insertAutomation: TaskRepositoryShape["insertAutomation"] = (input) =>
     sql
       .withTransaction(
-        insertAutomationRow(input).pipe(
+        prependAutomationRank().pipe(
+          Effect.flatMap((rank) => insertAutomationRow({ ...input, rank })),
           Effect.andThen(getAutomationRow({ id: input.id })),
           Effect.flatMap(
             Option.match({
@@ -3348,6 +3504,8 @@ const makeTaskRepository = Effect.gen(function* () {
     findRunStatusTrigger,
     upsertAutomation,
     insertAutomation,
+    reorderAutomation,
+    countAutomationTasks,
     updateAutomationSchedule,
     parkAutomation,
     countOpenAutomationTasks,

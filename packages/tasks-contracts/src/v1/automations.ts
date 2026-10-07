@@ -1,5 +1,6 @@
 import {
   IsoDateTime,
+  NonNegativeInt,
   PositiveInt,
   ProjectId,
   ThreadId,
@@ -7,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { TaskId, TaskTag } from "./tasks.ts";
+import { TaskId, TaskRank, TaskTag } from "./tasks.ts";
 
 export const TaskAutomationId = TrimmedNonEmptyString.pipe(Schema.brand("TaskAutomationId"));
 export type TaskAutomationId = typeof TaskAutomationId.Type;
@@ -56,6 +57,11 @@ export type TaskAutomationTemplate = typeof TaskAutomationTemplate.Type;
 
 export const TaskAutomation = Schema.Struct({
   id: TaskAutomationId,
+  /**
+   * The person's order of automations, one per environment (16 hex digits,
+   * new automations go first), as tasks' `rank`. Absent from older servers.
+   */
+  rank: Schema.optional(TaskRank),
   projectId: ProjectId,
   name: TrimmedNonEmptyString,
   status: TaskAutomationStatus,
@@ -113,8 +119,23 @@ export type TaskAutomationSearchInput = typeof TaskAutomationSearchInput.Type;
 export const AutomationSearchInput = TaskAutomationSearchInput;
 export type AutomationSearchInput = typeof AutomationSearchInput.Type;
 
+/** The prefix of `createdBy` on the tasks an automation creates. */
+export const AUTOMATION_TASK_CREATOR_PREFIX = "automation:" as const;
+
+/** The `createdBy` of the tasks this automation creates. */
+export function automationTaskCreator(id: TaskAutomationId): string {
+  return `${AUTOMATION_TASK_CREATOR_PREFIX}${id}`;
+}
+
+export const TaskAutomationListItem = Schema.Struct({
+  ...TaskAutomation.fields,
+  /** Tasks this automation created that still exist. Absent from older servers. */
+  taskCount: Schema.optional(NonNegativeInt),
+});
+export type TaskAutomationListItem = typeof TaskAutomationListItem.Type;
+
 export const TaskAutomationSearchResult = Schema.Struct({
-  automations: Schema.Array(TaskAutomation),
+  automations: Schema.Array(TaskAutomationListItem),
 });
 export type TaskAutomationSearchResult = typeof TaskAutomationSearchResult.Type;
 
@@ -146,6 +167,14 @@ export const TaskAutomationUpsertInput = Schema.Struct({
   sourceThreadId: Schema.optional(Schema.NullOr(ThreadId)),
 });
 export type TaskAutomationUpsertInput = typeof TaskAutomationUpsertInput.Type;
+
+/** Moves an automation next to a neighbor; without one it goes first. */
+export const TaskAutomationReorderInput = Schema.Struct({
+  id: TaskAutomationId,
+  beforeAutomationId: Schema.optional(TaskAutomationId),
+  afterAutomationId: Schema.optional(TaskAutomationId),
+});
+export type TaskAutomationReorderInput = typeof TaskAutomationReorderInput.Type;
 
 /** Human-only lifecycle transition; agents cannot reach this method. */
 export const TaskAutomationSetStatusInput = Schema.Struct({

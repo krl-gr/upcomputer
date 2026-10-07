@@ -46,7 +46,9 @@ export function taskRanksBetween(
 }
 
 /** Deterministic spacing used by migration and the bounded exhaustion rebalance. */
-export function rebalancedTaskRanks(ids: ReadonlyArray<TaskId>): ReadonlyMap<TaskId, TaskRank> {
+export function rebalancedTaskRanks<Id extends string = TaskId>(
+  ids: ReadonlyArray<Id>,
+): ReadonlyMap<Id, TaskRank> {
   if (BigInt(ids.length + 1) * TASK_RANK_STEP > TASK_RANK_MAX) {
     throw new RangeError("The task store is too large to rebalance ranks.");
   }

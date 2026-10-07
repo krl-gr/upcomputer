@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { TaskAgentId, TaskAgentRunId, TaskId } from "@t3tools/tasks-contracts/v1";
+import { TaskAgentId, TaskAgentRunId, TaskAutomationId, TaskId } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -131,6 +131,60 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       assert.include(personPage.statuses, "To Do", "facets ignore the selected status");
       assert.notInclude(personPage.statuses, "Backlog", "facets follow the audience");
       assert.notInclude(personPage.statuses, "Weekly", "facets follow the kind");
+    }),
+  );
+
+  it.effect("filter on createdBy: one automation's tasks, or none of any automation's", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsert(task("c-manual", [], { createdBy: "agent" }));
+      yield* repository.upsert(task("c-a1", [], { createdBy: "automation:task-automation-a" }));
+      yield* repository.upsert(
+        task("c-a2", [], {
+          createdBy: "automation:task-automation-a",
+          archivedAt: "2026-10-05T11:00:00.000Z",
+        }),
+      );
+      yield* repository.upsert(task("c-b", [], { createdBy: "automation:task-automation-b" }));
+      // Only the prefix counts; a person's creator name that mentions automations does not.
+      yield* repository.upsert(task("c-person", [], { createdBy: "Automation:x" }));
+
+      const ids = (input: Parameters<typeof repository.page>[0]) =>
+        repository.page({ limit: 50, ...input }).pipe(
+          Effect.map((page) =>
+            page.tasks
+              .map((item) => item.id as string)
+              .filter((id) => id.startsWith("c-"))
+              .toSorted(),
+          ),
+        );
+      assert.deepStrictEqual(yield* ids({ excludeAutomationTasks: true }), [
+        "c-manual",
+        "c-person",
+      ]);
+      assert.deepStrictEqual(yield* ids({ createdBy: "automation:task-automation-a" }), ["c-a1"]);
+      assert.deepStrictEqual(
+        yield* ids({ createdBy: "automation:task-automation-a", archive: "all" }),
+        ["c-a1", "c-a2"],
+      );
+      assert.deepStrictEqual(
+        (yield* repository.search({ excludeAutomationTasks: true }))
+          .map(({ id }) => id as string)
+          .filter((id) => id.startsWith("c-"))
+          .toSorted(),
+        ["c-manual", "c-person"],
+      );
+
+      const counts = yield* repository.countAutomationTasks({
+        ids: ["task-automation-a", "task-automation-b", "task-automation-none"].map((id) =>
+          TaskAutomationId.make(id),
+        ),
+      });
+      assert.deepStrictEqual(Object.fromEntries(counts), {
+        "task-automation-a": 2,
+        "task-automation-b": 1,
+        "task-automation-none": 0,
+      });
     }),
   );
 

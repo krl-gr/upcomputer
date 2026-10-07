@@ -15,6 +15,7 @@ import {
   AutomationDeleteInput,
   TaskAutomation,
   TaskAutomationRunSearchInput,
+  TaskAutomationReorderInput,
   TaskAutomationRunSearchResult,
   TaskAutomationSearchInput,
   TaskAutomationSearchResult,
@@ -97,7 +98,8 @@ export const TASK_AGENTS_RPC_CAPABILITY = {
   version: TASK_AGENTS_RPC_CONTRACT_VERSION,
 } as const;
 
-export const TASK_AUTOMATIONS_RPC_CONTRACT_VERSION = 1 as const;
+/** 2: automation rank, reorder, and task counts in search results. */
+export const TASK_AUTOMATIONS_RPC_CONTRACT_VERSION = 2 as const;
 export const TASK_AUTOMATIONS_RPC_NAMESPACE = "upcomputer.task-automations.v1" as const;
 export const TASK_AUTOMATIONS_RPC_CAPABILITY_ID = "upcomputer.task-automations.rpc.v1" as const;
 export const TASK_AUTOMATIONS_RPC_CAPABILITY = {
@@ -153,6 +155,7 @@ export const TASK_AUTOMATIONS_RPC_METHODS = {
   setStatus: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.setStatus`,
   delete: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.delete`,
   searchRuns: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.searchRuns`,
+  reorder: `${TASK_AUTOMATIONS_RPC_NAMESPACE}.reorder`,
 } as const;
 
 export const TasksCreateRpc = Rpc.make(TASKS_RPC_METHODS.create, {
@@ -407,6 +410,11 @@ export const TaskAutomationsSearchRunsRpc = Rpc.make(TASK_AUTOMATIONS_RPC_METHOD
   success: TaskAutomationRunSearchResult,
   error: TaskError,
 });
+export const TaskAutomationsReorderRpc = Rpc.make(TASK_AUTOMATIONS_RPC_METHODS.reorder, {
+  payload: TaskAutomationReorderInput,
+  success: TaskAutomation,
+  error: TaskError,
+});
 
 export const TaskAutomationsRpcGroup = RpcGroup.make(
   TaskAutomationsUpsertRpc,
@@ -414,4 +422,5 @@ export const TaskAutomationsRpcGroup = RpcGroup.make(
   TaskAutomationsSetStatusRpc,
   TaskAutomationsDeleteRpc,
   TaskAutomationsSearchRunsRpc,
+  TaskAutomationsReorderRpc,
 );

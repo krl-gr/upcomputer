@@ -2,7 +2,9 @@ import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "@t3tool
 import * as Schema from "effect/Schema";
 import { assert, test } from "vite-plus/test";
 
+import { TaskAutomation, TaskAutomationId } from "./automations.ts";
 import {
+  TaskAutomationsSearchRpc,
   TasksGetRpc,
   TasksPageRpc,
   TasksSearchRpc,
@@ -189,4 +191,43 @@ test("the current client decodes a version 12 server's tasks as agent tasks", ()
     rootThreadIds: [],
   });
   assert.equal(change.scheduleDates, undefined);
+});
+
+const { rank: _automationRank, ...v1AutomationFields } = TaskAutomation.fields;
+/** The automation search result of automations RPC version 1: no rank or task count. */
+const V1AutomationSearch = Schema.Struct({
+  automations: Schema.Array(Schema.Struct(v1AutomationFields)),
+});
+const decodeV1AutomationSearch = Schema.decodeUnknownSync(V1AutomationSearch);
+const encodeAutomationSearch = Schema.encodeSync(TaskAutomationsSearchRpc.successSchema);
+const decodeAutomationSearch = Schema.decodeUnknownSync(TaskAutomationsSearchRpc.successSchema);
+
+test("automations RPC versions 1 and 2 decode each other's search results", () => {
+  const automation = {
+    id: TaskAutomationId.make("task-automation-1"),
+    rank: TaskRank.make("0000000100000000"),
+    projectId: ProjectId.make("project-1"),
+    name: "Daily",
+    status: "draft" as const,
+    schedule: { cron: "0 9 * * *", timezone: "UTC" },
+    template: { title: "Check", description: "", status: "new", priority: null, tags: [] },
+    catchUpPolicy: "fire-once" as const,
+    skipIfOpen: true,
+    createdBy: "user",
+    sourceThreadId: null,
+    nextRunAt: null,
+    lastFiredAt: null,
+    lastFiredSlot: null,
+    lastTaskId: null,
+    lastError: null,
+    failureCount: 0,
+    createdAt: IsoDateTime.make("2026-10-07T10:00:00.000Z"),
+    updatedAt: IsoDateTime.make("2026-10-07T10:00:00.000Z"),
+  };
+  const current = encodeAutomationSearch({ automations: [{ ...automation, taskCount: 3 }] });
+  assert.equal(decodeV1AutomationSearch(current).automations[0]?.name, "Daily");
+  const { rank: _omitted, ...v1 } = automation;
+  const fromV1 = decodeAutomationSearch({ automations: [v1] });
+  assert.equal(fromV1.automations[0]?.rank, undefined);
+  assert.equal(fromV1.automations[0]?.taskCount, undefined);
 });

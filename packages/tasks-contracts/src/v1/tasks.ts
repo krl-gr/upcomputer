@@ -244,6 +244,10 @@ export const TaskSearchInput = Schema.Struct({
   audience: Schema.optional(TaskAudienceFilter),
   /** Defaults to task, so routines stay out of task lists. */
   kind: Schema.optional(TaskKind),
+  /** Only tasks with this creator, such as `automation:<id>` for one automation's tasks. */
+  createdBy: Schema.optional(TrimmedNonEmptyString),
+  /** Leaves out tasks an automation created (`createdBy` `automation:<id>`). */
+  excludeAutomationTasks: Schema.optional(Schema.Boolean),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(500))),
 });
 export type TaskSearchInput = typeof TaskSearchInput.Type;

@@ -452,6 +452,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASK_AUTOMATIONS_RPC_METHODS.setStatus]: operate,
     [TASK_AUTOMATIONS_RPC_METHODS.delete]: operate,
     [TASK_AUTOMATIONS_RPC_METHODS.searchRuns]: read,
+    [TASK_AUTOMATIONS_RPC_METHODS.reorder]: operate,
   },
   handlers: () =>
     TaskAutomationsRpcGroup.toLayer(
@@ -526,7 +527,16 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
-              return { automations: yield* repository.searchAutomations(input) };
+              const automations = yield* repository.searchAutomations(input);
+              const counts = yield* repository.countAutomationTasks({
+                ids: automations.map(({ id }) => id),
+              });
+              return {
+                automations: automations.map((automation) => ({
+                  ...automation,
+                  taskCount: counts.get(automation.id) ?? 0,
+                })),
+              };
             }),
           ),
         [TASK_AUTOMATIONS_RPC_METHODS.delete]: (input) =>
@@ -541,6 +551,13 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               return { runs: yield* repository.searchAutomationRuns(input) };
+            }),
+          ),
+        [TASK_AUTOMATIONS_RPC_METHODS.reorder]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              const repository = yield* TaskRepository;
+              return yield* repository.reorderAutomation(input);
             }),
           ),
       }),
