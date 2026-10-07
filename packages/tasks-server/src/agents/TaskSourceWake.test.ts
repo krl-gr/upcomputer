@@ -41,6 +41,7 @@ const row = (overrides: Partial<PendingWakeRow>): PendingWakeRow => ({
   taskTitle: "Fix the build",
   sourceThreadId: "thread-chat",
   sourceIsRunThread: 0,
+  taskArchived: 0,
   summary: "Fixed it.",
   ...overrides,
 });
@@ -58,6 +59,8 @@ describe("TaskSourceWake", () => {
     // Tasks created by another run do not wake that run's thread.
     expect(wakesSourceChat(row({ sourceIsRunThread: 1 }))).toBe(false);
     expect(wakesSourceChat(row({ sourceThreadId: "thread-run-1" }))).toBe(false);
+    // The task was archived after the run.
+    expect(wakesSourceChat(row({ taskArchived: 1 }))).toBe(false);
   });
 
   it("reports one run with its thread and summary", () => {
@@ -267,6 +270,48 @@ describe("TaskSourceWake batches", () => {
           ],
         );
         assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r2"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("an archived task's finished runs wake no chat, also from a waiting batch", () => {
+    let healthy = false;
+    const dispatch = fakeDispatch(() => (healthy ? null : "transient"));
+    const archive = (id: string) =>
+      Effect.gen(function* () {
+        yield* (yield* TaskRepository).setArchived({
+          ids: [TaskId.make(`task-${id}`)],
+          archived: true,
+          actor: { type: "person" },
+        });
+      });
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        // Archived after the run finished, before the sweep.
+        yield* finishedRun("r-archived", "chat");
+        yield* archive("r-archived");
+        yield* wake.sweep;
+        assert.deepStrictEqual(dispatch.attempts, []);
+        assert.deepStrictEqual(yield* wakeState, { told: ["r-archived"], batches: [] });
+
+        // Archived while its batch waits for a retry.
+        yield* finishedRun("r-waiting", "busy-chat");
+        yield* wake.sweep;
+        assert.deepStrictEqual(yield* wakeState, {
+          told: ["r-archived"],
+          batches: ["r-waiting:1"],
+        });
+        yield* archive("r-waiting");
+        healthy = true;
+        yield* retryNow;
+        yield* wake.sweep;
+        assert.deepStrictEqual(dispatch.delivered, []);
+        assert.deepStrictEqual(yield* wakeState, {
+          told: ["r-archived", "r-waiting"],
+          batches: [],
+        });
       }),
     );
   });

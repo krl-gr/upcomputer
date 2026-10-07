@@ -57,6 +57,8 @@ const PendingWakeRow = Schema.Struct({
   sourceThreadId: Schema.NullOr(Schema.String),
   /** The source chat is itself a task-agent run thread. */
   sourceIsRunThread: Schema.Number,
+  /** The task is archived now, possibly after the run finished. */
+  taskArchived: Schema.Number,
   summary: Schema.NullOr(Schema.String),
 });
 export type PendingWakeRow = typeof PendingWakeRow.Type;
@@ -77,13 +79,17 @@ function clip(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** Runs a source chat hears about: finished by the agent, not stopped by a person or a task change. */
+/**
+ * Runs a source chat hears about: finished by the agent, not stopped by a
+ * person or a task change, on a task that is not archived.
+ */
 export function wakesSourceChat(row: PendingWakeRow): row is WakeRun {
   return (
     row.taskId !== null &&
     row.sourceThreadId !== null &&
     row.sourceThreadId !== row.runThreadId &&
     row.sourceIsRunThread === 0 &&
+    row.taskArchived === 0 &&
     OUTCOME[row.status] !== undefined
   );
 }
@@ -173,6 +179,7 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       SELECT 1 FROM task_agent_runs AS source_run
       WHERE source_run.thread_id = task.source_thread_id
     ) AS "sourceIsRunThread",
+    task.archived_at IS NOT NULL AS "taskArchived",
     COALESCE(
       json_extract(result.payload_json, '$.summary'),
       json_extract(ending.payload_json, '$.reason')
@@ -281,6 +288,8 @@ export const makeTaskSourceWake = Effect.gen(function* () {
 
   const deliver = (batch: typeof WakeBatchRow.Type) =>
     Effect.gen(function* () {
+      // Read at delivery, so a task archived since the batch formed is left out,
+      // and a batch with nothing left is handled without a message.
       const runs = (yield* batchRuns(batch.id)).filter(wakesSourceChat);
       const [first, ...rest] = runs;
       if (first === undefined) return yield* acknowledge(batch.id);
