@@ -31,7 +31,7 @@ import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
-import type { PlannerAudience } from "./preferences.ts";
+import type { PlannerAudience, PlannerKind } from "./preferences.ts";
 import {
   addEntries,
   moveEntries,
@@ -73,8 +73,16 @@ export interface PlannerQuery {
   /** Projects the lists show; null for all. */
   readonly projectIds: readonly ProjectId[] | null;
   readonly archiveVisible: boolean;
-  /** Whose tasks the lists show. */
+  /** Whose tasks the lists show; routines are always the person's. */
   readonly audience: PlannerAudience;
+  /** Tasks or routines. */
+  readonly kind: PlannerKind;
+}
+
+/** Dates progress counts are limited to: the current week for routines. */
+export interface ProgressWindow {
+  readonly from: string;
+  readonly to: string;
 }
 
 export interface PlannerStoreOptions {
@@ -112,7 +120,10 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
 
 function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search: TaskPageInput }> {
   const projects: ReadonlyArray<ProjectId | undefined> = query.projectIds ?? [undefined];
-  const base = { audience: query.audience, kind: "task" } as const;
+  const base =
+    query.kind === "routine"
+      ? ({ audience: "person", kind: "routine" } as const)
+      : ({ audience: query.audience, kind: "task" } as const);
   return projects.flatMap((projectId) => {
     const scope = projectId === undefined ? {} : { projectId };
     return [
@@ -144,10 +155,11 @@ function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search:
 export function belongsToList(
   task: PlannerTask,
   list: PlannerListKey,
-  query: Pick<PlannerQuery, "projectIds" | "audience">,
+  query: Pick<PlannerQuery, "projectIds" | "audience" | "kind">,
 ): boolean {
-  if (task.kind !== "task") return false;
-  if (query.audience !== "all" && task.audience !== query.audience) return false;
+  if (task.kind !== query.kind) return false;
+  if (query.kind === "task" && query.audience !== "all" && task.audience !== query.audience)
+    return false;
   if (query.projectIds !== null && !query.projectIds.includes(task.projectId)) return false;
   const finished = task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
   return list === "archive" ? finished : !finished;
@@ -183,7 +195,12 @@ export class PlannerStore {
   private nextOpId = 1;
   private nextTempId = 1;
 
-  private query: PlannerQuery = { projectIds: null, archiveVisible: false, audience: "person" };
+  private query: PlannerQuery = {
+    projectIds: null,
+    archiveVisible: false,
+    audience: "person",
+    kind: "task",
+  };
   private lanes: Lane[] = [];
   private readonly lanePages = new Map<string, NonNullable<TaskPageLoadState["page"]>>();
   /** Tasks created here, shown before their list's next page includes them. */
@@ -193,6 +210,7 @@ export class PlannerStore {
   private rangeError: string | null = null;
   private readonly progress = new Map<string, ScheduleProgressCount>();
   private progressIds = new Set<string>();
+  private progressWindow: ProgressWindow | null = null;
   private readonly schedules = new Map<string, readonly TaskScheduleEntry[]>();
   private readonly scheduleWatchers = new Map<string, number>();
 
@@ -302,6 +320,7 @@ export class PlannerStore {
     const same =
       query.archiveVisible === this.query.archiveVisible &&
       query.audience === this.query.audience &&
+      query.kind === this.query.kind &&
       JSON.stringify(query.projectIds) === JSON.stringify(this.query.projectIds);
     if (same) return;
     this.query = query;
@@ -352,10 +371,17 @@ export class PlannerStore {
     this.schedule(0);
   }
 
-  /** The list rows whose progress chip is visible; others are not fetched. */
-  trackProgress(ids: readonly string[]) {
+  /**
+   * The list rows whose progress chip is visible; others are not fetched.
+   * With a window, only entries on those dates count (a routine's week).
+   */
+  trackProgress(ids: readonly string[], window: ProgressWindow | null = null) {
     const next = new Set(ids);
-    for (const id of next) if (!this.progressIds.has(id)) this.stale.progress.add(id);
+    const windowChanged =
+      window?.from !== this.progressWindow?.from || window?.to !== this.progressWindow?.to;
+    if (windowChanged) this.progressWindow = window;
+    for (const id of next)
+      if (windowChanged || !this.progressIds.has(id)) this.stale.progress.add(id);
     this.progressIds = next;
     if (this.stale.progress.size > 0) this.schedule(0);
   }
@@ -488,7 +514,12 @@ export class PlannerStore {
   private async loadProgress(ids: readonly string[]) {
     for (const part of chunks(ids, TASK_SCHEDULE_MAX_IDS)) {
       try {
-        const result = await this.client.tasks.scheduleProgress({ taskIds: part as TaskId[] });
+        const window = this.progressWindow;
+        const result = await this.client.tasks.scheduleProgress({
+          taskIds: part as TaskId[],
+          ...(window ? { from: window.from, to: window.to } : {}),
+        });
+        if (window !== this.progressWindow) continue;
         for (const id of part) this.progress.delete(id);
         for (const item of result.progress)
           this.progress.set(item.taskId, { total: item.total, handled: item.handled });
@@ -701,9 +732,10 @@ export class PlannerStore {
     readonly projectId?: ProjectId;
     readonly beforeTaskId?: string;
     readonly afterTaskId?: string;
+    readonly kind?: PlannerKind;
   }): Promise<boolean> {
     return this.write(
-      "Could not create the task",
+      input.kind === "routine" ? "Could not create the routine" : "Could not create the task",
       null,
       () =>
         this.client.tasks.create({
@@ -711,6 +743,7 @@ export class PlannerStore {
           description: input.description,
           status: PERSON_OPEN_STATUS,
           audience: "person",
+          ...(input.kind === "routine" ? { kind: "routine" as const } : {}),
           ...(input.projectId ? { projectId: input.projectId } : {}),
           ...(input.beforeTaskId ? { beforeTaskId: input.beforeTaskId as TaskId } : {}),
           ...(input.afterTaskId ? { afterTaskId: input.afterTaskId as TaskId } : {}),

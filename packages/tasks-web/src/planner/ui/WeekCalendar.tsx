@@ -58,9 +58,18 @@ const CalendarDayColumn = memo(function CalendarDayColumn(props: {
     id: `calendar-day-${props.day.date}`,
     data: { type: "calendar-day", date: props.day.date },
   });
+  const { defaultTaskDuration, defaultRoutineDuration } = preferences;
   const items = useMemo(
-    () => layoutDay(props.day.entries, preferences.defaultTaskDuration, slotHeight),
-    [props.day.entries, preferences.defaultTaskDuration, slotHeight],
+    () =>
+      layoutDay(
+        props.day.entries,
+        (entry) =>
+          props.tasks.get(entry.taskId)?.kind === "routine"
+            ? defaultRoutineDuration
+            : defaultTaskDuration,
+        slotHeight,
+      ),
+    [props.day.entries, props.tasks, defaultTaskDuration, defaultRoutineDuration, slotHeight],
   );
   const previewMinute = parseTimeToMinutes(props.preview);
   return (

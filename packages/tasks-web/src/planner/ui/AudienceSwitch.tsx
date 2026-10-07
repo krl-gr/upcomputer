@@ -10,10 +10,13 @@ const LABELS: Record<PlannerAudience, string> = { person: "Mine", agent: "Agents
 export function AudienceSwitch(props: {
   readonly value: PlannerAudience;
   readonly onChange: (value: PlannerAudience) => void;
+  /** Routines are always the person's, so the switch rests while they show. */
+  readonly disabled?: boolean;
 }) {
   return (
     <ToggleGroup
       aria-label="Whose tasks"
+      disabled={props.disabled ?? false}
       value={[props.value]}
       onValueChange={(value) => {
         const next = value[0];

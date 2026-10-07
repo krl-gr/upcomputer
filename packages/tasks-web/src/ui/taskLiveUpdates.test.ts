@@ -253,6 +253,30 @@ test("a reconnect uses one shared stream, detects gaps, retries failures, and re
   NodeAssert.equal(opens.length, 2);
 });
 
+test("a gap resyncs but still delivers the event's reminders", () => {
+  let emit: TaskChangeListener | undefined;
+  const subscribe = createTaskChangeSubscription((_signal, listener) => {
+    emit = listener;
+    return new Promise<void>(() => undefined);
+  });
+  const events: TaskChange[] = [];
+  const off = subscribe((event) => events.push(event));
+  emit!(sync);
+  const reminders = [
+    {
+      entryId: "entry-1",
+      taskId: "t" as TaskId,
+      title: "Stretch",
+      date: "2026-10-07",
+      startTime: "09:30",
+    },
+  ];
+  emit!({ ...changed([]), sequence: 7, reminders });
+  NodeAssert.equal(events.at(-1)?.kind, "sync");
+  NodeAssert.deepEqual(events.at(-1)?.reminders, reminders);
+  off();
+});
+
 test("a row event queued with Load more is not consumed by the append request", async (context) => {
   const h = harness();
   context.onTestFinished(() => h.loader.dispose());

@@ -76,7 +76,7 @@ describe("time", () => {
 
 describe("calendar layout", () => {
   test("untimed entries stay out of the grid and the default duration fills gaps", () => {
-    const items = layoutDay([entry("a", "09:00"), entry("b", null)], 30, 15);
+    const items = layoutDay([entry("a", "09:00"), entry("b", null)], () => 30, 15);
     NodeAssert.deepEqual(
       items.map((item) => [item.entry.id, item.startMinute, item.endMinute]),
       [["a", 540, 570]],
@@ -93,7 +93,7 @@ describe("calendar layout", () => {
         entry("c", "10:00", 30),
         entry("d", "12:00"),
       ],
-      30,
+      () => 30,
       15,
     );
     const lanes = Object.fromEntries(
@@ -104,12 +104,12 @@ describe("calendar layout", () => {
   });
 
   test("an entry ending at midnight is cut at the end of the day", () => {
-    const [item] = layoutDay([entry("a", "23:30", 120)], 30, 15);
+    const [item] = layoutDay([entry("a", "23:30", 120)], () => 30, 15);
     NodeAssert.equal(item!.endMinute, 1440);
   });
 
   test("a very short entry keeps half a slot of height", () => {
-    const [item] = layoutDay([entry("a", "09:00", 1)], 30, 20);
+    const [item] = layoutDay([entry("a", "09:00", 1)], () => 30, 20);
     NodeAssert.equal(item!.position.height, 10);
   });
 });

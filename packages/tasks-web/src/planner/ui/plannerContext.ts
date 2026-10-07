@@ -1,6 +1,6 @@
 import { createContext, use } from "react";
 
-import type { PlannerAudience, PlannerPreferences } from "../data/preferences.ts";
+import type { PlannerAudience, PlannerKind, PlannerPreferences } from "../data/preferences.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
 import type { WindowStore } from "../windows/windowStore.ts";
 import type { PlannerProject } from "./ProjectChip.tsx";
@@ -21,6 +21,8 @@ export interface PlannerContextValue {
   readonly markdownCwd: string | undefined;
   /** Whose tasks the lists show (Mine / Agents / All). */
   readonly audience: PlannerAudience;
+  /** Whether the list shows tasks or routines. */
+  readonly kind: PlannerKind;
   /** Tags an enabled agent of this environment starts on. */
   readonly triggerTags: ReadonlySet<string>;
   /** Opens a task in the table, which shows its agent runs. */

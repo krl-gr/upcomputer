@@ -16,6 +16,7 @@ import {
   type PaginationStatus,
   type PlannerListState,
   type PlannerSnapshot,
+  type ProgressWindow,
 } from "./plannerStore.ts";
 
 const stores = new Map<EnvironmentId, PlannerStore>();
@@ -125,16 +126,25 @@ export function useDayQueues(
   );
 }
 
-/** Progress chips of list rows; only fetched while the counter is shown. */
+/**
+ * Progress chips of list rows; only fetched while the counter is shown. A
+ * window limits them to its dates (wande counts routines per week).
+ */
 export function useQueueProgressByTaskIds(
   store: PlannerStore,
   snapshot: PlannerSnapshot,
   taskIds: readonly string[],
   enabled: boolean,
+  window: ProgressWindow | null = null,
 ) {
   const key = enabled ? taskIds.join(",") : "";
+  const from = window?.from;
+  const to = window?.to;
   useEffect(() => {
-    store.trackProgress(key ? key.split(",") : []);
-  }, [store, key]);
+    store.trackProgress(
+      key ? key.split(",") : [],
+      from !== undefined && to !== undefined ? { from, to } : null,
+    );
+  }, [store, key, from, to]);
   return snapshot.progress;
 }

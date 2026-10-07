@@ -58,6 +58,10 @@ export interface TasksWebRpcClient {
     readonly scheduleCopy: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleCopy>;
     readonly scheduleDelete: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleDelete>;
     readonly scheduleMoveOpen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleMoveOpen>;
+    readonly getScheduleSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getScheduleSettings>;
+    readonly updateScheduleSettings: RpcUnaryMethod<
+      typeof TASKS_RPC_METHODS.updateScheduleSettings
+    >;
   };
   readonly agents: {
     readonly upsert: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.upsert>;
@@ -202,6 +206,20 @@ export function createTasksWebRpcClient(
           "tasks.scheduleMoveOpen",
           "canMutateTasks",
           TASKS_RPC_METHODS.scheduleMoveOpen,
+          input,
+        ),
+      getScheduleSettings: (input) =>
+        request(
+          "tasks.getScheduleSettings",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getScheduleSettings,
+          input,
+        ),
+      updateScheduleSettings: (input) =>
+        request(
+          "tasks.updateScheduleSettings",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateScheduleSettings,
           input,
         ),
     },

@@ -424,13 +424,13 @@ describe("planner store: whose tasks", () => {
     await started(h);
     NodeAssert.deepEqual(ids(h), ["mine"]);
 
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent" });
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent", kind: "task" });
     await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
     NodeAssert.deepEqual(pageAudiences(h), ["agent"]);
     NodeAssert.deepEqual(ids(h), ["theirs"]);
 
     h.reset();
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "all" });
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "all", kind: "task" });
     await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
     NodeAssert.deepEqual(pageAudiences(h), ["all"]);
     NodeAssert.deepEqual(ids(h), ["mine", "theirs"]);
@@ -452,7 +452,66 @@ describe("planner store: whose tasks", () => {
     await NodeTimersPromises.setTimeout(10);
     NodeAssert.deepEqual(ids(h), ["b"]);
     h.setPage([task("a", "0000000000000001", { audience: "agent" })]);
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent" });
+    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent", kind: "task" });
     await until(() => ids(h).length === 1 && ids(h)[0] === "a");
+  });
+});
+
+describe("planner store: routines", () => {
+  const routinesQuery = {
+    projectIds: null,
+    archiveVisible: false,
+    audience: "agent",
+    kind: "routine",
+  } as const;
+
+  test("the Routines list asks for the person's routines, whatever the audience filter", async () => {
+    const h = harness();
+    h.setPage([
+      task("todo", "0000000000000001"),
+      task("stretch", "0000000000000002", { kind: "routine" }),
+    ]);
+    await started(h);
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["todo"]);
+
+    h.reset();
+    h.store.setQuery(routinesQuery);
+    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
+    const pages = h.calls.filter((call) => call.method === "page").map((call) => call.input);
+    NodeAssert.deepEqual(
+      pages.map(({ kind, audience }) => [kind, audience]),
+      [["routine", "person"]],
+    );
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["stretch"]);
+  });
+
+  test("a routine's progress counts the given week, and a new week asks again", async () => {
+    const h = harness();
+    await started(h);
+    h.store.trackProgress(["a"], { from: "2026-10-05", to: "2026-10-11" });
+    await until(() => h.count("scheduleProgress") === 1);
+    NodeAssert.deepEqual(h.calls.at(-1)!.input, {
+      taskIds: ["a"],
+      from: "2026-10-05",
+      to: "2026-10-11",
+    });
+    // The same week again is no new read; another week (or none) is.
+    h.store.trackProgress(["a"], { from: "2026-10-05", to: "2026-10-11" });
+    await NodeTimersPromises.setTimeout(20);
+    NodeAssert.equal(h.count("scheduleProgress"), 1);
+    h.store.trackProgress(["a"], null);
+    await until(() => h.count("scheduleProgress") === 2);
+    NodeAssert.deepEqual(h.calls.at(-1)!.input, { taskIds: ["a"] });
+  });
+
+  test("a routine is created as the person's routine", async () => {
+    const h = harness();
+    h.handlers.create = async (input) => task("new", "0000000000000000", input);
+    await started(h);
+    h.store.setQuery(routinesQuery);
+    await h.store.createTask({ title: "stretch", description: "", kind: "routine" });
+    const created = h.calls.find((call) => call.method === "create")!.input;
+    NodeAssert.deepEqual([created.kind, created.audience], ["routine", "person"]);
+    NodeAssert.ok(h.store.getSnapshot().active.ids.includes("new"));
   });
 });

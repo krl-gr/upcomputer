@@ -36,9 +36,12 @@ import {
   usePlannerViewState,
   useStoredPlannerAudience,
   useStoredPlannerEnvironment,
+  useStoredPlannerKind,
   type PlannerAudience,
+  type PlannerKind,
 } from "../data/preferences.ts";
 import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
+import { weekRangeOf } from "../logic/progress.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { AudienceSwitch } from "./AudienceSwitch.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
@@ -60,6 +63,8 @@ function PlannerBody(props: {
   readonly projects: readonly PlannerProject[];
   readonly projectIds: readonly string[] | null;
   readonly audience: PlannerAudience;
+  readonly kind: PlannerKind;
+  readonly onKindChange: (kind: PlannerKind) => void;
   readonly triggerTags: ReadonlySet<string>;
   readonly onOpenTask: (taskId: string) => void;
 }) {
@@ -85,8 +90,9 @@ function PlannerBody(props: {
       projectIds: props.projectIds as never,
       archiveVisible: showArchived,
       audience: props.audience,
+      kind: props.kind,
     });
-  }, [store, props.projectIds, showArchived, props.audience]);
+  }, [store, props.projectIds, showArchived, props.audience, props.kind]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
@@ -96,11 +102,17 @@ function PlannerBody(props: {
     [viewState.startDate, viewState.dayCount],
   );
   const days = useDayQueues(store, snapshot, dates);
+  // Routines count the current week only (wande), taken when the routines list shows.
+  const progressWindow = useMemo(
+    () => (props.kind === "routine" ? weekRangeOf(todayKey(), preferences.weekStartDay) : null),
+    [props.kind, preferences.weekStartDay],
+  );
   const progress = useQueueProgressByTaskIds(
     store,
     snapshot,
     list.results.map((task) => task.id),
     preferences.showProgress,
+    progressWindow,
   );
 
   const exitWeekSelection = useCallback(() => setWeekSelection(NO_SELECTION), []);
@@ -145,6 +157,7 @@ function PlannerBody(props: {
       preferences,
       markdownCwd: undefined,
       audience: props.audience,
+      kind: props.kind,
       triggerTags: props.triggerTags,
       openInTable: props.onOpenTask,
     }),
@@ -155,6 +168,7 @@ function PlannerBody(props: {
       props.projects,
       preferences,
       props.audience,
+      props.kind,
       props.triggerTags,
       props.onOpenTask,
     ],
@@ -265,6 +279,10 @@ function PlannerBody(props: {
               showArchived={showArchived}
               onToggleArchived={() => {
                 setShowArchived((current) => !current);
+                setListSelect({ active: false, ids: new Set() });
+              }}
+              onKindChange={(kind) => {
+                props.onKindChange(kind);
                 setListSelect({ active: false, ids: new Set() });
               }}
               progress={progress}
@@ -404,6 +422,7 @@ export function PlannerView(props: {
   );
   const availability = usePlannerAvailability(environmentId);
   const [audience, setAudience] = useStoredPlannerAudience();
+  const [kind, setKind] = useStoredPlannerKind();
   const triggerTags = useMemo(
     () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),
     [props.agents, environmentId],
@@ -444,7 +463,7 @@ export function PlannerView(props: {
               </SelectPopup>
             </Select>
           ) : null}
-          <AudienceSwitch value={audience} onChange={setAudience} />
+          <AudienceSwitch value={audience} onChange={setAudience} disabled={kind === "routine"} />
           {props.projectSelect}
         </>
       }
@@ -471,6 +490,8 @@ export function PlannerView(props: {
             projects={plannerProjects}
             projectIds={projectIds}
             audience={audience}
+            kind={kind}
+            onKindChange={setKind}
             triggerTags={triggerTags}
             onOpenTask={openTask}
           />

@@ -11,8 +11,9 @@ export interface WindowPosition {
   readonly y: number;
 }
 
-/** Where a create window puts the new task, and its preset project. */
+/** Where a create window puts the new task, its preset project, and whether it is a routine. */
 export interface CreateWindowInitial {
+  readonly kind?: "routine";
   readonly projectId?: string;
   readonly beforeTaskId?: string;
   readonly afterTaskId?: string;

@@ -5,9 +5,13 @@ import { ArchiveIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-rea
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { PaginatedTasks } from "../data/hooks.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
-import { scrollMemory, type PlannerAudience } from "../data/preferences.ts";
+import { scrollMemory, type PlannerAudience, type PlannerKind } from "../data/preferences.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";
@@ -17,13 +21,33 @@ import { ConfirmDeleteDialog, MoveBelowDialog } from "./TaskDialogs.tsx";
 import { TaskRow } from "./TaskRow.tsx";
 
 /** The planner creates tasks for the person; under Agents they are not listed. */
-export function noteCreatedInMine(audience: PlannerAudience) {
-  if (audience === "agent")
+export function noteCreatedInMine(audience: PlannerAudience, kind: PlannerKind) {
+  if (audience === "agent" && kind === "task")
     toastManager.add({
       type: "info",
       title: "Created in Mine",
       description: "New tasks are yours. Hand one to agents from its window.",
     });
+}
+
+/** Tasks / Routines: wande's two tabs, as a toggle in the list header. */
+function KindSwitch(props: {
+  readonly value: PlannerKind;
+  readonly onChange: (kind: PlannerKind) => void;
+}) {
+  return (
+    <ToggleGroup
+      aria-label="Tasks or routines"
+      value={[props.value]}
+      onValueChange={(value) => {
+        const next = value[0];
+        if (next === "task" || next === "routine") props.onChange(next);
+      }}
+    >
+      <ToggleGroupItem value="task">Tasks</ToggleGroupItem>
+      <ToggleGroupItem value="routine">Routines</ToggleGroupItem>
+    </ToggleGroup>
+  );
 }
 
 export interface ListDropIndicator {
@@ -41,6 +65,7 @@ export function TaskList(props: {
   readonly activeTasks: readonly PlannerTask[];
   readonly showArchived: boolean;
   readonly onToggleArchived: () => void;
+  readonly onKindChange: (kind: PlannerKind) => void;
   readonly progress: ReadonlyMap<string, ScheduleProgressCount>;
   readonly queueDate: string | null;
   readonly selectMode: boolean;
@@ -53,7 +78,8 @@ export function TaskList(props: {
   readonly onToggleWeek: () => void;
   readonly centered: boolean;
 }) {
-  const { store, windows, audience } = usePlanner();
+  const { store, windows, audience, kind } = usePlanner();
+  const noun = kind === "routine" ? "routine" : "task";
   const { results, status } = props.tasks;
   const hasMore = status === "CanLoadMore" || status === "LoadingMore";
   const hiddenActive = !props.showArchived && hasMore;
@@ -89,12 +115,13 @@ export function TaskList(props: {
   }, [moving, props.activeTasks, props.selectMode, results, hiddenActive, lastId]);
   const createNear = async (task: PlannerTask, where: "above" | "below") => {
     const created = await store.createTask({
-      title: "New task",
+      title: kind === "routine" ? "New routine" : "New task",
       description: "",
       projectId: task.projectId,
+      kind,
       ...(where === "above" ? { beforeTaskId: task.id } : { afterTaskId: task.id }),
     });
-    if (created) noteCreatedInMine(audience);
+    if (created) noteCreatedInMine(audience, kind);
   };
 
   return (
@@ -110,15 +137,24 @@ export function TaskList(props: {
           />
         ) : (
           <>
-            <Button size="sm" variant="outline" onClick={() => windows.openCreate()}>
-              New Task
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}
+              >
+                {kind === "routine" ? "New Routine" : "New Task"}
+              </Button>
+              <KindSwitch value={kind} onChange={props.onKindChange} />
+            </div>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="outline" onClick={() => props.onSelectModeChange(true)}>
                 Select
               </Button>
               <IconAction
-                label={props.showArchived ? "Show active tasks" : "Show done and archived tasks"}
+                label={
+                  props.showArchived ? `Show active ${noun}s` : `Show done and archived ${noun}s`
+                }
                 variant={props.showArchived ? "default" : "outline"}
                 size="icon-sm"
                 pressed={props.showArchived}
@@ -146,7 +182,7 @@ export function TaskList(props: {
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">Loading…</p>
           ) : results.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-              {props.showArchived ? "No done or archived tasks." : "No active tasks yet."}
+              {props.showArchived ? `No done or archived ${noun}s.` : `No active ${noun}s yet.`}
             </p>
           ) : (
             results.map((task) => (
@@ -183,19 +219,19 @@ export function TaskList(props: {
         {menu ? (
           <>
             <MenuItem onClick={() => void createNear(menu.task, "above")}>
-              Create task above
+              Create {noun} above
             </MenuItem>
             <MenuItem
               disabled={hiddenActive && menu.task.id === lastId}
               onClick={() => void createNear(menu.task, "below")}
             >
-              Create task below
+              Create {noun} below
             </MenuItem>
             <MenuItem onClick={() => void store.reorder([menu.task.id], {})}>Move to top</MenuItem>
-            <MenuItem onClick={() => setMoving([menu.task.id])}>Move below another task</MenuItem>
+            <MenuItem onClick={() => setMoving([menu.task.id])}>Move below another {noun}</MenuItem>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={() => setDeleting([menu.task.id])}>
-              Delete task
+              Delete {noun}
             </MenuItem>
           </>
         ) : null}

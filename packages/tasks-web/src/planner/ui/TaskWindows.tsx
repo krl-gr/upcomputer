@@ -30,7 +30,8 @@ import { toastManager } from "../../../../../apps/web/src/components/ui/toast.ts
 import { TablePill } from "../../ui/TablePill.tsx";
 import { useQueueInstancesByTaskId, useTaskById } from "../data/hooks.ts";
 import type { PlannerSnapshot } from "../data/plannerStore.ts";
-import { countProgress, progressLabel } from "../logic/progress.ts";
+import { todayKey } from "../logic/dates.ts";
+import { countProgress, progressLabel, weekRangeOf } from "../logic/progress.ts";
 import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
 import type { PlannerWindow } from "../windows/windowStore.ts";
 import { DescriptionField } from "./DescriptionField.tsx";
@@ -123,8 +124,15 @@ export function TaskDetailWindow(
   const [fullScreen, setFullScreen] = useState(false);
   const title = draft.title ?? task?.title ?? "";
   const description = draft.description ?? task?.description ?? "";
+  // A routine counts this week, like its list row.
+  const routine = task?.kind === "routine";
+  const weekStartDay = preferences.weekStartDay;
+  const week = useMemo(
+    () => (routine ? weekRangeOf(todayKey(), weekStartDay) : undefined),
+    [routine, weekStartDay],
+  );
   const progress = progressLabel(
-    entries ? countProgress(entries) : props.snapshot.progress.get(props.taskId),
+    entries ? countProgress(entries, week) : props.snapshot.progress.get(props.taskId),
   );
   const close = () => {
     clearDraft(draftKey);
@@ -195,8 +203,8 @@ export function TaskDetailWindow(
               <MenuItem disabled={!task} onClick={() => openInTable(props.taskId)}>
                 Open in table (runs)
               </MenuItem>
-              <MenuSeparator />
-              {task?.audience === "agent" ? (
+              {routine ? null : <MenuSeparator />}
+              {routine ? null : task?.audience === "agent" ? (
                 <MenuItem
                   onClick={() => {
                     void store.updateTask(task.id, { audience: "person" });
@@ -350,6 +358,8 @@ export function CreateTaskWindow(
   const { store, windows, projects, markdownCwd, audience } = usePlanner();
   const window = props.window;
   const initial = window.kind === "create" ? window.initial : {};
+  const kind = initial.kind ?? "task";
+  const noun = kind === "routine" ? "routine" : "task";
   const [draft, updateDraft] = useDraft(window.id);
   const [fullScreen, setFullScreen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -364,13 +374,14 @@ export function CreateTaskWindow(
   const create = async () => {
     const title = (draft.title ?? "").trim();
     if (!title) {
-      toastManager.add({ type: "warning", title: "Please enter a task title" });
+      toastManager.add({ type: "warning", title: `Please enter a ${noun} title` });
       return;
     }
     setSaving(true);
     const created = await store.createTask({
       title,
       description: draft.description ?? "",
+      kind,
       ...(projectId ? { projectId: projectId as never } : {}),
       ...(initial.beforeTaskId ? { beforeTaskId: initial.beforeTaskId } : {}),
       ...(initial.afterTaskId ? { afterTaskId: initial.afterTaskId } : {}),
@@ -378,7 +389,7 @@ export function CreateTaskWindow(
     setSaving(false);
     if (created) {
       close();
-      noteCreatedInMine(audience);
+      noteCreatedInMine(audience, kind);
     }
   };
   return (
@@ -393,7 +404,7 @@ export function CreateTaskWindow(
         <>
           <TitleInput
             value={draft.title ?? ""}
-            placeholder="Enter task title"
+            placeholder={`Enter ${noun} title`}
             onChange={(value) => updateDraft({ title: value })}
           />
           <Menu>

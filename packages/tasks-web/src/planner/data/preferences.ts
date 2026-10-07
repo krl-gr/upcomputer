@@ -15,6 +15,7 @@ const PlannerPreferencesSchema = Schema.Struct({
   /** 0 is Sunday. */
   weekStartDay: Schema.optional(Schema.Int),
   defaultTaskDuration: Schema.optional(Schema.Int),
+  defaultRoutineDuration: Schema.optional(Schema.Int),
   cardStyle: Schema.optional(Schema.Literals(["classic", "modern"])),
   showProgress: Schema.optional(Schema.Boolean),
   /** Pixels per quarter hour in the calendar, 5 to 30. */
@@ -32,6 +33,7 @@ export interface PlannerPreferences {
   readonly weekViewMode: "queue" | "calendar";
   readonly weekStartDay: number;
   readonly defaultTaskDuration: number;
+  readonly defaultRoutineDuration: number;
   readonly cardStyle: "classic" | "modern";
   readonly showProgress: boolean;
   readonly slotHeight: number;
@@ -67,6 +69,7 @@ export const PLANNER_PREFERENCES_KEY = "tasks.planner.preferences";
 export const PLANNER_VIEW_KEY = "tasks.planner.view";
 export const PLANNER_ENVIRONMENT_KEY = "tasks.planner.environment";
 export const PLANNER_AUDIENCE_KEY = "tasks.planner.audience";
+export const PLANNER_KIND_KEY = "tasks.planner.kind";
 export const TASKS_VIEW_KEY = "tasks.view";
 
 export function usePlannerPreferences() {
@@ -80,6 +83,7 @@ export function usePlannerPreferences() {
       weekViewMode: stored.weekViewMode ?? "queue",
       weekStartDay: clamp(stored.weekStartDay ?? localeWeekStart(), 0, 6),
       defaultTaskDuration: clamp(stored.defaultTaskDuration ?? 30, 1, 1440),
+      defaultRoutineDuration: clamp(stored.defaultRoutineDuration ?? 60, 1, 1440),
       cardStyle: stored.cardStyle ?? "modern",
       showProgress: stored.showProgress ?? true,
       slotHeight: clamp(stored.slotHeight ?? 15, 5, 30),
@@ -139,6 +143,14 @@ export function useStoredPlannerAudience() {
     "person",
     PlannerAudienceSchema,
   );
+}
+
+const PlannerKindSchema = Schema.Literals(["task", "routine"]);
+/** Which list the planner shows: Tasks or Routines (wande's two tabs). */
+export type PlannerKind = typeof PlannerKindSchema.Type;
+
+export function useStoredPlannerKind() {
+  return useLocalStorage<PlannerKind, PlannerKind>(PLANNER_KIND_KEY, "task", PlannerKindSchema);
 }
 
 /** A scroll position kept per device, written at most every 150 ms (wande's behavior). */

@@ -38,7 +38,11 @@ export function createTaskChangeSubscription(
       lastSequence = event.sequence;
       connected = true;
       attempts = 0;
-      for (const listener of listeners.keys()) listener(gap ? sync(event.sequence) : event);
+      // A gap resyncs the data; the reminders of this event still reach listeners.
+      const delivered: TaskChange = gap
+        ? { ...sync(event.sequence), ...(event.reminders ? { reminders: event.reminders } : {}) }
+        : event;
+      for (const listener of listeners.keys()) listener(delivered);
     }).then(
       () => retry(new Error("Task change stream disconnected.")),
       (error) => retry(error),

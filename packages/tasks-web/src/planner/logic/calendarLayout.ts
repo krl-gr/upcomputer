@@ -72,17 +72,21 @@ function assignLanes<E extends CalendarSourceEntry>(group: ReadonlyArray<Calenda
   return { lanes, laneCount: Math.max(1, laneEnds.length) };
 }
 
-/** Timed entries of one day, positioned for a grid with `slotHeight` pixels per quarter hour. */
+/**
+ * Timed entries of one day, positioned for a grid with `slotHeight` pixels per
+ * quarter hour. An entry without a duration takes `defaultDuration` of it
+ * (wande: the task or routine default).
+ */
 export function layoutDay<E extends CalendarSourceEntry>(
   entries: ReadonlyArray<E>,
-  defaultDuration: number,
+  defaultDuration: (entry: E) => number,
   slotHeight: number,
 ): CalendarItem<E>[] {
   const items: CalendarItem<E>[] = [];
   for (const entry of entries) {
     const startMinute = parseTimeToMinutes(entry.startTime);
     if (startMinute === null) continue;
-    const duration = effectiveDuration(entry, defaultDuration);
+    const duration = effectiveDuration(entry, defaultDuration(entry));
     items.push({
       entry,
       startMinute,

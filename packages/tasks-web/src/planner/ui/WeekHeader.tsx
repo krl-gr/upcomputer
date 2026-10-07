@@ -34,12 +34,16 @@ import { DAY_COUNT_OPTIONS, dateKeyOf, dateOfKey, type DayCount } from "../logic
 import { formatDuration } from "../logic/time.ts";
 import { IconAction } from "./IconAction.tsx";
 import { usePlanner } from "./plannerContext.ts";
+import { ReminderSettings } from "./ReminderSettings.tsx";
 import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DEFAULT_DURATIONS = [15, 20, 30, 45, 60, 90, 120];
 
-/** The planner settings (wande's Settings tab, the planner part), per device. */
+/**
+ * The planner settings (wande's Settings tab, the planner part): view
+ * preferences per device, then the server's reminder settings.
+ */
 function PlannerSettings(props: {
   readonly onChange: (patch: Partial<PlannerPreferences>) => void;
 }) {
@@ -96,6 +100,28 @@ function PlannerSettings(props: {
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
+            <Label>Default routine duration</Label>
+            <Select
+              value={String(preferences.defaultRoutineDuration)}
+              onValueChange={(value) => {
+                if (value !== null) props.onChange({ defaultRoutineDuration: Number(value) });
+              }}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue>{formatDuration(preferences.defaultRoutineDuration)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {[...new Set([...DEFAULT_DURATIONS, preferences.defaultRoutineDuration])]
+                  .sort((a, b) => a - b)
+                  .map((minutes) => (
+                    <SelectItem key={minutes} value={String(minutes)}>
+                      {formatDuration(minutes)}
+                    </SelectItem>
+                  ))}
+              </SelectPopup>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label>Card style</Label>
             <ToggleGroup
               value={[preferences.cardStyle]}
@@ -131,6 +157,9 @@ function PlannerSettings(props: {
               onCheckedChange={(checked) => props.onChange({ showProgress: checked })}
             />
           </Label>
+          <div className="border-t pt-4">
+            <ReminderSettings />
+          </div>
         </div>
       </PopoverPopup>
     </Popover>

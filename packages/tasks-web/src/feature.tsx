@@ -16,6 +16,11 @@ const LazyNavigationRunCounts = lazy(() =>
     default: module.TaskNavigationRunCounts,
   })),
 );
+const LazyTaskReminderNotifications = lazy(() =>
+  import("./planner/reminders/TaskReminderNotifications.tsx").then((module) => ({
+    default: module.TaskReminderNotifications,
+  })),
+);
 const LazyThreadRunCounts = lazy(() =>
   import("./ui/TaskThreadRunCounts.tsx").then((module) => ({
     default: module.TaskThreadRunCounts,
@@ -34,6 +39,15 @@ function ThreadRowRunCounts(props: ExperimentalWebThreadRowAccessoryProps) {
   return (
     <Suspense fallback={props.fallback}>
       <LazyThreadRunCounts {...props} />
+    </Suspense>
+  );
+}
+
+/** Task reminders as toasts and system notifications, wherever the app is. */
+function TaskReminders() {
+  return (
+    <Suspense fallback={null}>
+      <LazyTaskReminderNotifications />
     </Suspense>
   );
 }
@@ -57,6 +71,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rpcGroups: [TasksWebRpcGroup],
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
+  coordinator: TaskReminders,
   settings: [
     {
       id: "instructions",
