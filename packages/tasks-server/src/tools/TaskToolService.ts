@@ -33,6 +33,11 @@ import {
   TaskAgentRunId,
   TaskAutomationId,
   TaskReorderInput,
+  TaskScheduleAddInput,
+  TaskScheduleDeleteInput,
+  TaskScheduleMoveInput,
+  TaskScheduleToolGetInput,
+  TaskScheduleUpdateInput,
   TaskSearchInput,
   TaskToolContextInput,
   TaskToolCreateInput,
@@ -75,13 +80,18 @@ import { automationToolWriteRefusal } from "../automations/automationToolPolicy.
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
   composeTaskPromptSettings,
   TaskPromptSettingsStore,
   type TaskPromptChangeOrigin,
 } from "../persistence/TaskPromptSettingsStore.ts";
-import { PROMPT_GUIDANCE_EDITING, TASK_TRIGGER_RULES } from "./TaskToolDefinitions.ts";
+import {
+  PROMPT_GUIDANCE_EDITING,
+  PROMPT_GUIDANCE_SCHEDULING,
+  TASK_TRIGGER_RULES,
+} from "./TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
 import { setTasksArchived } from "../taskArchive.ts";
 
@@ -99,6 +109,11 @@ const decoders = {
   task_event_append: Schema.decodeUnknownEffect(TaskAppendEventInput),
   task_archive: Schema.decodeUnknownEffect(TaskArchiveInput),
   task_unarchive: Schema.decodeUnknownEffect(TaskArchiveInput),
+  task_schedule_get: Schema.decodeUnknownEffect(TaskScheduleToolGetInput),
+  task_schedule_add: Schema.decodeUnknownEffect(TaskScheduleAddInput),
+  task_schedule_update: Schema.decodeUnknownEffect(TaskScheduleUpdateInput),
+  task_schedule_move: Schema.decodeUnknownEffect(TaskScheduleMoveInput),
+  task_schedule_delete: Schema.decodeUnknownEffect(TaskScheduleDeleteInput),
   agent_get: Schema.decodeUnknownEffect(AgentGetInput),
   agent_search: Schema.decodeUnknownEffect(AgentSearchInput),
   agent_create: Schema.decodeUnknownEffect(AgentCreateInput),
@@ -414,6 +429,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const threads = yield* ThreadManagementService;
   const inbox = yield* InboxProject;
+  const schedule = yield* TaskScheduleService;
   const crypto = yield* Crypto.Crypto;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
@@ -524,6 +540,7 @@ const make = Effect.gen(function* () {
                     },
               ),
               promptGuidanceEditing: PROMPT_GUIDANCE_EDITING,
+              promptGuidanceScheduling: PROMPT_GUIDANCE_SCHEDULING,
               triggerRules: TASK_TRIGGER_RULES,
             }),
           };
@@ -756,6 +773,69 @@ const make = Effect.gen(function* () {
             },
           );
           return { isError: false, text: json(changed) };
+        }
+        case "task_schedule_get": {
+          const input = yield* decoders.task_schedule_get(args);
+          if (input.taskId !== undefined) {
+            if (input.from !== undefined || input.to !== undefined)
+              return { isError: true, text: "Pass either taskId or from and to, not both." };
+            return {
+              isError: false,
+              text: json(
+                yield* schedule.forTask({
+                  taskId: input.taskId,
+                  ...(input.limit !== undefined ? { limit: input.limit } : {}),
+                  ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+                }),
+              ),
+            };
+          }
+          if (input.from === undefined || input.to === undefined)
+            return { isError: true, text: "Pass from and to, or taskId." };
+          const range = yield* schedule.range({ from: input.from, to: input.to });
+          return {
+            isError: false,
+            // The tasks' identity and state only: their descriptions are for task_get.
+            text: json({
+              entries: range.entries,
+              tasks: range.tasks.map(
+                ({ id, title, status, audience, projectId, tags, archivedAt }) => ({
+                  id,
+                  title,
+                  status,
+                  audience,
+                  projectId,
+                  tags,
+                  archivedAt,
+                }),
+              ),
+            }),
+          };
+        }
+        // Schedule writes are not gated by run like the instructions: scheduling
+        // for the user is work a task may ask for. Read-only modes dry-run them.
+        case "task_schedule_add": {
+          const input = yield* decoders.task_schedule_add(args);
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, input }) };
+          return { isError: false, text: json(yield* schedule.add(input)) };
+        }
+        case "task_schedule_update": {
+          const input = yield* decoders.task_schedule_update(args);
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, input }) };
+          return { isError: false, text: json(yield* schedule.update(input)) };
+        }
+        case "task_schedule_move": {
+          const input = yield* decoders.task_schedule_move(args);
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, input }) };
+          return { isError: false, text: json(yield* schedule.move(input)) };
+        }
+        case "task_schedule_delete": {
+          const input = yield* decoders.task_schedule_delete(args);
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, input }) };
+          return {
+            isError: false,
+            text: json({ deleted: (yield* schedule.remove(input)).entries }),
+          };
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);

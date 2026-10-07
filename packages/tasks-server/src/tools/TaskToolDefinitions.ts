@@ -34,6 +34,23 @@ const audience = {
   description:
     "Who the task is for. agent (default): agents start on it by their triggers. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries.",
 } as const;
+const scheduleDate = {
+  type: "string",
+  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+  description: "A day in the user's time zone, YYYY-MM-DD.",
+} as const;
+const scheduleTime = {
+  type: "string",
+  pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
+  description: "Wall-clock start time, HH:MM.",
+} as const;
+const scheduleDuration = { type: "integer", minimum: 1, maximum: 1440 } as const;
+const entryIds = { type: "array", items: id, minItems: 1, maxItems: 500 } as const;
+const placement = {
+  ...object({ at: { type: "string", enum: ["top", "bottom"] }, before: id, after: id }),
+  description:
+    "Where the entries go on the date: exactly one of at (top or bottom), before or after an entry id on that date. Without it, an entry with a startTime goes before the first later one, others go last.",
+} as const;
 const dateTime = {
   type: ["string", "null"],
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
@@ -52,6 +69,14 @@ export const TASK_TRIGGER_RULES = [
   "Archiving is separate from status: no status archives a task. An archived task keeps its status, is hidden by default, never starts agents, and its active runs end. Unarchiving it is a trigger change, so a matching agent can start again.",
   "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
+
+/**
+ * One line in task_context about the user's planner. Server-owned: the
+ * promptGuidance texts are the user's and are stored whole, so a new default
+ * line would not reach anyone who edited them.
+ */
+export const PROMPT_GUIDANCE_SCHEDULING =
+  "The user's planner (task_schedule_* tools) is theirs: schedule tasks on the user's days, or move or delete their entries, only when the user asked for it or the task says so.";
 
 const automationTemplate = object(
   {
@@ -217,6 +242,80 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     name: "task_event_append",
     description: "Append a finding, note, or review event to a task.",
     inputSchema: object({ id, taskId: id, kind: id, payload: {} }, ["taskId", "kind"]),
+  },
+  {
+    type: "function",
+    mutation: "read",
+    name: "task_schedule_get",
+    description:
+      "Read the user's planner schedule. An entry means the user plans to work on a task on a day, optionally at a start time for a duration; status open, done or skipped is independent of the task's status. Pass from and to (at most 62 days, both included) for the entries of those days in order, with their tasks; or taskId for one task's entries by date (limit up to 500, then pass nextCursor as cursor).",
+    inputSchema: object({
+      from: scheduleDate,
+      to: scheduleDate,
+      taskId: id,
+      limit: { type: "integer", minimum: 1, maximum: 500 },
+      cursor: object(
+        { date: scheduleDate, startTime: { type: ["string", "null"] }, position: id },
+        ["date", "startTime", "position"],
+      ),
+    }),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_schedule_add",
+    description: `Plan tasks on one day of the user's planner: a new open entry per task id, in the given order. ${PROMPT_GUIDANCE_SCHEDULING}`,
+    inputSchema: object(
+      {
+        taskIds: { type: "array", items: id, minItems: 1, maxItems: 500 },
+        date: scheduleDate,
+        startTime: scheduleTime,
+        durationMinutes: scheduleDuration,
+        placement,
+      },
+      ["taskIds", "date"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_schedule_update",
+    description:
+      "Change one schedule entry in place: its status (open, done, skipped), start time or duration. null clears a start time or duration.",
+    inputSchema: object(
+      {
+        id,
+        status: { type: "string", enum: ["open", "done", "skipped"] },
+        startTime: { ...scheduleTime, type: ["string", "null"] },
+        durationMinutes: { ...scheduleDuration, type: ["integer", "null"] },
+      },
+      ["id"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_schedule_move",
+    description:
+      "Move schedule entries to another day as one block in their current order, keeping their ids and status. startTime or durationMinutes, when given, replace every moved entry's; null clears them.",
+    inputSchema: object(
+      {
+        ids: entryIds,
+        date: scheduleDate,
+        startTime: { ...scheduleTime, type: ["string", "null"] },
+        durationMinutes: { ...scheduleDuration, type: ["integer", "null"] },
+        placement,
+      },
+      ["ids", "date"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_schedule_delete",
+    description:
+      "Delete schedule entries from the user's planner. The tasks stay; returns the deleted entries.",
+    inputSchema: object({ ids: entryIds }, ["ids"]),
   },
   {
     type: "function",

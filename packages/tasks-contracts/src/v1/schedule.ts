@@ -112,6 +112,16 @@ export const TaskScheduleForTaskResult = Schema.Struct({
 });
 export type TaskScheduleForTaskResult = typeof TaskScheduleForTaskResult.Type;
 
+/** The task_schedule_get tool: a date range (`from`, `to`), or one task's entries (`taskId`). */
+export const TaskScheduleToolGetInput = Schema.Struct({
+  from: Schema.optional(TaskScheduleDate),
+  to: Schema.optional(TaskScheduleDate),
+  taskId: Schema.optional(TaskId),
+  limit: TaskScheduleForTaskInput.fields.limit,
+  cursor: TaskScheduleForTaskInput.fields.cursor,
+});
+export type TaskScheduleToolGetInput = typeof TaskScheduleToolGetInput.Type;
+
 /** Entry counts per task, optionally within a date range; handled is done or skipped. */
 export const TaskScheduleProgressInput = Schema.Struct({
   taskIds: Schema.Array(TaskId).check(Schema.isMaxLength(TASK_SCHEDULE_MAX_IDS)),

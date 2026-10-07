@@ -54,6 +54,7 @@ import {
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
 import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
@@ -927,6 +928,7 @@ test("an agent made broader just before an agent's unarchive commits keeps the t
               Layer.succeed(ThreadManagementService, {} as never),
               Layer.succeed(ProjectStoreV2, {} as never),
               Layer.succeed(InboxProject, {} as never),
+              Layer.succeed(TaskScheduleService, {} as never),
               deterministicCrypto(),
             ),
           ),
