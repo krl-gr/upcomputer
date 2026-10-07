@@ -7,6 +7,7 @@ import {
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 export const TaskId = TrimmedNonEmptyString.pipe(Schema.brand("TaskId"));
 export type TaskId = typeof TaskId.Type;
@@ -68,6 +69,36 @@ export const Task = Schema.Struct({
   triggerChangedAt: IsoDateTime,
 });
 export type Task = typeof Task.Type;
+
+/**
+ * A task, or a task list item, as RPC responses carry it. Tasks RPC version 11
+ * named the archive time `closedAt` and required it, so responses also carry a
+ * read-only `closedAt` equal to `archivedAt` for clients on that version, and a
+ * response from a version 11 server, with only `closedAt`, decodes with it as
+ * `archivedAt`. Writes never take `closedAt`: archive and unarchive change it.
+ */
+const withClosedAtAlias = <
+  S extends Schema.Top & { readonly Encoded: { readonly archivedAt: string | null } },
+>(
+  schema: S,
+) =>
+  Schema.Unknown.pipe(
+    Schema.decodeTo(
+      schema,
+      SchemaTransformation.transform<S["Encoded"], unknown>({
+        decode: (raw) => {
+          if (typeof raw !== "object" || raw === null || "archivedAt" in raw) {
+            return raw as S["Encoded"];
+          }
+          const { closedAt, ...rest } = raw as { readonly closedAt?: unknown };
+          return { ...rest, archivedAt: closedAt } as S["Encoded"];
+        },
+        encode: (task) => ({ ...task, closedAt: task.archivedAt }),
+      }),
+    ),
+  );
+
+export const TaskResponse = withClosedAtAlias(Task);
 
 export const TaskEvent = Schema.Struct({
   id: TaskEventId,
@@ -171,12 +202,14 @@ export const TaskPageInput = Schema.Struct({
 export type TaskPageInput = typeof TaskPageInput.Type;
 export const TaskRunCount = Schema.Struct({ status: Schema.String, count: PositiveInt });
 export type TaskRunCount = typeof TaskRunCount.Type;
-export const TaskListItem = Schema.Struct({
-  ...Task.fields,
-  runCounts: Schema.Array(TaskRunCount),
-  /** Raw status of the task's latest run (latest start); null without runs. Absent from older servers. */
-  latestRunStatus: Schema.optional(Schema.NullOr(Schema.String)),
-});
+export const TaskListItem = withClosedAtAlias(
+  Schema.Struct({
+    ...Task.fields,
+    runCounts: Schema.Array(TaskRunCount),
+    /** Raw status of the task's latest run (latest start); null without runs. Absent from older servers. */
+    latestRunStatus: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
 export const TaskPageResult = Schema.Struct({
   tasks: Schema.Array(TaskListItem),
   nextCursor: Schema.NullOr(TaskPageCursor),
@@ -203,7 +236,7 @@ export const TaskChange = Schema.Struct({
 });
 export type TaskChange = typeof TaskChange.Type;
 
-export const TaskSearchResult = Schema.Struct({ tasks: Schema.Array(Task) });
+export const TaskSearchResult = Schema.Struct({ tasks: Schema.Array(TaskResponse) });
 export type TaskSearchResult = typeof TaskSearchResult.Type;
 
 /**

@@ -28,7 +28,7 @@ import {
   TaskPromptSettingsUpdateResult,
 } from "./prompts.ts";
 import {
-  Task,
+  TaskResponse,
   TaskAppendEventInput,
   TaskArchiveInput,
   TaskArchiveResult,
@@ -121,7 +121,7 @@ export const TASK_AUTOMATIONS_RPC_METHODS = {
 
 export const TasksCreateRpc = Rpc.make(TASKS_RPC_METHODS.create, {
   payload: TaskCreateInput,
-  success: Task,
+  success: TaskResponse,
   error: TaskError,
 });
 export const TasksSearchRpc = Rpc.make(TASKS_RPC_METHODS.search, {
@@ -147,17 +147,17 @@ export const TasksSubscribeRpc = Rpc.make(TASKS_RPC_METHODS.subscribe, {
 });
 export const TasksGetRpc = Rpc.make(TASKS_RPC_METHODS.get, {
   payload: TaskGetInput,
-  success: Schema.NullOr(Task),
+  success: Schema.NullOr(TaskResponse),
   error: TaskError,
 });
 export const TasksUpdateRpc = Rpc.make(TASKS_RPC_METHODS.update, {
   payload: TaskUpdateInput,
-  success: Task,
+  success: TaskResponse,
   error: TaskError,
 });
 export const TasksReorderRpc = Rpc.make(TASKS_RPC_METHODS.reorder, {
   payload: TaskReorderInput,
-  success: Task,
+  success: TaskResponse,
   error: TaskError,
 });
 export const TasksDeleteRpc = Rpc.make(TASKS_RPC_METHODS.delete, {
@@ -166,12 +166,12 @@ export const TasksDeleteRpc = Rpc.make(TASKS_RPC_METHODS.delete, {
 });
 export const TasksAddTagRpc = Rpc.make(TASKS_RPC_METHODS.addTag, {
   payload: TaskTagInput,
-  success: Task,
+  success: TaskResponse,
   error: TaskError,
 });
 export const TasksRemoveTagRpc = Rpc.make(TASKS_RPC_METHODS.removeTag, {
   payload: TaskTagInput,
-  success: Task,
+  success: TaskResponse,
   error: TaskError,
 });
 export const TasksAppendEventRpc = Rpc.make(TASKS_RPC_METHODS.appendEvent, {
