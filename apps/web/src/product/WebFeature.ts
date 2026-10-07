@@ -73,6 +73,12 @@ export interface ExperimentalWebFeatureContribution {
   readonly threadRowAccessory?: ComponentType<ExperimentalWebThreadRowAccessoryProps>;
   /** Follows the open thread's title in the chat header. */
   readonly chatHeaderAccessory?: ComponentType<ExperimentalWebThreadAccessoryProps>;
+  /**
+   * Mounted once in the app shell while the primary environment is signed in,
+   * next to core's notification coordinators. It shows nothing of its own;
+   * use it for toasts and notifications the feature raises from anywhere.
+   */
+  readonly coordinator?: ComponentType;
   /** RPC groups the feature's server counterpart adds to the WebSocket transport. */
   readonly rpcGroups?: ReadonlyArray<RpcGroup.Any>;
 }

@@ -31,6 +31,7 @@ import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLa
 import { NightlyMobileBetaNotice } from "../components/NightlyMobileBeta";
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
+import { ProductCoordinators } from "../product/ProductSlots";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
@@ -235,6 +236,7 @@ function RootRouteView() {
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
+          {primaryEnvironmentAuthenticated ? <ProductCoordinators /> : null}
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
           <SlowRpcRequestToastCoordinator />

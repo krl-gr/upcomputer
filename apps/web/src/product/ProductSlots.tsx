@@ -118,6 +118,13 @@ export function ProductChatHeaderAccessory(props: ExperimentalWebThreadAccessory
   return chatHeaderAccessoryElements(WEB_PRODUCT, props);
 }
 
+/** Every feature's app-wide coordinator. */
+export function ProductCoordinators() {
+  return WEB_PRODUCT.features.flatMap((feature) =>
+    feature.coordinator ? [createElement(feature.coordinator, { key: feature.id })] : [],
+  );
+}
+
 // One lazy component per page, created once for the build's product.
 const routePages = new Map<string, ComponentType>(
   WEB_PRODUCT.routes.map((route) => [route.path, lazy(route.load)]),
