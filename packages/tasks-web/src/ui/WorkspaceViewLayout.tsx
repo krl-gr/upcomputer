@@ -35,6 +35,7 @@ export function WorkspaceViewLayout({
   children,
   onNavigateBack,
   navigateOnEscape = true,
+  inset = true,
 }: {
   readonly title: string;
   readonly action?: WorkspaceViewAction | undefined;
@@ -44,6 +45,11 @@ export function WorkspaceViewLayout({
   readonly onNavigateBack: () => void;
   /** The planner keeps Escape for its windows, menus and inline edits. */
   readonly navigateOnEscape?: boolean;
+  /**
+   * Content sits inside the header's gutters. The planner turns this off so its
+   * pane borders run edge to edge, and pads its own content.
+   */
+  readonly inset?: boolean;
 }) {
   const navigateBack = useCallback(() => onNavigateBack(), [onNavigateBack]);
 
@@ -102,7 +108,7 @@ export function WorkspaceViewLayout({
           ) : null}
         </WorkspacePageHeader>
         <div
-          className={`min-h-0 flex flex-1 flex-col overflow-auto ${WORKSPACE_CONTENT_GUTTER_CLASS}`}
+          className={`min-h-0 flex flex-1 flex-col overflow-auto ${inset ? WORKSPACE_CONTENT_GUTTER_CLASS : ""}`}
         >
           {children}
         </div>

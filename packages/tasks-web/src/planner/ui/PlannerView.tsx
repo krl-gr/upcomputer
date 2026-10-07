@@ -473,6 +473,7 @@ export function PlannerView(props: {
     <WorkspaceViewLayout
       title="Tasks"
       navigateOnEscape={false}
+      inset={false}
       onNavigateBack={props.onNavigateBack}
       toolbar={
         <>
