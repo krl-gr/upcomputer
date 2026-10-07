@@ -61,6 +61,7 @@ const STATUS_ORDER = [
   "new",
   "to do",
   "backlog",
+  "restored",
   "in progress",
   "ready for review",
   "done",

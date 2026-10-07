@@ -8,6 +8,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, test } from "vite-plus/test";
 
 import {
+  AGENT_RESTORED_STATUS,
   DEFAULT_TASK_PROMPT_SETTINGS,
   EMPTY_TASK_PROMPT_SETTINGS,
   TaskAgentId,
@@ -1936,6 +1937,38 @@ test("an audience or kind change between the start checks and the run insert pre
               : Effect.void,
           ),
         ),
+    }),
+  );
+});
+
+test("the planner's Restore starts no agent: an agent task is Restored before it is unarchived", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev", { startTags: ["dev"] }));
+      const archived = yield* repository.upsert(
+        taskInput("archived", { tags: ["dev"], audience: "agent", archivedAt: isoNow() }),
+      );
+      const done = yield* repository.upsert(
+        taskInput("done", { tags: ["dev"], audience: "agent", status: "Done" }),
+      );
+      // The planner's order: the status first, then the unarchive.
+      for (const { id } of [archived, done]) {
+        yield* change(
+          harness,
+          yield* repository.update({ actor, id, status: AGENT_RESTORED_STATUS }),
+        );
+      }
+      yield* service.scheduleTaskChanged({
+        task: yield* archiveTask(repository, archived.id, false),
+        reason: "unarchived",
+      });
+      yield* settled(harness, "probe", { tags: ["dev"] });
+      for (const id of ["archived", "done"]) {
+        NodeAssert.equal((yield* runsOf(repository, id)).length, 0, `${id} starts nothing`);
+        const task = Option.getOrThrow(yield* repository.getById({ id: TaskId.make(id) }));
+        NodeAssert.deepEqual([task.status, task.archivedAt], [AGENT_RESTORED_STATUS, null]);
+      }
     }),
   );
 });

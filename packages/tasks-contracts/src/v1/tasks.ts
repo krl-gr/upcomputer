@@ -49,6 +49,11 @@ export type TaskKind = typeof TaskKind.Type;
 /** The statuses the planner sets on person tasks: Restore and Done. */
 export const PERSON_OPEN_STATUS = "To Do" as const;
 export const PERSON_DONE_STATUS = "Done" as const;
+/**
+ * The status the planner's Restore sets on agent tasks. No agent starts on it,
+ * so a restored task waits until a person moves it on.
+ */
+export const AGENT_RESTORED_STATUS = "Restored" as const;
 
 /** Why a kind and audience cannot go together, or null. Routines are person tasks. */
 export function taskKindAudienceError(kind: TaskKind, audience: TaskAudience): string | null {

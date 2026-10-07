@@ -11,6 +11,7 @@
  * in-flight read cannot bring them back.
  */
 import {
+  AGENT_RESTORED_STATUS,
   PERSON_DONE_STATUS,
   PERSON_OPEN_STATUS,
   TASK_SCHEDULE_MAX_IDS,
@@ -783,28 +784,46 @@ export class PlannerStore {
     );
   }
 
-  /** Wande's Restore: back in the active list, unarchived and To Do. */
+  /**
+   * Wande's Restore: back in the active list, unarchived. A Done person task
+   * is To Do again. An agent task becomes Restored, which starts no agent, and
+   * its status is written before the unarchive: an unarchived task in a start
+   * status would start its agents at once. A failed status write unarchives
+   * nothing.
+   */
   async restore(ids: readonly string[]): Promise<boolean> {
     const view = this.getSnapshot().view;
-    const archived = ids.filter((id) => view.tasks.get(id)?.archivedAt);
-    const done = ids.filter((id) => view.tasks.get(id)?.status === PERSON_DONE_STATUS);
+    const archived: string[] = [];
+    const statuses = new Map<string, string>();
+    for (const id of ids) {
+      const task = view.tasks.get(id);
+      if (!task) continue;
+      if (task.archivedAt) archived.push(id);
+      const status =
+        task.audience === "agent"
+          ? task.archivedAt || task.status === PERSON_DONE_STATUS
+            ? AGENT_RESTORED_STATUS
+            : null
+          : task.status === PERSON_DONE_STATUS
+            ? PERSON_OPEN_STATUS
+            : null;
+      if (status !== null && status !== task.status) statuses.set(id, status);
+    }
     return this.write(
       ids.length === 1 ? "Could not restore the task" : "Could not restore the tasks",
       (current) =>
-        ids.reduce(
-          (next, id) =>
-            patchTask(next, id, {
-              archivedAt: null,
-              ...(done.includes(id) ? { status: PERSON_OPEN_STATUS } : {}),
-            }),
-          current,
-        ),
+        ids.reduce((next, id) => {
+          const status = statuses.get(id);
+          return patchTask(next, id, { archivedAt: null, ...(status ? { status } : {}) });
+        }, current),
       async () => {
+        const written = await Promise.all(
+          [...statuses].map(([id, status]) =>
+            this.client.tasks.update({ id: id as TaskId, status }),
+          ),
+        );
+        for (const task of written) this.mergeWrittenTask(task);
         if (archived.length > 0) await this.client.tasks.unarchive({ ids: archived as TaskId[] });
-        for (const id of done)
-          this.mergeWrittenTask(
-            await this.client.tasks.update({ id: id as TaskId, status: PERSON_OPEN_STATUS }),
-          );
       },
       () => this.refetchTasks(archived),
     );

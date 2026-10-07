@@ -125,6 +125,7 @@ function harness() {
     "items",
     "update",
     "archive",
+    "unarchive",
     "reorder",
     "reorderMany",
     "delete",
@@ -454,6 +455,110 @@ describe("planner store: whose tasks", () => {
     h.setPage([task("a", "0000000000000001", { audience: "agent" })]);
     h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent", kind: "task" });
     await until(() => ids(h).length === 1 && ids(h)[0] === "a");
+  });
+});
+
+describe("planner store: restore", () => {
+  const ARCHIVED_AT = "2026-10-01T10:00:00.000Z";
+  const everything = {
+    projectIds: null,
+    archiveVisible: true,
+    audience: "all",
+    kind: "task",
+  } as const;
+
+  /** A fake server that records the order of writes and which agents an unarchive would start. */
+  async function restoring(rows: PlannerTask[]) {
+    const h = harness();
+    const server = new Map<string, PlannerTask>(rows.map((row) => [row.id, row]));
+    const writes: string[] = [];
+    const startedOnUnarchive: string[] = [];
+    h.setPage(rows);
+    h.handlers.page = async () => ({ tasks: [...server.values()], nextCursor: null, statuses: [] });
+    h.handlers.items = async ({ ids }) => ({
+      tasks: [...server.values()].filter((row) => ids.includes(row.id)),
+    });
+    h.handlers.update = async ({ id, status }) => {
+      writes.push(`status ${id} ${status}`);
+      const row = { ...server.get(id)!, status };
+      server.set(id, row);
+      return row;
+    };
+    h.handlers.unarchive = async ({ ids }) => {
+      for (const id of ids as string[]) {
+        writes.push(`unarchive ${id}`);
+        const row = server.get(id)!;
+        // An agent with this tag starts on an unarchived To Do agent task.
+        if (row.audience === "agent" && row.status === "To Do" && row.tags.includes("dev"))
+          startedOnUnarchive.push(id);
+        server.set(id, { ...row, archivedAt: null });
+      }
+      return { results: [] };
+    };
+    h.store.setQuery(everything);
+    await started(h);
+    return { h, server, writes, startedOnUnarchive };
+  }
+
+  test("an agent task, archived or Done, comes back Restored and its status is written first", async () => {
+    const { h, server, writes, startedOnUnarchive } = await restoring([
+      task("archived", "0000000000000001", {
+        audience: "agent",
+        tags: ["dev"],
+        archivedAt: ARCHIVED_AT,
+      }),
+      task("done", "0000000000000002", { audience: "agent", tags: ["dev"], status: "Done" }),
+    ]);
+    const restored = h.store.restore(["archived", "done"]);
+    const optimistic = h.store.getSnapshot();
+    NodeAssert.deepEqual(optimistic.active.ids, ["archived", "done"]);
+    NodeAssert.equal(optimistic.view.tasks.get("archived")?.status, "Restored");
+    NodeAssert.equal(await restored, true);
+
+    NodeAssert.deepEqual(writes, [
+      "status archived Restored",
+      "status done Restored",
+      "unarchive archived",
+    ]);
+    NodeAssert.deepEqual(startedOnUnarchive, []);
+    for (const id of ["archived", "done"])
+      NodeAssert.deepEqual(
+        [server.get(id)!.status, server.get(id)!.archivedAt],
+        ["Restored", null],
+      );
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["archived", "done"]);
+    NodeAssert.deepEqual(h.store.getSnapshot().archive.ids, []);
+  });
+
+  test("a failed status write unarchives nothing", async () => {
+    const { h, writes } = await restoring([
+      task("archived", "0000000000000001", {
+        audience: "agent",
+        tags: ["dev"],
+        archivedAt: ARCHIVED_AT,
+      }),
+    ]);
+    h.handlers.update = async () => {
+      throw new Error("offline");
+    };
+    NodeAssert.equal(await h.store.restore(["archived"]), false);
+    NodeAssert.deepEqual(writes, []);
+    NodeAssert.equal(h.count("unarchive"), 0);
+    NodeAssert.deepEqual(h.errors, ["Could not restore the task"]);
+    NodeAssert.deepEqual(h.store.getSnapshot().archive.ids, ["archived"]);
+  });
+
+  test("a person task keeps its own Restore: Done is To Do again, archived is only unarchived", async () => {
+    const { h, server, writes } = await restoring([
+      task("done", "0000000000000001", { status: "Done" }),
+      task("archived", "0000000000000002", { status: "Waiting", archivedAt: ARCHIVED_AT }),
+    ]);
+    NodeAssert.equal(await h.store.restore(["done", "archived"]), true);
+    NodeAssert.deepEqual(writes, ["status done To Do", "unarchive archived"]);
+    NodeAssert.deepEqual(
+      ["done", "archived"].map((id) => server.get(id)!.status),
+      ["To Do", "Waiting"],
+    );
   });
 });
 
