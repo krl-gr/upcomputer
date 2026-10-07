@@ -8,6 +8,7 @@ import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
+import { useHiddenBrowserBackdrop } from "~/sidebarVibrancy/hiddenBrowserBackdrop";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { useActiveBrowserRecordingTabIds } from "./browserRecording";
@@ -262,9 +263,11 @@ export function HostedBrowserWebview(props: {
     wrapper.scrollTo({ left: 0, top: 0 });
   }, [runtimeTabId, viewport._tag, viewportHeight, viewportWidth]);
 
+  const renderingActive = active || backgroundActivity || pictureInPicture || recordingActive;
+  const hiddenBackdrop = useHiddenBrowserBackdrop(renderingActive && !active);
+
   if (!clientSettingsHydrated || !config) return null;
 
-  const renderingActive = active || backgroundActivity || pictureInPicture || recordingActive;
   const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
     active,
     renderingActive,
@@ -276,6 +279,7 @@ export function HostedBrowserWebview(props: {
     zIndex: presentation.zIndex,
     rect: lastRect,
     hiddenSize,
+    hiddenBackdrop,
   });
 
   return (
