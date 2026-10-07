@@ -1,3 +1,6 @@
+import { TaskSettingsMigration } from "./022_TaskSettings.ts";
+import { TaskScheduleEntriesMigration } from "./021_TaskScheduleEntries.ts";
+import { TaskAudienceAndKindMigration } from "./020_TaskAudienceAndKind.ts";
 import { TaskArchiveMigration } from "./019_TaskArchive.ts";
 import { TaskSourceWakeBatchesMigration } from "./018_TaskSourceWakeBatches.ts";
 import { TaskAgentRunSourceWakeMigration } from "./017_TaskAgentRunSourceWake.ts";
@@ -76,5 +79,8 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 17, name: "TaskAgentRunSourceWake", run: TaskAgentRunSourceWakeMigration },
     { version: 18, name: "TaskSourceWakeBatches", run: TaskSourceWakeBatchesMigration },
     { version: 19, name: "TaskArchive", run: TaskArchiveMigration },
+    { version: 20, name: "TaskAudienceAndKind", run: TaskAudienceAndKindMigration },
+    { version: 21, name: "TaskScheduleEntries", run: TaskScheduleEntriesMigration },
+    { version: 22, name: "TaskSettings", run: TaskSettingsMigration },
   ],
 } as const;

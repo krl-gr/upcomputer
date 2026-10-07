@@ -51,6 +51,8 @@ import { TaskRepositoryLive } from "./persistence/TaskRepositoryLive.ts";
 import { TASKS_RPC_CONTRIBUTION } from "./rpc/contributions.ts";
 import { TaskToolService, TaskToolServiceLive } from "./tools/TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./tools/TaskToolTypes.ts";
+import { InboxProject } from "./inbox/InboxProject.ts";
+import { TaskScheduleService } from "./schedule/TaskScheduleService.ts";
 
 const timestamp = "2026-10-07T10:00:00.000Z";
 const project = ProjectId.make("project-1");
@@ -123,6 +125,8 @@ function harness() {
         Layer.succeed(TaskToolContextResolver, resolver),
         Layer.succeed(TaskAgentService, agents),
         Layer.succeed(ThreadManagementService, {} as never),
+        Layer.succeed(InboxProject, {} as never),
+        Layer.succeed(TaskScheduleService, {} as never),
         Layer.succeed(ProjectStoreV2, {} as never),
       ),
     ),
@@ -599,3 +603,29 @@ it.effect("a status change through create records the person or agent that made 
     );
   }).pipe(Effect.provide(layer));
 });
+
+it.effect(
+  "task_search finds agent tasks unless asked for the person's, and creates take an audience",
+  () => {
+    const { layer, call } = harness();
+    return Effect.gen(function* () {
+      yield* call("task_create", { title: "for agents", description: "", status: "To Do" });
+      const created = yield* call("task_create", {
+        title: "for me",
+        description: "",
+        status: "To Do",
+        audience: "person",
+      });
+      assert.equal(created.task.audience, "person");
+      const titles = (args: Record<string, unknown>) =>
+        call("task_search", args).pipe(
+          Effect.map(({ tasks }) => tasks.map(({ title }: { title: string }) => title).toSorted()),
+        );
+      assert.deepStrictEqual(yield* titles({}), ["for agents"]);
+      assert.deepStrictEqual(yield* titles({ audience: "person" }), ["for me"]);
+      assert.deepStrictEqual(yield* titles({ audience: "all" }), ["for agents", "for me"]);
+      const handed = yield* call("task_update", { id: created.task.id, audience: "agent" });
+      assert.equal(handed.task.audience, "agent");
+    }).pipe(Effect.provide(layer));
+  },
+);

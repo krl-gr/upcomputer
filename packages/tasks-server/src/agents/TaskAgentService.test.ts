@@ -41,6 +41,7 @@ import {
   TaskPromptSettingsStoreLive,
 } from "../persistence/TaskPromptSettingsStore.ts";
 import {
+  startsForTask,
   continuesTaskAgentRun,
   releasedRunId,
   runsAgain,
@@ -98,6 +99,8 @@ function task(overrides: Partial<Task> = {}): Task {
     archivedAt: null,
     notBefore: null,
     triggerChangedAt: now,
+    audience: "agent",
+    kind: "task",
     ...overrides,
   };
 }
@@ -117,6 +120,21 @@ function run(overrides: Partial<TaskAgentRun> = {}): TaskAgentRun {
     ...overrides,
   };
 }
+
+test("a person task starts only an agent with start tags it carries, and a routine none", () => {
+  const nowMs = Date.parse(now);
+  const person = task({ audience: "person", status: "new", tags: ["test"] });
+  NodeAssert.equal(startsForTask(agent(), person, nowMs), true, "the tags hand it over");
+  NodeAssert.equal(startsForTask(agent(), { ...person, tags: [] }, nowMs), false);
+  NodeAssert.equal(startsForTask(agent({ startTags: [] }), person, nowMs), false, "status only");
+  NodeAssert.equal(
+    startsForTask(agent({ startTags: [], startStatuses: [] }), person, nowMs),
+    false,
+    "catch-all",
+  );
+  NodeAssert.equal(startsForTask(agent({ startTags: [] }), task({ status: "new" }), nowMs), true);
+  NodeAssert.equal(startsForTask(agent(), { ...person, kind: "routine" }, nowMs), false);
+});
 
 test("a started run keeps running while its task's status and tags change", () => {
   NodeAssert.equal(continuesTaskAgentRun(agent(), task({ status: "in_progress", tags: [] })), true);
@@ -247,6 +265,7 @@ test("a run prompt gets the global taskExecution plus its project's, from real s
         listAllActiveAgentRuns: () => Effect.succeed([]),
         listAllAgents: () => Effect.succeed([configuredAgent]),
         listAllTasks: () => Effect.succeed([assignedTask]),
+        listTriggerCandidates: () => Effect.succeed([assignedTask]),
         getById: () => Effect.succeed(Option.some(assignedTask)),
         getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
         findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),

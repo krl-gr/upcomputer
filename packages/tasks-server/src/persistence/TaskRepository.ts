@@ -8,6 +8,8 @@ import {
   TaskAgentRunSearchInput,
   TaskAgentSearchInput,
   TaskActor,
+  TaskAudience,
+  TaskKind,
   TaskArchiveOutcome,
   TaskAutomation,
   TaskAutomationId,
@@ -20,6 +22,15 @@ import {
   TaskEventsResult,
   TaskId,
   TaskReorderInput,
+  TaskReorderManyInput,
+  TaskScheduleEntry,
+  TaskScheduleEntryId,
+  TaskScheduleForTaskInput,
+  TaskScheduleForTaskResult,
+  TaskScheduleProgressInput,
+  TaskScheduleProgressResult,
+  TaskScheduleRangeInput,
+  TaskScheduleRangeResult,
   TaskSearchInput,
   TaskPageInput,
   TaskPageResult,
@@ -51,6 +62,9 @@ export const PersistTaskInput = Schema.Struct({
   parentTaskId: Schema.optional(Task.fields.parentTaskId),
   parentRunId: Schema.optional(Task.fields.parentRunId),
   notBefore: Schema.optional(Task.fields.notBefore),
+  /** Kept on existing tasks when absent; new tasks default to agent and task. */
+  audience: Schema.optional(TaskAudience),
+  kind: Schema.optional(TaskKind),
   /** Kept on existing tasks: only setArchived changes it. */
   archivedAt: Schema.optional(Task.fields.archivedAt),
   /** Server-computed on every write; any supplied value is ignored. */
@@ -220,6 +234,11 @@ export interface TaskRepositoryShape {
     input: TaskThreadTasksInput,
   ) => Effect.Effect<TaskThreadTasksResult, TaskRepositoryError>;
   readonly listAllTasks: () => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
+  /**
+   * Tasks an agent might start on, in global order: unarchived plain tasks
+   * that are for agents, or for a person and carry at least one tag.
+   */
+  readonly listTriggerCandidates: () => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
   /** Unarchived tasks whose notBefore falls in (after, until]. */
   readonly listTasksReachingNotBefore: (input: {
     readonly after: IsoDateTime;
@@ -234,6 +253,11 @@ export interface TaskRepositoryShape {
     input: SetTasksArchivedInput,
   ) => Effect.Effect<SetTasksArchivedResult, TaskRepositoryError>;
   readonly reorder: (input: TaskReorderInput) => Effect.Effect<Task, TaskRepositoryError>;
+  /** Moves the tasks as one block in their current relative order; returns them in that order. */
+  readonly reorderMany: (
+    input: TaskReorderManyInput,
+  ) => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
+  /** Deletes the task with its tags and schedule entries; its events are kept. */
   readonly deleteTask: (input: TaskDeleteInput) => Effect.Effect<void, TaskRepositoryError>;
   readonly replaceTags: (input: ReplaceTaskTagsInput) => Effect.Effect<Task, TaskRepositoryError>;
   readonly addTag: (
@@ -242,6 +266,34 @@ export interface TaskRepositoryShape {
   readonly removeTag: (
     input: TaskTagInput & { readonly updatedAt: IsoDateTime },
   ) => Effect.Effect<Task, TaskRepositoryError>;
+  /** Entries by id or on dates, ordered by date and position. */
+  readonly scheduleEntries: (
+    filter:
+      | { readonly ids: ReadonlyArray<TaskScheduleEntryId> }
+      | { readonly dates: ReadonlyArray<string> },
+  ) => Effect.Effect<ReadonlyArray<TaskScheduleEntry>, TaskRepositoryError>;
+  readonly scheduleRange: (
+    input: TaskScheduleRangeInput,
+  ) => Effect.Effect<TaskScheduleRangeResult, TaskRepositoryError>;
+  readonly scheduleForTask: (
+    input: TaskScheduleForTaskInput,
+  ) => Effect.Effect<TaskScheduleForTaskResult, TaskRepositoryError>;
+  /** One row per requested task, zero counts included. */
+  readonly scheduleProgress: (
+    input: TaskScheduleProgressInput,
+  ) => Effect.Effect<TaskScheduleProgressResult, TaskRepositoryError>;
+  /**
+   * Inserts or replaces whole entries in one transaction and publishes one
+   * change naming every date they left or entered and their tasks. Callers
+   * compute positions; positions only need to be unique once all are written.
+   */
+  readonly putScheduleEntries: (
+    entries: ReadonlyArray<TaskScheduleEntry>,
+  ) => Effect.Effect<ReadonlyArray<TaskScheduleEntry>, TaskRepositoryError>;
+  /** Deletes entries and returns them as they were; unknown ids are ignored. */
+  readonly deleteScheduleEntries: (
+    ids: ReadonlyArray<TaskScheduleEntryId>,
+  ) => Effect.Effect<ReadonlyArray<TaskScheduleEntry>, TaskRepositoryError>;
   readonly appendEvent: (
     input: PersistTaskEventInput,
   ) => Effect.Effect<TaskEvent, TaskRepositoryError>;
@@ -263,8 +315,10 @@ export interface TaskRepositoryShape {
   /**
    * Creates a run only if, at insert time, its task is not archived and its agent exists
    * and is enabled, and, unless `startableAt` is null, the task is past its
-   * notBefore at that time. None when an archive, postponement, disable or delete
-   * won the race. Explicit continuations pass null: they ignore notBefore.
+   * notBefore at that time and passes the audience and kind rules of
+   * `startsForTask`. None when an archive, postponement, audience or kind
+   * change, disable or delete won the race. Explicit continuations pass null:
+   * they ignore notBefore, audience and kind, as they ignore triggers.
    */
   readonly startAgentRun: (
     input: PersistTaskAgentRunInput & { readonly startableAt: string | null },

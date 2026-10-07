@@ -53,6 +53,7 @@ import {
 } from "../persistence/TaskPromptSettingsStore.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
+import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
 import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
@@ -925,6 +926,7 @@ test("an agent made broader just before an agent's unarchive commits keeps the t
               Layer.succeed(TaskToolContextResolver, {} as never),
               Layer.succeed(ThreadManagementService, {} as never),
               Layer.succeed(ProjectStoreV2, {} as never),
+              Layer.succeed(InboxProject, {} as never),
               deterministicCrypto(),
             ),
           ),
@@ -1701,6 +1703,231 @@ test("an archive, disable or agent deletion just before a continuation is insert
                     new Promise<void>((resolve) => {
                       pause.armed = false;
                       pause.reached = true;
+                      pause.release = resolve;
+                    }),
+                )
+              : Effect.void,
+          ),
+        ),
+    }),
+  );
+});
+
+/**
+ * Jobs run in order: once an agent task queued after `pending` has a run, the
+ * jobs before it are done. Lets a test assert that nothing started.
+ */
+const settled = (harness: Harness, probeId: string, overrides: Partial<Task> = {}) =>
+  Effect.gen(function* () {
+    const probe = yield* harness.repository.upsert(taskInput(probeId, overrides));
+    yield* harness.service.scheduleTaskChanged({ task: probe, reason: "created" });
+    yield* waitFor(
+      `run on ${probeId}`,
+      runsOf(harness.repository, probeId).pipe(Effect.map((runs) => runs[0])),
+    );
+  });
+
+test("audience, kind and project changes are trigger changes", async () => {
+  const layer = await database();
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      const created = yield* repository.upsert(taskInput("t", { audience: "person" }));
+      NodeAssert.equal(created.audience, "person");
+      NodeAssert.equal(created.kind, "task");
+      let last = created.triggerChangedAt;
+      for (const [label, patch] of [
+        ["audience", { audience: "agent" }],
+        ["project", { projectId: ProjectId.make("project-2") }],
+        ["kind", { audience: "person", kind: "routine" }],
+      ] as const) {
+        yield* tick;
+        const changed = yield* repository.update({ actor, id: created.id, ...patch });
+        NodeAssert.ok(
+          Date.parse(changed.triggerChangedAt) > Date.parse(last),
+          `${label} must count`,
+        );
+        last = changed.triggerChangedAt;
+      }
+      // Keeping them is not a change; an update without them keeps them.
+      yield* tick;
+      const same = yield* repository.update({
+        actor,
+        id: created.id,
+        kind: "routine",
+        output: "x",
+      });
+      NodeAssert.equal(same.triggerChangedAt, last);
+      NodeAssert.deepEqual([same.audience, same.kind], ["person", "routine"]);
+      // A routine must stay a person task.
+      yield* Effect.flip(repository.update({ actor, id: created.id, audience: "agent" }));
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getById({ id: created.id })).audience,
+        "person",
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+test("a person task never starts a status-only or catch-all agent; adding its tags hands it to a tagged agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("status-only"));
+      yield* repository.upsertAgent(agentInput("catch-all", { startStatuses: [] }));
+      yield* repository.upsertAgent(agentInput("tagged", { startTags: ["dev"] }));
+      const task = yield* repository.upsert(taskInput("mine", { audience: "person" }));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      yield* settled(harness, "probe");
+      NodeAssert.equal((yield* runsOf(repository, "mine")).length, 0);
+      NodeAssert.deepEqual(
+        (yield* repository.listTriggerCandidates()).map(({ id }) => id),
+        ["probe"],
+        "an untagged person task is not a candidate",
+      );
+
+      const tagged = yield* repository.addTag({ taskId: task.id, tag: "dev", updatedAt: isoNow() });
+      yield* service.scheduleTaskChanged({ task: tagged, reason: "tag-added" });
+      const [run] = yield* waitFor(
+        "the tagged agent's run",
+        runsOf(repository, "mine").pipe(Effect.map((runs) => (runs.length > 0 ? runs : undefined))),
+      );
+      NodeAssert.equal(run!.agentId, "tagged");
+      // Recovery goes over the candidates and starts no other agent on it.
+      yield* service.recover;
+      yield* settled(harness, "probe-2");
+      NodeAssert.deepEqual(
+        (yield* runsOf(repository, "mine")).map(({ agentId }) => agentId),
+        ["tagged"],
+      );
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getById({ id: task.id })).audience,
+        "person",
+        "the task stays the person's",
+      );
+    }),
+  );
+});
+
+test("setting audience to agent starts a status-only agent, and setting it back does not stop the run", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const task = yield* repository.upsert(taskInput("t", { audience: "person" }));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      yield* settled(harness, "probe");
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+
+      yield* change(harness, yield* repository.update({ actor, id: task.id, audience: "agent" }));
+      const run = yield* waitFor(
+        "run after the hand-off",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+
+      yield* change(harness, yield* repository.update({ actor, id: task.id, audience: "person" }));
+      yield* settled(harness, "probe-2");
+      const still = Option.getOrThrow(yield* repository.getAgentRunById({ id: run.id }));
+      NodeAssert.equal(still.completedAt, null);
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 1);
+    }),
+  );
+});
+
+test("a routine never starts an agent, not even one whose tags it carries", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(
+        agentInput("tagged", { startStatuses: [], startTags: ["dev"] }),
+      );
+      yield* repository.upsertAgent(agentInput("status-only"));
+      const routine = yield* repository.upsert(
+        taskInput("routine", { audience: "person", kind: "routine", tags: ["dev"] }),
+      );
+      yield* service.scheduleTaskChanged({ task: routine, reason: "created" });
+      yield* service.recover;
+      yield* settled(harness, "probe");
+      NodeAssert.equal((yield* runsOf(repository, "routine")).length, 0);
+      NodeAssert.ok(
+        !(yield* repository.listTriggerCandidates()).some(({ id }) => id === "routine"),
+      );
+    }),
+  );
+});
+
+test("moving a task to another project starts that project's agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(
+        agentInput("other", { projectId: ProjectId.make("project-2") }),
+      );
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      yield* settled(harness, "probe", { projectId: ProjectId.make("project-2") });
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      yield* change(
+        harness,
+        yield* repository.update({ actor, id: task.id, projectId: ProjectId.make("project-2") }),
+      );
+      const run = yield* waitFor(
+        "run in the new project",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+      NodeAssert.equal(run.agentId, "other");
+    }),
+  );
+});
+
+test("an audience or kind change between the start checks and the run insert prevents the start", async () => {
+  const pause: { taskId: string | null; reached: boolean; release: () => void } = {
+    taskId: null,
+    reached: false,
+    release: () => {},
+  };
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service, calls } = harness;
+        yield* repository.upsertAgent(agentInput("dev"));
+        const cases = [
+          { id: "to-person", patch: { audience: "person" } },
+          { id: "to-routine", patch: { audience: "person", kind: "routine" } },
+        ] as const;
+        for (const { id, patch } of cases) {
+          const task = yield* repository.upsert(taskInput(id));
+          pause.taskId = id;
+          pause.reached = false;
+          yield* service.scheduleTaskChanged({ task, reason: "created" });
+          yield* waitFor(
+            `start of ${id} to pause`,
+            Effect.sync(() => (pause.reached ? true : undefined)),
+          );
+          yield* repository.update({ actor, id: task.id, ...patch });
+          pause.release();
+          yield* settled(harness, `probe-${id}`);
+          NodeAssert.equal((yield* runsOf(repository, id)).length, 0, id);
+        }
+        NodeAssert.equal(
+          calls.filter((call) => call.type === "thread.create").length,
+          cases.length,
+          "only the probes started",
+        );
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      // The history lookup runs after the eligibility checks and before the insert.
+      searchAgentRuns: (input) =>
+        repository.searchAgentRuns(input).pipe(
+          Effect.tap(() =>
+            pause.taskId !== null && input.taskId === pause.taskId
+              ? Effect.promise(
+                  () =>
+                    new Promise<void>((resolve) => {
+                      pause.reached = true;
+                      pause.taskId = null;
                       pause.release = resolve;
                     }),
                 )

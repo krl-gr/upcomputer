@@ -9,7 +9,7 @@ import {
   TasksThreadTasksRpc,
   TasksUpdateRpc,
 } from "./rpc.ts";
-import { TaskId, TaskRank, TaskRunCount, TaskTag, type Task } from "./tasks.ts";
+import { TaskChange, TaskId, TaskRank, TaskRunCount, TaskTag, type Task } from "./tasks.ts";
 
 /** The Task of tasks RPC version 11 (6fbd963115), as older clients and servers decode it. */
 const V11Task = Schema.Struct({
@@ -43,6 +43,28 @@ const V11TaskListItem = Schema.Struct({
 });
 const V11Page = Schema.Struct({ tasks: Schema.Array(V11TaskListItem) });
 
+/** The Task of tasks RPC version 12 (6cdd2a7734): no audience or kind. */
+const { closedAt: _v11ClosedAt, ...v11Fields } = V11Task.fields;
+const V12Task = Schema.Struct({ ...v11Fields, archivedAt: Schema.NullOr(IsoDateTime) });
+const V12Page = Schema.Struct({
+  tasks: Schema.Array(Schema.Struct({ ...V12Task.fields, runCounts: Schema.Array(TaskRunCount) })),
+});
+/** The task change of version 12: no scheduleDates. */
+const V12TaskChange = Schema.Struct({
+  kind: Schema.Literals(["sync", "changed"]),
+  sequence: Schema.Number,
+  taskIds: Schema.Array(TaskId),
+  listChanged: Schema.Boolean,
+  runsChanged: Schema.Boolean,
+  rootThreadIds: Schema.Array(ThreadId),
+});
+const decodeV12Task = Schema.decodeUnknownSync(V12Task);
+const encodeV12Task = Schema.encodeSync(V12Task);
+const decodeV12Page = Schema.decodeUnknownSync(V12Page);
+const decodeV12TaskChange = Schema.decodeUnknownSync(V12TaskChange);
+const encodeTaskChange = Schema.encodeSync(TaskChange);
+const decodeTaskChange = Schema.decodeSync(TaskChange);
+
 const archivedAt = "2026-10-07T10:30:00.000Z";
 const task: Task = {
   id: TaskId.make("task-1"),
@@ -67,6 +89,8 @@ const task: Task = {
   archivedAt,
   notBefore: null,
   triggerChangedAt: "2026-10-07T10:30:00.000Z",
+  audience: "agent",
+  kind: "task",
 };
 const listItem = { ...task, runCounts: [], latestRunStatus: null };
 
@@ -116,4 +140,53 @@ test("the current client decodes a version 11 server's tasks, reading closedAt a
 
 test("a current response round-trips to the same task", () => {
   assert.deepStrictEqual(decodeUpdate(wire(encodeUpdate(task))), task);
+});
+
+test("a version 12 client decodes version 13 tasks and task changes, ignoring the new fields", () => {
+  const person: Task = { ...task, audience: "person" };
+  const decoded = decodeV12Task(wire(encodeGet(person)));
+  assert.equal(decoded.archivedAt, archivedAt);
+  assert.notProperty(decoded, "audience");
+  const page = decodeV12Page(
+    wire(
+      encodePage({
+        tasks: [{ ...listItem, kind: "routine", audience: "person" }],
+        nextCursor: null,
+        statuses: [],
+      }),
+    ),
+  );
+  assert.equal(page.tasks[0]?.id, task.id);
+  const change = encodeTaskChange({
+    kind: "changed",
+    sequence: 4,
+    taskIds: [task.id],
+    listChanged: false,
+    runsChanged: false,
+    rootThreadIds: [],
+    scheduleDates: ["2026-10-07"],
+  });
+  assert.equal(decodeV12TaskChange(wire(change)).sequence, 4);
+});
+
+test("the current client decodes a version 12 server's tasks as agent tasks", () => {
+  const { audience: _audience, kind: _kind, ...v12 } = task;
+  const encoded = wire(encodeV12Task(v12));
+  assert.deepStrictEqual(decodeGet(encoded), task);
+  const page = decodePage({
+    tasks: [{ ...(encoded as object), runCounts: [] }],
+    nextCursor: null,
+    statuses: [],
+  });
+  assert.equal(page.tasks[0]?.audience, "agent");
+  assert.equal(page.tasks[0]?.kind, "task");
+  const change = decodeTaskChange({
+    kind: "sync",
+    sequence: 0,
+    taskIds: [],
+    listChanged: true,
+    runsChanged: true,
+    rootThreadIds: [],
+  });
+  assert.equal(change.scheduleDates, undefined);
 });

@@ -22,6 +22,29 @@ export function taskRankBetween(lower: string | null, upper: string | null): Tas
   return encodeTaskRank(low + (high - low) / 2n);
 }
 
+/**
+ * `count` increasing ranks strictly between two neighbors (null: open end).
+ * An open end leaves the usual step between ranks, so appending repeatedly
+ * does not halve the space each time. Null when the gap is too small: the
+ * caller rebalances.
+ */
+export function taskRanksBetween(
+  lower: string | null,
+  upper: string | null,
+  count: number,
+): TaskRank[] | null {
+  const span = BigInt(count + 1) * TASK_RANK_STEP;
+  const high = upper === null ? null : decodeTaskRank(upper);
+  const low =
+    lower !== null ? decodeTaskRank(lower) : high === null || high <= span ? 0n : high - span;
+  const top = high ?? (low + span > TASK_RANK_MAX ? TASK_RANK_MAX : low + span);
+  const step = (top - low) / BigInt(count + 1);
+  if (step < 1n) return null;
+  return Array.from({ length: count }, (_, index) =>
+    encodeTaskRank(low + step * BigInt(index + 1)),
+  );
+}
+
 /** Deterministic spacing used by migration and the bounded exhaustion rebalance. */
 export function rebalancedTaskRanks(ids: ReadonlyArray<TaskId>): ReadonlyMap<TaskId, TaskRank> {
   if (BigInt(ids.length + 1) * TASK_RANK_STEP > TASK_RANK_MAX) {

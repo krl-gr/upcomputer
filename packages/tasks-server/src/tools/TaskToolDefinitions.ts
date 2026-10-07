@@ -28,6 +28,12 @@ const runStatuses = {
   type: "array",
   items: { type: "string", enum: ["failed", "interrupted", "blocked"] },
 } as const;
+const audience = {
+  type: "string",
+  enum: ["agent", "person"],
+  description:
+    "Who the task is for. agent (default): agents start on it by their triggers. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries.",
+} as const;
 const dateTime = {
   type: ["string", "null"],
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
@@ -37,11 +43,12 @@ const dateTime = {
 export const TASK_TRIGGER_RULES = [
   "An enabled agent starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
   "Setting a matching status or adding a matching tag starts the agent immediately. Park work in a status no agent starts on (for example Backlog), or set notBefore to delay it.",
-  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
+  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore, project, audience or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
   "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
   "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is archived or deleted, or when the agent is disabled or deleted.",
   "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
   "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is archived, the agent is disabled, or the agent has another active run on the task.",
+  "A task is for agents or for a person (audience). Person tasks and routines are the user's own work: an agent never starts on them by status alone. An agent starts on a person task only when the task has every one of the agent's start tags, or after its audience is set to agent.",
   "Archiving is separate from status: no status archives a task. An archived task keeps its status, is hidden by default, never starts agents, and its active runs end. Unarchiving it is a trigger change, so a matching agent can start again.",
   "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
@@ -97,11 +104,16 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_search",
     description:
-      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise.",
+      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise. Only agent tasks unless audience says otherwise.",
     inputSchema: object({
       projectId: id,
       status: id,
       tags,
+      audience: {
+        type: "string",
+        enum: ["agent", "person", "all"],
+        description: "agent (default): tasks for agents. person: the user's own tasks. all: both.",
+      },
       archive: {
         type: "string",
         enum: ["active", "archived", "all"],
@@ -116,7 +128,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_create",
     description:
-      "Create a task in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay.",
+      "Create a task in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Set audience to person for work the user does themselves; without a resolved project such a task goes to the Inbox project.",
     inputSchema: object(
       {
         id,
@@ -134,6 +146,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         metadata: {},
         tags,
         notBefore: dateTime,
+        audience,
       },
       ["title", "description", "status"],
     ),
@@ -143,7 +156,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_update",
     description:
-      "Update task fields, status, output, and tags without changing its global rank. Status, tag and notBefore changes can start agents (see task_context triggerRules). Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive.",
+      "Update task fields, status, output, and tags without changing its global rank. Status, tag, notBefore and audience changes can start agents (see task_context triggerRules); setting audience to agent hands a person task to agents. Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive.",
     inputSchema: object(
       {
         id,
@@ -156,6 +169,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         metadata: {},
         tags,
         notBefore: dateTime,
+        audience,
       },
       ["id"],
     ),

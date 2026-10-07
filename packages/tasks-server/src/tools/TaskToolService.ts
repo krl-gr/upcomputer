@@ -44,6 +44,7 @@ import {
   type TaskAutomation,
   type InstructionsField,
   type TaskPromptSettingsChange,
+  taskKindAudienceError,
 } from "@t3tools/tasks-contracts/v1";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -73,6 +74,7 @@ import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
 import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
+import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
   composeTaskPromptSettings,
@@ -316,6 +318,9 @@ function toolActor(context: TaskToolInvocationContext, callerRun: TaskAgentRun |
 function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedAt: string): Task {
   return {
     ...existing,
+    ...(update.projectId !== undefined ? { projectId: update.projectId } : {}),
+    ...(update.audience !== undefined ? { audience: update.audience } : {}),
+    ...(update.kind !== undefined ? { kind: update.kind } : {}),
     ...(update.title !== undefined ? { title: update.title } : {}),
     ...(update.description !== undefined ? { description: update.description } : {}),
     ...(update.output !== undefined ? { output: update.output } : {}),
@@ -408,6 +413,7 @@ const make = Effect.gen(function* () {
   const taskAgents = yield* TaskAgentService;
   const projects = yield* ProjectStoreV2;
   const threads = yield* ThreadManagementService;
+  const inbox = yield* InboxProject;
   const crypto = yield* Crypto.Crypto;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
@@ -530,9 +536,13 @@ const make = Effect.gen(function* () {
             : { isError: true, text: `Task '${input.id}' was not found.` };
         }
         case "task_search": {
+          const input = yield* decoders.task_search(args);
           return {
             isError: false,
-            text: json({ tasks: yield* repository.search(yield* decoders.task_search(args)) }),
+            // Agents look for their own queue: person tasks only when asked for.
+            text: json({
+              tasks: yield* repository.search({ ...input, audience: input.audience ?? "agent" }),
+            }),
           };
         }
         case "task_create": {
@@ -544,15 +554,23 @@ const make = Effect.gen(function* () {
             },
             invocationContext: context,
           });
-          if (!resolution.resolvedProject)
-            return {
-              isError: true,
-              text: json({ error: "Unable to resolve project.", resolution }),
-            };
+          if (!resolution.resolvedProject) {
+            // A person task without a project goes to the Inbox, as in the planner.
+            if (input.audience !== "person")
+              return {
+                isError: true,
+                text: json({ error: "Unable to resolve project.", resolution }),
+              };
+            if (isDryRun)
+              return { isError: false, text: json({ dryRun: true, project: "Inbox", input }) };
+          }
+          const projectId = resolution.resolvedProject
+            ? resolution.resolvedProject.project.id
+            : yield* inbox.ensure;
           const timestamp = yield* now;
           const task: PersistTaskInput = {
             id: input.id ?? TaskId.make(yield* randomId("task")),
-            projectId: resolution.resolvedProject.project.id,
+            projectId,
             title: input.title,
             description: input.description,
             output: input.output ?? null,
@@ -572,6 +590,7 @@ const make = Effect.gen(function* () {
             createdAt: timestamp,
             updatedAt: timestamp,
             archivedAt: null,
+            ...(input.audience !== undefined ? { audience: input.audience } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
           // An existing id updates that task; a status change is the caller's.
@@ -596,6 +615,13 @@ const make = Effect.gen(function* () {
               : { isError: true, text: `Task '${input.id}' was not found.` };
           }
           const before = yield* repository.getById({ id: input.id });
+          if (Option.isSome(before)) {
+            const invalid = taskKindAudienceError(
+              input.kind ?? before.value.kind,
+              input.audience ?? before.value.audience,
+            );
+            if (invalid !== null) return { isError: true, text: invalid };
+          }
           const callerRun = context.threadId
             ? Option.getOrNull(
                 yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),

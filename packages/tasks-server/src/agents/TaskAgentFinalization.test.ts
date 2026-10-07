@@ -75,6 +75,8 @@ test("finalization ownership and task truth commit atomically and idempotently",
     archivedAt: null,
     notBefore: null,
     triggerChangedAt: timestamp,
+    audience: "agent",
+    kind: "task",
   };
 
   await Effect.runPromise(

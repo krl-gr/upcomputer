@@ -6,6 +6,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
@@ -32,6 +33,29 @@ export const TaskDateTime = Schema.String.pipe(
   ),
 );
 export type TaskDateTime = typeof TaskDateTime.Type;
+
+/**
+ * Who a task is for. Agents start on `agent` tasks by their triggers. A
+ * `person` task is the user's own work: an agent starts on it only when the
+ * task carries every one of that agent's start tags, never by status alone.
+ */
+export const TaskAudience = Schema.Literals(["agent", "person"]);
+export type TaskAudience = typeof TaskAudience.Type;
+
+/** A routine is a person task planned again and again; it never starts agents. */
+export const TaskKind = Schema.Literals(["task", "routine"]);
+export type TaskKind = typeof TaskKind.Type;
+
+/** The statuses the planner sets on person tasks: Restore and Done. */
+export const PERSON_OPEN_STATUS = "To Do" as const;
+export const PERSON_DONE_STATUS = "Done" as const;
+
+/** Why a kind and audience cannot go together, or null. Routines are person tasks. */
+export function taskKindAudienceError(kind: TaskKind, audience: TaskAudience): string | null {
+  return kind === "routine" && audience !== "person"
+    ? "A routine is a person task: its audience must be person."
+    : null;
+}
 
 export const Task = Schema.Struct({
   id: TaskId,
@@ -63,10 +87,14 @@ export const Task = Schema.Struct({
   /** No agent run starts on this task before this time. */
   notBefore: Schema.NullOr(IsoDateTime),
   /**
-   * Last real change to title, description, status, tags, notBefore or archivedAt,
-   * computed by the server. An agent runs again only after such a change.
+   * Last real change to title, description, status, tags, notBefore, archivedAt,
+   * projectId, audience or kind, computed by the server. An agent runs again only after such a change.
    */
   triggerChangedAt: IsoDateTime,
+  /** Absent from tasks RPC version 12 and older: such tasks are agent tasks. */
+  audience: TaskAudience.pipe(Schema.withDecodingDefaultKey(Effect.succeed("agent" as const))),
+  /** Absent from tasks RPC version 12 and older: such tasks are plain tasks. */
+  kind: TaskKind.pipe(Schema.withDecodingDefaultKey(Effect.succeed("task" as const))),
 });
 export type Task = typeof Task.Type;
 
@@ -117,7 +145,8 @@ export type TaskDeleteInput = typeof TaskDeleteInput.Type;
 
 export const TaskCreateInput = Schema.Struct({
   id: Schema.optional(TaskId),
-  projectId: ProjectId,
+  /** Without a project the task goes to the Inbox project, created on first use. */
+  projectId: Schema.optional(ProjectId),
   title: TrimmedNonEmptyString,
   description: Schema.String,
   output: Schema.optional(Schema.NullOr(Schema.String)),
@@ -130,6 +159,12 @@ export const TaskCreateInput = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   tags: Schema.optional(Schema.Array(TaskTag)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
+  /** Defaults to agent, as before version 13. */
+  audience: Schema.optional(TaskAudience),
+  kind: Schema.optional(TaskKind),
+  /** Places the new task next to a neighbor in the global order; without either it goes first. */
+  beforeTaskId: Schema.optional(TaskId),
+  afterTaskId: Schema.optional(TaskId),
 });
 export type TaskCreateInput = typeof TaskCreateInput.Type;
 
@@ -149,6 +184,7 @@ export const TaskToolCreateInput = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   tags: Schema.optional(Schema.Array(TaskTag)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
+  audience: Schema.optional(TaskAudience),
 });
 export type TaskToolCreateInput = typeof TaskToolCreateInput.Type;
 
@@ -162,6 +198,8 @@ export type TaskToolContextInput = typeof TaskToolContextInput.Type;
 
 export const TaskUpdateInput = Schema.Struct({
   id: TaskId,
+  /** Moves the task to another project. Like status and tags, it can start agents. */
+  projectId: Schema.optional(ProjectId),
   title: Schema.optional(TrimmedNonEmptyString),
   description: Schema.optional(Schema.String),
   output: Schema.optional(Schema.NullOr(Schema.String)),
@@ -173,6 +211,8 @@ export const TaskUpdateInput = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   tags: Schema.optional(Schema.Array(TaskTag)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
+  audience: Schema.optional(TaskAudience),
+  kind: Schema.optional(TaskKind),
 });
 export type TaskUpdateInput = typeof TaskUpdateInput.Type;
 
@@ -180,11 +220,23 @@ export type TaskUpdateInput = typeof TaskUpdateInput.Type;
 export const TaskArchiveFilter = Schema.Literals(["active", "archived", "all"]);
 export type TaskArchiveFilter = typeof TaskArchiveFilter.Type;
 
+/** Which audience a list returns. */
+export const TaskAudienceFilter = Schema.Literals(["agent", "person", "all"]);
+export type TaskAudienceFilter = typeof TaskAudienceFilter.Type;
+
 export const TaskSearchInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   status: Schema.optional(TrimmedNonEmptyString),
+  /** Leaves out tasks in these statuses. */
+  excludeStatuses: Schema.optional(
+    Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(20)),
+  ),
   tags: Schema.optional(Schema.Array(TaskTag)),
   archive: Schema.optional(TaskArchiveFilter),
+  /** Defaults to all. */
+  audience: Schema.optional(TaskAudienceFilter),
+  /** Defaults to task, so routines stay out of task lists. */
+  kind: Schema.optional(TaskKind),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(500))),
 });
 export type TaskSearchInput = typeof TaskSearchInput.Type;
@@ -233,6 +285,8 @@ export const TaskChange = Schema.Struct({
   listChanged: Schema.Boolean,
   runsChanged: Schema.Boolean,
   rootThreadIds: Schema.Array(ThreadId),
+  /** Dates (YYYY-MM-DD) whose schedule entries changed; absent when none did. */
+  scheduleDates: Schema.optional(Schema.Array(Schema.String)),
 });
 export type TaskChange = typeof TaskChange.Type;
 
@@ -249,6 +303,22 @@ export const TaskReorderInput = Schema.Struct({
   afterTaskId: Schema.optional(TaskId),
 });
 export type TaskReorderInput = typeof TaskReorderInput.Type;
+
+export const TASK_REORDER_MANY_MAX_IDS = 500;
+
+/**
+ * Moves several tasks as one block, in their current relative order, next to
+ * a neighbor (or first). The neighbor may not be one of the moved tasks.
+ */
+export const TaskReorderManyInput = Schema.Struct({
+  ids: Schema.Array(TaskId).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(TASK_REORDER_MANY_MAX_IDS),
+  ),
+  beforeTaskId: Schema.optional(TaskId),
+  afterTaskId: Schema.optional(TaskId),
+});
+export type TaskReorderManyInput = typeof TaskReorderManyInput.Type;
 
 export const TaskTagInput = Schema.Struct({
   taskId: TaskId,

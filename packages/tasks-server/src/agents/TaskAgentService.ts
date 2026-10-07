@@ -141,9 +141,13 @@ const PENDING_RESULT_CONSUMPTION_TIMEOUT_MS = 2 * 60 * 1_000;
 
 /**
  * Task-state part of an agent's trigger. Whether a matching agent actually
- * starts also depends on its previous runs (see `startAgent`).
+ * starts also depends on its previous runs (see `startAgent`). Routines never
+ * start agents, and a person task starts only an agent that requires tags:
+ * adding all of its tags is the explicit hand-off.
  */
 export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
+  if (task.kind === "routine") return false;
+  if (task.audience === "person" && agent.startTags.length === 0) return false;
   if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
@@ -811,8 +815,10 @@ const make = Effect.gen(function* () {
       if (run === null) return;
 
       yield* Effect.gen(function* () {
-        const globallyOrderedTasks = (yield* repository.listAllTasks()).filter(
-          ({ archivedAt }) => archivedAt === null,
+        // The agents' queue: unarchived agent tasks, plus this task when a tag
+        // handed a person task over.
+        const globallyOrderedTasks = (yield* repository.listTriggerCandidates()).filter(
+          ({ id, audience }) => audience === "agent" || id === task.id,
         );
         const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
         const globalPosition = {
@@ -951,7 +957,7 @@ const make = Effect.gen(function* () {
       );
       if (reason === "deleted" || !agent.enabled) return;
       yield* Effect.forEach(
-        yield* repository.listAllTasks(),
+        yield* repository.listTriggerCandidates(),
         (task) => startMatchingAgents([agent], task),
         { discard: true, concurrency: 1 },
       );
@@ -961,7 +967,7 @@ const make = Effect.gen(function* () {
     yield* reconcileActiveRuns;
     const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
     yield* Effect.forEach(
-      yield* repository.listAllTasks(),
+      yield* repository.listTriggerCandidates(),
       (task) => startMatchingAgents(agents, task),
       { discard: true, concurrency: 1 },
     );

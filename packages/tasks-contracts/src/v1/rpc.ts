@@ -28,6 +28,21 @@ import {
   TaskPromptSettingsUpdateResult,
 } from "./prompts.ts";
 import {
+  TaskScheduleAddInput,
+  TaskScheduleCopyInput,
+  TaskScheduleDeleteInput,
+  TaskScheduleForTaskInput,
+  TaskScheduleForTaskResult,
+  TaskScheduleMoveInput,
+  TaskScheduleMoveOpenInput,
+  TaskScheduleProgressInput,
+  TaskScheduleProgressResult,
+  TaskScheduleRangeInput,
+  TaskScheduleRangeResult,
+  TaskScheduleUpdateInput,
+  TaskScheduleWriteResult,
+} from "./schedule.ts";
+import {
   TaskResponse,
   TaskAppendEventInput,
   TaskArchiveInput,
@@ -39,6 +54,7 @@ import {
   TaskEventsInput,
   TaskEventsResult,
   TaskReorderInput,
+  TaskReorderManyInput,
   TaskGetInput,
   TaskPageInput,
   TaskPageResult,
@@ -57,7 +73,11 @@ import {
   TaskUpdateInput,
 } from "./tasks.ts";
 
-export const TASKS_RPC_CONTRACT_VERSION = 12 as const;
+/**
+ * 13: task audience and kind, schedule entries, reorderMany, projectId on
+ * update. Version 12 shapes still decode in both directions.
+ */
+export const TASKS_RPC_CONTRACT_VERSION = 13 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {
@@ -93,6 +113,7 @@ export const TASKS_RPC_METHODS = {
   get: `${TASKS_RPC_NAMESPACE}.get`,
   update: `${TASKS_RPC_NAMESPACE}.update`,
   reorder: `${TASKS_RPC_NAMESPACE}.reorder`,
+  reorderMany: `${TASKS_RPC_NAMESPACE}.reorderMany`,
   delete: `${TASKS_RPC_NAMESPACE}.delete`,
   addTag: `${TASKS_RPC_NAMESPACE}.addTag`,
   removeTag: `${TASKS_RPC_NAMESPACE}.removeTag`,
@@ -102,6 +123,15 @@ export const TASKS_RPC_METHODS = {
   unarchive: `${TASKS_RPC_NAMESPACE}.unarchive`,
   getPromptSettings: `${TASKS_RPC_NAMESPACE}.getPromptSettings`,
   updatePromptSettings: `${TASKS_RPC_NAMESPACE}.updatePromptSettings`,
+  scheduleRange: `${TASKS_RPC_NAMESPACE}.scheduleRange`,
+  scheduleForTask: `${TASKS_RPC_NAMESPACE}.scheduleForTask`,
+  scheduleProgress: `${TASKS_RPC_NAMESPACE}.scheduleProgress`,
+  scheduleAdd: `${TASKS_RPC_NAMESPACE}.scheduleAdd`,
+  scheduleUpdate: `${TASKS_RPC_NAMESPACE}.scheduleUpdate`,
+  scheduleMove: `${TASKS_RPC_NAMESPACE}.scheduleMove`,
+  scheduleCopy: `${TASKS_RPC_NAMESPACE}.scheduleCopy`,
+  scheduleDelete: `${TASKS_RPC_NAMESPACE}.scheduleDelete`,
+  scheduleMoveOpen: `${TASKS_RPC_NAMESPACE}.scheduleMoveOpen`,
 } as const;
 
 export const TASK_AGENTS_RPC_METHODS = {
@@ -158,6 +188,11 @@ export const TasksUpdateRpc = Rpc.make(TASKS_RPC_METHODS.update, {
 export const TasksReorderRpc = Rpc.make(TASKS_RPC_METHODS.reorder, {
   payload: TaskReorderInput,
   success: TaskResponse,
+  error: TaskError,
+});
+export const TasksReorderManyRpc = Rpc.make(TASKS_RPC_METHODS.reorderMany, {
+  payload: TaskReorderManyInput,
+  success: TaskSearchResult,
   error: TaskError,
 });
 export const TasksDeleteRpc = Rpc.make(TASKS_RPC_METHODS.delete, {
@@ -223,6 +258,52 @@ export const TasksThreadTasksRpc = Rpc.make(TASKS_RPC_METHODS.threadTasks, {
   error: TaskError,
 });
 
+export const TasksScheduleRangeRpc = Rpc.make(TASKS_RPC_METHODS.scheduleRange, {
+  payload: TaskScheduleRangeInput,
+  success: TaskScheduleRangeResult,
+  error: TaskError,
+});
+export const TasksScheduleForTaskRpc = Rpc.make(TASKS_RPC_METHODS.scheduleForTask, {
+  payload: TaskScheduleForTaskInput,
+  success: TaskScheduleForTaskResult,
+  error: TaskError,
+});
+export const TasksScheduleProgressRpc = Rpc.make(TASKS_RPC_METHODS.scheduleProgress, {
+  payload: TaskScheduleProgressInput,
+  success: TaskScheduleProgressResult,
+  error: TaskError,
+});
+export const TasksScheduleAddRpc = Rpc.make(TASKS_RPC_METHODS.scheduleAdd, {
+  payload: TaskScheduleAddInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+export const TasksScheduleUpdateRpc = Rpc.make(TASKS_RPC_METHODS.scheduleUpdate, {
+  payload: TaskScheduleUpdateInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+export const TasksScheduleMoveRpc = Rpc.make(TASKS_RPC_METHODS.scheduleMove, {
+  payload: TaskScheduleMoveInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+export const TasksScheduleCopyRpc = Rpc.make(TASKS_RPC_METHODS.scheduleCopy, {
+  payload: TaskScheduleCopyInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+export const TasksScheduleDeleteRpc = Rpc.make(TASKS_RPC_METHODS.scheduleDelete, {
+  payload: TaskScheduleDeleteInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+export const TasksScheduleMoveOpenRpc = Rpc.make(TASKS_RPC_METHODS.scheduleMoveOpen, {
+  payload: TaskScheduleMoveOpenInput,
+  success: TaskScheduleWriteResult,
+  error: TaskError,
+});
+
 export const TasksRpcGroup = RpcGroup.make(
   TasksRunCountsRpc,
   TasksThreadRunCountsRpc,
@@ -235,6 +316,7 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksGetRpc,
   TasksUpdateRpc,
   TasksReorderRpc,
+  TasksReorderManyRpc,
   TasksDeleteRpc,
   TasksAddTagRpc,
   TasksRemoveTagRpc,
@@ -244,6 +326,15 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksUnarchiveRpc,
   TasksGetPromptSettingsRpc,
   TasksUpdatePromptSettingsRpc,
+  TasksScheduleRangeRpc,
+  TasksScheduleForTaskRpc,
+  TasksScheduleProgressRpc,
+  TasksScheduleAddRpc,
+  TasksScheduleUpdateRpc,
+  TasksScheduleMoveRpc,
+  TasksScheduleCopyRpc,
+  TasksScheduleDeleteRpc,
+  TasksScheduleMoveOpenRpc,
 );
 
 export const TaskAgentsUpsertRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.upsert, {

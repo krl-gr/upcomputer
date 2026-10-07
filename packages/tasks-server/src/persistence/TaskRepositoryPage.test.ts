@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 
 import { runExperimentalFeatureMigrations } from "../../../../apps/server/src/extensionApi.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "./migrations/index.ts";
-import { TaskRepository } from "./TaskRepository.ts";
+import { TaskRepository, type PersistTaskInput } from "./TaskRepository.ts";
 import { TaskRepositoryLive } from "./TaskRepositoryLive.ts";
 
 const timestamp = "2026-10-05T10:00:00.000Z";
@@ -19,7 +19,7 @@ const database = Layer.effectDiscard(
 
 const TestLayer = TaskRepositoryLive.pipe(Layer.provideMerge(database));
 
-const task = (id: string, tags: string[] = []) => ({
+const task = (id: string, tags: string[] = [], overrides: Partial<PersistTaskInput> = {}) => ({
   id: TaskId.make(id),
   projectId: project,
   title: id,
@@ -36,6 +36,7 @@ const task = (id: string, tags: string[] = []) => ({
   createdAt: timestamp,
   updatedAt: timestamp,
   archivedAt: null,
+  ...overrides,
 });
 
 const run = (id: string, taskId: string, status: string, startedAt: string) => ({
@@ -88,6 +89,92 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
           .pipe(Effect.map((page) => page.tasks.map((item) => item.id).toSorted()));
       assert.deepStrictEqual(yield* ids(["browser-use", "ui"]), ["both"]);
       assert.deepStrictEqual(yield* ids(["browser-use"]), ["both", "one"]);
+    }),
+  );
+
+  it.effect("filter by audience, kind and excluded statuses; facets follow audience and kind", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsert(task("f-agent", [], { status: "Backlog" }));
+      yield* repository.upsert(task("f-mine", [], { audience: "person" }));
+      yield* repository.upsert(task("f-done", [], { audience: "person", status: "Done" }));
+      yield* repository.upsert(
+        task("f-routine", [], { audience: "person", kind: "routine", status: "Weekly" }),
+      );
+
+      const ids = (input: Parameters<typeof repository.page>[0]) =>
+        repository
+          .page({ limit: 50, ...input })
+          .pipe(
+            Effect.map((page) =>
+              page.tasks.map((item) => item.id).filter((id) => id.startsWith("f-")),
+            ),
+          );
+      assert.deepStrictEqual(
+        (yield* ids({})).toSorted(),
+        ["f-agent", "f-done", "f-mine"],
+        "all audiences, no routines",
+      );
+      assert.deepStrictEqual(yield* ids({ audience: "agent" }), ["f-agent"]);
+      // The planner's active list.
+      assert.deepStrictEqual(yield* ids({ audience: "person", excludeStatuses: ["Done"] }), [
+        "f-mine",
+      ]);
+      assert.deepStrictEqual(yield* ids({ kind: "routine" }), ["f-routine"]);
+      const searched = yield* repository.search({ audience: "person", status: "Done" });
+      assert.deepStrictEqual(
+        searched.map(({ id }) => id),
+        ["f-done"],
+      );
+
+      const personPage = yield* repository.page({ audience: "person", status: "Done" });
+      assert.include(personPage.statuses, "To Do", "facets ignore the selected status");
+      assert.notInclude(personPage.statuses, "Backlog", "facets follow the audience");
+      assert.notInclude(personPage.statuses, "Weekly", "facets follow the kind");
+    }),
+  );
+
+  it.effect("reorderMany moves a block in its current order, next to a neighbor or first", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      // Each create prepends, so the global order is the reverse of creation.
+      for (const id of ["rm6", "rm5", "rm4", "rm3", "rm2", "rm1"])
+        yield* repository.upsert(task(id));
+      const order = () =>
+        repository
+          .page({ limit: 50 })
+          .pipe(
+            Effect.map((page) =>
+              page.tasks.map((item) => item.id as string).filter((id) => id.startsWith("rm")),
+            ),
+          );
+      assert.deepStrictEqual(yield* order(), ["rm1", "rm2", "rm3", "rm4", "rm5", "rm6"]);
+
+      const moved = yield* repository.reorderMany({
+        ids: [TaskId.make("rm5"), TaskId.make("rm2")],
+        afterTaskId: TaskId.make("rm3"),
+      });
+      assert.deepStrictEqual(
+        moved.map(({ id }) => id),
+        ["rm2", "rm5"],
+      );
+      assert.deepStrictEqual(yield* order(), ["rm1", "rm3", "rm2", "rm5", "rm4", "rm6"]);
+
+      yield* repository.reorderMany({ ids: [TaskId.make("rm6"), TaskId.make("rm4")] });
+      assert.deepStrictEqual((yield* order()).slice(0, 2), ["rm4", "rm6"], "first by default");
+
+      yield* repository.reorderMany({
+        ids: [TaskId.make("rm1"), TaskId.make("rm3")],
+        beforeTaskId: TaskId.make("rm6"),
+      });
+      assert.deepStrictEqual(yield* order(), ["rm4", "rm1", "rm3", "rm6", "rm2", "rm5"]);
+
+      const ownNeighbor = yield* Effect.flip(
+        repository.reorderMany({ ids: [TaskId.make("rm1")], afterTaskId: TaskId.make("rm1") }),
+      );
+      assert.equal(ownNeighbor._tag, "TaskPersistenceSqlError");
+      yield* Effect.flip(repository.reorderMany({ ids: [TaskId.make("missing")] }));
+      assert.deepStrictEqual(yield* order(), ["rm4", "rm1", "rm3", "rm6", "rm2", "rm5"]);
     }),
   );
 });

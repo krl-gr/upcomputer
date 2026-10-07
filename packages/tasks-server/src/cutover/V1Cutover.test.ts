@@ -93,6 +93,8 @@ it.layer(TestLayer)("runTaskV1Cutover", (it) => {
         archivedAt: null,
         notBefore: null,
         triggerChangedAt: timestamp,
+        audience: "agent",
+        kind: "task",
       };
       yield* repository.upsert(task);
       yield* repository.upsertAgent({

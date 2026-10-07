@@ -10,6 +10,7 @@ import { TaskAgentService, TaskAgentServiceLive } from "./agents/TaskAgentServic
 import { TaskSourceWakeLive } from "./agents/TaskSourceWake.ts";
 import { TaskAutomationServiceLive } from "./automations/TaskAutomationService.ts";
 import { TaskToolContextResolverLive } from "./context/TaskToolContextResolver.ts";
+import { InboxProjectLive } from "./inbox/InboxProject.ts";
 import { TaskMcpToolsLive } from "./mcp/TaskMcpTools.ts";
 import {
   AllChatsInstructionsLive,
@@ -19,6 +20,7 @@ import {
 } from "./persistence/index.ts";
 import { retryOperational } from "./retryOperational.ts";
 import { TASK_RPC_CONTRIBUTIONS } from "./rpc/contributions.ts";
+import { TaskScheduleServiceLive } from "./schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
 
 const TASKS_FEATURE_ID = "upcomputer.tasks";
@@ -30,7 +32,13 @@ const taskAgentsLive = TaskAgentServiceLive.pipe(
 
 export const TaskServicesLive = TaskToolServiceLive.pipe(
   Layer.provideMerge(
-    Layer.mergeAll(TaskToolContextResolverLive, TaskAutomationServiceLive, TaskSourceWakeLive),
+    Layer.mergeAll(
+      TaskToolContextResolverLive,
+      TaskAutomationServiceLive,
+      TaskSourceWakeLive,
+      InboxProjectLive,
+      TaskScheduleServiceLive,
+    ),
   ),
   Layer.provideMerge(taskAgentsLive),
 );

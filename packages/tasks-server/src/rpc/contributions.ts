@@ -14,6 +14,7 @@ import {
   TaskEventId,
   TaskId,
   TasksRpcGroup,
+  taskKindAudienceError,
   type TaskAutomation,
 } from "@t3tools/tasks-contracts/v1";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
@@ -30,7 +31,9 @@ import {
   armAutomationSchedule,
   normalizeAutomationTemplate,
 } from "../automations/automationWrites.ts";
+import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
+import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
 import { setTasksArchived } from "../taskArchive.ts";
 
@@ -70,6 +73,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.get]: read,
     [TASKS_RPC_METHODS.update]: operate,
     [TASKS_RPC_METHODS.reorder]: operate,
+    [TASKS_RPC_METHODS.reorderMany]: operate,
     [TASKS_RPC_METHODS.delete]: operate,
     [TASKS_RPC_METHODS.addTag]: operate,
     [TASKS_RPC_METHODS.removeTag]: operate,
@@ -79,6 +83,15 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.unarchive]: operate,
     [TASKS_RPC_METHODS.getPromptSettings]: read,
     [TASKS_RPC_METHODS.updatePromptSettings]: operate,
+    [TASKS_RPC_METHODS.scheduleRange]: read,
+    [TASKS_RPC_METHODS.scheduleForTask]: read,
+    [TASKS_RPC_METHODS.scheduleProgress]: read,
+    [TASKS_RPC_METHODS.scheduleAdd]: operate,
+    [TASKS_RPC_METHODS.scheduleUpdate]: operate,
+    [TASKS_RPC_METHODS.scheduleMove]: operate,
+    [TASKS_RPC_METHODS.scheduleCopy]: operate,
+    [TASKS_RPC_METHODS.scheduleDelete]: operate,
+    [TASKS_RPC_METHODS.scheduleMoveOpen]: operate,
   },
   handlers: () =>
     TasksRpcGroup.toLayer(
@@ -89,11 +102,17 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const agents = yield* TaskAgentService;
               const crypto = yield* Crypto.Crypto;
+              const invalid = taskKindAudienceError(
+                input.kind ?? "task",
+                input.audience ?? "agent",
+              );
+              if (invalid !== null) return yield* Effect.fail(taskError(invalid));
+              const projectId = input.projectId ?? (yield* (yield* InboxProject).ensure);
               const timestamp = yield* now;
               const id = input.id ?? TaskId.make(`task-${yield* crypto.randomUUIDv4}`);
-              const task = yield* repository.upsert({
+              const upsert = repository.upsert({
                 id,
-                projectId: input.projectId,
+                projectId,
                 title: input.title,
                 description: input.description,
                 output: input.output ?? null,
@@ -109,9 +128,30 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 createdAt: timestamp,
                 updatedAt: timestamp,
                 archivedAt: null,
+                ...(input.audience !== undefined ? { audience: input.audience } : {}),
+                ...(input.kind !== undefined ? { kind: input.kind } : {}),
                 // An existing id updates that task; a status change is the person's.
                 actor: { type: "person" },
               });
+              // A placed task appears once, at its place: one transaction, one change.
+              const task =
+                input.beforeTaskId === undefined && input.afterTaskId === undefined
+                  ? yield* upsert
+                  : yield* repository.withChangeTransaction(
+                      upsert.pipe(
+                        Effect.andThen(
+                          repository.reorder({
+                            id,
+                            ...(input.beforeTaskId !== undefined
+                              ? { beforeTaskId: input.beforeTaskId }
+                              : {}),
+                            ...(input.afterTaskId !== undefined
+                              ? { afterTaskId: input.afterTaskId }
+                              : {}),
+                          }),
+                        ),
+                      ),
+                    );
               yield* agents.scheduleTaskChanged({ task, reason: "created" });
               return task;
             }),
@@ -173,6 +213,13 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const agents = yield* TaskAgentService;
               const before = yield* repository.getById({ id: input.id });
+              if (Option.isSome(before)) {
+                const invalid = taskKindAudienceError(
+                  input.kind ?? before.value.kind,
+                  input.audience ?? before.value.audience,
+                );
+                if (invalid !== null) return yield* Effect.fail(taskError(invalid));
+              }
               const task = yield* repository.update({ ...input, actor: { type: "person" } });
               yield* agents.scheduleTaskChanged({
                 task,
@@ -193,6 +240,12 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               return yield* (yield* TaskRepository).reorder(input);
+            }),
+          ),
+        [TASKS_RPC_METHODS.reorderMany]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              return { tasks: yield* (yield* TaskRepository).reorderMany(input) };
             }),
           ),
         [TASKS_RPC_METHODS.delete]: (input) =>
@@ -284,6 +337,24 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               return yield* (yield* TaskPromptSettingsStore).update(input);
             }),
           ),
+        [TASKS_RPC_METHODS.scheduleRange]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.range(input))),
+        [TASKS_RPC_METHODS.scheduleForTask]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.forTask(input))),
+        [TASKS_RPC_METHODS.scheduleProgress]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.progress(input))),
+        [TASKS_RPC_METHODS.scheduleAdd]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.add(input))),
+        [TASKS_RPC_METHODS.scheduleUpdate]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.update(input))),
+        [TASKS_RPC_METHODS.scheduleMove]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.move(input))),
+        [TASKS_RPC_METHODS.scheduleCopy]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.copy(input))),
+        [TASKS_RPC_METHODS.scheduleDelete]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.remove(input))),
+        [TASKS_RPC_METHODS.scheduleMoveOpen]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.moveOpen(input))),
       }),
     ),
 });

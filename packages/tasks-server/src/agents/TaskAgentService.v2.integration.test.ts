@@ -49,6 +49,8 @@ import { rpcScopeAuthorizationLayer } from "../../../../apps/server/src/auth/Rpc
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import { ProviderRegistry } from "../../../../apps/server/src/provider/Services/ProviderRegistry.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
+import { ServerConfig } from "../../../../apps/server/src/config.ts";
+import { ProjectService } from "../../../../apps/server/src/project/ProjectService.ts";
 import { SqlitePersistenceMemory } from "../../../../apps/server/src/persistence/Layers/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "../../../../apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts";
 import type {
@@ -318,6 +320,8 @@ const task: Task = {
   archivedAt: null,
   notBefore: null,
   triggerChangedAt: timestamp,
+  audience: "agent",
+  kind: "task",
 };
 
 const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
@@ -338,6 +342,9 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
     Layer.provideMerge(runtime),
     Layer.provideMerge(db),
     Layer.provideMerge(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
+    // The tasks Inbox reads these when it is built; these tests never create it.
+    Layer.provideMerge(Layer.mock(ProjectService)({})),
+    Layer.provideMerge(Layer.succeed(ServerConfig, { baseDir: cwd } as never)),
     Layer.provideMerge(ServerSettings.layerTest().pipe(Layer.orDie)),
     Layer.provideMerge(NodeServices.layer),
   );

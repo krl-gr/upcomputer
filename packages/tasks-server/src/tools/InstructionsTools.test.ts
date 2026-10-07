@@ -45,6 +45,8 @@ import { TASKS_RPC_CONTRIBUTION } from "../rpc/contributions.ts";
 import { TASK_TOOL_SPECS } from "./TaskToolDefinitions.ts";
 import { TaskToolService, TaskToolServiceLive } from "./TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
+import { InboxProject } from "../inbox/InboxProject.ts";
+import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 
 const directories: string[] = [];
 
@@ -121,6 +123,8 @@ async function harness(options: { readonly allChats?: string } = {}) {
         Layer.succeed(TaskToolContextResolver, resolver),
         Layer.succeed(TaskAgentService, {} as TaskAgentServiceShape),
         Layer.succeed(ThreadManagementService, {} as never),
+        Layer.succeed(InboxProject, {} as never),
+        Layer.succeed(TaskScheduleService, {} as never),
         Layer.succeed(ProjectStoreV2, {
           getShell: (id: string) =>
             Effect.succeed(
