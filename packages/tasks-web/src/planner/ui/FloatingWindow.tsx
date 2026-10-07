@@ -34,6 +34,15 @@ const INTERACTIVE =
   'input, textarea, select, button, a, [contenteditable="true"], [data-prevent-drag]';
 
 /**
+ * Whether a pointer event started on this element's own DOM. Menus and
+ * dialogs opened from a window render in portals, but their React events
+ * still bubble through the window; dragging or raising on them would capture
+ * the pointer and swallow their clicks.
+ */
+const fromOwnDom = (event: { currentTarget: Element; target: EventTarget }) =>
+  event.currentTarget.contains(event.target as Node);
+
+/**
  * Wande's FloatingWindow: a non-modal window over the page with the dialog
  * surface, dragged by its header and kept inside the viewport, not resizable.
  * Several can be open; pressing one raises it. Below the `md` breakpoint it is
@@ -96,13 +105,13 @@ export function FloatingWindow(props: {
       className={cn(DIALOG_POPUP_CLASS, "fixed flex max-h-[85vh] flex-col shadow-xl")}
       style={{ left: position.x, top: position.y, width: props.width, zIndex: props.zIndex }}
       onPointerDownCapture={(event) => {
-        if (!(event.target as Element).closest(INTERACTIVE)) props.onFocus();
+        if (fromOwnDom(event) && !(event.target as Element).closest(INTERACTIVE)) props.onFocus();
       }}
     >
       <div
         className="flex shrink-0 cursor-move items-start gap-2 px-4 pt-4 pb-2 select-none"
         onPointerDown={(event) => {
-          if ((event.target as Element).closest(INTERACTIVE)) return;
+          if (!fromOwnDom(event) || (event.target as Element).closest(INTERACTIVE)) return;
           event.preventDefault();
           props.onFocus();
           event.currentTarget.setPointerCapture(event.pointerId);
