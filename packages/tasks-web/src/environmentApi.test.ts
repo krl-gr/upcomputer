@@ -8,7 +8,7 @@ vi.mock("../../../apps/web/src/extensionApi.ts", () => ({
   requestExperimentalFeatureRpc: rpc.request,
 }));
 
-import { readTasksWebAccess } from "./environmentApi.ts";
+import { readPlannerAvailability, readTasksWebAccess } from "./environmentApi.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -56,6 +56,21 @@ describe("Tasks access", () => {
     readTasksWebAccess(environmentId);
     await vi.advanceTimersByTimeAsync(0);
     expect(readTasksWebAccess(environmentId).availability).toBe("enabled");
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Planner availability", () => {
+  it("is enabled when the server answers the schedule range and unavailable when it rejects it", async () => {
+    rpc.request.mockResolvedValueOnce({ entries: [], tasks: [] });
+    rpc.request.mockRejectedValueOnce(new Error("Unknown request tag"));
+    const current = EnvironmentId.make("planner-current");
+    const older = EnvironmentId.make("planner-older-server");
+    expect(readPlannerAvailability(current)).toBe("loading");
+    expect(readPlannerAvailability(older)).toBe("loading");
+    await settle();
+    expect(readPlannerAvailability(current)).toBe("enabled");
+    expect(readPlannerAvailability(older)).toBe("unavailable");
     expect(rpc.request).toHaveBeenCalledTimes(2);
   });
 });

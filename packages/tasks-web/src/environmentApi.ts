@@ -16,6 +16,7 @@ import {
 } from "./rpc/index.ts";
 
 const RETRY_WHILE_DISCONNECTED_MS = 2_000;
+const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
 interface Probe {
   readonly availability: TasksWebAvailability;
@@ -49,7 +50,7 @@ function startProbe(environmentId: EnvironmentId) {
   requestFor(environmentId)((client) => client[TASKS_RPC_METHODS.runCounts]({})).then(
     () => setProbe(environmentId, { availability: "enabled" }),
     (error: unknown) => {
-      if (Schema.is(EnvironmentRpcUnavailableError)(error)) {
+      if (isEnvironmentRpcUnavailable(error)) {
         setTimeout(() => setProbe(environmentId, undefined), RETRY_WHILE_DISCONNECTED_MS);
         return;
       }
@@ -59,6 +60,39 @@ function startProbe(environmentId: EnvironmentId) {
       });
     },
   );
+}
+
+const plannerProbes = new Map<EnvironmentId, TasksWebAvailability>();
+
+function setPlannerProbe(environmentId: EnvironmentId, availability?: TasksWebAvailability) {
+  if (availability === undefined) plannerProbes.delete(environmentId);
+  else plannerProbes.set(environmentId, availability);
+  revision += 1;
+  for (const listener of listeners) listener();
+}
+
+/**
+ * Whether the server has the planner's schedule methods (tasks RPC version
+ * 13), asked once like the group probe above. Older servers get the table only.
+ */
+export function readPlannerAvailability(environmentId: EnvironmentId): TasksWebAvailability {
+  const known = plannerProbes.get(environmentId);
+  if (known !== undefined) return known;
+  plannerProbes.set(environmentId, "loading");
+  const today = new Date().toLocaleDateString("en-CA");
+  requestFor(environmentId)((client) =>
+    client[TASKS_RPC_METHODS.scheduleRange]({ from: today, to: today }),
+  ).then(
+    () => setPlannerProbe(environmentId, "enabled"),
+    (error: unknown) => {
+      if (isEnvironmentRpcUnavailable(error)) {
+        setTimeout(() => setPlannerProbe(environmentId, undefined), RETRY_WHILE_DISCONNECTED_MS);
+        return;
+      }
+      setPlannerProbe(environmentId, "unavailable");
+    },
+  );
+  return "loading";
 }
 
 /** What the Tasks UI may do in an environment; starts the check on first read. */

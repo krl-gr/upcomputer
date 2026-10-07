@@ -39,6 +39,7 @@ export interface TasksWebRpcClient {
     readonly get: RpcUnaryMethod<typeof TASKS_RPC_METHODS.get>;
     readonly update: RpcUnaryMethod<typeof TASKS_RPC_METHODS.update>;
     readonly reorder: RpcUnaryMethod<typeof TASKS_RPC_METHODS.reorder>;
+    readonly reorderMany: RpcUnaryMethod<typeof TASKS_RPC_METHODS.reorderMany>;
     readonly delete: RpcUnaryMethod<typeof TASKS_RPC_METHODS.delete>;
     readonly addTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.addTag>;
     readonly removeTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.removeTag>;
@@ -48,6 +49,15 @@ export interface TasksWebRpcClient {
     readonly unarchive: RpcUnaryMethod<typeof TASKS_RPC_METHODS.unarchive>;
     readonly getPromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getPromptSettings>;
     readonly updatePromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updatePromptSettings>;
+    readonly scheduleRange: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleRange>;
+    readonly scheduleForTask: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleForTask>;
+    readonly scheduleProgress: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleProgress>;
+    readonly scheduleAdd: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleAdd>;
+    readonly scheduleUpdate: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleUpdate>;
+    readonly scheduleMove: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleMove>;
+    readonly scheduleCopy: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleCopy>;
+    readonly scheduleDelete: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleDelete>;
+    readonly scheduleMoveOpen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleMoveOpen>;
   };
   readonly agents: {
     readonly upsert: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.upsert>;
@@ -139,6 +149,8 @@ export function createTasksWebRpcClient(
       update: (input) => request("tasks.update", "canMutateTasks", TASKS_RPC_METHODS.update, input),
       reorder: (input) =>
         request("tasks.reorder", "canMutateTasks", TASKS_RPC_METHODS.reorder, input),
+      reorderMany: (input) =>
+        request("tasks.reorderMany", "canMutateTasks", TASKS_RPC_METHODS.reorderMany, input),
       delete: (input) => request("tasks.delete", "canMutateTasks", TASKS_RPC_METHODS.delete, input),
       addTag: (input) => request("tasks.addTag", "canMutateTasks", TASKS_RPC_METHODS.addTag, input),
       removeTag: (input) =>
@@ -162,6 +174,34 @@ export function createTasksWebRpcClient(
           "tasks.updatePromptSettings",
           "canMutateTasks",
           TASKS_RPC_METHODS.updatePromptSettings,
+          input,
+        ),
+      scheduleRange: (input) =>
+        request("tasks.scheduleRange", "canReadTasks", TASKS_RPC_METHODS.scheduleRange, input),
+      scheduleForTask: (input) =>
+        request("tasks.scheduleForTask", "canReadTasks", TASKS_RPC_METHODS.scheduleForTask, input),
+      scheduleProgress: (input) =>
+        request(
+          "tasks.scheduleProgress",
+          "canReadTasks",
+          TASKS_RPC_METHODS.scheduleProgress,
+          input,
+        ),
+      scheduleAdd: (input) =>
+        request("tasks.scheduleAdd", "canMutateTasks", TASKS_RPC_METHODS.scheduleAdd, input),
+      scheduleUpdate: (input) =>
+        request("tasks.scheduleUpdate", "canMutateTasks", TASKS_RPC_METHODS.scheduleUpdate, input),
+      scheduleMove: (input) =>
+        request("tasks.scheduleMove", "canMutateTasks", TASKS_RPC_METHODS.scheduleMove, input),
+      scheduleCopy: (input) =>
+        request("tasks.scheduleCopy", "canMutateTasks", TASKS_RPC_METHODS.scheduleCopy, input),
+      scheduleDelete: (input) =>
+        request("tasks.scheduleDelete", "canMutateTasks", TASKS_RPC_METHODS.scheduleDelete, input),
+      scheduleMoveOpen: (input) =>
+        request(
+          "tasks.scheduleMoveOpen",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.scheduleMoveOpen,
           input,
         ),
     },
