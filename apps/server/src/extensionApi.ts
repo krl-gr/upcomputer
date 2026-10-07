@@ -8,6 +8,7 @@
  * not pull in `server.ts` or the CLI.
  */
 export * from "./product/FeatureMigrations.ts";
+export * from "./product/FeatureProjects.ts";
 export * from "./product/HttpRouteContribution.ts";
 export * from "./product/RpcContribution.ts";
 export * from "./product/ServerProduct.ts";
