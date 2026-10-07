@@ -11,8 +11,9 @@ import {
   type DragStartEvent,
   type Over,
 } from "@dnd-kit/core";
-import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
+import type { TaskAutomationListItem, TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
+import type { AutomationAnchor } from "../data/automationStore.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
 import {
@@ -29,15 +30,32 @@ import type { QueueDropIndicator, WeekSelection } from "./WeekQueue.tsx";
 
 export type ActiveDrag =
   | { readonly kind: "task"; readonly task: PlannerTask }
-  | { readonly kind: "entry"; readonly entry: TaskScheduleEntry; readonly count: number };
+  | { readonly kind: "entry"; readonly entry: TaskScheduleEntry; readonly count: number }
+  | { readonly kind: "automation"; readonly automation: TaskAutomationListItem };
 
 export interface DropIndicators {
   readonly list: ListDropIndicator | null;
+  /** Between automations; `taskId` is the automation's id. */
+  readonly automation: ListDropIndicator | null;
   readonly queue: QueueDropIndicator | null;
   readonly calendar: CalendarDropIndicator | null;
 }
 
-const NO_INDICATORS: DropIndicators = { list: null, queue: null, calendar: null };
+const NO_INDICATORS: DropIndicators = { list: null, automation: null, queue: null, calendar: null };
+
+/** An automation only reorders among automations; it never lands on a day. */
+type Source = DragSource | { readonly kind: "automation"; readonly automationId: string };
+type Target =
+  | DropTarget
+  | { readonly kind: "automation-item"; readonly automationId: string }
+  | { readonly kind: "automation-bottom" };
+type Plan =
+  | DropPlan
+  | {
+      readonly kind: "reorder-automation";
+      readonly automationId: string;
+      readonly anchor: AutomationAnchor;
+    };
 
 function clientY(event: Event | null): number | null {
   if (!event) return null;
@@ -58,6 +76,9 @@ export function usePlannerDnd(input: {
   readonly days: ReadonlyMap<string, readonly TaskScheduleEntry[]>;
   /** The visible list's order; null in the archive view, which does not reorder. */
   readonly listIds: readonly string[] | null;
+  /** The automations' order when the list shows them. */
+  readonly automations: readonly TaskAutomationListItem[] | null;
+  readonly onReorderAutomation: (automationId: string, anchor: AutomationAnchor) => void;
   readonly allowBottomDrop: boolean;
   readonly selection: WeekSelection;
   readonly onBlockMoved: () => void;
@@ -71,7 +92,7 @@ export function usePlannerDnd(input: {
   const [active, setActive] = useState<ActiveDrag | null>(null);
   const [indicators, setIndicators] = useState<DropIndicators>(NO_INDICATORS);
   const drag = useRef<{
-    source: DragSource;
+    source: Source;
     startY: number;
     grabOffsetY: number;
     pointerY: number | null;
@@ -81,11 +102,13 @@ export function usePlannerDnd(input: {
   const entryIdsByDate = () =>
     new Map([...input.days].map(([date, entries]) => [date, entries.map((entry) => entry.id)]));
 
-  const sourceOf = (activeItem: Active): DragSource | null => {
+  const sourceOf = (activeItem: Active): Source | null => {
     const data = activeItem.data.current as
-      | { type?: string; taskId?: string; entryId?: string; date?: string }
+      | { type?: string; taskId?: string; entryId?: string; date?: string; automationId?: string }
       | undefined;
     if (data?.type === "task" && data.taskId) return { kind: "task", taskId: data.taskId };
+    if (data?.type === "automation" && data.automationId)
+      return { kind: "automation", automationId: data.automationId };
     if (data?.type === "entry" && data.entryId && data.date) {
       const { selection, days } = input;
       const ids =
@@ -100,12 +123,18 @@ export function usePlannerDnd(input: {
     return null;
   };
 
-  const targetOf = (over: Over | null, deltaY: number): DropTarget | null => {
+  const targetOf = (over: Over | null, deltaY: number): Target | null => {
     const data = over?.data.current as
-      | { type?: string; taskId?: string; entryId?: string; date?: string }
+      | { type?: string; taskId?: string; entryId?: string; date?: string; automationId?: string }
       | undefined;
     if (!over || !data) return null;
     switch (data.type) {
+      case "automation-item":
+        return data.automationId
+          ? { kind: "automation-item", automationId: data.automationId }
+          : null;
+      case "automation-bottom":
+        return { kind: "automation-bottom" };
       case "task-list-item":
         return data.taskId ? { kind: "list-item", taskId: data.taskId } : null;
       case "list-bottom":
@@ -141,8 +170,34 @@ export function usePlannerDnd(input: {
     }
   };
 
-  const plan = (source: DragSource, target: DropTarget | null): DropPlan | null => {
+  const plan = (source: Source, target: Target | null): Plan | null => {
     if (!target) return null;
+    if (
+      source.kind === "automation" ||
+      target.kind === "automation-item" ||
+      target.kind === "automation-bottom"
+    ) {
+      if (source.kind !== "automation" || input.automations === null) return null;
+      if (target.kind !== "automation-item" && target.kind !== "automation-bottom") return null;
+      // The same rules as the task list: above a row, or last at the bottom.
+      const planned = planListDrop(
+        input.automations.map((automation) => automation.id),
+        source.automationId,
+        target.kind === "automation-item"
+          ? { kind: "list-item", taskId: target.automationId }
+          : { kind: "list-bottom" },
+        true,
+      );
+      if (planned?.kind !== "reorder") return null;
+      return {
+        kind: "reorder-automation",
+        automationId: source.automationId,
+        anchor: {
+          ...(planned.beforeTaskId ? { beforeAutomationId: planned.beforeTaskId } : {}),
+          ...(planned.afterTaskId ? { afterAutomationId: planned.afterTaskId } : {}),
+        },
+      };
+    }
     if (target.kind === "list-item" || target.kind === "list-bottom") {
       const { listIds, allowBottomDrop } = input;
       if (source.kind !== "task" || listIds === null) return null;
@@ -176,7 +231,10 @@ export function usePlannerDnd(input: {
       },
     };
     const { tasks, days } = input;
-    if (source.kind === "task") {
+    if (source.kind === "automation") {
+      const automation = input.automations?.find(({ id }) => id === source.automationId);
+      if (automation) setActive({ kind: "automation", automation });
+    } else if (source.kind === "task") {
       const task = tasks.get(source.taskId);
       if (task) setActive({ kind: "task", task });
     } else {
@@ -192,7 +250,21 @@ export function usePlannerDnd(input: {
     const planned = plan(current.source, target);
     let next: DropIndicators = NO_INDICATORS;
     if (planned && target) {
-      if (target.kind === "list-item")
+      if (target.kind === "automation-item")
+        next = {
+          ...NO_INDICATORS,
+          automation: { taskId: target.automationId, position: "above" },
+        };
+      else if (
+        target.kind === "automation-bottom" &&
+        planned.kind === "reorder-automation" &&
+        planned.anchor.afterAutomationId
+      )
+        next = {
+          ...NO_INDICATORS,
+          automation: { taskId: planned.anchor.afterAutomationId, position: "below" },
+        };
+      else if (target.kind === "list-item")
         next = { ...NO_INDICATORS, list: { taskId: target.taskId, position: "above" } };
       else if (target.kind === "list-bottom" && planned.kind === "reorder" && planned.afterTaskId)
         next = { ...NO_INDICATORS, list: { taskId: planned.afterTaskId, position: "below" } };
@@ -223,6 +295,9 @@ export function usePlannerDnd(input: {
     if (!planned) return;
     const { store, onBlockMoved } = input;
     switch (planned.kind) {
+      case "reorder-automation":
+        input.onReorderAutomation(planned.automationId, planned.anchor);
+        return;
       case "reorder":
         void store.reorder([planned.taskId], {
           ...(planned.beforeTaskId ? { beforeTaskId: planned.beforeTaskId } : {}),

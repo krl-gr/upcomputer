@@ -1,6 +1,7 @@
 import { createContext, use } from "react";
 
 import type { PlannerAudience, PlannerKind, PlannerPreferences } from "../data/preferences.ts";
+import type { AutomationStore } from "../data/automationStore.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
 import type { WindowStore } from "../windows/windowStore.ts";
 import type { PlannerProject } from "./ProjectChip.tsx";
@@ -13,13 +14,15 @@ import type { PlannerProject } from "./ProjectChip.tsx";
 export interface PlannerContextValue {
   readonly environmentId: string;
   readonly store: PlannerStore;
+  /** The environment's automations: the agents' routines. */
+  readonly automations: AutomationStore;
   readonly windows: WindowStore;
   readonly projects: readonly PlannerProject[];
   readonly projectById: ReadonlyMap<string, PlannerProject>;
   readonly preferences: PlannerPreferences;
   /** A project directory for markdown links in descriptions. */
   readonly markdownCwd: string | undefined;
-  /** Whose tasks the lists show (Mine / Agents / All). */
+  /** Whose tasks the lists show (Mine / Agents / All); under Routines, Agents is automations. */
   readonly audience: PlannerAudience;
   /** Whether the list shows tasks or routines. */
   readonly kind: PlannerKind;

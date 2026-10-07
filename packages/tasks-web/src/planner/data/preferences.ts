@@ -7,7 +7,10 @@
 import * as Schema from "effect/Schema";
 import { useCallback, useMemo } from "react";
 
-import { useLocalStorage } from "../../../../../apps/web/src/hooks/useLocalStorage.ts";
+import {
+  setLocalStorageItem,
+  useLocalStorage,
+} from "../../../../../apps/web/src/hooks/useLocalStorage.ts";
 import { DAY_COUNT_OPTIONS, todayKey } from "../logic/dates.ts";
 
 const PlannerPreferencesSchema = Schema.Struct({
@@ -184,4 +187,16 @@ export function scrollMemory(key: string) {
       };
     },
   };
+}
+
+/**
+ * Makes the planner open on the agents' routines (Routines × Agents), in one
+ * environment when given: where the former Automations page sends its links.
+ */
+export function storeAgentRoutinesView(environmentId: string | null) {
+  setLocalStorageItem(TASKS_VIEW_KEY, "planner", TasksViewSchema);
+  setLocalStorageItem(PLANNER_KIND_KEY, "routine", PlannerKindSchema);
+  setLocalStorageItem(PLANNER_AUDIENCE_KEY, "agent", PlannerAudienceSchema);
+  if (environmentId)
+    setLocalStorageItem(PLANNER_ENVIRONMENT_KEY, environmentId, PlannerEnvironmentSchema);
 }

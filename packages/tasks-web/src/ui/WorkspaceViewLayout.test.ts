@@ -42,7 +42,7 @@ test("pages use upstream's page header and leave the sidebar toggle to the share
 
 test("page content sits inside the header's gutters", () => {
   NodeAssert.match(source, /pl-\(--workspace-gutter-start\) pr-\(--workspace-gutter-end\)/);
-  for (const view of ["TasksView.tsx", "AgentsView.tsx", "AutomationsView.tsx"]) {
+  for (const view of ["TasksView.tsx", "AgentsView.tsx"]) {
     const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
     // Content adds no horizontal padding or centering of its own.
     NodeAssert.doesNotMatch(viewSource, /max-w-\[1600px\]/);
@@ -61,13 +61,13 @@ test("the Tasks header keeps its project, status, last-run and tag filters", () 
   NodeAssert.match(toolbar, /<TagFilterCombobox/);
 });
 
-test("Tasks, Agents and Automations share one project select, apart from the sidebar's scope", () => {
-  for (const route of ["TasksRoute.tsx", "AgentsRoute.tsx", "AutomationsRoute.tsx"]) {
+test("Tasks and Agents share one project select, apart from the sidebar's scope", () => {
+  for (const route of ["TasksRoute.tsx", "AgentsRoute.tsx"]) {
     const routeSource = NodeFS.readFileSync(new URL(`./${route}`, import.meta.url), "utf8");
     NodeAssert.match(routeSource, /usePagesProjectFilter\(\)/);
     NodeAssert.match(routeSource, /<ProjectFilterSelect/);
   }
-  for (const view of ["AgentsView.tsx", "AutomationsView.tsx"]) {
+  for (const view of ["AgentsView.tsx"]) {
     const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
     NodeAssert.match(viewSource, /\{props\.projectSelect\}/);
   }
@@ -80,7 +80,7 @@ test("Tasks, Agents and Automations share one project select, apart from the sid
 test("no muted context label follows the page title", () => {
   NodeAssert.doesNotMatch(source, /titleDetail|context/);
   NodeAssert.doesNotMatch(source, /" · "/);
-  for (const view of ["TasksView.tsx", "AgentsView.tsx", "AutomationsView.tsx"]) {
+  for (const view of ["TasksView.tsx", "AgentsView.tsx"]) {
     const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
     NodeAssert.doesNotMatch(viewSource, /titleDetail=/);
   }

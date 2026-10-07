@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { test } from "vite-plus/test";
 
-import type { ScopedTaskAgent, ScopedTaskAutomation } from "../state/index.ts";
+import type { ScopedTaskAgent } from "../state/index.ts";
 import { assertTableRowsOneSize } from "./tableRows.testing.ts";
 
 /** Loads modules through Vite, as the app does (aliases, Base UI, lucide). */
@@ -40,9 +40,6 @@ async function loadModules(context: { onTestFinished: (fn: () => Promise<void>) 
     agents: (await vite.ssrLoadModule(
       "/src/ui/AgentsView.tsx",
     )) as typeof import("./AgentsView.tsx"),
-    automations: (await vite.ssrLoadModule(
-      "/src/ui/AutomationsView.tsx",
-    )) as typeof import("./AutomationsView.tsx"),
     sidebar: (await vite.ssrLoadModule(`/@fs/${publicWebSource}/components/ui/sidebar.tsx`)) as {
       SidebarProvider: (props: { children: unknown }) => unknown;
     },
@@ -71,11 +68,6 @@ const project = {
   name: "UpComputer",
   workspaceRoot: "/repo/upcomputer",
   favicon,
-};
-const oneProject = {
-  key: "repo:upcomputer",
-  label: "UpComputer",
-  projectRefs: [{ environmentId: "local", projectId: "project-1" }],
 };
 
 test("Agents show the project as an icon, a global agent as All projects, none for one project", async (context) => {
@@ -133,66 +125,6 @@ test("Agents show the project as an icon, a global agent as All projects, none f
     row({ agent: agent("project-1", "UpComputer"), showProject: false }),
     /data-project-icon=/,
   );
-});
-
-test("Automations show the project icon column unless one project is selected", async (context) => {
-  const { automations, sidebar } = await loadModules(context);
-  const automation = {
-    id: "automation-1",
-    environmentId: "local",
-    projectId: "project-1",
-    projectName: "UpComputer",
-    name: "Nightly triage",
-    status: "enabled",
-    schedule: { cron: "0 9 * * *", timezone: "UTC" },
-    template: { title: "Triage", description: "", status: "To Do", tags: [], priority: null },
-    catchUpPolicy: "skip",
-    skipIfOpen: true,
-    createdBy: "agent",
-    sourceThreadId: null,
-    nextRunAt: null,
-    lastFiredAt: null,
-    lastFiredSlot: null,
-    lastTaskId: null,
-    lastError: null,
-    failureCount: 0,
-    createdAt: "2026-10-05T10:00:00.000Z",
-    updatedAt: "2026-10-05T10:00:00.000Z",
-  } as unknown as ScopedTaskAutomation;
-  const render = (projectFilter: typeof oneProject | null) =>
-    renderToStaticMarkup(
-      createElement(
-        sidebar.SidebarProvider as never,
-        null,
-        createElement(automations.AutomationsView, {
-          projects: [project as never],
-          automations: [automation],
-          projectFilter: projectFilter as never,
-          projectSelect: createElement("button", { "aria-label": "Filter by project" }),
-          tasks: [],
-          runs: [],
-          status: "ready",
-          canMutateEnvironment: () => true,
-          getClient: () => null,
-          onReload: () => undefined,
-          onNavigateBack: () => undefined,
-          onOpenTask: () => undefined,
-        }),
-      ),
-    );
-
-  const all = render(null);
-  NodeAssert.match(all, /aria-label="Filter by project"/, "the shared select is in the header");
-  NodeAssert.doesNotMatch(all, /<th[^>]*>Project<\/th>/, "no Project text column");
-  NodeAssert.match(all, /aria-label="UpComputer"[^>]*data-project-icon="project"/);
-  NodeAssert.ok(all.indexOf("data-project-icon=") < all.indexOf(">Nightly triage<"));
-  assertTableRowsOneSize(all);
-  NodeAssert.match(all, /data-table-pill="neutral">Proposed</, "a proposed automation's pill");
-
-  const one = render(oneProject);
-  NodeAssert.match(one, /Nightly triage/);
-  NodeAssert.doesNotMatch(one, /data-project-icon=/);
-  NodeAssert.doesNotMatch(one, /<span class="sr-only">Project<\/span>/);
 });
 
 test("the project select lists each project once, in the sidebar's order and icons", async (context) => {

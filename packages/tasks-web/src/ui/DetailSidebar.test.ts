@@ -19,8 +19,8 @@ test("the detail column has no background of its own and uses the regular tokens
   NodeAssert.match(className, /\btext-foreground\b/);
 });
 
-test("task, agent and automation views render both detail columns through DetailColumn", () => {
-  for (const view of ["TasksView.tsx", "AgentsView.tsx", "AutomationsView.tsx"]) {
+test("task and agent views render both detail columns through DetailColumn", () => {
+  for (const view of ["TasksView.tsx", "AgentsView.tsx"]) {
     const source = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
     // The existing item and the create form.
     NodeAssert.equal(source.match(/<DetailColumn>/g)?.length, 2, view);

@@ -4,13 +4,10 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import {
   loadAgentsState,
-  loadAutomationsState,
   loadTasksState,
   compareScopedTaskOrder,
   type AgentsDataState,
   type AgentsStateTarget,
-  type AutomationsDataState,
-  type AutomationsStateTarget,
   type TasksDataState,
   type TasksStateTarget,
 } from "../state/index.ts";
@@ -39,11 +36,6 @@ import type { TasksWebProject } from "./shared.ts";
 
 const EMPTY_TASKS: TasksDataState = { byEnvironment: {}, tasks: [] };
 const EMPTY_AGENTS: AgentsDataState = { byEnvironment: {}, agents: [], runs: [] };
-const EMPTY_AUTOMATIONS: AutomationsDataState = {
-  byEnvironment: {},
-  automations: [],
-  runs: [],
-};
 
 export interface TasksWorkspaceData {
   readonly taskTargets: readonly TasksStateTarget[];
@@ -51,17 +43,13 @@ export interface TasksWorkspaceData {
   readonly agentProjects: readonly AgentProject[];
   readonly tasks: TasksDataState;
   readonly agents: AgentsDataState;
-  readonly automations: AutomationsDataState;
   readonly tasksStatus: "loading" | "ready" | "error";
   readonly tasksErrorMessage?: string;
   readonly agentsStatus: "loading" | "ready" | "error";
   readonly agentsErrorMessage?: string;
-  readonly automationsStatus: "loading" | "ready" | "error";
-  readonly automationsErrorMessage?: string;
   readonly getClient: (environmentId: EnvironmentId) => TasksWebRpcClient | null;
   readonly canMutateTasks: (environmentId: EnvironmentId) => boolean;
   readonly canMutateAgents: (environmentId: EnvironmentId) => boolean;
-  readonly canMutateAutomations: (environmentId: EnvironmentId) => boolean;
   readonly reload: () => void;
 }
 
@@ -159,11 +147,9 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
   const [reloadVersion, setReloadVersion] = useState(0);
   const [tasks, setTasks] = useState<TasksDataState>(EMPTY_TASKS);
   const [agents, setAgents] = useState<AgentsDataState>(EMPTY_AGENTS);
-  const [automations, setAutomations] = useState<AutomationsDataState>(EMPTY_AUTOMATIONS);
   const [loading, setLoading] = useState(true);
   const priorTasks = useRef<TasksDataState>(EMPTY_TASKS);
   const priorAgents = useRef<AgentsDataState>(EMPTY_AGENTS);
-  const priorAutomations = useRef<AutomationsDataState>(EMPTY_AUTOMATIONS);
 
   const environmentIds = useMemo(
     () => [...new Set(projects.map(({ environmentId }) => environmentId))],
@@ -213,7 +199,6 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
     setLoading(true);
     const taskTargets: TasksStateTarget[] = [];
     const agentTargets: AgentsStateTarget[] = [];
-    const automationTargets: AutomationsStateTarget[] = [];
     for (const [environmentId, entry] of clientsAndAccess) {
       const projectNameById = projectNamesByEnvironment.get(environmentId);
       const target = {
@@ -223,24 +208,20 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
       };
       taskTargets.push(target);
       agentTargets.push(target);
-      automationTargets.push(target);
     }
     void Promise.all([
       loadLegacyTasks
         ? loadTasksState(taskTargets, priorTasks.current)
         : Promise.resolve(EMPTY_TASKS),
       loadAgentsState(agentTargets, priorAgents.current),
-      loadAutomationsState(automationTargets, priorAutomations.current),
-    ]).then(([nextTasks, nextAgents, nextAutomations]) => {
+    ]).then(([nextTasks, nextAgents]) => {
       if (cancelled) return;
       const taskStates = { ...nextTasks.byEnvironment };
       const agentStates = { ...nextAgents.byEnvironment };
-      const automationStates = { ...nextAutomations.byEnvironment };
       for (const environmentId of environmentIds) {
         if (clientsAndAccess.has(environmentId)) continue;
         const priorTaskState = priorTasks.current.byEnvironment[environmentId];
         const priorAgentState = priorAgents.current.byEnvironment[environmentId];
-        const priorAutomationState = priorAutomations.current.byEnvironment[environmentId];
         taskStates[environmentId] = {
           status: "unavailable",
           tasks: priorTaskState?.tasks ?? [],
@@ -250,12 +231,6 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
           status: "unavailable",
           agents: priorAgentState?.agents ?? [],
           runs: priorAgentState?.runs ?? [],
-          message: "The extension connection is unavailable for this environment.",
-        };
-        automationStates[environmentId] = {
-          status: "unavailable",
-          automations: priorAutomationState?.automations ?? [],
-          runs: priorAutomationState?.runs ?? [],
           message: "The extension connection is unavailable for this environment.",
         };
       }
@@ -274,21 +249,10 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
           .flatMap((state) => state.runs)
           .sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
       };
-      const mergedAutomations: AutomationsDataState = {
-        byEnvironment: automationStates,
-        automations: Object.values(automationStates)
-          .flatMap((state) => state.automations)
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-        runs: Object.values(automationStates)
-          .flatMap((state) => state.runs)
-          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
-      };
       priorTasks.current = mergedTasks;
       priorAgents.current = mergedAgents;
-      priorAutomations.current = mergedAutomations;
       setTasks(mergedTasks);
       setAgents(mergedAgents);
-      setAutomations(mergedAutomations);
       setLoading(false);
     });
     return () => {
@@ -310,15 +274,9 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
       clientsAndAccess.get(environmentId)?.access.canMutateAgents ?? false,
     [clientsAndAccess],
   );
-  const canMutateAutomations = useCallback(
-    (environmentId: EnvironmentId) =>
-      clientsAndAccess.get(environmentId)?.access.canMutateAutomations ?? false,
-    [clientsAndAccess],
-  );
   const reload = useCallback(() => setReloadVersion((current) => current + 1), []);
   const tasksViewStatus = viewStatus(loading, Object.values(tasks.byEnvironment));
   const agentsViewStatus = viewStatus(loading, Object.values(agents.byEnvironment));
-  const automationsViewStatus = viewStatus(loading, Object.values(automations.byEnvironment));
 
   return {
     taskTargets,
@@ -326,19 +284,13 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
     agentProjects,
     tasks,
     agents,
-    automations,
     tasksStatus: tasksViewStatus.status,
     ...(tasksViewStatus.message ? { tasksErrorMessage: tasksViewStatus.message } : {}),
     agentsStatus: agentsViewStatus.status,
     ...(agentsViewStatus.message ? { agentsErrorMessage: agentsViewStatus.message } : {}),
-    automationsStatus: automationsViewStatus.status,
-    ...(automationsViewStatus.message
-      ? { automationsErrorMessage: automationsViewStatus.message }
-      : {}),
     getClient,
     canMutateTasks,
     canMutateAgents,
-    canMutateAutomations,
     reload,
   };
 }

@@ -23,14 +23,17 @@ import type { ViewProjectFilter } from "../../ui/projectFilter.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
 import { WorkspaceViewLayout } from "../../ui/WorkspaceViewLayout.tsx";
 import {
+  automationStoreFor,
   plannerStoreFor,
   useActiveTasksPaginated,
   useArchivedTasksPaginated,
+  useAutomations,
   useDayQueues,
   usePlannerLive,
   usePlannerSnapshot,
   useQueueProgressByTaskIds,
 } from "../data/hooks.ts";
+import { plannerListShows } from "../data/plannerStore.ts";
 import {
   usePlannerPreferences,
   usePlannerViewState,
@@ -44,6 +47,7 @@ import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
 import { weekRangeOf } from "../logic/progress.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { AudienceSwitch } from "./AudienceSwitch.tsx";
+import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
@@ -69,6 +73,7 @@ function PlannerBody(props: {
   readonly onOpenTask: (taskId: string) => void;
 }) {
   const store = plannerStoreFor(props.environmentId);
+  const automationStore = automationStoreFor(props.environmentId);
   const windows = windowStoreFor(props.environmentId);
   usePlannerLive(store);
   const snapshot = usePlannerSnapshot(store);
@@ -77,7 +82,25 @@ function PlannerBody(props: {
   const [viewState, updateViewState] = usePlannerViewState();
   const wide = useMediaQuery("lg");
   const [markedDate, setMarkedDate] = useState<string | null>(() => todayKey());
-  const [showArchived, setShowArchived] = useState(false);
+  const [archiveToggled, setShowArchived] = useState(false);
+  const shows = plannerListShows(props.kind, props.audience);
+  // Routines × Agents lists automations only, which have no archive.
+  const showArchived = archiveToggled && shows.tasks;
+  const showsAutomations = shows.automations;
+  const automationSnapshot = useAutomations(automationStore, showsAutomations);
+  const { projectIds } = props;
+  const automations = useMemo(
+    () =>
+      projectIds === null
+        ? automationSnapshot
+        : {
+            ...automationSnapshot,
+            automations: automationSnapshot.automations.filter((automation) =>
+              projectIds.includes(automation.projectId),
+            ),
+          },
+    [automationSnapshot, projectIds],
+  );
   const [listSelect, setListSelect] = useState<{ active: boolean; ids: ReadonlySet<string> }>({
     active: false,
     ids: new Set(),
@@ -122,6 +145,9 @@ function PlannerBody(props: {
     days: snapshot.view.days,
     listIds: showArchived ? null : active.results.map((task) => task.id),
     allowBottomDrop: active.status === "Exhausted",
+    automations: showsAutomations && !showArchived ? automations.automations : null,
+    onReorderAutomation: (automationId, anchor) =>
+      void automationStore.reorder(automationId, anchor),
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
@@ -151,6 +177,7 @@ function PlannerBody(props: {
     () => ({
       environmentId: props.environmentId,
       store,
+      automations: automationStore,
       windows,
       projects: props.projects,
       projectById: new Map(props.projects.map((project) => [project.id, project])),
@@ -164,6 +191,7 @@ function PlannerBody(props: {
     [
       props.environmentId,
       store,
+      automationStore,
       windows,
       props.projects,
       preferences,
@@ -285,6 +313,8 @@ function PlannerBody(props: {
                 props.onKindChange(kind);
                 setListSelect({ active: false, ids: new Set() });
               }}
+              automations={showsAutomations ? automations : null}
+              automationIndicator={dnd.indicators.automation}
               progress={progress}
               queueDate={markedDate}
               selectMode={listSelect.active}
@@ -309,7 +339,9 @@ function PlannerBody(props: {
           }
         />
         <DragOverlay>
-          {dnd.active?.kind === "task" ? (
+          {dnd.active?.kind === "automation" ? (
+            <AutomationDragPreview automation={dnd.active.automation} />
+          ) : dnd.active?.kind === "task" ? (
             <TaskDragPreview task={dnd.active.task} />
           ) : dnd.active?.kind === "entry" ? (
             <EntryDragPreview
@@ -463,7 +495,7 @@ export function PlannerView(props: {
               </SelectPopup>
             </Select>
           ) : null}
-          <AudienceSwitch value={audience} onChange={setAudience} disabled={kind === "routine"} />
+          <AudienceSwitch value={audience} onChange={setAudience} />
           {props.projectSelect}
         </>
       }

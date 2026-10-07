@@ -12,6 +12,7 @@
  */
 import {
   AGENT_RESTORED_STATUS,
+  AUTOMATION_TASK_CREATOR_PREFIX,
   PERSON_DONE_STATUS,
   PERSON_OPEN_STATUS,
   TASK_SCHEDULE_MAX_IDS,
@@ -74,7 +75,10 @@ export interface PlannerQuery {
   /** Projects the lists show; null for all. */
   readonly projectIds: readonly ProjectId[] | null;
   readonly archiveVisible: boolean;
-  /** Whose tasks the lists show; routines are always the person's. */
+  /**
+   * Whose tasks the lists show. Routines are the person's: Agents shows
+   * automations instead (their own store), All shows both.
+   */
   readonly audience: PlannerAudience;
   /** Tasks or routines. */
   readonly kind: PlannerKind;
@@ -119,12 +123,29 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
   return result;
 }
 
+/**
+ * What the list shows in each cell of the planner's grid: Tasks or Routines
+ * by Mine, Agents or All. The agents' routines are automations, so Routines ×
+ * Agents lists automations only and Routines × All lists both.
+ */
+export function plannerListShows(kind: PlannerKind, audience: PlannerAudience) {
+  return {
+    tasks: !(kind === "routine" && audience === "agent"),
+    automations: kind === "routine" && audience !== "person",
+  } as const;
+}
+
+/**
+ * The task lists of the planner's grid. Tasks leave out what automations
+ * created: those tasks are reached from their automation's window.
+ */
 function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search: TaskPageInput }> {
+  if (!plannerListShows(query.kind, query.audience).tasks) return [];
   const projects: ReadonlyArray<ProjectId | undefined> = query.projectIds ?? [undefined];
   const base =
     query.kind === "routine"
       ? ({ audience: "person", kind: "routine" } as const)
-      : ({ audience: query.audience, kind: "task" } as const);
+      : ({ audience: query.audience, kind: "task", excludeAutomationTasks: true } as const);
   return projects.flatMap((projectId) => {
     const scope = projectId === undefined ? {} : { projectId };
     return [
@@ -159,8 +180,10 @@ export function belongsToList(
   query: Pick<PlannerQuery, "projectIds" | "audience" | "kind">,
 ): boolean {
   if (task.kind !== query.kind) return false;
+  if (!plannerListShows(query.kind, query.audience).tasks) return false;
   if (query.kind === "task" && query.audience !== "all" && task.audience !== query.audience)
     return false;
+  if (task.createdBy.startsWith(AUTOMATION_TASK_CREATOR_PREFIX)) return false;
   if (query.projectIds !== null && !query.projectIds.includes(task.projectId)) return false;
   const finished = task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
   return list === "archive" ? finished : !finished;
@@ -845,6 +868,15 @@ export class PlannerStore {
         },
       );
     }
+  }
+
+  /**
+   * The environment as the store's lists read it: pages fetched through it
+   * reach the store's tasks, so a window opened from such a list shows its
+   * task at once.
+   */
+  get listTarget(): TasksStateTarget {
+    return this.target;
   }
 
   /** Moves tasks as a block next to `anchor`; no anchor is the top. */

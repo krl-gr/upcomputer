@@ -6,17 +6,17 @@ import type { PlannerAudience } from "../data/preferences.ts";
 
 const LABELS: Record<PlannerAudience, string> = { person: "Mine", agent: "Agents", all: "All" };
 
-/** Mine / Agents / All: whose tasks the planner lists, next to the project filter. */
+/**
+ * Mine / Agents / All: whose work the planner lists, next to the project
+ * filter. Under Routines, the agents' routines are automations.
+ */
 export function AudienceSwitch(props: {
   readonly value: PlannerAudience;
   readonly onChange: (value: PlannerAudience) => void;
-  /** Routines are always the person's, so the switch rests while they show. */
-  readonly disabled?: boolean;
 }) {
   return (
     <ToggleGroup
       aria-label="Whose tasks"
-      disabled={props.disabled ?? false}
       value={[props.value]}
       onValueChange={(value) => {
         const next = value[0];

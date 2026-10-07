@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BotIcon, CalendarClockIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
+import { BotIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
 
 // The pure host module, not the web extension API: the product entry imports
 // this file while the connection runtime is still initializing, so nothing here
@@ -85,6 +85,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   routes: [
     { id: "tasks", path: "/tasks", load: () => import("./ui/TasksRoute.tsx") },
     { id: "agents", path: "/agents", load: () => import("./ui/AgentsRoute.tsx") },
+    // Automations live in the planner (Routines, Agents); old links redirect there.
     { id: "automations", path: "/automations", load: () => import("./ui/AutomationsRoute.tsx") },
   ],
   navigation: [
@@ -97,12 +98,5 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       accessory: NavigationRunCounts,
     },
     { id: "agents", label: "Agents", path: "/agents", order: 30, icon: BotIcon },
-    {
-      id: "automations",
-      label: "Automations",
-      path: "/automations",
-      order: 40,
-      icon: CalendarClockIcon,
-    },
   ],
 });

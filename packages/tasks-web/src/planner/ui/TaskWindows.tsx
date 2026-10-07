@@ -35,6 +35,7 @@ import { countProgress, progressLabel, weekRangeOf } from "../logic/progress.ts"
 import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
 import type { PlannerWindow } from "../windows/windowStore.ts";
 import { DescriptionField } from "./DescriptionField.tsx";
+import { AutomationWindow } from "./AutomationWindow.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
@@ -45,26 +46,7 @@ import { ConfirmDeleteDialog, ConfirmHandOffDialog } from "./TaskDialogs.tsx";
 import { noteCreatedInMine } from "./TaskList.tsx";
 import { TagsField } from "./TagsField.tsx";
 import { isFinished } from "./TaskRow.tsx";
-
-/** The window header's title: a growing textarea, as wande's DetailHeader. */
-function TitleInput(props: {
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly onBlur?: () => void;
-  readonly placeholder: string;
-}) {
-  return (
-    <textarea
-      rows={1}
-      className="field-sizing-content min-w-0 flex-1 resize-none overflow-hidden bg-transparent pt-1 text-lg font-semibold text-foreground outline-none placeholder:text-muted-foreground"
-      value={props.value}
-      placeholder={props.placeholder}
-      aria-label="Task title"
-      onChange={(event) => props.onChange(event.currentTarget.value)}
-      onBlur={props.onBlur}
-    />
-  );
-}
+import { TitleInput } from "./TitleInput.tsx";
 
 /** Wande's "Open full screen" for a description: a large editor in a dialog. */
 function FullScreenDescription(props: {
@@ -472,6 +454,15 @@ export function PlannerWindows(props: {
     <>
       {props.windows.map((window) => {
         const zIndex = 30 + Math.min(15, order.get(window.id) ?? 0);
+        if (window.kind === "automation")
+          return (
+            <AutomationWindow
+              key={window.id}
+              window={window}
+              zIndex={zIndex}
+              defaultProjectId={props.defaultProjectId}
+            />
+          );
         return window.kind === "detail" ? (
           <TaskDetailWindow
             key={window.id}

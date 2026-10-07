@@ -75,6 +75,7 @@ export interface TasksWebRpcClient {
     readonly setStatus: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.setStatus>;
     readonly delete: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.delete>;
     readonly searchRuns: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.searchRuns>;
+    readonly reorder: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.reorder>;
   };
 }
 
@@ -267,6 +268,13 @@ export function createTasksWebRpcClient(
           "automations.searchRuns",
           "canReadAutomations",
           TASK_AUTOMATIONS_RPC_METHODS.searchRuns,
+          input,
+        ),
+      reorder: (input) =>
+        request(
+          "automations.reorder",
+          "canMutateAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.reorder,
           input,
         ),
     },

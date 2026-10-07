@@ -1,8 +1,8 @@
 /**
  * The planner's floating windows, kept per environment at module level so
  * they are still open after leaving /tasks and coming back (wande keeps them
- * across tabs). One detail window per task, any number of create windows; a
- * focused window comes to the front.
+ * across tabs). One detail window per task and per automation, any number of
+ * create windows; a focused window comes to the front.
  */
 import { useSyncExternalStore } from "react";
 
@@ -34,6 +34,14 @@ export type PlannerWindow =
       readonly z: number;
       readonly position?: WindowPosition;
       readonly viewMode: "description" | "instances";
+    }
+  | {
+      /** An automation's settings and tasks; a new automation while `automationId` is null. */
+      readonly kind: "automation";
+      readonly id: string;
+      readonly automationId: string | null;
+      readonly z: number;
+      readonly position?: WindowPosition;
     };
 
 /** Above the page and its sheets, below menus and popovers (z-[130]). */
@@ -68,6 +76,34 @@ export class WindowStore {
     const id = `create-${this.nextCreate++}`;
     this.set([...this.windows, { kind: "create", id, z: this.bump(), initial }]);
     return id;
+  }
+
+  /** Opens a window for a new automation. */
+  openCreateAutomation(): string {
+    const id = `create-automation-${this.nextCreate++}`;
+    this.set([...this.windows, { kind: "automation", id, automationId: null, z: this.bump() }]);
+    return id;
+  }
+
+  /** Opens an automation's window, or raises it; `replacing` turns a create window into it. */
+  openAutomation(automationId: string, replacing?: string) {
+    const z = this.bump();
+    const id = `automation-${automationId}`;
+    const existing = this.windows.find((window) => window.id === id);
+    const replaced = replacing ? this.windows.find((window) => window.id === replacing) : undefined;
+    const others = this.windows.filter((window) => window.id !== id && window.id !== replacing);
+    this.set([
+      ...others,
+      {
+        kind: "automation",
+        id,
+        automationId,
+        z,
+        ...((existing ?? replaced)?.position
+          ? { position: (existing ?? replaced)!.position! }
+          : {}),
+      },
+    ]);
   }
 
   /** Opens a task's window, or raises it (switching the view when asked). */

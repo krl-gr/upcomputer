@@ -9,6 +9,7 @@ import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { readTasksWebAccess, readTasksWebClient } from "../../environmentApi.ts";
 import { addDays } from "../logic/dates.ts";
+import { AutomationStore, type AutomationSnapshot } from "./automationStore.ts";
 import type { PlannerTask } from "./pendingOps.ts";
 import {
   errorMessage,
@@ -39,6 +40,27 @@ export function plannerStoreFor(environmentId: EnvironmentId): PlannerStore {
     stores.set(environmentId, store);
   }
   return store;
+}
+
+const automationStores = new Map<EnvironmentId, AutomationStore>();
+
+/** One automation store per environment for the session, shared by the list and its windows. */
+export function automationStoreFor(environmentId: EnvironmentId): AutomationStore {
+  let store = automationStores.get(environmentId);
+  if (!store) {
+    store = new AutomationStore(readTasksWebClient(environmentId), {
+      onError: (title, error) =>
+        toastManager.add({ type: "error", title, description: errorMessage(error) }),
+    });
+    automationStores.set(environmentId, store);
+  }
+  return store;
+}
+
+/** The environment's automations, kept live while the caller is mounted and `enabled`. */
+export function useAutomations(store: AutomationStore, enabled = true): AutomationSnapshot {
+  useEffect(() => (enabled ? store.retain() : undefined), [store, enabled]);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
 export function usePlannerSnapshot(store: PlannerStore): PlannerSnapshot {
