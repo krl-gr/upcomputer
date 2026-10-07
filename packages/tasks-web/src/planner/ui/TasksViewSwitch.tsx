@@ -12,6 +12,7 @@ export function TasksViewSwitch(props: {
   return (
     <ToggleGroup
       aria-label="Tasks view"
+      variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
         const next = value[0];

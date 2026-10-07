@@ -15,6 +15,7 @@ export function KindSwitch(props: {
   return (
     <ToggleGroup
       aria-label="Tasks or routines"
+      variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
         const next = value[0];
