@@ -538,7 +538,7 @@ export function AutomationsView(props: AutomationsViewProps) {
                   void save();
                 },
               }
-            : SHOW_MANUAL_CREATE_ACTIONS
+            : SHOW_MANUAL_CREATE_ACTIONS.automations
               ? {
                   ariaLabel: "Create automation",
                   disabled: mutableProjects.length === 0 || savingKey !== null,

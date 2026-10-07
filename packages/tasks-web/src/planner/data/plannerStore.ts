@@ -64,6 +64,8 @@ export interface PlannerSnapshot {
   /** Entries of tasks whose schedule a detail window shows. */
   readonly schedules: ReadonlyMap<string, readonly TaskScheduleEntry[]>;
   readonly rangeError: string | null;
+  /** Tasks a window asked for that the server does not have (deleted elsewhere). */
+  readonly missingTaskIds: ReadonlySet<string>;
 }
 
 export interface PlannerQuery {
@@ -171,6 +173,7 @@ export class PlannerStore {
   private readonly entrySeq = new Map<string, number>();
   private readonly deletedTasks = new Set<string>();
   private readonly deletedEntries = new Set<string>();
+  private readonly missingTasks = new Set<string>();
   private seq = 0;
   private ops: PendingOp[] = [];
   private nextOpId = 1;
@@ -375,7 +378,8 @@ export class PlannerStore {
 
   /** Loads a task that no list or loaded day holds, for a detail window. */
   ensureTask(taskId: string) {
-    if (this.tasks.has(taskId) || this.deletedTasks.has(taskId)) return;
+    if (this.tasks.has(taskId) || this.deletedTasks.has(taskId) || this.missingTasks.has(taskId))
+      return;
     this.stale.tasks.add(taskId);
     this.schedule(0);
   }
@@ -504,7 +508,12 @@ export class PlannerStore {
   private async loadTasks(ids: readonly string[]) {
     for (const part of chunks(ids, 500)) {
       try {
-        await this.target.client.tasks.items({ ids: part as TaskId[] });
+        const { tasks } = await this.target.client.tasks.items({ ids: part as TaskId[] });
+        for (const id of part)
+          if (!tasks.some((task) => task.id === id)) {
+            this.missingTasks.add(id);
+            this.tasks.delete(id);
+          }
       } catch {
         // Rows keep their last known state until the next change.
       }
@@ -517,6 +526,7 @@ export class PlannerStore {
     for (const row of rows) {
       if (this.deletedTasks.has(row.id)) continue;
       if ((this.taskSeq.get(row.id) ?? 0) > start) continue;
+      this.missingTasks.delete(row.id);
       this.tasks.set(row.id, row);
       this.taskSeq.set(row.id, start);
     }
@@ -639,6 +649,7 @@ export class PlannerStore {
         ]),
       ),
       rangeError: this.rangeError,
+      missingTaskIds: new Set(this.missingTasks),
     };
   }
 
@@ -769,6 +780,7 @@ export class PlannerStore {
         () => this.client.tasks.delete({ id: id as TaskId }),
         () => {
           this.deletedTasks.add(id);
+          this.missingTasks.add(id);
           this.tasks.delete(id);
           this.forgetEntries(
             [...this.entries.values()].filter((entry) => entry.taskId === id).map(({ id }) => id),

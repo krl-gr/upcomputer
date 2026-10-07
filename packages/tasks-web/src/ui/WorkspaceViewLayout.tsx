@@ -34,6 +34,7 @@ export function WorkspaceViewLayout({
   toolbar,
   children,
   onNavigateBack,
+  navigateOnEscape = true,
 }: {
   readonly title: string;
   readonly action?: WorkspaceViewAction | undefined;
@@ -41,10 +42,13 @@ export function WorkspaceViewLayout({
   readonly toolbar?: ReactNode | undefined;
   readonly children: ReactNode;
   readonly onNavigateBack: () => void;
+  /** The planner keeps Escape for its windows, menus and inline edits. */
+  readonly navigateOnEscape?: boolean;
 }) {
   const navigateBack = useCallback(() => onNavigateBack(), [onNavigateBack]);
 
   useEffect(() => {
+    if (!navigateOnEscape) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape") return;
       event.preventDefault();
@@ -52,7 +56,7 @@ export function WorkspaceViewLayout({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigateBack]);
+  }, [navigateBack, navigateOnEscape]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none text-foreground isolate">

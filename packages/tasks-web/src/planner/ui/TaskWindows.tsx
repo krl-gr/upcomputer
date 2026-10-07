@@ -1,0 +1,443 @@
+import { useMemo, useState } from "react";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  CalendarIcon,
+  CircleCheckIcon,
+  ListPlusIcon,
+  MoreHorizontalIcon,
+  XIcon,
+} from "lucide-react";
+import { PERSON_DONE_STATUS, PERSON_OPEN_STATUS } from "@t3tools/tasks-contracts/v1";
+
+import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import {
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../../../../../apps/web/src/components/ui/dialog.tsx";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../../../../../apps/web/src/components/ui/menu.tsx";
+import { Textarea } from "../../../../../apps/web/src/components/ui/textarea.tsx";
+import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
+import { TablePill } from "../../ui/TablePill.tsx";
+import { useQueueInstancesByTaskId, useTaskById } from "../data/hooks.ts";
+import type { PlannerSnapshot } from "../data/plannerStore.ts";
+import { countProgress, progressLabel } from "../logic/progress.ts";
+import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
+import type { PlannerWindow } from "../windows/windowStore.ts";
+import { DescriptionField } from "./DescriptionField.tsx";
+import { FloatingWindow } from "./FloatingWindow.tsx";
+import { IconAction } from "./IconAction.tsx";
+import { ProjectChip } from "./ProjectChip.tsx";
+import { usePlanner } from "./plannerContext.ts";
+import { ScheduleTable } from "./ScheduleTable.tsx";
+import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";
+import { isFinished } from "./TaskRow.tsx";
+
+/** The window header's title: a growing textarea, as wande's DetailHeader. */
+function TitleInput(props: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onBlur?: () => void;
+  readonly placeholder: string;
+}) {
+  return (
+    <textarea
+      rows={1}
+      className="field-sizing-content min-w-0 flex-1 resize-none overflow-hidden bg-transparent pt-1 text-lg font-semibold text-foreground outline-none placeholder:text-muted-foreground"
+      value={props.value}
+      placeholder={props.placeholder}
+      aria-label="Task title"
+      onChange={(event) => props.onChange(event.currentTarget.value)}
+      onBlur={props.onBlur}
+    />
+  );
+}
+
+/** Wande's "Open full screen" for a description: a large editor in a dialog. */
+function FullScreenDescription(props: {
+  readonly open: boolean;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogPopup className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Description</DialogTitle>
+        </DialogHeader>
+        <DialogPanel>
+          <Textarea
+            value={props.value}
+            rows={24}
+            placeholder="Description (markdown)"
+            aria-label="Description"
+            autoFocus
+            onChange={(event) => props.onChange(event.currentTarget.value)}
+          />
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+interface WindowFrameProps {
+  readonly window: PlannerWindow;
+  readonly zIndex: number;
+}
+
+/**
+ * Wande's TaskDetailWindow. Project and status save at once, the title on
+ * blur, the description when the window closes (X), as in wande; unsaved
+ * text stays in the draft while the window is open, even off /tasks.
+ */
+export function TaskDetailWindow(
+  props: WindowFrameProps & {
+    readonly taskId: string;
+    readonly snapshot: PlannerSnapshot;
+    readonly queueDate: string | null;
+  },
+) {
+  const { store, windows, projects, preferences, markdownCwd } = usePlanner();
+  const window = props.window;
+  const viewMode = window.kind === "detail" ? window.viewMode : "description";
+  const task = useTaskById(store, props.snapshot, props.taskId);
+  const missing = props.snapshot.missingTaskIds.has(props.taskId);
+  const entries = useQueueInstancesByTaskId(store, props.snapshot, props.taskId, true);
+  const draftKey = `task:${props.taskId}`;
+  const [draft, updateDraft] = useDraft(draftKey);
+  const [menuDelete, setMenuDelete] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  const title = draft.title ?? task?.title ?? "";
+  const description = draft.description ?? task?.description ?? "";
+  const progress = progressLabel(
+    entries ? countProgress(entries) : props.snapshot.progress.get(props.taskId),
+  );
+  const close = () => {
+    clearDraft(draftKey);
+    windows.close(window.id);
+  };
+  const saveTitle = () => {
+    const current = readDraft(draftKey).title;
+    if (current === undefined || !task) return;
+    const next = current.trim();
+    if (!next) return;
+    clearDraft(draftKey, ["title"]);
+    if (next !== task.title) void store.updateTask(task.id, { title: next });
+  };
+  const saveAndClose = () => {
+    if (!task) {
+      close();
+      return;
+    }
+    const next = title.trim();
+    if (!next) {
+      toastManager.add({ type: "warning", title: "Please enter a task title" });
+      return;
+    }
+    const patch = {
+      ...(next !== task.title ? { title: next } : {}),
+      ...(description !== task.description ? { description } : {}),
+    };
+    if (Object.keys(patch).length > 0) void store.updateTask(task.id, patch);
+    close();
+  };
+  const finished = task ? isFinished(task) : false;
+  const statusLabel =
+    task && task.status !== PERSON_OPEN_STATUS && task.status !== PERSON_DONE_STATUS
+      ? task.status
+      : null;
+
+  return (
+    <FloatingWindow
+      width={560}
+      zIndex={props.zIndex}
+      position={window.position}
+      onFocus={() => windows.focus(window.id)}
+      onMove={(position) => windows.move(window.id, position)}
+      onDismiss={saveAndClose}
+      header={
+        <>
+          <TitleInput
+            value={title}
+            placeholder="Enter task title"
+            onChange={(value) => updateDraft({ title: value })}
+            onBlur={saveTitle}
+          />
+          <Menu>
+            <MenuTrigger
+              render={<Button size="icon-sm" variant="outline" aria-label="More actions" />}
+            >
+              <MoreHorizontalIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem
+                onClick={() => {
+                  windows.setViewMode(window.id, "description");
+                  setFullScreen(true);
+                }}
+              >
+                Open full screen
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem variant="destructive" disabled={!task} onClick={() => setMenuDelete(true)}>
+                Delete task
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+          <IconAction
+            label="Save and close"
+            variant="outline"
+            size="icon-sm"
+            onClick={saveAndClose}
+          >
+            <XIcon />
+          </IconAction>
+        </>
+      }
+    >
+      {missing && !task ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">This task was deleted.</p>
+      ) : !task ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-1">
+            <ProjectChip
+              projects={projects}
+              value={task.projectId}
+              onChange={(projectId) => {
+                if (projectId) void store.updateTask(task.id, { projectId: projectId as never });
+              }}
+            />
+            {finished ? (
+              <IconAction
+                label="Restore"
+                variant="outline"
+                onClick={() => void store.restore([task.id])}
+              >
+                <ArchiveRestoreIcon />
+              </IconAction>
+            ) : (
+              <>
+                <IconAction
+                  label="Mark as done"
+                  variant="outline"
+                  onClick={() => void store.markDone([task.id])}
+                >
+                  <CircleCheckIcon />
+                </IconAction>
+                <IconAction
+                  label="Archive"
+                  variant="outline"
+                  onClick={() => void store.archive([task.id])}
+                >
+                  <ArchiveIcon />
+                </IconAction>
+              </>
+            )}
+            {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
+            {props.queueDate && preferences.weekViewMode === "queue" ? (
+              <IconAction
+                label={`Add to queue for ${props.queueDate}`}
+                variant="outline"
+                onClick={() =>
+                  void store.addEntries({ taskIds: [task.id], date: props.queueDate! })
+                }
+              >
+                <ListPlusIcon />
+              </IconAction>
+            ) : null}
+            <IconAction
+              label={viewMode === "description" ? "Show the schedule" : "Show the description"}
+              variant={viewMode === "instances" ? "secondary" : "outline"}
+              size={progress ? "xs" : "icon-xs"}
+              pressed={viewMode === "instances"}
+              onClick={() =>
+                windows.setViewMode(
+                  window.id,
+                  viewMode === "description" ? "instances" : "description",
+                )
+              }
+            >
+              <CalendarIcon />
+              {progress ? <span>{progress}</span> : null}
+            </IconAction>
+          </div>
+          {viewMode === "description" ? (
+            <DescriptionField
+              value={description}
+              onChange={(value) => updateDraft({ description: value })}
+              cwd={markdownCwd}
+              rows={10}
+            />
+          ) : (
+            <ScheduleTable taskId={task.id} entries={entries} />
+          )}
+        </div>
+      )}
+      <FullScreenDescription
+        open={fullScreen}
+        value={description}
+        onChange={(value) => updateDraft({ description: value })}
+        onOpenChange={setFullScreen}
+      />
+      <ConfirmDeleteDialog
+        open={menuDelete}
+        title="Delete task"
+        description={`"${task?.title ?? "This task"}" and its schedule are deleted. This cannot be undone.`}
+        onOpenChange={setMenuDelete}
+        onConfirm={() => {
+          close();
+          void store.deleteTasks([props.taskId]);
+        }}
+      />
+    </FloatingWindow>
+  );
+}
+
+/** Wande's CreateTaskWindow: title, project and description; the task goes to the top. */
+export function CreateTaskWindow(
+  props: WindowFrameProps & { readonly defaultProjectId: string | null },
+) {
+  const { store, windows, projects, markdownCwd } = usePlanner();
+  const window = props.window;
+  const initial = window.kind === "create" ? window.initial : {};
+  const [draft, updateDraft] = useDraft(window.id);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const projectId =
+    draft.projectId !== undefined
+      ? draft.projectId || null
+      : (initial.projectId ?? props.defaultProjectId);
+  const close = () => {
+    clearDraft(window.id);
+    windows.close(window.id);
+  };
+  const create = async () => {
+    const title = (draft.title ?? "").trim();
+    if (!title) {
+      toastManager.add({ type: "warning", title: "Please enter a task title" });
+      return;
+    }
+    setSaving(true);
+    const created = await store.createTask({
+      title,
+      description: draft.description ?? "",
+      ...(projectId ? { projectId: projectId as never } : {}),
+      ...(initial.beforeTaskId ? { beforeTaskId: initial.beforeTaskId } : {}),
+      ...(initial.afterTaskId ? { afterTaskId: initial.afterTaskId } : {}),
+    });
+    setSaving(false);
+    if (created) close();
+  };
+  return (
+    <FloatingWindow
+      width={520}
+      zIndex={props.zIndex}
+      position={window.position}
+      onFocus={() => windows.focus(window.id)}
+      onMove={(position) => windows.move(window.id, position)}
+      onDismiss={close}
+      header={
+        <>
+          <TitleInput
+            value={draft.title ?? ""}
+            placeholder="Enter task title"
+            onChange={(value) => updateDraft({ title: value })}
+          />
+          <Menu>
+            <MenuTrigger
+              render={<Button size="icon-sm" variant="outline" aria-label="More actions" />}
+            >
+              <MoreHorizontalIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={() => setFullScreen(true)}>Open full screen</MenuItem>
+            </MenuPopup>
+          </Menu>
+        </>
+      }
+      footer={
+        <div className="flex gap-2">
+          <Button className="flex-1" disabled={saving} onClick={() => void create()}>
+            Create
+          </Button>
+          <Button className="flex-1" variant="outline" onClick={close}>
+            Cancel
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-1">
+          <ProjectChip
+            projects={projects}
+            value={projectId}
+            allowNewInbox
+            onChange={(next) => updateDraft({ projectId: next ?? "" })}
+          />
+        </div>
+        <DescriptionField
+          value={draft.description ?? ""}
+          onChange={(value) => updateDraft({ description: value })}
+          cwd={markdownCwd}
+          rows={3}
+          autoEdit
+        />
+      </div>
+      <FullScreenDescription
+        open={fullScreen}
+        value={draft.description ?? ""}
+        onChange={(value) => updateDraft({ description: value })}
+        onOpenChange={setFullScreen}
+      />
+    </FloatingWindow>
+  );
+}
+
+/** Every open window, stacked by focus order between the page and its dialogs (z 30 to 45). */
+export function PlannerWindows(props: {
+  readonly windows: readonly PlannerWindow[];
+  readonly snapshot: PlannerSnapshot;
+  readonly queueDate: string | null;
+  readonly defaultProjectId: string | null;
+}) {
+  const order = useMemo(
+    () => new Map([...props.windows].sort((a, b) => a.z - b.z).map((w, index) => [w.id, index])),
+    [props.windows],
+  );
+  return (
+    <>
+      {props.windows.map((window) => {
+        const zIndex = 30 + Math.min(15, order.get(window.id) ?? 0);
+        return window.kind === "detail" ? (
+          <TaskDetailWindow
+            key={window.id}
+            window={window}
+            zIndex={zIndex}
+            taskId={window.taskId}
+            snapshot={props.snapshot}
+            queueDate={props.queueDate}
+          />
+        ) : (
+          <CreateTaskWindow
+            key={window.id}
+            window={window}
+            zIndex={zIndex}
+            defaultProjectId={props.defaultProjectId}
+          />
+        );
+      })}
+    </>
+  );
+}

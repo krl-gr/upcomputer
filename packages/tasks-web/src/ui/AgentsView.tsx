@@ -709,7 +709,7 @@ export function AgentsView(props: AgentsViewProps) {
                   void save();
                 },
               }
-            : SHOW_MANUAL_CREATE_ACTIONS
+            : SHOW_MANUAL_CREATE_ACTIONS.agents
               ? {
                   ariaLabel: "Create agent",
                   disabled: mutableProjects.length === 0 || savingKey !== null,

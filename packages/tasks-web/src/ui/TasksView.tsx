@@ -5,6 +5,7 @@ import {
   TASK_HISTORY_EVENT_KINDS,
   TaskId,
   type TaskArchiveFilter,
+  type TaskAudience,
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
@@ -75,7 +76,11 @@ interface TaskFormState {
   readonly status: string;
   readonly tags: string;
   readonly description: string;
+  /** Who the new task is for; agent unless the person picks themselves. */
+  readonly audience: TaskAudience;
 }
+
+const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Agents", person: "Me" };
 
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
@@ -85,6 +90,8 @@ export interface TasksViewProps {
   readonly projectFilter: ViewProjectFilter | null;
   /** The shared project select, shown at the right of the header. */
   readonly projectSelect?: ReactNode;
+  /** The Planner / Table switch, shown at the left of the header. */
+  readonly viewSwitch?: ReactNode;
   /** Task status (server), last run (client), tags (server, all required) and archive (server). */
   readonly filters: TasksPageFilters;
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
@@ -117,6 +124,7 @@ function emptyForm(project?: TasksWebProject): TaskFormState {
     status: "new",
     tags: "",
     description: "",
+    audience: "agent",
   };
 }
 
@@ -661,6 +669,7 @@ export function TasksView(props: TasksViewProps) {
         description: form.description.trim(),
         status,
         tags: splitListInput(form.tags),
+        audience: form.audience,
       });
       toastManager.add({ type: "success", title: "Task created", description: title });
       setCreateModeOpen(false);
@@ -705,7 +714,7 @@ export function TasksView(props: TasksViewProps) {
                   void save();
                 },
               }
-            : SHOW_MANUAL_CREATE_ACTIONS
+            : SHOW_MANUAL_CREATE_ACTIONS.tasks
               ? {
                   ariaLabel: "Create task",
                   disabled: mutableProjects.length === 0 || saving,
@@ -742,6 +751,7 @@ export function TasksView(props: TasksViewProps) {
           </>
         ) : createModeOpen ? undefined : (
           <>
+            {props.viewSwitch}
             <span className="min-w-0 flex-1" />
             {props.projectSelect}
             <Select
@@ -1211,6 +1221,23 @@ export function TasksView(props: TasksViewProps) {
                             {project.name}
                           </SelectItem>
                         ))}
+                      </SelectPopup>
+                    </Select>
+                  </DetailSidebarRow>
+                  <DetailSidebarRow label="For" controlSelector="button">
+                    <Select
+                      value={form.audience}
+                      onValueChange={(value) => {
+                        if (value === "agent" || value === "person")
+                          setForm((current) => ({ ...current, audience: value }));
+                      }}
+                    >
+                      <SelectTrigger className={DETAIL_SELECT_TRIGGER_CLASS} aria-label="For">
+                        <SelectValue>{AUDIENCE_LABELS[form.audience]}</SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="agent">{AUDIENCE_LABELS.agent}</SelectItem>
+                        <SelectItem value="person">{AUDIENCE_LABELS.person}</SelectItem>
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
