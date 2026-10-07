@@ -109,6 +109,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 createdAt: timestamp,
                 updatedAt: timestamp,
                 archivedAt: null,
+                // An existing id updates that task; a status change is the person's.
+                actor: { type: "person" },
               });
               yield* agents.scheduleTaskChanged({ task, reason: "created" });
               return task;

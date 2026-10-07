@@ -57,7 +57,7 @@ export const PersistTaskInput = Schema.Struct({
   triggerChangedAt: Schema.optional(Task.fields.triggerChangedAt),
   /** Trusted invocation context; never exposed as a tool argument. */
   originThreadId: Schema.optional(Schema.NullOr(ThreadId)),
-  /** Recorded on a status change; the server itself when absent. */
+  /** Recorded on a status change. Only internal callers, such as automations, leave it out: the server. */
   actor: Schema.optional(TaskActor),
 });
 export type PersistTaskInput = typeof PersistTaskInput.Type;

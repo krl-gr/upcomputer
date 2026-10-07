@@ -110,7 +110,11 @@ function harness() {
     ),
   );
   const resolver: TaskToolContextResolverShape = {
-    resolve: () => Effect.succeed({ projects: [], resolvedProject: null } as never),
+    resolve: () =>
+      Effect.succeed({
+        projects: [],
+        resolvedProject: { project: { id: project, title: "Project" } },
+      } as never),
   };
   const layer = TaskToolServiceLive.pipe(
     Layer.provideMerge(
@@ -545,6 +549,53 @@ it.effect("an agent cannot unarchive a task to start an agent broader than itsel
     assert.deepStrictEqual(
       scheduled.map(({ task, startCeiling }) => ({ id: task.id, startCeiling })),
       [{ id: TaskId.make("wide"), startCeiling: undefined }],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("a status change through create records the person or agent that made it", () => {
+  const { layer, call, rpc } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    yield* repository.upsert(task("t"));
+    const recreate = (status: string) =>
+      rpc((client) =>
+        client[TASKS_RPC_METHODS.create]({
+          id: TaskId.make("t"),
+          projectId: project,
+          title: "t",
+          description: "",
+          status,
+        }),
+      );
+    yield* recreate("Done");
+
+    const create = (status: string, context: TaskToolInvocationContext) =>
+      call("task_create", { id: "t", title: "t", description: "", status }, context);
+    yield* create("Review", chat);
+    const runId = TaskAgentRunId.make("run-1");
+    const runThread = ThreadId.make("thread-run-1");
+    yield* repository.createAgentRun({
+      id: runId,
+      taskId: TaskId.make("t"),
+      agentId: TaskAgentId.make("agent"),
+      threadId: runThread,
+      modelSelection,
+      status: "running",
+      startedAt: timestamp,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
+    yield* create("In Progress", { ...chat, threadId: runThread });
+
+    assert.deepStrictEqual(
+      (yield* historyOf("t")).toReversed().map(({ payload }) => payload),
+      [
+        { from: "To Do", to: "Done", actor: person },
+        { from: "Done", to: "Review", actor: { type: "thread", threadId: chatThread } },
+        { from: "Review", to: "In Progress", actor: { type: "agent-run", agentRunId: runId } },
+      ],
     );
   }).pipe(Effect.provide(layer));
 });

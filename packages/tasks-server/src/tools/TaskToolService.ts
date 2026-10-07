@@ -573,7 +573,13 @@ const make = Effect.gen(function* () {
             archivedAt: null,
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
-          const saved = yield* repository.upsert(task);
+          // An existing id updates that task; a status change is the caller's.
+          const callerRun = context.threadId
+            ? Option.getOrNull(
+                yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
+              )
+            : null;
+          const saved = yield* repository.upsert({ ...task, actor: toolActor(context, callerRun) });
           yield* taskAgents.scheduleTaskChanged({ task: saved, reason: "created" });
           return { isError: false, text: json({ task: saved }) };
         }
