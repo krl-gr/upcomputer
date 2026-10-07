@@ -185,6 +185,8 @@ export const TaskToolCreateInput = Schema.Struct({
   tags: Schema.optional(Schema.Array(TaskTag)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
   audience: Schema.optional(TaskAudience),
+  /** A routine is always a person task; audience defaults to person for it. */
+  kind: Schema.optional(TaskKind),
 });
 export type TaskToolCreateInput = typeof TaskToolCreateInput.Type;
 
@@ -276,6 +278,21 @@ export type TaskListItemsInput = typeof TaskListItemsInput.Type;
 export const TaskListItemsResult = Schema.Struct({ tasks: Schema.Array(TaskListItem) });
 export type TaskListItemsResult = typeof TaskListItemsResult.Type;
 
+/**
+ * A schedule entry whose reminder the server just sent, once per entry. It
+ * travels only on the change stream: a client that is not connected then
+ * does not see it.
+ */
+export const TaskReminder = Schema.Struct({
+  entryId: TrimmedNonEmptyString,
+  taskId: TaskId,
+  title: Schema.String,
+  /** The entry's date and start time, wall-clock in the schedule's time zone. */
+  date: Schema.String,
+  startTime: Schema.String,
+});
+export type TaskReminder = typeof TaskReminder.Type;
+
 // Every connection starts with sync. Sequence gaps (e.g. a slow subscriber)
 // also require a snapshot refresh; no unbounded event log is retained.
 export const TaskChange = Schema.Struct({
@@ -287,6 +304,8 @@ export const TaskChange = Schema.Struct({
   rootThreadIds: Schema.Array(ThreadId),
   /** Dates (YYYY-MM-DD) whose schedule entries changed; absent when none did. */
   scheduleDates: Schema.optional(Schema.Array(Schema.String)),
+  /** Reminders due now; absent when none are. */
+  reminders: Schema.optional(Schema.Array(TaskReminder)),
 });
 export type TaskChange = typeof TaskChange.Type;
 

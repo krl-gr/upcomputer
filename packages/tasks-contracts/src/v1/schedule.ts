@@ -202,3 +202,35 @@ export const TaskScheduleWriteResult = Schema.Struct({
   entries: Schema.Array(TaskScheduleEntry),
 });
 export type TaskScheduleWriteResult = typeof TaskScheduleWriteResult.Type;
+
+export const TaskReminderLeadMinutes = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(1440),
+);
+export const DEFAULT_TASK_REMINDER_LEAD_MINUTES = 10;
+
+/**
+ * The server's schedule settings. Entry dates and times are wall-clock values
+ * in `scheduleTimeZone`; reminders turn them into instants with it.
+ */
+export const TaskScheduleSettings = Schema.Struct({
+  /** An IANA time zone; null follows the server's own zone. */
+  scheduleTimeZone: Schema.NullOr(TrimmedNonEmptyString),
+  /** The zone a null `scheduleTimeZone` means. */
+  serverTimeZone: Schema.String,
+  /** Reminders for timed open entries, `reminderLeadMinutes` before they start. */
+  remindersEnabled: Schema.Boolean,
+  reminderLeadMinutes: TaskReminderLeadMinutes,
+});
+export type TaskScheduleSettings = typeof TaskScheduleSettings.Type;
+
+export const TaskScheduleSettingsGetInput = Schema.Struct({});
+export type TaskScheduleSettingsGetInput = typeof TaskScheduleSettingsGetInput.Type;
+
+/** Changes the given settings; every pending reminder is recomputed. */
+export const TaskScheduleSettingsUpdateInput = Schema.Struct({
+  scheduleTimeZone: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  remindersEnabled: Schema.optional(Schema.Boolean),
+  reminderLeadMinutes: Schema.optional(TaskReminderLeadMinutes),
+});
+export type TaskScheduleSettingsUpdateInput = typeof TaskScheduleSettingsUpdateInput.Type;

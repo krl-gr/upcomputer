@@ -34,6 +34,12 @@ const audience = {
   description:
     "Who the task is for. agent (default): agents start on it by their triggers. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries.",
 } as const;
+const kind = {
+  type: "string",
+  enum: ["task", "routine"],
+  description:
+    "routine: something the user plans again and again (a habit, a weekly chore), listed apart and counted per week. Always a person task; it never starts an agent. Default task.",
+} as const;
 const scheduleDate = {
   type: "string",
   pattern: "^\\d{4}-\\d{2}-\\d{2}$",
@@ -172,6 +178,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tags,
         notBefore: dateTime,
         audience,
+        kind,
       },
       ["title", "description", "status"],
     ),

@@ -20,6 +20,7 @@ import {
 } from "./persistence/index.ts";
 import { retryOperational } from "./retryOperational.ts";
 import { TASK_RPC_CONTRIBUTIONS } from "./rpc/contributions.ts";
+import { TaskReminderSweeperLive } from "./schedule/TaskReminderSweeper.ts";
 import { TaskScheduleServiceLive } from "./schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
 
@@ -62,7 +63,9 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
       ownerId: TASKS_FEATURE_ID,
       version: 1,
       layer: eraseExperimentalServerLayer(
-        TaskRecoveryLive.pipe(Layer.provideMerge(TaskServicesLive)),
+        Layer.mergeAll(TaskRecoveryLive, TaskReminderSweeperLive).pipe(
+          Layer.provideMerge(TaskServicesLive),
+        ),
       ),
     },
   ],

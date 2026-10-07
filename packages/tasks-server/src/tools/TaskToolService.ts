@@ -563,7 +563,14 @@ const make = Effect.gen(function* () {
           };
         }
         case "task_create": {
-          const input = yield* decoders.task_create(args);
+          const decoded = yield* decoders.task_create(args);
+          // A routine is the user's: its audience defaults to person.
+          const input =
+            decoded.kind === "routine" && decoded.audience === undefined
+              ? { ...decoded, audience: "person" as const }
+              : decoded;
+          const invalid = taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent");
+          if (invalid !== null) return { isError: true, text: invalid };
           const resolution = yield* resolver.resolve({
             args: {
               ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -608,6 +615,7 @@ const make = Effect.gen(function* () {
             updatedAt: timestamp,
             archivedAt: null,
             ...(input.audience !== undefined ? { audience: input.audience } : {}),
+            ...(input.kind !== undefined ? { kind: input.kind } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
           // An existing id updates that task; a status change is the caller's.

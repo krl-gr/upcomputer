@@ -16,6 +16,8 @@ import {
   type TaskScheduleProgressResult,
   type TaskScheduleRangeInput,
   type TaskScheduleRangeResult,
+  type TaskScheduleSettings,
+  type TaskScheduleSettingsUpdateInput,
   type TaskScheduleUpdateInput,
   type TaskScheduleWriteResult,
 } from "@t3tools/tasks-contracts/v1";
@@ -28,6 +30,7 @@ import * as Layer from "effect/Layer";
 import type { TaskRepositoryError } from "../persistence/Errors.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TASK_RANK_STEP, encodeTaskRank, taskRanksBetween } from "../persistence/taskRank.ts";
+import { isTimeZone } from "./reminders.ts";
 
 type ScheduleEffect<A> = Effect.Effect<A, TaskError | TaskRepositoryError>;
 
@@ -47,6 +50,11 @@ export interface TaskScheduleServiceShape {
   readonly copy: (input: TaskScheduleCopyInput) => ScheduleEffect<TaskScheduleWriteResult>;
   readonly remove: (input: TaskScheduleDeleteInput) => ScheduleEffect<TaskScheduleWriteResult>;
   readonly moveOpen: (input: TaskScheduleMoveOpenInput) => ScheduleEffect<TaskScheduleWriteResult>;
+  readonly settings: () => ScheduleEffect<TaskScheduleSettings>;
+  /** Changes the time zone or reminder settings; pending reminders follow at once. */
+  readonly updateSettings: (
+    input: TaskScheduleSettingsUpdateInput,
+  ) => ScheduleEffect<TaskScheduleSettings>;
 }
 
 export class TaskScheduleService extends Context.Service<
@@ -305,6 +313,11 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  const updateSettings: TaskScheduleServiceShape["updateSettings"] = (input) =>
+    input.scheduleTimeZone != null && !isTimeZone(input.scheduleTimeZone)
+      ? fail(`'${input.scheduleTimeZone}' is not a known time zone.`)
+      : repository.updateScheduleSettings(input);
+
   return {
     range,
     forTask: (input) => repository.scheduleForTask(input),
@@ -315,6 +328,8 @@ const make = Effect.gen(function* () {
     copy,
     remove,
     moveOpen,
+    settings: () => repository.scheduleSettings(),
+    updateSettings,
   } satisfies TaskScheduleServiceShape;
 });
 

@@ -24,8 +24,12 @@ import {
   type TaskThreadTasksInput,
   TaskRunCount,
   type TaskChange,
+  type TaskReminder,
   type TaskScheduleEntry,
+  type TaskScheduleSettings,
   TaskThreadRunCountsResult,
+  DEFAULT_TASK_REMINDER_LEAD_MINUTES,
+  PERSON_DONE_STATUS,
   taskKindAudienceError,
 } from "@t3tools/tasks-contracts/v1";
 import { ModelSelection, ThreadId } from "@t3tools/contracts";
@@ -46,6 +50,12 @@ import {
   toTaskPersistenceDecodeError,
   toTaskPersistenceSqlError,
 } from "./Errors.ts";
+import {
+  reminderAt,
+  scheduledInstant,
+  serverTimeZone,
+  type ReminderSettings,
+} from "../schedule/reminders.ts";
 import { makeScheduleQueries } from "./scheduleQueries.ts";
 import {
   CompleteTaskAutomationRunInput,
@@ -2536,6 +2546,151 @@ const makeTaskRepository = Effect.gen(function* () {
       );
   };
 
+  const readScheduleSettings = schedule.settings().pipe(
+    Effect.map(([row]): TaskScheduleSettings => ({
+      scheduleTimeZone: row?.scheduleTimeZone ?? null,
+      serverTimeZone: serverTimeZone(),
+      remindersEnabled: (row?.remindersEnabled ?? 1) === 1,
+      reminderLeadMinutes: row?.reminderLeadMinutes ?? DEFAULT_TASK_REMINDER_LEAD_MINUTES,
+    })),
+  );
+  const reminderSettingsOf = (settings: TaskScheduleSettings): ReminderSettings => ({
+    timeZone: settings.scheduleTimeZone ?? settings.serverTimeZone,
+    enabled: settings.remindersEnabled,
+    leadMinutes: settings.reminderLeadMinutes,
+  });
+  const nowMillis = Effect.map(DateTime.now, DateTime.toEpochMillis);
+
+  /**
+   * Recomputes the reminder of every entry the settings or the passing time
+   * can change. Entries more than a day before today (in any zone) have
+   * started and keep what they have.
+   */
+  const recomputeRemindersWith = (settings: ReminderSettings) =>
+    Effect.gen(function* () {
+      const now = yield* nowMillis;
+      const fromDate = new Date(now - 2 * 86_400_000).toISOString().slice(0, 10);
+      const rows = yield* schedule.reminderCandidates({ fromDate });
+      yield* Effect.forEach(
+        rows,
+        (row) => {
+          const next = reminderAt(row, settings, now);
+          return next === row.remindAt ? Effect.void : schedule.setRemindAt(row.id, next);
+        },
+        { discard: true, concurrency: 1 },
+      );
+    });
+
+  const scheduleSettings: TaskRepositoryShape["scheduleSettings"] = () =>
+    readScheduleSettings.pipe(
+      Effect.mapError(
+        toSqlOrDecodeError(
+          "TaskRepository.scheduleSettings:query",
+          "TaskRepository.scheduleSettings:decodeRows",
+        ),
+      ),
+    );
+
+  const updateScheduleSettings: TaskRepositoryShape["updateScheduleSettings"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* readScheduleSettings;
+          const next: TaskScheduleSettings = {
+            ...current,
+            ...(input.scheduleTimeZone !== undefined
+              ? { scheduleTimeZone: input.scheduleTimeZone }
+              : {}),
+            ...(input.remindersEnabled !== undefined
+              ? { remindersEnabled: input.remindersEnabled }
+              : {}),
+            ...(input.reminderLeadMinutes !== undefined
+              ? { reminderLeadMinutes: input.reminderLeadMinutes }
+              : {}),
+          };
+          yield* schedule.updateSettings(next);
+          yield* recomputeRemindersWith(reminderSettingsOf(next));
+          return next;
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.updateScheduleSettings:query",
+            "TaskRepository.updateScheduleSettings:decodeRows",
+          ),
+        ),
+      );
+
+  const recomputeReminders: TaskRepositoryShape["recomputeReminders"] = () =>
+    sql
+      .withTransaction(
+        Effect.flatMap(readScheduleSettings, (settings) =>
+          recomputeRemindersWith(reminderSettingsOf(settings)),
+        ),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.recomputeReminders:query",
+            "TaskRepository.recomputeReminders:decodeRows",
+          ),
+        ),
+      );
+
+  const claimDueReminders: TaskRepositoryShape["claimDueReminders"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const now = yield* DateTime.now;
+          const nowIso = DateTime.formatIso(now);
+          const due = yield* schedule.dueReminders({ now: nowIso, limit: input.limit });
+          if (due.length === 0) return [];
+          const settings = reminderSettingsOf(yield* readScheduleSettings);
+          yield* schedule.markReminded(
+            due.map(({ entryId }) => entryId),
+            nowIso,
+          );
+          // Claimed either way; only an open entry of a live task that has not
+          // started yet is worth a reminder (wande drops the others as stale).
+          return due.flatMap((row): TaskReminder[] => {
+            if (row.status !== "open" || row.startTime === null || row.title === null) return [];
+            if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
+            const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
+            if (startsAt === null || startsAt <= DateTime.toEpochMillis(now)) return [];
+            return [
+              {
+                entryId: row.entryId,
+                taskId: row.taskId,
+                title: row.title,
+                date: row.date,
+                startTime: row.startTime,
+              },
+            ];
+          });
+        }),
+      )
+      .pipe(
+        Effect.tap((reminders) =>
+          reminders.length === 0
+            ? Effect.void
+            : publishChange({
+                taskIds: [],
+                listChanged: false,
+                runsChanged: false,
+                rootThreadIds: [],
+                reminders,
+              }),
+        ),
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.claimDueReminders:query",
+            "TaskRepository.claimDueReminders:decodeRows",
+          ),
+        ),
+        Effect.uninterruptible,
+      );
+
   const putScheduleEntries: TaskRepositoryShape["putScheduleEntries"] = (entries) =>
     withScheduleChanges(
       "TaskRepository.putScheduleEntries",
@@ -2544,10 +2699,13 @@ const makeTaskRepository = Effect.gen(function* () {
         const before =
           ids.length === 0 ? [] : yield* schedule.byIds({ idsJson: JSON.stringify(ids) });
         yield* schedule.releasePositions(before.map(({ id }) => id));
-        yield* Effect.forEach(entries, (entry) => schedule.upsert(entry), {
-          discard: true,
-          concurrency: 1,
-        });
+        const reminders = reminderSettingsOf(yield* readScheduleSettings);
+        const now = yield* nowMillis;
+        yield* Effect.forEach(
+          entries,
+          (entry) => schedule.upsert({ ...entry, remindAt: reminderAt(entry, reminders, now) }),
+          { discard: true, concurrency: 1 },
+        );
         const changed: ReadonlyArray<TaskScheduleEntry> = [...before, ...entries];
         return {
           result: entries,
@@ -3150,6 +3308,10 @@ const makeTaskRepository = Effect.gen(function* () {
     scheduleProgress,
     putScheduleEntries,
     deleteScheduleEntries,
+    scheduleSettings,
+    updateScheduleSettings,
+    recomputeReminders,
+    claimDueReminders,
     appendEvent,
     events: listTaskEvents,
     upsertAgent,

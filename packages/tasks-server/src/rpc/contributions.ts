@@ -92,6 +92,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.scheduleCopy]: operate,
     [TASKS_RPC_METHODS.scheduleDelete]: operate,
     [TASKS_RPC_METHODS.scheduleMoveOpen]: operate,
+    [TASKS_RPC_METHODS.getScheduleSettings]: read,
+    [TASKS_RPC_METHODS.updateScheduleSettings]: operate,
   },
   handlers: () =>
     TasksRpcGroup.toLayer(
@@ -355,6 +357,12 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.remove(input))),
         [TASKS_RPC_METHODS.scheduleMoveOpen]: (input) =>
           asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.moveOpen(input))),
+        [TASKS_RPC_METHODS.getScheduleSettings]: () =>
+          asTaskRpc(Effect.flatMap(TaskScheduleService, (schedule) => schedule.settings())),
+        [TASKS_RPC_METHODS.updateScheduleSettings]: (input) =>
+          asTaskRpc(
+            Effect.flatMap(TaskScheduleService, (schedule) => schedule.updateSettings(input)),
+          ),
       }),
     ),
 });

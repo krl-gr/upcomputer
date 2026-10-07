@@ -39,6 +39,9 @@ import {
   TaskScheduleProgressResult,
   TaskScheduleRangeInput,
   TaskScheduleRangeResult,
+  TaskScheduleSettings,
+  TaskScheduleSettingsGetInput,
+  TaskScheduleSettingsUpdateInput,
   TaskScheduleUpdateInput,
   TaskScheduleWriteResult,
 } from "./schedule.ts";
@@ -75,7 +78,8 @@ import {
 
 /**
  * 13: task audience and kind, schedule entries, reorderMany, projectId on
- * update. Version 12 shapes still decode in both directions.
+ * update, schedule settings and reminders on the change stream. Version 12
+ * shapes still decode in both directions.
  */
 export const TASKS_RPC_CONTRACT_VERSION = 13 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
@@ -132,6 +136,8 @@ export const TASKS_RPC_METHODS = {
   scheduleCopy: `${TASKS_RPC_NAMESPACE}.scheduleCopy`,
   scheduleDelete: `${TASKS_RPC_NAMESPACE}.scheduleDelete`,
   scheduleMoveOpen: `${TASKS_RPC_NAMESPACE}.scheduleMoveOpen`,
+  getScheduleSettings: `${TASKS_RPC_NAMESPACE}.getScheduleSettings`,
+  updateScheduleSettings: `${TASKS_RPC_NAMESPACE}.updateScheduleSettings`,
 } as const;
 
 export const TASK_AGENTS_RPC_METHODS = {
@@ -304,6 +310,17 @@ export const TasksScheduleMoveOpenRpc = Rpc.make(TASKS_RPC_METHODS.scheduleMoveO
   error: TaskError,
 });
 
+export const TasksGetScheduleSettingsRpc = Rpc.make(TASKS_RPC_METHODS.getScheduleSettings, {
+  payload: TaskScheduleSettingsGetInput,
+  success: TaskScheduleSettings,
+  error: TaskError,
+});
+export const TasksUpdateScheduleSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updateScheduleSettings, {
+  payload: TaskScheduleSettingsUpdateInput,
+  success: TaskScheduleSettings,
+  error: TaskError,
+});
+
 export const TasksRpcGroup = RpcGroup.make(
   TasksRunCountsRpc,
   TasksThreadRunCountsRpc,
@@ -335,6 +352,8 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksScheduleCopyRpc,
   TasksScheduleDeleteRpc,
   TasksScheduleMoveOpenRpc,
+  TasksGetScheduleSettingsRpc,
+  TasksUpdateScheduleSettingsRpc,
 );
 
 export const TaskAgentsUpsertRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.upsert, {

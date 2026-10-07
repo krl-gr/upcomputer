@@ -1,3 +1,4 @@
+import { TaskScheduleRemindersMigration } from "./023_TaskScheduleReminders.ts";
 import { TaskSettingsMigration } from "./022_TaskSettings.ts";
 import { TaskScheduleEntriesMigration } from "./021_TaskScheduleEntries.ts";
 import { TaskAudienceAndKindMigration } from "./020_TaskAudienceAndKind.ts";
@@ -82,5 +83,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 20, name: "TaskAudienceAndKind", run: TaskAudienceAndKindMigration },
     { version: 21, name: "TaskScheduleEntries", run: TaskScheduleEntriesMigration },
     { version: 22, name: "TaskSettings", run: TaskSettingsMigration },
+    { version: 23, name: "TaskScheduleReminders", run: TaskScheduleRemindersMigration },
   ],
 } as const;

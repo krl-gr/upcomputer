@@ -1,8 +1,9 @@
 import {
   TaskId,
   TaskScheduleEntry,
+  TaskScheduleEntryId,
+  TaskScheduleEntryStatus,
   TaskScheduleForTaskCursor,
-  type TaskScheduleEntryId,
 } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -14,6 +15,14 @@ const UNTIMED_LAST = "~";
 
 /** SQL for `task_schedule_entries`. TaskRepositoryLive runs it in its transactions. */
 export function makeScheduleQueries(sql: SqlClient.SqlClient) {
+  const REMINDER_UPDATE_FROM = (remindAt: string | null) => sql`
+    reminder_sent_at = CASE WHEN remind_at IS ${remindAt} THEN reminder_sent_at ELSE NULL END,
+    remind_at = ${remindAt}`;
+  const REMINDER_UPDATE = sql`
+    reminder_sent_at = CASE WHEN task_schedule_entries.remind_at IS excluded.remind_at
+      THEN task_schedule_entries.reminder_sent_at ELSE NULL END,
+    remind_at = excluded.remind_at`;
+
   const COLUMNS = sql`
     id,
     task_id AS "taskId",
@@ -88,14 +97,21 @@ export function makeScheduleQueries(sql: SqlClient.SqlClient) {
       GROUP BY task_id`,
   });
 
+  /**
+   * Writes a whole entry with its reminder instant. A reminder already sent
+   * stays sent while the instant is unchanged (wande's
+   * `preserveReminderDeliveryState`); a new instant makes it due again.
+   */
   const upsert = SqlSchema.void({
-    Request: TaskScheduleEntry,
+    Request: Schema.Struct({ ...TaskScheduleEntry.fields, remindAt: Schema.NullOr(Schema.String) }),
     execute: (entry) => sql`
       INSERT INTO task_schedule_entries (
-        id, task_id, date, position, start_time, duration_minutes, status, created_at, updated_at
+        id, task_id, date, position, start_time, duration_minutes, status, created_at, updated_at,
+        remind_at
       ) VALUES (
         ${entry.id}, ${entry.taskId}, ${entry.date}, ${entry.position}, ${entry.startTime},
-        ${entry.durationMinutes}, ${entry.status}, ${entry.createdAt}, ${entry.updatedAt}
+        ${entry.durationMinutes}, ${entry.status}, ${entry.createdAt}, ${entry.updatedAt},
+        ${entry.remindAt}
       )
       ON CONFLICT (id) DO UPDATE SET
         task_id = excluded.task_id,
@@ -104,8 +120,87 @@ export function makeScheduleQueries(sql: SqlClient.SqlClient) {
         start_time = excluded.start_time,
         duration_minutes = excluded.duration_minutes,
         status = excluded.status,
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at,
+        ${REMINDER_UPDATE}`,
   });
+
+  /** Recomputed reminder instants of entries that keep everything else. */
+  const setRemindAt = (id: TaskScheduleEntryId, remindAt: string | null) =>
+    sql`UPDATE task_schedule_entries SET ${REMINDER_UPDATE_FROM(remindAt)}
+      WHERE id = ${id}`.pipe(Effect.asVoid);
+
+  /** The single settings row, as a list for decoding. */
+  const settings = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({
+      scheduleTimeZone: Schema.NullOr(Schema.String),
+      remindersEnabled: Schema.Number,
+      reminderLeadMinutes: Schema.Number,
+    }),
+    execute: () => sql`
+      SELECT schedule_time_zone AS "scheduleTimeZone",
+        reminders_enabled AS "remindersEnabled",
+        reminder_lead_minutes AS "reminderLeadMinutes"
+      FROM task_settings WHERE id = 1`,
+  });
+
+  const updateSettings = (input: {
+    readonly scheduleTimeZone: string | null;
+    readonly remindersEnabled: boolean;
+    readonly reminderLeadMinutes: number;
+  }) =>
+    sql`UPDATE task_settings SET
+        schedule_time_zone = ${input.scheduleTimeZone},
+        reminders_enabled = ${input.remindersEnabled ? 1 : 0},
+        reminder_lead_minutes = ${input.reminderLeadMinutes}
+      WHERE id = 1`.pipe(Effect.asVoid);
+
+  /**
+   * Entries whose reminder may change with the settings or the time: unsent
+   * ones, and open timed entries from `fromDate` on (older ones have started).
+   */
+  const reminderCandidates = SqlSchema.findAll({
+    Request: Schema.Struct({ fromDate: Schema.String }),
+    Result: Schema.Struct({
+      id: TaskScheduleEntryId,
+      date: Schema.String,
+      startTime: Schema.NullOr(Schema.String),
+      status: TaskScheduleEntryStatus,
+      remindAt: Schema.NullOr(Schema.String),
+    }),
+    execute: ({ fromDate }) => sql`
+      SELECT id, date, start_time AS "startTime", status, remind_at AS "remindAt"
+      FROM task_schedule_entries
+      WHERE (remind_at IS NOT NULL AND reminder_sent_at IS NULL)
+        OR (status = 'open' AND start_time IS NOT NULL AND date >= ${fromDate})`,
+  });
+
+  /** Unsent reminders due at `now`, oldest first, with their task (null when deleted). */
+  const dueReminders = SqlSchema.findAll({
+    Request: Schema.Struct({ now: Schema.String, limit: Schema.Number }),
+    Result: Schema.Struct({
+      entryId: TaskScheduleEntryId,
+      taskId: TaskId,
+      date: Schema.String,
+      startTime: Schema.NullOr(Schema.String),
+      status: TaskScheduleEntryStatus,
+      title: Schema.NullOr(Schema.String),
+      taskStatus: Schema.NullOr(Schema.String),
+      archivedAt: Schema.NullOr(Schema.String),
+    }),
+    execute: ({ now, limit }) => sql`
+      SELECT e.id AS "entryId", e.task_id AS "taskId", e.date, e.start_time AS "startTime",
+        e.status, t.title, t.status AS "taskStatus", t.archived_at AS "archivedAt"
+      FROM task_schedule_entries e LEFT JOIN tasks t ON t.id = e.task_id
+      WHERE e.remind_at IS NOT NULL AND e.reminder_sent_at IS NULL AND e.remind_at <= ${now}
+      ORDER BY e.remind_at, e.id
+      LIMIT ${limit}`,
+  });
+
+  const markReminded = (ids: ReadonlyArray<TaskScheduleEntryId>, at: string) =>
+    sql`UPDATE task_schedule_entries SET reminder_sent_at = ${at}
+      WHERE id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
+        AND reminder_sent_at IS NULL`.pipe(Effect.asVoid);
 
   /**
    * Gives existing rows a unique placeholder position first, so rewriting
@@ -136,6 +231,12 @@ export function makeScheduleQueries(sql: SqlClient.SqlClient) {
     forTask,
     progress,
     upsert,
+    setRemindAt,
+    settings,
+    updateSettings,
+    reminderCandidates,
+    dueReminders,
+    markReminded,
     releasePositions,
     deleteByIds,
     deleteForTask,

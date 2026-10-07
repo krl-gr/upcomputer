@@ -31,6 +31,9 @@ import {
   TaskScheduleProgressResult,
   TaskScheduleRangeInput,
   TaskScheduleRangeResult,
+  TaskScheduleSettings,
+  TaskScheduleSettingsUpdateInput,
+  TaskReminder,
   TaskSearchInput,
   TaskPageInput,
   TaskPageResult,
@@ -294,6 +297,25 @@ export interface TaskRepositoryShape {
   readonly deleteScheduleEntries: (
     ids: ReadonlyArray<TaskScheduleEntryId>,
   ) => Effect.Effect<ReadonlyArray<TaskScheduleEntry>, TaskRepositoryError>;
+  readonly scheduleSettings: () => Effect.Effect<TaskScheduleSettings, TaskRepositoryError>;
+  /** Changes the settings and recomputes every pending reminder, in one transaction. */
+  readonly updateScheduleSettings: (
+    input: TaskScheduleSettingsUpdateInput,
+  ) => Effect.Effect<TaskScheduleSettings, TaskRepositoryError>;
+  /**
+   * Recomputes pending reminders with the current settings and time, e.g. at
+   * startup after the server's zone changed. Reminders already sent at an
+   * unchanged instant stay sent.
+   */
+  readonly recomputeReminders: () => Effect.Effect<void, TaskRepositoryError>;
+  /**
+   * Claims up to `limit` due reminders, each once (the claim is stored, so a
+   * restart never repeats it), and publishes the ones still worth sending on
+   * the change stream: open entries of live tasks that have not started.
+   */
+  readonly claimDueReminders: (input: {
+    readonly limit: number;
+  }) => Effect.Effect<ReadonlyArray<TaskReminder>, TaskRepositoryError>;
   readonly appendEvent: (
     input: PersistTaskEventInput,
   ) => Effect.Effect<TaskEvent, TaskRepositoryError>;

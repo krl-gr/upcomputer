@@ -629,3 +629,37 @@ it.effect(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect("task_create makes a routine the person's and refuses one for agents", () => {
+  const { layer, call, scheduled } = harness();
+  return Effect.gen(function* () {
+    const created = yield* call("task_create", {
+      title: "stretch",
+      description: "",
+      status: "To Do",
+      kind: "routine",
+      tags: ["dev"],
+    });
+    assert.deepStrictEqual([created.task.kind, created.task.audience], ["routine", "person"]);
+    // The scheduler is told, and its gate (TaskTriggerSemantics) never starts a routine.
+    assert.equal(scheduled.at(-1)?.task.id, created.task.id);
+    const refused = yield* (yield* TaskToolService).call({
+      name: "task_create",
+      args: {
+        title: "agent routine",
+        description: "",
+        status: "To Do",
+        kind: "routine",
+        audience: "agent",
+      },
+      context: chat,
+    });
+    assert.isTrue(refused.isError);
+    assert.include(refused.text, "routine");
+    const { tasks } = yield* call("task_search", { audience: "all", kind: "routine" });
+    assert.deepStrictEqual(
+      tasks.map(({ title }: { title: string }) => title),
+      ["stretch"],
+    );
+  }).pipe(Effect.provide(layer));
+});
