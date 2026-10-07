@@ -1,3 +1,4 @@
+import { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
@@ -30,11 +31,23 @@ export const LAST_RUN_OPTIONS: ReadonlyArray<{ readonly value: string; readonly 
   { value: NO_RUNS_FILTER, label: "No runs" },
 ];
 
+/** Archive dropdown options; archived tasks are hidden unless chosen here. */
+export const ARCHIVE_OPTIONS: ReadonlyArray<{
+  readonly value: TaskArchiveFilter;
+  readonly label: string;
+}> = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "Active and archived" },
+];
+
 /** Filters of the Tasks table besides the shared project, kept across visits. */
 export const TasksPageFilters = Schema.Struct({
   status: Schema.String,
   lastRun: Schema.String,
   tags: Schema.Array(Schema.String),
+  /** Absent from filters saved before archiving existed, which means active. */
+  archive: Schema.optional(TaskArchiveFilter),
 });
 export type TasksPageFilters = typeof TasksPageFilters.Type;
 
@@ -43,6 +56,7 @@ export const DEFAULT_TASKS_PAGE_FILTERS: TasksPageFilters = {
   status: ALL_FILTER,
   lastRun: ALL_FILTER,
   tags: [],
+  archive: "active",
 };
 
 export function useTasksPageFilters() {

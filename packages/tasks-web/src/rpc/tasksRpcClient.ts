@@ -43,6 +43,9 @@ export interface TasksWebRpcClient {
     readonly addTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.addTag>;
     readonly removeTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.removeTag>;
     readonly appendEvent: RpcUnaryMethod<typeof TASKS_RPC_METHODS.appendEvent>;
+    readonly events: RpcUnaryMethod<typeof TASKS_RPC_METHODS.events>;
+    readonly archive: RpcUnaryMethod<typeof TASKS_RPC_METHODS.archive>;
+    readonly unarchive: RpcUnaryMethod<typeof TASKS_RPC_METHODS.unarchive>;
     readonly getPromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getPromptSettings>;
     readonly updatePromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updatePromptSettings>;
   };
@@ -142,6 +145,11 @@ export function createTasksWebRpcClient(
         request("tasks.removeTag", "canMutateTasks", TASKS_RPC_METHODS.removeTag, input),
       appendEvent: (input) =>
         request("tasks.appendEvent", "canMutateTasks", TASKS_RPC_METHODS.appendEvent, input),
+      events: (input) => request("tasks.events", "canReadTasks", TASKS_RPC_METHODS.events, input),
+      archive: (input) =>
+        request("tasks.archive", "canMutateTasks", TASKS_RPC_METHODS.archive, input),
+      unarchive: (input) =>
+        request("tasks.unarchive", "canMutateTasks", TASKS_RPC_METHODS.unarchive, input),
       getPromptSettings: (input) =>
         request(
           "tasks.getPromptSettings",

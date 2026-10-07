@@ -92,6 +92,33 @@ test("the project choice is shared by the pages, and all filters survive a remou
   await act(async () => pages.unmount());
 });
 
+test("filters saved before archiving existed still load, showing active tasks", async () => {
+  const storage = memoryStorage();
+  storage.setItem(
+    "upcomputer:tasks:filters",
+    JSON.stringify({ status: "To Do", lastRun: "__all__", tags: ["ui"] }),
+  );
+  vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: storage }));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const { create } = await import("react-test-renderer");
+  const filters = await import("./pageFilters.ts");
+  let seen: unknown;
+  function TasksPage() {
+    seen = filters.useTasksPageFilters()[0];
+    return null;
+  }
+  let page!: ReturnType<typeof create>;
+  await act(async () => {
+    page = create(createElement(TasksPage));
+  });
+  NodeAssert.deepEqual(
+    seen,
+    { status: "To Do", lastRun: "__all__", tags: ["ui"] },
+    "kept as saved; no archive choice reads as active",
+  );
+  await act(async () => page.unmount());
+});
+
 test("trigger tags come from enabled agents only", async () => {
   const { agentTriggerTags } = await import("./pageFilters.ts");
   NodeAssert.deepEqual(

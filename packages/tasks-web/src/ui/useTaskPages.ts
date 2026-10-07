@@ -2,19 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
 import type { TaskPageState, ScopedTaskListItem } from "../state/taskPages.ts";
+import type { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import { planTaskQueryLanes, type ViewProjectFilter } from "./projectFilter.ts";
 
 const PAGE_SIZE = 100;
 
 /**
- * Paged task queries for the Tasks view: the header's project, task status and
- * tags (every tag required), all applied by the server.
+ * Paged task queries for the Tasks view: the header's project, task status,
+ * tags (every tag required) and archive state, all applied by the server.
  */
 export function useTaskPages(
   targets: readonly TasksStateTarget[],
   projectFilter: ViewProjectFilter | null,
   statusFilter: string,
   tags: readonly string[],
+  archive: TaskArchiveFilter,
 ) {
   const [byLane, setByLane] = useState<Record<string, TaskPageLoadState>>({});
   const loaders = useRef<TaskPageLoader[]>([]);
@@ -28,9 +30,10 @@ export function useTaskPages(
         projectFilter,
         statusFilter,
         tags,
+        archive,
         pageSize: PAGE_SIZE,
       }),
-    [targets, projectFilter, statusFilter, tags],
+    [targets, projectFilter, statusFilter, tags, archive],
   );
 
   useEffect(() => {

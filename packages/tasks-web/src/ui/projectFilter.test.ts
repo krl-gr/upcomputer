@@ -99,6 +99,19 @@ test("task queries run one lane per member project, scoped to its environment", 
     pageSize: 100,
   }).map((lane) => lane.key);
   NodeAssert.equal(new Set(keys).size, keys.length, "lane keys are unique per project");
+
+  // Active is the server's default, so only the other archive modes are sent.
+  const archive = (mode: "active" | "archived" | "all") =>
+    planTaskQueryLanes({
+      targets: [target("laptop", ["p-main"])],
+      projectFilter: null,
+      statusFilter: "__all__",
+      archive: mode,
+      pageSize: 100,
+    }).map((lane) => lane.search);
+  NodeAssert.deepEqual(archive("active"), [{ limit: 100 }]);
+  NodeAssert.deepEqual(archive("archived"), [{ archive: "archived", limit: 100 }]);
+  NodeAssert.deepEqual(archive("all"), [{ archive: "all", limit: 100 }]);
 });
 
 test("the tag filter asks the server for tasks with every selected tag", () => {

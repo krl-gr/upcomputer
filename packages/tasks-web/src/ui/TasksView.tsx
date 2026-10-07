@@ -1,7 +1,12 @@
 /* oxlint-disable t3code/no-native-title-tooltip -- ported V1 Tasks UI; moves to Tooltip with the product UI phase. */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
-import { TaskId } from "@t3tools/tasks-contracts/v1";
+import {
+  TASK_HISTORY_EVENT_KINDS,
+  TaskId,
+  type TaskArchiveFilter,
+  type TaskEvent,
+} from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
@@ -39,6 +44,7 @@ import {
 import {
   agentTriggerTags,
   ALL_FILTER,
+  ARCHIVE_OPTIONS,
   LAST_RUN_OPTIONS,
   matchesLastRunFilter,
   type TasksPageFilters,
@@ -46,6 +52,7 @@ import {
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
+import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
@@ -78,7 +85,7 @@ export interface TasksViewProps {
   readonly projectFilter: ViewProjectFilter | null;
   /** The shared project select, shown at the right of the header. */
   readonly projectSelect?: ReactNode;
-  /** Task status (server), last run (client) and tags (server, all required). */
+  /** Task status (server), last run (client), tags (server, all required) and archive (server). */
   readonly filters: TasksPageFilters;
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly hasMore: boolean;
@@ -198,6 +205,12 @@ export function TasksView(props: TasksViewProps) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
   const statusFilter = filters.status;
+  const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
+  const [history, setHistory] = useState<{
+    readonly taskKey: string | null;
+    readonly events: readonly TaskEvent[];
+    readonly status: "loading" | "ready" | "error";
+  }>({ taskKey: null, events: [], status: "loading" });
   const [optimisticTasks, setOptimisticTasks] = useState<readonly ScopedTaskListItem[]>(
     props.tasks,
   );
@@ -552,6 +565,72 @@ export function TasksView(props: TasksViewProps) {
     [props],
   );
 
+  // Status and archive changes always touch updatedAt, so it keys the reload.
+  useEffect(() => {
+    if (!selectedTask) return;
+    const client = props.getClient(selectedTask.environmentId);
+    if (!client) return;
+    const key = taskKey(selectedTask);
+    let cancelled = false;
+    void client.tasks
+      .events({ taskId: selectedTask.id, kinds: [...TASK_HISTORY_EVENT_KINDS], limit: 50 })
+      .then(
+        ({ events }) => {
+          if (!cancelled) setHistory({ taskKey: key, events, status: "ready" });
+        },
+        () => {
+          if (!cancelled)
+            setHistory((previous) => ({
+              taskKey: key,
+              events: previous.taskKey === key ? previous.events : [],
+              status: "error",
+            }));
+        },
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTask?.id, selectedTask?.environmentId, selectedTask?.updatedAt, props.getClient]);
+
+  const historyEntries = useMemo(() => {
+    if (!selectedTask || history.taskKey !== taskKey(selectedTask)) return [];
+    const agentIdByRun = new Map(detailRuns.map((run) => [run.id as string, run.agentId]));
+    const agentNames = new Map(props.agents.map((agent) => [agent.id as string, agent.name]));
+    return taskHistoryEntries(history.events, (runId) => {
+      const agentId = agentIdByRun.get(runId);
+      return agentId === undefined ? null : (agentNames.get(agentId) ?? null);
+    });
+  }, [detailRuns, history, props.agents, selectedTask]);
+
+  const setTaskArchived = useCallback(
+    async (task: ScopedTask, archived: boolean) => {
+      const client = props.getClient(task.environmentId);
+      if (!client) return;
+      setUpdatingField("archive");
+      try {
+        await (archived ? client.tasks.archive : client.tasks.unarchive)({ ids: [task.id] });
+        const fresh = await client.tasks.get({ id: task.id });
+        if (fresh) setFetchedTask({ ...task, ...fresh });
+        toastManager.add({
+          type: "success",
+          title: archived ? "Task archived" : "Task unarchived",
+          description: task.title,
+        });
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: archived ? "Failed to archive task" : "Failed to unarchive task",
+            description: errorDescription(error),
+          }),
+        );
+      } finally {
+        setUpdatingField(null);
+      }
+    },
+    [props],
+  );
+
   const save = useCallback(async () => {
     if (createInFlightRef.current) return;
     const title = form.title.trim();
@@ -605,7 +684,17 @@ export function TasksView(props: TasksViewProps) {
       title={selectedTask ? "" : createModeOpen ? "New task" : "Tasks"}
       action={
         selectedTask
-          ? undefined
+          ? props.canMutateEnvironment(selectedTask.environmentId)
+            ? {
+                ariaLabel: selectedTask.archivedAt ? "Unarchive task" : "Archive task",
+                disabled: updatingField === "archive",
+                hideIcon: true,
+                label: selectedTask.archivedAt ? "Unarchive" : "Archive",
+                onClick: () => {
+                  void setTaskArchived(selectedTask, selectedTask.archivedAt === null);
+                },
+              }
+            : undefined
           : createModeOpen
             ? {
                 ariaLabel: "Create task",
@@ -647,6 +736,9 @@ export function TasksView(props: TasksViewProps) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {selectedTask.title}
             </span>
+            {selectedTask.archivedAt ? (
+              <span className="shrink-0 text-sm text-muted-foreground">Archived</span>
+            ) : null}
           </>
         ) : createModeOpen ? undefined : (
           <>
@@ -705,6 +797,26 @@ export function TasksView(props: TasksViewProps) {
               value={filters.tags}
               onChange={(tags) => onFiltersChange({ ...filters, tags })}
             />
+            <Select
+              value={archiveFilter}
+              onValueChange={(value) => {
+                const option = ARCHIVE_OPTIONS.find((candidate) => candidate.value === value);
+                if (option) onFiltersChange({ ...filters, archive: option.value });
+              }}
+            >
+              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Filter by archive">
+                <SelectValue>
+                  {ARCHIVE_OPTIONS.find((option) => option.value === archiveFilter)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {ARCHIVE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           </>
         )
       }
@@ -901,6 +1013,11 @@ export function TasksView(props: TasksViewProps) {
                   <DetailSidebarRow label="Updated">
                     {new Date(selectedTask.updatedAt).toLocaleDateString()}
                   </DetailSidebarRow>
+                  {selectedTask.archivedAt ? (
+                    <DetailSidebarRow label="Archived">
+                      {new Date(selectedTask.archivedAt).toLocaleString()}
+                    </DetailSidebarRow>
+                  ) : null}
                   {selectedTask.notBefore ? (
                     <DetailSidebarRow label="Not before">
                       {new Date(selectedTask.notBefore).toLocaleString()}
@@ -1013,6 +1130,12 @@ export function TasksView(props: TasksViewProps) {
                     Load more runs
                   </button>
                 ) : null}
+              </DetailSidebarSection>
+              <DetailSidebarSection title="History" count={historyEntries.length}>
+                <TaskHistory
+                  entries={historyEntries}
+                  status={history.taskKey === taskKey(selectedTask) ? history.status : "loading"}
+                />
               </DetailSidebarSection>
             </DetailColumn>
           </div>
@@ -1148,7 +1271,10 @@ export function TasksView(props: TasksViewProps) {
             <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
               {props.status === "loading"
                 ? "Loading tasks..."
-                : projectFilter !== null || statusFilter !== ALL_FILTER || filters.tags.length > 0
+                : projectFilter !== null ||
+                    statusFilter !== ALL_FILTER ||
+                    filters.tags.length > 0 ||
+                    archiveFilter !== "active"
                   ? "No tasks match the current filters."
                   : "No tasks yet"}
             </div>
@@ -1231,7 +1357,12 @@ export function TasksView(props: TasksViewProps) {
                             </div>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 align-middle whitespace-nowrap">{task.status}</td>
+                        <td className="px-4 py-4 align-middle whitespace-nowrap">
+                          {task.status}
+                          {task.archivedAt ? (
+                            <span className="ml-2 text-muted-foreground">Archived</span>
+                          ) : null}
+                        </td>
                         <td className="max-w-56 px-4 py-4 align-middle">
                           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
                         </td>

@@ -23,7 +23,13 @@ export default function TasksRoute() {
   const data = useTasksWorkspaceData(false);
   const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const [filters, setFilters] = useTasksPageFilters();
-  const pages = useTaskPages(data.taskTargets, projectFilter, filters.status, filters.tags);
+  const pages = useTaskPages(
+    data.taskTargets,
+    projectFilter,
+    filters.status,
+    filters.tags,
+    filters.archive ?? "active",
+  );
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useMemo(
     () =>

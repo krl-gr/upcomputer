@@ -1,5 +1,5 @@
 import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
-import type { TaskPageInput } from "@t3tools/tasks-contracts/v1";
+import type { TaskArchiveFilter, TaskPageInput } from "@t3tools/tasks-contracts/v1";
 
 import type { TasksStateTarget } from "../state/tasksState.ts";
 import { ALL_FILTER } from "./pageFilters.ts";
@@ -93,12 +93,15 @@ export function planTaskQueryLanes(input: {
   readonly projectFilter: ViewProjectFilter | null;
   readonly statusFilter: string;
   readonly tags?: ReadonlyArray<string>;
+  /** Active, the server's default, when absent. */
+  readonly archive?: TaskArchiveFilter;
   readonly pageSize: number;
 }): TaskQueryLane[] {
   const keys = orderedProjectFilterKeys(input.projectFilter);
   const filterSearch = {
     ...(input.statusFilter === ALL_FILTER ? {} : { status: input.statusFilter }),
     ...(input.tags && input.tags.length > 0 ? { tags: [...input.tags] } : {}),
+    ...(input.archive && input.archive !== "active" ? { archive: input.archive } : {}),
   };
   return input.targets.flatMap((target) => {
     if (keys === null) {
