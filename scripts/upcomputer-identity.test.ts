@@ -53,6 +53,7 @@ it("names packaged builds as V1 did", () => {
   assert.equal(resolveDesktopProductName("0.0.46"), V1.productName);
   assert.equal(resolveDesktopProductName("0.0.46-nightly.20261005.1"), V1.nightlyProductName);
   assert.equal(resolveDesktopProductName("0.0.46-localtest.1"), V1.localTestProductName);
+  assert.equal(resolveDesktopProductName("0.0.46-demo.1"), "Up.computer Demo");
 });
 
 it.effect("packages releases with the V1 app id, schemes and update feed", () =>
@@ -125,20 +126,25 @@ it.effect("packages releases with the V1 app id, schemes and update feed", () =>
   }).pipe(Effect.provide(releaseEnvironment)),
 );
 
-it.effect("keeps local test builds off the Alpha bundle id, schemes and update feed", () =>
+it.effect("keeps local test and demo builds off the Alpha bundle id, schemes and update feed", () =>
   Effect.gen(function* () {
-    const config = yield* createBuildConfig(
-      "mac",
-      "dmg",
-      "0.0.46-localtest.1",
-      false,
-      false,
-      undefined,
-      undefined,
-    );
-    assert.equal(config.appId, V1.localTestAppId);
-    assert.equal(config.productName, V1.localTestProductName);
-    assert.notProperty(config, "publish");
-    assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, []);
+    for (const [version, appId, productName] of [
+      ["0.0.46-localtest.1", V1.localTestAppId, V1.localTestProductName],
+      ["0.0.46-demo.1", "computer.up.upcomputer.demo", "Up.computer Demo"],
+    ] as const) {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        version,
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.equal(config.appId, appId);
+      assert.equal(config.productName, productName);
+      assert.notProperty(config, "publish");
+      assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, []);
+    }
   }).pipe(Effect.provide(releaseEnvironment)),
 );

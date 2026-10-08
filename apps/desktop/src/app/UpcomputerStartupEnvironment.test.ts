@@ -95,4 +95,28 @@ describe("Up.computer desktop identity", () => {
       assert.equal(environment.displayName, "UpComputer Local Test");
     }),
   );
+
+  it.effect("isolates a demo build from the Alpha and local test apps", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        T3CODE_HOME: "/Users/alice/.upcomputer-local-test",
+        T3CODE_PORT: "3773",
+      };
+      applyUpcomputerStartupEnvironment({
+        env,
+        appVersion: "0.0.46-demo.1",
+        homeDirectory: "/Users/alice",
+        joinPath: posixJoin,
+      });
+      assert.deepStrictEqual(env, {
+        T3CODE_HOME: "/Users/alice/.upcomputer-demo",
+        T3CODE_DISABLE_AUTO_UPDATE: "true",
+      });
+
+      const environment = yield* makeEnvironment("0.0.46-demo.1", env);
+      assert.equal(environment.stateDir, "/Users/alice/.upcomputer-demo/userdata");
+      assert.equal(environment.appUserModelId, "computer.up.upcomputer.demo");
+      assert.equal(environment.displayName, "Up.computer Demo");
+    }),
+  );
 });

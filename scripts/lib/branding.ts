@@ -149,6 +149,8 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
       'UPCOMPUTER_LOCAL_TEST_APP_NAME = "UpComputer Local Test"',
       'UPCOMPUTER_LOCAL_TEST_APP_ID = "computer.up.upcomputer.localtest"',
       'UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME = ".upcomputer-local-test"',
+      'UPCOMPUTER_DEMO_APP_ID = "computer.up.upcomputer.demo"',
+      'UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME = ".upcomputer-demo"',
     ],
   },
   { path: "apps/desktop/package.json", requires: ['"productName": "Up.computer (Alpha)"'] },
@@ -174,7 +176,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/desktop/src/app/UpcomputerStartupEnvironment.ts",
-    requires: ["applyUpcomputerEnvAliases(env)", "UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME"],
+    requires: ["applyUpcomputerEnvAliases(env)", "resolveUpcomputerLocalBuildIdentity"],
   },
   {
     path: "apps/desktop/src/main.ts",

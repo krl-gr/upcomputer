@@ -5,9 +5,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import {
-  isUpcomputerLocalTestVersion,
+  resolveUpcomputerLocalBuildIdentity,
   UPCOMPUTER_DEVELOPMENT_USER_DATA_DIR_NAME,
-  UPCOMPUTER_LOCAL_TEST_APP_NAME,
   UPCOMPUTER_USER_DATA_DIR_NAME,
 } from "@t3tools/shared/upcomputerIdentity";
 
@@ -50,8 +49,9 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     const path = yield* Path.Path;
     // Up.computer keeps the V1 profile folders, so an auto-updated V1 install
     // keeps its Chromium state (sign-ins, safeStorage keys, browser profiles).
-    const names = isUpcomputerLocalTestVersion(input.appVersion)
-      ? { current: UPCOMPUTER_LOCAL_TEST_APP_NAME, legacy: UPCOMPUTER_LOCAL_TEST_APP_NAME }
+    const localBuild = resolveUpcomputerLocalBuildIdentity(input.appVersion);
+    const names = localBuild
+      ? { current: localBuild.appName, legacy: localBuild.appName }
       : input.isDevelopment
         ? {
             current: UPCOMPUTER_DEVELOPMENT_USER_DATA_DIR_NAME,

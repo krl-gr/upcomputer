@@ -1,8 +1,5 @@
 import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
-import {
-  isUpcomputerLocalTestVersion,
-  UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME,
-} from "@t3tools/shared/upcomputerIdentity";
+import { resolveUpcomputerLocalBuildIdentity } from "@t3tools/shared/upcomputerIdentity";
 
 /**
  * Applies the Up.computer process environment before anything reads it.
@@ -17,12 +14,10 @@ export function applyUpcomputerStartupEnvironment(input: {
 }): void {
   const { env } = input;
   applyUpcomputerEnvAliases(env);
-  // A local QA build never shares the Alpha app's state, port or updater.
-  if (isUpcomputerLocalTestVersion(input.appVersion)) {
-    env.T3CODE_HOME = input.joinPath(
-      input.homeDirectory,
-      UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME,
-    );
+  // A local test or demo build never shares the Alpha app's state, port or updater.
+  const localBuild = resolveUpcomputerLocalBuildIdentity(input.appVersion);
+  if (localBuild) {
+    env.T3CODE_HOME = input.joinPath(input.homeDirectory, localBuild.homeDirectoryName);
     env.T3CODE_DISABLE_AUTO_UPDATE = "true";
     delete env.VITE_DEV_SERVER_URL;
     delete env.T3CODE_PORT;

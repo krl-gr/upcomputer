@@ -48,3 +48,47 @@ export const UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME = ".upcomputer-local-test
 export function isUpcomputerLocalTestVersion(version: string): boolean {
   return /^\d+\.\d+\.\d+-localtest\.\d+$/.test(version);
 }
+
+/**
+ * A packaged demo build (`X.Y.Z-demo.N`) for showing the app with made-up
+ * data. Like the local test build it has its own state, bundle id and no
+ * update feed, so it can run next to Alpha and Local Test.
+ */
+export const UPCOMPUTER_DEMO_APP_NAME = "Up.computer Demo";
+export const UPCOMPUTER_DEMO_APP_ID = "computer.up.upcomputer.demo";
+export const UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME = ".upcomputer-demo";
+
+export function isUpcomputerDemoVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+-demo\.\d+$/.test(version);
+}
+
+/**
+ * The separate identity of a local build (local test or demo): app and
+ * Electron profile name, bundle id and home directory. `undefined` for
+ * Alpha, nightly and dev builds, which keep the V1 identity.
+ */
+export interface UpcomputerLocalBuildIdentity {
+  readonly appName: string;
+  readonly appId: string;
+  readonly homeDirectoryName: string;
+}
+
+export function resolveUpcomputerLocalBuildIdentity(
+  version: string,
+): UpcomputerLocalBuildIdentity | undefined {
+  if (isUpcomputerLocalTestVersion(version)) {
+    return {
+      appName: UPCOMPUTER_LOCAL_TEST_APP_NAME,
+      appId: UPCOMPUTER_LOCAL_TEST_APP_ID,
+      homeDirectoryName: UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME,
+    };
+  }
+  if (isUpcomputerDemoVersion(version)) {
+    return {
+      appName: UPCOMPUTER_DEMO_APP_NAME,
+      appId: UPCOMPUTER_DEMO_APP_ID,
+      homeDirectoryName: UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME,
+    };
+  }
+  return undefined;
+}

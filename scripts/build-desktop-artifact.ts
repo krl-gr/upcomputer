@@ -19,13 +19,11 @@ import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/rela
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import {
-  isUpcomputerLocalTestVersion,
+  resolveUpcomputerLocalBuildIdentity,
   UPCOMPUTER_APP_ID,
   UPCOMPUTER_DESKTOP_PRODUCT_NAME,
   UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
   UPCOMPUTER_EXECUTABLE_NAME,
-  UPCOMPUTER_LOCAL_TEST_APP_ID,
-  UPCOMPUTER_LOCAL_TEST_APP_NAME,
   UPCOMPUTER_NIGHTLY_DESKTOP_PRODUCT_NAME,
   UPCOMPUTER_PRODUCT_NAME,
   UPCOMPUTER_PROTOCOL_SCHEME,
@@ -2666,16 +2664,17 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
-  if (isUpcomputerLocalTestVersion(version)) return UPCOMPUTER_LOCAL_TEST_APP_NAME;
+  const localBuild = resolveUpcomputerLocalBuildIdentity(version);
+  if (localBuild) return localBuild.appName;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? UPCOMPUTER_NIGHTLY_DESKTOP_PRODUCT_NAME
     : (desktopPackageJson.productName ?? UPCOMPUTER_DESKTOP_PRODUCT_NAME);
 }
 
-// A local QA build gets its own bundle id and no update feed or URL schemes,
-// so it can never replace or intercept the installed Alpha app.
+// A local test or demo build gets its own bundle id and no update feed or URL
+// schemes, so it can never replace or intercept the installed Alpha app.
 export function resolveDesktopAppId(version: string): string {
-  return isUpcomputerLocalTestVersion(version) ? UPCOMPUTER_LOCAL_TEST_APP_ID : DESKTOP_APP_ID;
+  return resolveUpcomputerLocalBuildIdentity(version)?.appId ?? DESKTOP_APP_ID;
 }
 
 const DESKTOP_PROTOCOLS = [
@@ -2686,7 +2685,7 @@ const DESKTOP_PROTOCOLS = [
 ];
 
 function resolveDesktopProtocols(version: string) {
-  return isUpcomputerLocalTestVersion(version) ? [] : DESKTOP_PROTOCOLS;
+  return resolveUpcomputerLocalBuildIdentity(version) ? [] : DESKTOP_PROTOCOLS;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2739,7 +2738,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (!isDesktopPreviewVersion(version) && !isUpcomputerLocalTestVersion(version)) {
+  if (!isDesktopPreviewVersion(version) && !resolveUpcomputerLocalBuildIdentity(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];

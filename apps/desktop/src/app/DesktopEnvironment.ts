@@ -21,10 +21,8 @@ import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePat
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 import {
-  isUpcomputerLocalTestVersion,
+  resolveUpcomputerLocalBuildIdentity,
   UPCOMPUTER_APP_ID,
-  UPCOMPUTER_LOCAL_TEST_APP_ID,
-  UPCOMPUTER_LOCAL_TEST_APP_NAME,
   UPCOMPUTER_PRODUCT_NAME,
 } from "@t3tools/shared/upcomputerIdentity";
 
@@ -124,9 +122,9 @@ export function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: isUpcomputerLocalTestVersion(input.appVersion)
-      ? UPCOMPUTER_LOCAL_TEST_APP_NAME
-      : `${APP_BASE_NAME} (${stageLabel})`,
+    displayName:
+      resolveUpcomputerLocalBuildIdentity(input.appVersion)?.appName ??
+      `${APP_BASE_NAME} (${stageLabel})`,
   };
 }
 
@@ -247,11 +245,11 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
-    appUserModelId: isUpcomputerLocalTestVersion(input.appVersion)
-      ? UPCOMPUTER_LOCAL_TEST_APP_ID
-      : Option.getOrElse(config.appUserModelIdOverride, () =>
-          isDevelopment ? `${UPCOMPUTER_APP_ID}.dev` : UPCOMPUTER_APP_ID,
-        ),
+    appUserModelId:
+      resolveUpcomputerLocalBuildIdentity(input.appVersion)?.appId ??
+      Option.getOrElse(config.appUserModelIdOverride, () =>
+        isDevelopment ? `${UPCOMPUTER_APP_ID}.dev` : UPCOMPUTER_APP_ID,
+      ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxWmClass: resolveLinuxWmClass(isDevelopment),
     linuxApplicationsDir,
