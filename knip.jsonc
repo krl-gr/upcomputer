@@ -14,8 +14,14 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
-      // worktree setup (from t3.json) run directly.
-      "entry": ["knip-schemas.ts", "mobile-native-client.ts", "setup-worktree.ts"],
+      // worktree setup (from t3.json) run directly. Up.computer's apply-branding
+      // runs by hand after an upstream merge (docs/branding.md).
+      "entry": [
+        "knip-schemas.ts",
+        "mobile-native-client.ts",
+        "setup-worktree.ts",
+        "apply-branding.ts",
+      ],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -31,8 +37,18 @@
         "src/provider/testFixtures/*.mjs",
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.
-      // The Vite+ web build prerequisite.
-      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web"],
+      // The Vite+ web build prerequisite. Up.computer's computer-use runtime
+      // externals, which the server bundle leaves on disk.
+      "ignoreDependencies": [
+        "@effect/platform-node-shared",
+        "@t3tools/web",
+        "open-computer-use",
+        "playwright-core",
+      ],
+    },
+    "apps/marketing": {
+      // Astro loads these through `<script src>` tags, which knip does not follow.
+      "entry": ["src/scripts/*.ts", "public/scripts/*.js"],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.
@@ -57,7 +73,8 @@
     },
     "apps/web": {
       // Vitest loads this through the per-file @vitest-environment directive.
-      "ignoreDependencies": ["jsdom"],
+      // The Up.computer Tasks plug-in's contracts come with @t3tools/tasks-web.
+      "ignoreDependencies": ["jsdom", "@t3tools/tasks-contracts"],
       // Worktree setup (scripts/setup-worktree.ts) runs this directly.
       "entry": ["scripts/warm-dep-cache.ts"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
@@ -91,6 +108,11 @@
     "packages/*": {
       // These workspace packages are private to this monorepo.
       "includeEntryExports": true,
+    },
+    "packages/computer-use-web": {
+      "includeEntryExports": true,
+      // React DOM pairs with the React this plug-in renders into the web host.
+      "ignoreDependencies": ["react-dom", "@types/react-dom"],
     },
     "packages/effect-acp": {
       "includeEntryExports": true,
