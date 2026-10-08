@@ -34,7 +34,7 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     # A manual run from another branch would deploy that branch to production.
-    if: ${{ github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
+    if: ${{ github.repository == 'pingdotgg/t3code' && github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
     # GitHub-hosted: Blacksmith runners are not set up for the Up.computer repository.
     runs-on: ubuntu-24.04
     timeout-minutes: 15

@@ -10,6 +10,7 @@ permissions:
 jobs:
   prepare-config:
     name: Prepare PR size config
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     outputs:
       labels_json: ${{ steps.config.outputs.labels_json }}

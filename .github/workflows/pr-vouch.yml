@@ -20,6 +20,7 @@ permissions:
 jobs:
   collect-targets:
     name: Collect PR targets
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     outputs:
       targets: ${{ steps.collect.outputs.targets }}

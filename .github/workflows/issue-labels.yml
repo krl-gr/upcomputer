@@ -15,6 +15,7 @@ permissions:
 jobs:
   sync:
     name: Sync issue labels
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     steps:
       - name: Ensure managed issue labels exist
