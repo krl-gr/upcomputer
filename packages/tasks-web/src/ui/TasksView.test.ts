@@ -36,7 +36,7 @@ test("source thread is conditionally rendered once in the detail sidebar", () =>
 test("agent executions retain the canonical Runs label across task surfaces", () => {
   NodeAssert.match(sidebar, /<DetailSidebarSection title="Runs" count=\{detailRuns\.length\}>/);
   NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title="Threads"/);
-  NodeAssert.match(source, /<th[^>]*>Runs<\/th>/);
+  NodeAssert.match(source, /<th[^>]*>\s*Runs\s*<\/th>/);
 });
 
 test("task rows expose isolated pointer and keyboard reorder controls", () => {
