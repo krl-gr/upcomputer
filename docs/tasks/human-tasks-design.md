@@ -688,18 +688,19 @@ entry card or the floating window, live in the planner's own components.
 
 ### 8.6 Where each control lives
 
-Positions are wande's. "Toolbar" is `WorkspaceViewLayout`'s toolbar row.
+Positions are wande's. The planner has no page toolbar: the list header and
+the week header side by side are its title bar row (both `WorkspacePageHeader`).
 
 | control                                                              | wande location                          | planner location                                          |
 | -------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
-| Planner / Table switch                                               | none                                    | toolbar, left                                             |
-| project filter                                                       | none (wande has no list filters)        | toolbar, right (existing `ProjectFilterSelect`)           |
-| Tasks / Routines (phase 4)                                           | top-level tabs                          | toolbar, left of Mine / Agents / All                      |
-| Mine / Agents / All (phase 3)                                        | none                                    | toolbar, next to the project filter                       |
-| environment select                                                   | none                                    | toolbar, only with more than one environment              |
-| New Task                                                             | list header, left                       | list header, left                                         |
-| Select (mode)                                                        | list header, right                      | list header, right                                        |
-| Archive view toggle                                                  | list header, right                      | list header, right                                        |
+| Planner / Table switch                                               | none                                    | list header, left, icons (the table's toolbar: names)     |
+| project filter                                                       | none (wande has no list filters)        | none for now (the table keeps it)                         |
+| Tasks / Routines (phase 4)                                           | top-level tabs                          | list header, after Planner / Table (a select when narrow) |
+| Mine / Agents / All (phase 3)                                        | none                                    | list header, a select after Tasks / Routines              |
+| environment select                                                   | none                                    | list header menu, only with more than one environment     |
+| New Task                                                             | list header, left                       | list header, right, `+`                                   |
+| Select (mode)                                                        | list header, right                      | list header menu                                          |
+| Archive view toggle                                                  | list header, right                      | list header menu, Show archive                            |
 | right-pane hide/show                                                 | list header, right (lg and up)          | list header, right (lg and up)                            |
 | select-mode count, bulk project/status/add-to-queue, bulk menu, exit | list header in select mode              | same                                                      |
 | title (click to edit, Enter saves)                                   | row                                     | row                                                       |

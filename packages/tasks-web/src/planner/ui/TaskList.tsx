@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { ArchiveIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
-import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import type { AutomationSnapshot } from "../data/automationStore.ts";
@@ -14,8 +12,6 @@ import type { PlannerTask } from "../data/pendingOps.ts";
 import { scrollMemory, type PlannerAudience, type PlannerKind } from "../data/preferences.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import { AutomationRow } from "./AutomationRow.tsx";
-import { BulkActions } from "./BulkActions.tsx";
-import { IconAction } from "./IconAction.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";
 import { ConfirmDeleteDialog, MoveBelowDialog } from "./TaskDialogs.tsx";
@@ -119,15 +115,15 @@ function AutomationSection(props: {
 }
 
 /**
- * Wande's EntityList: the header (New Task, Select, Archive, hide the week),
- * the rows in their order, Load more and the bottom drop zone.
+ * Wande's EntityList below its header (`ListHeader`): the rows in their
+ * order, Load more and the bottom drop zone. The move and delete dialogs are
+ * shared with the header's bulk controls.
  */
 export function TaskList(props: {
   readonly tasks: PaginatedTasks;
   /** The ordered active list, for "Move below another task" from the archive view too. */
   readonly activeTasks: readonly PlannerTask[];
   readonly showArchived: boolean;
-  readonly onToggleArchived: () => void;
   /** The automations when the list shows them (Routines, Agents or All). */
   readonly automations: AutomationSnapshot | null;
   readonly automationIndicator: ListDropIndicator | null;
@@ -138,12 +134,15 @@ export function TaskList(props: {
   readonly onSelectModeChange: (selectMode: boolean) => void;
   readonly onToggleSelected: (taskId: string) => void;
   readonly indicator: ListDropIndicator | null;
-  readonly canHideWeek: boolean;
-  readonly weekHidden: boolean;
-  readonly onToggleWeek: () => void;
+  /** Task ids for "Move below another task", or null while the dialog is closed. */
+  readonly moving: readonly string[] | null;
+  readonly onMovingChange: (ids: readonly string[] | null) => void;
+  /** Task ids to confirm deleting, or null while the dialog is closed. */
+  readonly deleting: readonly string[] | null;
+  readonly onDeletingChange: (ids: readonly string[] | null) => void;
   readonly centered: boolean;
 }) {
-  const { store, windows, audience, kind } = usePlanner();
+  const { store, audience, kind } = usePlanner();
   const noun = kind === "routine" ? "routine" : "task";
   // Routines × Agents: the agents' routines are automations, and nothing else shows.
   const automationsOnly = !plannerListShows(kind, audience).tasks;
@@ -152,8 +151,7 @@ export function TaskList(props: {
   const hiddenActive = !props.showArchived && hasMore;
   const lastId = results.at(-1)?.id ?? null;
   const [menu, setMenu] = useState<{ task: PlannerTask; point: MenuPoint } | null>(null);
-  const [moving, setMoving] = useState<readonly string[] | null>(null);
-  const [deleting, setDeleting] = useState<readonly string[] | null>(null);
+  const { moving, deleting, onMovingChange: setMoving, onDeletingChange: setDeleting } = props;
   const { setNodeRef: setBottomNode } = useDroppable({
     id: "task-list-bottom",
     data: { type: "list-bottom" },
@@ -168,10 +166,6 @@ export function TaskList(props: {
     return memory.follow(element);
   }, [props.showArchived]);
 
-  const selected = useMemo(
-    () => results.filter((task) => props.selectedIds.has(task.id)),
-    [results, props.selectedIds],
-  );
   const exitSelect = () => props.onSelectModeChange(false);
   const moveCandidates = useMemo(() => {
     if (!moving) return [];
@@ -193,78 +187,6 @@ export function TaskList(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* The outer side follows the page header's gutter, so the header's edges
-          line up with the toolbar's; the side towards the week keeps px-3. */}
-      <div
-        className={cn(
-          "flex h-12 shrink-0 items-center justify-between gap-2 border-b pl-(--workspace-gutter-start)",
-          props.canHideWeek && !props.weekHidden ? "pr-3" : "pr-(--workspace-gutter-end)",
-        )}
-      >
-        {props.selectMode ? (
-          <BulkActions
-            selected={selected}
-            queueDate={props.queueDate}
-            onExit={exitSelect}
-            onMoveUnder={() => setMoving(selected.map((task) => task.id))}
-            onDelete={() => setDeleting(selected.map((task) => task.id))}
-          />
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              {automationsOnly ? (
-                <Button size="sm" variant="outline" onClick={() => windows.openCreateAutomation()}>
-                  New Automation
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}
-                >
-                  {kind === "routine" ? "New Routine" : "New Task"}
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              {automationsOnly ? null : (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => props.onSelectModeChange(true)}
-                  >
-                    Select
-                  </Button>
-                  <IconAction
-                    label={
-                      props.showArchived
-                        ? `Show active ${noun}s`
-                        : `Show done and archived ${noun}s`
-                    }
-                    variant={props.showArchived ? "default" : "outline"}
-                    size="icon-sm"
-                    pressed={props.showArchived}
-                    onClick={props.onToggleArchived}
-                  >
-                    <ArchiveIcon />
-                  </IconAction>
-                </>
-              )}
-              {props.canHideWeek ? (
-                <IconAction
-                  label={props.weekHidden ? "Show the week" : "Hide the week"}
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={props.onToggleWeek}
-                >
-                  {props.weekHidden ? <PanelRightOpenIcon /> : <PanelRightCloseIcon />}
-                </IconAction>
-              ) : null}
-            </div>
-          </>
-        )}
-      </div>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className={props.centered ? "mx-auto w-full max-w-3xl py-2" : "w-full py-2"}>
           {automationsOnly ? null : status === "LoadingFirstPage" && results.length === 0 ? (

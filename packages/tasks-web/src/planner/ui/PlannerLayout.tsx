@@ -1,8 +1,9 @@
 import { useRef, useState, type ReactNode } from "react";
 
+import { useSidebar } from "../../../../../apps/web/src/components/ui/sidebar.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { useMediaQuery } from "../../../../../apps/web/src/hooks/useMediaQuery.ts";
-import { MIN_LIST_WIDTH } from "../data/preferences.ts";
+import { LIST_HEADER_WIDTH, MIN_LIST_WIDTH } from "../data/preferences.ts";
 
 /** Stacked layout's week height: hidden, split, or the whole pane (wande's three modes). */
 type StackedMode = 0 | 1 | 2;
@@ -11,17 +12,24 @@ const STACKED_HEIGHTS: Record<StackedMode, string> = { 0: "0px", 1: "40%", 2: "1
 /**
  * Wande's ResizableLayout. From `lg` up: the list on the left at a width the
  * person drags (kept per device) and the week on the right, which the list
- * header can hide. Below `lg`: the week above the list, with a bar that snaps
- * the week to hidden, split or full.
+ * header can hide; the two column headers form the title bar row, and the
+ * week pane's `border-l` divides both. Below `lg`: the list header on top,
+ * then the week above the list, with a bar that snaps the week to hidden,
+ * split or full.
  */
 export function PlannerLayout(props: {
+  readonly listHeader: ReactNode;
   readonly list: ReactNode;
+  readonly weekHeader: ReactNode;
   readonly week: ReactNode;
   readonly listWidth: number;
   readonly onListWidthChange: (width: number) => void;
   readonly weekHidden: boolean;
 }) {
   const wide = useMediaQuery("lg");
+  // With the sidebar collapsed the list header starts after the sidebar toggle
+  // (and the macOS traffic lights), so the column grows to keep its controls.
+  const sidebarCollapsed = useSidebar().state === "collapsed";
   const container = useRef<HTMLDivElement>(null);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const [mode, setMode] = useState<StackedMode>(1);
@@ -31,19 +39,22 @@ export function PlannerLayout(props: {
     return (
       <div ref={container} className="absolute inset-0 flex min-h-0">
         <div
-          className={cn("relative min-h-0", props.weekHidden ? "flex-1" : "shrink-0")}
+          className={cn("relative flex min-h-0 flex-col", props.weekHidden ? "flex-1" : "shrink-0")}
           style={
             props.weekHidden
               ? undefined
               : {
                   width: dragWidth ?? props.listWidth,
-                  minWidth: MIN_LIST_WIDTH,
+                  minWidth: sidebarCollapsed
+                    ? `max(${MIN_LIST_WIDTH}px, calc(var(--workspace-titlebar-content-left) + var(--workspace-gutter-end) + ${LIST_HEADER_WIDTH}px))`
+                    : MIN_LIST_WIDTH,
                   // The week keeps at least 320px, as wande's dynamic maximum.
                   maxWidth: "calc(100% - 320px)",
                 }
           }
         >
-          {props.list}
+          {props.listHeader}
+          <div className="relative min-h-0 flex-1">{props.list}</div>
           {props.weekHidden ? null : (
             <div
               className="absolute top-0 -right-1 z-20 h-full w-2 cursor-ew-resize touch-none"
@@ -79,57 +90,64 @@ export function PlannerLayout(props: {
           )}
         </div>
         {props.weekHidden ? null : (
-          <div className="relative min-h-0 flex-1 border-l">{props.week}</div>
+          <div className="relative flex min-h-0 flex-1 flex-col border-l">
+            {props.weekHeader}
+            <div className="relative min-h-0 flex-1">{props.week}</div>
+          </div>
         )}
       </div>
     );
 
   return (
-    <div ref={container} className="absolute inset-0 flex min-h-0 flex-col">
-      <div
-        className="relative min-h-0 shrink-0 overflow-hidden"
-        style={{ height: dragHeight ?? STACKED_HEIGHTS[mode] }}
-      >
-        {props.week}
-      </div>
-      <div className="relative z-10 flex h-0 justify-center">
+    <div className="absolute inset-0 flex min-h-0 flex-col">
+      {props.listHeader}
+      <div ref={container} className="relative flex min-h-0 flex-1 flex-col">
         <div
-          className="-mt-2.5 h-5 w-12 cursor-ns-resize touch-none rounded-full border bg-background shadow-sm"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize the week"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            const target = event.currentTarget;
-            target.setPointerCapture(event.pointerId);
-            const top = container.current?.getBoundingClientRect().top ?? 0;
-            const total = container.current?.clientHeight ?? 1;
-            let height = 0;
-            const move = (moveEvent: PointerEvent) => {
-              height = Math.max(0, Math.min(total, moveEvent.clientY - top));
-              setDragHeight(height);
-            };
-            const up = () => {
-              target.removeEventListener("pointermove", move);
-              target.removeEventListener("pointerup", up);
-              target.removeEventListener("pointercancel", up);
-              setDragHeight(null);
-              const share = height / total;
-              setMode(share < 0.2 ? 0 : share < 0.6 ? 1 : 2);
-            };
-            target.addEventListener("pointermove", move);
-            target.addEventListener("pointerup", up);
-            target.addEventListener("pointercancel", up);
-          }}
-        />
-      </div>
-      <div
-        className={cn(
-          "relative min-h-0 flex-1 border-t",
-          mode === 2 && dragHeight === null && "hidden",
-        )}
-      >
-        {props.list}
+          className="relative flex min-h-0 shrink-0 flex-col overflow-hidden"
+          style={{ height: dragHeight ?? STACKED_HEIGHTS[mode] }}
+        >
+          {props.weekHeader}
+          <div className="relative min-h-0 flex-1">{props.week}</div>
+        </div>
+        <div className="relative z-10 flex h-0 justify-center">
+          <div
+            className="-mt-2.5 h-5 w-12 cursor-ns-resize touch-none rounded-full border bg-background shadow-sm"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize the week"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              const target = event.currentTarget;
+              target.setPointerCapture(event.pointerId);
+              const top = container.current?.getBoundingClientRect().top ?? 0;
+              const total = container.current?.clientHeight ?? 1;
+              let height = 0;
+              const move = (moveEvent: PointerEvent) => {
+                height = Math.max(0, Math.min(total, moveEvent.clientY - top));
+                setDragHeight(height);
+              };
+              const up = () => {
+                target.removeEventListener("pointermove", move);
+                target.removeEventListener("pointerup", up);
+                target.removeEventListener("pointercancel", up);
+                setDragHeight(null);
+                const share = height / total;
+                setMode(share < 0.2 ? 0 : share < 0.6 ? 1 : 2);
+              };
+              target.addEventListener("pointermove", move);
+              target.addEventListener("pointerup", up);
+              target.addEventListener("pointercancel", up);
+            }}
+          />
+        </div>
+        <div
+          className={cn(
+            "relative min-h-0 flex-1 border-t",
+            mode === 2 && dragHeight === null && "hidden",
+          )}
+        >
+          {props.list}
+        </div>
       </div>
     </div>
   );

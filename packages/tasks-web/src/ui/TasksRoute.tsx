@@ -19,6 +19,8 @@ import { useTasksPageFilters } from "./pageFilters.ts";
  * /tasks has two modes: the Planner (person tasks, wande's layout, one
  * environment) and the Table (every task, every environment). The URL's
  * `view` wins, then the last choice; a `task` link always opens the table.
+ * Only the table filters by project; the planner leaves the stored choice
+ * (shared with Agents) as it is and lists every project.
  */
 export default function TasksRoute() {
   const navigate = useNavigate();
@@ -43,11 +45,13 @@ export default function TasksRoute() {
     },
     [navigate, setStoredView],
   );
-  const viewSwitch = <TasksViewSwitch value={view} onChange={setView} />;
   return view === "planner" ? (
-    <PlannerRoute viewSwitch={viewSwitch} onShowTable={() => setView("table")} />
+    <PlannerRoute
+      viewSwitch={<TasksViewSwitch value={view} onChange={setView} icons />}
+      onShowTable={() => setView("table")}
+    />
   ) : (
-    <TasksTableRoute viewSwitch={viewSwitch} />
+    <TasksTableRoute viewSwitch={<TasksViewSwitch value={view} onChange={setView} />} />
   );
 }
 
@@ -55,7 +59,6 @@ function PlannerRoute(props: { readonly viewSwitch: ReactNode; readonly onShowTa
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const data = useTasksWorkspaceData(false);
-  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const navigateBack = useCallback(() => {
     if (canGoBack) window.history.back();
     else void navigate({ to: "/" } as never);
@@ -63,16 +66,8 @@ function PlannerRoute(props: { readonly viewSwitch: ReactNode; readonly onShowTa
   return (
     <PlannerView
       viewSwitch={props.viewSwitch}
-      projectSelect={
-        <ProjectFilterSelect
-          projectGroups={projectGroups}
-          value={projectFilter?.key ?? null}
-          onChange={setProjectKey}
-        />
-      }
       projects={data.projects}
       taskTargets={data.taskTargets}
-      projectFilter={projectFilter}
       agents={data.agents.agents}
       onShowTable={props.onShowTable}
       onOpenTask={(environmentId, taskId) => {

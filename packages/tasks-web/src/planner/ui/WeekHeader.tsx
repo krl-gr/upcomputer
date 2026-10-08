@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
-import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { Calendar } from "../../../../../apps/web/src/components/ui/calendar.tsx";
 import { Label } from "../../../../../apps/web/src/components/ui/label.tsx";
 import {
@@ -26,6 +25,8 @@ import {
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
 import { Switch } from "../../../../../apps/web/src/components/ui/switch.tsx";
+import { isElectron } from "../../../../../apps/web/src/env.ts";
+import { WorkspacePageHeader } from "../../../../../apps/web/src/extensionApi.ts";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -189,16 +190,20 @@ export function WeekHeader(props: {
   readonly onMoveSelected: (date: string) => void;
   readonly onCopySelected: (dates: readonly string[], at: "top" | "bottom") => void;
   readonly onDeleteSelected: () => void;
-  /** The stacked layout: the week spans the page, so both sides meet its edges. */
-  readonly fullWidth: boolean;
+  /**
+   * Beside the list (from `lg` up) the header is the title bar's right half,
+   * as the right panel's tab bar is beside the thread header. Stacked under
+   * the list header it is a plain row.
+   */
+  readonly titleBar: boolean;
 }) {
   const { preferences } = usePlanner();
-  // The outer sides follow the page header's gutter, so the header's edges line
-  // up with the toolbar's; the side towards the list keeps px-3.
-  const headerClass = cn(
-    "flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-(--workspace-gutter-end)",
-    props.fullWidth ? "pl-(--workspace-gutter-start)" : "pl-3",
-  );
+  // The left edge belongs to the list column, so no collapsed-sidebar inset.
+  const header = {
+    electron: isElectron && props.titleBar,
+    clearCollapsedSidebar: false,
+    className: "justify-between border-b border-border",
+  };
   const [menuOpen, setMenuOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -212,7 +217,7 @@ export function WeekHeader(props: {
 
   if (props.selectionMode)
     return (
-      <div className={headerClass}>
+      <WorkspacePageHeader {...header}>
         <h2 className="text-sm font-semibold text-foreground">
           Selected{" "}
           <span className="font-medium text-muted-foreground tabular-nums">
@@ -317,11 +322,11 @@ export function WeekHeader(props: {
           onOpenChange={setDeleting}
           onConfirm={props.onDeleteSelected}
         />
-      </div>
+      </WorkspacePageHeader>
     );
 
   return (
-    <div className={headerClass}>
+    <WorkspacePageHeader {...header}>
       <h2 className="truncate text-sm font-semibold text-foreground">
         {monthFormatter.format(first)}{" "}
         <span className="text-muted-foreground">{first.getFullYear()}</span>
@@ -436,6 +441,6 @@ export function WeekHeader(props: {
         </Popover>
         <PlannerSettings onChange={props.onPreferencesChange} />
       </div>
-    </div>
+    </WorkspacePageHeader>
   );
 }

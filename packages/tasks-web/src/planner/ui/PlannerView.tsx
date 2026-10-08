@@ -19,7 +19,6 @@ import {
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
-import type { ViewProjectFilter } from "../../ui/projectFilter.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
 import { WorkspaceViewLayout } from "../../ui/WorkspaceViewLayout.tsx";
 import {
@@ -46,12 +45,11 @@ import {
 import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
 import { weekRangeOf } from "../logic/progress.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
-import { AudienceSwitch } from "./AudienceSwitch.tsx";
 import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
-import { KindSwitch } from "./KindSwitch.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
+import { ListHeader, type PlannerEnvironmentOption } from "./ListHeader.tsx";
 import { PlannerLayout } from "./PlannerLayout.tsx";
 import { isInboxRoot, type PlannerProject } from "./ProjectChip.tsx";
 import { TaskList } from "./TaskList.tsx";
@@ -66,9 +64,13 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
   readonly projects: readonly PlannerProject[];
-  readonly projectIds: readonly string[] | null;
+  readonly viewSwitch: ReactNode;
+  readonly environments: readonly PlannerEnvironmentOption[];
+  readonly onEnvironmentChange: (environmentId: string) => void;
   readonly audience: PlannerAudience;
+  readonly onAudienceChange: (audience: PlannerAudience) => void;
   readonly kind: PlannerKind;
+  readonly onKindChange: (kind: PlannerKind) => void;
   readonly triggerTags: ReadonlySet<string>;
   readonly onOpenTask: (taskId: string) => void;
 }) {
@@ -87,24 +89,13 @@ function PlannerBody(props: {
   // Routines × Agents lists automations only, which have no archive.
   const showArchived = archiveToggled && shows.tasks;
   const showsAutomations = shows.automations;
-  const automationSnapshot = useAutomations(automationStore, showsAutomations);
-  const { projectIds } = props;
-  const automations = useMemo(
-    () =>
-      projectIds === null
-        ? automationSnapshot
-        : {
-            ...automationSnapshot,
-            automations: automationSnapshot.automations.filter((automation) =>
-              projectIds.includes(automation.projectId),
-            ),
-          },
-    [automationSnapshot, projectIds],
-  );
+  const automations = useAutomations(automationStore, showsAutomations);
   const [listSelect, setListSelect] = useState<{ active: boolean; ids: ReadonlySet<string> }>({
     active: false,
     ids: new Set(),
   });
+  const [moving, setMoving] = useState<readonly string[] | null>(null);
+  const [deleting, setDeleting] = useState<readonly string[] | null>(null);
   // A selection belongs to one list: switching Tasks / Routines leaves select mode.
   const [selectionKind, setSelectionKind] = useState(props.kind);
   if (selectionKind !== props.kind) {
@@ -114,18 +105,23 @@ function PlannerBody(props: {
   const [weekSelection, setWeekSelection] = useState<WeekSelection>(NO_SELECTION);
   const [entryMenu, setEntryMenu] = useState<EntryMenuTarget | null>(null);
 
+  // The planner lists every project for now; rows keep their project chips.
   useEffect(() => {
     store.setQuery({
-      projectIds: props.projectIds as never,
+      projectIds: null,
       archiveVisible: showArchived,
       audience: props.audience,
       kind: props.kind,
     });
-  }, [store, props.projectIds, showArchived, props.audience, props.kind]);
+  }, [store, showArchived, props.audience, props.kind]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
   const list = showArchived ? archived : active;
+  const selectedTasks = useMemo(
+    () => list.results.filter((task) => listSelect.ids.has(task.id)),
+    [list.results, listSelect.ids],
+  );
   const dates = useMemo(
     () => dateRange(viewState.startDate, viewState.dayCount),
     [viewState.startDate, viewState.dayCount],
@@ -223,46 +219,48 @@ function PlannerBody(props: {
     });
   };
   const selectedWeekIds = [...weekSelection.ids];
+  const weekHeader = (
+    <WeekHeader
+      startDate={viewState.startDate}
+      dayCount={viewState.dayCount}
+      onNavigate={navigate}
+      onGoToDate={(date) =>
+        updateViewState({
+          startDate: viewStartFor(date, viewState.dayCount, preferences.weekStartDay),
+        })
+      }
+      onDayCountChange={(dayCount) => updateViewState({ dayCount })}
+      onPreferencesChange={updatePreferences}
+      selectionMode={weekSelection.active}
+      selectedCount={weekSelection.ids.size}
+      onSelectionModeChange={(activeMode) =>
+        setWeekSelection(activeMode ? { active: true, ids: new Set() } : NO_SELECTION)
+      }
+      onMoveSelected={(date) => {
+        void store.moveEntries({
+          ids: selectedWeekIds as never,
+          date,
+          placement: { at: "bottom" },
+        });
+        exitWeekSelection();
+      }}
+      onCopySelected={(copyDates, at) => {
+        void store.copyEntries({
+          ids: selectedWeekIds as never,
+          dates: copyDates as string[],
+          placement: { at },
+        });
+        exitWeekSelection();
+      }}
+      onDeleteSelected={() => {
+        void store.deleteEntries(selectedWeekIds);
+        exitWeekSelection();
+      }}
+      titleBar={wide}
+    />
+  );
   const weekContent = (
     <div className="flex h-full min-h-0 flex-col">
-      <WeekHeader
-        startDate={viewState.startDate}
-        dayCount={viewState.dayCount}
-        onNavigate={navigate}
-        onGoToDate={(date) =>
-          updateViewState({
-            startDate: viewStartFor(date, viewState.dayCount, preferences.weekStartDay),
-          })
-        }
-        onDayCountChange={(dayCount) => updateViewState({ dayCount })}
-        onPreferencesChange={updatePreferences}
-        selectionMode={weekSelection.active}
-        selectedCount={weekSelection.ids.size}
-        onSelectionModeChange={(activeMode) =>
-          setWeekSelection(activeMode ? { active: true, ids: new Set() } : NO_SELECTION)
-        }
-        onMoveSelected={(date) => {
-          void store.moveEntries({
-            ids: selectedWeekIds as never,
-            date,
-            placement: { at: "bottom" },
-          });
-          exitWeekSelection();
-        }}
-        onCopySelected={(copyDates, at) => {
-          void store.copyEntries({
-            ids: selectedWeekIds as never,
-            dates: copyDates as string[],
-            placement: { at },
-          });
-          exitWeekSelection();
-        }}
-        onDeleteSelected={() => {
-          void store.deleteEntries(selectedWeekIds);
-          exitWeekSelection();
-        }}
-        fullWidth={!wide}
-      />
       {snapshot.rangeError ? (
         <p className="border-b px-3 py-1.5 text-xs text-destructive-foreground">
           {snapshot.rangeError}
@@ -306,16 +304,38 @@ function PlannerBody(props: {
           listWidth={viewState.listWidth}
           onListWidthChange={(listWidth) => updateViewState({ listWidth })}
           weekHidden={weekHidden}
+          weekHeader={weekHeader}
           week={weekContent}
-          list={
-            <TaskList
-              tasks={list}
-              activeTasks={active.results}
+          listHeader={
+            <ListHeader
+              viewSwitch={props.viewSwitch}
+              onKindChange={props.onKindChange}
+              onAudienceChange={props.onAudienceChange}
+              environments={props.environments}
+              onEnvironmentChange={props.onEnvironmentChange}
               showArchived={showArchived}
               onToggleArchived={() => {
                 setShowArchived((current) => !current);
                 setListSelect({ active: false, ids: new Set() });
               }}
+              selectMode={listSelect.active}
+              selected={selectedTasks}
+              queueDate={markedDate}
+              onSelectModeChange={(activeMode) =>
+                setListSelect({ active: activeMode, ids: new Set() })
+              }
+              onMoveUnder={() => setMoving(selectedTasks.map((task) => task.id))}
+              onDelete={() => setDeleting(selectedTasks.map((task) => task.id))}
+              canHideWeek={wide}
+              weekHidden={weekHidden}
+              onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
+            />
+          }
+          list={
+            <TaskList
+              tasks={list}
+              activeTasks={active.results}
+              showArchived={showArchived}
               automations={showsAutomations ? automations : null}
               automationIndicator={dnd.indicators.automation}
               progress={progress}
@@ -334,9 +354,10 @@ function PlannerBody(props: {
                 })
               }
               indicator={dnd.indicators.list}
-              canHideWeek={wide}
-              weekHidden={weekHidden}
-              onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
+              moving={moving}
+              onMovingChange={setMoving}
+              deleting={deleting}
+              onDeletingChange={setDeleting}
               centered={weekHidden}
             />
           }
@@ -359,7 +380,7 @@ function PlannerBody(props: {
         windows={openWindows}
         snapshot={snapshot}
         queueDate={markedDate}
-        defaultProjectId={props.projectIds?.length === 1 ? props.projectIds[0]! : null}
+        defaultProjectId={null}
       />
     </PlannerContext>
   );
@@ -392,17 +413,6 @@ function plannerProjectsOf(
     }));
 }
 
-function filterProjectIds(
-  filter: ViewProjectFilter | null,
-  environmentId: EnvironmentId | null,
-): readonly string[] | null {
-  return filter
-    ? filter.projectRefs
-        .filter((ref) => ref.environmentId === environmentId)
-        .map((ref) => ref.projectId)
-    : null;
-}
-
 function Notice(props: { readonly children: ReactNode; readonly action?: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
@@ -414,14 +424,13 @@ function Notice(props: { readonly children: ReactNode; readonly action?: ReactNo
 
 /**
  * The Planner mode of /tasks: wande's tasks screen for one environment at a
- * time (its schedule order lives in that environment's database).
+ * time (its schedule order lives in that environment's database). It has no
+ * page header: the list and week headers are the title bar row.
  */
 export function PlannerView(props: {
   readonly viewSwitch: ReactNode;
-  readonly projectSelect: ReactNode;
   readonly projects: readonly TasksWebProject[];
   readonly taskTargets: readonly TasksStateTarget[];
-  readonly projectFilter: ViewProjectFilter | null;
   /** Every environment's agents; the planner suggests and marks their trigger tags. */
   readonly agents: ReadonlyArray<{
     readonly environmentId: string;
@@ -435,8 +444,6 @@ export function PlannerView(props: {
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
-  const environmentLabel = (id: string) =>
-    environments.find((environment) => environment.environmentId === id)?.label ?? id;
   const [storedEnvironment, setStoredEnvironment] = useStoredPlannerEnvironment();
   const candidates = useMemo(
     () => props.taskTargets.filter((target) => target.access.canReadTasks),
@@ -450,10 +457,15 @@ export function PlannerView(props: {
     () => plannerProjectsOf(props.projects, environmentId),
     [props.projects, environmentId],
   );
-  // The filter's identity changes only with the choice (usePagesProjectFilter).
-  const projectIds = useMemo(
-    () => filterProjectIds(props.projectFilter, environmentId),
-    [props.projectFilter, environmentId],
+  const environmentOptions = useMemo(
+    () =>
+      candidates.map((target) => ({
+        id: target.environmentId,
+        label:
+          environments.find((environment) => environment.environmentId === target.environmentId)
+            ?.label ?? target.environmentId,
+      })),
+    [candidates, environments],
   );
   const availability = usePlannerAvailability(environmentId);
   const [audience, setAudience] = useStoredPlannerAudience();
@@ -470,17 +482,17 @@ export function PlannerView(props: {
     [environmentId, onOpenTask],
   );
 
+  const ready = environmentId !== null && availability === "enabled";
   return (
     <WorkspaceViewLayout
       title="Tasks"
-      navigateOnEscape={false}
-      inset={false}
-      onNavigateBack={props.onNavigateBack}
+      // Until the planner shows, the page header keeps the title bar and the view switch.
+      header={!ready}
       toolbar={
         <>
           {props.viewSwitch}
           <span className="min-w-0 flex-1" />
-          {candidates.length > 1 && environmentId ? (
+          {environmentOptions.length > 1 && environmentId ? (
             <Select
               value={environmentId}
               onValueChange={(value) => {
@@ -488,25 +500,26 @@ export function PlannerView(props: {
               }}
             >
               <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Environment">
-                <SelectValue>{environmentLabel(environmentId)}</SelectValue>
+                <SelectValue>
+                  {environmentOptions.find((option) => option.id === environmentId)?.label}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                {candidates.map((target) => (
-                  <SelectItem key={target.environmentId} value={target.environmentId}>
-                    {environmentLabel(target.environmentId)}
+                {environmentOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
                   </SelectItem>
                 ))}
               </SelectPopup>
             </Select>
           ) : null}
-          <KindSwitch value={kind} onChange={setKind} />
-          <AudienceSwitch value={audience} onChange={setAudience} />
-          {props.projectSelect}
         </>
       }
+      navigateOnEscape={false}
+      inset={false}
+      onNavigateBack={props.onNavigateBack}
     >
-      {/* A divider under the toolbar, edge to edge like the planner's pane borders. */}
-      <div className="flex min-h-0 flex-1 flex-col border-t">
+      <div className="flex min-h-0 flex-1 flex-col">
         {environmentId === null ? (
           <Notice>No connected environment serves Tasks.</Notice>
         ) : availability === "loading" ? (
@@ -527,9 +540,13 @@ export function PlannerView(props: {
               key={environmentId}
               environmentId={environmentId}
               projects={plannerProjects}
-              projectIds={projectIds}
+              viewSwitch={props.viewSwitch}
+              environments={environmentOptions}
+              onEnvironmentChange={setStoredEnvironment}
               audience={audience}
+              onAudienceChange={setAudience}
               kind={kind}
+              onKindChange={setKind}
               triggerTags={triggerTags}
               onOpenTask={openTask}
             />

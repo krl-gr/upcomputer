@@ -63,8 +63,14 @@ function localeWeekStart(): number {
   }
 }
 
-export const DEFAULT_LIST_WIDTH = 384;
-export const MIN_LIST_WIDTH = 280;
+/**
+ * The list header's controls between its gutters, with Tasks / Routines as a
+ * select (`ListHeader`; the switch needs 424px). The list column is at least
+ * this plus the gutters, and by default wide enough for the switch.
+ */
+export const LIST_HEADER_WIDTH = 376;
+export const DEFAULT_LIST_WIDTH = 464;
+export const MIN_LIST_WIDTH = 420;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 

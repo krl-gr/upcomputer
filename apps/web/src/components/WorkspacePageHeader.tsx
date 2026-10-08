@@ -7,11 +7,17 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 export function WorkspacePageHeader({
   electron = false,
   reserveNativeControls = electron,
+  clearCollapsedSidebar = true,
   className,
   ...props
 }: ComponentPropsWithoutRef<"header"> & {
   readonly electron?: boolean;
   readonly reserveNativeControls?: boolean;
+  /**
+   * Fork: off for a header that does not start at the window's left edge (a
+   * right-hand pane's), so it does not pad for the collapsed sidebar's toggle.
+   */
+  readonly clearCollapsedSidebar?: boolean;
 }) {
   return (
     <header
@@ -19,7 +25,7 @@ export function WorkspacePageHeader({
         "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-3 pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left,padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         electron && "drag-region",
         reserveNativeControls && "wco:pr-(--workspace-native-controls-inset)",
-        COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+        clearCollapsedSidebar && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         className,
       )}
       {...props}

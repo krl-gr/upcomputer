@@ -36,6 +36,7 @@ export function WorkspaceViewLayout({
   onNavigateBack,
   navigateOnEscape = true,
   inset = true,
+  header = true,
 }: {
   readonly title: string;
   readonly action?: WorkspaceViewAction | undefined;
@@ -50,6 +51,11 @@ export function WorkspaceViewLayout({
    * pane borders run edge to edge, and pads its own content.
    */
   readonly inset?: boolean;
+  /**
+   * Off for the planner: its list and week headers are the page's title bar
+   * row, so the page header (and with it the title) is left out.
+   */
+  readonly header?: boolean;
 }) {
   const navigateBack = useCallback(() => onNavigateBack(), [onNavigateBack]);
 
@@ -67,46 +73,48 @@ export function WorkspaceViewLayout({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground">
-        <WorkspacePageHeader electron={isElectron}>
-          {leadingAction ? (
-            <button
-              aria-label={leadingAction.ariaLabel}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]"
-              disabled={leadingAction.disabled}
-              onClick={leadingAction.onClick}
-              title={leadingAction.title ?? leadingAction.ariaLabel}
-              type="button"
-            >
-              {leadingAction.icon}
-              {leadingAction.label ? <span>{leadingAction.label}</span> : null}
-            </button>
-          ) : null}
-          {title ? (
-            <h1
-              className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
-            >
-              {title}
-            </h1>
-          ) : null}
-          {toolbar ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {toolbar}
-            </div>
-          ) : null}
-          {action ? (
-            <button
-              aria-label={action.ariaLabel}
-              className={`${action.label ? "h-8 gap-1.5 rounded-md px-2 font-medium text-foreground" : "size-8 rounded-full text-muted-foreground"} inline-flex shrink-0 items-center justify-center transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]`}
-              disabled={action.disabled}
-              onClick={action.onClick}
-              title={action.title ?? action.ariaLabel}
-              type="button"
-            >
-              {action.hideIcon ? null : (action.icon ?? <PlusIcon className="size-4" />)}
-              {action.label ? <span className="text-sm">{action.label}</span> : null}
-            </button>
-          ) : null}
-        </WorkspacePageHeader>
+        {header ? (
+          <WorkspacePageHeader electron={isElectron}>
+            {leadingAction ? (
+              <button
+                aria-label={leadingAction.ariaLabel}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]"
+                disabled={leadingAction.disabled}
+                onClick={leadingAction.onClick}
+                title={leadingAction.title ?? leadingAction.ariaLabel}
+                type="button"
+              >
+                {leadingAction.icon}
+                {leadingAction.label ? <span>{leadingAction.label}</span> : null}
+              </button>
+            ) : null}
+            {title ? (
+              <h1
+                className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
+              >
+                {title}
+              </h1>
+            ) : null}
+            {toolbar ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {toolbar}
+              </div>
+            ) : null}
+            {action ? (
+              <button
+                aria-label={action.ariaLabel}
+                className={`${action.label ? "h-8 gap-1.5 rounded-md px-2 font-medium text-foreground" : "size-8 rounded-full text-muted-foreground"} inline-flex shrink-0 items-center justify-center transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]`}
+                disabled={action.disabled}
+                onClick={action.onClick}
+                title={action.title ?? action.ariaLabel}
+                type="button"
+              >
+                {action.hideIcon ? null : (action.icon ?? <PlusIcon className="size-4" />)}
+                {action.label ? <span className="text-sm">{action.label}</span> : null}
+              </button>
+            ) : null}
+          </WorkspacePageHeader>
+        ) : null}
         <div
           className={`min-h-0 flex flex-1 flex-col overflow-auto ${inset ? WORKSPACE_CONTENT_GUTTER_CLASS : ""}`}
         >
