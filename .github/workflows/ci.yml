@@ -342,6 +342,7 @@ jobs:
   # the diff cannot be resolved, the lint runs.
   mobile_native_changes:
     name: Mobile Native Changes
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -419,7 +420,7 @@ jobs:
     needs: mobile_native_changes
     # Skip only on an explicit "no": a gate job that failed or errored leaves the
     # output empty, and that must run the lint rather than silently skip it.
-    if: ${{ !cancelled() && needs.mobile_native_changes.outputs.changed != 'false' }}
+    if: ${{ !cancelled() && github.repository == 'pingdotgg/t3code' && needs.mobile_native_changes.outputs.changed != 'false' }}
     runs-on: macos-15
     timeout-minutes: 10
     steps:
@@ -501,7 +502,8 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          # Only the macOS lint skips on purpose, when no native mobile code changed.
+          # Only the mobile native jobs skip on purpose: when no native mobile code
+          # changed, and outside pingdotgg/t3code, which ships the mobile app.
           echo "$RESULTS" | jq -e 'all(to_entries[];
             .value.result == "success"
-            or (.key == "mobile_native_static_analysis" and .value.result == "skipped"))' > /dev/null
+            or ((.key | startswith("mobile_native_")) and .value.result == "skipped"))' > /dev/null
