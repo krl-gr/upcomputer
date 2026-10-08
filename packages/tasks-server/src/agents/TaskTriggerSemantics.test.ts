@@ -560,7 +560,7 @@ function fakeThreads() {
 }
 
 async function withScheduler(
-  use: (harness: Harness) => Effect.Effect<void, unknown, SqlClient.SqlClient>,
+  use: (harness: Harness) => Effect.Effect<void, unknown, SqlClient.SqlClient | TaskRepository>,
   legacy?: (db: NodeSqlite.DatabaseSync) => void,
   /** Wraps the scheduler's repository, e.g. to pause a call and force an interleaving. */
   wrapRepository?: (repository: TaskRepositoryShape) => TaskRepositoryShape,

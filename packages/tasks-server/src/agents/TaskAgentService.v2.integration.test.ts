@@ -348,7 +348,6 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
     Layer.provide(Layer.succeed(ServerProduct, TASKS_PRODUCT)),
   );
   // Feature services are erased at the product boundary; the tests read them.
-  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   return composed as Layer.Layer<
     Layer.Success<typeof composed> | TaskRepository | TaskAgentService | TaskSourceWake,
     Layer.Error<typeof composed>
