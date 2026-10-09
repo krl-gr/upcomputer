@@ -63,6 +63,7 @@ import {
   TASK_RANK_STEP,
   encodeTaskRank,
   rebalancedTaskRanks,
+  taskRankAfter,
   taskRankBetween,
 } from "./taskRank.ts";
 
@@ -894,10 +895,10 @@ const makeTaskRepository = Effect.gen(function* () {
     execute: () => sql`SELECT id FROM tasks ORDER BY rank ASC, id ASC`,
   });
 
-  const getFirstTaskRankRow = SqlSchema.findOneOption({
+  const getLastTaskRankRow = SqlSchema.findOneOption({
     Request: Schema.Void,
     Result: Schema.Struct({ rank: Task.fields.rank }),
-    execute: () => sql`SELECT rank FROM tasks ORDER BY rank ASC, id ASC LIMIT 1`,
+    execute: () => sql`SELECT rank FROM tasks ORDER BY rank DESC, id DESC LIMIT 1`,
   });
 
   const listTaskTags = SqlSchema.findAll({
@@ -1780,15 +1781,17 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
-  const prependRank = () =>
-    getFirstTaskRankRow().pipe(
-      Effect.flatMap((first) => {
-        if (Option.isNone(first)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
-        const candidate = taskRankBetween(null, first.value.rank);
+  // New tasks join the end of the order, so tasks created one after another
+  // keep that order in the list and in every queue hand-off that follows it.
+  const appendRank = () =>
+    getLastTaskRankRow().pipe(
+      Effect.flatMap((last) => {
+        if (Option.isNone(last)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
+        const candidate = taskRankAfter(last.value.rank);
         if (candidate) return Effect.succeed(candidate);
         return listTaskIdRows().pipe(
-          Effect.flatMap(rebalanceTaskRows),
-          Effect.as(encodeTaskRank(TASK_RANK_STEP / 2n)),
+          Effect.tap(rebalanceTaskRows),
+          Effect.map((rows) => encodeTaskRank(BigInt(rows.length + 1) * TASK_RANK_STEP)),
         );
       }),
     );
@@ -1798,7 +1801,7 @@ const makeTaskRepository = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           const existing = yield* getById({ id: task.id });
-          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* prependRank());
+          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* appendRank());
           const origin = Option.isSome(existing)
             ? {
                 rootThreadId: existing.value.rootThreadId,

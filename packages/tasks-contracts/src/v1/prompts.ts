@@ -152,7 +152,7 @@ Choosing the agent: unless the user's recorded preferences or explicit words alr
 
 Assignment: add the chosen agent's trigger tag and record its id in metadata.targetAgentId. A run id exists only after the run starts.
 
-Queue: an agent works through its tasks one at a time. If it has no task in its start status and none In Progress (task_search with its tag), create the task directly in its start status so it starts now. Otherwise create it in Backlog; the agent's queue hand-off activates it later. An agent without start statuses starts on its tag in any status, so add the tag only when the task should start. Never start several tasks of one queue at once unless the user asked for fan-out.`,
+Queue: an agent works through its tasks one at a time. If it has no task in its start status and none In Progress (task_search with its tag), create the task directly in its start status so it starts now. Otherwise create it in Backlog; the agent's queue hand-off activates it later. New tasks join the end of the list, so create queued tasks in the order they should run; no reorder is needed. An agent without start statuses starts on its tag in any status, so add the tag only when the task should start. Never start several tasks of one queue at once unless the user asked for fan-out.`,
   agentCreation: `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
 
 Adapt these templates for the agent's instructions.
@@ -164,7 +164,7 @@ Queue worker (developer), started by its tag in its start status, e.g. To Do:
 - Commit only your own files, and only if the user allowed commits.
 - Run every command in the foreground with a timeout; start no background processes.
 - Keep the task output current.
-- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the oldest Backlog task with your tag to your start status. Never more than one.
+- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the first Backlog task with your tag in task_search order (the list order) to your start status. Never more than one.
 - Final mutation: a single task_update to the review status, e.g. Needs Review, with assigneeAgentRunId: null.
 
 Reviewer, started by its own tag or status:
