@@ -406,7 +406,8 @@ interface FakeThread {
 type Call =
   | { readonly type: "thread.create"; readonly threadId: string }
   | { readonly type: "turn"; readonly threadId: string; readonly text: string }
-  | { readonly type: "interrupt"; readonly threadId: string };
+  | { readonly type: "interrupt"; readonly threadId: string }
+  | { readonly type: "settle"; readonly threadId: string };
 
 interface Harness {
   readonly repository: TaskRepositoryShape;
@@ -481,6 +482,9 @@ function fakeThreads() {
         if (command.type === "thread.create") {
           threadOf(command.threadId);
           calls.push({ type: "thread.create", threadId: command.threadId });
+        }
+        if (command.type === "thread.settle") {
+          calls.push({ type: "settle", threadId: command.threadId });
         }
         return { sequence: calls.length };
       }),
@@ -1707,6 +1711,39 @@ test("an archive, disable or agent deletion just before a continuation is insert
               : Effect.void,
           ),
         ),
+    }),
+  );
+});
+
+test("a finished run settles its thread, which releases the provider session", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, endRun, calls } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const run = yield* waitFor(
+        "the run to start",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+      const settles = () =>
+        calls.filter((call) => call.type === "settle" && call.threadId === run.threadId);
+
+      // A periodic pass while the provider still works settles nothing.
+      yield* Effect.sleep("1200 millis");
+      NodeAssert.equal(settles().length, 0);
+
+      endRun(run.threadId, "completed", {
+        reply: { status: "Needs Review", summary: "done" },
+      });
+      yield* waitFor(
+        "the thread to settle",
+        Effect.sync(() => settles()[0]),
+      );
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getAgentRunById({ id: run.id })).status,
+        "completed",
+      );
     }),
   );
 });

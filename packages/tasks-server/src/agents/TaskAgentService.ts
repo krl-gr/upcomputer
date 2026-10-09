@@ -409,6 +409,32 @@ const make = Effect.gen(function* () {
       });
     });
 
+  /**
+   * Settles the thread of an ended task-agent run once its v2 work has stopped
+   * too. Settling detaches the thread's idle provider session now instead of
+   * after the provider idle timeout, so finished runs keep no provider process.
+   * A later message (a continuation) unsettles the thread and opens a session.
+   */
+  const settleEndedRunThread = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      if (Option.isSome(yield* repository.findActiveAgentRunByThreadId({ threadId }))) return;
+      if (Option.isNone(yield* repository.findLatestAgentRunByThreadId({ threadId }))) return;
+      const records = yield* readThreadRuns(threadId);
+      if (Option.isNone(records)) return;
+      if (records.value.thread.settledOverride === "settled") return;
+      if (records.value.runs.some(isActiveRun)) return;
+      yield* threads.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make(yield* randomId("task-agent-thread-settle")),
+        threadId,
+      });
+    }).pipe(
+      // Settle refuses a thread with blocked or newly started work; it stays as is.
+      Effect.catchCause((cause) =>
+        Effect.logDebug("Task-agent thread not settled", { threadId, cause }),
+      ),
+    );
+
   const finalizeRun = (input: {
     readonly run: {
       readonly id: TaskAgentRunId;
@@ -470,6 +496,11 @@ const make = Effect.gen(function* () {
           events: input.events ?? [],
         });
       }),
+    ).pipe(
+      // An interrupted v2 run settles its thread from its terminal run event instead.
+      Effect.tap((finalized) =>
+        finalized ? settleEndedRunThread(input.run.threadId) : Effect.void,
+      ),
     );
 
   /** A released run finished its work; every other reason ends it as stopped. */
@@ -697,10 +728,12 @@ const make = Effect.gen(function* () {
   const reconcileActiveRuns = Effect.gen(function* () {
     const activeRuns = yield* repository.listAllActiveAgentRuns();
     const timestamp = yield* now;
-    yield* Effect.forEach(activeRuns, (run) => reconcileRun(run, timestamp), {
-      discard: true,
-      concurrency: 1,
-    });
+    yield* Effect.forEach(
+      activeRuns,
+      (run) =>
+        reconcileRun(run, timestamp).pipe(Effect.andThen(settleEndedRunThread(run.threadId))),
+      { discard: true, concurrency: 1 },
+    );
   });
 
   /**
@@ -1211,6 +1244,7 @@ ${message.text}`,
           threadId: event.threadId,
         });
         if (Option.isSome(active)) yield* reconcileRun(active.value, yield* now);
+        yield* settleEndedRunThread(event.threadId);
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to handle a v2 run event for task-agent runs", { cause }),
