@@ -408,12 +408,27 @@ it.effect("every real status change records one event with its actor, from each 
       { id: "t", status: "In Progress", assigneeAgentRunId: runId },
       { ...chat, threadId: runThread },
     );
+    // A run that never set the status reports one through its result.
+    const resultRunId = TaskAgentRunId.make("run-2");
+    const resultThread = ThreadId.make("thread-run-2");
+    yield* repository.createAgentRun({
+      id: resultRunId,
+      taskId: TaskId.make("t"),
+      agentId: TaskAgentId.make("agent-2"),
+      threadId: resultThread,
+      modelSelection,
+      status: "running",
+      startedAt: timestamp,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
     const consume = makeTaskAgentResultConsumer({
       repository,
       scheduleTaskChanged: () => Effect.void,
     });
     yield* consume({
-      threadId: runThread,
+      threadId: resultThread,
       markdown: '~~~task_agent_result\n{"status":"Needs Review","summary":"Done."}\n~~~',
       createdAt: "2026-10-07T11:00:00.000Z",
     });
@@ -431,9 +446,83 @@ it.effect("every real status change records one event with its actor, from each 
       },
       {
         kind: TASK_STATUS_CHANGED_EVENT,
-        payload: { from: "In Progress", to: "Needs Review", actor: runActor },
+        payload: {
+          from: "In Progress",
+          to: "Needs Review",
+          actor: { type: "agent-run", agentRunId: resultRunId },
+        },
       },
     ]);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("a result never overwrites the status its run set", () => {
+  const { layer, call } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    yield* repository.upsert(task("t", { status: "Needs Review" }));
+    const runId = TaskAgentRunId.make("run");
+    const runThread = ThreadId.make("thread-run");
+    yield* repository.createAgentRun({
+      id: runId,
+      taskId: TaskId.make("t"),
+      agentId: TaskAgentId.make("reviewer"),
+      threadId: runThread,
+      modelSelection,
+      status: "running",
+      startedAt: timestamp,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
+    // The reviewer approves with task_update, then reports a lowercase status,
+    // and then an unrelated one: the status it set stays.
+    yield* call("task_update", { id: "t", status: "Done" }, { ...chat, threadId: runThread });
+    const consumed = yield* makeTaskAgentResultConsumer({
+      repository,
+      scheduleTaskChanged: () => Effect.void,
+    })({
+      threadId: runThread,
+      markdown: '~~~task_agent_result\n{"status":"done","summary":"Approved."}\n~~~',
+      createdAt: "2026-10-07T11:00:00.000Z",
+    });
+    assert.isTrue(consumed);
+    const saved = yield* repository.getById({ id: TaskId.make("t") });
+    assert.equal(Option.getOrThrow(saved).status, "Done");
+    assert.equal(Option.getOrThrow(saved).output, "Approved.");
+    assert.deepStrictEqual(
+      (yield* historyOf("t")).map(({ payload }) => payload),
+      [{ from: "Needs Review", to: "Done", actor: { type: "agent-run", agentRunId: runId } }],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("a result that respells the current status changes nothing", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    yield* repository.upsert(task("t", { status: "Done" }));
+    const runThread = ThreadId.make("thread-run");
+    yield* repository.createAgentRun({
+      id: TaskAgentRunId.make("run"),
+      taskId: TaskId.make("t"),
+      agentId: TaskAgentId.make("agent"),
+      threadId: runThread,
+      modelSelection,
+      status: "running",
+      startedAt: timestamp,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
+    yield* makeTaskAgentResultConsumer({ repository, scheduleTaskChanged: () => Effect.void })({
+      threadId: runThread,
+      markdown: '~~~task_agent_result\n{"status":" done ","summary":"Same."}\n~~~',
+      createdAt: "2026-10-07T11:00:00.000Z",
+    });
+    const saved = yield* repository.getById({ id: TaskId.make("t") });
+    assert.equal(Option.getOrThrow(saved).status, "Done");
+    assert.deepStrictEqual(yield* historyOf("t"), []);
   }).pipe(Effect.provide(layer));
 });
 

@@ -262,10 +262,11 @@ Task system protocol:
 - Update task status and append concise findings as work proceeds.
 - Keep task output synchronized with the latest concise result when explicitly continuing work in this thread.
 - Downstream task ancestry is recorded automatically from this thread by the server.
-- Always finish with a fenced task_agent_result JSON block.
+- Set the task's final status yourself with task_update.
+- Always finish with a fenced task_agent_result JSON block. Its "status" never overrides a status you set during this run; add it, with an existing status name, only if you did not set one.
 
 ~~~task_agent_result
-{"status":"ready for review","summary":"Outcome summary.","blocked":false,"events":[]}
+{"summary":"Outcome summary.","blocked":false,"events":[]}
 ~~~`.trim();
 }
 
