@@ -35,6 +35,8 @@
         "scripts/update-test-shard-weights.ts",
         "scripts/verify-background-live.ts",
         "src/provider/testFixtures/*.mjs",
+        // Up.computer pro imports the build-time extension API by path.
+        "src/extensionApi.ts!",
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite. Up.computer's computer-use runtime
@@ -76,7 +78,8 @@
       // The Up.computer Tasks plug-in's contracts come with @t3tools/tasks-web.
       "ignoreDependencies": ["jsdom", "@t3tools/tasks-contracts"],
       // Worktree setup (scripts/setup-worktree.ts) runs this directly.
-      "entry": ["scripts/warm-dep-cache.ts"],
+      // Up.computer pro imports the build-time extension API by path.
+      "entry": ["scripts/warm-dep-cache.ts", "src/extensionApi.ts!"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
@@ -100,7 +103,15 @@
     },
     "apps/mobile/modules/t3-markdown-text": {
       // React Native codegen discovers component specifications by filename.
-      "entry": ["src/*NativeComponent.ts!"],
+      // Up.computer keeps apps/mobile outside the pnpm workspace, so the
+      // mobile package scripts that would reach these files are not analyzed:
+      // the React Native CLI reads react-native.config.js, and the icon sync
+      // script runs by hand (`sync:pierre-icons`).
+      "entry": [
+        "src/*NativeComponent.ts!",
+        "react-native.config.js",
+        "scripts/sync-pierre-file-icons.mjs",
+      ],
     },
     "infra/relay": {
       "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!"],

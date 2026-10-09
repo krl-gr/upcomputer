@@ -87,6 +87,7 @@ const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProvide
   "azure-devops",
 ];
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): string {
   switch (source) {
     case "github":
@@ -104,6 +105,7 @@ export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): str
   }
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): string {
   switch (source) {
     case "forgejo":
@@ -120,6 +122,7 @@ export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): 
   }
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourceProvider(
   source: AddProjectRemoteSource,
 ): AddProjectRemoteProviderKind | null {

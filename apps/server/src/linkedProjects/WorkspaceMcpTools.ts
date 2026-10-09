@@ -98,8 +98,8 @@ const ThreadUnlinkProjectTool = Tool.make("thread_unlink_project", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
-export const THREAD_SEARCH_DEFAULT_LIMIT = 20;
-export const THREAD_SEARCH_MAX_LIMIT = 50;
+const THREAD_SEARCH_DEFAULT_LIMIT = 20;
+const THREAD_SEARCH_MAX_LIMIT = 50;
 
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   description:

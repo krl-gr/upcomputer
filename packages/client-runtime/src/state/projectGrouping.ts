@@ -152,6 +152,7 @@ export function deriveLogicalProjectKeyFromSettings(
   });
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function deriveProjectGroupLabel(input: {
   readonly representative: Pick<EnvironmentProject, "title" | "repositoryIdentity">;
   readonly members: ReadonlyArray<Pick<EnvironmentProject, "title" | "repositoryIdentity">>;

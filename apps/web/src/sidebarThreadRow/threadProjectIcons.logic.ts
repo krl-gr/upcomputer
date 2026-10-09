@@ -25,7 +25,7 @@ export interface ThreadProjectIconStack<Project> {
   readonly showScratchIcon: boolean;
 }
 
-export const THREAD_PROJECT_ICON_STACK_LIMIT = 3;
+const THREAD_PROJECT_ICON_STACK_LIMIT = 3;
 
 function isPathWithinRoot(candidate: string, root: string): boolean {
   const normalizedCandidate = normalizeProjectPathForComparison(candidate);

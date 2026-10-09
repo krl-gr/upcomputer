@@ -131,6 +131,7 @@ function oklabToHex(color: Oklab): string {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function mixThemePreviewBase(colors: ThemePreviewColors, mode: ThemeAppearance): string {
   const spec = THEME_PREVIEW_RENDER_SPECS[mode]!;
   const canvas = parseOklab(colors.canvas);

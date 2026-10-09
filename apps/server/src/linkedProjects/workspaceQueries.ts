@@ -14,7 +14,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * non-ASCII text most often takes: as typed, lowercase, UPPERCASE, and
  * Capitalized. Each form is ASCII-folded to line up with lower(column).
  */
-export const searchNeedles = (query: string): ReadonlyArray<string> => {
+const searchNeedles = (query: string): ReadonlyArray<string> => {
   const asciiLower = (value: string) => value.replace(/[A-Z]/g, (char) => char.toLowerCase());
   const lower = query.toLowerCase();
   const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);

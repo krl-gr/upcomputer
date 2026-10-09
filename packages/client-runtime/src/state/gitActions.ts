@@ -42,6 +42,7 @@ export type GitActionRequestInput = Pick<
   "action" | "commitMessage" | "featureBranch" | "filePaths"
 >;
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function buildMenuItems(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
@@ -108,6 +109,7 @@ export function buildMenuItems(
   ];
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function resolveQuickAction(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
@@ -243,6 +245,7 @@ export function resolveQuickAction(
   };
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function getGitActionDisabledReason(input: {
   item: GitActionMenuItem;
   gitStatus: VcsStatusResult | null;
@@ -307,6 +310,7 @@ export function getGitActionDisabledReason(input: {
   return "Create PR is currently unavailable.";
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function requiresDefaultBranchConfirmation(
   action: GitStackedAction,
   isDefaultBranch: boolean,
@@ -320,6 +324,7 @@ export function requiresDefaultBranchConfirmation(
   );
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function resolveDefaultBranchActionDialogCopy(input: {
   action: DefaultBranchConfirmableAction;
   branchName: string;

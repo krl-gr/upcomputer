@@ -42,13 +42,10 @@ export const SIDEBAR_MENU_SCOPE =
   "[--sidebar-row-content-inset:--spacing(2)] [--sidebar-control-gap:--spacing(2)] [&_:where([data-sidebar=menu-button])]:font-normal [&_:where([data-sidebar=menu-button])]:text-sidebar-muted-foreground";
 
 /**
- * Gap between rows: `SidebarMenu`'s `gap-1`, which our menus get from it.
- * A compact thread row sits in upstream's thread list instead, which spaces
- * rows by `gap-px`; `SIDEBAR_LIST_ROW_SPACING` adds the 3px left over.
+ * Our menus space rows by `SidebarMenu`'s `gap-1`. A compact thread row sits
+ * in upstream's thread list instead, which spaces rows by `gap-px`, so this
+ * adds the 3px left over below the row.
  */
-export const SIDEBAR_ROW_GAP = "gap-1";
-
-/** A compact row in upstream's thread list: `SIDEBAR_ROW_GAP` less the list's `gap-px`, below it. */
 export const SIDEBAR_LIST_ROW_SPACING = "pb-0.75";
 
 /** `contain-intrinsic-size` of a compact row in upstream's list: `SIDEBAR_ROW_HEIGHT`. */

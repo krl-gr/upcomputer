@@ -15,7 +15,11 @@ export const USER_INSTRUCTIONS_HEADING = "User instructions (from Up.computer se
 
 let current = "";
 
-/** Returns `undefined` when there is nothing to add. */
+/**
+ * Returns `undefined` when there is nothing to add.
+ *
+ * @public Up.computer pro's Pi adapter test builds its expected block with it.
+ */
 export function formatUserInstructionsBlock(instructions: string): string | undefined {
   const trimmed = instructions.trim();
   return trimmed ? `# ${USER_INSTRUCTIONS_HEADING}\n\n${trimmed}` : undefined;

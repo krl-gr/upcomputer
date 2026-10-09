@@ -32,7 +32,7 @@ export interface ThreadProjectLinksChange {
   readonly projectLinksPinned?: true;
 }
 
-export const hasThreadProjectLinksUpdate = (update: ThreadProjectLinksUpdate) =>
+const hasThreadProjectLinksUpdate = (update: ThreadProjectLinksUpdate) =>
   update.linkProjectIds !== undefined || update.unlinkProjectIds !== undefined;
 
 /** A metadata update that only changes links, which does not count as thread activity. */

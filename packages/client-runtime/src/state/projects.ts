@@ -9,6 +9,7 @@ import {
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const isWindowsPlatform = (platform: string): boolean => {
   return /^win(dows)?/i.test(platform);
 };

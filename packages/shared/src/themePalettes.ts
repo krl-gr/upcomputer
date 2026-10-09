@@ -896,6 +896,7 @@ export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
   IRIS_THEME,
 ];
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function getThemeColorsForAppearance(
   theme: ThemeDefinition,
   appearance: ThemeAppearance,

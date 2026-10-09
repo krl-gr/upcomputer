@@ -120,7 +120,7 @@ function writeOwnV1CutoverState(userdata: string, state: V1CutoverState & { runI
 }
 
 /** What the person sees when a cutover stopped: the reason, and that nothing was lost. */
-export function describeFailedV1Cutover(state: V1CutoverState): string {
+function describeFailedV1Cutover(state: V1CutoverState): string {
   return [
     `Up.computer could not move your V1 data to the new version: ${state.message ?? "unknown error"}.`,
     "Your V1 data was not changed.",
@@ -1115,7 +1115,7 @@ function formatFailedV1Cutover(input: {
 }
 
 /** The report as Markdown, written next to the database. */
-export function formatV1CutoverReport(report: V1CutoverReport): string {
+function formatV1CutoverReport(report: V1CutoverReport): string {
   const failed = report.checks.filter((entry) => !entry.ok);
   const lines = [
     "# Up.computer V1 to v2 cutover report",

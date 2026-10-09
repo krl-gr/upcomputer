@@ -169,6 +169,7 @@ export const setPairingTokenOnUrl = (url: URL, credential: string): URL => {
   return next;
 };
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const readHostedPairingRequest = (url: URL): HostedPairingRequest | null => {
   const host = url.searchParams.get(HOSTED_PAIRING_HOST_PARAM)?.trim() ?? "";
   const token = getPairingTokenFromUrl(url)?.trim() ?? "";

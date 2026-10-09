@@ -15,7 +15,7 @@ import { isWindowsAbsolutePath, normalizeProjectPathForComparison } from "@t3too
  * the user removed a link (even the last one) the thread is never auto-linked.
  */
 
-export function isPathWithinRoot(candidate: string, root: string): boolean {
+function isPathWithinRoot(candidate: string, root: string): boolean {
   const normalizedCandidate = normalizeProjectPathForComparison(candidate);
   const normalizedRoot = normalizeProjectPathForComparison(root);
   if (normalizedCandidate.length === 0 || normalizedRoot.length === 0) return false;
