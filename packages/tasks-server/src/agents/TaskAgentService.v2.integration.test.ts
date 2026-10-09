@@ -59,6 +59,7 @@ import type {
 import * as ProviderAdapterRegistry from "../../../../apps/server/src/orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
+import { limitRecoveryCommand } from "../../../../apps/server/src/orchestration-v2/UsageLimitRecoveryWorker.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "../../../../apps/server/src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
 import {
@@ -85,6 +86,24 @@ const projectId = ProjectId.make("project:task-agents-v2");
 const HOLD = "[hold-turn]";
 /** A message containing this marker fails its turn. */
 const FAIL = "[fail-turn]";
+/** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
+const LIMIT = "[limit-turn]";
+
+/** Provider sessions the scripted provider opened, closed and resumed threads in. */
+interface SessionLog {
+  readonly opened: number;
+  readonly closed: number;
+  readonly resumed: number;
+}
+
+/** One provider process per thread, like OpenCode 1.x: detaching its thread stops it. */
+const perThreadCapabilities = {
+  ...CodexProviderCapabilitiesV2,
+  sessions: {
+    ...CodexProviderCapabilitiesV2.sessions,
+    supportsMultipleProviderThreadsPerSession: false,
+  },
+};
 
 interface StartedTurn {
   readonly threadId: ThreadId;
@@ -99,14 +118,21 @@ interface StartedTurn {
  */
 function makeTaskAgentAdapter(
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
+  sessions: Ref.Ref<SessionLog>,
+  perThreadSessions: boolean,
 ): ProviderAdapterV2Shape {
+  const capabilities = perThreadSessions ? perThreadCapabilities : CodexProviderCapabilitiesV2;
   return {
     instanceId,
     driver,
-    getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+    getCapabilities: () => Effect.succeed(capabilities),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (sessionInput) =>
       Effect.gen(function* () {
+        yield* Ref.update(sessions, (log) => ({ ...log, opened: log.opened + 1 }));
+        yield* Effect.addFinalizer(() =>
+          Ref.update(sessions, (log) => ({ ...log, closed: log.closed + 1 })),
+        );
         const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
         const held = new Map<ProviderTurnId, ProviderAdapterV2TurnInput>();
         const now = yield* DateTime.now;
@@ -141,7 +167,7 @@ function makeTaskAgentAdapter(
             status: "ready",
             cwd: sessionInput.runtimePolicy.cwd ?? "/fallback",
             model: sessionInput.modelSelection.model,
-            capabilities: CodexProviderCapabilitiesV2,
+            capabilities,
             createdAt: now,
             updatedAt: now,
             lastError: null,
@@ -172,7 +198,10 @@ function makeTaskAgentAdapter(
                 updatedAt: createdAt,
               } satisfies OrchestrationV2ProviderThread;
             }),
-          resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
+          resumeThread: ({ providerThread }) =>
+            Ref.update(sessions, (log) => ({ ...log, resumed: log.resumed + 1 })).pipe(
+              Effect.as(providerThread),
+            ),
           startTurn: (input) =>
             Effect.gen(function* () {
               yield* Ref.update(started, (turns) => [
@@ -189,6 +218,27 @@ function makeTaskAgentAdapter(
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
+                return;
+              }
+              if (input.message.text.includes(LIMIT)) {
+                yield* Queue.offer(events, providerTurn(input, id, "failed", at));
+                yield* Queue.offer(events, {
+                  type: "turn.terminal",
+                  driver,
+                  providerThreadId: input.providerThread.id,
+                  providerTurnId: id,
+                  runOrdinal: input.runOrdinal,
+                  failureItemOrdinal: input.runOrdinal * 100 + 2,
+                  status: "failed",
+                  failure: {
+                    class: "usage_limit",
+                    message: "Plan limit reached.",
+                    code: "usageLimitExceeded",
+                    retryable: null,
+                    resetAt: DateTime.formatIso(DateTime.add(at, { seconds: 2 })),
+                  },
+                  threadDisposition: "reusable",
+                });
                 return;
               }
               if (input.message.text.includes(FAIL)) {
@@ -327,11 +377,19 @@ const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
  * composed through the product seam: the hooks core reads for its runtime
  * services and its MCP server, with the product provided as the CLI does.
  */
-function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<StartedTurn>>) {
+function makeLayer(
+  name: string,
+  cwd: string,
+  started: Ref.Ref<ReadonlyArray<StartedTurn>>,
+  sessions: Ref.Ref<SessionLog>,
+  perThreadSessions: boolean,
+) {
   const db = SqlitePersistenceMemory;
   const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
     { name, runtimePolicyOverride: { cwd } },
-    ProviderAdapterRegistry.makeSingleLayer(makeTaskAgentAdapter(started)),
+    ProviderAdapterRegistry.makeSingleLayer(
+      makeTaskAgentAdapter(started, sessions, perThreadSessions),
+    ),
     { databaseLayer: db },
   );
   const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
@@ -438,6 +496,7 @@ const runSlice = <A, E>(
   body: (
     services: Effect.Success<typeof slice> & {
       readonly started: Ref.Ref<ReadonlyArray<StartedTurn>>;
+      readonly sessions: Ref.Ref<SessionLog>;
       readonly cwd: string;
     },
   ) => Effect.Effect<
@@ -451,15 +510,19 @@ const runSlice = <A, E>(
     | ProjectStore.ProjectStoreV2
     | ThreadManagementService.ThreadManagementService
   >,
+  options: { readonly perThreadSessions?: boolean } = {},
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(name);
       const started = yield* Ref.make<ReadonlyArray<StartedTurn>>([]);
+      const sessions = yield* Ref.make<SessionLog>({ opened: 0, closed: 0, resumed: 0 });
       return yield* Effect.gen(function* () {
         const services = yield* slice;
-        return yield* body({ ...services, started, cwd });
-      }).pipe(Effect.provide(makeLayer(name, cwd, started)));
+        return yield* body({ ...services, started, sessions, cwd });
+      }).pipe(
+        Effect.provide(makeLayer(name, cwd, started, sessions, options.perThreadSessions ?? false)),
+      );
     }),
   );
 
@@ -718,6 +781,189 @@ it.live(
           );
         }),
     ),
+);
+
+/** The session log once `count` sessions closed and none is open. */
+const sessionsReleased = (sessions: Ref.Ref<SessionLog>, count: number) =>
+  Ref.get(sessions).pipe(
+    Effect.map((log) =>
+      log.closed === count && log.opened === count ? Option.some(log) : Option.none(),
+    ),
+  );
+
+it.live(
+  "a finished run releases its provider session, and a continuation resumes in a new one",
+  () =>
+    runSlice(
+      "task-agent-v2-release",
+      ({ createTask, runWithStatus, taskAgents, threads, started, sessions }) =>
+        Effect.gen(function* () {
+          const first = yield* createTask;
+          yield* eventually("the first run to complete", runWithStatus(first.id, "completed"));
+          yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+          const released = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+          assert.lengthOf(released.providerSessions, 0);
+          // Releasing the session leaves the thread itself as it was.
+          assert.isNull(released.thread.settledOverride);
+
+          const message = yield* taskAgents.messageRun({ id: first.id, text: "Please continue." });
+          assert.isTrue(message.ok);
+          if (!message.ok) return;
+          yield* eventually(
+            "the continuation to complete",
+            runWithStatus(message.run.id, "completed"),
+          );
+          const turns = yield* Ref.get(started);
+          assert.lengthOf(turns, 2);
+          assert.include(turns[1]?.text ?? "", "Please continue.");
+          const log = yield* eventually(
+            "the continuation's session to close",
+            sessionsReleased(sessions, 2),
+          );
+          // The new session resumed the thread's provider conversation.
+          assert.strictEqual(log.resumed, 1);
+        }),
+      { perThreadSessions: true },
+    ),
+);
+
+it.live("a run that ends on a usage limit releases its session and still resumes at reset", () =>
+  runSlice(
+    "task-agent-v2-release-limit",
+    ({ createTaskWith, runWithStatus, runsOf, threads, started, sessions }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(`Hit the provider limit. ${LIMIT}`);
+        yield* eventually("the run to fail", runWithStatus(first.id, "failed"));
+        yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+        const shell = yield* threads.getThreadShell(first.threadId);
+        assert.isDefined(shell);
+        if (shell === undefined || shell === null) return;
+        assert.strictEqual(shell.lastErrorClass, "usage_limit");
+        assert.notStrictEqual(shell.settledOverride, "settled");
+
+        // The usage-limit worker's own steps: arm recovery, then resume at reset.
+        const arm = limitRecoveryCommand(shell, true, Date.now());
+        assert.strictEqual(arm?.type, "thread.metadata.update");
+        yield* threads.dispatch(arm!);
+        const armed = yield* threads.getThreadShell(first.threadId);
+        assert.strictEqual(armed?.limitRecovery?.autoResume, true);
+        const resume = limitRecoveryCommand(armed!, true, Date.parse(armed!.usageLimitResetAt!));
+        assert.strictEqual(resume?.type, "message.dispatch");
+        // The orchestrator resumes only once the reset time has passed.
+        yield* Effect.sleep(Date.parse(armed!.usageLimitResetAt!) - Date.now() + 50);
+        yield* threads.dispatch(resume!);
+        yield* eventually(
+          "the resumed run to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.continuesRunId === first.id && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        assert.lengthOf(yield* Ref.get(started), 2);
+        yield* eventually("the resumed run's session to close", sessionsReleased(sessions, 2));
+      }),
+    { perThreadSessions: true },
+  ),
+);
+
+it.live(
+  "releasing a stopped run's session keeps the thread's pin, active state and pull request watch",
+  () =>
+    runSlice(
+      "task-agent-v2-release-kept",
+      ({ createTaskWith, taskAgents, threads, v2Runs, sessions }) =>
+        Effect.gen(function* () {
+          const first = yield* createTaskWith(`Keep working. ${HOLD}`);
+          const v2RunWithStatus = (status: OrchestrationV2Run["status"]) =>
+            v2Runs(first.threadId).pipe(
+              Effect.map((runs) => Option.fromNullishOr(runs.find((run) => run.status === status))),
+            );
+          yield* eventually("the v2 run to be running", v2RunWithStatus("running"));
+          const threadId = first.threadId;
+          yield* threads.dispatch({
+            type: "thread.pin",
+            commandId: CommandId.make("command:release-kept:pin"),
+            threadId,
+          });
+          yield* threads.dispatch({
+            type: "thread.unsettle",
+            commandId: CommandId.make("command:release-kept:unsettle"),
+            threadId,
+            reason: "user",
+          });
+          yield* threads.dispatch({
+            type: "thread.pull-request.watch",
+            commandId: CommandId.make("command:release-kept:watch"),
+            threadId,
+            host: "github.com",
+            repository: "t3tools/demo",
+            number: 7,
+            watching: true,
+            link: { url: "https://github.com/t3tools/demo/pull/7", source: "manual" },
+          });
+          const before = (yield* threads.getThreadRecords(threadId, ["runs"])).thread;
+          assert.isNotNull(before.pinnedAt ?? null);
+          assert.strictEqual(before.settledOverride, "active");
+          assert.isDefined(before.pullRequests?.[0]?.watch);
+
+          yield* taskAgents.stopRun({ id: first.id });
+          yield* eventually("the v2 run to be interrupted", v2RunWithStatus("interrupted"));
+          yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+          const after = (yield* threads.getThreadRecords(threadId, ["runs"])).thread;
+          assert.deepStrictEqual(after.pinnedAt, before.pinnedAt);
+          assert.strictEqual(after.settledOverride, "active");
+          assert.deepStrictEqual(after.pullRequests?.[0]?.watch, before.pullRequests?.[0]?.watch);
+        }),
+      { perThreadSessions: true },
+    ),
+);
+
+it.live("a later plain turn in a finished run's thread keeps its provider session", () =>
+  runSlice(
+    "task-agent-v2-release-plain",
+    ({ createTask, runWithStatus, runsOf, repository, v2Runs, sendAsPerson, sessions }) =>
+      Effect.gen(function* () {
+        const first = yield* createTask;
+        yield* eventually("the first run to complete", runWithStatus(first.id, "completed"));
+        yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+
+        const person = { type: "person" } as const;
+        yield* repository.setArchived({ ids: [task.id], archived: true, actor: person });
+        yield* sendAsPerson(first.threadId, "Archived task: just answer.");
+        yield* eventually(
+          "the plain turn to complete",
+          v2Runs(first.threadId).pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.ordinal === 2 && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        // A wrongful release would follow the turn's terminal event within milliseconds.
+        yield* Effect.sleep("500 millis");
+        assert.deepInclude(yield* Ref.get(sessions), { opened: 2, closed: 1 });
+
+        // The task's next run uses that session and releases it when it ends.
+        yield* repository.setArchived({ ids: [task.id], archived: false, actor: person });
+        yield* sendAsPerson(first.threadId, "continue");
+        yield* eventually(
+          "the continuation to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.continuesRunId === first.id && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        yield* eventually("the session to close", sessionsReleased(sessions, 2));
+      }),
+    { perThreadSessions: true },
+  ),
 );
 
 const mcpClient = McpSchema.McpServerClient.of({

@@ -419,6 +419,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "checkpoint.rollback":
     case "checkpoint.rollback.fail":
     case "thread.background-work.settle":
+    case "thread.provider-sessions.release-idle":
     case "provider.switch":
       return command.threadId;
     case "delegated_task.request":
@@ -3380,6 +3381,70 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* Ref.update(effects, (existing) => [...existing, pendingEffect]);
     },
   );
+
+  /**
+   * Detaches the provider sessions of a thread whose work has ended, and nothing else: the thread
+   * keeps its lifecycle, pins, watches and usage-limit recovery. Commands are decided serially, so
+   * a turn that starts after this attaches a session again through its own effect.
+   */
+  const dispatchIdleProviderSessionsRelease = Effect.fn(
+    "orchestrationV2.dispatch.idleProviderSessionsRelease",
+  )(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "thread.provider-sessions.release-idle" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs", "runtimeRequests", "providerSessions"])
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (
+      projection.runs.some((run) => isBlockingRun(run) || run.status === "queued") ||
+      projection.runtimeRequests.some((request) => request.status === "pending")
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} has active or blocked work; its provider sessions stay attached.`,
+      });
+    }
+    const now = yield* DateTime.now;
+    const liveSessions = projection.providerSessions.filter(
+      (session) => session.status !== "stopped" && session.status !== "error",
+    );
+    for (const session of liveSessions) {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "provider-session.detached",
+        threadId: command.threadId,
+        driver: session.driver,
+        providerInstanceId: session.providerInstanceId,
+        occurredAt: now,
+        payload: { providerSessionId: session.id, detachedAt: now, reason: command.reason },
+      });
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        {
+          id: `effect:${command.commandId}:provider-session.detach:${session.id}`,
+          commandId: command.commandId,
+          threadId: command.threadId,
+          request: {
+            type: "provider-session.detach",
+            providerSessionId: session.id,
+            detail: command.reason,
+          },
+        } satisfies PendingOrchestrationEffectV2,
+      ]);
+    }
+  });
 
   const dispatchThreadFork = Effect.fn("orchestrationV2.dispatch.threadFork")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "thread.fork" }>,
@@ -9689,6 +9754,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.background-work.settle":
         yield* dispatchBackgroundWorkSettle(command, events);
         break;
+      case "thread.provider-sessions.release-idle":
+        yield* dispatchIdleProviderSessionsRelease(command, events, effects);
+        break;
       case "thread.fork":
         yield* dispatchThreadFork(command, events);
         break;
@@ -9782,9 +9850,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const plan = yield* dispatchOnce(command).pipe(
       Effect.flatMap((planned) =>
-        // A settle that finds the provider already ended everything has
-        // nothing to record, which is its expected outcome, not a failure.
-        planned.events.length > 0 || command.type === "thread.background-work.settle"
+        // A settle that finds the provider already ended everything, or a
+        // release that finds no attached session, has nothing to record,
+        // which is its expected outcome, not a failure.
+        planned.events.length > 0 ||
+        command.type === "thread.background-work.settle" ||
+        command.type === "thread.provider-sessions.release-idle"
           ? Effect.succeed(planned)
           : Effect.fail(
               new OrchestratorDispatchError({

@@ -410,28 +410,23 @@ const make = Effect.gen(function* () {
     });
 
   /**
-   * Settles the thread of an ended task-agent run once its v2 work has stopped
-   * too. Settling detaches the thread's idle provider session now instead of
-   * after the provider idle timeout, so finished runs keep no provider process.
-   * A later message (a continuation) unsettles the thread and opens a session.
+   * Releases the provider sessions of an ended task-agent run's thread now
+   * instead of after the provider idle timeout, so a finished run keeps no
+   * provider process. The orchestrator refuses while the thread still has
+   * active, queued or blocked work, and changes nothing else on the thread. A
+   * later message (a continuation) attaches a session again.
    */
-  const settleEndedRunThread = (threadId: ThreadId) =>
+  const releaseEndedRunSessions = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      if (Option.isSome(yield* repository.findActiveAgentRunByThreadId({ threadId }))) return;
-      if (Option.isNone(yield* repository.findLatestAgentRunByThreadId({ threadId }))) return;
-      const records = yield* readThreadRuns(threadId);
-      if (Option.isNone(records)) return;
-      if (records.value.thread.settledOverride === "settled") return;
-      if (records.value.runs.some(isActiveRun)) return;
       yield* threads.dispatch({
-        type: "thread.settle",
-        commandId: CommandId.make(yield* randomId("task-agent-thread-settle")),
+        type: "thread.provider-sessions.release-idle",
+        commandId: CommandId.make(yield* randomId("task-agent-session-release")),
         threadId,
+        reason: "Task-agent run ended.",
       });
     }).pipe(
-      // Settle refuses a thread with blocked or newly started work; it stays as is.
       Effect.catchCause((cause) =>
-        Effect.logDebug("Task-agent thread not settled", { threadId, cause }),
+        Effect.logDebug("Task-agent provider sessions not released", { threadId, cause }),
       ),
     );
 
@@ -497,9 +492,9 @@ const make = Effect.gen(function* () {
         });
       }),
     ).pipe(
-      // An interrupted v2 run settles its thread from its terminal run event instead.
+      // A run stopped mid-turn releases from its v2 run's terminal event instead.
       Effect.tap((finalized) =>
-        finalized ? settleEndedRunThread(input.run.threadId) : Effect.void,
+        finalized ? releaseEndedRunSessions(input.run.threadId) : Effect.void,
       ),
     );
 
@@ -731,7 +726,15 @@ const make = Effect.gen(function* () {
     yield* Effect.forEach(
       activeRuns,
       (run) =>
-        reconcileRun(run, timestamp).pipe(Effect.andThen(settleEndedRunThread(run.threadId))),
+        reconcileRun(run, timestamp).pipe(
+          // A result consumed here ends the run outside finalizeRun.
+          Effect.andThen(repository.getAgentRunById({ id: run.id })),
+          Effect.flatMap((ended) =>
+            Option.isSome(ended) && ended.value.completedAt !== null
+              ? releaseEndedRunSessions(run.threadId)
+              : Effect.void,
+          ),
+        ),
       { discard: true, concurrency: 1 },
     );
   });
@@ -1240,11 +1243,25 @@ ${message.text}`,
           yield* continueFromPersonMessage(event.payload);
           return;
         }
+        if (event.type !== "run.updated") return;
         const active = yield* repository.findActiveAgentRunByThreadId({
           threadId: event.threadId,
         });
         if (Option.isSome(active)) yield* reconcileRun(active.value, yield* now);
-        yield* settleEndedRunThread(event.threadId);
+        // Only v2 work of the thread's latest task-agent run, once that run
+        // has ended; later plain conversation in the thread keeps its session.
+        const latest = yield* repository.findLatestAgentRunByThreadId({
+          threadId: event.threadId,
+        });
+        const requestedAt = DateTime.toEpochMillis(event.payload.requestedAt);
+        if (
+          Option.isSome(latest) &&
+          latest.value.completedAt !== null &&
+          Date.parse(latest.value.startedAt) <= requestedAt &&
+          requestedAt <= Date.parse(latest.value.completedAt)
+        ) {
+          yield* releaseEndedRunSessions(event.threadId);
+        }
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to handle a v2 run event for task-agent runs", { cause }),

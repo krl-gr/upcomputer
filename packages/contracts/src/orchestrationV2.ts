@@ -3033,6 +3033,18 @@ const OrchestrationV2InternalCommand = Schema.Union([
     providerThreadId: ProviderThreadId,
     providerTurnId: ProviderTurnId,
   }),
+  /**
+   * Detaches the thread's provider sessions before the provider idle timeout, so a per-thread
+   * provider process stops now. Unlike a settle it leaves the thread itself as it is: lifecycle,
+   * pins, pull request watches and usage-limit recovery. Rejected while the thread has active,
+   * queued or blocked work. The next turn attaches a session again.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.provider-sessions.release-idle"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reason: TrimmedNonEmptyString,
+  }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;
 
