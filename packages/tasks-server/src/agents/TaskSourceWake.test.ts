@@ -7,8 +7,10 @@ import {
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { TaskAgentId, TaskAgentRunId, TaskId } from "@t3tools/tasks-contracts/v1";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
@@ -24,6 +26,7 @@ import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts"
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import {
+  SOURCE_SETTLE_MS,
   SOURCE_WAKE_MAX_ATTEMPTS,
   sourceWakeMessage,
   TaskSourceWake,
@@ -39,6 +42,7 @@ const row = (overrides: Partial<PendingWakeRow>): PendingWakeRow => ({
   agentName: "Developer",
   taskId: "task-1",
   taskTitle: "Fix the build",
+  taskStatus: "Needs Review",
   sourceThreadId: "thread-chat",
   sourceIsRunThread: 0,
   taskArchived: 0,
@@ -77,8 +81,9 @@ describe("TaskSourceWake", () => {
       summary: 'Task "Fix the build" completed',
     });
     expect(message.text).toContain(
-      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed. Summary: Fixed it.',
+      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed, task now Needs Review. Summary: Fixed it.',
     );
+    expect(message.text).toContain("No run for this chat's tasks is in progress now.");
   });
 
   it("batches runs that finished together into one message", () => {
@@ -105,6 +110,7 @@ describe("TaskSourceWake", () => {
         { id: "task-2", title: "Docs" },
       ],
     });
+    // Not settled: the failure is reported while other work may still run.
     expect(message.text.split("\n")).toHaveLength(4);
   });
 });
@@ -152,7 +158,8 @@ const withWake = <A, E>(
   dispatch: ReturnType<typeof fakeDispatch>,
   body: Effect.Effect<A, E, TaskRepository | TaskSourceWake | SqlClient.SqlClient>,
 ) =>
-  body.pipe(
+  // Runs below end at `at`; by the first sweep their chats have settled.
+  Effect.andThen(TestClock.setTime(Date.parse(at) + 60_000), body).pipe(
     Effect.provide(
       Layer.mergeAll(TaskSourceWakeLive, TaskRepositoryLive).pipe(
         Layer.provideMerge(
@@ -166,8 +173,12 @@ const withWake = <A, E>(
     ),
   );
 
-/** A finished run of a task created in `sourceThreadId`. */
-const finishedRun = (id: string, sourceThreadId: string) =>
+/** A run of a task created in `sourceThreadId`, finished at `at` unless still running. */
+const finishedRun = (
+  id: string,
+  sourceThreadId: string,
+  status: "completed" | "failed" | "running" = "completed",
+) =>
   Effect.gen(function* () {
     const repository = yield* TaskRepository;
     yield* repository.upsertAgent({
@@ -206,9 +217,9 @@ const finishedRun = (id: string, sourceThreadId: string) =>
       agentId: TaskAgentId.make("agent"),
       threadId: ThreadId.make(`thread-${id}`),
       modelSelection,
-      status: "completed",
+      status,
       startedAt: at,
-      completedAt: at,
+      completedAt: status === "running" ? null : at,
       triggerRunId: null,
       continuesRunId: null,
     });
@@ -228,10 +239,82 @@ const wakeState = Effect.gen(function* () {
   };
 });
 
+/** Ends a running run now. */
+const finishNow = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const completedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* sql`
+      UPDATE task_agent_runs SET status = 'completed', completed_at = ${completedAt}
+      WHERE id = ${id}
+    `;
+  });
+
 /** Makes every waiting batch due now, as if its retry time passed. */
 const retryNow = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`UPDATE task_source_wake_batches SET retry_at = NULL`;
+});
+
+describe("TaskSourceWake settling", () => {
+  it.effect("a chat hears about completed runs once its tasks have settled", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("r1", "chat");
+        yield* finishedRun("r2", "chat", "running");
+        yield* finishedRun("r-other", "other-chat");
+        // The chat's second task still runs; another chat is not held up by it.
+        yield* wake.sweep;
+        assert.deepStrictEqual(
+          dispatch.delivered.map((message) => message.threadId),
+          ["other-chat"],
+        );
+        assert.deepStrictEqual(yield* wakeState, { told: ["r-other"], batches: [] });
+
+        // Its last run just ended: a run it triggers may still start.
+        yield* finishNow("r2");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+
+        yield* TestClock.adjust(SOURCE_SETTLE_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 2);
+        const message = dispatch.delivered[1]!;
+        assert.strictEqual(message.threadId, "chat");
+        assert.include(message.text, "run r1");
+        assert.include(message.text, "run r2");
+        assert.include(message.text, "No run for this chat's tasks is in progress now.");
+        assert.deepStrictEqual(yield* wakeState, {
+          told: ["r-other", "r1", "r2"],
+          batches: [],
+        });
+      }),
+    );
+  });
+
+  it.effect("a failed run wakes its chat at once, with the completed runs waiting", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("r1", "chat");
+        yield* finishedRun("r2", "chat", "running");
+        yield* finishedRun("r3", "chat", "failed");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        assert.include(message!.text, "run r1");
+        assert.include(message!.text, "run r3");
+        assert.include(message!.text, ": failed");
+        assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r3"], batches: [] });
+      }),
+    );
+  });
 });
 
 describe("TaskSourceWake batches", () => {

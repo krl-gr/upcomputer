@@ -22,6 +22,12 @@ const SUMMARY_MAX_LENGTH = 400;
 /** Sends of one batch before it counts as handled anyway, so a broken chat cannot be woken forever. */
 export const SOURCE_WAKE_MAX_ATTEMPTS = 5;
 const SOURCE_WAKE_RETRY_BASE_MS = 10_000;
+/**
+ * How long a chat's tasks must have had no run in progress before their
+ * completed runs are reported. It bridges the moment between one run ending
+ * and the run it triggers starting, such as a review after the work.
+ */
+export const SOURCE_SETTLE_MS = 15_000;
 
 /**
  * Dispatch failures that a retry cannot fix: the chat refused the message, or
@@ -54,6 +60,7 @@ const PendingWakeRow = Schema.Struct({
   agentName: Schema.NullOr(Schema.String),
   taskId: Schema.NullOr(Schema.String),
   taskTitle: Schema.NullOr(Schema.String),
+  taskStatus: Schema.NullOr(Schema.String),
   sourceThreadId: Schema.NullOr(Schema.String),
   /** The source chat is itself a task-agent run thread. */
   sourceIsRunThread: Schema.Number,
@@ -78,6 +85,9 @@ function clip(text: string, max: number): string {
   const flat = text.trim().replace(/\s+/g, " ");
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
+
+/** Run endings the chat may need to act on, reported without waiting for its other tasks. */
+const WAKES_AT_ONCE = ["blocked", "failed", "interrupted"];
 
 /**
  * Runs a source chat hears about: finished by the agent, not stopped by a
@@ -106,7 +116,11 @@ export function sourceWakeMessage(runs: readonly [WakeRun, ...WakeRun[]]): {
     : outcomes.every((value) => value === "completed")
       ? "completed"
       : "updated";
-  const tasks = runs.map((run) => ({ id: run.taskId, title: run.taskTitle ?? run.taskId }));
+  const tasks = [
+    ...new Map(
+      runs.map((run) => [run.taskId, { id: run.taskId, title: run.taskTitle ?? run.taskId }]),
+    ).values(),
+  ];
   const summary =
     runs.length === 1
       ? `Task "${clip(tasks[0]!.title, 80)}" ${OUTCOME[first.status]!.verb}`
@@ -114,16 +128,20 @@ export function sourceWakeMessage(runs: readonly [WakeRun, ...WakeRun[]]): {
   const lines = runs.map((run) => {
     const title = run.taskTitle ?? run.taskId;
     const agent = run.agentName === null ? "" : ` by agent "${run.agentName}"`;
+    const taskStatus = run.taskStatus === null ? "" : `, task now ${run.taskStatus}`;
     const detail = run.summary === null ? "" : ` Summary: ${clip(run.summary, SUMMARY_MAX_LENGTH)}`;
-    return `- Task "${title}" (${run.taskId}), run ${run.runId}${agent}: ${run.status}.${detail}`;
+    return `- Task "${title}" (${run.taskId}), run ${run.runId}${agent}: ${run.status}${taskStatus}.${detail}`;
   });
+  // Completed runs are only reported once the chat's tasks have settled.
+  const settled = runs.every((run) => run.status === "completed");
   return {
     text: [
       runs.length === 1
         ? "A task-agent run finished for a task created in this chat:"
         : "Task-agent runs finished for tasks created in this chat:",
       ...lines,
-      "Read a task with task_get for its full output.",
+      ...(settled ? ["No run for this chat's tasks is in progress now."] : []),
+      "Read a task with task_get when you need its full output.",
     ].join("\n"),
     notification: {
       source: {
@@ -138,7 +156,7 @@ export function sourceWakeMessage(runs: readonly [WakeRun, ...WakeRun[]]): {
 }
 
 export interface TaskSourceWakeShape {
-  /** Tells each source chat about the runs that finished since the last sweep, once. */
+  /** Tells each source chat about its finished runs that are due, once. */
   readonly sweep: Effect.Effect<void>;
 }
 
@@ -158,6 +176,11 @@ const WakeBatchRow = Schema.Struct({
  * queue delivers once the chat is idle. Finished runs are swept from storage, so runs that
  * end together reach their chat as one message and a restart loses none.
  *
+ * A completed run waits until none of the chat's tasks has had a run in progress for
+ * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
+ * UI shows the progress in between. A blocked, failed or interrupted run goes out at
+ * once, together with the completed runs waiting for the same chat.
+ *
  * Runs are first grouped into batches that are stored before anything is sent. The
  * batch id is the message's command id, so a retry repeats the same message (v2 replays
  * a command it already ran) and acknowledges only that batch's runs. Failures a retry
@@ -174,6 +197,7 @@ export const makeTaskSourceWake = Effect.gen(function* () {
     agent.name AS "agentName",
     task.id AS "taskId",
     task.title AS "taskTitle",
+    task.status AS "taskStatus",
     task.source_thread_id AS "sourceThreadId",
     EXISTS (
       SELECT 1 FROM task_agent_runs AS source_run
@@ -192,17 +216,44 @@ export const makeTaskSourceWake = Effect.gen(function* () {
     LEFT JOIN task_events AS ending ON ending.id = run.id || ':task-agent-' || run.status
   `;
 
-  /** Finished runs not yet told and not yet in a batch. */
-  const unbatchedRows = SqlSchema.findAll({
-    Request: Schema.Void,
+  /**
+   * Finished runs not yet told and not yet in a batch whose chat may hear now:
+   * its tasks have settled (no run in progress or recently ended), or one of
+   * them ended in a way the chat may need to act on. The rest wait here, so a
+   * chat that delegates a queue hears once when it settles, not on every run.
+   */
+  const dueRows = SqlSchema.findAll({
+    Request: Schema.String,
     Result: PendingWakeRow,
-    execute: () => sql`
+    execute: (settledBefore) => sql`
+      WITH busy_source AS (
+        SELECT DISTINCT busy_task.source_thread_id AS id
+        FROM task_agent_runs AS busy_run
+        JOIN tasks AS busy_task ON busy_task.id = busy_run.task_id
+        WHERE busy_task.source_thread_id IS NOT NULL
+          AND (busy_run.completed_at IS NULL OR busy_run.completed_at > ${settledBefore})
+      ),
+      urgent_source AS (
+        SELECT DISTINCT urgent_task.source_thread_id AS id
+        FROM task_agent_runs AS urgent_run
+        JOIN tasks AS urgent_task ON urgent_task.id = urgent_run.task_id
+        WHERE urgent_run.completed_at IS NOT NULL
+          AND urgent_run.source_wake_at IS NULL
+          AND urgent_run.source_wake_batch_id IS NULL
+          AND ${sql.in("urgent_run.status", WAKES_AT_ONCE)}
+          AND urgent_task.archived_at IS NULL
+      )
       SELECT ${runColumns}
       FROM task_agent_runs AS run
       ${runJoins}
       WHERE run.completed_at IS NOT NULL
         AND run.source_wake_at IS NULL
         AND run.source_wake_batch_id IS NULL
+        AND (
+          task.source_thread_id IS NULL
+          OR task.source_thread_id NOT IN (SELECT id FROM busy_source)
+          OR task.source_thread_id IN (SELECT id FROM urgent_source)
+        )
       ORDER BY run.completed_at ASC, run.id ASC
       LIMIT ${SWEEP_LIMIT}
     `,
@@ -235,15 +286,19 @@ export const makeTaskSourceWake = Effect.gen(function* () {
   const now = Effect.map(DateTime.now, DateTime.formatIso);
 
   /**
-   * Stores the next batches: runs no chat hears about are marked handled, the
-   * rest are grouped per source chat. Decided in one transaction on the stored
+   * Stores the next batches from the due runs: runs no chat hears about are
+   * marked handled, the rest are grouped per source chat. Decided in one transaction on the stored
    * rows, so a run joins exactly one batch and a batch never changes.
    */
   const formBatches = sql.withTransaction(
     Effect.gen(function* () {
-      const rows = yield* unbatchedRows();
+      const current = yield* DateTime.now;
+      const settledBefore = DateTime.formatIso(
+        DateTime.subtract(current, { milliseconds: SOURCE_SETTLE_MS }),
+      );
+      const rows = yield* dueRows(settledBefore);
       if (rows.length === 0) return;
-      const at = yield* now;
+      const at = DateTime.formatIso(current);
       const silent = rows.filter((row) => !wakesSourceChat(row)).map((row) => row.runId);
       if (silent.length > 0) {
         yield* sql`

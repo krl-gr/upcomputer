@@ -75,7 +75,7 @@ import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TASKS_SERVER_FEATURE } from "../serverFeature.ts";
 import { TaskAgentService } from "./TaskAgentService.ts";
-import { TaskSourceWake } from "./TaskSourceWake.ts";
+import { SOURCE_SETTLE_MS, TaskSourceWake } from "./TaskSourceWake.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const instanceId = ProviderInstanceId.make("codex-task-agent-test");
@@ -1153,7 +1153,11 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       const fetched = yield* callTool("task_get", { id: createdTask.id });
       assert.include(textOf(fetched), "Needs Review");
 
-      // The chat hears about the finished run once, as a queued notification turn.
+      // The chat hears about the finished run once its tasks have settled, as a
+      // queued notification turn. Ending the run earlier stands in for the wait.
+      const sql = yield* SqlClient.SqlClient;
+      const settledAt = new Date(Date.now() - SOURCE_SETTLE_MS).toISOString();
+      yield* sql`UPDATE task_agent_runs SET completed_at = ${settledAt} WHERE id = ${run.id}`;
       const wake = yield* TaskSourceWake;
       const notificationsOf = threads
         .getThreadRecords(chatThreadId, ["messages"])
