@@ -722,6 +722,63 @@ test("several agents keep running on one task; a release completes only the rele
   );
 });
 
+test("a release to the Blocked status ends the run as blocked and starts a blocked-run agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      yield* repository.upsertAgent(
+        agentInput("helper", { startStatuses: [], startRunStatuses: ["blocked"] }),
+      );
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const devRun = yield* waitFor(
+        "developer run",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+
+      const blocker = "Missing required credentials. Need user input.";
+      yield* change(
+        harness,
+        yield* repository.update({
+          actor,
+          id: task.id,
+          status: "Blocked",
+          output: blocker,
+          assigneeAgentRunId: null,
+        }),
+        devRun.id,
+      );
+      const ended = yield* waitFor(
+        "the developer run to end",
+        repository
+          .getAgentRunById({ id: devRun.id })
+          .pipe(
+            Effect.map((run) =>
+              Option.getOrThrow(run).completedAt ? Option.getOrThrow(run) : undefined,
+            ),
+          ),
+      );
+      NodeAssert.equal(ended.status, "blocked");
+      const results = yield* repository.events({ taskId: task.id, kinds: ["task.agent-result"] });
+      NodeAssert.deepEqual(
+        results.events.map(({ payload }) => {
+          const { blocked, summary, status } = payload as Record<string, unknown>;
+          return { blocked, summary, status };
+        }),
+        [{ blocked: true, summary: blocker, status: "Blocked" }],
+      );
+      const helperRun = yield* waitFor(
+        "the blocked-run agent",
+        runsOf(repository, "t").pipe(
+          Effect.map((runs) => runs.find((run) => run.agentId === "helper")),
+        ),
+      );
+      NodeAssert.equal(helperRun.triggerRunId, devRun.id);
+    }),
+  );
+});
+
 test("an agent restarts only after a trigger change, and an explicit stop is not undone", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {

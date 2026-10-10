@@ -8,7 +8,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * frozen here. They told every run to call task_get and claim the task first,
  * turns the run prompt now makes unnecessary.
  */
-const PREVIOUS_DEFAULTS = {
+export const PREVIOUS_DEFAULTS = {
   agentCreation: `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
 
 Adapt these templates for the agent's instructions.

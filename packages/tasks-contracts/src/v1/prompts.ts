@@ -165,7 +165,7 @@ Queue worker (developer), started by its tag in its start status, e.g. To Do:
 - Run every command in the foreground with a timeout; start no background processes.
 - Keep the task output current.
 - Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the first Backlog task with your tag in task_search order (the list order) to your start status. Never more than one.
-- Final mutation: a single task_update to the review status, e.g. Needs Review, with assigneeAgentRunId: null.
+- Final mutation: a single task_update to the review status, e.g. Needs Review, with assigneeAgentRunId: null. When blocked, the same update with status Blocked and the blocker in the output.
 
 Reviewer, started by its own tag or status:
 - Read the full diff and run the verification yourself.
@@ -178,5 +178,5 @@ Reviewer, started by its own tag or status:
 - Run every command in the foreground and wait for it; start no background processes.
 - Record blockers with evidence. On quota, rate-limit or auth failures, stop and report them; do not retry.
 - If your instructions define a queue hand-off, do it before the final update.
-- Do everything else first, then make exactly one final task_update with assigneeAgentRunId: null. It ends the run.`,
+- Do everything else first, then make exactly one final task_update with assigneeAgentRunId: null. It ends the run. If you cannot continue, give that update the status Blocked and the blocker in the output; the run then ends as blocked.`,
 };

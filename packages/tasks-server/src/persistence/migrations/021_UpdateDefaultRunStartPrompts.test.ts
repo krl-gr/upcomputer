@@ -6,22 +6,17 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runExperimentalFeatureMigrations } from "../../../../../apps/server/src/extensionApi.ts";
-import { UpdateDefaultRunStartPromptsMigration } from "./021_UpdateDefaultRunStartPrompts.ts";
+import {
+  PREVIOUS_DEFAULTS,
+  UpdateDefaultRunStartPromptsMigration,
+} from "./021_UpdateDefaultRunStartPrompts.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "./index.ts";
 
 const database = Layer.effectDiscard(
   runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]),
 ).pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })));
 
-const previousTaskExecution = DEFAULT_TASK_PROMPT_SETTINGS.taskExecution
-  .replace(
-    "- Start from the task in this prompt; it says whether your run already holds the task. Call task_get only when you need its events or it may have changed.",
-    "- Claim the task first: task_get, then set assigneeAgentRunId to your run id.",
-  )
-  .replace(
-    "make exactly one final task_update with assigneeAgentRunId: null. It ends the run.",
-    "make exactly one final task_update, then report your task_agent_result.",
-  );
+const previousTaskExecution = PREVIOUS_DEFAULTS.taskExecution;
 
 it.layer(database)("UpdateDefaultRunStartPrompts migration", (it) => {
   it.effect("updates an unedited default and keeps an edited one", () =>

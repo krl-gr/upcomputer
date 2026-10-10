@@ -51,7 +51,7 @@ export type TaskAgentChangedReason = "upserted" | "deleted";
 export interface TaskChangedInput {
   readonly task: Task;
   readonly reason: TaskChangedReason;
-  /** A run that gave up its claim in this change; it ends as completed. */
+  /** A run that gave up its claim in this change; it ends as completed, or blocked (see BLOCKED_TASK_STATUS). */
   readonly releasedRunId?: TaskAgentRunId | null;
   /**
    * The broadest modes an agent this change starts may run in, checked against
@@ -120,6 +120,20 @@ export function releasedRunId(input: {
     ? TaskAgentRunId.make(before.assigneeAgentRunId)
     : null;
 }
+
+/**
+ * The status a run's final, releasing task_update sets to report that it
+ * cannot continue: the run then ends as blocked, as a task_agent_result with
+ * blocked:true ends it. Compared without case or spacing.
+ */
+export const BLOCKED_TASK_STATUS = "Blocked";
+
+export function isBlockedTaskStatus(status: string): boolean {
+  return status.trim().replace(/\s+/g, " ").toLowerCase() === BLOCKED_TASK_STATUS.toLowerCase();
+}
+
+/** Longest task output a blocked release copies into its result event. */
+const RELEASE_SUMMARY_MAX_LENGTH = 2_000;
 
 /** What a person can do about a run that ended without a result. */
 export const TASK_AGENT_RUN_RECOVERY_HINT =
@@ -279,6 +293,7 @@ ${claimLine(task, runId)}
 - Keep task output synchronized with the latest concise result when explicitly continuing work in this thread.
 - Downstream task ancestry is recorded automatically from this thread by the server.
 - Set the task's final status yourself with task_update, as your last call and with assigneeAgentRunId null in the same update. Releasing the task ends this run at once, so do everything else first; nothing is needed after it.
+- If you cannot continue, make that final update with status "${BLOCKED_TASK_STATUS}" and the blocker and what you need in the output. The run then ends as blocked, which reports it to the chat that created the task and to agents that handle blocked runs.
 - If you end without releasing the task, finish with a fenced task_agent_result JSON block. Its "status" never overrides a status you set during this run; add it, with an existing status name, only if you did not set one.
 
 ~~~task_agent_result
@@ -548,6 +563,53 @@ const make = Effect.gen(function* () {
             ]
           : [],
       });
+    });
+
+  /**
+   * A run that released its task finished its work. A release to the Blocked
+   * status reports a blocker instead: the run ends as blocked with a result
+   * event, and agents waiting on blocked runs start.
+   */
+  const releaseRun = (
+    run: {
+      readonly id: TaskAgentRunId;
+      readonly taskId: Task["id"];
+      readonly agentId: TaskAgent["id"];
+      readonly threadId: ThreadId;
+    },
+    task: Task,
+  ) =>
+    Effect.gen(function* () {
+      if (!isBlockedTaskStatus(task.status)) return yield* stopActiveRun(run, "released");
+      const summary =
+        task.output?.trim().slice(0, RELEASE_SUMMARY_MAX_LENGTH) ||
+        `Task agent set status "${task.status}".`;
+      const finalized = yield* finalizeRun({
+        run,
+        finalizingStatus: "finalizing:stopped",
+        status: "blocked",
+        interrupt: true,
+        events: [
+          {
+            id: TaskEventId.make(`${run.id}:task-agent-result`),
+            taskId: run.taskId,
+            kind: "task.agent-result",
+            payload: {
+              source: "task_update",
+              agentId: run.agentId,
+              agentRunId: run.id,
+              threadId: run.threadId,
+              status: task.status,
+              blocked: true,
+              summary,
+            },
+            createdAt: yield* now,
+          },
+        ],
+      });
+      // Agents waiting on blocked runs start as they do for a result block,
+      // not only within the releasing call's modes.
+      if (finalized) yield* scheduleRunFinished(task.id);
     });
 
   /** Lets agents waiting on run statuses see a run that just ended. */
@@ -980,7 +1042,7 @@ const make = Effect.gen(function* () {
             const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
             const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
             if (stopReason !== null) yield* stopActiveRun(run, stopReason);
-            else if (run.id === releasedRunId) yield* stopActiveRun(run, "released");
+            else if (run.id === releasedRunId && current !== null) yield* releaseRun(run, current);
           }),
         { discard: true, concurrency: 1 },
       );

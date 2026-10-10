@@ -1,6 +1,7 @@
 import { TaskArchiveMigration } from "./019_TaskArchive.ts";
 import { UpdateDefaultQueuePromptsMigration } from "./020_UpdateDefaultQueuePrompts.ts";
 import { UpdateDefaultRunStartPromptsMigration } from "./021_UpdateDefaultRunStartPrompts.ts";
+import { UpdateDefaultBlockedReleasePromptsMigration } from "./022_UpdateDefaultBlockedReleasePrompts.ts";
 import { TaskSourceWakeBatchesMigration } from "./018_TaskSourceWakeBatches.ts";
 import { TaskAgentRunSourceWakeMigration } from "./017_TaskAgentRunSourceWake.ts";
 import { ProjectTaskPromptsMigration } from "./016_ProjectTaskPrompts.ts";
@@ -83,6 +84,11 @@ export const TASK_MIGRATION_CONTRIBUTION = {
       version: 21,
       name: "UpdateDefaultRunStartPrompts",
       run: UpdateDefaultRunStartPromptsMigration,
+    },
+    {
+      version: 22,
+      name: "UpdateDefaultBlockedReleasePrompts",
+      run: UpdateDefaultBlockedReleasePromptsMigration,
     },
   ],
 } as const;
