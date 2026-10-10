@@ -28,6 +28,14 @@ const SOURCE_WAKE_RETRY_BASE_MS = 10_000;
  * and the run it triggers starting, such as a review after the work.
  */
 export const SOURCE_SETTLE_MS = 15_000;
+/**
+ * The longest a completed run waits for its chat's other tasks to settle. A
+ * chat whose tasks never go quiet (a long run, or a queue other chats keep
+ * feeding) still hears about it, at most about once per this interval. A
+ * Developer and Reviewer pair takes 1 to 2 minutes on the bench and a
+ * three-task queue about 3, so a short queue still ends in one message.
+ */
+export const SOURCE_MAX_WAIT_MS = 5 * 60_000;
 
 /**
  * Dispatch failures that a retry cannot fix: the chat refused the message, or
@@ -104,8 +112,14 @@ export function wakesSourceChat(row: PendingWakeRow): row is WakeRun {
   );
 }
 
-/** One notification and agent-facing message for the runs that finished for one source chat. */
-export function sourceWakeMessage(runs: readonly [WakeRun, ...WakeRun[]]): {
+/**
+ * One notification and agent-facing message for the runs that finished for one
+ * source chat. `idle` says that no run for the chat's tasks is in progress now.
+ */
+export function sourceWakeMessage(
+  runs: readonly [WakeRun, ...WakeRun[]],
+  idle: boolean,
+): {
   readonly text: string;
   readonly notification: OrchestrationV2Notification;
 } {
@@ -132,15 +146,13 @@ export function sourceWakeMessage(runs: readonly [WakeRun, ...WakeRun[]]): {
     const detail = run.summary === null ? "" : ` Summary: ${clip(run.summary, SUMMARY_MAX_LENGTH)}`;
     return `- Task "${title}" (${run.taskId}), run ${run.runId}${agent}: ${run.status}${taskStatus}.${detail}`;
   });
-  // Completed runs are only reported once the chat's tasks have settled.
-  const settled = runs.every((run) => run.status === "completed");
   return {
     text: [
       runs.length === 1
         ? "A task-agent run finished for a task created in this chat:"
         : "Task-agent runs finished for tasks created in this chat:",
       ...lines,
-      ...(settled ? ["No run for this chat's tasks is in progress now."] : []),
+      ...(idle ? ["No run for this chat's tasks is in progress now."] : []),
       "Read a task with task_get when you need its full output.",
     ].join("\n"),
     notification: {
@@ -178,8 +190,9 @@ const WakeBatchRow = Schema.Struct({
  *
  * A completed run waits until none of the chat's tasks has had a run in progress for
  * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
- * UI shows the progress in between. A blocked, failed or interrupted run goes out at
- * once, together with the completed runs waiting for the same chat.
+ * UI shows the progress in between. It waits at most SOURCE_MAX_WAIT_MS. A blocked,
+ * failed or interrupted run goes out at once, ahead of the completed runs waiting for
+ * the same chat, which go with it.
  *
  * Runs are first grouped into batches that are stored before anything is sent. The
  * batch id is the message's command id, so a retry repeats the same message (v2 replays
@@ -216,16 +229,24 @@ export const makeTaskSourceWake = Effect.gen(function* () {
     LEFT JOIN task_events AS ending ON ending.id = run.id || ':task-agent-' || run.status
   `;
 
+  /** Runs the chat may need to act on come first, in a batch and in the sweep window. */
+  const runOrder = sql`
+    CASE WHEN ${sql.in("run.status", WAKES_AT_ONCE)} THEN 0 ELSE 1 END,
+    run.completed_at ASC,
+    run.id ASC
+  `;
+
   /**
    * Finished runs not yet told and not yet in a batch whose chat may hear now:
-   * its tasks have settled (no run in progress or recently ended), or one of
-   * them ended in a way the chat may need to act on. The rest wait here, so a
-   * chat that delegates a queue hears once when it settles, not on every run.
+   * its tasks have settled (no run in progress or recently ended), one of them
+   * ended in a way the chat may need to act on, or a completed one has waited
+   * SOURCE_MAX_WAIT_MS. The rest wait here, so a chat that delegates a queue
+   * hears once when it settles, not on every run.
    */
   const dueRows = SqlSchema.findAll({
-    Request: Schema.String,
+    Request: Schema.Struct({ settledBefore: Schema.String, waitedBefore: Schema.String }),
     Result: PendingWakeRow,
-    execute: (settledBefore) => sql`
+    execute: ({ settledBefore, waitedBefore }) => sql`
       WITH busy_source AS (
         SELECT DISTINCT busy_task.source_thread_id AS id
         FROM task_agent_runs AS busy_run
@@ -242,6 +263,16 @@ export const makeTaskSourceWake = Effect.gen(function* () {
           AND urgent_run.source_wake_batch_id IS NULL
           AND ${sql.in("urgent_run.status", WAKES_AT_ONCE)}
           AND urgent_task.archived_at IS NULL
+      ),
+      waited_source AS (
+        SELECT DISTINCT waited_task.source_thread_id AS id
+        FROM task_agent_runs AS waited_run
+        JOIN tasks AS waited_task ON waited_task.id = waited_run.task_id
+        WHERE waited_run.completed_at <= ${waitedBefore}
+          AND waited_run.source_wake_at IS NULL
+          AND waited_run.source_wake_batch_id IS NULL
+          AND waited_run.status = 'completed'
+          AND waited_task.archived_at IS NULL
       )
       SELECT ${runColumns}
       FROM task_agent_runs AS run
@@ -253,8 +284,9 @@ export const makeTaskSourceWake = Effect.gen(function* () {
           task.source_thread_id IS NULL
           OR task.source_thread_id NOT IN (SELECT id FROM busy_source)
           OR task.source_thread_id IN (SELECT id FROM urgent_source)
+          OR task.source_thread_id IN (SELECT id FROM waited_source)
         )
-      ORDER BY run.completed_at ASC, run.id ASC
+      ORDER BY ${runOrder}
       LIMIT ${SWEEP_LIMIT}
     `,
   });
@@ -267,7 +299,22 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       FROM task_agent_runs AS run
       ${runJoins}
       WHERE run.source_wake_batch_id = ${batchId}
-      ORDER BY run.completed_at ASC, run.id ASC
+      ORDER BY ${runOrder}
+    `,
+  });
+
+  /** Whether a run for a task created in the chat is in progress now. */
+  const sourceBusy = SqlSchema.findAll({
+    Request: Schema.String,
+    Result: Schema.Struct({ busy: Schema.Number }),
+    execute: (sourceThreadId) => sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM task_agent_runs AS busy_run
+        JOIN tasks AS busy_task ON busy_task.id = busy_run.task_id
+        WHERE busy_task.source_thread_id = ${sourceThreadId}
+          AND busy_run.completed_at IS NULL
+      ) AS busy
     `,
   });
 
@@ -293,10 +340,12 @@ export const makeTaskSourceWake = Effect.gen(function* () {
   const formBatches = sql.withTransaction(
     Effect.gen(function* () {
       const current = yield* DateTime.now;
-      const settledBefore = DateTime.formatIso(
-        DateTime.subtract(current, { milliseconds: SOURCE_SETTLE_MS }),
-      );
-      const rows = yield* dueRows(settledBefore);
+      const before = (milliseconds: number) =>
+        DateTime.formatIso(DateTime.subtract(current, { milliseconds }));
+      const rows = yield* dueRows({
+        settledBefore: before(SOURCE_SETTLE_MS),
+        waitedBefore: before(SOURCE_MAX_WAIT_MS),
+      });
       if (rows.length === 0) return;
       const at = DateTime.formatIso(current);
       const silent = rows.filter((row) => !wakesSourceChat(row)).map((row) => row.runId);
@@ -348,7 +397,9 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       const runs = (yield* batchRuns(batch.id)).filter(wakesSourceChat);
       const [first, ...rest] = runs;
       if (first === undefined) return yield* acknowledge(batch.id);
-      const { text, notification } = sourceWakeMessage([first, ...rest]);
+      // Decided now, not from the batch: a batch may go out while other work runs.
+      const [state] = yield* sourceBusy(batch.sourceThreadId);
+      const { text, notification } = sourceWakeMessage([first, ...rest], state?.busy === 0);
       const sent = yield* Effect.exit(
         threads.dispatch({
           type: "message.dispatch",
