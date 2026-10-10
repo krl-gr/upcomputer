@@ -18,6 +18,7 @@ import { entryTimingLabel, minutesToPixels, resizedDuration } from "../logic/tim
 import { IconAction } from "./IconAction.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
+import { projectStripeClassName } from "./projectStripe.ts";
 import { isFinished } from "./TaskRow.tsx";
 
 export interface EntryCardHandlers {
@@ -37,8 +38,8 @@ export interface EntryDragData {
 const handled = (entry: TaskScheduleEntry) => entry.status !== "open";
 
 /**
- * The card's look: wande's two card styles without project colors. "modern"
- * has a stripe and mutes a handled entry; "classic" strikes it through. A
+ * The card's look: wande's two card styles. "modern" has a stripe in the
+ * project's color and mutes a handled entry; "classic" strikes it through. A
  * done or archived task is struck through in both (its entries show the
  * task's own state, doc 5.3).
  */
@@ -48,7 +49,7 @@ function EntryBody(props: {
   readonly compact?: boolean;
   readonly trailing?: ReactNode;
 }) {
-  const { preferences } = usePlanner();
+  const { preferences, projectById } = usePlanner();
   const timing = entryTimingLabel(props.entry);
   const taskFinished = props.task ? isFinished(props.task) : false;
   const muted = handled(props.entry) || taskFinished;
@@ -58,7 +59,11 @@ function EntryBody(props: {
         <span
           className={cn(
             "absolute top-1 bottom-1 left-1 w-1 rounded-full",
-            muted ? "bg-muted-foreground/30" : "bg-primary/60",
+            muted
+              ? "bg-muted-foreground/30"
+              : projectStripeClassName(
+                  (props.task && projectById.get(props.task.projectId)) ?? null,
+                ),
           )}
         />
       ) : null}
