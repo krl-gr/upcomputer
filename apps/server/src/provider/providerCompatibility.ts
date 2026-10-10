@@ -56,11 +56,13 @@ export const ProviderCompatibilityPolicy = Policy.pipe(
 );
 export type ProviderCompatibilityPolicy = typeof ProviderCompatibilityPolicy.Type;
 
+// Manifest policies are keyed to T3 Code releases, so they are matched against the T3 Code
+// version this core tracks (`t3codeVersion`), not Up.computer's own release version.
 export function resolveProviderCompatibility(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
   version: string | null,
-  t3CodeVersion = packageJson.version,
+  t3CodeVersion = packageJson.t3codeVersion,
 ): ServerProviderCompatibilityAdvisory | undefined {
   const policy = policies?.find(
     (entry) => entry.driver === driver && satisfiesSemverRange(t3CodeVersion, entry.t3CodeRange),
