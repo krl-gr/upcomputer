@@ -579,6 +579,49 @@ it.live(
     ),
 );
 
+it.live("a started run holds its task and ends when its final update releases it", () =>
+  runSlice("task-agent-v2-claim", ({ repository, taskAgents, runsOf, runWithStatus, started }) =>
+    Effect.gen(function* () {
+      yield* repository.upsertAgent(agent);
+      const created = yield* repository.upsert({
+        ...task,
+        description: `Address the review. ${HOLD}`,
+        output: "Reviewer: the README example is wrong.",
+      });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      const run = yield* eventually(
+        "the run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+      const claimed = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+      assert.strictEqual(claimed.assigneeAgentRunId, run.id);
+      // The prompt carries what the agent would otherwise fetch with task_get.
+      const firstTurn = yield* eventually(
+        "the provider turn",
+        Ref.get(started).pipe(Effect.map((turns) => Option.fromNullishOr(turns[0]))),
+      );
+      assert.include(
+        firstTurn.text,
+        `This run holds the task: the server set assigneeAgentRunId to "${run.id}"`,
+      );
+      assert.include(firstTurn.text, "Current output:\nReviewer: the README example is wrong.");
+      assert.notInclude(firstTurn.text, "Claim the task by setting");
+
+      const released = yield* callTaskTool(run.threadId, "task_update", {
+        id: task.id,
+        status: "Needs Review",
+        assigneeAgentRunId: null,
+      });
+      assert.isFalse(released.isError, released.text);
+      const done = yield* eventually("the run to complete", runWithStatus(run.id, "completed"));
+      assert.isNotNull(done.completedAt);
+      const updated = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+      assert.strictEqual(updated.status, "Needs Review");
+      assert.isNull(updated.assigneeAgentRunId);
+    }),
+  ),
+);
+
 it.live("the run completes from its final message's task_agent_result", () =>
   runSlice("task-agent-v2-finish", ({ createTask, runWithStatus, repository, threads }) =>
     Effect.gen(function* () {

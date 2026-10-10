@@ -1,5 +1,6 @@
 import { TaskArchiveMigration } from "./019_TaskArchive.ts";
 import { UpdateDefaultQueuePromptsMigration } from "./020_UpdateDefaultQueuePrompts.ts";
+import { UpdateDefaultRunStartPromptsMigration } from "./021_UpdateDefaultRunStartPrompts.ts";
 import { TaskSourceWakeBatchesMigration } from "./018_TaskSourceWakeBatches.ts";
 import { TaskAgentRunSourceWakeMigration } from "./017_TaskAgentRunSourceWake.ts";
 import { ProjectTaskPromptsMigration } from "./016_ProjectTaskPrompts.ts";
@@ -78,5 +79,10 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 18, name: "TaskSourceWakeBatches", run: TaskSourceWakeBatchesMigration },
     { version: 19, name: "TaskArchive", run: TaskArchiveMigration },
     { version: 20, name: "UpdateDefaultQueuePrompts", run: UpdateDefaultQueuePromptsMigration },
+    {
+      version: 21,
+      name: "UpdateDefaultRunStartPrompts",
+      run: UpdateDefaultRunStartPromptsMigration,
+    },
   ],
 } as const;

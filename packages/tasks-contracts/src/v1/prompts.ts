@@ -159,7 +159,7 @@ Adapt these templates for the agent's instructions.
 
 Queue worker (developer), started by its tag in its start status, e.g. To Do:
 - Work only on tasks with your tag in your start status.
-- At start: task_get, claim the task with your run id, set In Progress, and read the repository's AGENTS.md or CLAUDE.md.
+- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, and the run already holds it.
 - Make the smallest coherent change; verify it with tests, typecheck and lint.
 - Commit only your own files, and only if the user allowed commits.
 - Run every command in the foreground with a timeout; start no background processes.
@@ -170,13 +170,13 @@ Queue worker (developer), started by its tag in its start status, e.g. To Do:
 Reviewer, started by its own tag or status:
 - Read the full diff and run the verification yourself.
 - Never edit; report findings by severity with file:line and evidence.
-- End with one task_update that hands the task to a person: the review status, and your trigger tag removed.`,
+- End with one task_update that hands the task to a person: the review status, your trigger tag removed, and assigneeAgentRunId: null.`,
   automationCreation: `Create an automation only for genuinely recurring work. Use the user's timezone, make the generated task template self-contained, avoid duplicate open work when appropriate, and leave agent-created automations as drafts for human review.`,
   taskExecution: `Your agent's own instructions come first; where they differ from this, follow them.
-- Claim the task first: task_get, then set assigneeAgentRunId to your run id.
+- Start from the task in this prompt; it says whether your run already holds the task. Call task_get only when you need its events or it may have changed.
 - Keep the task status and output current, so a person can evaluate the result without reading the thread.
 - Run every command in the foreground and wait for it; start no background processes.
 - Record blockers with evidence. On quota, rate-limit or auth failures, stop and report them; do not retry.
 - If your instructions define a queue hand-off, do it before the final update.
-- Do everything else first, then make exactly one final task_update, then report your task_agent_result.`,
+- Do everything else first, then make exactly one final task_update with assigneeAgentRunId: null. It ends the run.`,
 };

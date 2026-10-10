@@ -2435,6 +2435,19 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.gen(function* () {
           const inserted = yield* startAgentRunRow(input);
           if (inserted.length === 0) return Option.none<TaskAgentRun>();
+          // The run holds its task from the start, unless another active run
+          // holds it; the agent does not spend a turn claiming it.
+          yield* sql`
+            UPDATE tasks
+            SET assignee_worker_id = ${input.id},
+              updated_at = ${input.startedAt}
+            WHERE id = ${input.taskId}
+              AND (assignee_worker_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM task_agent_runs
+                WHERE id = tasks.assignee_worker_id
+                  AND completed_at IS NULL
+              ))
+          `;
           return yield* getAgentRunById({ id: input.id });
         }),
       )

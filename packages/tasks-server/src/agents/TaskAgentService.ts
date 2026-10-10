@@ -222,6 +222,23 @@ Inspect it with agent_run_transcript when that tool is available. Leave "status"
 `;
 }
 
+/**
+ * How a run learns whether it holds its task. The server claims the task when
+ * the run starts unless another active run holds it (see startAgentRun).
+ */
+function claimLine(task: Task, runId: TaskAgentRunId): string {
+  return task.assigneeAgentRunId === runId
+    ? `- This run holds the task: the server set assigneeAgentRunId to "${runId}" when the run started. Do not claim it again.`
+    : `- Claim the task by setting assigneeAgentRunId to "${runId}".`;
+}
+
+/** The task's output when the run started, so the agent need not fetch it. */
+function outputSection(task: Task): string {
+  const output = task.output?.trim();
+  return output ? `\nCurrent output:\n${output}\n` : "";
+}
+
+/** `task` is read after the run started, so it shows the run's claim and current output. */
 function prompt(
   agent: TaskAgent,
   task: Task,
@@ -246,7 +263,7 @@ Assigned task:
 
 Description:
 ${task.description || "(empty)"}
-
+${outputSection(task)}
 Metadata:
 ${taskMetadata(task.metadata)}
 
@@ -256,14 +273,13 @@ Agent run identity:
 - threadId: ${threadId}
 ${triggerSection(trigger)}
 Task system protocol:
-- Work only on the assigned task.
-- Use task_get before work if the task may have changed.
-- Claim the task by setting assigneeAgentRunId to "${runId}".
+- Work only on the assigned task. The task above, with its output, is current as of this run's start; call task_get only when you need its events or another run may have changed it since.
+${claimLine(task, runId)}
 - Update task status and append concise findings as work proceeds.
 - Keep task output synchronized with the latest concise result when explicitly continuing work in this thread.
 - Downstream task ancestry is recorded automatically from this thread by the server.
-- Set the task's final status yourself with task_update.
-- Always finish with a fenced task_agent_result JSON block. Its "status" never overrides a status you set during this run; add it, with an existing status name, only if you did not set one.
+- Set the task's final status yourself with task_update, as your last call and with assigneeAgentRunId null in the same update. Releasing the task ends this run at once, so do everything else first; nothing is needed after it.
+- If you end without releasing the task, finish with a fenced task_agent_result JSON block. Its "status" never overrides a status you set during this run; add it, with an existing status name, only if you did not set one.
 
 ~~~task_agent_result
 {"summary":"Outcome summary.","blocked":false,"events":[]}
@@ -852,6 +868,8 @@ const make = Effect.gen(function* () {
           ({ archivedAt }) => archivedAt === null,
         );
         const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
+        // Read after the run started: it carries the run's claim and current output.
+        const startedTask = globallyOrderedTasks[globalIndex] ?? task;
         const globalPosition = {
           index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
           total: globallyOrderedTasks.length,
@@ -878,7 +896,7 @@ const make = Effect.gen(function* () {
           commandId: CommandId.make(yield* randomId("task-agent-turn-start")),
           threadId,
           messageId: taskAgentRunMessageId(run.id),
-          text: prompt(agent, task, run.id, threadId, settings, globalPosition, trigger),
+          text: prompt(agent, startedTask, run.id, threadId, settings, globalPosition, trigger),
           attachments: [],
           modelSelection,
           mode: "auto",
@@ -1133,13 +1151,20 @@ const make = Effect.gen(function* () {
 
           if (message.type === "send") {
             pending.current = { continuation, task };
+            const startedTask = Option.getOrElse(
+              yield* repository
+                .getById({ id: task.id })
+                .pipe(Effect.orElseSucceed(() => Option.none<Task>())),
+              () => task,
+            );
             const sent = yield* Effect.exit(
               sendTurn(
                 taskAgentRunMessageId(continuation.id),
                 `Task-agent run continued:
 This thread continues ended run ${run.id} (status "${run.status}") as a new run.
 - agentRunId: ${continuation.id}
-Claim the task with this agentRunId and finish with a fenced task_agent_result JSON block, as before.
+${claimLine(startedTask, continuation.id)}
+Finish as before: release the task in your final task_update, or end with a fenced task_agent_result JSON block.
 
 ${message.text}`,
               ),
