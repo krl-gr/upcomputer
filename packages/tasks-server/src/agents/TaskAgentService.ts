@@ -49,9 +49,14 @@ export type TaskChangedReason =
 export type TaskAgentChangedReason = "upserted" | "deleted";
 
 export interface TaskChangedInput {
+  /** The task as this change left it. */
   readonly task: Task;
   readonly reason: TaskChangedReason;
-  /** A run that gave up its claim in this change; it ends as completed, or blocked (see BLOCKED_TASK_STATUS). */
+  /**
+   * A run that gave up its claim in this change. It ends as completed, or as
+   * blocked (see BLOCKED_TASK_STATUS), decided from `task`, so an edit made
+   * before the change is reconciled does not change the run's outcome.
+   */
   readonly releasedRunId?: TaskAgentRunId | null;
   /**
    * The broadest modes an agent this change starts may run in, checked against
@@ -1042,7 +1047,7 @@ const make = Effect.gen(function* () {
             const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
             const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
             if (stopReason !== null) yield* stopActiveRun(run, stopReason);
-            else if (run.id === releasedRunId && current !== null) yield* releaseRun(run, current);
+            else if (run.id === releasedRunId) yield* releaseRun(run, queuedTask);
           }),
         { discard: true, concurrency: 1 },
       );

@@ -779,6 +779,71 @@ test("a release to the Blocked status ends the run as blocked and starts a block
   );
 });
 
+test("a release to Blocked ends the run blocked even when the task changes before it is reconciled", async () => {
+  // Armed with the release's task id: a person's edit lands right when its change is reconciled.
+  const race: { taskId: TaskId | null } = { taskId: null };
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service } = harness;
+        yield* repository.upsertAgent(agentInput("dev"));
+        const task = yield* repository.upsert(taskInput("t"));
+        yield* service.scheduleTaskChanged({ task, reason: "created" });
+        const devRun = yield* waitFor(
+          "developer run",
+          runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+        );
+
+        const blocker = "Missing required credentials.";
+        const releasedTask = yield* repository.update({
+          actor,
+          id: task.id,
+          status: "Blocked",
+          output: blocker,
+          assigneeAgentRunId: null,
+        });
+        race.taskId = task.id;
+        yield* change(harness, releasedTask, devRun.id);
+        const ended = yield* waitFor(
+          "the developer run to end",
+          repository
+            .getAgentRunById({ id: devRun.id })
+            .pipe(
+              Effect.map((run) =>
+                Option.getOrThrow(run).completedAt ? Option.getOrThrow(run) : undefined,
+              ),
+            ),
+        );
+        NodeAssert.equal(race.taskId, null, "the person's edit landed before reconciliation");
+        NodeAssert.equal(ended.status, "blocked");
+        const results = yield* repository.events({ taskId: task.id, kinds: ["task.agent-result"] });
+        NodeAssert.deepEqual(
+          results.events.map(({ payload }) => {
+            const { blocked, summary, status } = payload as Record<string, unknown>;
+            return { blocked, summary, status };
+          }),
+          [{ blocked: true, summary: blocker, status: "Blocked" }],
+        );
+        NodeAssert.equal(
+          Option.getOrThrow(yield* repository.getById({ id: task.id })).status,
+          "Needs Review",
+        );
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      // Reconciling a change first records its history event.
+      appendEvent: (input) =>
+        race.taskId !== null && input.taskId === race.taskId && input.kind === "task.updated"
+          ? Effect.suspend(() => {
+              race.taskId = null;
+              return repository.update({ actor, id: input.taskId, status: "Needs Review" });
+            }).pipe(Effect.andThen(repository.appendEvent(input)))
+          : repository.appendEvent(input),
+    }),
+  );
+});
+
 test("an agent restarts only after a trigger change, and an explicit stop is not undone", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {
