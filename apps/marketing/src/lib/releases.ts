@@ -1,6 +1,6 @@
 const REPO = "krl-gr/upcomputer";
 
-export const RELEASE_VERSION = "0.0.32";
+export const RELEASE_VERSION = "0.0.33";
 export const RELEASE_TAG = `core-v${RELEASE_VERSION}`;
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 export const RELEASE_URL = `${RELEASES_URL}/tag/${RELEASE_TAG}`;
