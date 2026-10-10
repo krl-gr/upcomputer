@@ -554,12 +554,13 @@ const make = Effect.gen(function* () {
         }
         case "task_search": {
           const input = yield* decoders.task_search(args);
+          // Agents look for their own queue: person tasks only when asked for.
+          // Routines are person tasks, so asking for them searches every audience.
+          const audience =
+            input.audience ?? (input.kind === undefined || input.kind === "task" ? "agent" : "all");
           return {
             isError: false,
-            // Agents look for their own queue: person tasks only when asked for.
-            text: json({
-              tasks: yield* repository.search({ ...input, audience: input.audience ?? "agent" }),
-            }),
+            text: json({ tasks: yield* repository.search({ ...input, audience }) }),
           };
         }
         case "task_create": {

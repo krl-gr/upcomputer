@@ -16,6 +16,7 @@ import {
   TaskEventId,
   TaskId,
   TaskKind,
+  TaskKindFilter,
   TaskTag,
   TASK_ARCHIVED_EVENT,
   TASK_STATUS_CHANGED_EVENT,
@@ -509,9 +510,12 @@ const makeTaskRepository = Effect.gen(function* () {
           : "archived_at IS NULL",
     );
 
-  /** Audience and kind filters; every list shows one kind. */
-  const membershipCondition = (audience: TaskAudienceFilter, kind: TaskKind) =>
-    audience === "all" ? sql`kind = ${kind}` : sql`audience = ${audience} AND kind = ${kind}`;
+  /** Audience and kind filters; `all` leaves that column unfiltered. */
+  const membershipCondition = (audience: TaskAudienceFilter, kind: TaskKindFilter) => {
+    const audienceCondition =
+      audience === "all" ? sql.literal("1 = 1") : sql`audience = ${audience}`;
+    return kind === "all" ? audienceCondition : sql`${audienceCondition} AND kind = ${kind}`;
+  };
 
   /**
    * History events the server records itself. A caller-supplied id makes the
@@ -834,7 +838,7 @@ const makeTaskRepository = Effect.gen(function* () {
       tagCount: Schema.Number,
       archive: TaskArchiveFilter,
       audience: TaskAudienceFilter,
-      kind: TaskKind,
+      kind: TaskKindFilter,
       excludeStatusesJson: Schema.NullOr(Schema.String),
       createdBy: Schema.NullOr(Schema.String),
       excludeAutomationTasks: Schema.Number,

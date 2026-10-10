@@ -49,6 +49,7 @@ import { TaskPromptSettingsStoreLive } from "./persistence/TaskPromptSettingsSto
 import { TaskRepository, type PersistTaskInput } from "./persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "./persistence/TaskRepositoryLive.ts";
 import { TASKS_RPC_CONTRIBUTION } from "./rpc/contributions.ts";
+import { TASK_TOOL_SPECS } from "./tools/TaskToolDefinitions.ts";
 import { TaskToolService, TaskToolServiceLive } from "./tools/TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./tools/TaskToolTypes.ts";
 import { InboxProject } from "./inbox/InboxProject.ts";
@@ -629,6 +630,38 @@ it.effect(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect("task_search offers kind and finds routines without an audience", () => {
+  const { layer, call } = harness();
+  return Effect.gen(function* () {
+    // The advertised schema rejects unknown properties, so kind must be listed.
+    const schema = TASK_TOOL_SPECS.find(({ name }) => name === "task_search")?.inputSchema as
+      | { properties: Record<string, { enum?: unknown }> }
+      | undefined;
+    assert.deepStrictEqual(schema?.properties.kind?.enum, ["task", "routine", "all"]);
+    yield* call("task_create", { title: "for agents", description: "", status: "To Do" });
+    yield* call("task_create", {
+      title: "for me",
+      description: "",
+      status: "To Do",
+      audience: "person",
+    });
+    yield* call("task_create", {
+      title: "stretch",
+      description: "",
+      status: "To Do",
+      kind: "routine",
+    });
+    const titles = (args: Record<string, unknown>) =>
+      call("task_search", args).pipe(
+        Effect.map(({ tasks }) => tasks.map(({ title }: { title: string }) => title).toSorted()),
+      );
+    assert.deepStrictEqual(yield* titles({}), ["for agents"]);
+    assert.deepStrictEqual(yield* titles({ kind: "routine" }), ["stretch"]);
+    assert.deepStrictEqual(yield* titles({ kind: "all" }), ["for agents", "for me", "stretch"]);
+    assert.deepStrictEqual(yield* titles({ kind: "all", audience: "agent" }), ["for agents"]);
+  }).pipe(Effect.provide(layer));
+});
 
 it.effect("task_create makes a routine the person's and refuses one for agents", () => {
   const { layer, call, scheduled } = harness();

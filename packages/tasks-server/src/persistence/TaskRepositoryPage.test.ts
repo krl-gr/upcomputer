@@ -134,6 +134,54 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
     }),
   );
 
+  it.effect("kind all lists tasks and routines together under the other filters", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      const routine = { audience: "person", kind: "routine" } as const;
+      // A new task goes first, so these are created last to first.
+      yield* repository.upsert(task("k-5-routine", [], routine));
+      yield* repository.upsert(
+        task("k-4-old", [], { ...routine, archivedAt: "2026-10-05T11:00:00.000Z" }),
+      );
+      yield* repository.upsert(task("k-3-mine", ["gym"], { audience: "person" }));
+      yield* repository.upsert(task("k-2-routine", ["gym"], routine));
+      yield* repository.upsert(task("k-1-task"));
+
+      const ids = (input: Parameters<typeof repository.search>[0]) =>
+        repository
+          .search({ limit: 500, ...input })
+          .pipe(
+            Effect.map((tasks) =>
+              tasks.map(({ id }) => id as string).filter((id) => id.startsWith("k-")),
+            ),
+          );
+      assert.deepStrictEqual(yield* ids({}), ["k-1-task", "k-3-mine"], "routines stay out");
+      assert.deepStrictEqual(yield* ids({ kind: "routine" }), ["k-2-routine", "k-5-routine"]);
+      // Global rank order across kinds.
+      assert.deepStrictEqual(yield* ids({ kind: "all" }), [
+        "k-1-task",
+        "k-2-routine",
+        "k-3-mine",
+        "k-5-routine",
+      ]);
+      assert.deepStrictEqual(yield* ids({ kind: "all", archive: "all" }), [
+        "k-1-task",
+        "k-2-routine",
+        "k-3-mine",
+        "k-4-old",
+        "k-5-routine",
+      ]);
+      assert.deepStrictEqual(yield* ids({ kind: "all", audience: "agent" }), ["k-1-task"]);
+      assert.deepStrictEqual(yield* ids({ kind: "all", tags: ["gym"] }), [
+        "k-2-routine",
+        "k-3-mine",
+      ]);
+      const first = yield* repository.page({ kind: "all", projectId: project, limit: 2 });
+      assert.isNotNull(first.nextCursor);
+      assert.include(first.statuses, "To Do");
+    }),
+  );
+
   it.effect("filter on createdBy: one automation's tasks, or none of any automation's", () =>
     Effect.gen(function* () {
       const repository = yield* TaskRepository;

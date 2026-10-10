@@ -135,15 +135,22 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_search",
     description:
-      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise. Only agent tasks unless audience says otherwise.",
+      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise. By default only regular agent tasks: ask for routines with kind routine, or tasks and routines with kind all.",
     inputSchema: object({
       projectId: id,
       status: id,
       tags,
+      kind: {
+        type: "string",
+        enum: ["task", "routine", "all"],
+        description:
+          "task (default): regular tasks only. routine: only routines, the user's recurring habits and chores. all: both.",
+      },
       audience: {
         type: "string",
         enum: ["agent", "person", "all"],
-        description: "agent (default): tasks for agents. person: the user's own tasks. all: both.",
+        description:
+          "agent: tasks for agents. person: the user's own tasks. all: both. Defaults to agent, or to all when kind is routine or all, since routines are person tasks.",
       },
       archive: {
         type: "string",

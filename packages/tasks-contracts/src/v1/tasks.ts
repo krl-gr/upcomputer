@@ -231,6 +231,10 @@ export type TaskArchiveFilter = typeof TaskArchiveFilter.Type;
 export const TaskAudienceFilter = Schema.Literals(["agent", "person", "all"]);
 export type TaskAudienceFilter = typeof TaskAudienceFilter.Type;
 
+/** Which kind a list returns: tasks, routines, or both. */
+export const TaskKindFilter = Schema.Literals(["task", "routine", "all"]);
+export type TaskKindFilter = typeof TaskKindFilter.Type;
+
 export const TaskSearchInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   status: Schema.optional(TrimmedNonEmptyString),
@@ -243,7 +247,7 @@ export const TaskSearchInput = Schema.Struct({
   /** Defaults to all. */
   audience: Schema.optional(TaskAudienceFilter),
   /** Defaults to task, so routines stay out of task lists. */
-  kind: Schema.optional(TaskKind),
+  kind: Schema.optional(TaskKindFilter),
   /** Only tasks with this creator, such as `automation:<id>` for one automation's tasks. */
   createdBy: Schema.optional(TrimmedNonEmptyString),
   /** Leaves out tasks an automation created (`createdBy` `automation:<id>`). */
