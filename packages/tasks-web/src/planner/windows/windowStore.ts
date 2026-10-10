@@ -2,7 +2,8 @@
  * The planner's floating windows, kept per environment at module level so
  * they are still open after leaving /tasks and coming back (wande keeps them
  * across tabs). One detail window per task and per automation, any number of
- * create windows; a focused window comes to the front.
+ * create windows; a focused window comes to the front. The Tasks surface in the
+ * right panel keeps its own windows, apart from the page's.
  */
 import { useSyncExternalStore } from "react";
 
@@ -46,11 +47,12 @@ export type PlannerWindow =
 
 /** Above the page and its sheets, below menus and popovers (z-[130]). */
 const BASE_Z = 60;
+// Shared by every store: a create window's id keys its draft.
+let nextCreate = 1;
 
 export class WindowStore {
   private windows: readonly PlannerWindow[] = [];
   private nextZ = BASE_Z;
-  private nextCreate = 1;
   private readonly listeners = new Set<() => void>();
 
   subscribe = (listener: () => void) => {
@@ -73,14 +75,14 @@ export class WindowStore {
   }
 
   openCreate(initial: CreateWindowInitial = {}): string {
-    const id = `create-${this.nextCreate++}`;
+    const id = `create-${nextCreate++}`;
     this.set([...this.windows, { kind: "create", id, z: this.bump(), initial }]);
     return id;
   }
 
   /** Opens a window for a new automation. */
   openCreateAutomation(): string {
-    const id = `create-automation-${this.nextCreate++}`;
+    const id = `create-automation-${nextCreate++}`;
     this.set([...this.windows, { kind: "automation", id, automationId: null, z: this.bump() }]);
     return id;
   }
@@ -156,11 +158,15 @@ export class WindowStore {
 
 const stores = new Map<string, WindowStore>();
 
-export function windowStoreFor(environmentId: string): WindowStore {
-  let store = stores.get(environmentId);
+export function windowStoreFor(
+  environmentId: string,
+  surface: "page" | "panel" = "page",
+): WindowStore {
+  const key = `${surface}:${environmentId}`;
+  let store = stores.get(key);
   if (!store) {
     store = new WindowStore();
-    stores.set(environmentId, store);
+    stores.set(key, store);
   }
   return store;
 }

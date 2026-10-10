@@ -32,6 +32,7 @@ import {
 } from "./WebFeature";
 import {
   composeExperimentalWebFeatures,
+  findExperimentalWebRightPanelSurface,
   findExperimentalWebRoute,
   findExperimentalWebSettingsPage,
   isExperimentalWebNavigationActive,
@@ -152,6 +153,43 @@ describe("web product composition", () => {
     expect(() =>
       composeExperimentalWebFeatures([
         { id: "test.shadow", version: 1, rpcGroups: [RpcGroup.make(ProbeRpc)] },
+      ]),
+    ).toThrow(WebFeatureInvariantError);
+  });
+
+  it("offers right-panel surfaces only under free, unique launcher letters", async () => {
+    const surface = (id: string, shortcut: string) => ({
+      id,
+      label: "Notes",
+      shortcut,
+      icon: NotesPage,
+      load: async () => ({ default: NotesPage }),
+    });
+    const product = composeExperimentalWebFeatures([
+      { id: "test.notes", version: 1, rightPanelSurfaces: [surface("notes", "N")] },
+    ]);
+    expect(product.rightPanelSurfaces.map((entry) => entry.shortcut)).toEqual(["N"]);
+    expect(
+      await findExperimentalWebRightPanelSurface(product, "notes")
+        ?.load()
+        .then((module) => module.default),
+    ).toBe(NotesPage);
+    expect(findExperimentalWebRightPanelSurface(product, "pins")).toBeUndefined();
+
+    // Core's launcher owns B, T, F, D, P, L and M; a shortcut is one letter.
+    for (const shortcut of ["B", "M", "n", "NO"]) {
+      expect(() =>
+        defineExperimentalWebFeature({
+          id: "test.notes",
+          version: 1,
+          rightPanelSurfaces: [surface("notes", shortcut)],
+        }),
+      ).toThrow(WebFeatureInvariantError);
+    }
+    expect(() =>
+      composeExperimentalWebFeatures([
+        { id: "test.notes", version: 1, rightPanelSurfaces: [surface("notes", "N")] },
+        { id: "test.pins", version: 1, rightPanelSurfaces: [surface("pins", "N")] },
       ]),
     ).toThrow(WebFeatureInvariantError);
   });

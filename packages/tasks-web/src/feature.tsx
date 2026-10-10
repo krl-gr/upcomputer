@@ -82,6 +82,15 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       load: () => import("./settings/InstructionsSettingsPage.tsx"),
     },
   ],
+  rightPanelSurfaces: [
+    {
+      id: "tasks",
+      label: "Tasks",
+      shortcut: "K",
+      icon: ListTodoIcon,
+      load: () => import("./ui/TasksPanel.tsx"),
+    },
+  ],
   routes: [
     { id: "tasks", path: "/tasks", load: () => import("./ui/TasksRoute.tsx") },
     { id: "agents", path: "/agents", load: () => import("./ui/AgentsRoute.tsx") },

@@ -159,7 +159,7 @@ export function WeekCalendar(props: {
             key={day.date}
             type="button"
             className={cn(
-              "flex items-center justify-center gap-1 border-r px-2 py-2 hover:bg-accent/60",
+              "flex flex-wrap items-center justify-center gap-1 border-r px-2 py-2 hover:bg-accent/60",
               day.date === today && "bg-background",
             )}
             onClick={() => props.onMark(day.date)}

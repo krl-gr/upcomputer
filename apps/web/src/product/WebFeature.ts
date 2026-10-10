@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
@@ -16,6 +16,8 @@ const RESERVED_ROUTE_PATHS = new Set([
   "/usage",
   "/welcome",
 ]);
+// Letters core's right-panel launcher already uses (`RightPanelTabs.tsx`).
+const CORE_RIGHT_PANEL_SHORTCUTS = new Set(["B", "T", "F", "D", "P", "L", "M"]);
 
 export interface ExperimentalWebPageModule {
   readonly default: ComponentType;
@@ -59,6 +61,29 @@ export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebT
   readonly fallback: ReactNode;
 }
 
+export interface ExperimentalWebRightPanelSurfaceProps {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  /** The thread's project, null while it has none. */
+  readonly projectId: ProjectId | null;
+}
+
+/**
+ * A surface in the right panel beside a thread: an entry in the panel's
+ * launcher and "+" menu, and at most one tab per thread.
+ */
+export interface ExperimentalWebRightPanelSurfaceContribution {
+  readonly id: string;
+  /** The launcher entry and the tab title. */
+  readonly label: string;
+  /** One letter that opens the surface from the launcher; core's letters are taken. */
+  readonly shortcut: string;
+  readonly icon: ComponentType<{ readonly className?: string }>;
+  readonly load: () => Promise<{
+    readonly default: ComponentType<ExperimentalWebRightPanelSurfaceProps>;
+  }>;
+}
+
 /**
  * Trusted, build-time web feature. Each slot is optional; the host owns
  * placement and layout, the feature owns content.
@@ -79,6 +104,7 @@ export interface ExperimentalWebFeatureContribution {
    * use it for toasts and notifications the feature raises from anywhere.
    */
   readonly coordinator?: ComponentType;
+  readonly rightPanelSurfaces?: ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution>;
   /** RPC groups the feature's server counterpart adds to the WebSocket transport. */
   readonly rpcGroups?: ReadonlyArray<RpcGroup.Any>;
 }
@@ -95,6 +121,8 @@ export class WebFeatureInvariantError extends Error {
       | "duplicate-route"
       | "duplicate-navigation"
       | "duplicate-settings"
+      | "invalid-shortcut"
+      | "duplicate-right-panel-surface"
       | "duplicate-rpc-method",
     message: string,
   ) {
@@ -135,6 +163,15 @@ function assertSettingsPath(path: string): void {
   }
 }
 
+function assertShortcut(shortcut: string, field: string): void {
+  if (!/^[A-Z]$/.test(shortcut) || CORE_RIGHT_PANEL_SHORTCUTS.has(shortcut)) {
+    throw new WebFeatureInvariantError(
+      "invalid-shortcut",
+      `${field} shortcut '${shortcut}' must be one uppercase letter core's launcher does not use.`,
+    );
+  }
+}
+
 export function defineExperimentalWebFeature<
   const Feature extends ExperimentalWebFeatureContribution,
 >(feature: Feature): Feature {
@@ -158,6 +195,11 @@ export function defineExperimentalWebFeature<
     assertStableId(page.id, `Settings page id for '${feature.id}'`);
     assertSettingsPath(page.path);
     assertLabel(page.label, `Settings page '${page.id}'`);
+  }
+  for (const surface of feature.rightPanelSurfaces ?? []) {
+    assertStableId(surface.id, `Right-panel surface id for '${feature.id}'`);
+    assertLabel(surface.label, `Right-panel surface '${surface.id}'`);
+    assertShortcut(surface.shortcut, `Right-panel surface '${surface.id}'`);
   }
   return feature;
 }

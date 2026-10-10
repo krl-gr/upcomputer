@@ -14,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
+  Blocks,
   Smartphone,
   ChevronDown,
   ChevronLeft,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
 import {
+  type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -79,6 +81,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { withoutHiddenProductSurfaces } from "~/product/productFlags";
+import { productRightPanelSurface, productRightPanelSurfaces } from "~/product/ProductSlots";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -124,6 +127,8 @@ interface RightPanelTabsProps {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
+  /** Offers the product features' surfaces too; left out where the panel is not beside a thread. */
+  onAddFeatureSurface?: (featureSurfaceId: string) => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -183,6 +188,30 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequests: "No linked pull requests available.",
   device: "Available from a thread.",
 } as const;
+
+interface FeatureSurfaceAction {
+  readonly label: string;
+  readonly icon: ComponentType<{ readonly className?: string }>;
+  readonly shortcut: string;
+  readonly available: true;
+  readonly disabledReason: string;
+  readonly onClick: () => void;
+}
+
+/** Launcher entries for the product features' surfaces, after core's. */
+function featureSurfaceActions(
+  onAdd: ((featureSurfaceId: string) => void) | undefined,
+): FeatureSurfaceAction[] {
+  if (!onAdd) return [];
+  return productRightPanelSurfaces().map((surface) => ({
+    label: surface.label,
+    icon: surface.icon,
+    shortcut: surface.shortcut,
+    available: true,
+    disabledReason: "",
+    onClick: () => onAdd(surface.id),
+  }));
+}
 
 type TabContextMenuAction =
   | "rename"
@@ -321,6 +350,7 @@ function RightPanelEmptyState(props: {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
+  featureActions: readonly FeatureSurfaceAction[];
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -332,7 +362,7 @@ function RightPanelEmptyState(props: {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
-  const actions = withoutHiddenProductSurfaces([
+  const coreActions = withoutHiddenProductSurfaces([
     {
       label: "Browser",
       icon: Globe2,
@@ -391,6 +421,7 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddDevice,
     },
   ] as const);
+  const actions = [...coreActions, ...props.featureActions];
 
   type SurfaceAction = (typeof actions)[number];
 
@@ -597,6 +628,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "feature":
+      return productRightPanelSurface(surface.featureSurfaceId)?.label ?? surface.featureSurfaceId;
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -680,6 +713,10 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "feature": {
+      const Icon = productRightPanelSurface(surface.featureSurfaceId)?.icon ?? Blocks;
+      return <Icon className="size-3 shrink-0" />;
+    }
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -833,7 +870,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   }, []);
 
-  const addSurfaceActions = withoutHiddenProductSurfaces([
+  const featureActions = featureSurfaceActions(props.onAddFeatureSurface);
+  const coreAddSurfaceActions = withoutHiddenProductSurfaces([
     {
       label: "Browser",
       icon: Globe2,
@@ -891,6 +929,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDevice,
     },
   ] as const);
+  const addSurfaceActions = [...coreAddSurfaceActions, ...featureActions];
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
@@ -1372,6 +1411,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
+            featureActions={featureActions}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}

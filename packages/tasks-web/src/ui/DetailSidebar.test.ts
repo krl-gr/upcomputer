@@ -23,7 +23,7 @@ test("task and agent views render both detail columns through DetailColumn", () 
   for (const view of ["TasksView.tsx", "AgentsView.tsx"]) {
     const source = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
     // The existing item and the create form.
-    NodeAssert.equal(source.match(/<DetailColumn>/g)?.length, 2, view);
+    NodeAssert.equal(source.match(/<DetailColumn[\s>]/g)?.length, 2, view);
     NodeAssert.doesNotMatch(source, /<aside/, view);
     NodeAssert.doesNotMatch(source, /\b(?:bg|text)-sidebar/, view);
   }

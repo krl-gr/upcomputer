@@ -26,6 +26,8 @@ export function TagFilterCombobox(props: {
   readonly tags: ReadonlyArray<string>;
   readonly value: ReadonlyArray<string>;
   readonly onChange: (tags: string[]) => void;
+  /** The trigger's width; a fixed one by default. */
+  readonly className?: string | undefined;
 }) {
   return (
     <Combobox<string, true>
@@ -38,7 +40,7 @@ export function TagFilterCombobox(props: {
         render={
           <SelectButton
             size="sm"
-            className="w-40 shrink-0"
+            className={props.className ?? "w-40 shrink-0"}
             aria-label="Filter by tags"
             title="Tasks with every selected tag"
           />

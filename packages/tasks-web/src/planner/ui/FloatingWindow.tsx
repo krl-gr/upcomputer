@@ -1,4 +1,12 @@
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
@@ -30,6 +38,12 @@ function defaultPosition(width: number): WindowPosition {
   );
 }
 
+/**
+ * Set by the planner in a right-panel surface: windows fill the planner's
+ * area instead of floating over the app, and Escape closes them like Back.
+ */
+export const FloatingWindowDocked = createContext(false);
+
 const INTERACTIVE =
   'input, textarea, select, button, a, [contenteditable="true"], [data-prevent-drag]';
 
@@ -46,7 +60,8 @@ const fromOwnDom = (event: { currentTarget: Element; target: EventTarget }) =>
  * Wande's FloatingWindow: a non-modal window over the page with the dialog
  * surface, dragged by its header and kept inside the viewport, not resizable.
  * Several can be open; pressing one raises it. Below the `md` breakpoint it is
- * a bottom sheet instead.
+ * a bottom sheet instead, and docked (`FloatingWindowDocked`) it covers the
+ * planner.
  */
 export function FloatingWindow(props: {
   readonly width: number;
@@ -57,10 +72,11 @@ export function FloatingWindow(props: {
   readonly footer?: ReactNode;
   readonly onFocus: () => void;
   readonly onMove: (position: WindowPosition) => void;
-  /** Sheet mode only: the sheet was dismissed. */
+  /** Sheet and docked modes: the sheet was dismissed, or Escape pressed. */
   readonly onDismiss: () => void;
 }) {
   const desktop = useMediaQuery("md");
+  const docked = use(FloatingWindowDocked);
   const [position, setPosition] = useState<WindowPosition>(
     () => props.position ?? defaultPosition(props.width),
   );
@@ -82,6 +98,23 @@ export function FloatingWindow(props: {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [props.width]);
+
+  if (docked)
+    return (
+      <div
+        role="dialog"
+        className="absolute inset-0 z-30 flex min-h-0 flex-col bg-background text-foreground"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || event.defaultPrevented || !fromOwnDom(event)) return;
+          event.preventDefault();
+          props.onDismiss();
+        }}
+      >
+        <div className="flex shrink-0 items-start gap-2 px-3 pt-3 pb-2">{props.header}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">{props.children}</div>
+        {props.footer ? <div className="shrink-0 px-3 pb-3">{props.footer}</div> : null}
+      </div>
+    );
 
   if (!desktop)
     return (

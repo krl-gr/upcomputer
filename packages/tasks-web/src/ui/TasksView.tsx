@@ -115,6 +115,8 @@ export interface TasksViewProps {
   readonly onNavigateBack: () => void;
   readonly onSelectedTaskKeyChange?: (taskKey: string | null) => void;
   readonly onOpenThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+  /** `panel` fits a right-panel surface: wrapped filters, a narrow list, stacked details. */
+  readonly layout?: "page" | "panel";
 }
 
 function emptyForm(project?: TasksWebProject): TaskFormState {
@@ -213,6 +215,9 @@ export function TasksView(props: TasksViewProps) {
   const createInFlightRef = useRef(false);
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
+  const panel = props.layout === "panel";
+  // In the panel, filters grow to fill the rows they wrap into.
+  const filterWidth = (width: string) => `${width} shrink-0${panel ? " grow" : ""}`;
   const statusFilter = filters.status;
   const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
   const [history, setHistory] = useState<{
@@ -689,9 +694,15 @@ export function TasksView(props: TasksViewProps) {
     }
   }, [form, props, selectedProject]);
 
+  const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
+  const detailInnerClass = panel
+    ? "flex min-w-0 flex-1 flex-col gap-3"
+    : "flex min-h-0 min-w-0 flex-1 gap-5";
+
   return (
     <WorkspaceViewLayout
-      title={selectedTask ? "" : createModeOpen ? "New task" : "Tasks"}
+      variant={props.layout}
+      title={selectedTask ? "" : createModeOpen ? "New task" : panel ? "" : "Tasks"}
       action={
         selectedTask
           ? props.canMutateEnvironment(selectedTask.environmentId)
@@ -753,7 +764,7 @@ export function TasksView(props: TasksViewProps) {
         ) : createModeOpen ? undefined : (
           <>
             {props.viewSwitch}
-            <span className="min-w-0 flex-1" />
+            {panel ? null : <span className="min-w-0 flex-1" />}
             {props.projectSelect}
             <Select
               value={statusFilter}
@@ -761,7 +772,11 @@ export function TasksView(props: TasksViewProps) {
                 if (value) onFiltersChange({ ...filters, status: value });
               }}
             >
-              <SelectTrigger className="w-40 shrink-0" size="sm" aria-label="Filter by status">
+              <SelectTrigger
+                className={filterWidth("w-40")}
+                size="sm"
+                aria-label="Filter by status"
+              >
                 <SelectValue>
                   {statusFilter === ALL_FILTER ? "All statuses" : statusFilter}
                 </SelectValue>
@@ -782,7 +797,7 @@ export function TasksView(props: TasksViewProps) {
               }}
             >
               <SelectTrigger
-                className="w-36 shrink-0"
+                className={filterWidth("w-36")}
                 size="sm"
                 aria-label="Filter by last run"
                 title="Status of each task's latest run"
@@ -807,6 +822,7 @@ export function TasksView(props: TasksViewProps) {
               tags={tagOptions}
               value={filters.tags}
               onChange={(tags) => onFiltersChange({ ...filters, tags })}
+              className={filterWidth("w-40")}
             />
             <Select
               value={archiveFilter}
@@ -815,7 +831,11 @@ export function TasksView(props: TasksViewProps) {
                 if (option) onFiltersChange({ ...filters, archive: option.value });
               }}
             >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Filter by archive">
+              <SelectTrigger
+                className={filterWidth("w-44")}
+                size="sm"
+                aria-label="Filter by archive"
+              >
                 <SelectValue>
                   {ARCHIVE_OPTIONS.find((option) => option.value === archiveFilter)?.label}
                 </SelectValue>
@@ -842,9 +862,9 @@ export function TasksView(props: TasksViewProps) {
       }
     >
       {selectedTask ? (
-        <div className="flex min-h-0 w-full flex-1 py-5">
-          <div className="flex min-h-0 min-w-0 flex-1 gap-5">
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div className={detailOuterClass}>
+          <div className={detailInnerClass}>
+            <main className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
               <DetailSidebarSection
                 key={`${taskKey(selectedTask)}:description`}
                 title="Description"
@@ -893,7 +913,7 @@ export function TasksView(props: TasksViewProps) {
                 </DetailSidebarSection>
               ) : null}
             </main>
-            <DetailColumn>
+            <DetailColumn stacked={panel}>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1152,8 +1172,8 @@ export function TasksView(props: TasksViewProps) {
           </div>
         </div>
       ) : createModeOpen ? (
-        <div className="flex min-h-0 w-full flex-1 py-5">
-          <div className="flex min-h-0 min-w-0 flex-1 gap-5">
+        <div className={detailOuterClass}>
+          <div className={detailInnerClass}>
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <textarea
                 className="min-h-36 w-full flex-1 resize-none appearance-none overflow-auto border-0 bg-transparent px-3 py-2 text-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground focus:bg-transparent focus:outline-none [&::-webkit-resizer]:hidden"
@@ -1165,7 +1185,7 @@ export function TasksView(props: TasksViewProps) {
                 }
               />
             </main>
-            <DetailColumn>
+            <DetailColumn stacked={panel}>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label="Title" controlSelector="input">
@@ -1270,7 +1290,7 @@ export function TasksView(props: TasksViewProps) {
           </div>
         </div>
       ) : (
-        <div className="flex w-full min-w-0 flex-col gap-5 py-6">
+        <div className={`flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`}>
           {environmentCount > 1 ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               Task order is global within each connected environment. Environments are grouped
@@ -1314,17 +1334,26 @@ export function TasksView(props: TasksViewProps) {
             <div className="min-w-0 overflow-x-auto">
               {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
                   and takes the width the other columns leave. */}
-              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+              {/* The panel's narrow list has no minimum width: tags move under the title. */}
+              <table
+                className={`w-full border-collapse text-left text-sm ${panel ? "" : "min-w-[920px]"}`}
+              >
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
-                    <th className="w-12 py-3 pr-2 font-medium">
+                    <th className={`${panel ? "w-8" : "w-12"} py-3 pr-2 font-medium`}>
                       <span className="sr-only">Order</span>
                     </th>
                     {showProjectColumn ? <ProjectIconHeader /> : null}
-                    <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
-                    <th className="w-40 px-4 py-3 font-medium">Status</th>
-                    <th className="w-56 px-4 py-3 font-medium">Tags</th>
-                    <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
+                    <th className={`max-w-0 py-3 ${panel ? "pr-2" : "pr-4"} font-medium`}>Title</th>
+                    <th
+                      className={`${panel ? "w-px px-2 whitespace-nowrap" : "w-40 px-4"} py-3 font-medium`}
+                    >
+                      Status
+                    </th>
+                    {panel ? null : <th className="w-56 px-4 py-3 font-medium">Tags</th>}
+                    <th
+                      className={`w-px py-3 ${panel ? "pl-2" : "pl-4"} text-right font-medium whitespace-nowrap`}
+                    >
                       Runs
                     </th>
                   </tr>
@@ -1368,7 +1397,7 @@ export function TasksView(props: TasksViewProps) {
                             name={task.projectName}
                           />
                         ) : null}
-                        <td className="max-w-0 py-4 pr-4 align-middle">
+                        <td className={`max-w-0 py-4 ${panel ? "pr-2" : "pr-4"} align-middle`}>
                           <button
                             type="button"
                             className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
@@ -1384,17 +1413,28 @@ export function TasksView(props: TasksViewProps) {
                               {taskMetadataLabel(task)}
                             </div>
                           ) : null}
+                          {panel && task.tags.length > 0 ? (
+                            <div className="mt-1 flex min-w-0">
+                              <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+                            </div>
+                          ) : null}
                         </td>
-                        <td className="px-4 py-4 align-middle whitespace-nowrap">
+                        <td
+                          className={`${panel ? "px-2" : "px-4"} py-4 align-middle whitespace-nowrap`}
+                        >
                           {task.status}
                           {task.archivedAt ? (
                             <span className="ml-2 text-muted-foreground">Archived</span>
                           ) : null}
                         </td>
-                        <td className="max-w-56 px-4 py-4 align-middle">
-                          <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-                        </td>
-                        <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
+                        {panel ? null : (
+                          <td className="max-w-56 px-4 py-4 align-middle">
+                            <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+                          </td>
+                        )}
+                        <td
+                          className={`py-4 ${panel ? "pl-2" : "pl-4"} text-right align-middle whitespace-nowrap`}
+                        >
                           <TableRunCounts
                             groups={groupTaskRunCounts(task.runCounts)}
                             onSelect={(group) => openTask(task, group.status)}

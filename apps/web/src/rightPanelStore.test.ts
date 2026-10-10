@@ -535,6 +535,65 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps one tab per feature surface and closes it like any other", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "files");
+    store.openFeature(refA, "tasks");
+    store.open(refA, "files");
+    store.openFeature(refA, "tasks");
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "feature:tasks",
+      surfaces: [
+        { id: "files", kind: "files" },
+        { id: "feature:tasks", kind: "feature", featureSurfaceId: "tasks" },
+      ],
+    });
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+
+    store.closeSurface(refA, "feature:tasks");
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+    store.openFeature(refA, "tasks");
+    store.closeSurface(refA, "files");
+    store.closeSurface(refA, "feature:tasks");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+  });
+
+  it("restores saved feature surfaces and drops malformed ones", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "feature:tasks",
+            surfaces: [
+              { id: "feature:tasks", kind: "feature", featureSurfaceId: "tasks" },
+              { id: "feature:notes", kind: "feature" },
+              { id: "feature:pins", kind: "feature", featureSurfaceId: "tasks" },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "feature:tasks",
+          surfaces: [{ id: "feature:tasks", kind: "feature", featureSurfaceId: "tasks" }],
+        },
+      },
+      threadPanelVisibilityByThreadKey: {},
+    });
+  });
+
   it("opens workspace-root links as the singleton files explorer", () => {
     const store = useRightPanelStore.getState();
     store.openFile(refA, "README.md");

@@ -8,6 +8,7 @@ import {
   orderedProjectFilterKeys,
   planTaskQueryLanes,
   preferredProject,
+  threadProjectFilter,
   type ViewProjectFilter,
 } from "./projectFilter.ts";
 
@@ -135,4 +136,33 @@ test("the tag filter asks the server for tasks with every selected tag", () => {
     pageSize: 100,
   });
   NodeAssert.notEqual(withoutTags[0]?.key, lanes[0]?.key, "a tag change replaces the query");
+});
+
+test("the Tasks surface beside a thread shows the thread's logical project", () => {
+  const groups = [
+    {
+      projectKey: repoFilter.key,
+      displayName: repoFilter.label,
+      memberProjectRefs: repoFilter.projectRefs,
+      scratch: false,
+    },
+    {
+      projectKey: "scratch",
+      displayName: "Scratch",
+      memberProjectRefs: [ref("laptop", "p-scratch")],
+      scratch: true,
+    },
+  ];
+  const isScratch = (group: (typeof groups)[number]) => group.scratch;
+
+  // A worktree checkout belongs to its repo's group, every member included.
+  NodeAssert.deepEqual(
+    threadProjectFilter(groups, ref("laptop", "p-worktree"), isScratch),
+    repoFilter,
+  );
+  // Same project id in another environment is a different project.
+  NodeAssert.equal(threadProjectFilter(groups, ref("remote", "p-main"), isScratch), null);
+  // Scratch threads and threads without a project see every project.
+  NodeAssert.equal(threadProjectFilter(groups, ref("laptop", "p-scratch"), isScratch), null);
+  NodeAssert.equal(threadProjectFilter(groups, null, isScratch), null);
 });

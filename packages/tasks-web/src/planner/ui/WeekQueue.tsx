@@ -38,7 +38,11 @@ export interface WeekSelection {
   readonly ids: ReadonlySet<string>;
 }
 
-/** The marked day and its header: wande's "target day for Add to queue". */
+/**
+ * The marked day and its header: wande's "target day for Add to queue". Its
+ * container wraps, so a narrow column (a phone, the right panel) puts the
+ * date under the weekday.
+ */
 export function DayHeaderLabel(props: { readonly date: string; readonly marked: boolean }) {
   const day = dateOfKey(props.date);
   return (
@@ -85,7 +89,7 @@ const QueueDayColumn = memo(function QueueDayColumn(props: {
       )}
     >
       <div
-        className="group relative flex shrink-0 cursor-pointer items-center justify-center gap-1 border-b px-2 py-2 hover:bg-accent/60"
+        className="group relative flex shrink-0 cursor-pointer flex-wrap items-center justify-center gap-1 border-b px-2 py-2 hover:bg-accent/60"
         onClick={() => props.onMark(date)}
       >
         <DayHeaderLabel date={date} marked={props.marked} />

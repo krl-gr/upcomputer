@@ -15,6 +15,7 @@ import {
   WebFeatureInvariantError,
   type ExperimentalWebFeatureContribution,
   type ExperimentalWebNavigationContribution,
+  type ExperimentalWebRightPanelSurfaceContribution,
   type ExperimentalWebRouteContribution,
   type ExperimentalWebSettingsPageContribution,
 } from "./WebFeature";
@@ -26,6 +27,8 @@ export interface ExperimentalWebProductComposition {
   readonly navigation: ReadonlyArray<ExperimentalWebNavigationContribution>;
   readonly routes: ReadonlyArray<ExperimentalWebRouteContribution>;
   readonly settings: ReadonlyArray<ExperimentalWebSettingsPageContribution>;
+  /** Launched after core's surfaces, in feature order. */
+  readonly rightPanelSurfaces: ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution>;
   /** The core group merged with every feature group, as the server serves them. */
   readonly rpcGroup: typeof WsRpcGroup;
   /** The session client factory; core's own when no feature adds RPC groups. */
@@ -113,12 +116,24 @@ export function composeExperimentalWebFeatures(
     "duplicate-settings",
     (path) => `Web settings page '${path}' is registered more than once.`,
   );
+  const rightPanelSurfaces = uniqueBy(
+    uniqueBy(
+      features.flatMap((feature) => feature.rightPanelSurfaces ?? []),
+      (surface) => surface.id,
+      "duplicate-right-panel-surface",
+      (id) => `Right-panel surface '${id}' is registered more than once.`,
+    ),
+    (surface) => surface.shortcut,
+    "duplicate-right-panel-surface",
+    (shortcut) => `Right-panel shortcut '${shortcut}' is registered more than once.`,
+  );
   const rpcGroup = mergeRpcGroups(features);
   return Object.freeze({
     features,
     navigation: [...navigation].sort(byOrder),
     routes,
     settings: [...settings].sort(byOrder),
+    rightPanelSurfaces,
     rpcGroup,
     makeRpcClient: rpcGroup === WsRpcGroup ? makeWsRpcProtocolClient : RpcClient.make(rpcGroup),
     flags: Object.freeze({ ...(options.flags ?? UPSTREAM_PRODUCT_FLAGS) }),
@@ -131,6 +146,13 @@ export function findExperimentalWebRoute(
   pathname: string,
 ): ExperimentalWebRouteContribution | undefined {
   return composition.routes.find((route) => route.path === pathname);
+}
+
+export function findExperimentalWebRightPanelSurface(
+  composition: ExperimentalWebProductComposition,
+  id: string,
+): ExperimentalWebRightPanelSurfaceContribution | undefined {
+  return composition.rightPanelSurfaces.find((surface) => surface.id === id);
 }
 
 export function findExperimentalWebSettingsPage(

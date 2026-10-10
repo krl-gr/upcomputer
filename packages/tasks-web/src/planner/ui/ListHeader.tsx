@@ -59,6 +59,11 @@ export function ListHeader(props: {
   readonly canHideWeek: boolean;
   readonly weekHidden: boolean;
   readonly onToggleWeek: () => void;
+  /**
+   * The page's title bar row; off in a right-panel surface, where it is a
+   * plain row under the panel's tab bar.
+   */
+  readonly titleBar: boolean;
 }) {
   const { environmentId, windows, audience, kind } = usePlanner();
   // Routines × Agents: the agents' routines are automations, with no select or archive.
@@ -73,8 +78,9 @@ export function ListHeader(props: {
 
   return (
     <WorkspacePageHeader
-      electron={isElectron}
-      reserveNativeControls={isElectron && !weekBeside}
+      electron={isElectron && props.titleBar}
+      reserveNativeControls={isElectron && props.titleBar && !weekBeside}
+      clearCollapsedSidebar={props.titleBar}
       className="border-b border-border"
     >
       {props.selectMode ? (

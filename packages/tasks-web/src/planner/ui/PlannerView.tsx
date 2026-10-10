@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -63,6 +63,9 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
+  /** The projects the lists show; null for all. */
+  readonly projectIds: readonly ProjectId[] | null;
+  readonly panel: boolean;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
@@ -76,13 +79,14 @@ function PlannerBody(props: {
 }) {
   const store = plannerStoreFor(props.environmentId);
   const automationStore = automationStoreFor(props.environmentId);
-  const windows = windowStoreFor(props.environmentId);
+  const windows = windowStoreFor(props.environmentId, props.panel ? "panel" : "page");
   usePlannerLive(store);
   const snapshot = usePlannerSnapshot(store);
   const openWindows = usePlannerWindows(windows);
   const [preferences, updatePreferences] = usePlannerPreferences();
   const [viewState, updateViewState] = usePlannerViewState();
-  const wide = useMediaQuery("lg");
+  // The right panel is narrow whatever the window's width: always stacked.
+  const wide = useMediaQuery("lg") && !props.panel;
   const [markedDate, setMarkedDate] = useState<string | null>(() => todayKey());
   const [archiveToggled, setShowArchived] = useState(false);
   const shows = plannerListShows(props.kind, props.audience);
@@ -105,15 +109,15 @@ function PlannerBody(props: {
   const [weekSelection, setWeekSelection] = useState<WeekSelection>(NO_SELECTION);
   const [entryMenu, setEntryMenu] = useState<EntryMenuTarget | null>(null);
 
-  // The planner lists every project for now; rows keep their project chips.
+  // The page lists every project; the right panel, the thread's. Rows keep their project chips.
   useEffect(() => {
     store.setQuery({
-      projectIds: null,
+      projectIds: props.projectIds,
       archiveVisible: showArchived,
       audience: props.audience,
       kind: props.kind,
     });
-  }, [store, showArchived, props.audience, props.kind]);
+  }, [store, props.projectIds, showArchived, props.audience, props.kind]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
@@ -301,6 +305,7 @@ function PlannerBody(props: {
     <PlannerContext value={context}>
       <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
         <PlannerLayout
+          stacked={props.panel}
           listWidth={viewState.listWidth}
           onListWidthChange={(listWidth) => updateViewState({ listWidth })}
           weekHidden={weekHidden}
@@ -329,6 +334,7 @@ function PlannerBody(props: {
               canHideWeek={wide}
               weekHidden={weekHidden}
               onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
+              titleBar={!props.panel}
             />
           }
           list={
@@ -380,7 +386,8 @@ function PlannerBody(props: {
         windows={openWindows}
         snapshot={snapshot}
         queueDate={markedDate}
-        defaultProjectId={null}
+        defaultProjectId={props.projectIds?.[0] ?? null}
+        docked={props.panel}
       />
     </PlannerContext>
   );
@@ -441,6 +448,14 @@ export function PlannerView(props: {
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
+  /**
+   * The right panel's planner: the thread's environment when it serves Tasks,
+   * its lists limited to `projectIds` (null for all), task windows inside it.
+   */
+  readonly panel?: {
+    readonly environmentId: EnvironmentId;
+    readonly projectIds: readonly ProjectId[] | null;
+  };
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
@@ -449,23 +464,29 @@ export function PlannerView(props: {
     () => props.taskTargets.filter((target) => target.access.canReadTasks),
     [props.taskTargets],
   );
+  const pinnedEnvironment = candidates.some(
+    (target) => target.environmentId === props.panel?.environmentId,
+  )
+    ? (props.panel?.environmentId ?? null)
+    : null;
   const environmentId = useMemo(
-    () => pickEnvironment(candidates, storedEnvironment, primaryEnvironmentId),
-    [candidates, storedEnvironment, primaryEnvironmentId],
+    () => pinnedEnvironment ?? pickEnvironment(candidates, storedEnvironment, primaryEnvironmentId),
+    [pinnedEnvironment, candidates, storedEnvironment, primaryEnvironmentId],
   );
   const plannerProjects = useMemo(
     () => plannerProjectsOf(props.projects, environmentId),
     [props.projects, environmentId],
   );
+  // The panel's planner stays in the thread's environment.
   const environmentOptions = useMemo(
     () =>
-      candidates.map((target) => ({
+      (pinnedEnvironment ? [] : candidates).map((target) => ({
         id: target.environmentId,
         label:
           environments.find((environment) => environment.environmentId === target.environmentId)
             ?.label ?? target.environmentId,
       })),
-    [candidates, environments],
+    [pinnedEnvironment, candidates, environments],
   );
   const availability = usePlannerAvailability(environmentId);
   const [audience, setAudience] = useStoredPlannerAudience();
@@ -485,7 +506,8 @@ export function PlannerView(props: {
   const ready = environmentId !== null && availability === "enabled";
   return (
     <WorkspaceViewLayout
-      title="Tasks"
+      variant={props.panel ? "panel" : "page"}
+      title={props.panel ? "" : "Tasks"}
       // Until the planner shows, the page header keeps the title bar and the view switch.
       header={!ready}
       toolbar={
@@ -539,6 +561,8 @@ export function PlannerView(props: {
             <PlannerBody
               key={environmentId}
               environmentId={environmentId}
+              projectIds={pinnedEnvironment ? (props.panel?.projectIds ?? null) : null}
+              panel={props.panel !== undefined}
               projects={plannerProjects}
               viewSwitch={props.viewSwitch}
               environments={environmentOptions}

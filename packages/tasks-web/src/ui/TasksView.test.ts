@@ -13,8 +13,8 @@ const selectedDetail = source.slice(
   source.indexOf("{selectedTask ? ("),
   source.indexOf(") : createModeOpen ? ("),
 );
-const mainColumn = selectedDetail.slice(0, selectedDetail.indexOf("<DetailColumn>"));
-const sidebar = selectedDetail.slice(selectedDetail.indexOf("<DetailColumn>"));
+const mainColumn = selectedDetail.slice(0, selectedDetail.indexOf("<DetailColumn"));
+const sidebar = selectedDetail.slice(selectedDetail.indexOf("<DetailColumn"));
 
 test("source thread is conditionally rendered once in the detail sidebar", () => {
   NodeAssert.doesNotMatch(mainColumn, /Source thread/);
@@ -347,7 +347,7 @@ test("source thread link preserves its target and open behavior", () => {
     /<TaskThreadLink\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+title="Source thread"\s+onOpen=\{props\.onOpenThread\}/,
   );
   NodeAssert.match(sidebar, /className="flex min-w-0 flex-col gap-0\.5"/);
-  NodeAssert.match(sidebar, /^<DetailColumn>/);
+  NodeAssert.match(sidebar, /^<DetailColumn[\s>]/);
 });
 
 test("task details caption tags as Tags, with no Labels left in tasks-web text", () => {

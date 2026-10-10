@@ -279,6 +279,7 @@ import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";
 import { isProductFeatureShown, terminalCommandTarget } from "~/product/productFlags";
+import { ProductRightPanelSurface } from "~/product/ProductSlots";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
@@ -5276,6 +5277,13 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef]);
+  const addFeatureSurface = useCallback(
+    (featureSurfaceId: string) => {
+      if (!activeThreadRef) return;
+      useRightPanelStore.getState().openFeature(activeThreadRef, featureSurfaceId);
+    },
+    [activeThreadRef],
+  );
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
   const visiblePullRequests = visibleThreadPullRequests(
@@ -10639,6 +10647,13 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "feature" ? (
+      <ProductRightPanelSurface
+        featureSurfaceId={renderedRightPanelSurface.featureSurfaceId}
+        environmentId={activeThread.environmentId}
+        threadId={activeThread.id}
+        projectId={activeProject?.id ?? null}
+      />
     ) : renderedRightPanelSurface?.kind === "device" ? (
       <Suspense fallback={null}>
         <DevicePanel
@@ -11583,6 +11598,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequest={addPullRequestSurface}
           onAddPullRequests={addPullRequestsSurface}
           onAddDevice={addDeviceSurface}
+          onAddFeatureSurface={addFeatureSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -11638,6 +11654,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}
             onAddDevice={addDeviceSurface}
+            onAddFeatureSurface={addFeatureSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

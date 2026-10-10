@@ -36,7 +36,7 @@ import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
 import type { PlannerWindow } from "../windows/windowStore.ts";
 import { DescriptionField } from "./DescriptionField.tsx";
 import { AutomationWindow } from "./AutomationWindow.tsx";
-import { FloatingWindow } from "./FloatingWindow.tsx";
+import { FloatingWindow, FloatingWindowDocked } from "./FloatingWindow.tsx";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
@@ -439,20 +439,28 @@ export function CreateTaskWindow(
   );
 }
 
-/** Every open window, stacked by focus order between the page and its dialogs (z 30 to 45). */
+/**
+ * Every open window, stacked by focus order between the page and its dialogs
+ * (z 30 to 45). Docked, only the front window shows, over the planner; closing
+ * it uncovers the next.
+ */
 export function PlannerWindows(props: {
   readonly windows: readonly PlannerWindow[];
   readonly snapshot: PlannerSnapshot;
   readonly queueDate: string | null;
   readonly defaultProjectId: string | null;
+  readonly docked?: boolean;
 }) {
   const order = useMemo(
     () => new Map([...props.windows].sort((a, b) => a.z - b.z).map((w, index) => [w.id, index])),
     [props.windows],
   );
+  const shown = props.docked
+    ? props.windows.filter((window) => order.get(window.id) === props.windows.length - 1)
+    : props.windows;
   return (
-    <>
-      {props.windows.map((window) => {
+    <FloatingWindowDocked value={props.docked ?? false}>
+      {shown.map((window) => {
         const zIndex = 30 + Math.min(15, order.get(window.id) ?? 0);
         if (window.kind === "automation")
           return (
@@ -481,6 +489,6 @@ export function PlannerWindows(props: {
           />
         );
       })}
-    </>
+    </FloatingWindowDocked>
   );
 }

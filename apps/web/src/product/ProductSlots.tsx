@@ -11,10 +11,13 @@ import { SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/
 import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
 import type {
+  ExperimentalWebRightPanelSurfaceContribution,
+  ExperimentalWebRightPanelSurfaceProps,
   ExperimentalWebThreadAccessoryProps,
   ExperimentalWebThreadRowAccessoryProps,
 } from "./WebFeature";
 import {
+  findExperimentalWebRightPanelSurface,
   isExperimentalWebNavigationActive,
   type ExperimentalWebProductComposition,
 } from "./WebProduct";
@@ -132,6 +135,9 @@ const routePages = new Map<string, ComponentType>(
 const settingsPages = new Map<string, ComponentType>(
   WEB_PRODUCT.settings.map((page) => [page.path, lazy(page.load)]),
 );
+const rightPanelSurfaces = new Map<string, ComponentType<ExperimentalWebRightPanelSurfaceProps>>(
+  WEB_PRODUCT.rightPanelSurfaces.map((surface) => [surface.id, lazy(surface.load)]),
+);
 
 function ProductPage(props: { readonly page: ComponentType | undefined }) {
   const Page = props.page;
@@ -151,4 +157,32 @@ export function ProductRoutePage(props: { readonly pathname: string }) {
 /** The feature settings section at a path; the route has already checked it exists. */
 export function ProductSettingsPage(props: { readonly pathname: string }) {
   return <ProductPage page={settingsPages.get(props.pathname)} />;
+}
+
+/** Feature surfaces the right panel beside a thread offers after core's. */
+export function productRightPanelSurfaces(): ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution> {
+  return WEB_PRODUCT.rightPanelSurfaces;
+}
+
+export function productRightPanelSurface(
+  id: string,
+): ExperimentalWebRightPanelSurfaceContribution | undefined {
+  return findExperimentalWebRightPanelSurface(WEB_PRODUCT, id);
+}
+
+/** A feature surface's content; nothing for a surface this build does not have. */
+export function ProductRightPanelSurface(
+  props: ExperimentalWebRightPanelSurfaceProps & { readonly featureSurfaceId: string },
+) {
+  const surface = rightPanelSurfaces.get(props.featureSurfaceId);
+  if (surface === undefined) return null;
+  return (
+    <Suspense fallback={null}>
+      {createElement(surface, {
+        environmentId: props.environmentId,
+        threadId: props.threadId,
+        projectId: props.projectId,
+      })}
+    </Suspense>
+  );
 }

@@ -55,6 +55,31 @@ export function filterByProjectFilter<
 }
 
 /**
+ * The logical project a thread belongs to, for the Tasks surface beside it.
+ * A thread without a project, or in a Scratch project, sees all projects.
+ */
+export function threadProjectFilter<
+  G extends {
+    readonly projectKey: string;
+    readonly displayName: string;
+    readonly memberProjectRefs: ReadonlyArray<ScopedProjectRef>;
+  },
+>(
+  groups: ReadonlyArray<G>,
+  project: ScopedProjectRef | null,
+  isScratch: (group: G) => boolean,
+): ViewProjectFilter | null {
+  if (!project) return null;
+  const group = groups.find((candidate) =>
+    candidate.memberProjectRefs.some(
+      (ref) => ref.environmentId === project.environmentId && ref.projectId === project.projectId,
+    ),
+  );
+  if (!group || isScratch(group)) return null;
+  return { key: group.projectKey, label: group.displayName, projectRefs: group.memberProjectRefs };
+}
+
+/**
  * Project to preselect in a create form: the first candidate (in `preferredKeys`
  * order, e.g. the sidebar's member order) that is available, else the first
  * available project.

@@ -15,7 +15,8 @@ const STACKED_HEIGHTS: Record<StackedMode, string> = { 0: "0px", 1: "40%", 2: "1
  * header can hide; the two column headers form the title bar row, and the
  * week pane's `border-l` divides both. Below `lg`: the list header on top,
  * then the week above the list, with a bar that snaps the week to hidden,
- * split or full.
+ * split or full. `stacked` keeps the stacked layout at any width, for the
+ * right panel.
  */
 export function PlannerLayout(props: {
   readonly listHeader: ReactNode;
@@ -25,8 +26,9 @@ export function PlannerLayout(props: {
   readonly listWidth: number;
   readonly onListWidthChange: (width: number) => void;
   readonly weekHidden: boolean;
+  readonly stacked?: boolean;
 }) {
-  const wide = useMediaQuery("lg");
+  const wide = useMediaQuery("lg") && !props.stacked;
   // With the sidebar collapsed the list header starts after the sidebar toggle
   // (and the macOS traffic lights), so the column grows to keep its controls.
   const sidebarCollapsed = useSidebar().state === "collapsed";
