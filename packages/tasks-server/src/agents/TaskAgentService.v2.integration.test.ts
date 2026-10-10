@@ -732,6 +732,64 @@ it.live("a run that releases its task as Blocked ends blocked and wakes its chat
   ),
 );
 
+it.live("a Blocked release starts only blocked-run agents within the releasing run's modes", () =>
+  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf }) =>
+    Effect.gen(function* () {
+      const supervised: TaskAgent = {
+        ...agent,
+        config: { ...agent.config, runtimeMode: "approval-required" },
+      };
+      const broadHelper: TaskAgent = {
+        ...agent,
+        id: TaskAgentId.make("task-agent:v2-blocked-broad"),
+        name: "Full-access helper",
+        startStatuses: [],
+        startRunStatuses: ["blocked"],
+      };
+      const narrowHelper: TaskAgent = {
+        ...supervised,
+        id: TaskAgentId.make("task-agent:v2-blocked-narrow"),
+        name: "Supervised helper",
+        startStatuses: [],
+        startRunStatuses: ["blocked"],
+      };
+      yield* repository.upsertAgent(supervised);
+      yield* repository.upsertAgent(broadHelper);
+      yield* repository.upsertAgent(narrowHelper);
+      const created = yield* repository.upsert({ ...task, description: `Work. ${HOLD}` });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      const run = yield* eventually(
+        "the run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+
+      const released = yield* callTaskTool(run.threadId, "task_update", {
+        id: task.id,
+        status: "Blocked",
+        output: "Need user input.",
+        assigneeAgentRunId: null,
+      });
+      assert.isFalse(released.isError, released.text);
+      const narrowRun = yield* eventually(
+        "the supervised helper to start",
+        runsOf.pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.agentId === narrowHelper.id)),
+          ),
+        ),
+      );
+      assert.strictEqual(narrowRun.triggerRunId, run.id);
+      assert.strictEqual(
+        (yield* runsOf).find((candidate) => candidate.id === run.id)?.status,
+        "blocked",
+      );
+      // A pass with no caller, as after a restart, is held to the blocked run's modes too.
+      yield* taskAgents.recover;
+      assert.isUndefined((yield* runsOf).find((candidate) => candidate.agentId === broadHelper.id));
+    }),
+  ),
+);
+
 it.live("the run completes from its final message's task_agent_result", () =>
   runSlice("task-agent-v2-finish", ({ createTask, runWithStatus, repository, threads }) =>
     Effect.gen(function* () {

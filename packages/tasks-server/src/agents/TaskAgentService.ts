@@ -613,7 +613,7 @@ const make = Effect.gen(function* () {
         ],
       });
       // Agents waiting on blocked runs start as they do for a result block,
-      // not only within the releasing call's modes.
+      // within this run's modes (see startAgent).
       if (finalized) yield* scheduleRunFinished(task.id);
     });
 
@@ -871,17 +871,35 @@ const make = Effect.gen(function* () {
         });
         if (Option.isNone(triggerRun)) return;
         const triggerAgent = yield* repository.getAgentById({ id: triggerRun.value.agentId });
-        // A failed run's provider error is its thread's last error, as V1's session error was.
-        const failedShell =
-          triggerRun.value.status === "failed"
+        const triggerStatus = triggerRun.value.status;
+        const triggerShell =
+          triggerStatus === "failed" || triggerStatus === "blocked"
             ? yield* threads
                 .getThreadShell(triggerRun.value.threadId)
                 .pipe(Effect.orElseSucceed(() => null))
             : null;
+        // A blocked run reported its own outcome, by result or release, so an agent
+        // acting on it runs within that run's modes, whichever pass starts it.
+        if (
+          triggerStatus === "blocked" &&
+          (triggerShell === null ||
+            broaderRunMode(agentRunModes(agent.config), {
+              runtimeMode: triggerShell.runtimeMode,
+              interactionMode: triggerShell.interactionMode,
+            }) !== null)
+        ) {
+          yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
+            taskId: task.id,
+            agentId: agent.id,
+            triggerRunId: triggerRun.value.id,
+          });
+          return;
+        }
         trigger = {
           run: triggerRun.value,
           agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
-          reason: failedShell?.lastError?.trim() || null,
+          // A failed run's provider error is its thread's last error, as V1's session error was.
+          reason: triggerStatus === "failed" ? triggerShell?.lastError?.trim() || null : null,
         };
       } else {
         const [latestRun] = yield* repository.searchAgentRuns({
