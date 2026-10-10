@@ -88,6 +88,8 @@ const HOLD = "[hold-turn]";
 const FAIL = "[fail-turn]";
 /** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
 const LIMIT = "[limit-turn]";
+/** A message containing this marker leaves native background work running after its turn. */
+const BACKGROUND = "[background]";
 
 /** Provider sessions the scripted provider opened, closed and resumed threads in. */
 interface SessionLog {
@@ -120,6 +122,7 @@ function makeTaskAgentAdapter(
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
   sessions: Ref.Ref<SessionLog>,
   perThreadSessions: boolean,
+  background: Ref.Ref<boolean>,
 ): ProviderAdapterV2Shape {
   const capabilities = perThreadSessions ? perThreadCapabilities : CodexProviderCapabilitiesV2;
   return {
@@ -173,6 +176,9 @@ function makeTaskAgentAdapter(
             lastError: null,
           },
           events: Stream.fromQueue(events),
+          // Native background work only the provider knows about, like Claude's background Bash.
+          hasPendingBackgroundWork: Ref.get(background),
+          hasPendingBackgroundWorkForThread: () => Ref.get(background),
           ensureThread: (threadInput) =>
             Effect.gen(function* () {
               const createdAt = yield* DateTime.now;
@@ -215,6 +221,7 @@ function makeTaskAgentAdapter(
               ]);
               const at = yield* DateTime.now;
               const id = ProviderTurnId.make(`provider-turn:${input.attemptId}`);
+              if (input.message.text.includes(BACKGROUND)) yield* Ref.set(background, true);
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
@@ -372,6 +379,11 @@ const task: Task = {
 
 const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
 
+interface SliceOptions {
+  readonly perThreadSessions?: boolean;
+  readonly providerSessionIdleTimeoutMs?: number;
+}
+
 /**
  * Upstream's v2 runtime with a scripted provider, plus the tasks feature
  * composed through the product seam: the hooks core reads for its runtime
@@ -382,15 +394,21 @@ function makeLayer(
   cwd: string,
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
   sessions: Ref.Ref<SessionLog>,
-  perThreadSessions: boolean,
+  background: Ref.Ref<boolean>,
+  options: SliceOptions,
 ) {
   const db = SqlitePersistenceMemory;
   const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
     { name, runtimePolicyOverride: { cwd } },
     ProviderAdapterRegistry.makeSingleLayer(
-      makeTaskAgentAdapter(started, sessions, perThreadSessions),
+      makeTaskAgentAdapter(started, sessions, options.perThreadSessions ?? false, background),
     ),
-    { databaseLayer: db },
+    {
+      databaseLayer: db,
+      ...(options.providerSessionIdleTimeoutMs === undefined
+        ? {}
+        : { providerSessionIdleTimeoutMs: options.providerSessionIdleTimeoutMs }),
+    },
   );
   const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
     Layer.provideMerge(runtime),
@@ -497,6 +515,7 @@ const runSlice = <A, E>(
     services: Effect.Success<typeof slice> & {
       readonly started: Ref.Ref<ReadonlyArray<StartedTurn>>;
       readonly sessions: Ref.Ref<SessionLog>;
+      readonly background: Ref.Ref<boolean>;
       readonly cwd: string;
     },
   ) => Effect.Effect<
@@ -510,19 +529,18 @@ const runSlice = <A, E>(
     | ProjectStore.ProjectStoreV2
     | ThreadManagementService.ThreadManagementService
   >,
-  options: { readonly perThreadSessions?: boolean } = {},
+  options: SliceOptions = {},
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(name);
       const started = yield* Ref.make<ReadonlyArray<StartedTurn>>([]);
       const sessions = yield* Ref.make<SessionLog>({ opened: 0, closed: 0, resumed: 0 });
+      const background = yield* Ref.make(false);
       return yield* Effect.gen(function* () {
         const services = yield* slice;
-        return yield* body({ ...services, started, sessions, cwd });
-      }).pipe(
-        Effect.provide(makeLayer(name, cwd, started, sessions, options.perThreadSessions ?? false)),
-      );
+        return yield* body({ ...services, started, sessions, background, cwd });
+      }).pipe(Effect.provide(makeLayer(name, cwd, started, sessions, background, options)));
     }),
   );
 
@@ -963,6 +981,65 @@ it.live("a later plain turn in a finished run's thread keeps its provider sessio
         yield* eventually("the session to close", sessionsReleased(sessions, 2));
       }),
     { perThreadSessions: true },
+  ),
+);
+
+/**
+ * A run that ends while the provider still holds native background work keeps
+ * its session: the release asks the provider and leaves the session to the
+ * idle timeout, which releases it once that work and its delivery finish.
+ */
+const keepsSessionForBackgroundWork = (name: string, description: string, endStatus: string) =>
+  runSlice(
+    name,
+    ({ createTaskWith, runWithStatus, threads, sessions, background }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(description);
+        yield* eventually("the run to end", runWithStatus(first.id, endStatus));
+        const sql = yield* SqlClient.SqlClient;
+        // Every release attempt of the ended run has asked the provider.
+        yield* eventually(
+          "the release to ask the provider",
+          sql<{ readonly status: string }>`
+            SELECT status FROM orchestration_v2_effect_outbox
+            WHERE thread_id = ${first.threadId}
+              AND effect_type = 'provider-session.release-idle'
+          `.pipe(
+            Effect.map((rows) =>
+              rows.length > 0 && rows.every((row) => row.status === "succeeded")
+                ? Option.some(rows)
+                : Option.none(),
+            ),
+          ),
+        );
+        assert.deepInclude(yield* Ref.get(sessions), { opened: 1, closed: 0 });
+        const kept = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+        assert.lengthOf(kept.providerSessions, 1);
+        assert.notStrictEqual(kept.providerSessions[0]?.status, "stopped");
+
+        // The background work finishes and its result is delivered.
+        yield* Ref.set(background, false);
+        yield* eventually("the idle timeout to close the session", sessionsReleased(sessions, 1));
+        // The idle timeout stopped the session; a release would have detached it.
+        const released = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+        assert.strictEqual(released.providerSessions[0]?.status, "stopped");
+      }),
+    { perThreadSessions: true, providerSessionIdleTimeoutMs: 300 },
+  );
+
+it.live("a run that completes with native background work keeps its session until it ends", () =>
+  keepsSessionForBackgroundWork(
+    "task-agent-v2-release-background",
+    `Start a background job. ${BACKGROUND}`,
+    "completed",
+  ),
+);
+
+it.live("a run that fails with native background work keeps its session until it ends", () =>
+  keepsSessionForBackgroundWork(
+    "task-agent-v2-release-background-failed",
+    `Start a background job, then fail. ${BACKGROUND} ${FAIL}`,
+    "failed",
   ),
 );
 

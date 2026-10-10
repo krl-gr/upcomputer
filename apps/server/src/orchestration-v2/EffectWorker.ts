@@ -149,6 +149,44 @@ export const executorLayer: Layer.Layer<
                     }),
                 ),
               );
+          case "provider-session.release-idle": {
+            const request = effect.request;
+            return providerSessions
+              .hasPendingBackgroundWork({
+                providerSessionId: request.providerSessionId,
+                threadId: effect.threadId,
+              })
+              .pipe(
+                Effect.flatMap((pending) =>
+                  pending
+                    ? // The provider idle timeout releases the session once
+                      // that work and its delivery have finished.
+                      Effect.logDebug("Provider session keeps background work; not released", {
+                        threadId: effect.threadId,
+                        providerSessionId: request.providerSessionId,
+                      })
+                    : threads
+                        .dispatch({
+                          type: "thread.provider-sessions.release-idle",
+                          commandId: CommandId.make(`${effect.id}:release`),
+                          threadId: effect.threadId,
+                          reason: request.detail,
+                          providerSessionId: request.providerSessionId,
+                        })
+                        .pipe(
+                          Effect.asVoid,
+                          // Work that started meanwhile keeps the session.
+                          Effect.catchCause((cause) =>
+                            Effect.logDebug("Provider session not released", {
+                              threadId: effect.threadId,
+                              providerSessionId: request.providerSessionId,
+                              cause,
+                            }),
+                          ),
+                        ),
+                ),
+              );
+          }
           case "provider-turn.start":
             return providerTurnStart
               .start({ threadId: effect.threadId, runId: effect.request.runId, willRetry })

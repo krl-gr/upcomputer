@@ -179,6 +179,16 @@ export interface ProviderSessionManagerV2Shape {
      */
     readonly revokeMcpCredential?: boolean;
   }) => Effect.Effect<void, ProviderSessionManagerV2Error>;
+  /**
+   * Whether the live session still holds work for the thread outside a turn,
+   * by the same provider probe the idle timeout waits on. A shared runtime
+   * answers for the thread's own provider threads where it can. False when the
+   * session is not live or the thread is not attached to it.
+   */
+  readonly hasPendingBackgroundWork: (input: {
+    readonly providerSessionId: ProviderSessionId;
+    readonly threadId: ThreadId;
+  }) => Effect.Effect<boolean>;
 }
 
 export class ProviderSessionManagerV2 extends Context.Service<
@@ -1909,6 +1919,31 @@ export const layerWithOptions = (
             ),
           ),
         release: releaseEntry,
+        hasPendingBackgroundWork: (input) =>
+          Effect.gen(function* () {
+            const entry = (yield* Ref.get(sessions)).get(sessionKey(input.providerSessionId));
+            if (entry === undefined || !entry.attachedThreadIds.has(input.threadId)) return false;
+            const runtime = entry.runtime;
+            const threadProbe = runtime.hasPendingBackgroundWorkForThread;
+            if (entry.supportsMultipleProviderThreads && threadProbe !== undefined) {
+              const projection = yield* projectionStore.getThreadRecords(input.threadId, [
+                "providerThreads",
+              ]);
+              for (const providerThread of projection.providerThreads) {
+                if (providerThread.providerSessionId !== input.providerSessionId) continue;
+                if (yield* threadProbe(providerThread)) return true;
+              }
+              return false;
+            }
+            if (entry.busyCount > 0) return true;
+            return runtime.hasPendingBackgroundWork === undefined
+              ? false
+              : yield* runtime.hasPendingBackgroundWork;
+          }).pipe(
+            // Unknown counts as pending: the idle timeout still releases the
+            // session once the provider stops reporting work.
+            Effect.catchCause(() => Effect.succeed(true)),
+          ),
         detach: (input) =>
           Effect.gen(function* () {
             const key = sessionKey(input.providerSessionId);

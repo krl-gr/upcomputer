@@ -36,6 +36,12 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     revokeMcpCredential: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
+    /** Detaches the thread from this session only if its provider holds no background work for it. */
+    type: Schema.Literal("provider-session.release-idle"),
+    providerSessionId: ProviderSessionId,
+    detail: Schema.String,
+  }),
+  Schema.Struct({
     type: Schema.Literal("provider-turn.start"),
     runId: RunId,
   }),
@@ -108,6 +114,7 @@ export type OrchestrationEffectRequestV2 = typeof OrchestrationEffectRequestV2.T
 export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "provider-runtime.continue",
   "provider-session.detach",
+  "provider-session.release-idle",
   "provider-thread.rollback",
   "checkpoint.capture",
   "terminal.cleanup",

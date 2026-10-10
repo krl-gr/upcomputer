@@ -262,6 +262,8 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    /** Provider session idle timeout; the session manager's default when omitted. */
+    readonly providerSessionIdleTimeoutMs?: number;
   } = {},
 ): Layer.Layer<
   Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
@@ -335,6 +337,9 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
   );
   const providerSessionManagerProvided = ProviderSessionManager.layerWithOptions({
     configureMcp: false,
+    ...(options.providerSessionIdleTimeoutMs === undefined
+      ? {}
+      : { idleTimeoutMs: options.providerSessionIdleTimeoutMs }),
   }).pipe(
     Layer.provide(
       Layer.mergeAll(

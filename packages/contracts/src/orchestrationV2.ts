@@ -3037,13 +3037,19 @@ const OrchestrationV2InternalCommand = Schema.Union([
    * Detaches the thread's provider sessions before the provider idle timeout, so a per-thread
    * provider process stops now. Unlike a settle it leaves the thread itself as it is: lifecycle,
    * pins, pull request watches and usage-limit recovery. Rejected while the thread has active,
-   * queued or blocked work. The next turn attaches a session again.
+   * queued or blocked work, including background work. The next turn attaches a session again.
+   *
+   * Without `providerSessionId` it only asks each attached session's provider whether it still
+   * holds background work for the thread. A session that holds none comes back with its id, and
+   * that command detaches it. A session that still holds work is left to the provider idle
+   * timeout, which waits for that work.
    */
   Schema.Struct({
     type: Schema.Literal("thread.provider-sessions.release-idle"),
     commandId: CommandId,
     threadId: ThreadId,
     reason: TrimmedNonEmptyString,
+    providerSessionId: Schema.optional(ProviderSessionId),
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

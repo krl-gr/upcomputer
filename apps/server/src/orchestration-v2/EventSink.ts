@@ -535,11 +535,20 @@ const baseLayer: Layer.Layer<
           }
 
           const normalized = yield* normalizeEvents(input.events);
-          const storedEvents = yield* eventStore.append({
-            commandId: input.commandId,
-            events: normalized,
-          });
-          const sequence = storedEvents.at(-1)?.sequence;
+          const storedEvents =
+            normalized.length === 0
+              ? []
+              : yield* eventStore.append({
+                  commandId: input.commandId,
+                  events: normalized,
+                });
+          // A command that only schedules effects records them at the thread's
+          // current sequence.
+          const sequence =
+            storedEvents.at(-1)?.sequence ??
+            (input.effects.length > 0
+              ? yield* eventStore.latestSequence({ threadId: input.threadId })
+              : undefined);
           if (sequence === undefined) {
             return yield* Effect.die(
               new Error(`Command ${input.commandId} produced no orchestration events.`),
