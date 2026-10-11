@@ -134,10 +134,11 @@ it.effect("a database already at 24 runs 25..29 only", () =>
     const editedTaskCreation = "Development goes to the developer agent.";
     yield* seed(editedTaskCreation);
     const sql = yield* SqlClient.SqlClient;
-    const [{ count: settingsRows }] = yield* sql<{ readonly count: number }>`
+    const [settingsRows] = yield* sql<{ readonly count: number }>`
       SELECT COUNT(*) AS count FROM task_settings
     `;
-    assert.equal(settingsRows, 1);
+    assert.isDefined(settingsRows);
+    assert.equal(settingsRows!.count, 1);
     yield* migrateThrough(29);
 
     const upgraded = yield* state;
