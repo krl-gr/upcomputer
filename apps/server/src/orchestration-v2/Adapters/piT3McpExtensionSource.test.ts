@@ -2,7 +2,13 @@ import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { assert, describe, it } from "@effect/vitest";
 
-import { PI_T3_MCP_EXTENSION_SOURCE } from "./piT3McpExtensionSource.ts";
+import {
+  PI_T3_MCP_EXTENSION_SOURCE,
+  T3_MCP_BEARER_ENV,
+  T3_MCP_URL_ENV,
+  T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
+  T3_PI_USER_INSTRUCTIONS_ENV,
+} from "./piT3McpExtensionSource.ts";
 
 type RequestHook = (
   event: { payload: unknown },
@@ -55,5 +61,48 @@ describe("Pi upstream output-budget workaround", () => {
     assert.isUndefined(
       hook({ payload: { max_tokens: 231_969 } }, { model: { provider: "anthropic" } }),
     );
+  });
+});
+
+type SystemPromptHook = (event: { systemPrompt: string }) => { systemPrompt: string };
+
+async function loadSystemPromptHook(env: Record<string, string>): Promise<SystemPromptHook> {
+  const handlers = new Map<string, unknown>();
+  const source = NodeModule.stripTypeScriptTypes(
+    PI_T3_MCP_EXTENSION_SOURCE.replace('import { Type } from "typebox";', "").replace(
+      "export default async function",
+      "async function",
+    ),
+  );
+  // An unreachable endpoint: the extension still registers its prompt hook.
+  await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
+    process: { env },
+    AbortSignal,
+    fetch: () => Promise.reject(new Error("offline")),
+    pi: { on: (name: string, handler: unknown) => handlers.set(name, handler) },
+  });
+  const hook = handlers.get("before_agent_start") as SystemPromptHook | undefined;
+  assert.isDefined(hook);
+  return hook!;
+}
+
+describe("Pi orchestration guidance", () => {
+  const mcpEnv = {
+    [T3_MCP_URL_ENV]: "http://127.0.0.1:43123/mcp",
+    [T3_MCP_BEARER_ENV]: "secret-pi-token",
+  };
+
+  it("appends the orchestration block unless the session omits it", async () => {
+    const withBlock = (await loadSystemPromptHook(mcpEnv))({ systemPrompt: "base" });
+    assert.include(withBlock.systemPrompt, "Up.computer orchestration");
+
+    const withoutBlock = (
+      await loadSystemPromptHook({
+        ...mcpEnv,
+        [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
+        [T3_PI_USER_INSTRUCTIONS_ENV]: "# User instructions",
+      })
+    )({ systemPrompt: "base" });
+    assert.equal(withoutBlock.systemPrompt, "base\n\n# User instructions");
   });
 });

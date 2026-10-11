@@ -1,4 +1,5 @@
-import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode, ThreadId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
 
@@ -34,6 +35,76 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.
 `;
 
+/** Tools the orchestration block teaches; `*` ends a prefix. */
+const T3_CODE_ORCHESTRATION_TOOLS = [
+  "orchestrator_capabilities",
+  "delegate_task",
+  "task_status",
+  "task_cancel",
+  "create_threads",
+  "schedule_task",
+  "t3_thread_*",
+  "t3_worktree_*",
+  "html_preview",
+  "html_render",
+];
+
+/**
+ * Whether a configured tool list names a tool the orchestration block
+ * teaches. Names may carry a harness MCP prefix such as `mcp__t3-code__`.
+ */
+export function namesOrchestrationTool(tools: ReadonlyArray<string>): boolean {
+  return tools.some((tool) => {
+    const prefixEnd = tool.lastIndexOf("__");
+    const name = prefixEnd < 0 ? tool : tool.slice(prefixEnd + 2);
+    return T3_CODE_ORCHESTRATION_TOOLS.some((pattern) =>
+      pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern,
+    );
+  });
+}
+
+/**
+ * Decides whether a thread's agent gets the orchestration block. `undefined`
+ * keeps the default, which every session with the T3 MCP server gets. A
+ * product feature that starts agents with a narrower job (task agents)
+ * registers one at activation; chats are never narrowed.
+ */
+export type OrchestrationInstructionsResolver = (
+  threadId: ThreadId,
+) => Effect.Effect<boolean | undefined>;
+
+let orchestrationInstructionsResolver: OrchestrationInstructionsResolver | undefined;
+
+/** Registers the resolver for the lifetime of the calling scope. */
+export const registerOrchestrationInstructionsResolver = (
+  resolver: OrchestrationInstructionsResolver,
+) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      orchestrationInstructionsResolver = resolver;
+    }),
+    () =>
+      Effect.sync(() => {
+        if (orchestrationInstructionsResolver === resolver) {
+          orchestrationInstructionsResolver = undefined;
+        }
+      }),
+  );
+
+/** Read when a thread's MCP session is prepared; a failing resolver keeps the block. */
+export const orchestrationInstructionsFor = (threadId: ThreadId): Effect.Effect<boolean> =>
+  orchestrationInstructionsResolver === undefined
+    ? Effect.succeed(true)
+    : orchestrationInstructionsResolver(threadId).pipe(
+        Effect.map((wanted) => wanted ?? true),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Could not resolve orchestration instructions; keeping them.", {
+            threadId,
+            cause,
+          }).pipe(Effect.as(true)),
+        ),
+      );
+
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## Up.computer collaborative browser
@@ -56,6 +127,8 @@ Investigate with read-only actions and do not edit files or otherwise execute th
 export interface T3AcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasT3Mcp: boolean;
+  /** Absent means the orchestration block follows `hasT3Mcp`. */
+  readonly orchestrationInstructions?: boolean;
 }
 
 /**
@@ -69,9 +142,12 @@ export function t3AcpPromptWithInstructions(input: {
 }): string {
   // Native slash commands must remain at the start of the prompt.
   if (input.prompt.trimStart().startsWith("/")) return input.prompt;
+  const orchestration = input.state.hasT3Mcp && input.state.orchestrationInstructions !== false;
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
-    input.previousState.hasT3Mcp === input.state.hasT3Mcp
+    input.previousState.hasT3Mcp === input.state.hasT3Mcp &&
+    (input.previousState.orchestrationInstructions !== false) ===
+      (input.state.orchestrationInstructions !== false)
   ) {
     return input.prompt;
   }
@@ -79,9 +155,8 @@ export function t3AcpPromptWithInstructions(input: {
     input.state.interactionMode === "plan"
       ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
       : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
-    ...(input.state.hasT3Mcp
-      ? [T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()]
-      : []),
+    ...(input.state.hasT3Mcp ? [T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim()] : []),
+    ...(orchestration ? [T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()] : []),
   ];
   return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
@@ -98,6 +173,7 @@ function prependT3OrchestrationInstructions(prompt: string): string {
 export function t3OrchestrationPromptForFirstRun(input: {
   readonly prompt: string;
   readonly runOrdinal: number;
+  /** Whether the session has the T3 MCP server and its agent should get the block. */
   readonly hasT3Mcp: boolean;
 }): string {
   return input.runOrdinal === 1 && input.hasT3Mcp

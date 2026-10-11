@@ -1,7 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
+import { ThreadId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 
 import {
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  namesOrchestrationTool,
+  orchestrationInstructionsFor,
+  registerOrchestrationInstructionsResolver,
   t3AcpPromptWithInstructions,
   t3OrchestrationPromptForFirstRun,
   t3OrchestrationSystemPrompt,
@@ -87,4 +92,55 @@ describe("T3 orchestration provider instructions", () => {
     assert.notInclude(withoutMcp, "Up.computer collaborative browser");
     assert.notInclude(withoutMcp, "Up.computer orchestration");
   });
+
+  it("keeps the ACP browser guidance when the session's agent does not get orchestration", () => {
+    const prompt = "Continue.";
+    const withBlock = { interactionMode: "default", hasT3Mcp: true } as const;
+    const withoutBlock = { ...withBlock, orchestrationInstructions: false } as const;
+
+    const injected = t3AcpPromptWithInstructions({ prompt, state: withoutBlock });
+    assert.include(injected, "Up.computer collaborative browser");
+    assert.notInclude(injected, "Up.computer orchestration");
+    assert.equal(
+      t3AcpPromptWithInstructions({ prompt, state: withoutBlock, previousState: withoutBlock }),
+      prompt,
+    );
+    assert.include(
+      t3AcpPromptWithInstructions({ prompt, state: withBlock, previousState: withoutBlock }),
+      "Up.computer orchestration",
+    );
+  });
+
+  it("recognizes orchestration tools in a configured tool list", () => {
+    assert.isTrue(namesOrchestrationTool(["read", "delegate_task"]));
+    assert.isTrue(namesOrchestrationTool(["mcp__t3-code__schedule_task"]));
+    assert.isTrue(namesOrchestrationTool(["t3_thread_launch"]));
+    assert.isFalse(
+      namesOrchestrationTool(["read", "bash", "edit", "task_get", "task_update", "task_search"]),
+    );
+    assert.isFalse(namesOrchestrationTool([]));
+  });
+
+  it.effect("keeps the block unless a registered resolver narrows the thread", () =>
+    Effect.gen(function* () {
+      const chat = ThreadId.make("thread-chat");
+      const run = ThreadId.make("thread-task-agent-run");
+      const broken = ThreadId.make("thread-resolver-fails");
+      assert.isTrue(yield* orchestrationInstructionsFor(run));
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* registerOrchestrationInstructionsResolver((threadId) =>
+            threadId === broken
+              ? Effect.die("database unavailable")
+              : Effect.succeed(threadId === run ? false : undefined),
+          );
+          assert.isTrue(yield* orchestrationInstructionsFor(chat));
+          assert.isFalse(yield* orchestrationInstructionsFor(run));
+          assert.isTrue(yield* orchestrationInstructionsFor(broken));
+        }),
+      );
+      assert.isTrue(yield* orchestrationInstructionsFor(run));
+    }),
+  );
 });

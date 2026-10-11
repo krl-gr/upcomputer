@@ -6728,9 +6728,15 @@ export function makeAcpAdapterV2(
           sessionId: string,
         ) {
           const prompt: Array<EffectAcpSchema.ContentBlock> = [];
+          const hasT3Mcp = acpMcpServers(turnInput.threadId, self).length > 0;
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
-            hasT3Mcp: acpMcpServers(turnInput.threadId, self).length > 0,
+            hasT3Mcp,
+            orchestrationInstructions:
+              hasT3Mcp &&
+              McpProviderSession.wantsOrchestrationInstructions(
+                McpProviderSession.readMcpProviderSession(turnInput.threadId),
+              ),
           } satisfies T3AcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const messageText = providerMessageTextWithAttachmentPaths({

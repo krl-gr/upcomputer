@@ -529,6 +529,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       assert.deepEqual(overrides, {
         allowedTools: [ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD],
         mcpServers: T3_MCP_SERVERS,
+        orchestrationInstructions: true,
       });
     });
   });
@@ -545,6 +546,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       assert.deepEqual(overrides, {
         allowedTools: ["Read", "mcp__t3-code__*"],
         mcpServers: T3_MCP_SERVERS,
+        orchestrationInstructions: true,
       });
     });
   });
@@ -564,6 +566,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
           ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
         ],
         mcpServers: T3_MCP_SERVERS,
+        orchestrationInstructions: true,
       });
       assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
     });
@@ -700,6 +703,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
             timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
           },
         },
+        orchestrationInstructions: true,
       });
 
       const options = ClaudeAdapterV2.makeClaudeQueryOptions({
@@ -724,6 +728,53 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
       assert.equal(logged.hasMcpServers, true);
       assert.notInclude(JSON.stringify(logged), "secret-claude-token");
+    } finally {
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }
+  });
+
+  it("keeps the T3 tools but drops the orchestration block when the session omits it", () => {
+    const threadId = ThreadId.make("thread-claude-mcp-no-orchestration");
+    const session = {
+      environmentId: EnvironmentId.make("environment-claude-mcp"),
+      threadId,
+      providerSessionId: "mcp-session-claude-no-orchestration",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      endpoint: "http://127.0.0.1:43123/mcp",
+      authorizationHeader: "Bearer secret-claude-token",
+      browserToolsAvailable: true,
+    };
+    const appendFor = (orchestrationInstructions: boolean) => {
+      McpProviderSession.setMcpProviderSession({ ...session, orchestrationInstructions });
+      const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+        threadId,
+        readOnlySandbox: false,
+      });
+      const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+        modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+        nativeThreadId: "native-thread-claude-no-orchestration",
+        resume: false,
+        cwd: "/workspace",
+        ...overrides,
+      });
+      return {
+        append: (options.systemPrompt as { readonly append?: string }).append ?? "",
+        hasMcpServers: options.mcpServers?.["t3-code"] !== undefined,
+        key: ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
+          ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(CLAUDE_TEST_RUNTIME_POLICY),
+          overrides,
+        ),
+      };
+    };
+
+    try {
+      const withBlock = appendFor(true);
+      const withoutBlock = appendFor(false);
+      assert.include(withBlock.append, "Up.computer orchestration");
+      assert.notInclude(withoutBlock.append, "Up.computer orchestration");
+      assert.isTrue(withoutBlock.hasMcpServers);
+      // The system prompt is fixed per process, so a change must open a new query.
+      assert.notEqual(withBlock.key, withoutBlock.key);
     } finally {
       McpProviderSession.clearMcpProviderSession(threadId);
     }

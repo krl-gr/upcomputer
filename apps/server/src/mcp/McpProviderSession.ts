@@ -14,6 +14,12 @@ export interface McpProviderSessionConfig {
    * call would reject.
    */
   readonly browserToolsAvailable: boolean;
+  /**
+   * False when the session's agent should not get the orchestration block,
+   * as decided by `orchestrationInstructionsFor`. The tools stay callable;
+   * this only keeps their long guide out of every model call. Defaults to true.
+   */
+  readonly orchestrationInstructions?: boolean;
   /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities?: ReadonlySet<string>;
   /**
@@ -22,6 +28,13 @@ export interface McpProviderSessionConfig {
    * already pointed at the server's daemon; the agent never handles a token.
    */
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+}
+
+/** Whether a session with this MCP config gets the orchestration block. */
+export function wantsOrchestrationInstructions(
+  config: Pick<McpProviderSessionConfig, "orchestrationInstructions"> | undefined,
+): boolean {
+  return config !== undefined && config.orchestrationInstructions !== false;
 }
 
 /** Provider env with the device variables applied over `base`, or `base` untouched. */

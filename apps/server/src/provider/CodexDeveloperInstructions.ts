@@ -15,6 +15,8 @@ The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators an
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
+  /** False omits the orchestration block; see `orchestrationInstructionsFor`. */
+  readonly orchestration?: boolean;
 }
 
 const normalizeAvailability = (
@@ -214,10 +216,18 @@ export function buildCodexAdditionalContext(
   toolsAvailable: boolean | T3CodeToolAvailability = true,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
+  const orchestration = normalizeAvailability(toolsAvailable).orchestration !== false;
   const userInstructions = currentUserInstructionsBlock();
   // Separate keys keep each value under Codex's per-entry token cap.
   return {
-    t3_code_orchestration: { kind: "application", value: T3_CODE_ORCHESTRATION_INSTRUCTIONS },
+    ...(orchestration
+      ? {
+          t3_code_orchestration: {
+            kind: "application",
+            value: T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+          },
+        }
+      : {}),
     t3_code_runtime: {
       kind: "application",
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime, omitUserInstructions: true }),

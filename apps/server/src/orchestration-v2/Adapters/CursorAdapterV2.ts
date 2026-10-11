@@ -2136,7 +2136,9 @@ export function makeCursorAdapterV2(
               attachmentsDir: serverConfig.attachmentsDir,
             }),
             runOrdinal: turnInput.runOrdinal,
-            hasT3Mcp: cursorMcpServers(turnInput.threadId) !== undefined,
+            hasT3Mcp: McpProviderSession.wantsOrchestrationInstructions(
+              McpProviderSession.readMcpProviderSession(turnInput.threadId),
+            ),
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),

@@ -23,6 +23,10 @@ export {
   ThreadManagementService,
 } from "./orchestration-v2/ThreadManagementService.ts";
 export { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+export {
+  namesOrchestrationTool,
+  registerOrchestrationInstructionsResolver,
+} from "./provider/T3OrchestrationInstructions.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
 export {
