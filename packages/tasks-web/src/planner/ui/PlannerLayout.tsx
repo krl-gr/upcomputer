@@ -2,7 +2,6 @@ import { useRef, useState, type ReactNode } from "react";
 
 import { useSidebar } from "../../../../../apps/web/src/components/ui/sidebar.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
-import { useMediaQuery } from "../../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { LIST_HEADER_WIDTH, MIN_LIST_WIDTH } from "../data/preferences.ts";
 
 /** Stacked layout's week height: hidden, split, or the whole pane (wande's three modes). */
@@ -10,13 +9,12 @@ type StackedMode = 0 | 1 | 2;
 const STACKED_HEIGHTS: Record<StackedMode, string> = { 0: "0px", 1: "40%", 2: "100%" };
 
 /**
- * Wande's ResizableLayout. From `lg` up: the list on the left at a width the
- * person drags (kept per device) and the week on the right, which the list
- * header can hide; the two column headers form the title bar row, and the
- * week pane's `border-l` divides both. Below `lg`: the list header on top,
- * then the week above the list, with a bar that snaps the week to hidden,
- * split or full. `stacked` keeps the stacked layout at any width, for the
- * right panel.
+ * Wande's ResizableLayout. `wide` (the planner's own width, `plannerIsWide`):
+ * the list on the left at a width the person drags (kept per device) and the
+ * week on the right, which the list header can hide; the two column headers
+ * form one row, the page's title bar, and the week pane's `border-l` divides
+ * both. Otherwise: the list header on top, then the week above the list, with
+ * a bar that snaps the week to hidden, split or full.
  */
 export function PlannerLayout(props: {
   readonly listHeader: ReactNode;
@@ -26,12 +24,14 @@ export function PlannerLayout(props: {
   readonly listWidth: number;
   readonly onListWidthChange: (width: number) => void;
   readonly weekHidden: boolean;
-  readonly stacked?: boolean;
+  readonly wide: boolean;
+  /** The headers are the page's title bar row, not a right-panel surface's plain row. */
+  readonly titleBar: boolean;
 }) {
-  const wide = useMediaQuery("lg") && !props.stacked;
-  // With the sidebar collapsed the list header starts after the sidebar toggle
-  // (and the macOS traffic lights), so the column grows to keep its controls.
-  const sidebarCollapsed = useSidebar().state === "collapsed";
+  const { wide } = props;
+  // With the sidebar collapsed the page's list header starts after the sidebar
+  // toggle (and the macOS traffic lights), so the column grows to keep its controls.
+  const clearsSidebar = useSidebar().state === "collapsed" && props.titleBar;
   const container = useRef<HTMLDivElement>(null);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const [mode, setMode] = useState<StackedMode>(1);
@@ -47,7 +47,7 @@ export function PlannerLayout(props: {
               ? undefined
               : {
                   width: dragWidth ?? props.listWidth,
-                  minWidth: sidebarCollapsed
+                  minWidth: clearsSidebar
                     ? `max(${MIN_LIST_WIDTH}px, calc(var(--workspace-titlebar-content-left) + var(--workspace-gutter-end) + ${LIST_HEADER_WIDTH}px))`
                     : MIN_LIST_WIDTH,
                   // The week keeps at least 320px, as wande's dynamic maximum.

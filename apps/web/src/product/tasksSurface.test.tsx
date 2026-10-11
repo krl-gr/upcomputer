@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 // The jsdom test environment cannot load this repo's test setup (it imports
 // `node:sea`), so the DOM is installed by hand before React loads.
-await vi.hoisted(async () => {
+const dom = await vi.hoisted(async () => {
   // @ts-expect-error jsdom ships no type declarations and this repo has no @types/jsdom.
   const { JSDOM } = await import("jsdom");
   const { window } = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -19,20 +19,36 @@ await vi.hoisted(async () => {
     }
   }
   Object.defineProperty(globalThis, "window", { configurable: true, value: window });
-  // The tab strip measures itself and the menus wait for animations; jsdom has neither.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
+  // The tab strip and the planner measure themselves and the menus wait for
+  // animations; jsdom has neither. `resize` reports a new width to every observer.
+  const observers = new Set<ResizeObserverCallback>();
+  globalThis.ResizeObserver = class {
+    readonly callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe() {
+      observers.add(this.callback);
+    }
     unobserve() {}
-    disconnect() {}
-  };
+    disconnect() {
+      observers.delete(this.callback);
+    }
+  } as unknown as typeof ResizeObserver;
   window.Element.prototype.getAnimations ??= () => [];
-  // The planner asks for the window's width; a narrow one, like the panel's.
+  // Media queries see a narrow window.
   window.matchMedia ??= (query: string) => ({
     matches: false,
     media: query,
     addEventListener() {},
     removeEventListener() {},
   });
+  const resize = (width: number) => {
+    for (const callback of observers) {
+      callback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+    }
+  };
+  return { resize };
 });
 
 const { act } = await import("react");
@@ -368,6 +384,36 @@ describe("the Tasks surface's content", () => {
     await vi.waitFor(() => expect(shows("Health routine")).toBe(true), { timeout: 5000 });
     expect(shows("Life OS routine")).toBe(true);
     expect(tasksServer.pageInputs.filter((input) => input.projectId !== undefined)).toEqual([]);
+  });
+
+  it("puts the list beside the week when the planner is wide, and stacks them when narrow", async () => {
+    const listBesideWeek = () => document.querySelector('[aria-label="Resize the task list"]');
+    const stacked = () => document.querySelector('[aria-label="Resize the week"]');
+    // The planner's first measurement, before any resize.
+    const measure = vi
+      .spyOn(window.HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ width: 1250 } as DOMRect);
+    try {
+      renderTasks({ "tasks.view": "planner" });
+      await vi.waitFor(() => expect(listBesideWeek()).not.toBeNull(), { timeout: 5000 });
+      expect(stacked()).toBeNull();
+
+      act(() => dom.resize(400));
+      expect(stacked()).not.toBeNull();
+      expect(listBesideWeek()).toBeNull();
+
+      act(() => dom.resize(800));
+      expect(listBesideWeek()).not.toBeNull();
+      act(() => root?.unmount());
+      container?.remove();
+
+      measure.mockReturnValue({ width: 400 } as DOMRect);
+      renderTasks({ "tasks.view": "planner" });
+      await vi.waitFor(() => expect(stacked()).not.toBeNull(), { timeout: 5000 });
+      expect(listBesideWeek()).toBeNull();
+    } finally {
+      measure.mockRestore();
+    }
   });
 
   it("filters the table by the page's project, not the thread's", async () => {

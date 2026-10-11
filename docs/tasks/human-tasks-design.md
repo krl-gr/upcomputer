@@ -701,7 +701,7 @@ the week header side by side are its title bar row (both `WorkspacePageHeader`).
 | New Task                                                             | list header, left                       | list header, right, `+`                                   |
 | Select (mode)                                                        | list header, right                      | list header menu                                          |
 | Archive view toggle                                                  | list header, right                      | list header menu, Show archive                            |
-| right-pane hide/show                                                 | list header, right (lg and up)          | list header, right (lg and up)                            |
+| right-pane hide/show                                                 | list header, right (lg and up)          | list header, right (planner 768px wide and up)            |
 | select-mode count, bulk project/status/add-to-queue, bulk menu, exit | list header in select mode              | same                                                      |
 | title (click to edit, Enter saves)                                   | row                                     | row                                                       |
 | project chip                                                         | row metadata                            | row metadata, icon + name                                 |

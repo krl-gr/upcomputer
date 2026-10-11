@@ -191,9 +191,9 @@ export function WeekHeader(props: {
   readonly onCopySelected: (dates: readonly string[], at: "top" | "bottom") => void;
   readonly onDeleteSelected: () => void;
   /**
-   * Beside the list (from `lg` up) the header is the title bar's right half,
+   * Beside the list on the page the header is the title bar's right half,
    * as the right panel's tab bar is beside the thread header. Stacked under
-   * the list header it is a plain row.
+   * the list header, or in the right panel, it is a plain row.
    */
   readonly titleBar: boolean;
 }) {

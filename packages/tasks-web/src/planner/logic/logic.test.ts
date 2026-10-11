@@ -11,6 +11,7 @@ import {
   queueDropTarget,
 } from "./dndPlanning.ts";
 import { insertionIndex } from "./placement.ts";
+import { plannerIsWide, WIDE_PLANNER_MIN_WIDTH } from "./plannerWidth.ts";
 import { countProgress, progressLabel, weekRangeOf } from "./progress.ts";
 import {
   entryTimingLabel,
@@ -138,6 +139,19 @@ describe("progress", () => {
     const week = weekRangeOf("2026-10-07", 1);
     NodeAssert.deepEqual(week, { from: "2026-10-05", to: "2026-10-11" });
     NodeAssert.deepEqual(countProgress(entries, week), { total: 3, handled: 2 });
+  });
+});
+
+describe("planner width", () => {
+  test("the list sits beside the week from the threshold up, stacked below it", () => {
+    NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH - 1), false);
+    NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH), true);
+    NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH + 1), true);
+  });
+
+  test("the page switches where the lg window breakpoint did, beside the default sidebar", () => {
+    NodeAssert.equal(plannerIsWide(1024 - 256), true);
+    NodeAssert.equal(plannerIsWide(1023 - 256), false);
   });
 });
 

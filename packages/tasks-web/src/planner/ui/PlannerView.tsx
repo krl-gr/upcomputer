@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
-import { useMediaQuery } from "../../../../../apps/web/src/hooks/useMediaQuery.ts";
+import { useElementWidth } from "../../../../../apps/web/src/hooks/useElementWidth.ts";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -43,6 +43,7 @@ import {
   type PlannerKind,
 } from "../data/preferences.ts";
 import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
+import { plannerIsWide } from "../logic/plannerWidth.ts";
 import { weekRangeOf } from "../logic/progress.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { AutomationDragPreview } from "./AutomationRow.tsx";
@@ -64,6 +65,8 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
   readonly panel: boolean;
+  /** List left and week right: the planner's own width, measured by `PlannerView`. */
+  readonly wide: boolean;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
@@ -83,8 +86,7 @@ function PlannerBody(props: {
   const openWindows = usePlannerWindows(windows);
   const [preferences, updatePreferences] = usePlannerPreferences();
   const [viewState, updateViewState] = usePlannerViewState();
-  // The right panel is narrow whatever the window's width: always stacked.
-  const wide = useMediaQuery("lg") && !props.panel;
+  const { wide } = props;
   const [markedDate, setMarkedDate] = useState<string | null>(() => todayKey());
   const [archiveToggled, setShowArchived] = useState(false);
   const shows = plannerListShows(props.kind, props.audience);
@@ -258,7 +260,7 @@ function PlannerBody(props: {
         void store.deleteEntries(selectedWeekIds);
         exitWeekSelection();
       }}
-      titleBar={wide}
+      titleBar={wide && !props.panel}
     />
   );
   const weekContent = (
@@ -303,7 +305,8 @@ function PlannerBody(props: {
     <PlannerContext value={context}>
       <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
         <PlannerLayout
-          stacked={props.panel}
+          wide={wide}
+          titleBar={!props.panel}
           listWidth={viewState.listWidth}
           onListWidthChange={(listWidth) => updateViewState({ listWidth })}
           weekHidden={weekHidden}
@@ -446,7 +449,7 @@ export function PlannerView(props: {
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
-  /** The right panel's planner: the page's lists in a stacked layout, task windows inside it. */
+  /** The right panel's planner: the page's lists under the panel's tab bar, task windows inside it. */
   readonly panel?: boolean;
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -490,6 +493,11 @@ export function PlannerView(props: {
   );
 
   const ready = environmentId !== null && availability === "enabled";
+  // The layout follows the planner's own width, on the page and in the right
+  // panel. The first measurement lands before paint, and the body waits for
+  // it so the wrong layout never shows. This box fills the view whatever the
+  // layout inside it, so switching cannot change the width that decided it.
+  const [plannerRef, plannerWidth] = useElementWidth<HTMLDivElement>();
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
@@ -543,22 +551,25 @@ export function PlannerView(props: {
             This environment runs an older server without the planner. The table shows its tasks.
           </Notice>
         ) : (
-          <div className="relative min-h-0 flex-1">
-            <PlannerBody
-              key={environmentId}
-              environmentId={environmentId}
-              panel={props.panel === true}
-              projects={plannerProjects}
-              viewSwitch={props.viewSwitch}
-              environments={environmentOptions}
-              onEnvironmentChange={setStoredEnvironment}
-              audience={audience}
-              onAudienceChange={setAudience}
-              kind={kind}
-              onKindChange={setKind}
-              triggerTags={triggerTags}
-              onOpenTask={openTask}
-            />
+          <div ref={plannerRef} className="relative min-h-0 flex-1">
+            {plannerWidth === null ? null : (
+              <PlannerBody
+                key={environmentId}
+                environmentId={environmentId}
+                panel={props.panel === true}
+                wide={plannerIsWide(plannerWidth)}
+                projects={plannerProjects}
+                viewSwitch={props.viewSwitch}
+                environments={environmentOptions}
+                onEnvironmentChange={setStoredEnvironment}
+                audience={audience}
+                onAudienceChange={setAudience}
+                kind={kind}
+                onKindChange={setKind}
+                triggerTags={triggerTags}
+                onOpenTask={openTask}
+              />
+            )}
           </div>
         )}
       </div>
