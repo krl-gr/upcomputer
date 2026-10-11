@@ -1,11 +1,16 @@
-import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
-import * as Context from "effect/Context";
+import {
+  OrchestratorMcpFailure,
+  type ProviderInteractionMode,
+  type RuntimeMode,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import type * as JsonSchema from "effect/JsonSchema";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import {
   McpInvocationContext,
+  McpToolAccess,
+  resultToolkitRegistration,
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { ComputerUseInteractionMode } from "../computerUse/ComputerUsePolicy.ts";
@@ -103,53 +108,67 @@ const resolveSession = Effect.gen(function* () {
   } satisfies ComputerUseSession;
 });
 
+const computerUseTool = (tool: ComputerUseToolDefinition) =>
+  Tool.dynamic(tool.name, {
+    description: tool.description,
+    parameters: tool.inputSchema as JsonSchema.JsonSchema,
+    // The handler answers with its own `CallToolResult`.
+    failure: OrchestratorMcpFailure,
+  })
+    .annotate(Tool.Title, tool.label)
+    .annotate(Tool.Readonly, tool.mode === "observe")
+    .addDependency(McpInvocationContext)
+    .addDependency(ThreadManagementService);
+
+const ComputerUseToolkit = Toolkit.make(...COMPUTER_USE_TOOLS.map(computerUseTool));
+
+/**
+ * Observing reads the screen for the calling thread; controlling acts for it
+ * while its run is live. Either needs an agent running inside a thread.
+ */
+const ComputerUseToolkitHandlersLive = McpToolAccess.toLayer(
+  ComputerUseToolkit,
+  Effect.gen(function* () {
+    const computerUse = yield* ComputerUseService;
+    const handlers = COMPUTER_USE_TOOLS.map((tool) => {
+      const declare =
+        tool.mode === "observe" ? McpToolAccess.readsAsCaller : McpToolAccess.actsAsCaller;
+      return [
+        tool.name,
+        declare((payload: unknown) =>
+          resolveSession.pipe(
+            Effect.flatMap((session) =>
+              callComputerUseTool(tool, (payload ?? {}) as Record<string, unknown>, session),
+            ),
+            Effect.map(
+              (result) =>
+                new McpSchema.CallToolResult({
+                  isError: result.isError,
+                  content: result.content.map((item) =>
+                    item.type === "text"
+                      ? { type: "text" as const, text: item.text }
+                      : {
+                          type: "image" as const,
+                          data: new Uint8Array(Buffer.from(item.data, "base64")),
+                          mimeType: item.mimeType,
+                        },
+                  ),
+                }),
+            ),
+            Effect.provideService(ComputerUseService, computerUse),
+          ),
+        ),
+      ] as const;
+    });
+    return Object.fromEntries(handlers) as McpToolAccess.Handlers<typeof ComputerUseToolkit.tools>;
+  }),
+);
+
 /**
  * The computer_* tools on the core MCP server every provider session receives.
  * Each call reads the calling thread's current modes.
  */
-export const ComputerUseMcpToolsLive = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-    const computerUse = yield* ComputerUseService;
-    const threads = yield* ThreadManagementService;
-    for (const tool of COMPUTER_USE_TOOLS) {
-      yield* server.addTool({
-        tool: new McpSchema.Tool({
-          name: tool.name,
-          title: tool.label,
-          description: tool.description,
-          inputSchema: tool.inputSchema as McpSchema.Tool["inputSchema"],
-          annotations: { title: tool.label, readOnlyHint: tool.mode === "observe" },
-        }),
-        annotations: Context.empty(),
-        handle: (payload) =>
-          Effect.withFiber((fiber) => {
-            const invocation = Context.getUnsafe(fiber.context, McpInvocationContext);
-            return resolveSession.pipe(
-              Effect.flatMap((session) =>
-                callComputerUseTool(tool, (payload ?? {}) as Record<string, unknown>, session),
-              ),
-              Effect.map(
-                (result) =>
-                  new McpSchema.CallToolResult({
-                    isError: result.isError,
-                    content: result.content.map((item) =>
-                      item.type === "text"
-                        ? { type: "text" as const, text: item.text }
-                        : {
-                            type: "image" as const,
-                            data: new Uint8Array(Buffer.from(item.data, "base64")),
-                            mimeType: item.mimeType,
-                          },
-                    ),
-                  }),
-              ),
-              Effect.provideService(McpInvocationContext, invocation),
-              Effect.provideService(ThreadManagementService, threads),
-              Effect.provideService(ComputerUseService, computerUse),
-            );
-          }),
-      });
-    }
-  }),
+export const ComputerUseMcpToolsLive = resultToolkitRegistration(
+  ComputerUseToolkit,
+  ComputerUseToolkitHandlersLive,
 );

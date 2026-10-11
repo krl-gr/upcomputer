@@ -1,8 +1,4 @@
-import {
-  HostProcessArchitecture,
-  HostProcessEnvironment,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -139,9 +135,9 @@ export const make = Effect.fn("resourceTelemetry.resourceMonitorBinary.make")(fu
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const architecture = yield* HostProcessArchitecture;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const architecture = yield* HostProcess.Architecture;
+  const environment = yield* HostProcess.Environment;
   const linuxLibc = platform === "linux" ? yield* ResourceMonitorHostLinuxLibc : undefined;
   const executableName = binaryName(platform);
   const platformKey = resourceMonitorPlatformKey(platform, architecture);
@@ -200,9 +196,14 @@ export const make = Effect.fn("resourceTelemetry.resourceMonitorBinary.make")(fu
       const exists = yield* fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false));
       if (!exists) continue;
 
-      if (platform !== "win32") {
-        const stat = yield* fileSystem.stat(candidate).pipe(Effect.option);
-        if (Option.isSome(stat) && (stat.value.mode & 0o111) === 0) {
+      const stat = yield* fileSystem.stat(candidate).pipe(Effect.option);
+      if (Option.isSome(stat)) {
+        // Directories are executable-looking on win32, where the exec-bit test
+        // below is skipped, and only fail later at spawn.
+        const unusable =
+          stat.value.type === "Directory" ||
+          (platform !== "win32" && (stat.value.mode & 0o111) === 0);
+        if (unusable) {
           return yield* new ResourceMonitorBinaryNotExecutable({
             path: candidate,
             mode: stat.value.mode,

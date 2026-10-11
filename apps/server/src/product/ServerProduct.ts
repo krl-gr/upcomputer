@@ -22,7 +22,7 @@ import {
   type ProductFlags,
 } from "@t3tools/shared/productFlags";
 
-import type { AnyProviderDriver } from "../provider/ProviderDriver.ts";
+import type { AnyProviderDriver } from "@t3tools/provider-core/server/driver";
 import type { BuiltInDriversEnv } from "../provider/builtInDrivers.ts";
 import {
   createExperimentalFeatureMigrationPlan,

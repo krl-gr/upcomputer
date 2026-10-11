@@ -9,15 +9,16 @@ import {
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { McpServer, Tool, Toolkit } from "effect/unstable/ai";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { Tool, Toolkit } from "effect/ai";
+import * as SqlClient from "effect/sql/SqlClient";
 
+import { toolkitRegistration } from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
-import { newCommandId, readCaller, readMutationCaller, unavailable } from "../mcp/threadAccess.ts";
+import * as McpToolAccess from "../mcp/McpToolAccess.ts";
+import { newCommandId, readCaller, unavailable } from "../mcp/threadAccess.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
@@ -219,7 +220,7 @@ const changeThreadLinks = Effect.fn("WorkspaceMcpTools.changeThreadLinks")(funct
     readonly paths?: ReadonlyArray<string> | undefined;
   },
 ) {
-  const { threads, caller } = yield* readMutationCaller();
+  const { threads, caller } = yield* readCaller();
   if (caller === undefined) {
     return yield* new OrchestratorMcpFailure({
       code: "thread_credential_required",
@@ -308,10 +309,10 @@ const makeSnippet = (text: string, query: string) => {
   return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
 };
 
-export const WorkspaceToolkitHandlersLive = WorkspaceToolkit.toLayer({
-  thread_link_project: (input) => changeThreadLinks("link", input),
-  thread_unlink_project: (input) => changeThreadLinks("unlink", input),
-  t3_thread_search: (input) =>
+export const WorkspaceToolkitHandlersLive = McpToolAccess.toLayer(WorkspaceToolkit, {
+  thread_link_project: McpToolAccess.actsAsCaller((input) => changeThreadLinks("link", input)),
+  thread_unlink_project: McpToolAccess.actsAsCaller((input) => changeThreadLinks("unlink", input)),
+  t3_thread_search: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const { caller } = yield* readCaller();
       const query = input.query.trim();
@@ -352,9 +353,11 @@ export const WorkspaceToolkitHandlersLive = WorkspaceToolkit.toLayer({
       );
       return { matches, hasMore: rows.length > limit };
     }),
+  ),
 });
 
 /** Registers the workspace tools on the core MCP server every provider session receives. */
-export const WorkspaceMcpToolsLive = McpServer.toolkit(WorkspaceToolkit).pipe(
-  Layer.provide(WorkspaceToolkitHandlersLive),
+export const WorkspaceMcpToolsLive = toolkitRegistration(
+  WorkspaceToolkit,
+  WorkspaceToolkitHandlersLive,
 );

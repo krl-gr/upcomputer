@@ -6,7 +6,7 @@ import { TaskAgentId, TaskAgentRunId, TaskId, type Task } from "@t3tools/tasks-c
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { runExperimentalFeatureMigrations } from "../../../../apps/server/src/extensionApi.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";

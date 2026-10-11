@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** Add the current human-facing result summary to each task. */
 export const AddTaskOutputMigration = Effect.gen(function* () {

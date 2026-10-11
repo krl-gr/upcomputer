@@ -116,4 +116,4 @@ export const SIDEBAR_DIM_TEXT = "text-sidebar-muted-foreground/80";
  * pointer is on the button itself or it has keyboard focus. Each place keeps
  * its own reveal rule (hidden until its row or header is hovered or focused).
  */
-export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring`;
+export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;

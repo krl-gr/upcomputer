@@ -1,5 +1,6 @@
 import {
   compileResolvedKeybindingRule,
+  DEFAULT_RESOLVED_KEYBINDINGS,
   mergeWithDefaultKeybindings,
 } from "@t3tools/shared/keybindings";
 import type { ComponentProps } from "react";
@@ -125,6 +126,15 @@ function renderPanel(
     root!.render(
       <RightPanelTabs
         mode="inline"
+        keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
         surfaces={surfaces}
         environmentId={null}
         activeSurfaceId={surfaces[0]?.id ?? null}

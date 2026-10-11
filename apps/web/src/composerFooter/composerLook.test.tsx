@@ -34,6 +34,7 @@ type PrimaryActionsProps = ComponentProps<typeof ComposerPrimaryActions>;
 function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
   const props: PrimaryActionsProps = {
     compact: false,
+    canOperateThread: true,
     pendingAction: null,
     isRunning: false,
     canInterrupt: false,

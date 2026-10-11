@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** No historical inference: old tasks intentionally retain null origins. */
 export const TaskOriginsMigration = Effect.gen(function* () {

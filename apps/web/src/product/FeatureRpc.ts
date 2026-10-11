@@ -9,8 +9,8 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import type * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as RpcClient from "effect/rpc/RpcClient";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";

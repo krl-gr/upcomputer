@@ -56,7 +56,10 @@ vi.mock("../state/environments", () => ({
   }),
   usePrimaryEnvironmentId: () => "env-1",
 }));
-vi.mock("../state/server", () => ({ primaryServerKeybindingsAtom: "keybindings" }));
+vi.mock("../state/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/server")>()),
+  primaryServerKeybindingsAtom: "keybindings",
+}));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
 vi.mock("../hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");

@@ -24,7 +24,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import type { ThreadPanelPresentation } from "../rightPanelLayout";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { cn } from "../lib/utils";
 import {
   useProject,
   useProjects,
@@ -84,7 +83,6 @@ export interface ThreadPanelToggleProps {
   presentation: ThreadPanelPresentation;
   popoverHandle: ReturnType<typeof PopoverCreateHandle>;
   shortcutLabel: string | null;
-  hasAttention: boolean;
   onToggle: () => void;
 }
 
@@ -143,17 +141,11 @@ function ThreadPanelToggle(props: ThreadPanelToggleProps) {
       type="button"
       aria-label="Toggle thread details panel"
       aria-pressed={props.open}
-      className={cn(CONTEXT_ROW_TOGGLE_CLASS, "relative")}
+      className={CONTEXT_ROW_TOGGLE_CLASS}
       onClick={popover ? undefined : props.onToggle}
       data-context-row-thread-panel-toggle=""
     >
       <SquareMenuIcon className="size-4" />
-      {props.hasAttention ? (
-        <span
-          className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-background"
-          aria-hidden="true"
-        />
-      ) : null}
     </button>
   );
   return (

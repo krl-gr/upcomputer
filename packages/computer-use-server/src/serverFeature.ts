@@ -1,3 +1,4 @@
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -17,6 +18,10 @@ import {
 
 const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use";
 
+class ComputerUseSettingsMoveError extends Data.TaggedError("ComputerUseSettingsMoveError")<{
+  readonly message: string;
+}> {}
+
 /**
  * Desktop computer use and the managed Chrome for every provider: the
  * computer_* tools on the core MCP server, Chrome as a second host for the
@@ -30,7 +35,9 @@ export const COMPUTER_USE_SERVER_FEATURE = defineExperimentalServerFeature({
     Effect.try({
       try: () => moveLegacySettingsSections(settingsPath, { replace: fromV1Cutover }),
       catch: (cause) =>
-        new Error(`Could not write ${computerUseSettingsPath(settingsPath)}: ${String(cause)}`),
+        new ComputerUseSettingsMoveError({
+          message: `Could not write ${computerUseSettingsPath(settingsPath)}: ${String(cause)}`,
+        }),
     }).pipe(
       Effect.map((moved) =>
         moved.length === 0

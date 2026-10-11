@@ -2,7 +2,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   HTML_RENDER_MEASURE_FONTS,
   HTML_RENDER_MEASURE_WIDTHS,
@@ -11,7 +11,7 @@ import {
 import { T3_CODE_DARK_THEME_COLORS } from "@t3tools/shared/themePalettes";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64 from "effect/encoding/Base64";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -24,13 +24,13 @@ import * as NodeURL from "node:url";
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as HtmlRender from "./HtmlRender.ts";
-import * as PreviewBrowser from "./PreviewBrowser.ts";
+import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 
 // Real-browser tests run only when this names a chrome-headless-shell, for
 // example one T3 installed under <T3 home>/tools/chrome-headless-shell.
 const TEST_BROWSER_ENV = "T3CODE_TEST_HEADLESS_SHELL";
 
-const htmlRenderLayer = (
+const layerHtmlRender = (
   executable?: string,
   installed: Effect.Effect<Option.Option<string>> = Effect.succeed(
     Option.fromUndefinedOr(executable),
@@ -52,7 +52,7 @@ const htmlRenderLayer = (
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-html-render-" })),
     Layer.provideMerge(NodeServices.layer),
   );
-const testLayer = htmlRenderLayer();
+const layerTest = layerHtmlRender();
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -84,8 +84,8 @@ describe("HtmlRender", () => {
         ].join(""),
       );
 
-      const pngUri = `data:image/png;base64,${Encoding.encodeBase64(PNG_BYTES)}`;
-      const svgUri = `data:image/svg+xml;base64,${Encoding.encodeBase64("<svg/>")}`;
+      const pngUri = `data:image/png;base64,${Base64.encode(PNG_BYTES)}`;
+      const svgUri = `data:image/svg+xml;base64,${Base64.encode("<svg/>")}`;
       expect(prepared).toContain(`<img src="${pngUri}">`);
       expect(prepared).toContain(`url(${svgUri})`);
       expect(prepared).toContain(`['${pngUri}', \`${svgUri}\`]`);
@@ -94,7 +94,7 @@ describe("HtmlRender", () => {
       // The theme bootstrap opens the head, ahead of the page's own markup.
       expect(prepared.indexOf("<head>")).toBeLessThan(prepared.indexOf('<style id="t3-theme">'));
       expect(prepared.indexOf('<style id="t3-theme">')).toBeLessThan(prepared.indexOf("<title>"));
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("inlines an SVG behind processing instructions and a doctype subset", () =>
@@ -114,8 +114,8 @@ describe("HtmlRender", () => {
 
       const prepared = yield* htmlRender.prepare(`<img src="${svg}">`);
 
-      expect(prepared).toContain(`data:image/svg+xml;base64,${Encoding.encodeBase64(source)}`);
-    }).pipe(Effect.provide(testLayer)),
+      expect(prepared).toContain(`data:image/svg+xml;base64,${Base64.encode(source)}`);
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("lists every local image it cannot read", () =>
@@ -167,7 +167,7 @@ describe("HtmlRender", () => {
         upper,
         longer,
       ]);
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("publishes the prepared page as an html thread attachment", () =>
@@ -197,7 +197,7 @@ describe("HtmlRender", () => {
       const html = yield* fileSystem.readFileString(stored ?? "");
       expect(html).toContain('<style id="t3-theme">');
       expect(html).toContain("<p>Quarterly revenue</p>");
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("removes the page when publishing is interrupted", () =>
@@ -225,7 +225,7 @@ describe("HtmlRender", () => {
         expect(yield* storedPages).toEqual([]);
       }).pipe(
         Effect.provide(
-          htmlRenderLayer(
+          layerHtmlRender(
             undefined,
             Deferred.succeed(measuring, undefined).pipe(Effect.andThen(Effect.never)),
           ),
@@ -238,16 +238,18 @@ describe("HtmlRender", () => {
     "screenshots the page in headless Chrome with the requested theme and every console level",
     (ctx) =>
       Effect.gen(function* () {
-        const executable = (yield* HostProcessEnvironment)[TEST_BROWSER_ENV];
+        const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
         if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
         yield* Effect.gen(function* () {
           const htmlRender = yield* HtmlRender.HtmlRender;
           const preview = yield* htmlRender.preview({
             html: [
-              '<!doctype html><html><head></head><body><div style="height:300px;background:var(--accent)"></div>',
+              '<!doctype html><html><head></head><body><div id="page" tabindex="0" style="height:300px;background:var(--accent)"></div>',
               '<img src="/nonexistent/t3-missing.png" hidden>',
               "<script>",
               "const root = getComputedStyle(document.documentElement);",
+              'const page = document.getElementById("page"); page.focus();',
+              'const focus = getComputedStyle(page); console.log("focus", focus.outlineWidth, focus.outlineOffset, page.getBoundingClientRect().width, document.documentElement.scrollWidth);',
               'console.log("ready", 3); console.info(root.getPropertyValue("--font-sans"));',
               'console.warn(root.getPropertyValue("--background")); console.error("boom");',
               "</script>",
@@ -271,6 +273,7 @@ describe("HtmlRender", () => {
           expect(preview.consoleMessages).toEqual(
             expect.arrayContaining([
               { level: "log", text: "ready 3" },
+              { level: "log", text: "focus 2px -2px 400 400" },
               { level: "info", text: HTML_RENDER_MEASURE_FONTS.sans },
               {
                 level: "warning",
@@ -283,7 +286,7 @@ describe("HtmlRender", () => {
               },
             ]),
           );
-        }).pipe(Effect.provide(htmlRenderLayer(executable)));
+        }).pipe(Effect.provide(layerHtmlRender(executable)));
       }),
     30_000,
   );
@@ -292,7 +295,7 @@ describe("HtmlRender", () => {
     "keeps every local file but the page itself out of the browser",
     (ctx) =>
       Effect.gen(function* () {
-        const executable = (yield* HostProcessEnvironment)[TEST_BROWSER_ENV];
+        const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
         if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
         yield* Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
@@ -314,7 +317,7 @@ describe("HtmlRender", () => {
           const texts = preview.consoleMessages.map((message) => message.text);
           expect(texts).toContain("secret: none");
           expect(texts.join(" ")).not.toContain("abc123");
-        }).pipe(Effect.scoped, Effect.provide(htmlRenderLayer(executable)));
+        }).pipe(Effect.scoped, Effect.provide(layerHtmlRender(executable)));
       }),
     30_000,
   );
@@ -323,7 +326,7 @@ describe("HtmlRender", () => {
     "keeps the page off this machine's local network",
     (ctx) =>
       Effect.gen(function* () {
-        const executable = (yield* HostProcessEnvironment)[TEST_BROWSER_ENV];
+        const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
         if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
         // The page's connections go through a proxy that only reaches public
         // addresses, and WebRTC is gone. Each line below is a way out that
@@ -370,7 +373,7 @@ describe("HtmlRender", () => {
               `window.open("${origin}/popup"); location.href = "${origin}/navigate";</script>`,
             ].join(""),
           });
-        }).pipe(Effect.provide(htmlRenderLayer(executable)));
+        }).pipe(Effect.provide(layerHtmlRender(executable)));
         expect(requests).toEqual([]);
         expect(datagrams).toEqual([]);
       }).pipe(Effect.scoped),
@@ -381,7 +384,7 @@ describe("HtmlRender", () => {
     "measures a published page at every client width with a fresh load each",
     (ctx) =>
       Effect.gen(function* () {
-        const executable = (yield* HostProcessEnvironment)[TEST_BROWSER_ENV];
+        const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
         if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
         yield* Effect.gen(function* () {
           const htmlRender = yield* HtmlRender.HtmlRender;
@@ -396,7 +399,7 @@ describe("HtmlRender", () => {
           expect(reference.heights).toEqual(
             HTML_RENDER_MEASURE_WIDTHS.map((width) => [width, Math.ceil(width / 2)]),
           );
-        }).pipe(Effect.provide(htmlRenderLayer(executable)));
+        }).pipe(Effect.provide(layerHtmlRender(executable)));
       }),
     30_000,
   );

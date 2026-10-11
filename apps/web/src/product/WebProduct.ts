@@ -6,9 +6,9 @@ import {
   type ProductFlags,
   type ProductSurfaces,
 } from "@t3tools/shared/productFlags";
-import type * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as Rpc from "effect/rpc/Rpc";
+import * as RpcClient from "effect/rpc/RpcClient";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 import {
   defineExperimentalWebFeature,

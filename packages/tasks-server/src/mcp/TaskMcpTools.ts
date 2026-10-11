@@ -1,11 +1,13 @@
-import * as Context from "effect/Context";
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import type * as JsonSchema from "effect/JsonSchema";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import {
   latestActiveRun,
   McpInvocationContext,
+  McpToolAccess,
+  resultToolkitRegistration,
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
@@ -53,44 +55,54 @@ const invocationContext = Effect.gen(function* () {
   } satisfies TaskToolInvocationContext;
 });
 
-/** Registers every task tool on the core MCP server that v2 gives each provider session. */
-export const TaskMcpToolsLive = Layer.effectDiscard(
+const taskTool = (spec: (typeof TASK_TOOL_SPECS)[number]) =>
+  Tool.dynamic(spec.name, {
+    description: spec.description,
+    parameters: spec.inputSchema as JsonSchema.JsonSchema,
+    // The handler answers with its own `CallToolResult`.
+    failure: OrchestratorMcpFailure,
+  })
+    .annotate(Tool.Readonly, spec.mutation === "read")
+    .addDependency(McpInvocationContext)
+    .addDependency(ThreadManagementService);
+
+const TaskToolkit = Toolkit.make(...TASK_TOOL_SPECS.map(taskTool));
+
+/**
+ * Reads are open to every caller. Writes need a live calling run or a client
+ * approved to write; the task tools then apply their own mutation policy.
+ */
+const TaskToolkitHandlersLive = McpToolAccess.toLayer(
+  TaskToolkit,
   Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
     const tools = yield* TaskToolService;
-    const threads = yield* ThreadManagementService;
-    for (const spec of TASK_TOOL_SPECS) {
-      yield* server.addTool({
-        tool: new McpSchema.Tool({
-          name: spec.name,
-          description: spec.description,
-          inputSchema: spec.inputSchema as McpSchema.Tool["inputSchema"],
-          annotations: { readOnlyHint: spec.mutation === "read" },
-        }),
-        annotations: Context.empty(),
-        handle: (payload) =>
-          Effect.withFiber((fiber) => {
-            const invocation = Context.getUnsafe(fiber.context, McpInvocationContext);
-            return invocationContext.pipe(
-              Effect.flatMap((context) =>
-                tools.call({
-                  name: spec.name,
-                  args: (payload ?? {}) as Record<string, unknown>,
-                  context,
+    const handlers = TASK_TOOL_SPECS.map((spec) => {
+      const declare = spec.mutation === "read" ? McpToolAccess.reads : McpToolAccess.writes;
+      return [
+        spec.name,
+        declare((payload: unknown) =>
+          invocationContext.pipe(
+            Effect.flatMap((context) =>
+              tools.call({
+                name: spec.name,
+                args: (payload ?? {}) as Record<string, unknown>,
+                context,
+              }),
+            ),
+            Effect.map(
+              (result) =>
+                new McpSchema.CallToolResult({
+                  isError: result.isError,
+                  content: [{ type: "text", text: result.text }],
                 }),
-              ),
-              Effect.provideService(McpInvocationContext, invocation),
-              Effect.provideService(ThreadManagementService, threads),
-              Effect.map(
-                (result) =>
-                  new McpSchema.CallToolResult({
-                    isError: result.isError,
-                    content: [{ type: "text", text: result.text }],
-                  }),
-              ),
-            );
-          }),
-      });
-    }
+            ),
+          ),
+        ),
+      ] as const;
+    });
+    return Object.fromEntries(handlers) as McpToolAccess.Handlers<typeof TaskToolkit.tools>;
   }),
 );
+
+/** Registers every task tool on the core MCP server that v2 gives each provider session. */
+export const TaskMcpToolsLive = resultToolkitRegistration(TaskToolkit, TaskToolkitHandlersLive);

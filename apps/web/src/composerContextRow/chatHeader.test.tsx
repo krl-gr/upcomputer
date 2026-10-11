@@ -103,6 +103,8 @@ async function renderHeader() {
         activeThreadTitle="Find the worktree fixes"
         isServerThread
         activeProject={NO_PROJECT as never}
+        parentThreadLink={null}
+        onOpenThread={vi.fn()}
         rightPanelOpen={false}
         onNewThreadInProject={vi.fn()}
       />,

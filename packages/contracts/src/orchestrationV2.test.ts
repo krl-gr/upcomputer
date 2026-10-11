@@ -16,12 +16,14 @@ import {
   ProviderInstanceId,
   ProviderReplayTranscript,
   ProviderThreadId,
+  RunAttemptId,
   RunId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnItemId,
 } from "./index.ts";
 import {
+  latestProviderTurnForAttempt,
   OrchestrationV2Checkpoint,
   OrchestrationV2CheckpointScope,
   OrchestrationV2Command,
@@ -34,6 +36,7 @@ import {
   OrchestrationV2ShellSnapshot,
   OrchestrationV2SubscribeThreadInput,
   OrchestrationV2Subagent,
+  OrchestrationV2SubagentJson,
   OrchestrationV2ThreadHistoryPage,
   OrchestrationV2ThreadProjection,
   OrchestrationV2ThreadStreamItem,
@@ -43,6 +46,48 @@ import {
 } from "./orchestrationV2.ts";
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
+function emptyThreadProjection() {
+  return {
+    thread: {
+      createdBy: "user",
+      creationSource: "web",
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Thread",
+      providerInstanceId: "codex",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: "thread-1" },
+      forkedFrom: null,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      deletedAt: null,
+    },
+    runs: [],
+    attempts: [],
+    nodes: [],
+    subagents: [],
+    providerSessions: [],
+    providerThreads: [],
+    providerTurns: [],
+    runtimeRequests: [],
+    messages: [],
+    plans: [],
+    turnItems: [],
+    checkpointScopes: [],
+    checkpoints: [],
+    contextHandoffs: [],
+    contextTransfers: [],
+    visibleTurnItems: [],
+    updatedAt: now,
+  };
+}
+
 const LegacyShellStreamItem = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("synchronized") }),
   Schema.Struct({
@@ -68,6 +113,7 @@ const decodeOrchestrationV2Checkpoint = Schema.decodeUnknownSync(OrchestrationV2
 const decodeOrchestrationV2DomainEvent = Schema.decodeUnknownSync(OrchestrationV2DomainEvent);
 const decodeProviderReplayTranscript = Schema.decodeUnknownSync(ProviderReplayTranscript);
 const decodeOrchestrationV2Subagent = Schema.decodeUnknownSync(OrchestrationV2Subagent);
+const encodeOrchestrationV2SubagentJson = Schema.encodeSync(OrchestrationV2SubagentJson);
 const decodeOrchestrationV2ThreadProjection = Schema.decodeUnknownSync(
   OrchestrationV2ThreadProjection,
 );
@@ -203,7 +249,7 @@ describe("orchestration V2 contracts", () => {
     });
     const known = item("item-known", "system_notice", { message: "Hello" });
     // A type no build of this client knows, standing in for a newer server's item.
-    const future = item("item-future", "secret_request", { secretRef: "ref-1" });
+    const future = item("item-future", "hologram", { beam: "ref-1" });
     const projected = (position: number, turnItem: { readonly id: string }) => ({
       position,
       visibility: "local",
@@ -322,6 +368,47 @@ describe("orchestration V2 contracts", () => {
     });
     expect(legacyDecoded.afterSequence).toBe(12);
     expect("acceptBoundedSnapshot" in legacyDecoded).toBe(false);
+  });
+
+  it("negotiates compact bounded turnItems without disturbing older peers", () => {
+    // Older servers strip the unknown opt-in, so they keep sending full turnItems.
+    const legacyDecoded = decodeLegacySubscribeThreadInput({
+      threadId: "thread-1",
+      acceptBoundedSnapshot: true,
+      acceptCompactTurnItems: true,
+    });
+    expect("acceptCompactTurnItems" in legacyDecoded).toBe(false);
+    expect(
+      decodeOrchestrationV2SubscribeThreadInput({
+        threadId: "thread-1",
+        acceptCompactTurnItems: true,
+      }).acceptCompactTurnItems,
+    ).toBe(true);
+
+    const decodeStreamItem = Schema.decodeUnknownSync(OrchestrationV2ThreadStreamItem);
+    const projection = decodeStreamItem({
+      kind: "snapshot",
+      snapshotSequence: 1,
+      projection: emptyThreadProjection(),
+    });
+    // Older servers never send the marker; newer clients treat absence as full turnItems.
+    expect(projection.kind === "snapshot" && projection.turnItemsOmitLocalVisible).toBe(undefined);
+    const marked = decodeStreamItem({
+      kind: "snapshot",
+      snapshotSequence: 1,
+      projection: emptyThreadProjection(),
+      turnItemsOmitLocalVisible: true,
+    });
+    expect(marked.kind === "snapshot" && marked.turnItemsOmitLocalVisible).toBe(true);
+    // The marker only means "omitted"; any other value is a protocol error.
+    expect(() =>
+      decodeStreamItem({
+        kind: "snapshot",
+        snapshotSequence: 1,
+        projection: emptyThreadProjection(),
+        turnItemsOmitLocalVisible: false,
+      }),
+    ).toThrow();
   });
 
   it("decodes persisted capability snapshots that predate runtimePolicy", () => {
@@ -843,6 +930,68 @@ describe("orchestration V2 contracts", () => {
     if (turnItem.type !== "subagent") throw new Error("expected subagent item");
     expect(turnItem.progress).toBe("Inspecting package metadata");
   });
+
+  it.each(["  indented prompt\n", "\n \t\n"])(
+    "preserves workflow prompt and result %j in stored and wire JSON",
+    (preview) => {
+      const subagent = {
+        ...decodeOrchestrationV2Subagent({
+          id: "workflow-coordinator",
+          threadId: "thread-1",
+          runId: "run-1",
+          parentNodeId: "node-root-1",
+          origin: "provider_native",
+          createdBy: "agent",
+          driver: "claudeAgent",
+          providerInstanceId: "claudeAgent",
+          providerThreadId: null,
+          childThreadId: null,
+          nativeTaskRef: null,
+          prompt: "Run workflow",
+          title: null,
+          model: null,
+          status: "running",
+          result: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+        }),
+        workflow: {
+          phases: [],
+          agents: [
+            {
+              index: 1,
+              label: "Member",
+              state: "completed" as const,
+              prompt: preview,
+              result: preview,
+            },
+          ],
+        },
+      };
+      const { workflow, ...coordinator } = subagent;
+      const incoming = { ...encodeOrchestrationV2SubagentJson(coordinator), workflow };
+      for (const codec of [
+        OrchestrationV2SubagentJson,
+        Schema.toCodecJson(OrchestrationV2Subagent),
+      ]) {
+        const encode = Schema.encodeSync(codec);
+        const decode = Schema.decodeUnknownSync(codec);
+        const json: unknown = JSON.parse(JSON.stringify(encode(subagent)));
+        expect(json).toMatchObject({
+          workflow: { agents: [{ prompt: preview, result: preview }] },
+        });
+        expect(decode(json).workflow?.agents[0]).toMatchObject({
+          prompt: preview,
+          result: preview,
+        });
+        expect(decode(incoming).workflow?.agents[0]).toMatchObject({
+          prompt: preview,
+          result: preview,
+        });
+      }
+    },
+  );
 
   it("decodes app-owned subagent parent-wake policies", () => {
     const appOwnedSubagent = {
@@ -1404,5 +1553,18 @@ describe("limit recovery choice updates", () => {
     { autoResume: true, snooze: false },
   ])("accepts an explicit independent choice %j", (choice) => {
     expect(decode({ ...identity, ...choice })).toEqual({ ...identity, ...choice });
+  });
+});
+
+describe("latestProviderTurnForAttempt", () => {
+  it("returns the attempt's highest-ordinal turn, as a Codex goal run spans several", () => {
+    const turns = [
+      { id: "first", runAttemptId: RunAttemptId.make("goal-attempt"), ordinal: 3 },
+      { id: "other", runAttemptId: RunAttemptId.make("other-attempt"), ordinal: 9 },
+      { id: "last", runAttemptId: RunAttemptId.make("goal-attempt"), ordinal: 5 },
+      { id: "subagent", runAttemptId: null, ordinal: 7 },
+    ];
+    expect(latestProviderTurnForAttempt(turns, RunAttemptId.make("goal-attempt"))?.id).toBe("last");
+    expect(latestProviderTurnForAttempt(turns, null)).toBeUndefined();
   });
 });

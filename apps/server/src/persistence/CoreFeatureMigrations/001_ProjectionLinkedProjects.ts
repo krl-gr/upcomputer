@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 // A project can link projects for all of its threads, stored as a JSON array
 // of project ids; readers drop ids of deleted projects. Thread links live in

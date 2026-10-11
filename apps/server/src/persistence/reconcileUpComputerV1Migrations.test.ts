@@ -11,7 +11,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { TASK_MIGRATION_CONTRIBUTION } from "@t3tools/tasks-server/persistence";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
@@ -19,8 +19,8 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
-import * as SqlitePersistence from "./Layers/Sqlite.ts";
-import { runMigrations } from "./Migrations.ts";
+import * as SqlitePersistence from "./Sqlite.ts";
+import { migrationEntries, runMigrations } from "./Migrations.ts";
 import Migration0033 from "./Migrations/033_ProjectionThreadsSettled.ts";
 import Migration0034 from "./Migrations/034_ProjectionThreadsSnoozed.ts";
 import Migration0044 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
@@ -112,7 +112,7 @@ it.effect(
         const latest = yield* sql<{ readonly id: number }>`
         SELECT MAX(migration_id) AS id FROM effect_sql_migrations
       `;
-        assert.equal(latest[0]?.id, 56);
+        assert.equal(latest[0]?.id, migrationEntries.at(-1)?.[0]);
 
         const legacy = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
         yield* legacy.reconcileShells;

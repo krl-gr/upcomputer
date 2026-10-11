@@ -49,6 +49,15 @@ function renderLauncher() {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
+      keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+      getShortcutContext={() => ({
+        terminalFocus: false,
+        terminalOpen: false,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+      })}
       surfaces={[]}
       environmentId={null}
       activeSurfaceId={null}

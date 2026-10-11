@@ -15,16 +15,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { McpServer } from "effect/unstable/ai";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { McpServer } from "effect/ai";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { ThreadToolkitRegistrationLive } from "../mcp/McpHttpServer.ts";
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
+import * as McpToolAccess from "../mcp/McpToolAccess.ts";
 import { planThreadProjectLinks } from "../orchestration-v2/linkedProjects.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -79,7 +80,7 @@ const makeDependencies = (callerOverrides: Partial<OrchestrationV2ThreadShell> =
     ...callerOverrides,
   } as OrchestrationV2ThreadShell;
   const dispatched: OrchestrationV2ServerCommand[] = [];
-  const database = SqlitePersistenceMemory;
+  const database = SqlitePersistence.layerMemory;
   const layer = Layer.mergeAll(
     NodeCrypto.layer,
     NodeServices.layer,
@@ -123,6 +124,8 @@ const makeDependencies = (callerOverrides: Partial<OrchestrationV2ThreadShell> =
   return { layer, dispatched };
 };
 
+const handlers = McpToolAccess.HandlersLayer.layer(WorkspaceToolkitHandlersLive);
+
 const seedProjects = Effect.gen(function* () {
   const store = yield* ProjectStore.ProjectStoreV2;
   yield* store.apply(projectCreated(home, "/work/home"));
@@ -163,7 +166,7 @@ it.effect("links and unlinks projects on the calling thread by id and by folder"
     const scratchLink = yield* handle("thread_link_project", { projectIds: [scratch] });
     assert.isTrue(scratchLink.isFailure);
     assert.equal(dispatched.length, 2);
-  }).pipe(Effect.provide(WorkspaceToolkitHandlersLive.pipe(Layer.provideMerge(layer))));
+  }).pipe(Effect.provide(handlers.pipe(Layer.provideMerge(layer))));
 });
 
 it.effect("refuses links from a caller that is not full-access/default, but allows unlinks", () => {
@@ -179,7 +182,7 @@ it.effect("refuses links from a caller that is not full-access/default, but allo
     const unlinked = yield* handle("thread_unlink_project", { projectIds: [docs] });
     assert.isFalse(unlinked.isFailure);
     assert.equal(dispatched.length, 1);
-  }).pipe(Effect.provide(WorkspaceToolkitHandlersLive.pipe(Layer.provideMerge(layer))));
+  }).pipe(Effect.provide(handlers.pipe(Layer.provideMerge(layer))));
 });
 
 it.effect(
@@ -282,7 +285,7 @@ it.effect(
         ["title"],
       );
       assert.isFalse(byTitle.hasMore);
-    }).pipe(Effect.provide(WorkspaceToolkitHandlersLive.pipe(Layer.provideMerge(layer))));
+    }).pipe(Effect.provide(handlers.pipe(Layer.provideMerge(layer))));
   },
 );
 
@@ -297,7 +300,7 @@ it.effect("replaces upstream's project-scoped t3_thread_search when registered a
     Effect.provide(
       // The order McpHttpServer.layer uses: core toolkits first, then product tools.
       WorkspaceMcpToolsLive.pipe(
-        Layer.provideMerge(ThreadToolkitRegistrationLive),
+        Layer.provideMerge(McpHttpServer.layerThreadToolkit),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(
           Layer.mergeAll(

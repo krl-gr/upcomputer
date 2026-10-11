@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 
 import type { ExperimentalFeatureMigrationContribution } from "../product/FeatureMigrations.ts";
 import ProjectionLinkedProjects from "./CoreFeatureMigrations/001_ProjectionLinkedProjects.ts";

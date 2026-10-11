@@ -15,11 +15,10 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   createAtomCommandScheduler,
-  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
@@ -205,6 +204,16 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
     }),
   );
+  // The stored guide only changes when somebody generates one, which refreshes it below.
+  const reviewGuide = writableQueryFamily(
+    createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:review-guide",
+      tag: WS_METHODS.pullRequestsReviewGuide,
+      execute: (input) => routedRequest(WS_METHODS.pullRequestsReviewGuide, input),
+      staleTimeMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
+  );
   const reviewerCandidates = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:reviewer-candidates",
@@ -320,7 +329,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           JSON.stringify([environmentId, input.projectId, input.repository, input.number]),
       },
     }),
-    runAction: createEnvironmentCommand(runtime, {
+    runAction: createEnvironmentRpcCommand(runtime, {
+      tag: WS_METHODS.pullRequestsRunAction,
       label: "environment-data:pull-requests:run-action",
       // Preparation belongs to the write's lane. Refreshable queries would restart it after
       // every preceding action, and preparing outside the lane could reorder the clicks.
@@ -328,8 +338,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         input: PullRequestActionInput & {
           readonly resolveMergeMethod?: (detail: PullRequestDetail) => PullRequestMergeMethod;
         },
-        registry,
-        environmentId,
       ) =>
         Effect.gen(function* () {
           const { resolveMergeMethod, ...actionInput } = input;
@@ -369,9 +377,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             });
             preparedInput = { ...actionInput, mergeMethod };
           }
-          yield* routedRequest(WS_METHODS.pullRequestsRunAction, preparedInput);
-          registry.refresh(preview({ environmentId, input: actionInput }));
+          return yield* routedRequest(WS_METHODS.pullRequestsRunAction, preparedInput);
         }),
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() => registry.refresh(preview({ environmentId, input }))),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
@@ -501,6 +510,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             missingIdentities,
           );
         }),
+    }),
+    reviewGuide,
+    /** Runs a model on the environment; never fired without the reader asking for it. */
+    generateReviewGuide: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:generate-review-guide",
+      tag: WS_METHODS.pullRequestsGenerateReviewGuide,
+      execute: (input) => routedRequest(WS_METHODS.pullRequestsGenerateReviewGuide, input),
+      onSuccess: (target, registry) => Effect.sync(() => registry.refresh(reviewGuide(target))),
     }),
     /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
     labelCandidates,

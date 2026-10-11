@@ -6,22 +6,21 @@ import {
   ProviderSessionId,
   ThreadId,
 } from "@t3tools/contracts";
-import { HostProcessIsExecutable } from "@t3tools/shared/hostProcess";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
-import * as Crypto from "effect/Crypto";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
-import * as EffectAcpErrors from "effect-acp/errors";
-
-import * as ServerConfig from "../../config.ts";
-import * as IdAllocator from "../IdAllocator.ts";
-import { ProviderAdapterV2RuntimePolicy } from "../ProviderAdapter.ts";
 import {
   AcpProviderCapabilitiesV2,
   makeAcpAdapterV2,
   type AcpAdapterV2RuntimeInput,
-} from "./AcpAdapterV2.ts";
+} from "@t3tools/provider-acp/server/adapter";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as EffectAcpErrors from "effect-acp/errors";
+
 import * as ClaudeAdapterV2 from "./ClaudeAdapterV2.ts";
 import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
 
@@ -68,8 +67,7 @@ describe("linked project folders in provider sessions", () => {
     Effect.gen(function* () {
       let runtimeInput: AcpAdapterV2RuntimeInput | undefined;
       const instanceId = ProviderInstanceId.make("acp-test-linked-folders");
-      const adapter = makeAcpAdapterV2({
-        crypto: yield* Crypto.Crypto,
+      const adapter = yield* makeAcpAdapterV2({
         instanceId,
         flavor: {
           driver: ProviderDriverKind.make("acp-test"),
@@ -84,11 +82,8 @@ describe("linked project folders in provider sessions", () => {
               ),
             ),
         },
-        fileSystem: yield* FileSystem.FileSystem,
-        idAllocator: yield* IdAllocator.IdAllocatorV2,
-        serverConfig: yield* ServerConfig.ServerConfig,
         selfInvocation: yield* resolveSelfInvocation().pipe(
-          Effect.provideService(HostProcessIsExecutable, true),
+          Effect.provideService(HostProcess.IsExecutable, true),
         ),
       });
       yield* Effect.exit(
@@ -96,7 +91,7 @@ describe("linked project folders in provider sessions", () => {
           threadId: ThreadId.make("thread-acp-linked-folders"),
           providerSessionId: ProviderSessionId.make("session-acp-linked-folders"),
           modelSelection: { instanceId, model: "default" },
-          runtimePolicy: ProviderAdapterV2RuntimePolicy.make({
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
             runtimeMode: "full-access",
             interactionMode: "default",
             cwd: "/work/home",
@@ -110,9 +105,8 @@ describe("linked project folders in provider sessions", () => {
         Layer.mergeAll(
           NodeServices.layer,
           IdAllocator.layer,
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-linked-folders-" }).pipe(
-            Layer.provide(NodeServices.layer),
-          ),
+          McpProviderSessions.layer,
+          TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
         ),
       ),
       Effect.scoped,

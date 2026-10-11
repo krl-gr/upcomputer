@@ -156,6 +156,7 @@ function modelPicker(
 ) {
   return (
     <ComposerFooterModelPicker
+      environmentId={null}
       activeInstanceId={CLAUDE}
       model={OPUS}
       lockedProvider={null}

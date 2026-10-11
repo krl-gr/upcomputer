@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   EnvironmentId,
   ProjectId,
@@ -24,6 +25,11 @@ const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() =>
     </>
   ),
 }));
+vi.mock("~/state/session", async (original) => ({
+  ...(await original<typeof import("~/state/session")>()),
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
+}));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
 vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [], useServerConfigs: () => new Map() }));
@@ -39,12 +45,18 @@ vi.mock("~/hooks/useSettings", () => ({
 vi.mock("~/hooks/useLiveRefresh", () => ({ useLiveRefresh: () => {} }));
 vi.mock("~/hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => newThread }));
 vi.mock("~/lib/sourceControlActions", () => ({
-  usePreparePullRequestThreadAction: () => ({ run: prepareThread }),
+  usePreparePullRequestThreadAction: () => ({ run: prepareThread, isAllowed: true, error: null }),
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("~/state/pullRequests", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/pullRequests")>()),
-  pullRequestEnvironment: { detail: () => "detail", activity: () => "activity" },
+  pullRequestEnvironment: {
+    detail: () => "detail",
+    activity: () => "activity",
+    // The header menu reads the stored guide to label "Write guide" or "Rewrite guide".
+    reviewGuide: () => "review-guide",
+    generateReviewGuide: { permissionAtom: () => "generate-review-guide" },
+  },
   usePullRequestTurnRefresh: () => 0,
   useSharedPullRequestSummary: () => null,
 }));
@@ -102,43 +114,51 @@ vi.mock("./PullRequestThreadLinks", () => ({ PullRequestThreadLinks: () => null 
 vi.mock("./PullRequestSummaryTab", () => ({
   PullRequestSummaryTab: ({
     onFixFinding,
+    scrollerRef,
   }: ComponentProps<typeof import("./PullRequestSummaryTab").PullRequestSummaryTab>) => (
-    <button
-      onClick={() =>
-        onFixFinding?.({
-          kind: "check",
-          check: { name: "Unit tests", status: "failure", description: "Test failed", url: null },
-        })
-      }
-    >
-      Fix check
-    </button>
+    <div ref={scrollerRef} data-test-scroll="summary">
+      <button
+        onClick={() =>
+          onFixFinding?.({
+            kind: "check",
+            check: { name: "Unit tests", status: "failure", description: "Test failed", url: null },
+          })
+        }
+      >
+        Fix check
+      </button>
+    </div>
   ),
 }));
+// The guide renders diffs, which start the diff worker; this suite never opens it.
+vi.mock("./PullRequestGuideTab", () => ({ PullRequestGuideTab: () => null }));
 vi.mock("./PullRequestCodeTab", () => ({
   default: ({
     onAddToAgentSelection,
+    scrollerRef,
   }: ComponentProps<typeof import("./PullRequestCodeTab").default>) => (
-    <button
-      onClick={() =>
-        onAddToAgentSelection?.({
-          request: "Fix this line",
-          comment: {
-            id: "note-1",
-            sectionId: "file:a.ts",
-            sectionTitle: "a.ts",
-            filePath: "a.ts",
-            startIndex: 0,
-            endIndex: 0,
-            rangeLabel: "L1",
-            text: "Please fix",
-            diff: "+broken()",
-          },
-        })
-      }
-    >
-      Add to agent
-    </button>
+    <div ref={scrollerRef} data-test-scroll="code">
+      <button
+        onClick={() =>
+          onAddToAgentSelection?.({
+            request: "Fix this line",
+            comment: {
+              id: "note-1",
+              sectionId: "file:a.ts",
+              sectionTitle: "a.ts",
+              filePath: "a.ts",
+              startIndex: 0,
+              endIndex: 0,
+              rangeLabel: "L1",
+              text: "Please fix",
+              diff: "+broken()",
+            },
+          })
+        }
+      >
+        Add to agent
+      </button>
+    </div>
   ),
 }));
 
@@ -146,7 +166,7 @@ import { PullRequestDetailPanel } from "./PullRequestDetailPanel";
 import { pullRequestPanelContext } from "./pullRequestDetail.logic";
 
 const detail: PullRequestDetailView = {
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   projectId: ProjectId.make("project"),
   projectTitle: "Project",
   workspaceRoot: "/workspace",
@@ -336,4 +356,83 @@ describe.each([
       expect(newThread).toHaveBeenCalled();
     }
   });
+});
+
+it("changes the title only for the active tab's main scroller", async () => {
+  const scrollers = new Map<string, { scrollTop: number; scrollHeight: number }>();
+  await act(async () => {
+    renderer = create(
+      <PullRequestDetailPanel
+        environmentId={threadRef.environmentId}
+        reference={detail}
+        context="page"
+        shortcutsEnabled={false}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
+      />,
+      {
+        createNodeMock: (element) => {
+          const props = element.props as Record<string, unknown>;
+          const name = props["data-test-scroll"] as string | undefined;
+          if (name) {
+            const scroller = { scrollTop: 0, scrollHeight: 300 };
+            scrollers.set(name, scroller);
+            return scroller;
+          }
+          return { scrollHeight: props.inert === false ? 100 : 20 };
+        },
+      },
+    );
+  });
+
+  const mainScroll = renderer.root.findByProps({
+    className: "relative flex min-h-0 flex-1 flex-col overflow-hidden",
+  });
+  const titleFold = () => {
+    let node = renderer.root.findByType("h1");
+    while (typeof node.props.inert !== "boolean") node = node.parent!;
+    return node;
+  };
+  const summary = scrollers.get("summary")!;
+  const nested = { scrollTop: 200 };
+  await act(async () => mainScroll.props.onScrollCapture({ target: nested }));
+  expect(titleFold().props.inert).toBe(false);
+  summary.scrollTop = 180;
+  nested.scrollTop = 0;
+  await act(async () => {
+    mainScroll.props.onScrollCapture({ target: summary });
+    mainScroll.props.onScrollCapture({ target: nested });
+  });
+  expect(titleFold().props.inert).toBe(true);
+  expect(summary.scrollTop).toBe(100);
+  expect(nested.scrollTop).toBe(0);
+
+  await act(async () => mainScroll.props.onScrollCapture({ target: { scrollTop: 0 } }));
+  expect(titleFold().props.inert).toBe(true);
+  summary.scrollTop = 0;
+  await act(async () => mainScroll.props.onScrollCapture({ target: summary }));
+  expect(titleFold().props.inert).toBe(false);
+
+  await click("Code");
+  const code = scrollers.get("code")!;
+  summary.scrollTop = 180;
+  await act(async () => mainScroll.props.onScrollCapture({ target: summary }));
+  expect(titleFold().props.inert).toBe(false);
+  code.scrollTop = 180;
+  await act(async () => mainScroll.props.onScrollCapture({ target: code }));
+  expect(titleFold().props.inert).toBe(true);
+  expect(code.scrollTop).toBe(100);
+  await click("Summary");
+  expect(titleFold().props.inert).toBe(false);
+  await click("Code");
+  expect(titleFold().props.inert).toBe(true);
+  code.scrollTop = 0;
+  await act(async () => mainScroll.props.onScrollCapture({ target: code }));
+  expect(titleFold().props.inert).toBe(false);
 });

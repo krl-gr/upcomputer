@@ -1,3 +1,4 @@
+import { setUserInstructions } from "@t3tools/provider-core/server/userInstructions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -5,33 +6,10 @@ import * as Stream from "effect/Stream";
 import { ServerSettingsService } from "../serverSettings.ts";
 
 /**
- * The user's "all chats" instructions (the top-level `customInstructions`
- * setting), as one delimited block every provider session gets in its most
- * system-level channel. Adapters read it through `buildRuntimeInstructions`
- * (Codex through its own additional-context entry), so a change applies to
- * the next session or turn that builds its instructions.
+ * Keeps the user's "all chats" instructions block that every provider session
+ * gets (`@t3tools/provider-core/server/userInstructions`) in sync with the
+ * settings file, including edits made outside the app.
  */
-export const USER_INSTRUCTIONS_HEADING = "User instructions (from Up.computer settings)";
-
-let current = "";
-
-/** Returns `undefined` when there is nothing to add. */
-export function formatUserInstructionsBlock(instructions: string): string | undefined {
-  const trimmed = instructions.trim();
-  return trimmed ? `# ${USER_INSTRUCTIONS_HEADING}\n\n${trimmed}` : undefined;
-}
-
-/** The current block, or `undefined` while the user has no instructions. */
-export function currentUserInstructionsBlock(): string | undefined {
-  return formatUserInstructionsBlock(current);
-}
-
-/** Test hook; the server keeps the value in sync with settings through `layer`. */
-export function setUserInstructions(instructions: string): void {
-  current = instructions;
-}
-
-/** Keeps the block in sync with the settings file, including edits made outside the app. */
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const settings = yield* ServerSettingsService;

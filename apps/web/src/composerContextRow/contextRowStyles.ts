@@ -5,10 +5,10 @@
 const CONTEXT_ROW_TONE =
   "text-(--composer-muted) hover:text-(--composer-bright) aria-expanded:text-(--composer-bright)";
 
-export const CONTEXT_ROW_ICON_BUTTON_CLASS = `inline-flex size-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
+export const CONTEXT_ROW_ICON_BUTTON_CLASS = `inline-flex size-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
 
 /** V1's "Add project" in a chat without a project: text in the row's tone. */
-export const CONTEXT_ROW_TEXT_BUTTON_CLASS = `inline-flex h-8 shrink-0 items-center rounded-lg px-2 text-sm font-normal leading-relaxed outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
+export const CONTEXT_ROW_TEXT_BUTTON_CLASS = `inline-flex h-8 shrink-0 items-center rounded-lg px-2 text-sm font-normal leading-relaxed outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${CONTEXT_ROW_TONE}`;
 
 /** The right-panel toggle: the icon button, bright while the panel is open. */
 export const CONTEXT_ROW_TOGGLE_CLASS = `${CONTEXT_ROW_ICON_BUTTON_CLASS} aria-pressed:text-(--composer-bright)`;

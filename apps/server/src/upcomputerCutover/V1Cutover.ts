@@ -52,7 +52,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
@@ -60,7 +60,7 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { initializeV2Database } from "../persistence/initializeV2Database.ts";
-import { makeSqlitePersistenceLive } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import {
   type ExperimentalFeatureMigrationContribution,
   runExperimentalFeatureMigrations,
@@ -685,7 +685,8 @@ function settingsFileAllChats(settingsPath: string) {
 
 function settingsKeys(settingsPath: string) {
   const settings = readJsonObject(settingsPath);
-  const known = new Set(Object.keys(ServerSettings.fields));
+  // The settings service moves the retired `providers` map into `providerInstances` when it reads it.
+  const known = new Set([...Object.keys(ServerSettings.fields), "providers"]);
   const keys = Object.keys(settings).toSorted();
   return { keys, droppedByV2: keys.filter((key) => !known.has(key)) };
 }
@@ -796,7 +797,7 @@ const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
       ? EnvironmentId.make(NodeFS.readFileSync(environmentIdPath, "utf8").trim())
       : null;
 
-    const database = makeSqlitePersistenceLive(stagingPath);
+    const database = SqlitePersistence.layerFromPath(stagingPath);
     const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
       Layer.provideMerge(database),
     );

@@ -12,7 +12,7 @@ import { TaskError, type TaskRank, type TaskScheduleEntry } from "@t3tools/tasks
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { makeFeatureProjects, ProjectStoreV2 } from "../../../../apps/server/src/extensionApi.ts";
 import { InboxProject, InboxProjectLive } from "../inbox/InboxProject.ts";

@@ -9,11 +9,11 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import * as Rpc from "effect/rpc/Rpc";
+import * as RpcGroup from "effect/rpc/RpcGroup";
+import * as RpcTest from "effect/rpc/RpcTest";
 
-import { rpcScopeAuthorizationLayer } from "../auth/RpcAuthorization.ts";
+import * as RpcAuthorization from "../auth/RpcAuthorization.ts";
 import {
   RpcContributionError,
   createRpcContributionPlan,
@@ -109,7 +109,7 @@ describe("RPC contributions", () => {
             rpcContributionHandlersLayer(contributions, {
               currentSessionId: "session-1" as never,
             }) as Layer.Layer<Rpc.ToHandler<typeof ReadRpc | typeof WriteRpc>>,
-            rpcScopeAuthorizationLayer(
+            RpcAuthorization.layer(
               [AuthOrchestrationReadScope],
               rpcContributionScopes(contributions),
             ),

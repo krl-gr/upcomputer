@@ -12,10 +12,10 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
-import { collectUint8StreamText } from "../../../../apps/server/src/stream/collectUint8StreamText.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import { readSettingsSections } from "../settings/ComputerUseSettingsFile.ts";
 import { evaluateComputerUsePolicy, type ComputerUseInteractionMode } from "./ComputerUsePolicy.ts";
 import { normalizeComputerUseBackendArgs } from "./ComputerUseBackendArgs.ts";

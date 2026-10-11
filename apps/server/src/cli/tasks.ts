@@ -20,8 +20,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as References from "effect/References";
-import { Command, Flag, GlobalFlag } from "effect/unstable/cli";
-import * as CliError from "effect/unstable/cli/CliError";
+import { Command, Flag, GlobalFlag } from "effect/cli";
+import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -31,7 +31,7 @@ import { ServerProduct } from "../product/ServerProduct.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { openZipArchive } from "../zipArchive.ts";
 import { resolveCliAuthConfig } from "./config.ts";
-import { ProjectCliRuntimeLive } from "./project.ts";
+import { layerProjectCliRuntime } from "./project.ts";
 
 const userError = (message: string) => new CliError.UserError({ cause: message });
 
@@ -166,7 +166,7 @@ const importWandeCommand = Command.make("import-wande", {
             ),
           ),
         ),
-        Layer.provideMerge(ProjectCliRuntimeLive),
+        Layer.provideMerge(layerProjectCliRuntime),
         Layer.provideMerge(ServerConfig.layer(config)),
         Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
       );

@@ -8,6 +8,8 @@ import {
 } from "@t3tools/client-runtime/state/terminal";
 import {
   ThreadId,
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
   type EnvironmentId,
   type TerminalAttachInput,
   type TerminalSummary,
@@ -17,6 +19,7 @@ import { useMemo } from "react";
 import { isProductFeatureShown } from "../product/productFlags";
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
+import { useEnvironmentScope } from "./session";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
 
@@ -126,16 +129,25 @@ export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
   readonly terminal: TerminalAttachInput | null;
 }): TerminalSessionState {
+  const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
+  const canOperate = useEnvironmentScope(input.environmentId, AuthTerminalOperateScope);
   const attach = useEnvironmentQuery(
     input.environmentId !== null && input.terminal !== null
-      ? terminalEnvironment.attach({
-          environmentId: input.environmentId,
-          input: input.terminal,
-        })
+      ? canOperate
+        ? terminalEnvironment.attach({
+            environmentId: input.environmentId,
+            input: input.terminal,
+          })
+        : canRead
+          ? terminalEnvironment.observe({
+              environmentId: input.environmentId,
+              input: { threadId: input.terminal.threadId, terminalId: input.terminal.terminalId },
+            })
+          : null
       : null,
   );
   const metadata = useEnvironmentQuery(
-    input.environmentId === null
+    input.environmentId === null || !canRead
       ? null
       : terminalEnvironment.metadata({
           environmentId: input.environmentId,
@@ -161,9 +173,10 @@ export function useAttachedTerminalSession(input: {
 export function useKnownTerminalSessions(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
-}): ReadonlyArray<KnownTerminalSession> {
+}): ReadonlyArray<KnownTerminalSession> | null {
+  const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
   const metadata = useEnvironmentQuery(
-    input.environmentId === null || !isProductFeatureShown("terminalSurface")
+    input.environmentId === null || !canRead || !isProductFeatureShown("terminalSurface")
       ? null
       : terminalEnvironment.metadata({
           environmentId: input.environmentId,
@@ -171,8 +184,11 @@ export function useKnownTerminalSessions(input: {
         }),
   );
   return useMemo(
-    () => selectKnownTerminalSessions(metadata.data, input.environmentId, input.threadId),
-    [input.environmentId, input.threadId, metadata.data],
+    () =>
+      metadata.data === null || metadata.error !== null
+        ? null
+        : selectKnownTerminalSessions(metadata.data, input.environmentId, input.threadId),
+    [input.environmentId, input.threadId, metadata.data, metadata.error],
   );
 }
 
@@ -184,5 +200,5 @@ export function useThreadRunningTerminalIds(input: {
   const sessions = useKnownTerminalSessions(
     isProductFeatureShown("terminal") ? input : { environmentId: null, threadId: null },
   );
-  return useMemo(() => selectRunningSubprocessTerminalIds(sessions), [sessions]);
+  return useMemo(() => selectRunningSubprocessTerminalIds(sessions ?? []), [sessions]);
 }

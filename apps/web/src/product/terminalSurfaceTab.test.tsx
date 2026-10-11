@@ -120,6 +120,11 @@ vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (select: (settings: Record<string, unknown>) => unknown) =>
     select({ fontFamilyCode: "", fontSizeCode: 12, fontFamilyTerminal: "", fontSizeTerminal: 12 }),
 }));
+vi.mock("../state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/session")>()),
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
+}));
 vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => async () => null }));
 
 const { act } = await import("react");

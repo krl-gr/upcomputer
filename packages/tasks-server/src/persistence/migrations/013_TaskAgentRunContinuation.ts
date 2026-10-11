@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** The ended run a run continues in the same thread; null for every earlier run. */
 export const TaskAgentRunContinuationMigration = Effect.gen(function* () {

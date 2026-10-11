@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const ROUTE_PATH = /^\/[a-z0-9][a-z0-9._-]*$/;

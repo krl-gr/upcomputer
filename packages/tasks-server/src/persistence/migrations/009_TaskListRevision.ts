@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** A cursor must not survive a reorder, rebalance, or filter-membership change. */
 export const TaskListRevisionMigration = Effect.gen(function* () {

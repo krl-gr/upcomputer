@@ -34,7 +34,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   ProjectStoreV2,
@@ -563,7 +563,7 @@ function fakeThreads() {
 }
 
 async function withScheduler(
-  use: (harness: Harness) => Effect.Effect<void, unknown, SqlClient.SqlClient>,
+  use: (harness: Harness) => Effect.Effect<void, unknown, SqlClient.SqlClient | TaskRepository>,
   legacy?: (db: NodeSqlite.DatabaseSync) => void,
   /** Wraps the scheduler's repository, e.g. to pause a call and force an interleaving. */
   wrapRepository?: (repository: TaskRepositoryShape) => TaskRepositoryShape,

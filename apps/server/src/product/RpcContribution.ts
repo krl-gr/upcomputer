@@ -4,8 +4,8 @@ import {
   type AuthSessionId,
 } from "@t3tools/contracts";
 import * as Layer from "effect/Layer";
-import type * as Rpc from "effect/unstable/rpc/Rpc";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as Rpc from "effect/rpc/Rpc";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 const STABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 

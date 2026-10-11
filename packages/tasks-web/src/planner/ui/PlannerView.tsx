@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
-import { useElementWidth } from "../../../../../apps/web/src/hooks/useElementWidth.ts";
+import { observeResize } from "../../../../../apps/web/src/lib/observeResize.ts";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -497,7 +497,16 @@ export function PlannerView(props: {
   // panel. The first measurement lands before paint, and the body waits for
   // it so the wrong layout never shows. This box fills the view whatever the
   // layout inside it, so switching cannot change the width that decided it.
-  const [plannerRef, plannerWidth] = useElementWidth<HTMLDivElement>();
+  const [plannerElement, setPlannerElement] = useState<HTMLDivElement | null>(null);
+  const [plannerWidth, setPlannerWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!plannerElement) return;
+    setPlannerWidth(plannerElement.getBoundingClientRect().width);
+    return observeResize(plannerElement, (entries) => {
+      const entry = entries.at(-1);
+      if (entry) setPlannerWidth(entry.contentRect.width);
+    });
+  }, [plannerElement]);
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
@@ -551,7 +560,7 @@ export function PlannerView(props: {
             This environment runs an older server without the planner. The table shows its tasks.
           </Notice>
         ) : (
-          <div ref={plannerRef} className="relative min-h-0 flex-1">
+          <div ref={setPlannerElement} className="relative min-h-0 flex-1">
             {plannerWidth === null ? null : (
               <PlannerBody
                 key={environmentId}

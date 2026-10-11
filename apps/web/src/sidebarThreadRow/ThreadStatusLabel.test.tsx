@@ -157,7 +157,7 @@ function detailedProps(thread: DetailedRowProps["thread"]): DetailedRowProps {
     jumpLabel: null,
     currentEnvironmentId: "env-local",
     environmentLabel: null,
-    environmentMachine: "local",
+    environmentMachine: "laptop",
     project: null,
     projectDisplayName: "UpComputer",
     providerEntryByInstanceId: new Map(),

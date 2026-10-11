@@ -28,15 +28,10 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
-import {
-  ProviderAdapterOpenSessionError,
-  type ProviderAdapterV2Event,
-  type ProviderAdapterV2Shape,
-  type ProviderAdapterV2TurnInput,
-} from "./ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "./testkit/ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "./testkit/ReplayFixtureWorkspace.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const driver = ProviderDriverKind.make("codex");
 const providerInstanceId = ProviderInstanceId.make("codex-restart-test");
@@ -69,7 +64,7 @@ const exclusiveCapabilities: OrchestrationV2ProviderCapabilities = {
 };
 
 interface ActiveTurn {
-  readonly input: ProviderAdapterV2TurnInput;
+  readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
   readonly providerTurnId: ProviderTurnId;
 }
 
@@ -92,7 +87,7 @@ function makeRestartAdapter(
   state: Ref.Ref<RestartAdapterState>,
   sessionCapabilities: OrchestrationV2ProviderCapabilities = pooledCapabilities,
   providerInstanceId = initialSelection.instanceId,
-): ProviderAdapterV2Shape {
+): ProviderAdapter.ProviderAdapterV2["Service"] {
   return {
     instanceId: providerInstanceId,
     driver,
@@ -125,14 +120,14 @@ function makeRestartAdapter(
           ] as const;
         });
         if (failThisOpen) {
-          return yield* new ProviderAdapterOpenSessionError({
+          return yield* new ProviderAdapter.ProviderAdapterOpenSessionError({
             driver,
             providerSessionId: sessionInput.providerSessionId,
             cause: "simulated replacement open failure",
           });
         }
 
-        const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
         const now = yield* DateTime.now;
         const providerSession: OrchestrationV2ProviderSession = {
           id: sessionInput.providerSessionId,
@@ -290,7 +285,9 @@ function makeRestartAdapter(
   };
 }
 
-function makeCompletingHandoffAdapter(startCount: Ref.Ref<number>): ProviderAdapterV2Shape {
+function makeCompletingHandoffAdapter(
+  startCount: Ref.Ref<number>,
+): ProviderAdapter.ProviderAdapterV2["Service"] {
   return {
     instanceId: handoffProviderInstanceId,
     driver: handoffDriver,
@@ -298,7 +295,7 @@ function makeCompletingHandoffAdapter(startCount: Ref.Ref<number>): ProviderAdap
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (sessionInput) =>
       Effect.gen(function* () {
-        const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
         const now = yield* DateTime.now;
         return {
           instanceId: handoffProviderInstanceId,
@@ -391,7 +388,7 @@ function makeCompletingHandoffAdapter(startCount: Ref.Ref<number>): ProviderAdap
   };
 }
 
-it.live("restarts selection as a new attempt and retries after old-session cleanup", () =>
+it.live("retries a failed selection restart session open before completing", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace("selection-restart-lifecycle");
@@ -403,10 +400,13 @@ it.live("restarts selection as a new attempt and retries after old-session clean
         closedSessionCount: 0,
         failedReplacementOpen: false,
       });
-      const registry = ProviderAdapterRegistry.makeSingleLayer(makeRestartAdapter(state));
+      const layerRegistry = ProviderAdapterRegistry.layerSingle(makeRestartAdapter(state));
 
       const result = yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+
         yield* orchestrator.dispatch({
           type: "thread.create",
           createdBy: "user",
@@ -421,6 +421,21 @@ it.live("restarts selection as a new attempt and retries after old-session clean
           branch: null,
           worktreePath: cwd,
         });
+        const running = yield* eventSink
+          .stream({
+            threadId,
+            afterSequence: yield* eventSink.latestSequence({ threadId }),
+          })
+          .pipe(
+            Stream.map((stored) => stored.event),
+            Stream.filter(
+              (event) =>
+                event.type === "provider-turn.updated" && event.payload.status === "running",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           createdBy: "user",
@@ -433,11 +448,8 @@ it.live("restarts selection as a new attempt and retries after old-session clean
           modelSelection: initialSelection,
           dispatchMode: { type: "start_immediately" },
         });
-        for (let index = 0; index < 1_000; index += 1) {
-          const current = yield* orchestrator.getThreadProjection(threadId);
-          if (current.providerTurns.some((turn) => turn.status === "running")) break;
-          yield* Effect.sleep("5 millis");
-        }
+        yield* Fiber.join(running);
+        yield* worker.drain();
         const activeProjection = yield* orchestrator.getThreadProjection(threadId);
         assert.isTrue(activeProjection.providerTurns.some((turn) => turn.status === "running"));
         const activeRunId = activeProjection.runs[0]?.id;
@@ -445,6 +457,20 @@ it.live("restarts selection as a new attempt and retries after old-session clean
           return yield* Effect.die("active restart test run is missing");
         }
 
+        const completed = yield* eventSink
+          .stream({
+            threadId,
+            afterSequence: yield* eventSink.latestSequence({ threadId }),
+          })
+          .pipe(
+            Stream.map((stored) => stored.event),
+            Stream.filter(
+              (event) => event.type === "run.updated" && event.payload.status === "completed",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           createdBy: "user",
@@ -457,32 +483,17 @@ it.live("restarts selection as a new attempt and retries after old-session clean
           modelSelection: replacementSelection,
           dispatchMode: { type: "restart_active", targetRunId: activeRunId },
         });
-        for (let index = 0; index < 1_000; index += 1) {
-          const current = yield* orchestrator.getThreadProjection(threadId);
-          if (current.attempts.length === 2 && current.attempts[1]?.status === "completed") {
-            const captured = yield* Ref.get(state);
-            return { projection: current, captured };
-          }
-          yield* Effect.sleep("5 millis");
-        }
-        const current = yield* orchestrator.getThreadProjection(threadId);
-        const adapterState = yield* Ref.get(state);
-        yield* Effect.logError("selection restart did not complete", {
-          runs: current.runs.map((run) => [run.status, run.activeAttemptId]),
-          attempts: current.attempts.map((attempt) => [attempt.id, attempt.status]),
-          providerTurns: current.providerTurns.map((turn) => [turn.id, turn.status]),
-          providerThreads: current.providerThreads.map((thread) => [
-            thread.providerSessionId,
-            thread.status,
-          ]),
-          adapterState,
-        });
-        return yield* Effect.die("selection restart did not complete");
+        yield* Fiber.join(completed);
+        yield* worker.drain();
+        return {
+          projection: yield* orchestrator.getThreadProjection(threadId),
+          captured: yield* Ref.get(state),
+        };
       }).pipe(
         Effect.provide(
-          makeOrchestratorV2ReplayLayerWithRegistry(
+          ProviderReplayHarness.layerWithRegistry(
             { name: "selection-restart-lifecycle" },
-            registry,
+            layerRegistry,
           ),
         ),
       );
@@ -504,7 +515,8 @@ it.live("restarts selection as a new attempt and retries after old-session clean
         ),
         "selection restart supersede must not project hard-Stop interrupt items",
       );
-      assert.equal(projection.runs[0]?.modelSelection.model, replacementSelection.model);
+      assert.equal(projection.runs.at(-1)?.modelSelection.model, replacementSelection.model);
+      assert.equal(projection.runs.at(-1)?.status, "completed");
       assert.isTrue(captured.failedReplacementOpen);
       // The old pooled process remains available to its other threads; this
       // thread moved to a freshly allocated replacement session.
@@ -554,7 +566,7 @@ it.live.each(["stopped", "error"] as const)(
           // simulated replacement-open failure is skipped.
           failedReplacementOpen: true,
         });
-        const registry = ProviderAdapterRegistry.makeSingleLayer(
+        const layerRegistry = ProviderAdapterRegistry.layerSingle(
           makeRestartAdapter(state, exclusiveCapabilities),
         );
 
@@ -677,7 +689,7 @@ it.live.each(["stopped", "error"] as const)(
             liveSessionId: liveSession.id,
             detachedSessionIds,
           };
-        }).pipe(Effect.provide(makeOrchestratorV2ReplayLayerWithRegistry({ name }, registry)));
+        }).pipe(Effect.provide(ProviderReplayHarness.layerWithRegistry({ name }, layerRegistry)));
 
         const { projection, captured } = result;
         assert.lengthOf(projection.runs, 2);
@@ -719,7 +731,7 @@ it.live("detaches the old provider session after an active provider handoff", ()
         failedReplacementOpen: false,
       });
       const targetStartCount = yield* Ref.make(0);
-      const registry = ProviderAdapterRegistry.makeLayer([
+      const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeRestartAdapter(state, exclusiveCapabilities),
         makeCompletingHandoffAdapter(targetStartCount),
       ]);
@@ -803,9 +815,9 @@ it.live("detaches the old provider session after an active provider handoff", ()
         return yield* Effect.die("active provider handoff did not complete");
       }).pipe(
         Effect.provide(
-          makeOrchestratorV2ReplayLayerWithRegistry(
+          ProviderReplayHarness.layerWithRegistry(
             { name: "selection-provider-handoff-lifecycle" },
-            registry,
+            layerRegistry,
           ),
         ),
       );
@@ -865,9 +877,9 @@ it.live.each(["active", "idle", "selection-command", "pooled", "separate-home"] 
                     }),
                 })),
               ),
-          } satisfies ProviderAdapterV2Shape;
+          } satisfies ProviderAdapter.ProviderAdapterV2["Service"];
         });
-        const registry = Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistryV2, {
+        const layerRegistry = Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistryV2, {
           get: (instanceId) =>
             Effect.succeed(adapters.find((adapter) => adapter.instanceId === instanceId)!),
           list: () => Effect.succeed([providerInstanceId, targetId]),
@@ -990,7 +1002,7 @@ it.live.each(["active", "idle", "selection-command", "pooled", "separate-home"] 
           assert.equal(returnedThread.providerInstanceId, providerInstanceId);
           assert.isEmpty(third.contextHandoffs);
           assert.deepEqual(messages, ["first", "second", "third"]);
-        }).pipe(Effect.provide(makeOrchestratorV2ReplayLayerWithRegistry({ name }, registry)));
+        }).pipe(Effect.provide(ProviderReplayHarness.layerWithRegistry({ name }, layerRegistry)));
       }),
     ),
 );

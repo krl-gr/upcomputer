@@ -10,7 +10,7 @@ import { TASKS_RPC_METHODS, TaskId, TasksRpcGroup } from "@t3tools/tasks-contrac
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import * as RpcTest from "effect/rpc/RpcTest";
 import { afterEach } from "vite-plus/test";
 
 import { ServerConfig } from "../../../../apps/server/src/config.ts";

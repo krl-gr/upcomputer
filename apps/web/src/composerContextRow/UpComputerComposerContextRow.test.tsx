@@ -172,7 +172,6 @@ function rowProps(
       presentation: "inline",
       popoverHandle: PopoverCreateHandle(),
       shortcutLabel: "⌘I",
-      hasAttention: false,
       onToggle: vi.fn(),
     },
     ...overrides,
@@ -414,7 +413,6 @@ describe("the row under the composer", () => {
         threadPanelOpen={false}
         threadPanelPresentation="inline"
         threadPanelShortcutLabel={null}
-        threadPanelHasAttention={false}
         rightPanelAvailable
         rightPanelOpen={false}
         rightPanelShortcutLabel={null}
@@ -458,7 +456,6 @@ describe("the row under the composer", () => {
         threadPanelOpen={false}
         threadPanelPresentation="inline"
         threadPanelShortcutLabel={null}
-        threadPanelHasAttention={false}
         rightPanelAvailable
         rightPanelOpen={false}
         rightPanelShortcutLabel={null}

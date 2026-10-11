@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import type { BrowserSurfaceRect } from "../browser/browserSurfaceStore";
+import { observeResize } from "../lib/observeResize";
 import { showsSidebarVibrancy } from "./sidebarVibrancy";
 
 /*
@@ -20,11 +21,14 @@ let stopTracking: (() => void) | null = null;
 
 function startTracking(): () => void {
   let observed: Element | null = null;
+  let stopObserving: (() => void) | null = null;
   const measure = () => {
     const inset = document.querySelector(INSET_SELECTOR);
     if (inset !== observed) {
-      if (observed) observer.unobserve(observed);
-      if (inset) observer.observe(inset);
+      stopObserving?.();
+      // The inset resizes whenever the sidebar or the window does, and reports a
+      // zero size once a route swap detaches it, which re-queries the new one.
+      stopObserving = inset ? observeResize(inset, measure) : null;
       observed = inset;
     }
     const box = inset?.getBoundingClientRect();
@@ -43,13 +47,10 @@ function startTracking(): () => void {
     backdrop = next;
     for (const listener of listeners) listener();
   };
-  // The inset resizes whenever the sidebar or the window does, and reports a
-  // zero size once a route swap detaches it, which re-queries the new one.
-  const observer = new ResizeObserver(measure);
   window.addEventListener("resize", measure);
   measure();
   return () => {
-    observer.disconnect();
+    stopObserving?.();
     window.removeEventListener("resize", measure);
     backdrop = null;
   };

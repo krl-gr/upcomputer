@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import {
@@ -18,6 +19,7 @@ import { buildMessageContext, reviewCommentContextReference } from "~/lib/compos
 
 import {
   buildAddSelectionToAgentHandoff,
+  buildAskAboutGuideStopHandoff,
   classifyPullRequestChecks,
   groupPullRequestChecks,
   describePullRequestChecks,
@@ -95,12 +97,14 @@ describe("pull request checkout commands", () => {
     ],
     ["unknown", "feature", null, null],
   ] as const)("builds the %s command", (provider, branch, repository, expected) => {
-    expect(pullRequestCheckoutCommand(provider, 42, branch, repository)).toBe(expected);
+    expect(
+      pullRequestCheckoutCommand(SourceControlProviderKind.make(provider), 42, branch, repository),
+    ).toBe(expected);
   });
   it("fetches Forgejo pull refs from the actual repository, including a mounted host and port", () => {
     expect(
       pullRequestCheckoutCommand(
-        "forgejo",
+        SourceControlProviderKind.make("forgejo"),
         42,
         "feature",
         null,
@@ -113,7 +117,7 @@ describe("pull request checkout commands", () => {
   it("quotes shell metacharacters in Forgejo repository URLs", () => {
     expect(
       pullRequestCheckoutCommand(
-        "forgejo",
+        SourceControlProviderKind.make("forgejo"),
         42,
         "feature",
         null,
@@ -1219,6 +1223,54 @@ describe("asking about a change rather than working on it", () => {
   });
 });
 
+describe("buildAskAboutGuideStopHandoff", () => {
+  const base = {
+    number: 42,
+    title: "Add search",
+    url: "https://github.com/acme/web/pull/42",
+    headBranch: "feat/search",
+    baseBranch: "main",
+    state: "open" as const,
+    isDraft: false,
+  };
+  const stop = {
+    index: 1,
+    title: "The index is built on write",
+    summary: "Writes now update the index.",
+    attention: "A tradeoff: writes get slower.",
+    excerpts: [
+      { path: "src/index.ts", side: "new" as const, start: 10, end: 20 },
+      { path: "src/old.ts", side: "old" as const, start: 3, end: 5 },
+    ],
+  };
+
+  it("carries the stop beside the pull request and asks only for an answer", () => {
+    const handoff = buildAskAboutGuideStopHandoff({ ...base, stop, question: "Why on write?" });
+    expect(handoff.prompt).toBe("Why on write?");
+    expect(handoff.reviewComments.map((entry) => entry.filePath)).toEqual([
+      "PR #42",
+      "Guide stop 2",
+    ]);
+    expect(handoff.reviewComments[0]?.text).toContain("Do not change any code");
+    const chip = handoff.reviewComments[1]?.text ?? "";
+    expect(chip).toContain("Writes now update the index.");
+    expect(chip).toContain("A tradeoff: writes get slower.");
+    expect(chip).toContain("- src/index.ts lines 10-20\n");
+    expect(chip).toContain("- src/old.ts lines 3-5 (removed; numbered as in the base branch)");
+  });
+
+  it("leaves the question to the reader when none was suggested", () => {
+    const handoff = buildAskAboutGuideStopHandoff({
+      ...base,
+      stop: { ...stop, attention: null, excerpts: [] },
+      question: "",
+    });
+    expect(handoff.prompt).toBe("");
+    expect(handoff.reviewComments[1]?.text).not.toContain("judge");
+    expect(handoff.reviewComments[1]?.text).not.toContain("lines it showed");
+  });
+});
+
 describe("a second ask into the same composer", () => {
   const chip = (id: string): ReviewCommentContext => ({
     id,
@@ -1714,7 +1766,7 @@ describe("cached pull request detail", () => {
   const reference = { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 7 };
   const detail = (overrides: Partial<PullRequestDetail> = {}): PullRequestDetail =>
     ({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       capabilities: {
         diff: true,
         comment: true,
@@ -1797,7 +1849,7 @@ describe("cached pull request detail", () => {
         remoteName: "origin",
         remoteUrl: "https://github.com/acme/web.git",
       },
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
     });
     expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)?.title).toBe(
       "Cache the title",
@@ -1824,7 +1876,7 @@ describe("cached pull request detail", () => {
           remoteName: "origin",
           remoteUrl: "git@ssh.dev.azure.com:v3/org/project/web",
         },
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
       }),
     ).toBe(reference);
     expect(resolvePullRequestReferenceHost(reference, undefined)).toBe(reference);
@@ -1847,7 +1899,7 @@ describe("cached pull request detail", () => {
   it("keeps Forgejo ports isolated when recovering legacy snapshots", () => {
     const storage = makeStorage();
     const cached = detail({
-      provider: "forgejo",
+      provider: SourceControlProviderKind.make("forgejo"),
       url: "https://forge.example:8443/acme/web/pulls/7",
     });
     writePullRequestDetailSnapshot(storage, "env-1", reference, cached);
@@ -1869,7 +1921,8 @@ describe("cached pull request detail", () => {
 
   it.each(["github", "gitlab"] as const)(
     "retains portless %s snapshot identities for custom web ports",
-    (provider) => {
+    (providerName) => {
+      const provider = SourceControlProviderKind.make(providerName);
       const storage = makeStorage();
       const host = `${provider}.example.com`;
       const hosted = { ...reference, host };

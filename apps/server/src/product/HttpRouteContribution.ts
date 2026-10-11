@@ -1,5 +1,5 @@
 import * as Layer from "effect/Layer";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 type HttpRouteMethod = Parameters<typeof HttpRouter.add>[0];
 type HttpRoutePath = Parameters<typeof HttpRouter.add>[1];

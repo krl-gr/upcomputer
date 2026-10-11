@@ -187,7 +187,7 @@ export function TaskList(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
         <div className={props.centered ? "mx-auto w-full max-w-3xl py-2" : "w-full py-2"}>
           {automationsOnly ? null : status === "LoadingFirstPage" && results.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">Loading…</p>

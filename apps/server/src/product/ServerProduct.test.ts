@@ -4,10 +4,13 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import { UPCOMPUTER_PRODUCT_FLAGS, UPSTREAM_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
-import { McpSchema, McpServer } from "effect/unstable/ai";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { McpServer, Tool, Toolkit } from "effect/ai";
+import * as SqlClient from "effect/sql/SqlClient";
 
+import { toolkitRegistration } from "../mcp/McpHttpServer.ts";
+import * as McpToolAccess from "../mcp/McpToolAccess.ts";
 import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
 import {
   ServerProduct,
@@ -27,6 +30,10 @@ class FeatureNotes extends Context.Service<
 >()("t3/product/ServerProduct.test/FeatureNotes") {}
 
 const OWNER = "upcomputer.test";
+
+const NotesToolkit = Toolkit.make(
+  Tool.make("notes_read", { description: "Reads the notes.", success: Schema.String }),
+);
 
 /** Reads a row its own migration wrote, so it only builds after the migrations ran. */
 const featureNotesLayer = Layer.effect(
@@ -72,25 +79,15 @@ const feature = {
       ownerId: OWNER,
       version: 1,
       layer: eraseExperimentalServerLayer(
-        Layer.effectDiscard(
-          Effect.gen(function* () {
-            const server = yield* McpServer.McpServer;
-            const notes = yield* FeatureNotes;
-            yield* server.addTool({
-              tool: new McpSchema.Tool({
-                name: "notes_read",
-                description: "Reads the notes.",
-                inputSchema: { type: "object", properties: {} },
-              }),
-              annotations: Context.empty(),
-              handle: () =>
-                notes.read.pipe(
-                  Effect.map(
-                    (text) => new McpSchema.CallToolResult({ content: [{ type: "text", text }] }),
-                  ),
-                ),
-            });
-          }),
+        toolkitRegistration(
+          NotesToolkit,
+          McpToolAccess.toLayer(
+            NotesToolkit,
+            Effect.gen(function* () {
+              const notes = yield* FeatureNotes;
+              return { notes_read: McpToolAccess.reads(() => notes.read) };
+            }),
+          ),
         ),
       ),
     },

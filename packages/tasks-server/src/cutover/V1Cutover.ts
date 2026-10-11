@@ -13,7 +13,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { TASK_AGENT_RUN_RECOVERY_HINT } from "../agents/TaskAgentService.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";

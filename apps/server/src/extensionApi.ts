@@ -12,9 +12,11 @@ export * from "./product/FeatureProjects.ts";
 export * from "./product/HttpRouteContribution.ts";
 export * from "./product/RpcContribution.ts";
 export * from "./product/ServerProduct.ts";
-export type { AnyProviderDriver, ProviderDriver } from "./provider/ProviderDriver.ts";
+export type { AnyProviderDriver, ProviderDriver } from "@t3tools/provider-core/server/driver";
 export type { BuiltInDriversEnv } from "./provider/builtInDrivers.ts";
 export { McpInvocationContext } from "./mcp/McpInvocationContext.ts";
+export * as McpToolAccess from "./mcp/McpToolAccess.ts";
+export { resultToolkitRegistration } from "./mcp/McpHttpServer.ts";
 export { PreviewAutomationBroker } from "./mcp/PreviewAutomationBroker.ts";
 export { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 export { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
@@ -23,7 +25,7 @@ export {
   latestActiveRun,
   ThreadManagementService,
 } from "./orchestration-v2/ThreadManagementService.ts";
-export { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+export { ProviderRegistry } from "./provider/ProviderRegistry.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
 export {

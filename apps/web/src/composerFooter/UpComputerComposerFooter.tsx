@@ -15,6 +15,7 @@ import { useComposerMenuState } from "../components/chat/useComposerMenuState";
 import { resolveRestingComposerControlsLayout } from "../components/composerFooterLayout";
 import { Select, SelectItem, SelectPopup } from "../components/ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import { measureComposerFooterControls } from "./composerFooterMeasurement";
 import {
@@ -109,16 +110,19 @@ function useComposerFooterControlsLayout() {
 
   useLayoutEffect(measure, [measure]);
   useEffect(() => {
-    if (!row || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
+    if (!row) return;
+    let stopObserving = () => {};
     const observeControls = () => {
-      observer.disconnect();
-      observer.observe(row);
-      row
-        .querySelectorAll<HTMLElement>(
-          "[data-composer-footer-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
-        )
-        .forEach((element) => observer.observe(element));
+      stopObserving();
+      stopObserving = observeResize(
+        [
+          row,
+          ...row.querySelectorAll<HTMLElement>(
+            "[data-composer-footer-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
+          ),
+        ],
+        measure,
+      );
       measure();
     };
     observeControls();
@@ -126,7 +130,7 @@ function useComposerFooterControlsLayout() {
     mutations.observe(row, { childList: true, subtree: true, characterData: true });
     document.fonts?.addEventListener("loadingdone", measure);
     return () => {
-      observer.disconnect();
+      stopObserving();
       mutations.disconnect();
       document.fonts?.removeEventListener("loadingdone", measure);
     };

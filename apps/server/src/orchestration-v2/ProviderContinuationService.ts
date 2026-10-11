@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
-import * as IdAllocator from "./IdAllocator.ts";
-import * as ProviderContinuationRequests from "./ProviderContinuationRequests.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import { isUndeliveredMailboxSteer } from "./NotificationMailbox.ts";
 
@@ -57,7 +57,7 @@ function delegatedCompletionRetryKey(
  * the orchestrator selects native steering or queued delivery under its thread
  * lock. Adapter-buffered continuations still queue behind active work.
  */
-export const workerLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const ids = yield* IdAllocator.IdAllocatorV2;
     const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
@@ -147,10 +147,12 @@ export const workerLive = Layer.effectDiscard(
         }
         // The ordinal is display metadata only: allocate.message appends a
         // random UUID, so a stale projection read here cannot collide ids.
-        const messageId = yield* ids.allocate.message({
-          threadId: request.threadId,
-          ordinal: projection.messages.length + 1,
-        });
+        const messageId =
+          request.messageId ??
+          (yield* ids.allocate.message({
+            threadId: request.threadId,
+            ordinal: projection.messages.length + 1,
+          }));
         const commandId = CommandId.make(`provider-continuation:${messageId}`);
         const dispatch = threads.dispatch({
           type: "message.dispatch",

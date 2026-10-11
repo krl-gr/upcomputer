@@ -77,8 +77,8 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
   { path: /^apps\/server\/src\/mcp\/McpHttpServer\.ts$/, line: /^\s*name: "T3 Code",$/ },
   // Codex app-server `clientInfo`; the Codex replay fixtures pin it.
   {
-    path: /^apps\/server\/src\/provider\/Layers\/CodexProvider\.ts$/,
-    line: /^\s*(name|title): "T3 Code",$/,
+    path: /^apps\/server\/src\/provider\/CodexProvider\.ts$/,
+    line: /^const CODEX_CLIENT_NAME = "T3 Code";$/,
   },
   {
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/CodexAdapterV2\.test\.ts$/,

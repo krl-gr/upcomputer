@@ -1,3 +1,4 @@
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -21,16 +22,22 @@ const dom = await vi.hoisted(async () => {
   Object.defineProperty(globalThis, "window", { configurable: true, value: window });
   // The tab strip and the planner measure themselves and the menus wait for
   // animations; jsdom has neither. `resize` reports a new width to every observer.
-  const observers = new Set<ResizeObserverCallback>();
+  // Each observer keeps its targets: the shared observer in `observeResize`
+  // routes entries by `entry.target`.
+  const observers = new Map<ResizeObserverCallback, Set<Element>>();
   globalThis.ResizeObserver = class {
     readonly callback: ResizeObserverCallback;
     constructor(callback: ResizeObserverCallback) {
       this.callback = callback;
     }
-    observe() {
-      observers.add(this.callback);
+    observe(target: Element) {
+      const targets = observers.get(this.callback) ?? new Set<Element>();
+      targets.add(target);
+      observers.set(this.callback, targets);
     }
-    unobserve() {}
+    unobserve(target: Element) {
+      observers.get(this.callback)?.delete(target);
+    }
     disconnect() {
       observers.delete(this.callback);
     }
@@ -44,8 +51,11 @@ const dom = await vi.hoisted(async () => {
     removeEventListener() {},
   });
   const resize = (width: number) => {
-    for (const callback of observers) {
-      callback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+    for (const [callback, targets] of observers) {
+      const entries = [...targets].map(
+        (target) => ({ target, contentRect: { width, height: 0 } }) as ResizeObserverEntry,
+      );
+      callback(entries, {} as ResizeObserver);
     }
   };
   return { resize };
@@ -248,6 +258,15 @@ function renderPanel(
     root!.render(
       <RightPanelTabs
         mode="inline"
+        keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
         surfaces={surfaces}
         environmentId={null}
         activeSurfaceId={surfaces[0]?.id ?? null}

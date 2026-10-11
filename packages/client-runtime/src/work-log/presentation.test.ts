@@ -7,6 +7,7 @@ import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  liveThoughtLine,
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
@@ -307,6 +308,7 @@ describe("resolveWorkEntryToolPresentation", () => {
     ["t3_thread_fork", "Forking this thread", "Requested a fork of this thread"],
     ["t3_thread_send_attachments", "Sending attachments", "Sent attachments"],
     ["run_scheduled_task_now", "Running a scheduled task", "Requested a run of a scheduled task"],
+    ["t3_workflow_stop", "Stopping a workflow", "Requested a stop for a workflow"],
   ])("labels %s through its lifecycle", (tool, running, completed) => {
     expect(resolveWorkEntryToolPresentation({ label: `T3-code.${tool}` })?.displayName).toBe(
       running,
@@ -317,6 +319,47 @@ describe("resolveWorkEntryToolPresentation", () => {
         toolLifecycleStatus: "completed",
       })?.displayName,
     ).toBe(completed);
+  });
+
+  it("summarizes workflow stop targets separately from their parent thread", () => {
+    const entry = {
+      id: "workflow-stop",
+      createdAt: "2026-10-07T00:00:00.000Z",
+      tone: "tool",
+      label: "Custom title",
+      itemType: "dynamic_tool",
+      toolLifecycleStatus: "completed",
+      toolData: {
+        server: "t3-code",
+        tool: "t3_workflow_stop",
+        arguments: { threadId: "parent", subagentId: "workflow-1" },
+        result: {},
+      },
+    } satisfies WorkLogPresentationEntry;
+    expect(
+      summarizeToolGroup([
+        entry,
+        entry,
+        {
+          ...entry,
+          toolData: {
+            ...entry.toolData,
+            arguments: { threadId: "parent", subagentId: "workflow-2" },
+          },
+        },
+        {
+          ...entry,
+          toolData: {
+            ...entry.toolData,
+            tool: "t3_thread_interrupt",
+            arguments: { threadId: "parent" },
+          },
+        },
+      ]),
+    ).toEqual({
+      summary: "Requested stops for 2 workflows and requested interrupts for 1 thread",
+      hasFailure: false,
+    });
   });
 
   it("summarizes project tools from MCP arguments and results without claiming failed effects", () => {
@@ -958,5 +1001,42 @@ describe("device group summaries", () => {
         },
       ]).summary,
     ).toBe("Used 1 tool");
+  });
+});
+
+describe("liveThoughtLine", () => {
+  it("keeps the first sentence, including a closing quote", () => {
+    expect(
+      liveThoughtLine(
+        'Found the cause: the repo has no commits, so `git worktree add` fails with "invalid reference: main." Now checking the UI.',
+      ),
+    ).toBe(
+      'Found the cause: the repo has no commits, so git worktree add fails with "invalid reference: main."',
+    );
+  });
+
+  it("does not cut at dots inside file names or long dashes", () => {
+    expect(
+      liveThoughtLine("I read ThreadLaunchService.ts \u2014 it skips the fetch. Next step."),
+    ).toBe("I read ThreadLaunchService.ts \u2014 it skips the fetch.");
+  });
+
+  it("uses a bold-only opening line as the whole line", () => {
+    expect(
+      liveThoughtLine("**Narrowing dispatch files**\n\nI should check the adapter. Then more."),
+    ).toBe("Narrowing dispatch files");
+    expect(liveThoughtLine("**Narrowing dispatch files**\r\n\r\nI should check the adapter.")).toBe(
+      "Narrowing dispatch files",
+    );
+  });
+
+  it("returns unpunctuated text whole and flattens markdown", () => {
+    expect(liveThoughtLine("- Checking [the docs](https://x.dev) for **limits**")).toBe(
+      "Checking the docs for limits",
+    );
+    expect(liveThoughtLine("This is *really* ~~not~~ _fine_ in snake_case_names.")).toBe(
+      "This is really not fine in snake_case_names.",
+    );
+    expect(liveThoughtLine("   ")).toBe("");
   });
 });

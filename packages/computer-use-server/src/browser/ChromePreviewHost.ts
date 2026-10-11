@@ -17,7 +17,7 @@ import {
 
 import {
   FILL_PREVIEW_VIEWPORT,
-  PREVIEW_AUTOMATION_OPERATIONS,
+  PREVIEW_AUTOMATION_V1_OPERATIONS,
   type BrowserNavigationTarget,
   type EnvironmentId,
   type PreviewAutomationActionEvent,
@@ -760,8 +760,15 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
-  return { supportedOperations: PREVIEW_AUTOMATION_OPERATIONS, execute };
+  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute };
 }
+
+/** What this host serves; the server's own browser serves the rest. */
+const CHROME_PREVIEW_HOST_OPERATIONS = [
+  ...PREVIEW_AUTOMATION_V1_OPERATIONS,
+  "resize",
+  "setColorScheme",
+] as const;
 
 export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
 
@@ -782,7 +789,7 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
       environmentId: input.environmentId,
       supportedOperations: input.host.supportedOperations,
     },
-    { preferred: input.preferred },
+    { serverHost: { preferred: input.preferred } },
   );
   yield* Stream.runForEach(events, (event) => {
     if (event.type !== "request") return Effect.void;

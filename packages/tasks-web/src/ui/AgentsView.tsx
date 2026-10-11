@@ -850,6 +850,7 @@ export function AgentsView(props: AgentsViewProps) {
                   <DetailSidebarRow label="Model">
                     {canEditAgent && baseModelSelection ? (
                       <ProviderModelPicker
+                        environmentId={selectedEnvironmentId ?? null}
                         activeInstanceId={
                           (form.modelInstanceId ||
                             baseModelSelection.instanceId) as ProviderInstanceId
@@ -1191,6 +1192,7 @@ export function AgentsView(props: AgentsViewProps) {
                   {baseModelSelection ? (
                     <DetailSidebarRow label="Model">
                       <ProviderModelPicker
+                        environmentId={selectedEnvironmentId ?? null}
                         activeInstanceId={
                           (form.modelInstanceId ||
                             baseModelSelection.instanceId) as ProviderInstanceId

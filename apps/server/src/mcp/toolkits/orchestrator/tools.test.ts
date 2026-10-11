@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Tool } from "effect/unstable/ai";
+import { Tool } from "effect/ai";
 
 import {
   CreateThreadsTool,
@@ -22,11 +22,11 @@ describe("orchestrator MCP tool guidance", () => {
     assert.include(DelegateTaskTool.description ?? "", "childThreadId is backing storage");
     assert.include(
       OrchestratorToolkit.tools.t3_thread_send.description ?? "",
-      "Do not use a delegated task's childThreadId to start another review round",
+      "a requested follow-up creates a fresh task",
     );
     assert.include(
       OrchestratorToolkit.tools.task_cancel.description ?? "",
-      "without interrupting later child-thread runs",
+      "This includes later child-thread runs, even after the task is terminal",
     );
   });
 

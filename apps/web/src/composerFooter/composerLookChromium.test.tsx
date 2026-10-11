@@ -119,6 +119,7 @@ function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
         attach={props.attach ? { input: null, open: () => undefined } : null}
         modelPicker={
           <ComposerFooterModelPicker
+            environmentId={null}
             compact={false}
             isComposerOwned
             activeInstanceId={CLAUDE}

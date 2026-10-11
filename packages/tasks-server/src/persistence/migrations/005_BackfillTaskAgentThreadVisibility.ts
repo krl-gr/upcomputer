@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** Repair task-agent threads created before core persisted sidebarVisible. */
 export const BackfillTaskAgentThreadVisibilityMigration = Effect.gen(function* () {

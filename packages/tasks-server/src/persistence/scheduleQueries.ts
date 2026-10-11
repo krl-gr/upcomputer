@@ -7,8 +7,8 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import type * as SqlClient from "effect/sql/SqlClient";
+import * as SqlSchema from "effect/sql/SqlSchema";
 
 /** Untimed entries sort after timed ones within a date. */
 const UNTIMED_LAST = "~";

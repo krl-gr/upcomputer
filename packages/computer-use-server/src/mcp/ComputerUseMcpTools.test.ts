@@ -14,7 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import { McpSchema, McpServer } from "effect/ai";
 
 import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
@@ -90,7 +90,19 @@ function makeFixture() {
   );
   const threads = Layer.mock(ThreadManagementService)({
     getThreadShell: (id) =>
-      Effect.succeed(id === threadId ? ({ id, ...thread } as OrchestrationV2ThreadShell) : null),
+      Effect.succeed(
+        id === threadId
+          ? ({
+              id,
+              deletedAt: null,
+              archivedAt: null,
+              // A live run of the calling session, which computer use needs to act.
+              activeRunId: "run-1",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              ...thread,
+            } as OrchestrationV2ThreadShell)
+          : null,
+      ),
   });
   const layer = ComputerUseMcpToolsLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),

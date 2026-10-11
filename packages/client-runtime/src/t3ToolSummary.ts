@@ -94,7 +94,7 @@ export function summarizeT3ToolCalls(
     };
   });
   const completed = results.filter((call) => call.outcome === "completed");
-  const failedCount = results.filter((call) => call.outcome === "failed").length;
+  let failedCount = results.filter((call) => call.outcome === "failed").length;
   const selected = completed.length > 0 ? completed : results;
   const times = quantity(selected.length, "time");
   const phrase = (past: string, infinitive: string, object: string) =>
@@ -166,6 +166,13 @@ export function summarizeT3ToolCalls(
         "Requested interrupts for",
         "interrupt",
         quantity(countEntities(threadIds), "thread"),
+      );
+      break;
+    case "workflow-stop":
+      label = phrase(
+        "Requested stops for",
+        "stop",
+        quantity(countEntities(entityIds("subagentId")), "workflow"),
       );
       break;
     case "task-status":
@@ -285,6 +292,9 @@ export function summarizeT3ToolCalls(
         quantity(countEntities(entityIds("requestId")), "pending question request"),
       );
       break;
+    case "secret-request":
+      label = phrase("Asked for", "ask for", quantity(selected.length, "secret"));
+      break;
     case "worktree-handoff":
       label = phrase(
         "Handed off to",
@@ -388,6 +398,32 @@ export function summarizeT3ToolCalls(
         "check",
         `linked pull requests${selected.length === 1 ? "" : ` ${times}`}`,
       );
+      break;
+    case "write-pr-guides": {
+      // One call writes many guides, and reports a refusal per guide rather than failing.
+      const outcomes = selected.flatMap((call) =>
+        Array.isArray(call.output?.guides)
+          ? call.output.guides.map((guide) => asRecord(guide)?.outcome)
+          : [],
+      );
+      const started = outcomes.filter((outcome) => outcome !== "failed").length;
+      const failed = outcomes.length - started;
+      failedCount += failed;
+      if (outcomes.length > 0 && started === 0) {
+        label = `Could not start ${quantity(failed, "review guide")}`;
+      } else {
+        label = phrase(
+          "Started",
+          "start",
+          outcomes.length === 0
+            ? `review guides ${times}`
+            : `${quantity(started, "review guide")}${failed > 0 ? `, ${failed} failed` : ""}`,
+        );
+      }
+      break;
+    }
+    case "read-pr-guide":
+      label = phrase("Read", "read", quantity(selected.length, "review guide"));
       break;
     case "browser":
       label = phrase("Used", "use", `browser ${times}`);

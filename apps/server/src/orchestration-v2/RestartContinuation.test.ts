@@ -10,6 +10,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
+  type OrchestrationV2Command,
   type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -21,7 +22,7 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "./IdAllocator.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 
@@ -319,7 +320,7 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
     const commands: Parameters<
       ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
     >[0][] = [];
-    const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
+    const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
       getThreadRecords: () => Effect.succeed(projection),
       recoverDelegatedTask: () => Effect.void,
       dispatch: (command) => {
@@ -329,12 +330,16 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
         return Effect.succeed({} as never);
       },
     });
-    const enabled = Layer.merge(
-      threads,
+    const layerEnabled = Layer.merge(
+      layerThreads,
       ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
     );
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
     assert.lengthOf(commands, 1);
     assert.match(String(commands[0]!.commandId), /run:restart$/);
     if (commands[0]!.type === "message.dispatch")
@@ -352,12 +357,17 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
         },
       ],
     };
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
     assert.lengthOf(commands, 1);
     projection = { ...projection, runs: [projection.runs[0]!] };
     yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
       Effect.provide(
-        Layer.merge(threads, ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false })),
+        Layer.merge(
+          layerThreads,
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
+        ),
       ),
     );
     assert.lengthOf(commands, 1);
@@ -471,6 +481,7 @@ it.effect.each([
           {
             id: "subagent:background",
             runId,
+            origin: "provider_native",
             driver,
             providerInstanceId: instanceId,
             status: "running",
@@ -597,9 +608,9 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
   }),
 );
 
-const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
+const continuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
   Effect.gen(function* () {
-    const texts: Array<string> = [];
+    const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
     yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
       Effect.provide(
         Layer.merge(
@@ -607,7 +618,7 @@ const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
             getThreadRecords: () => Effect.succeed(projection),
             recoverDelegatedTask: () => Effect.void,
             dispatch: (command) => {
-              if (command.type === "message.dispatch") texts.push(command.text);
+              if (command.type === "message.dispatch") dispatches.push(command);
               return Effect.succeed({} as never);
             },
           }),
@@ -615,8 +626,13 @@ const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
         ),
       ),
     );
-    return texts;
+    return dispatches;
   });
+
+const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
+  continuationDispatches(projection).pipe(
+    Effect.map((dispatches) => dispatches.map((command) => command.text)),
+  );
 
 const cutMidTurn = (extra: Record<string, unknown> = {}) => {
   const base = makeProjection();
@@ -728,6 +744,18 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
     assert.lengthOf(texts, 1);
     assert.include(texts[0]!, "Background reviewer");
     assert.isTrue(texts[0]!.endsWith("Continue where you left off."));
+  }),
+);
+
+it.effect("shows a continuation as an Up.computer notice whose detail is the prompt", () =>
+  Effect.gen(function* () {
+    const [resumed] = yield* continuationDispatches(cutMidTurn());
+    assert.deepEqual(resumed?.notification, {
+      source: { kind: "system" },
+      outcome: "updated",
+      summary: "Up.computer restarted and resumed this turn",
+      detail: "Continue where you left off.",
+    });
   }),
 );
 

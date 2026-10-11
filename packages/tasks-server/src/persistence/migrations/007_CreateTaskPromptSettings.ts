@@ -1,6 +1,6 @@
 import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** Store environment-wide user guidance for task orchestration tools and agents. */
 export const CreateTaskPromptSettingsMigration = Effect.gen(function* () {

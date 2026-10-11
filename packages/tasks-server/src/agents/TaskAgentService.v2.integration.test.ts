@@ -38,31 +38,27 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { McpSchema, McpServer } from "effect/unstable/ai";
-import type * as Rpc from "effect/unstable/rpc/Rpc";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import { McpSchema, McpServer } from "effect/ai";
+import type * as Rpc from "effect/rpc/Rpc";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as RpcTest from "effect/rpc/RpcTest";
 
-import { rpcScopeAuthorizationLayer } from "../../../../apps/server/src/auth/RpcAuthorization.ts";
+import * as RpcAuthorization from "../../../../apps/server/src/auth/RpcAuthorization.ts";
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
-import { ProviderRegistry } from "../../../../apps/server/src/provider/Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "../../../../apps/server/src/provider/ProviderRegistry.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import { ProjectService } from "../../../../apps/server/src/project/ProjectService.ts";
-import { SqlitePersistenceMemory } from "../../../../apps/server/src/persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../../../apps/server/src/persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "../../../../apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts";
-import type {
-  ProviderAdapterV2Event,
-  ProviderAdapterV2Shape,
-  ProviderAdapterV2TurnInput,
-} from "../../../../apps/server/src/orchestration-v2/ProviderAdapter.ts";
+import type * as ProviderAdapter from "../../../provider-core/src/server/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../../../../apps/server/src/orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "../../../../apps/server/src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
+import * as ProviderReplayHarness from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
+import { checkpointWorkspace } from "../../../provider-testing/src/replayWorkspace.ts";
 import {
   composeExperimentalServerFeatures,
   productFeatureLayer,
@@ -101,7 +97,7 @@ interface StartedTurn {
  */
 function makeTaskAgentAdapter(
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
-): ProviderAdapterV2Shape {
+): ProviderAdapter.ProviderAdapterV2["Service"] {
   return {
     instanceId,
     driver,
@@ -109,15 +105,15 @@ function makeTaskAgentAdapter(
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (sessionInput) =>
       Effect.gen(function* () {
-        const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
-        const held = new Map<ProviderTurnId, ProviderAdapterV2TurnInput>();
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        const held = new Map<ProviderTurnId, ProviderAdapter.ProviderAdapterV2TurnInput>();
         const now = yield* DateTime.now;
         const providerTurn = (
-          input: ProviderAdapterV2TurnInput,
+          input: ProviderAdapter.ProviderAdapterV2TurnInput,
           id: ProviderTurnId,
           status: "running" | "completed" | "interrupted" | "failed",
           at: DateTime.Utc,
-        ): ProviderAdapterV2Event => ({
+        ): ProviderAdapter.ProviderAdapterV2Event => ({
           type: "provider_turn.updated",
           driver,
           providerTurn: {
@@ -332,10 +328,10 @@ const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
  * services and its MCP server, with the product provided as the CLI does.
  */
 function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<StartedTurn>>) {
-  const db = SqlitePersistenceMemory;
-  const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
+  const db = SqlitePersistence.layerMemory;
+  const runtime = ProviderReplayHarness.layerWithRegistry(
     { name, runtimePolicyOverride: { cwd } },
-    ProviderAdapterRegistry.makeSingleLayer(makeTaskAgentAdapter(started)),
+    ProviderAdapterRegistry.layerSingle(makeTaskAgentAdapter(started)),
     { databaseLayer: db },
   );
   const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
@@ -742,7 +738,7 @@ const mcpClient = McpSchema.McpServerClient.of({
 });
 
 it.live("a chat creates a task through the task MCP tools and the started run reports back", () =>
-  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd }) =>
+  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd, started, sendAsPerson }) =>
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -787,6 +783,16 @@ it.live("a chat creates a task through the task MCP tools and the started run re
         worktreePath: null,
       });
       yield* repository.upsertAgent(agent);
+      // Task tools act for a chat while its run is live, as an agent calling them is.
+      yield* sendAsPerson(chatThreadId, `Plan the work. ${HOLD}`);
+      yield* eventually(
+        "the chat's held turn",
+        Ref.get(started).pipe(
+          Effect.map((turns) =>
+            Option.fromNullishOr(turns.find((turn) => turn.threadId === chatThreadId)),
+          ),
+        ),
+      );
       const callTool = (name: string, args: Record<string, unknown>) =>
         server.callTool({ name, arguments: args }).pipe(
           Effect.provideService(McpInvocationContext, {
@@ -798,7 +804,7 @@ it.live("a chat creates a task through the task MCP tools and the started run re
               providerInstanceId: instanceId,
             },
             client: undefined,
-            capabilities: new Set<never>(),
+            capabilities: new Set(["orchestration" as const]),
             issuedAt: 0,
           }),
           Effect.provideService(McpSchema.McpServerClient, mcpClient),
@@ -927,7 +933,7 @@ it.live("a run a person's message continued claims the task with the earlier run
                 providerInstanceId: instanceId,
               },
               client: undefined,
-              capabilities: new Set<never>(),
+              capabilities: new Set(["orchestration" as const]),
               issuedAt: 0,
             }),
             Effect.provideService(McpSchema.McpServerClient, mcpClient),
@@ -955,7 +961,7 @@ const callTaskTool = (threadId: ThreadId, name: string, args: Record<string, unk
           providerInstanceId: instanceId,
         },
         client: undefined,
-        capabilities: new Set<never>(),
+        capabilities: new Set(["orchestration" as const]),
         issuedAt: 0,
       }),
       Effect.provideService(McpSchema.McpServerClient, mcpClient),
@@ -1013,7 +1019,7 @@ it.live("task tools start or continue runs only within the calling thread's mode
           text: "Do something with full access.",
         });
         assert.isTrue(idle.isError, idle.text);
-        assert.include(idle.text, "needs an active run");
+        assert.include(idle.text, "no longer owns an active thread run");
 
         // Live, but the full-access run is broader than the chat.
         yield* goLive(supervised);
@@ -1084,7 +1090,7 @@ const tasksRpcClient = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
         rpcContributionHandlersLayer(TASKS_PRODUCT.rpc, {
           currentSessionId: AuthSessionId.make("session:task-agents-v2"),
         }) as Layer.Layer<Rpc.ToHandler<RpcGroup.Rpcs<typeof TasksRpcGroup>>>,
-        rpcScopeAuthorizationLayer(scopes, rpcContributionScopes(TASKS_PRODUCT.rpc)),
+        RpcAuthorization.layer(scopes, rpcContributionScopes(TASKS_PRODUCT.rpc)),
       ),
     ),
   );
