@@ -33,7 +33,7 @@ export const SOURCE_SETTLE_MS = 15_000;
  * chat whose tasks never go quiet (a long run, or a queue other chats keep
  * feeding) still hears about it, at most about once per this interval. A
  * Developer and Reviewer pair takes 1 to 2 minutes on the bench and a
- * three-task queue about 3, so a short queue still ends in one message.
+ * three-task queue about 3, so a short queue still ends in one report.
  */
 export const SOURCE_MAX_WAIT_MS = 5 * 60_000;
 
@@ -112,6 +112,61 @@ export function wakesSourceChat(row: PendingWakeRow): row is WakeRun {
   );
 }
 
+/** Each task the runs belong to, once, with its status now. */
+function runTasks(runs: ReadonlyArray<WakeRun>) {
+  return [
+    ...new Map(
+      runs.map((run) => [
+        run.taskId,
+        {
+          id: run.taskId,
+          title: run.taskTitle ?? run.taskId,
+          ...(run.taskStatus === null ? {} : { status: run.taskStatus }),
+        },
+      ]),
+    ).values(),
+  ];
+}
+
+/** One agent-facing line per run. */
+function runLines(runs: ReadonlyArray<WakeRun>): string[] {
+  return runs.map((run) => {
+    const title = run.taskTitle ?? run.taskId;
+    const agent = run.agentName === null ? "" : ` by agent "${run.agentName}"`;
+    const taskStatus = run.taskStatus === null ? "" : `, task now ${run.taskStatus}`;
+    const detail = run.summary === null ? "" : ` Summary: ${clip(run.summary, SUMMARY_MAX_LENGTH)}`;
+    return `- Task "${title}" (${run.taskId}), run ${run.runId}${agent}: ${run.status}${taskStatus}.${detail}`;
+  });
+}
+
+/** Whether the chat only needs to see the runs: all completed, nothing to act on. */
+export function reportsWithoutWake(runs: ReadonlyArray<WakeRun>): boolean {
+  return runs.every((run) => run.status === "completed");
+}
+
+/**
+ * The card a chat shows for runs that all completed, recorded without waking its
+ * model. The detail is what the agent reads with its next turn.
+ */
+export function sourceRunsCard(
+  runs: readonly [WakeRun, ...WakeRun[]],
+): OrchestrationV2Notification {
+  const tasks = runTasks(runs);
+  return {
+    source: { kind: "task_agent_run", tasks },
+    outcome: "completed",
+    summary:
+      tasks.length === 1
+        ? `Task "${clip(tasks[0]!.title, 80)}" done`
+        : `${tasks.length} tasks done: ${clip(tasks.map((task) => task.title).join(", "), 120)}`,
+    detail: [
+      "Task-agent runs finished for tasks created in this chat:",
+      ...runLines(runs),
+      "Read a task with task_get when you need its full output.",
+    ].join("\n"),
+  };
+}
+
 /**
  * One notification and agent-facing message for the runs that finished for one
  * source chat. `idle` says that no run for the chat's tasks is in progress now.
@@ -130,22 +185,12 @@ export function sourceWakeMessage(
     : outcomes.every((value) => value === "completed")
       ? "completed"
       : "updated";
-  const tasks = [
-    ...new Map(
-      runs.map((run) => [run.taskId, { id: run.taskId, title: run.taskTitle ?? run.taskId }]),
-    ).values(),
-  ];
+  const tasks = runTasks(runs);
   const summary =
     runs.length === 1
       ? `Task "${clip(tasks[0]!.title, 80)}" ${OUTCOME[first.status]!.verb}`
       : `${runs.length} task runs finished: ${clip(tasks.map((task) => task.title).join(", "), 120)}`;
-  const lines = runs.map((run) => {
-    const title = run.taskTitle ?? run.taskId;
-    const agent = run.agentName === null ? "" : ` by agent "${run.agentName}"`;
-    const taskStatus = run.taskStatus === null ? "" : `, task now ${run.taskStatus}`;
-    const detail = run.summary === null ? "" : ` Summary: ${clip(run.summary, SUMMARY_MAX_LENGTH)}`;
-    return `- Task "${title}" (${run.taskId}), run ${run.runId}${agent}: ${run.status}${taskStatus}.${detail}`;
-  });
+  const lines = runLines(runs);
   return {
     text: [
       runs.length === 1
@@ -183,10 +228,12 @@ const WakeBatchRow = Schema.Struct({
 });
 
 /**
- * Wakes the chat a task came from when its runs finish, the way upstream's pull request
- * watch wakes a thread: a queued, server-created notification message that v2's durable
- * queue delivers once the chat is idle. Finished runs are swept from storage, so runs that
- * end together reach their chat as one message and a restart loses none.
+ * Tells the chat a task came from when its runs finish. Runs that all completed are
+ * recorded as a card in the chat without waking its model, which reads them with its next
+ * turn. A batch with a blocked, failed or interrupted run wakes the chat the way upstream's
+ * pull request watch wakes a thread: a queued, server-created notification message that
+ * v2's durable queue delivers once the chat is idle. Finished runs are swept from storage,
+ * so runs that end together reach their chat as one report and a restart loses none.
  *
  * A completed run waits until none of the chat's tasks has had a run in progress for
  * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
@@ -195,7 +242,7 @@ const WakeBatchRow = Schema.Struct({
  * the same chat, which go with it.
  *
  * Runs are first grouped into batches that are stored before anything is sent. The
- * batch id is the message's command id, so a retry repeats the same message (v2 replays
+ * batch id is the report's command id, so a retry repeats the same report (v2 replays
  * a command it already ran) and acknowledges only that batch's runs. Failures a retry
  * cannot fix, and batches that keep failing, count as handled.
  */
@@ -393,28 +440,38 @@ export const makeTaskSourceWake = Effect.gen(function* () {
   const deliver = (batch: typeof WakeBatchRow.Type) =>
     Effect.gen(function* () {
       // Read at delivery, so a task archived since the batch formed is left out,
-      // and a batch with nothing left is handled without a message.
+      // and a batch with nothing left is handled without a report.
       const runs = (yield* batchRuns(batch.id)).filter(wakesSourceChat);
       const [first, ...rest] = runs;
       if (first === undefined) return yield* acknowledge(batch.id);
-      // Decided now, not from the batch: a batch may go out while other work runs.
-      const [state] = yield* sourceBusy(batch.sourceThreadId);
-      const { text, notification } = sourceWakeMessage([first, ...rest], state?.busy === 0);
-      const sent = yield* Effect.exit(
-        threads.dispatch({
-          type: "message.dispatch",
-          createdBy: "agent",
-          creationSource: "server",
-          commandId: CommandId.make(`task-source-wake:${batch.id}`),
-          threadId: ThreadId.make(batch.sourceThreadId),
-          messageId: MessageId.make(`message:task-source-wake:${batch.id}`),
-          senderThreadId: ThreadId.make(first.runThreadId),
-          text,
-          attachments: [],
-          notification,
-          dispatchMode: { type: "queue_after_active" },
-        }),
-      );
+      const commandId = CommandId.make(`task-source-wake:${batch.id}`);
+      const threadId = ThreadId.make(batch.sourceThreadId);
+      const send = reportsWithoutWake(runs)
+        ? threads.dispatch({
+            type: "thread.notification.record",
+            commandId,
+            threadId,
+            notification: sourceRunsCard([first, ...rest]),
+          })
+        : Effect.gen(function* () {
+            // Decided now, not from the batch: a batch may go out while other work runs.
+            const [state] = yield* sourceBusy(batch.sourceThreadId);
+            const { text, notification } = sourceWakeMessage([first, ...rest], state?.busy === 0);
+            return yield* threads.dispatch({
+              type: "message.dispatch",
+              createdBy: "agent",
+              creationSource: "server",
+              commandId,
+              threadId,
+              messageId: MessageId.make(`message:task-source-wake:${batch.id}`),
+              senderThreadId: ThreadId.make(first.runThreadId),
+              text,
+              attachments: [],
+              notification,
+              dispatchMode: { type: "queue_after_active" },
+            });
+          });
+      const sent = yield* Effect.exit(send);
       if (sent._tag === "Success") return yield* acknowledge(batch.id);
       const attempts = batch.attempts + 1;
       if (isPermanentWakeFailure(sent.cause) || attempts >= SOURCE_WAKE_MAX_ATTEMPTS) {

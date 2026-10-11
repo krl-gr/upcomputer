@@ -785,14 +785,17 @@ function timelineEntryFoldRunId(entry: TimelineEntry, runlessKey: RunId | null):
   return null;
 }
 
-/** A steer adds input to its existing turn, without creating a new header. */
+/**
+ * A steer adds input to its existing turn, without creating a new header. A notification
+ * recorded without a run started no turn, so it starts no response either.
+ */
 function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   return (
     (entry.kind === "message" &&
       entry.message.role === "user" &&
       entry.message.inputIntent !== "steer" &&
       entry.message.inputIntent !== "promoted_queued_to_steer") ||
-    (entry.kind === "work" && entry.entry.itemType === "notification")
+    (entry.kind === "work" && entry.entry.itemType === "notification" && entry.entry.runId != null)
   );
 }
 

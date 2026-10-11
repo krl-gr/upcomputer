@@ -52,6 +52,10 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import {
+  pendingRecordedNotifications,
+  recordedNotificationsNote,
+} from "./RecordedNotificationNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -955,25 +959,40 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
+      const compactionMessageIds = new Set(
+        projection.messages
+          .filter(
+            (candidate) =>
+              candidate.attachments.length === 0 &&
+              candidate.text.trim().toLowerCase() === "/compact",
+          )
+          .map((candidate) => candidate.id),
+      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds: new Set(
-          projection.messages
-            .filter(
-              (candidate) =>
-                candidate.attachments.length === 0 &&
-                candidate.text.trim().toLowerCase() === "/compact",
-            )
-            .map((candidate) => candidate.id),
-        ),
+        compactionMessageIds,
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      // Notes go before the user text, delivered once like the text itself.
+      const turnNote = [
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+        recordedNotificationsNote(
+          pendingRecordedNotifications({
+            items: projection.turnItems,
+            runs: projection.runs,
+            providerTurns: projection.providerTurns,
+            attempts: projection.attempts,
+            compactionMessageIds,
+            run,
+          }),
+        ),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1123,7 +1142,7 @@ export const layer: Layer.Layer<
                 tokenCap,
                 modelContextWindow,
                 // The note is sent with the user text, so it spends the same allowance.
-                userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
                 attachments: message.attachments,
                 providerThread: budgetProviderThread,
                 nativeContextEstimate:
@@ -1164,9 +1183,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
-            .filter((part) => part !== "")
-            .join("\n\n");
+          const context = [delivery.context, turnNote].filter((part) => part !== "").join("\n\n");
           // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
@@ -1202,7 +1219,7 @@ export const layer: Layer.Layer<
       const deliverySession =
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
-        restartNote === "" &&
+        turnNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

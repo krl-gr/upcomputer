@@ -29,6 +29,8 @@ import {
   SOURCE_MAX_WAIT_MS,
   SOURCE_SETTLE_MS,
   SOURCE_WAKE_MAX_ATTEMPTS,
+  reportsWithoutWake,
+  sourceRunsCard,
   sourceWakeMessage,
   TaskSourceWake,
   TaskSourceWakeLive,
@@ -75,7 +77,7 @@ describe("TaskSourceWake", () => {
     expect(message.notification).toEqual({
       source: {
         kind: "task_agent_run",
-        tasks: [{ id: "task-1", title: "Fix the build" }],
+        tasks: [{ id: "task-1", title: "Fix the build", status: "Needs Review" }],
         childThreadId: "thread-run-1",
       },
       outcome: "completed",
@@ -107,12 +109,51 @@ describe("TaskSourceWake", () => {
     expect(message.notification.source).toEqual({
       kind: "task_agent_run",
       tasks: [
-        { id: "task-1", title: "Fix the build" },
-        { id: "task-2", title: "Docs" },
+        { id: "task-1", title: "Fix the build", status: "Needs Review" },
+        { id: "task-2", title: "Docs", status: "Needs Review" },
       ],
     });
     // Other work still runs: no idle line.
     expect(message.text.split("\n")).toHaveLength(4);
+  });
+
+  it("reports runs that all completed as a card, with each task once", () => {
+    const runs = [
+      row({}),
+      row({ runId: "run-2", runThreadId: "thread-run-2", agentName: "Reviewer" }),
+      row({
+        runId: "run-3",
+        runThreadId: "thread-run-3",
+        taskId: "task-2",
+        taskTitle: "Docs",
+        taskStatus: "Done",
+        summary: null,
+      }),
+    ].filter(wakesSourceChat);
+    const [first, ...rest] = runs;
+    if (first === undefined) throw new Error("expected runs");
+    expect(reportsWithoutWake(runs)).toBe(true);
+    expect(reportsWithoutWake([...runs, { ...first, status: "blocked" }])).toBe(false);
+    expect(reportsWithoutWake([{ ...first, status: "failed" }])).toBe(false);
+    expect(reportsWithoutWake([{ ...first, status: "interrupted" }])).toBe(false);
+    const card = sourceRunsCard([first, ...rest]);
+    expect(card.source).toEqual({
+      kind: "task_agent_run",
+      tasks: [
+        { id: "task-1", title: "Fix the build", status: "Needs Review" },
+        { id: "task-2", title: "Docs", status: "Done" },
+      ],
+    });
+    expect(card.outcome).toBe("completed");
+    expect(card.summary).toBe("2 tasks done: Fix the build, Docs");
+    expect(card.detail?.split("\n")).toEqual([
+      "Task-agent runs finished for tasks created in this chat:",
+      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed, task now Needs Review. Summary: Fixed it.',
+      '- Task "Fix the build" (task-1), run run-2 by agent "Reviewer": completed, task now Needs Review. Summary: Fixed it.',
+      '- Task "Docs" (task-2), run run-3 by agent "Developer": completed, task now Done.',
+      "Read a task with task_get when you need its full output.",
+    ]);
+    expect(sourceRunsCard([first]).summary).toBe('Task "Fix the build" done');
   });
 });
 
@@ -126,12 +167,19 @@ const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "g
  */
 function fakeDispatch(fail: (threadId: string) => "transient" | "permanent" | null) {
   const handled = new Set<string>();
-  const delivered: Array<{ readonly threadId: string; readonly text: string }> = [];
+  /** A wake starts a model turn; a card is only recorded. Its text is the card's detail. */
+  const delivered: Array<{
+    readonly threadId: string;
+    readonly kind: "wake" | "card";
+    readonly text: string;
+  }> = [];
   const attempts: string[] = [];
   const service = {
     dispatch: (command: OrchestrationV2ServerCommand) =>
       Effect.gen(function* () {
-        if (command.type !== "message.dispatch") return yield* Effect.die("unexpected command");
+        if (command.type !== "message.dispatch" && command.type !== "thread.notification.record") {
+          return yield* Effect.die("unexpected command");
+        }
         attempts.push(command.threadId);
         if (handled.has(command.commandId)) return { sequence: 0 };
         const failure = fail(command.threadId);
@@ -148,7 +196,15 @@ function fakeDispatch(fail: (threadId: string) => "transient" | "permanent" | nu
           });
         }
         handled.add(command.commandId);
-        delivered.push({ threadId: command.threadId, text: command.text });
+        delivered.push(
+          command.type === "message.dispatch"
+            ? { threadId: command.threadId, kind: "wake", text: command.text }
+            : {
+                threadId: command.threadId,
+                kind: "card",
+                text: command.notification.detail ?? "",
+              },
+        );
         return { sequence: delivered.length };
       }),
   };
@@ -258,7 +314,7 @@ const retryNow = Effect.gen(function* () {
 });
 
 describe("TaskSourceWake settling", () => {
-  it.effect("a chat hears about completed runs once its tasks have settled", () => {
+  it.effect("a chat sees completed runs as one card once its tasks have settled", () => {
     const dispatch = fakeDispatch(() => null);
     return withWake(
       dispatch,
@@ -285,9 +341,13 @@ describe("TaskSourceWake settling", () => {
         assert.lengthOf(dispatch.delivered, 2);
         const message = dispatch.delivered[1]!;
         assert.strictEqual(message.threadId, "chat");
+        // Recorded in the chat; its model is not woken for it.
+        assert.deepStrictEqual(
+          dispatch.delivered.map((report) => report.kind),
+          ["card", "card"],
+        );
         assert.include(message.text, "run r1");
         assert.include(message.text, "run r2");
-        assert.include(message.text, "No run for this chat's tasks is in progress now.");
         assert.deepStrictEqual(yield* wakeState, {
           told: ["r-other", "r1", "r2"],
           batches: [],
@@ -308,6 +368,8 @@ describe("TaskSourceWake settling", () => {
         yield* wake.sweep;
         assert.lengthOf(dispatch.delivered, 1);
         const [message] = dispatch.delivered;
+        // The completed run goes with the failure into one model wake.
+        assert.strictEqual(message!.kind, "wake");
         assert.include(message!.text, "run r1");
         assert.include(message!.text, "run r3");
         assert.include(message!.text, ": failed");
@@ -337,6 +399,7 @@ describe("TaskSourceWake settling", () => {
           yield* wake.sweep;
           assert.lengthOf(dispatch.delivered, 1);
           const [message] = dispatch.delivered;
+          assert.strictEqual(message!.kind, "card");
           assert.include(message!.text, "run r1");
           assert.notInclude(message!.text, "run r2");
           // r2 still runs: the report does not say the chat's work is done.
@@ -365,6 +428,7 @@ describe("TaskSourceWake settling", () => {
         yield* wake.sweep;
         assert.isAtLeast(dispatch.delivered.length, 1);
         const [first] = dispatch.delivered;
+        assert.strictEqual(first!.kind, "wake");
         const lines = first!.text.split("\n");
         assert.include(lines[1], "run r-failed");
         const reported = () =>

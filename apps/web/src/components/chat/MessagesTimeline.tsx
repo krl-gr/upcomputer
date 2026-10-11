@@ -38,6 +38,7 @@ import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-mes
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
+import { TaskRunsNotificationCard } from "./TaskRunsNotificationCard";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   resolveWorkEntryToolPresentation,
@@ -4995,6 +4996,21 @@ type WorkEntryRowProps = {
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {
   const ctx = use(TimelineRowCtx);
   const item = props.workEntry.projectedItem?.item;
+  if (
+    item?.type === "notification" &&
+    item.runId === null &&
+    item.source.kind === "task_agent_run" &&
+    item.source.tasks.length > 0
+  ) {
+    return (
+      <TaskRunsNotificationCard
+        environmentId={ctx.activeThreadEnvironmentId}
+        tasks={item.source.tasks}
+        createdAt={props.workEntry.createdAt}
+        timestampFormat={ctx.timestampFormat}
+      />
+    );
+  }
   const childThreadId =
     item?.type === "notification" ? notificationChildThreadId(item.source) : undefined;
   if (item?.type !== "notification" || childThreadId === undefined) {

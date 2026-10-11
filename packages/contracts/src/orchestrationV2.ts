@@ -1050,7 +1050,14 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     // UpComputer task-agent runs that finished for tasks created in this thread.
     Schema.Struct({
       kind: Schema.Literal("task_agent_run"),
-      tasks: Schema.Array(Schema.Struct({ id: TrimmedNonEmptyString, title: Schema.String })),
+      tasks: Schema.Array(
+        Schema.Struct({
+          id: TrimmedNonEmptyString,
+          title: Schema.String,
+          /** The task's status when the notification was recorded. */
+          status: Schema.optional(Schema.String),
+        }),
+      ),
       /** The run's own thread, when the notification reports one run. */
       childThreadId: Schema.optional(ThreadId),
     }),
@@ -3011,6 +3018,17 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  /**
+   * Records a notification in the thread's timeline without a message or a run, so no
+   * provider turn starts. The agent is told on its next turn. The command id names the
+   * timeline item, so a retry records it once.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.notification.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    notification: OrchestrationV2Notification,
   }),
   /** Records that the provider rollback `requestId` failed for good. */
   Schema.Struct({

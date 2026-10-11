@@ -1268,7 +1268,7 @@ const mcpClient = McpSchema.McpServerClient.of({
 });
 
 it.live("a chat creates a task through the task MCP tools and the started run reports back", () =>
-  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd }) =>
+  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd, started, sendAsPerson, v2Runs }) =>
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -1364,57 +1364,67 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       const fetched = yield* callTool("task_get", { id: createdTask.id });
       assert.include(textOf(fetched), "Needs Review");
 
-      // The chat hears about the finished run once its tasks have settled, as a
-      // queued notification turn. Ending the run earlier stands in for the wait.
+      // The chat sees the finished run as a card once its tasks have settled, without a
+      // model turn. Ending the run earlier stands in for the wait.
       const sql = yield* SqlClient.SqlClient;
       const settledAt = new Date(Date.now() - SOURCE_SETTLE_MS).toISOString();
       yield* sql`UPDATE task_agent_runs SET completed_at = ${settledAt} WHERE id = ${run.id}`;
       const wake = yield* TaskSourceWake;
-      const notificationsOf = threads
-        .getThreadRecords(chatThreadId, ["messages"])
-        .pipe(
-          Effect.map((records) =>
-            records.messages.filter(
-              (message) => message.notification?.source.kind === "task_agent_run",
-            ),
-          ),
-        );
-      const [notified] = yield* eventually(
-        "the source chat notification",
+      const cardsOf = threads
+        .getThreadRecords(chatThreadId, ["turnItems"], { turnItemTypes: ["notification"] })
+        .pipe(Effect.map((records) => records.turnItems));
+      const [card] = yield* eventually(
+        "the source chat card",
         Effect.gen(function* () {
           yield* wake.sweep;
-          const messages = yield* notificationsOf;
-          return messages.length > 0 ? Option.some(messages) : Option.none();
+          const cards = yield* cardsOf;
+          return cards.length > 0 ? Option.some(cards) : Option.none();
         }),
       );
       yield* wake.sweep;
-      assert.lengthOf(yield* notificationsOf, 1);
-      assert.strictEqual(notified?.senderThreadId, run.threadId);
-      assert.strictEqual(notified?.createdBy, "agent");
-      assert.strictEqual(notified?.creationSource, "server");
-      assert.deepStrictEqual(notified?.notification, {
-        source: {
-          kind: "task_agent_run",
-          tasks: [{ id: createdTask.id, title: task.title }],
-          childThreadId: run.threadId,
-        },
-        outcome: "completed",
-        summary: `Task "${task.title}" completed`,
+      assert.lengthOf(yield* cardsOf, 1);
+      assert(card?.type === "notification");
+      assert.isNull(card.runId);
+      assert.deepStrictEqual(card.source, {
+        kind: "task_agent_run",
+        tasks: [{ id: createdTask.id, title: task.title, status: "Needs Review" }],
       });
-      assert.include(notified?.text, "Summary: Handled 1");
-      // The queue delivers it as a turn of its own once the chat is idle.
-      yield* eventually(
-        "the notification turn",
-        threads
-          .getThreadRecords(chatThreadId, ["runs"])
-          .pipe(
-            Effect.map((records) =>
-              Option.fromNullishOr(
-                records.runs.find((candidate) => candidate.userMessageId === notified?.id),
-              ),
-            ),
-          ),
+      assert.strictEqual(card.outcome, "completed");
+      assert.strictEqual(card.summary, `Task "${task.title}" done`);
+      assert.include(card.detail, "Summary: Handled 1");
+      // No message was queued and no turn started in the chat.
+      const chat = yield* threads.getThreadRecords(chatThreadId, ["runs", "messages"]);
+      assert.deepStrictEqual(chat.runs, []);
+      assert.deepStrictEqual(chat.messages, []);
+      assert.isFalse((yield* Ref.get(started)).some((turn) => turn.threadId === chatThreadId));
+
+      // The next turn the chat takes for another reason carries the card, once.
+      const chatTurns = Ref.get(started).pipe(
+        Effect.map((turns) => turns.filter((turn) => turn.threadId === chatThreadId)),
       );
+      const turnNumber = (count: number) =>
+        chatTurns.pipe(
+          Effect.map((turns) =>
+            turns.length >= count ? Option.some(turns[count - 1]!) : Option.none(),
+          ),
+        );
+      yield* sendAsPerson(chatThreadId, "How did it go?");
+      const first = yield* eventually("the chat's first turn", turnNumber(1));
+      assert.include(first.text, "Note: these notifications were shown in this thread");
+      assert.include(first.text, `- Task "${task.title}" done`);
+      assert.include(first.text, "Summary: Handled 1");
+      assert.isTrue(first.text.endsWith("User message:\nHow did it go?"));
+      yield* eventually(
+        "the chat's first run to complete",
+        v2Runs(chatThreadId).pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.status === "completed")),
+          ),
+        ),
+      );
+      yield* sendAsPerson(chatThreadId, "Thanks.");
+      const second = yield* eventually("the chat's second turn", turnNumber(2));
+      assert.strictEqual(second.text, "Thanks.");
     }),
   ),
 );

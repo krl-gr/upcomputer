@@ -420,6 +420,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "checkpoint.rollback.fail":
     case "thread.background-work.settle":
     case "thread.provider-sessions.release-idle":
+    case "thread.notification.record":
     case "provider.switch":
       return command.threadId;
     case "delegated_task.request":
@@ -6946,6 +6947,53 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  /** A notification of its own in the timeline: no message, run or effect. */
+  const dispatchNotificationRecord = Effect.fn("orchestrationV2.dispatch.notificationRecord")(
+    function* (
+      command: Extract<
+        OrchestrationV2ServerCommand,
+        { readonly type: "thread.notification.record" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const thread = yield* projectionStore
+        .getThread(command.threadId)
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const now = yield* DateTime.now;
+      const turnItem: OrchestrationV2TurnItem = {
+        id: idAllocator.derive.recordedNotificationTurnItem({ commandId: command.commandId }),
+        threadId: command.threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: yield* nextTurnItemOrdinal({ thread }),
+        status: "completed",
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        type: "notification",
+        ...command.notification,
+      };
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: turnItem,
+      });
+    },
+  );
+
   const dispatchRuntimeRequestRespond = (
     command: Extract<OrchestrationV2Command, { readonly type: "runtime-request.respond" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -9817,6 +9865,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "thread.created.record":
         yield* dispatchCreatedThreadRecord(command, events);
+        break;
+      case "thread.notification.record":
+        yield* dispatchNotificationRecord(command, events);
         break;
       default:
         return yield* dispatchUnsupported(command);
