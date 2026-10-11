@@ -25,6 +25,17 @@ describe("T3 orchestration provider instructions", () => {
     );
   });
 
+  it("asks for the provider catalog only to delegate or to report it missing", () => {
+    // A chat that only queues a task must not fetch the catalog (perf round 3).
+    const sentences = T3_CODE_ORCHESTRATION_INSTRUCTIONS.split(/(?<=\.)\s+/).filter((sentence) =>
+      sentence.includes("orchestrator_capabilities"),
+    );
+    assert.isAbove(sentences.length, 0);
+    for (const sentence of sentences) {
+      assert.match(sentence, /Before delegating|before reporting|acp-mcp-call/, sentence);
+    }
+  });
+
   it("documents structured schedules instead of JSON strings", () => {
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "structured object, never as JSON text");
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, '"everyMs":3600000');
