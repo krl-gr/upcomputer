@@ -863,44 +863,47 @@ const make = Effect.gen(function* () {
 
       let trigger: RunTrigger | null = null;
       if (agent.startRunStatuses.length > 0) {
-        const triggerRun = yield* repository.findRunStatusTrigger({
+        const triggerRuns = yield* repository.findRunStatusTriggers({
           taskId: task.id,
           agentId: agent.id,
           statuses: agent.startRunStatuses,
           completedAfter: agent.createdAt,
         });
-        if (Option.isNone(triggerRun)) return;
-        const triggerAgent = yield* repository.getAgentById({ id: triggerRun.value.agentId });
-        const triggerStatus = triggerRun.value.status;
-        const triggerShell =
-          triggerStatus === "failed" || triggerStatus === "blocked"
-            ? yield* threads
-                .getThreadShell(triggerRun.value.threadId)
-                .pipe(Effect.orElseSucceed(() => null))
-            : null;
-        // A blocked run reported its own outcome, by result or release, so an agent
-        // acting on it runs within that run's modes, whichever pass starts it.
-        if (
-          triggerStatus === "blocked" &&
-          (triggerShell === null ||
-            broaderRunMode(agentRunModes(agent.config), {
-              runtimeMode: triggerShell.runtimeMode,
-              interactionMode: triggerShell.interactionMode,
-            }) !== null)
-        ) {
-          yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
-            taskId: task.id,
-            agentId: agent.id,
-            triggerRunId: triggerRun.value.id,
-          });
-          return;
+        for (const triggerRun of triggerRuns) {
+          const triggerShell =
+            triggerRun.status === "failed" || triggerRun.status === "blocked"
+              ? yield* threads
+                  .getThreadShell(triggerRun.threadId)
+                  .pipe(Effect.orElseSucceed(() => null))
+              : null;
+          // A blocked run reported its own outcome, by result or release, so an agent
+          // acting on it runs within that run's modes, whichever pass starts it. A
+          // refused run stays unhandled and the agent may take an older one instead.
+          if (
+            triggerRun.status === "blocked" &&
+            (triggerShell === null ||
+              broaderRunMode(agentRunModes(agent.config), {
+                runtimeMode: triggerShell.runtimeMode,
+                interactionMode: triggerShell.interactionMode,
+              }) !== null)
+          ) {
+            yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
+              taskId: task.id,
+              agentId: agent.id,
+              triggerRunId: triggerRun.id,
+            });
+            continue;
+          }
+          const triggerAgent = yield* repository.getAgentById({ id: triggerRun.agentId });
+          trigger = {
+            run: triggerRun,
+            agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
+            // A failed run's provider error is its thread's last error, as V1's session error was.
+            reason: triggerRun.status === "failed" ? triggerShell?.lastError?.trim() || null : null,
+          };
+          break;
         }
-        trigger = {
-          run: triggerRun.value,
-          agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
-          // A failed run's provider error is its thread's last error, as V1's session error was.
-          reason: triggerStatus === "failed" ? triggerShell?.lastError?.trim() || null : null,
-        };
+        if (trigger === null) return;
       } else {
         const [latestRun] = yield* repository.searchAgentRuns({
           taskId: task.id,

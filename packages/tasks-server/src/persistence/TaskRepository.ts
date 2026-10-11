@@ -298,13 +298,14 @@ export interface TaskRepositoryShape {
     input: TaskAgentRunSearchInput,
   ) => Effect.Effect<ReadonlyArray<TaskAgentRun>, TaskRepositoryError>;
   /**
-   * The latest run of another agent on the task that ended in one of the
-   * statuses, is that agent's latest run on the task, was not itself started by
-   * a run status, and has no run of `agentId` started after it.
+   * Runs of other agents on the task, latest completed first, that ended in one
+   * of the statuses, are their agent's latest run on the task, were not
+   * themselves started by a run status, and have no run of `agentId` started
+   * after them.
    */
-  readonly findRunStatusTrigger: (
+  readonly findRunStatusTriggers: (
     input: FindRunStatusTriggerInput,
-  ) => Effect.Effect<Option.Option<TaskAgentRun>, TaskRepositoryError>;
+  ) => Effect.Effect<ReadonlyArray<TaskAgentRun>, TaskRepositoryError>;
   readonly upsertAutomation: (
     input: PersistTaskAutomationInput,
   ) => Effect.Effect<TaskAutomation, TaskRepositoryError>;

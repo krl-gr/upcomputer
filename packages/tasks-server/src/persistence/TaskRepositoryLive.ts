@@ -1375,7 +1375,7 @@ const makeTaskRepository = Effect.gen(function* () {
       `,
   });
 
-  const findRunStatusTriggerRow = SqlSchema.findOneOption({
+  const runStatusTriggerRows = SqlSchema.findAll({
     Request: Schema.Struct({
       taskId: TaskId,
       agentId: TaskAgentId,
@@ -1413,7 +1413,6 @@ const makeTaskRepository = Effect.gen(function* () {
               AND d.started_at >= r.completed_at
           )
         ORDER BY r.completed_at DESC, r.id ASC
-        LIMIT 1
       `,
   });
 
@@ -2623,8 +2622,8 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
-  const findRunStatusTrigger: TaskRepositoryShape["findRunStatusTrigger"] = (input) =>
-    findRunStatusTriggerRow({
+  const findRunStatusTriggers: TaskRepositoryShape["findRunStatusTriggers"] = (input) =>
+    runStatusTriggerRows({
       taskId: input.taskId,
       agentId: input.agentId,
       statusesJson: JSON.stringify(input.statuses),
@@ -2632,8 +2631,8 @@ const makeTaskRepository = Effect.gen(function* () {
     }).pipe(
       Effect.mapError(
         toSqlOrDecodeError(
-          "TaskRepository.findRunStatusTrigger:query",
-          "TaskRepository.findRunStatusTrigger:decodeRows",
+          "TaskRepository.findRunStatusTriggers:query",
+          "TaskRepository.findRunStatusTriggers:decodeRows",
         ),
       ),
     );
@@ -2902,7 +2901,7 @@ const makeTaskRepository = Effect.gen(function* () {
     finalizeAgentRun: (input) =>
       withChanges(finalizeAgentRun(input), (changed) => (changed ? [input.taskId] : []), true),
     searchAgentRuns,
-    findRunStatusTrigger,
+    findRunStatusTriggers,
     upsertAutomation,
     insertAutomation,
     updateAutomationSchedule,

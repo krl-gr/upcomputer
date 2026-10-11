@@ -294,7 +294,11 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       yield* repository.upsert(taskInput("t"));
       const doctorCreatedAt = isoNow();
       yield* tick;
-      const find = repository.findRunStatusTrigger({
+      const latest = (input: Parameters<TaskRepositoryShape["findRunStatusTriggers"]>[0]) =>
+        repository
+          .findRunStatusTriggers(input)
+          .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0])));
+      const find = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor"),
         statuses: ["failed", "blocked"],
@@ -335,7 +339,7 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       );
 
       // A second doctor ignores runs that a run status started.
-      const other = repository.findRunStatusTrigger({
+      const other = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor-2"),
         statuses: ["failed", "blocked"],
@@ -344,7 +348,7 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       NodeAssert.equal(Option.getOrNull(yield* other)?.id, "dev-3");
 
       // Failures before the waiting agent existed are history.
-      const later = repository.findRunStatusTrigger({
+      const later = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor-3"),
         statuses: ["failed", "blocked"],
@@ -861,6 +865,77 @@ test("a blocked run starts only blocked-run agents within its own modes, by rele
       NodeAssert.equal(
         Option.getOrThrow(yield* repository.getAgentRunById({ id: reporting.id })).status,
         "blocked",
+      );
+    }),
+  );
+});
+
+test("a blocked run refused for its modes leaves an older failure to the same agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls, endRun } = harness;
+      yield* repository.upsertAgent(agentInput("build"));
+      yield* repository.upsertAgent(
+        agentInput("review", {
+          config: { ...agentInput("review").config, runtimeMode: "approval-required" },
+        }),
+      );
+      // Disabled until both outcomes exist, as when it becomes eligible only on recovery.
+      const helper = agentInput("helper", {
+        enabled: false,
+        startStatuses: [],
+        startRunStatuses: ["failed", "blocked"],
+      });
+      yield* repository.upsertAgent(helper);
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const runOf = (agentId: string) =>
+        waitFor(
+          `${agentId} run`,
+          runsOf(repository, "t").pipe(
+            Effect.map((runs) => runs.find((run) => run.agentId === agentId)),
+          ),
+        );
+      const endedAs = (runId: TaskAgentRunId, status: string) =>
+        waitFor(
+          `run ${runId} to end ${status}`,
+          repository
+            .getAgentRunById({ id: runId })
+            .pipe(
+              Effect.map((run) => (Option.getOrThrow(run).status === status ? true : undefined)),
+            ),
+        );
+      const build = yield* runOf("build");
+      const review = yield* runOf("review");
+      yield* waitFor(
+        "both first turns",
+        Effect.sync(() =>
+          turnsTo(calls, build.threadId).length > 0 && turnsTo(calls, review.threadId).length > 0
+            ? true
+            : undefined,
+        ),
+      );
+
+      endRun(build.threadId, "failed", { lastError: "build broke" });
+      yield* endedAs(build.id, "failed");
+      yield* tick;
+      endRun(review.threadId, "completed", {
+        reply: { status: "To Do", summary: "Need approval.", blocked: true },
+      });
+      yield* endedAs(review.id, "blocked");
+
+      // The newer blocked run is refused for the full-access helper; the failure is not.
+      yield* repository.upsertAgent({ ...helper, enabled: true });
+      yield* service.recover;
+      const helperRun = yield* runOf("helper");
+      NodeAssert.equal(helperRun.triggerRunId, build.id);
+      yield* service.recover;
+      const runs = yield* runsOf(repository, "t");
+      NodeAssert.equal(runs.filter((run) => run.agentId === "helper").length, 1);
+      NodeAssert.equal(
+        runs.some((run) => run.triggerRunId === review.id),
+        false,
+        "the refused blocked run stays unhandled",
       );
     }),
   );
