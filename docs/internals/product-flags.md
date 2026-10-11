@@ -6,7 +6,7 @@ UpComputer ships on upstream core but does not ship every upstream feature. It h
 
 - `ProductFlags` lists the hideable features: `pullRequests`, `terminalSurface`, `terminal`, `threadSettlement`, `devices`, `mcpOAuth`, `scheduledTaskWebhooks`, `defaultBrowser`, `cliCommand`, `mcpApps`, `usageDataNotice`. The terminal is split in two: `terminalSurface` is the terminal as a right-panel surface (its launcher entry and `+` menu item, its tab, the `terminal.*` shortcuts that only act while a terminal has focus, and the terminal font setting); `terminal` is everything else (the bottom drawer and its `terminal.toggle` shortcut, project scripts and `script.*`, "Run in terminal", the worktree setup terminal, the running-terminal badge on thread rows).
 - `UPSTREAM_PRODUCT_FLAGS` shows everything. Core without a product composition uses it, so stock core and upstream's own tests behave as upstream.
-- `UPCOMPUTER_PRODUCT_FLAGS` shows `terminalSurface`, `mcpOAuth`, `scheduledTaskWebhooks`, `defaultBrowser`, `cliCommand` and `mcpApps` and hides every other flag. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
+- `UPCOMPUTER_PRODUCT_FLAGS` shows `terminalSurface`, `mcpOAuth`, `scheduledTaskWebhooks`, `defaultBrowser`, `cliCommand`, `mcpApps` and `usageDataNotice` and hides every other flag. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
 - A table in the same module maps each flag to the capabilities, keybinding commands, settings search items and right-panel launchers it hides.
 
 ## Server hooks
@@ -38,7 +38,7 @@ The web composition carries the flags too. Upstream files call `apps/web/src/pro
 - `scheduledTaskWebhooks`: Scheduled prompts offer no "On webhook" trigger (an existing webhook task keeps its own), and Connections hides "Hold webhooks while offline".
 - `cliCommand`: no `up` command row in Settings, General.
 - `mcpApps`: MCP app results show as ordinary tool calls instead of inline apps (`session-logic.ts`).
-- `usageDataNotice`: onboarding shows no note on anonymous usage data and Settings no privacy policy row, both of which link upstream's policy.
+- `usageDataNotice`: onboarding shows no note on usage data and Settings no privacy policy row. Both link `PRIVACY_POLICY_URL` in `apps/web/src/legalLinks.ts`, which points at Up.computer's policy, so their copy describes Up.computer's telemetry rather than upstream's.
 - Terminal metadata (`state/terminalSessions.ts`): `useKnownTerminalSessions` subscribes with `terminalSurface`, since the panel tab takes its labels and working directories from it and ChatView allocates terminal ids from it; `useThreadRunningTerminalIds`, the thread rows' running-terminal badge, needs `terminal` too.
 
 Web unit tests alias `product/productEntry` to `apps/web/test/coreProductEntry.ts`, so upstream's tests run with upstream's flags. Tests for a hidden feature mock the entry, as `product/productFlags.test.tsx` does.

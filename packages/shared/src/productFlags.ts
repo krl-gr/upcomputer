@@ -40,7 +40,7 @@ export interface ProductFlags {
   readonly cliCommand: boolean;
   /** MCP apps rendered and run inline in threads. */
   readonly mcpApps: boolean;
-  /** Upstream's notes on anonymous usage data, in onboarding and in Settings, with its privacy link. */
+  /** The notes on usage data, in onboarding and in Settings, with the privacy policy link. */
   readonly usageDataNotice: boolean;
 }
 
@@ -71,7 +71,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   defaultBrowser: true,
   cliCommand: true,
   mcpApps: true,
-  usageDataNotice: false,
+  usageDataNotice: true,
 });
 
 /**

@@ -3374,7 +3374,7 @@ export function GeneralSettingsPanel() {
         {isProductFeatureShown("usageDataNotice") ? (
           <SettingsRow
             {...searchableSetting("privacy-policy")}
-            description="How we handle your data, including the anonymous usage data Up.computer collects."
+            description="What Up.computer collects: basic usage stats, never your chats, files or passwords."
             control={
               <Button
                 render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}

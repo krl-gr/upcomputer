@@ -431,8 +431,8 @@ function ConnectionStep({
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         {isProductFeatureShown("usageDataNotice") ? (
           <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-            Up.computer collects anonymous usage data to help us improve it. To read more about how
-            your data is used and how to opt out, see our{" "}
+            Up.computer sends us basic usage stats, like the app version and which agent and model
+            you use, so we can improve it. It never sends your chats, files or passwords. See our{" "}
             <a
               className="underline underline-offset-2 hover:text-foreground"
               href={PRIVACY_POLICY_URL}
@@ -440,8 +440,8 @@ function ConnectionStep({
               rel="noreferrer noopener"
             >
               privacy policy
-            </a>
-            .
+            </a>{" "}
+            for details and how to turn this off.
           </p>
         ) : null}
         <Button
