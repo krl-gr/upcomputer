@@ -157,9 +157,10 @@ describe("hidden upstream features in the web app", () => {
         "composer-collapse",
         "cli-command",
         "privacy-policy",
+        "remove-agent-credits-on-merge",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(12);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(13);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });

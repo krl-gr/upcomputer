@@ -419,6 +419,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
           <SettingsRow
             serverScoped
             settingKeys={["removeAgentCreditsOnMerge"]}
+            hidden={!isProductFeatureShown("pullRequests")}
             mixed={mixedAgentCredits}
             {...searchableSetting("remove-agent-credits-on-merge")}
             description="Remove recognized agent credit lines from GitHub merge and squash messages, keeping human co-authors. Includes auto-merge. Excludes merge queues, stack merges, and existing commits."

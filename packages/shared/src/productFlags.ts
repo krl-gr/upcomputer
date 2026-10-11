@@ -168,6 +168,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     keybindingCommands: ["pullRequest."],
     settingsSearchIds: [
       "pull-request-merge-method",
+      "remove-agent-credits-on-merge",
       "github-routing",
       "auto-settle-merged-threads",
     ],
