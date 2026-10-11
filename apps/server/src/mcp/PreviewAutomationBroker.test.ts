@@ -980,6 +980,52 @@ it.effect("serves from a server-side host only while no desktop host takes the c
   ),
 );
 
+// Up.computer runs upstream's environment browser (a preferred connection)
+// next to its managed Chrome (a server-side host preferred while "Always use
+// Chrome" is on). Both serve; the setting decides which one leads.
+it.effect("serves from the environment browser, and from Chrome while it is preferred", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      let alwaysUseChrome = false;
+      const answer = (clientId: string, events: Stream.Stream<PreviewAutomationStreamEvent>) =>
+        Stream.runForEach(requestsFrom(events), (request) =>
+          broker.respond({
+            clientId,
+            connectionId: request.connectionId,
+            requestId: request.requestId,
+            ok: true,
+            result: clientId,
+          }),
+        ).pipe(Effect.forkScoped);
+      const status = (providerSessionId: string) =>
+        broker.invoke<string>({
+          scope: { ...scope, providerSessionId },
+          operation: "status",
+          input: {},
+        });
+
+      yield* answer(
+        "chrome",
+        yield* broker.connect(makeHost({ clientId: "chrome" }), {
+          serverHost: { preferred: Effect.sync(() => alwaysUseChrome) },
+        }),
+      );
+      yield* answer("desktop", yield* broker.connect(makeHost({ clientId: "desktop" })));
+      yield* answer(
+        "environment-browser",
+        yield* broker.connect(makeHost({ clientId: "environment-browser" }), { preferred: true }),
+      );
+      yield* Effect.yieldNow;
+      expect(yield* status("session-1")).toBe("environment-browser");
+
+      alwaysUseChrome = true;
+      expect(yield* status("session-1")).toBe("chrome");
+      expect(yield* status("session-2")).toBe("chrome");
+    }),
+  ),
+);
+
 it.effect("does not route new operations to legacy hosts that did not advertise support", () =>
   Effect.scoped(
     Effect.gen(function* () {

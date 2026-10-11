@@ -816,8 +816,9 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
 });
 
 /**
- * The managed Chrome as the broker's second preview host: it serves agents
- * when no desktop app does, and every call while "Always use Chrome" is on.
+ * The managed Chrome as a server-side preview host: upstream's environment
+ * browser and desktop apps serve agents first, and Chrome takes every call
+ * while "Always use Chrome" is on.
  */
 export const ChromePreviewHostLive = Layer.effectDiscard(
   Effect.gen(function* () {
