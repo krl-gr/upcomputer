@@ -368,7 +368,7 @@ function PlannerBody(props: {
             />
           }
         />
-        <DragOverlay>
+        <DragOverlay dropAnimation={dnd.dropAnimation}>
           {dnd.active?.kind === "automation" ? (
             <AutomationDragPreview automation={dnd.active.automation} />
           ) : dnd.active?.kind === "task" ? (

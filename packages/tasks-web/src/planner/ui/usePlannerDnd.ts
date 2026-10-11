@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  defaultDropAnimation,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
@@ -9,6 +10,7 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
+  type DropAnimation,
   type Over,
 } from "@dnd-kit/core";
 import type { TaskAutomationListItem, TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
@@ -18,6 +20,7 @@ import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
 import {
   calendarDropTime,
+  dropReturnsToSource,
   planListDrop,
   planScheduleDrop,
   queueDropTarget,
@@ -92,6 +95,8 @@ export function usePlannerDnd(input: {
   );
   const [active, setActive] = useState<ActiveDrag | null>(null);
   const [indicators, setIndicators] = useState<DropIndicators>(NO_INDICATORS);
+  // Read by DragOverlay in the render that ends the drag, so set it in onDragEnd.
+  const [dropAnimation, setDropAnimation] = useState<DropAnimation | null>(defaultDropAnimation);
   const drag = useRef<{
     source: Source;
     startY: number;
@@ -215,6 +220,7 @@ export function usePlannerDnd(input: {
   };
 
   const onDragStart = (event: DragStartEvent) => {
+    setDropAnimation(defaultDropAnimation);
     const source = sourceOf(event.active);
     if (!source) return;
     const startY = clientY(event.activatorEvent) ?? 0;
@@ -299,6 +305,7 @@ export function usePlannerDnd(input: {
     const current = drag.current;
     if (!current) return;
     const planned = plan(current.source, targetOf(event.over, event.delta.y));
+    if (!dropReturnsToSource(planned)) setDropAnimation(null);
     reset();
     if (!planned) return;
     const { store, onBlockMoved } = input;
@@ -336,6 +343,7 @@ export function usePlannerDnd(input: {
     sensors,
     active,
     indicators,
+    dropAnimation,
     handlers: { onDragStart, onDragMove, onDragOver: onDragMove, onDragEnd, onDragCancel: reset },
   };
 }

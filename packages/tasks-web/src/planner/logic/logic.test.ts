@@ -5,6 +5,7 @@ import { layoutDay } from "./calendarLayout.ts";
 import { addDays, viewStartFor, weekStartOf, weekdayOf } from "./dates.ts";
 import {
   calendarDropTime,
+  dropReturnsToSource,
   planListDrop,
   planScheduleDrop,
   queueDropTarget,
@@ -363,5 +364,25 @@ describe("drag and drop planning", () => {
       "09:00",
     );
     NodeAssert.equal(calendarDropTime({ ...column, pointerY: 99_999, grabOffsetY: 0 }), "23:45");
+  });
+
+  test("only a task added to a day keeps its preview from flying back to the list", () => {
+    const queueDay = { kind: "queue-column", date: "2026-10-08" } as const;
+    const calendarDay = { kind: "calendar-day", date: "2026-10-08", startTime: "09:00" } as const;
+    NodeAssert.equal(dropReturnsToSource(planScheduleDrop(task, queueDay, byDate)), false);
+    NodeAssert.equal(dropReturnsToSource(planScheduleDrop(task, calendarDay, byDate)), false);
+    // The moved card or reordered row is where the preview settles.
+    NodeAssert.equal(dropReturnsToSource(planScheduleDrop(one("e1"), queueDay, byDate)), true);
+    NodeAssert.equal(dropReturnsToSource(planScheduleDrop(one("e1"), calendarDay, byDate)), true);
+    NodeAssert.equal(
+      dropReturnsToSource(planListDrop(list, "a", { kind: "list-item", taskId: "c" }, true)),
+      true,
+    );
+    // A drop that does nothing is a cancel.
+    NodeAssert.equal(
+      dropReturnsToSource(planScheduleDrop(task, { kind: "list-bottom" }, byDate)),
+      true,
+    );
+    NodeAssert.equal(dropReturnsToSource(null), true);
   });
 });

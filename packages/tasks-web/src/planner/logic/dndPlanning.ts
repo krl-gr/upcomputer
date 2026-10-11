@@ -131,6 +131,16 @@ export function planScheduleDrop(
 }
 
 /**
+ * Whether the drag preview flies back to the dragged element on release. A
+ * task added to a day stays in the list, so flying back to its row would look
+ * like a cancelled drop; its new card is already in the day. A reorder or a
+ * moved entry re-renders in its new place, and the preview settles there.
+ */
+export function dropReturnsToSource(plan: { readonly kind: string } | null): boolean {
+  return plan?.kind !== "add";
+}
+
+/**
  * Where a drop on a day column lands: above the first card whose middle is
  * below the pointer, else last. The header, the padding and the gaps between
  * cards count too, so the first and the last place are as easy to hit as any.
