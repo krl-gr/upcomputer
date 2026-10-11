@@ -22,6 +22,15 @@ export function showsDraftHeroNoProjectPicker(): boolean {
 }
 
 /**
+ * Whether the hero's project picker lists "No project" first, as V1's did.
+ * Upstream moved that choice to the line under the heading; with our row the
+ * picker keeps it too, so a project draft leaves its project from the picker.
+ */
+export function showsDraftHeroNoProjectItem(): boolean {
+  return showsUpComputerComposerContextRow();
+}
+
+/**
  * Where the composer's control shortcuts (`composer.workspace`, `composer.host`)
  * look for their trigger. Our row sits under the composer shell, so with it the
  * scope is the whole composer stack.

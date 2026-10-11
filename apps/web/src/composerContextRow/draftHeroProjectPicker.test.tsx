@@ -147,6 +147,25 @@ describe("the empty draft's hero", () => {
     expect(container.textContent).toContain("or start without a project");
   });
 
+  it('lists "No project" first in the picker of a draft with a project, as V1 did', async () => {
+    await renderHero(UPCOMPUTER);
+    await act(async () => (projectPicker() as HTMLElement).click());
+    const options = [...document.querySelectorAll('[role="option"]')].map(
+      (option) => option.textContent,
+    );
+    expect(options).toEqual(["No project", "UpComputer", "Add project"]);
+  });
+
+  it("leaves leaving the project to the line under the heading with the upstream surface", async () => {
+    state.surface = "upstream";
+    await renderHero(UPCOMPUTER);
+    await act(async () => (projectPicker() as HTMLElement).click());
+    const options = [...document.querySelectorAll('[role="option"]')].map(
+      (option) => option.textContent,
+    );
+    expect(options).toEqual(["UpComputer", "Add project"]);
+  });
+
   it('keeps upstream\'s "No project" picker with the upstream surface', async () => {
     state.surface = "upstream";
     await renderHero(SCRATCH);

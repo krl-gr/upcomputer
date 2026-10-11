@@ -3,7 +3,7 @@ import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDr
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,11 +41,17 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { showsDraftHeroNoProjectPicker } from "~/composerContextRow/composerContextRowSurface";
+import {
+  showsDraftHeroNoProjectItem,
+  showsDraftHeroNoProjectPicker,
+} from "~/composerContextRow/composerContextRowSurface";
+import { projectIconColorClassName } from "~/projectIconColors";
 
 // Picker value for the "Add project" row; real entries are keyed by logical
 // project key.
 const ADD_PROJECT_VALUE = "add-project";
+// Picker value for V1's "No project" row (`showsDraftHeroNoProjectItem`).
+const NO_PROJECT_VALUE = "no-project";
 
 interface PickerItem {
   readonly value: string;
@@ -184,10 +190,13 @@ export function DraftHeroHeadline({
   // a project, so it only trails the unfiltered list.
   const pickerItems = useMemo<readonly PickerItem[]>(
     () => [
+      ...(scratchWorkspaceRoot !== null && !isScratchDraft && showsDraftHeroNoProjectItem()
+        ? [{ value: NO_PROJECT_VALUE, label: "No project" }]
+        : []),
       ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
       { value: ADD_PROJECT_VALUE, label: "Add project" },
     ],
-    [menuEntries],
+    [isScratchDraft, menuEntries, scratchWorkspaceRoot],
   );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -288,6 +297,10 @@ export function DraftHeroHeadline({
           openAddProject();
           return;
         }
+        if (item.value === NO_PROJECT_VALUE) {
+          void startScratch();
+          return;
+        }
         const entry = projectEntryByKey.get(item.value);
         if (!entry || item.value === activeProjectKey) {
           return;
@@ -332,6 +345,14 @@ export function DraftHeroHeadline({
               <ComboboxItem key={item.value} hideIndicator value={item}>
                 {item.value === ADD_PROJECT_VALUE ? (
                   <FolderPlusIcon className="size-4 shrink-0" />
+                ) : item.value === NO_PROJECT_VALUE ? (
+                  // Boxed like ProjectFavicon so the label lines up with project rows.
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex size-4 shrink-0 ${projectIconColorClassName("gray")}`}
+                  >
+                    <MessageSquareDashedIcon className="size-full" />
+                  </span>
                 ) : entry ? (
                   <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
                 ) : null}
