@@ -3,7 +3,12 @@ import { describe, test } from "vite-plus/test";
 
 import { layoutDay } from "./calendarLayout.ts";
 import { addDays, viewStartFor, weekStartOf, weekdayOf } from "./dates.ts";
-import { calendarDropTime, planListDrop, planScheduleDrop } from "./dndPlanning.ts";
+import {
+  calendarDropTime,
+  planListDrop,
+  planScheduleDrop,
+  queueDropTarget,
+} from "./dndPlanning.ts";
 import { insertionIndex } from "./placement.ts";
 import { countProgress, progressLabel, weekRangeOf } from "./progress.ts";
 import {
@@ -253,6 +258,86 @@ describe("drag and drop planning", () => {
       ),
       null,
     );
+  });
+
+  // Cards of 2026-10-07 as a day column lays them out: 40px tall, 4px apart, under a header.
+  const cards = [
+    { id: "e1", top: 100, height: 40 },
+    { id: "e2", top: 144, height: 40 },
+    { id: "e3", top: 188, height: 40 },
+  ];
+  const dropAt = (source: ReturnType<typeof one>, date: string, pointerY: number) =>
+    planScheduleDrop(
+      source,
+      queueDropTarget(date, pointerY, date === "2026-10-07" ? cards : []),
+      byDate,
+    );
+
+  test("a day column drop goes above the first card whose middle is below the pointer", () => {
+    NodeAssert.deepEqual(queueDropTarget("2026-10-07", 60, cards), {
+      kind: "queue-entry",
+      entryId: "e1",
+      date: "2026-10-07",
+    });
+    NodeAssert.deepEqual(queueDropTarget("2026-10-07", 125, cards), {
+      kind: "queue-entry",
+      entryId: "e2",
+      date: "2026-10-07",
+    });
+    NodeAssert.deepEqual(queueDropTarget("2026-10-07", 220, cards), {
+      kind: "queue-column",
+      date: "2026-10-07",
+    });
+  });
+
+  test("an entry reaches the first place of its own day", () => {
+    const first = { kind: "move", ids: ["e3"], date: "2026-10-07", placement: { before: "e1" } };
+    // Just under the header, the gap above the first card, its upper half.
+    NodeAssert.deepEqual(dropAt(one("e3"), "2026-10-07", 60), first);
+    NodeAssert.deepEqual(dropAt(one("e3"), "2026-10-07", 98), first);
+    NodeAssert.deepEqual(dropAt(one("e3"), "2026-10-07", 110), first);
+    // Its lower half is the second place.
+    NodeAssert.deepEqual(dropAt(one("e3"), "2026-10-07", 130), {
+      kind: "move",
+      ids: ["e3"],
+      date: "2026-10-07",
+      placement: { before: "e2" },
+    });
+  });
+
+  test("an entry from another day reaches the first place", () => {
+    NodeAssert.deepEqual(dropAt(one("e4", "2026-10-08"), "2026-10-07", 110), {
+      kind: "move",
+      ids: ["e4"],
+      date: "2026-10-07",
+      placement: { before: "e1" },
+    });
+  });
+
+  test("an entry reaches an empty day and the last place", () => {
+    NodeAssert.deepEqual(dropAt(one("e1"), "2026-10-09", 300), {
+      kind: "move",
+      ids: ["e1"],
+      date: "2026-10-09",
+      placement: { at: "bottom" },
+    });
+    // The lower half of the last card, or anywhere below it.
+    const last = { kind: "move", ids: ["e1"], date: "2026-10-07", placement: { at: "bottom" } };
+    NodeAssert.deepEqual(dropAt(one("e1"), "2026-10-07", 220), last);
+    NodeAssert.deepEqual(dropAt(one("e1"), "2026-10-07", 600), last);
+    NodeAssert.deepEqual(dropAt(one("e4", "2026-10-08"), "2026-10-07", 220), {
+      kind: "move",
+      ids: ["e4"],
+      date: "2026-10-07",
+      placement: { at: "bottom" },
+    });
+  });
+
+  test("a drop next to the entry itself changes nothing", () => {
+    NodeAssert.equal(dropAt(one("e2"), "2026-10-07", 150), null);
+    NodeAssert.equal(dropAt(one("e2"), "2026-10-07", 175), null);
+    NodeAssert.equal(dropAt(one("e2"), "2026-10-07", 130), null);
+    NodeAssert.equal(dropAt(one("e3"), "2026-10-07", 220), null);
   });
 
   test("selected entries move as a block, and a calendar drop sets their start time", () => {

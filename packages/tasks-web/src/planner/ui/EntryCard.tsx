@@ -1,13 +1,12 @@
 import {
   memo,
-  useCallback,
   useState,
   type CSSProperties,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useDraggable } from "@dnd-kit/core";
 import { CheckIcon, CircleCheckIcon, CircleIcon, MoreVerticalIcon, SquareIcon } from "lucide-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
@@ -154,31 +153,15 @@ export const QueueEntryCard = memo(function QueueEntryCard(props: {
 }) {
   const { entry, handlers } = props;
   const pending = entry.id.startsWith("pending-entry-");
-  const {
-    attributes,
-    listeners,
-    isDragging,
-    setNodeRef: setDragNode,
-  } = useDraggable({
+  // Its day column is the drop target; where in the column follows the pointer.
+  const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
     id: `queue-entry:${entry.id}`,
     data: { type: "entry", entryId: entry.id, date: entry.date } satisfies EntryDragData,
     disabled: pending || (props.selectMode && !props.selected),
   });
-  const { setNodeRef: setDropNode } = useDroppable({
-    id: `queue-drop-entry:${entry.id}`,
-    data: { type: "queue-entry", entryId: entry.id, date: entry.date },
-    disabled: pending,
-  });
-  const setNode = useCallback(
-    (node: HTMLElement | null) => {
-      setDragNode(node);
-      setDropNode(node);
-    },
-    [setDragNode, setDropNode],
-  );
   return (
     <div
-      ref={setNode}
+      ref={setNodeRef}
       {...attributes}
       {...listeners}
       data-entry-id={entry.id}

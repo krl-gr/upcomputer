@@ -20,6 +20,7 @@ import {
   calendarDropTime,
   planListDrop,
   planScheduleDrop,
+  queueDropTarget,
   type DragSource,
   type DropPlan,
   type DropTarget,
@@ -139,12 +140,19 @@ export function usePlannerDnd(input: {
         return data.taskId ? { kind: "list-item", taskId: data.taskId } : null;
       case "list-bottom":
         return { kind: "list-bottom" };
-      case "queue-column":
-        return data.date ? { kind: "queue-column", date: data.date } : null;
-      case "queue-entry":
-        return data.entryId && data.date
-          ? { kind: "queue-entry", entryId: data.entryId, date: data.date }
-          : null;
+      case "queue-column": {
+        const current = drag.current;
+        if (!data.date || !current) return null;
+        // The cards' live boxes: dnd-kit measures droppables once per drag,
+        // and the drop line moves the cards below it while it shows.
+        const cards = [
+          ...document.querySelectorAll(`[data-queue-date="${data.date}"] [data-entry-id]`),
+        ].map((node) => {
+          const box = node.getBoundingClientRect();
+          return { id: node.getAttribute("data-entry-id") ?? "", top: box.top, height: box.height };
+        });
+        return queueDropTarget(data.date, current.pointerY ?? current.startY + deltaY, cards);
+      }
       case "calendar-day": {
         const current = drag.current;
         if (!data.date || !current) return null;

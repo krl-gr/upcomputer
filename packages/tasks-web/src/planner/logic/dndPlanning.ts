@@ -115,8 +115,9 @@ export function planScheduleDrop(
     case "queue-entry": {
       if (source.ids.includes(target.entryId)) return null;
       const onDate = entryIdsByDate.get(target.date) ?? [];
-      if (source.ids.length === 1 && onDate[onDate.indexOf(source.entryId) + 1] === target.entryId)
-        return null;
+      const at = onDate.indexOf(source.entryId);
+      // Only an entry already on this date can be just above the target.
+      if (source.ids.length === 1 && at >= 0 && onDate[at + 1] === target.entryId) return null;
       return {
         kind: "move",
         ids: source.ids,
@@ -127,6 +128,22 @@ export function planScheduleDrop(
     default:
       return null;
   }
+}
+
+/**
+ * Where a drop on a day column lands: above the first card whose middle is
+ * below the pointer, else last. The header, the padding and the gaps between
+ * cards count too, so the first and the last place are as easy to hit as any.
+ */
+export function queueDropTarget(
+  date: string,
+  pointerY: number,
+  cards: ReadonlyArray<{ readonly id: string; readonly top: number; readonly height: number }>,
+): DropTarget {
+  const before = cards.find((card) => pointerY < card.top + card.height / 2);
+  return before
+    ? { kind: "queue-entry", entryId: before.id, date }
+    : { kind: "queue-column", date };
 }
 
 /**
