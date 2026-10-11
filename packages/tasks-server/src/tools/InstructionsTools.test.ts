@@ -802,6 +802,67 @@ test("task_context lists the project's enabled agents with their queues", async 
   NodeAssert.equal("agents" in (await call("task_context")).body, false);
 });
 
+test("task_context leaves a person's own tasks out of agent queues unless tags hand them over", async () => {
+  const { call, run } = await harness();
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };
+  const at = new Date().toISOString();
+  await run(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      for (const [id, startTags] of [
+        ["anyone", []],
+        ["developer", ["dev"]],
+      ] as const) {
+        yield* repository.upsertAgent({
+          id: TaskAgentId.make(id),
+          projectId: null,
+          name: id,
+          enabled: true,
+          startStatuses: ["To Do"],
+          startTags,
+          startRunStatuses: [],
+          config: { role: id, modelSelection, instructions: "Work." },
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+      for (const [id, audience, tags] of [
+        ["agent-work", "agent", []],
+        ["my-errand", "person", []],
+        ["handed-over", "person", ["dev"]],
+      ] as const) {
+        yield* repository.upsert({
+          id: TaskId.make(id),
+          projectId: ProjectId.make("project-a"),
+          title: id,
+          description: "",
+          output: null,
+          status: "To Do",
+          priority: null,
+          createdBy: "test",
+          assigneeAgentRunId: null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          metadata: null,
+          tags,
+          audience,
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+        });
+      }
+    }),
+  );
+
+  const context = (await call("task_context", { projectId: "project-a" })).body;
+  const byId = Object.fromEntries(
+    context.agents.map((agent: { readonly id: string }) => [agent.id, agent]),
+  );
+  // The agent without tags would never start on either person task.
+  NodeAssert.deepEqual(byId.anyone.queue, { "To Do": 1, "In Progress": 0 });
+  NodeAssert.deepEqual(byId.developer.queue, { "To Do": 1, "In Progress": 0 });
+});
+
 test("task_context shows a tag-only agent busy once a run holds its To Do task", async () => {
   const { call, run } = await harness();
   const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };

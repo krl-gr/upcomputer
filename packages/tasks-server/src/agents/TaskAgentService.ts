@@ -159,14 +159,24 @@ const PENDING_SESSION_START_TIMEOUT_MS = 2 * 60 * 1_000;
 const PENDING_RESULT_CONSUMPTION_TIMEOUT_MS = 2 * 60 * 1_000;
 
 /**
+ * Whether a task's kind and audience let an agent start on it at all. Routines
+ * never start agents, and a person task starts only an agent that requires
+ * tags: adding all of its tags is the explicit hand-off.
+ */
+export function agentMayTakeTask(
+  agent: Pick<TaskAgent, "startTags">,
+  task: Pick<Task, "kind" | "audience">,
+): boolean {
+  if (task.kind === "routine") return false;
+  return task.audience !== "person" || agent.startTags.length > 0;
+}
+
+/**
  * Task-state part of an agent's trigger. Whether a matching agent actually
- * starts also depends on its previous runs (see `startAgent`). Routines never
- * start agents, and a person task starts only an agent that requires tags:
- * adding all of its tags is the explicit hand-off.
+ * starts also depends on its previous runs (see `startAgent`).
  */
 export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
-  if (task.kind === "routine") return false;
-  if (task.audience === "person" && agent.startTags.length === 0) return false;
+  if (!agentMayTakeTask(agent, task)) return false;
   if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
