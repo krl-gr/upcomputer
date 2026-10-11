@@ -10,8 +10,10 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServerResponse } from "effect/http";
 import { openMediaFile } from "./assets/MediaFile.ts";
@@ -66,6 +68,39 @@ describe("untraced requests", () => {
         }),
       ),
     );
+  });
+});
+
+describe("request logging", () => {
+  it.effect("leaves webhook requests and their tokens out of the request log", () => {
+    const logged: Array<string> = [];
+    const logger = Logger.make(({ fiber }) => {
+      logged.push(JSON.stringify(fiber.getRef(References.CurrentLogAnnotations)));
+    });
+    return Effect.gen(function* () {
+      const layerRoutes = Layer.effectDiscard(
+        Effect.gen(function* () {
+          const router = yield* HttpRouter.HttpRouter;
+          yield* router.add("POST", "/api/hooks/:task/:token", HttpServerResponse.empty());
+          yield* router.add("GET", "/api/environment", HttpServerResponse.empty());
+        }),
+      );
+      // Logging on, as with --log-websocket-events.
+      const services = yield* Layer.build(
+        HttpRouter.serve(Layer.merge(layerRoutes, ServerHttp.layerUnloggedWebhookRequests), {
+          disableListenLog: true,
+        }).pipe(Layer.provideMerge(NodeHttpServer.layerTest)),
+      );
+      const client = Context.get(services, HttpClient.HttpClient);
+
+      yield* client.post("/api/hooks/review-task/SYNTHETIC_TOKEN");
+      // No route takes GET, so the router answers; that response stays out too.
+      yield* client.get("/api/hooks/review-task/SYNTHETIC_TOKEN?x=1");
+      yield* client.get("/api/environment");
+
+      expect(logged.some((entry) => entry.includes("/api/environment"))).toBe(true);
+      expect(logged.filter((entry) => entry.includes("SYNTHETIC_TOKEN"))).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(Logger.layer([logger], { mergeWithExisting: false })));
   });
 });
 

@@ -391,14 +391,35 @@ const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_P
 // privately, so it is provided to the served layer, never merged into the
 // routes. Add paths here instead of providing it again. The query string is
 // ignored, as in routing.
+const requestPath = (url: string) => {
+  const queryIndex = url.indexOf("?");
+  return queryIndex === -1 ? url : url.slice(0, queryIndex);
+};
+
+// Webhook URLs carry their secret token in the path.
+const isWebhookPath = (path: string) => path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`);
+
 const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
-  const queryIndex = request.url.indexOf("?");
-  const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
-  // Webhook URLs carry their secret token in the path, so they never reach a trace.
-  return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`);
+  const path = requestPath(request.url);
+  return UNTRACED_REQUEST_PATHS.has(path) || isWebhookPath(path);
 });
 
 export const withUntracedRequests = Layer.provide(layerUntracedRequests);
+
+/**
+ * Keeps webhook requests out of the request log (`--log-websocket-events`),
+ * which records each request's path and so a webhook's token. Global, so a
+ * webhook path that matches no route is left out too.
+ */
+export const layerUnloggedWebhookRequests = HttpRouter.middleware(
+  (httpEffect) =>
+    Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      isWebhookPath(requestPath(request.url))
+        ? HttpMiddleware.withLoggerDisabled(httpEffect)
+        : httpEffect,
+    ),
+  { global: true },
+);
 
 export const layerAssetRoute = HttpRouter.add(
   "GET",
