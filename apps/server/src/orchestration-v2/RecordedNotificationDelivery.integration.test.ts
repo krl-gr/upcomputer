@@ -244,3 +244,23 @@ it.effect("a card recorded while the provider starts reaches the next prompt", (
     }),
   ),
 );
+
+it.effect("a slash command stays a command, and the next prompt carries the card", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness("recorded-notification-slash-command");
+      yield* Effect.gen(function* () {
+        const { recordCard, send } = yield* scenario(harness.cwd);
+        yield* send("first");
+        yield* recordCard("A");
+        yield* send("/hello WORLD");
+        assert.strictEqual(harness.prompts[1], "/hello WORLD");
+        yield* send("next");
+        assert.include(harness.prompts[2], "- Task A done");
+        assert.isTrue(harness.prompts[2]!.endsWith("User message:\nnext"));
+        yield* send("after");
+        assert.strictEqual(harness.prompts[3], "after");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  ),
+);

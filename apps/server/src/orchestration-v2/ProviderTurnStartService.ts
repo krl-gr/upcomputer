@@ -837,19 +837,17 @@ export const layer: Layer.Layer<
         createdAt: providerThread.createdAt,
         updatedAt: now,
       };
-      const compactionMessageIds = new Set(
+      // A native slash command (/compact included) must start the prompt, so it carries
+      // no note and delivers none; the next ordinary prompt does.
+      const commandMessageIds = new Set(
         projection.messages
-          .filter(
-            (candidate) =>
-              candidate.attachments.length === 0 &&
-              candidate.text.trim().toLowerCase() === "/compact",
-          )
+          .filter((candidate) => candidate.text.trimStart().startsWith("/"))
           .map((candidate) => candidate.id),
       );
       // Read with this snapshot and recorded on the attempt, so a notification recorded
       // while the provider starts waits for the next prompt.
       const recordedNotifications =
-        run.restartContinuationOfRunId !== undefined || compactionMessageIds.has(run.userMessageId)
+        run.restartContinuationOfRunId !== undefined || commandMessageIds.has(run.userMessageId)
           ? []
           : pendingRecordedNotifications({
               items: projection.turnItems,
@@ -985,7 +983,7 @@ export const layer: Layer.Layer<
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds,
+        commandMessageIds,
         run,
         attempts: projection.attempts,
       });
