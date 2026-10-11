@@ -1183,6 +1183,61 @@ test("an unarchive keeps its caller's ceiling until the agent starts", async () 
   );
 });
 
+test("task_create with a tasks list starts one run per task created in a start status", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const tools = yield* Effect.provide(
+        Effect.gen(function* () {
+          return yield* TaskToolService;
+        }),
+        TaskToolServiceLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(TaskRepository, repository),
+              Layer.succeed(TaskAgentService, service),
+              Layer.succeed(TaskPromptSettingsStore, {} as never),
+              Layer.succeed(TaskToolContextResolver, {
+                resolve: () =>
+                  Effect.succeed({
+                    projects: [],
+                    resolvedProject: { project: { id: project, title: "Project" } },
+                  } as never),
+              }),
+              Layer.succeed(ThreadManagementService, {} as never),
+              Layer.succeed(ProjectStoreV2, {} as never),
+              deterministicCrypto(),
+            ),
+          ),
+        ),
+      );
+      const result = yield* tools.call({
+        name: "task_create",
+        args: {
+          tasks: ["a", "b", "c"].map((id) => ({
+            id,
+            title: id,
+            description: "",
+            status: id === "b" ? "Backlog" : "To Do",
+          })),
+        },
+        context: { source: "provider", mutationPolicy: "allow", threadId: ThreadId.make("chat") },
+      });
+      NodeAssert.equal(result.isError, false, result.text);
+
+      // Jobs run in order: once a later task's run starts, the list's jobs are done.
+      const next = yield* repository.upsert(taskInput("z"));
+      yield* service.scheduleTaskChanged({ task: next, reason: "created" });
+      yield* waitFor("run on z", runsOf(repository, "z").pipe(Effect.map((runs) => runs[0])));
+      NodeAssert.equal((yield* runsOf(repository, "a")).length, 1);
+      NodeAssert.equal((yield* runsOf(repository, "b")).length, 0);
+      NodeAssert.equal((yield* runsOf(repository, "c")).length, 1);
+      NodeAssert.equal(calls.filter((call) => call.type === "thread.create").length, 3);
+    }),
+  );
+});
+
 test("an agent made broader just before an agent's unarchive commits keeps the task archived, also after recovery", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {

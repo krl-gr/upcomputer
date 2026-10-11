@@ -1,3 +1,5 @@
+import { TASK_CREATE_BATCH_LIMIT } from "@t3tools/tasks-contracts/v1";
+
 import type { TaskToolSpec } from "./TaskToolTypes.ts";
 
 const object = (
@@ -31,6 +33,23 @@ const runStatuses = {
 const dateTime = {
   type: ["string", "null"],
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
+} as const;
+
+/** One task of task_create; required unless the call passes a tasks list. */
+const taskCreateFields = {
+  id,
+  title: id,
+  description: { type: "string" },
+  output: { type: ["string", "null"] },
+  status: id,
+  priority: { type: ["string", "null"] },
+  createdBy: id,
+  assigneeAgentRunId: { type: ["string", "null"] },
+  sourceThreadId: { type: ["string", "null"] },
+  sourceRunId: { type: ["string", "null"] },
+  metadata: {},
+  tags,
+  notBefore: dateTime,
 } as const;
 
 /** Server trigger semantics returned by task_context; not user-editable guidance. */
@@ -127,28 +146,18 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description:
-      "Create a task in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. A new task joins the end of the global order, so tasks created one after another keep that order.",
-    inputSchema: object(
-      {
-        id,
-        projectId: id,
-        workspaceRoot: id,
-        title: id,
-        description: { type: "string" },
-        output: { type: ["string", "null"] },
-        status: id,
-        priority: { type: ["string", "null"] },
-        createdBy: id,
-        assigneeAgentRunId: { type: ["string", "null"] },
-        sourceThreadId: { type: ["string", "null"] },
-        sourceRunId: { type: ["string", "null"] },
-        metadata: {},
-        tags,
-        notBefore: dateTime,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks join the end of the global order in the order given. One task returns the task; a list returns each task's id, rank, title, status, tags and notBefore.`,
+    inputSchema: object({
+      projectId: id,
+      workspaceRoot: id,
+      ...taskCreateFields,
+      tasks: {
+        type: "array",
+        minItems: 1,
+        maxItems: TASK_CREATE_BATCH_LIMIT,
+        items: object(taskCreateFields, ["title", "description", "status"]),
       },
-      ["title", "description", "status"],
-    ),
+    }),
   },
   {
     type: "function",

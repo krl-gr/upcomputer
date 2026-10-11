@@ -8,7 +8,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * here. Their queue wording said "oldest Backlog task" while hand-offs
  * followed the list order, which put newer tasks first.
  */
-const PREVIOUS_DEFAULTS = {
+export const PREVIOUS_DEFAULTS = {
   taskCreation: `Create focused, independently reviewable tasks. The description must be self-contained and keep the user's intent: goal, context, target, constraints, verification and expected output, so the agent never needs the originating chat. Include absolute paths of attached images and tell the agent to open them.
 
 Choosing the agent: unless the user's recorded preferences or explicit words already decide it, do not pick one silently. Call agent_search, show the relevant agents (name, model, enabled, trigger statuses and tags), recommend one with a reason, and let the user decide. If none fits, propose creating one.
