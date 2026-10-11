@@ -87,7 +87,9 @@ import { expandHomePath } from "../../pathExpansion.ts";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
+  CODEX_T3_MCP_SERVER,
 } from "../../provider/CodexDeveloperInstructions.ts";
+import type { ToolCallHint } from "../../provider/ToolCallHints.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -712,6 +714,7 @@ export function buildCodexTurnStartParams(input: {
   readonly browserToolsAvailable?: boolean;
   readonly deviceToolsAvailable?: boolean;
   readonly orchestrationInstructions?: boolean;
+  readonly toolCallHints?: ReadonlyArray<ToolCallHint>;
   /** ChatGPT token sharing does not accept service tiers. */
   readonly omitServiceTier?: boolean;
 }) {
@@ -749,6 +752,7 @@ export function buildCodexTurnStartParams(input: {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
               orchestration: input.orchestrationInstructions ?? true,
+              ...(input.toolCallHints ? { toolCallHints: input.toolCallHints } : {}),
             },
           )
         : undefined;
@@ -1230,7 +1234,7 @@ export function codexThreadRuntimeParams(input: {
         ? {}
         : {
             mcp_servers: {
-              "t3-code": {
+              [CODEX_T3_MCP_SERVER]: {
                 url: mcpSession.endpoint,
                 http_headers: {
                   Authorization: mcpSession.authorizationHeader,
@@ -5584,6 +5588,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
                 orchestrationInstructions:
                   McpProviderSession.wantsOrchestrationInstructions(mcpSession),
+                ...(mcpSession?.toolCallHints ? { toolCallHints: mcpSession.toolCallHints } : {}),
                 omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               });
               yield* Ref.update(pendingRootTurns, (current) => {

@@ -7,6 +7,22 @@ import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
 } from "./T3OrchestrationInstructions.ts";
+import type { ToolCallHint } from "./ToolCallHints.ts";
+
+/** The name Codex gets the T3 MCP server under in its `mcp_servers` config. */
+export const CODEX_T3_MCP_SERVER = "t3-code";
+
+/**
+ * How Codex code mode names a T3 MCP tool in exec: the server name with
+ * characters other than letters, digits and `_` replaced by `_`.
+ */
+export const codexCodeModeToolName = (tool: string) =>
+  `tools.mcp__${CODEX_T3_MCP_SERVER.replace(/[^A-Za-z0-9_]/g, "_")}__${tool}`;
+
+const toolCallHintInstructions = (hints: ReadonlyArray<ToolCallHint>) =>
+  `In Codex code mode, call these Up.computer tools in exec directly, without an ALL_TOOLS lookup: ${hints
+    .map(({ name, args }) => `\`${codexCodeModeToolName(name)}(${args})\``)
+    .join(", ")}.`;
 
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## Up.computer devices
 
@@ -17,6 +33,8 @@ export interface T3CodeToolAvailability {
   readonly device: boolean;
   /** False omits the orchestration block; see `orchestrationInstructionsFor`. */
   readonly orchestration?: boolean;
+  /** Tools to name with their exec call shape; see `toolCallHintsFor`. */
+  readonly toolCallHints?: ReadonlyArray<ToolCallHint>;
 }
 
 const normalizeAvailability = (
@@ -217,6 +235,7 @@ export function buildCodexAdditionalContext(
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
   const orchestration = normalizeAvailability(toolsAvailable).orchestration !== false;
+  const toolCallHints = normalizeAvailability(toolsAvailable).toolCallHints ?? [];
   const userInstructions = currentUserInstructionsBlock();
   // Separate keys keep each value under Codex's per-entry token cap.
   return {
@@ -233,6 +252,14 @@ export function buildCodexAdditionalContext(
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime, omitUserInstructions: true }),
     },
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
+    ...(toolCallHints.length > 0
+      ? {
+          t3_code_tool_calls: {
+            kind: "application",
+            value: toolCallHintInstructions(toolCallHints),
+          },
+        }
+      : {}),
     ...(userInstructions
       ? { user_instructions: { kind: "application", value: userInstructions } }
       : {}),

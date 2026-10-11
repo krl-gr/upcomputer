@@ -32,6 +32,7 @@ import * as Stream from "effect/Stream";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import { orchestrationInstructionsFor } from "../provider/T3OrchestrationInstructions.ts";
+import { sameToolCallHints, toolCallHintsFor } from "../provider/ToolCallHints.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -471,6 +472,7 @@ export const layerWithOptions = (
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
                 const orchestrationInstructions = yield* orchestrationInstructionsFor(threadId);
+                const toolCallHints = yield* toolCallHintsFor(threadId);
                 const existing = McpProviderSession.readMcpProviderSession(threadId);
                 if (existing !== undefined) {
                   // Reserve before the async resolve so a release cannot
@@ -487,10 +489,14 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable
                   ) {
-                    if (existing.orchestrationInstructions !== orchestrationInstructions) {
+                    if (
+                      existing.orchestrationInstructions !== orchestrationInstructions ||
+                      !sameToolCallHints(existing.toolCallHints ?? [], toolCallHints)
+                    ) {
                       McpProviderSession.setMcpProviderSession({
                         ...existing,
                         orchestrationInstructions,
+                        toolCallHints,
                       });
                     }
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
@@ -507,6 +513,7 @@ export const layerWithOptions = (
                 McpProviderSession.setMcpProviderSession({
                   ...credential.config,
                   orchestrationInstructions,
+                  toolCallHints,
                 });
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };

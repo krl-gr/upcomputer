@@ -27,6 +27,7 @@ export {
   namesOrchestrationTool,
   registerOrchestrationInstructionsResolver,
 } from "./provider/T3OrchestrationInstructions.ts";
+export { registerToolCallHintsResolver, type ToolCallHint } from "./provider/ToolCallHints.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
 export {

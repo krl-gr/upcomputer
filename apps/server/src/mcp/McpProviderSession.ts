@@ -1,5 +1,7 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
+import type { ToolCallHint } from "../provider/ToolCallHints.ts";
+
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -20,6 +22,8 @@ export interface McpProviderSessionConfig {
    * this only keeps their long guide out of every model call. Defaults to true.
    */
   readonly orchestrationInstructions?: boolean;
+  /** Tools the agent may call without a lookup, as decided by `toolCallHintsFor`. */
+  readonly toolCallHints?: ReadonlyArray<ToolCallHint>;
   /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities?: ReadonlySet<string>;
   /**

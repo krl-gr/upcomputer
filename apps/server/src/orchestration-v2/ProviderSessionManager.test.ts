@@ -36,6 +36,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
 import { registerOrchestrationInstructionsResolver } from "../provider/T3OrchestrationInstructions.ts";
+import { registerToolCallHintsResolver } from "../provider/ToolCallHints.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -1167,7 +1168,7 @@ it.effect(
 );
 
 it.effect(
-  "ProviderSessionManagerV2 records whether the thread's agent gets the orchestration block",
+  "ProviderSessionManagerV2 records the thread's orchestration block and tool call hints",
   () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
@@ -1184,6 +1185,9 @@ it.effect(
         yield* registerOrchestrationInstructionsResolver((threadId) =>
           Effect.succeed(threadId === narrowed ? false : undefined),
         );
+        yield* registerToolCallHintsResolver((threadId) =>
+          Effect.succeed(threadId === chat ? [{ name: "task_get", args: "{id}" }] : []),
+        );
         for (const threadId of [narrowed, chat]) {
           const providerSessionId = yield* idAllocator.allocate.providerSession({
             providerInstanceId: modelSelection.instanceId,
@@ -1198,6 +1202,8 @@ it.effect(
         const [taskAgent, chatSession] = yield* Ref.get(mcpConfigs);
         assert.isFalse(taskAgent?.orchestrationInstructions);
         assert.isTrue(chatSession?.orchestrationInstructions);
+        assert.deepEqual(taskAgent?.toolCallHints, []);
+        assert.deepEqual(chatSession?.toolCallHints, [{ name: "task_get", args: "{id}" }]);
       });
 
       yield* effect.pipe(

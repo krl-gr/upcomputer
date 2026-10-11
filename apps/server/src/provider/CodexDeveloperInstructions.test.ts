@@ -5,6 +5,7 @@ import { describe, it } from "vite-plus/test";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
+  CODEX_T3_MCP_SERVER,
 } from "./CodexDeveloperInstructions.ts";
 
 describe("buildCodexDeveloperInstructions", () => {
@@ -101,6 +102,36 @@ describe("T3 browser developer instructions", () => {
   it("tracks the turn's MCP configuration rather than defaulting to on", () => {
     NodeAssert.match(toolInstructions(runtime, true), /preview_open/);
     NodeAssert.doesNotMatch(toolInstructions(runtime, false), /preview_open/);
+  });
+});
+
+describe("Codex tool call hints", () => {
+  const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+
+  it("names hinted tools as code mode exposes the t3-code server's tools", () => {
+    // Codex replaces the server name's `-` with `_` (checked against Codex 0.162 rollouts).
+    NodeAssert.equal(CODEX_T3_MCP_SERVER, "t3-code");
+    const context = buildCodexAdditionalContext(runtime, {
+      browser: false,
+      device: false,
+      toolCallHints: [
+        { name: "task_get", args: "{id}" },
+        { name: "task_search", args: "{status?}" },
+      ],
+    });
+    NodeAssert.equal(
+      context.t3_code_tool_calls?.value,
+      "In Codex code mode, call these Up.computer tools in exec directly, without an ALL_TOOLS lookup: `tools.mcp__t3_code__task_get({id})`, `tools.mcp__t3_code__task_search({status?})`.",
+    );
+  });
+
+  it("adds nothing without hints", () => {
+    NodeAssert.equal(
+      buildCodexAdditionalContext(runtime, { browser: true, device: false, toolCallHints: [] })
+        .t3_code_tool_calls,
+      undefined,
+    );
+    NodeAssert.equal(buildCodexAdditionalContext(runtime, true).t3_code_tool_calls, undefined);
   });
 });
 
