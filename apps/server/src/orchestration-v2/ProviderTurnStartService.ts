@@ -837,6 +837,26 @@ export const layer: Layer.Layer<
         createdAt: providerThread.createdAt,
         updatedAt: now,
       };
+      const compactionMessageIds = new Set(
+        projection.messages
+          .filter(
+            (candidate) =>
+              candidate.attachments.length === 0 &&
+              candidate.text.trim().toLowerCase() === "/compact",
+          )
+          .map((candidate) => candidate.id),
+      );
+      // Read with this snapshot and recorded on the attempt, so a notification recorded
+      // while the provider starts waits for the next prompt.
+      const recordedNotifications =
+        run.restartContinuationOfRunId !== undefined || compactionMessageIds.has(run.userMessageId)
+          ? []
+          : pendingRecordedNotifications({
+              items: projection.turnItems,
+              runs: projection.runs,
+              providerTurns: projection.providerTurns,
+              attempts: projection.attempts,
+            });
       const runningRun: OrchestrationV2Run = {
         ...run,
         status: "running",
@@ -844,6 +864,9 @@ export const layer: Layer.Layer<
       };
       const runningAttempt: OrchestrationV2RunAttempt = {
         ...attempt,
+        ...(recordedNotifications.length === 0
+          ? {}
+          : { promptedNotificationIds: recordedNotifications.map((item) => item.id) }),
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
@@ -959,15 +982,6 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
-      const compactionMessageIds = new Set(
-        projection.messages
-          .filter(
-            (candidate) =>
-              candidate.attachments.length === 0 &&
-              candidate.text.trim().toLowerCase() === "/compact",
-          )
-          .map((candidate) => candidate.id),
-      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
@@ -980,16 +994,7 @@ export const layer: Layer.Layer<
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
-        recordedNotificationsNote(
-          pendingRecordedNotifications({
-            items: projection.turnItems,
-            runs: projection.runs,
-            providerTurns: projection.providerTurns,
-            attempts: projection.attempts,
-            compactionMessageIds,
-            run,
-          }),
-        ),
+        recordedNotificationsNote(recordedNotifications),
       ]
         .filter((part) => part !== "")
         .join("\n\n");

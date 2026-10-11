@@ -1,6 +1,5 @@
 import { assert, it } from "@effect/vitest";
 import {
-  MessageId,
   RunAttemptId,
   RunId,
   ThreadId,
@@ -18,14 +17,12 @@ import {
 const minute = (value: number) =>
   DateTime.makeUnsafe(`2026-10-11T10:${String(value).padStart(2, "0")}:00.000Z`);
 
-function run(ordinal: number, startedAt: number, extra: Partial<OrchestrationV2Run> = {}) {
+function run(ordinal: number, extra: Partial<OrchestrationV2Run> = {}) {
   return {
     id: RunId.make(`run:${ordinal}`),
     ordinal,
-    userMessageId: MessageId.make(`message:${ordinal}`),
     activeAttemptId: RunAttemptId.make(`attempt:${ordinal}`),
     status: "completed",
-    startedAt: minute(startedAt),
     ...extra,
   } as OrchestrationV2Run;
 }
@@ -54,86 +51,81 @@ function notice(at: number, extra: Partial<OrchestrationV2TurnItem> = {}) {
   } as OrchestrationV2TurnItem;
 }
 
+/** One attempt per run, with the notices its prompt carried and its provider turn status. */
 const pending = (input: {
-  readonly target: OrchestrationV2Run;
-  readonly runs: ReadonlyArray<OrchestrationV2Run>;
+  readonly runs: ReadonlyArray<{
+    readonly run: OrchestrationV2Run;
+    readonly prompted?: ReadonlyArray<number>;
+    readonly turn?: "completed" | "failed" | "interrupted";
+  }>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
-  readonly compactions?: ReadonlyArray<string>;
 }) =>
   pendingRecordedNotifications({
     items: input.items,
-    runs: input.runs,
-    // Every run except the target completed a provider turn.
-    providerTurns: input.runs
-      .filter((source) => source.id !== input.target.id)
-      .map((source) => ({ runAttemptId: source.activeAttemptId!, status: "completed" as const })),
-    attempts: input.runs.map((source) => ({ id: source.activeAttemptId!, runId: source.id })),
-    compactionMessageIds: new Set(input.compactions ?? []),
-    run: input.target,
+    runs: input.runs.map((entry) => entry.run),
+    providerTurns: input.runs.flatMap((entry) =>
+      entry.turn === undefined
+        ? []
+        : [{ runAttemptId: entry.run.activeAttemptId!, status: entry.turn }],
+    ),
+    attempts: input.runs.map((entry) => ({
+      id: entry.run.activeAttemptId!,
+      runId: entry.run.id,
+      ...(entry.prompted === undefined
+        ? {}
+        : {
+            promptedNotificationIds: entry.prompted.map((at) =>
+              TurnItemId.make(`turn-item:notification:${at}`),
+            ),
+          }),
+    })),
   }).map((item) => (item.type === "notification" ? item.summary : item.type));
 
-it("carries notifications recorded since the last prompted run, once", () => {
-  const first = run(1, 1);
-  const second = run(2, 10);
-  const third = run(3, 20);
-  // Recorded before run 1, while run 1 ran, and after it.
+it("carries notifications until a completed turn's prompt carried them", () => {
   const items = [notice(0), notice(5), notice(8)];
-  assert.deepEqual(pending({ target: first, runs: [first], items }), [
-    "Notice 0",
-    "Notice 5",
-    "Notice 8",
-  ]);
-  assert.deepEqual(pending({ target: second, runs: [first, second], items }), [
-    "Notice 5",
-    "Notice 8",
-  ]);
-  // Run 2's completed turn delivered them.
-  assert.deepEqual(pending({ target: third, runs: [first, second, third], items }), []);
+  assert.deepEqual(pending({ runs: [], items }), ["Notice 0", "Notice 5", "Notice 8"]);
+  // Run 1's prompt carried 0 and 5; 8 was recorded after it was read.
+  assert.deepEqual(
+    pending({ runs: [{ run: run(1), prompted: [0, 5], turn: "completed" }], items }),
+    ["Notice 8"],
+  );
 });
 
-it("ignores notifications of runs, and turns that did not prompt", () => {
-  const first = run(1, 1);
+it("does not count a prompt whose turn did not complete, or a rolled-back run", () => {
+  const items = [notice(2)];
+  assert.deepEqual(pending({ runs: [{ run: run(1), prompted: [2], turn: "failed" }], items }), [
+    "Notice 2",
+  ]);
+  assert.deepEqual(pending({ runs: [{ run: run(1), prompted: [2] }], items }), ["Notice 2"]);
+  assert.deepEqual(
+    pending({
+      runs: [{ run: run(1, { status: "rolled_back" }), prompted: [2], turn: "completed" }],
+      items,
+    }),
+    ["Notice 2"],
+  );
+});
+
+it("does not infer delivery from a later run's start time", () => {
+  // Recorded while run 1 started: its prompt did not carry it, though run 1 started later.
+  const items = [notice(5)];
+  assert.deepEqual(
+    pending({
+      runs: [{ run: run(1, { startedAt: minute(6) }), turn: "completed" }],
+      items,
+    }),
+    ["Notice 5"],
+  );
+});
+
+it("ignores notifications of runs and other turn items", () => {
   const items = [
     notice(2),
     // A wake's notification belongs to its own run, whose prompt is its text.
     notice(3, { runId: RunId.make("run:1") }),
     { ...notice(4), type: "system_notice", message: "Other" } as OrchestrationV2TurnItem,
   ];
-  // Run 1 never completed a provider turn, so it delivered nothing.
-  const second = run(2, 10);
-  assert.deepEqual(
-    pendingRecordedNotifications({
-      items,
-      runs: [first, second],
-      providerTurns: [{ runAttemptId: first.activeAttemptId!, status: "failed" }],
-      attempts: [{ id: first.activeAttemptId!, runId: first.id }],
-      compactionMessageIds: new Set(),
-      run: second,
-    }).map((item) => item.id),
-    [TurnItemId.make("turn-item:notification:2")],
-  );
-});
-
-it("leaves compactions and restart continuations without the note", () => {
-  const first = run(1, 1);
-  const compaction = run(2, 10);
-  const continuation = run(3, 20, { restartContinuationOfRunId: RunId.make("run:1") });
-  const next = run(4, 30);
-  const items = [notice(5)];
-  const compactions = ["message:2"];
-  assert.deepEqual(
-    pending({ target: compaction, runs: [first, compaction], items, compactions }),
-    [],
-  );
-  assert.deepEqual(
-    pending({ target: continuation, runs: [first, compaction, continuation], items, compactions }),
-    [],
-  );
-  // Neither of them told the agent, so the next prompted turn still does.
-  assert.deepEqual(
-    pending({ target: next, runs: [first, compaction, continuation, next], items, compactions }),
-    ["Notice 5"],
-  );
+  assert.deepEqual(pending({ runs: [], items }), ["Notice 2"]);
 });
 
 it("writes a bounded note with each notification's detail", () => {

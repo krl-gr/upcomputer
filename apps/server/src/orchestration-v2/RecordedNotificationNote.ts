@@ -4,38 +4,28 @@ import type {
   OrchestrationV2RunAttempt,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
 
 type RecordedNotification = Extract<OrchestrationV2TurnItem, { readonly type: "notification" }>;
 
 const MAX_NOTE_ENTRIES = 10;
 const MAX_DETAIL_LENGTH = 2_000;
 
-function recordedAt(item: RecordedNotification): DateTime.Utc {
-  return item.startedAt ?? item.updatedAt;
-}
-
 /**
  * Notifications recorded in the thread without a run (`thread.notification.record`) that no
- * provider turn has been prompted after. A completed turn of a run that started after one
- * proves delivery, so the pending set is derived rather than cleared. Compactions and
- * restart continuations carry no note, so they neither owe nor deliver it, and a
- * rolled-back run left native history.
+ * prompt has delivered yet. An attempt names the notifications its prompt carried, and a
+ * completed provider turn of that attempt delivers them, so the pending set is derived
+ * rather than cleared. A rolled-back run left native history.
  */
 export function pendingRecordedNotifications(input: {
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
-  readonly runs: ReadonlyArray<OrchestrationV2Run>;
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "status">>;
   readonly providerTurns: ReadonlyArray<
     Pick<OrchestrationV2ProviderTurn, "runAttemptId" | "status">
   >;
-  /** Include earlier attempts: a steer replaces the attempt but not the run. */
-  readonly attempts: ReadonlyArray<Pick<OrchestrationV2RunAttempt, "id" | "runId">>;
-  readonly compactionMessageIds: ReadonlySet<string>;
-  readonly run: Pick<OrchestrationV2Run, "userMessageId" | "restartContinuationOfRunId">;
+  readonly attempts: ReadonlyArray<
+    Pick<OrchestrationV2RunAttempt, "id" | "runId" | "promptedNotificationIds">
+  >;
 }): ReadonlyArray<RecordedNotification> {
-  const isCompaction = (run: Pick<OrchestrationV2Run, "userMessageId">) =>
-    input.compactionMessageIds.has(run.userMessageId);
-  if (input.run.restartContinuationOfRunId !== undefined || isCompaction(input.run)) return [];
   const recorded = input.items.filter(
     (item): item is RecordedNotification => item.type === "notification" && item.runId === null,
   );
@@ -45,29 +35,17 @@ export function pendingRecordedNotifications(input: {
       .filter((turn) => turn.status === "completed")
       .map((turn) => turn.runAttemptId),
   );
-  const promptedRunIds = new Set(
+  const rolledBackRunIds = new Set(
+    input.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
+  );
+  const delivered = new Set(
     input.attempts
-      .filter((attempt) => completedAttemptIds.has(attempt.id))
-      .map((attempt) => attempt.runId),
+      .filter(
+        (attempt) => completedAttemptIds.has(attempt.id) && !rolledBackRunIds.has(attempt.runId),
+      )
+      .flatMap((attempt) => attempt.promptedNotificationIds ?? []),
   );
-  const lastPromptedAt = input.runs
-    .filter(
-      (run) =>
-        run.startedAt !== null &&
-        run.status !== "rolled_back" &&
-        run.restartContinuationOfRunId === undefined &&
-        !isCompaction(run) &&
-        (promptedRunIds.has(run.id) ||
-          (run.activeAttemptId !== null && completedAttemptIds.has(run.activeAttemptId))),
-    )
-    .reduce<DateTime.Utc | null>(
-      (latest, run) =>
-        latest === null || DateTime.isGreaterThan(run.startedAt!, latest) ? run.startedAt : latest,
-      null,
-    );
-  return recorded.filter(
-    (item) => lastPromptedAt === null || DateTime.isGreaterThan(recordedAt(item), lastPromptedAt),
-  );
+  return recorded.filter((item) => !delivered.has(item.id));
 }
 
 /**

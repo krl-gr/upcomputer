@@ -622,6 +622,11 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
   ]),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
+  /**
+   * Run-less notifications (`thread.notification.record`) whose note this attempt's prompt
+   * carried. A completed provider turn of the attempt delivers them.
+   */
+  promptedNotificationIds: Schema.optional(Schema.Array(TurnItemId)),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
 
