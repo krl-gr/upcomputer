@@ -297,7 +297,11 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       yield* repository.upsert(taskInput("t"));
       const doctorCreatedAt = isoNow();
       yield* tick;
-      const find = repository.findRunStatusTrigger({
+      const latest = (input: Parameters<TaskRepositoryShape["findRunStatusTriggers"]>[0]) =>
+        repository
+          .findRunStatusTriggers(input)
+          .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0])));
+      const find = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor"),
         statuses: ["failed", "blocked"],
@@ -338,7 +342,7 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       );
 
       // A second doctor ignores runs that a run status started.
-      const other = repository.findRunStatusTrigger({
+      const other = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor-2"),
         statuses: ["failed", "blocked"],
@@ -347,7 +351,7 @@ test("a run-status trigger is another agent's unhandled latest run, never one st
       NodeAssert.equal(Option.getOrNull(yield* other)?.id, "dev-3");
 
       // Failures before the waiting agent existed are history.
-      const later = repository.findRunStatusTrigger({
+      const later = latest({
         taskId: TaskId.make("t"),
         agentId: TaskAgentId.make("doctor-3"),
         statuses: ["failed", "blocked"],
@@ -403,13 +407,16 @@ interface FakeThread {
   runs: FakeRun[];
   messages: FakeMessage[];
   lastError: string | null;
+  /** The modes the thread was created with; unset for a thread the test only seeded. */
+  modes?: { readonly runtimeMode: string; readonly interactionMode: string };
 }
 
 /** What the service asked the v2 thread service to do, in order. */
 type Call =
   | { readonly type: "thread.create"; readonly threadId: string }
   | { readonly type: "turn"; readonly threadId: string; readonly text: string }
-  | { readonly type: "interrupt"; readonly threadId: string };
+  | { readonly type: "interrupt"; readonly threadId: string }
+  | { readonly type: "release"; readonly threadId: string };
 
 interface Harness {
   readonly repository: TaskRepositoryShape;
@@ -424,7 +431,11 @@ interface Harness {
     status: "completed" | "failed" | "interrupted",
     options?: {
       readonly lastError?: string;
-      readonly reply?: { readonly status: string; readonly summary: string };
+      readonly reply?: {
+        readonly status: string;
+        readonly summary: string;
+        readonly blocked?: boolean;
+      };
       readonly endedAt?: string;
     },
   ) => void;
@@ -446,8 +457,8 @@ function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
   );
 }
 
-const resultText = (status: string, summary: string) =>
-  `Done.\n~~~task_agent_result\n${JSON.stringify({ status, summary, blocked: false, events: [] })}\n~~~`;
+const resultText = (status: string, summary: string, blocked = false) =>
+  `Done.\n~~~task_agent_result\n${JSON.stringify({ status, summary, blocked, events: [] })}\n~~~`;
 
 /**
  * The v2 thread service as the task agents use it. A thread exists once it is
@@ -482,8 +493,14 @@ function fakeThreads() {
     dispatch: (command: OrchestrationV2ServerCommand) =>
       Effect.sync(() => {
         if (command.type === "thread.create") {
-          threadOf(command.threadId);
+          threadOf(command.threadId).modes = {
+            runtimeMode: command.runtimeMode,
+            interactionMode: command.interactionMode,
+          };
           calls.push({ type: "thread.create", threadId: command.threadId });
+        }
+        if (command.type === "thread.provider-sessions.release-idle") {
+          calls.push({ type: "release", threadId: command.threadId });
         }
         return { sequence: calls.length };
       }),
@@ -527,7 +544,11 @@ function fakeThreads() {
         };
       }),
     getThreadShell: (threadId: ThreadId) =>
-      Effect.sync(() => ({ id: threadId, lastError: threadOf(threadId).lastError })),
+      Effect.sync(() => ({
+        id: threadId,
+        lastError: threadOf(threadId).lastError,
+        ...threadOf(threadId).modes,
+      })),
     streamDomainEvents: Stream.never,
   };
   const endRun: Harness["endRun"] = (threadId, status, options = {}) => {
@@ -541,7 +562,7 @@ function fakeThreads() {
     if (options.reply) {
       thread.messages.push({
         role: "assistant",
-        text: resultText(options.reply.status, options.reply.summary),
+        text: resultText(options.reply.status, options.reply.summary, options.reply.blocked),
         streaming: false,
         runId: run.id,
         updatedAt: endedAt,
@@ -721,6 +742,273 @@ test("several agents keep running on one task; a release completes only the rele
   );
 });
 
+test("a release to the Blocked status ends the run as blocked and starts a blocked-run agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      yield* repository.upsertAgent(
+        agentInput("helper", { startStatuses: [], startRunStatuses: ["blocked"] }),
+      );
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const devRun = yield* waitFor(
+        "developer run",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+
+      const blocker = "Missing required credentials. Need user input.";
+      yield* change(
+        harness,
+        yield* repository.update({
+          actor,
+          id: task.id,
+          status: "Blocked",
+          output: blocker,
+          assigneeAgentRunId: null,
+        }),
+        devRun.id,
+      );
+      const ended = yield* waitFor(
+        "the developer run to end",
+        repository
+          .getAgentRunById({ id: devRun.id })
+          .pipe(
+            Effect.map((run) =>
+              Option.getOrThrow(run).completedAt ? Option.getOrThrow(run) : undefined,
+            ),
+          ),
+      );
+      NodeAssert.equal(ended.status, "blocked");
+      const results = yield* repository.events({ taskId: task.id, kinds: ["task.agent-result"] });
+      NodeAssert.deepEqual(
+        results.events.map(({ payload }) => {
+          const { blocked, summary, status } = payload as Record<string, unknown>;
+          return { blocked, summary, status };
+        }),
+        [{ blocked: true, summary: blocker, status: "Blocked" }],
+      );
+      const helperRun = yield* waitFor(
+        "the blocked-run agent",
+        runsOf(repository, "t").pipe(
+          Effect.map((runs) => runs.find((run) => run.agentId === "helper")),
+        ),
+      );
+      NodeAssert.equal(helperRun.triggerRunId, devRun.id);
+    }),
+  );
+});
+
+test("a blocked run starts only blocked-run agents within its own modes, by release or by result", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, endRun } = harness;
+      const supervised = (id: string, overrides: Partial<TaskAgent> = {}) =>
+        agentInput(id, {
+          ...overrides,
+          config: { ...agentInput(id).config, runtimeMode: "approval-required" },
+        });
+      yield* repository.upsertAgent(supervised("dev"));
+      yield* repository.upsertAgent(
+        agentInput("broad", { startStatuses: [], startRunStatuses: ["blocked"] }),
+      );
+      yield* repository.upsertAgent(
+        supervised("narrow", { startStatuses: [], startRunStatuses: ["blocked"] }),
+      );
+      const devRunOf = (taskId: string) =>
+        waitFor(
+          `developer run on ${taskId}`,
+          runsOf(repository, taskId).pipe(
+            Effect.map((runs) => runs.find((run) => run.agentId === "dev")),
+          ),
+        );
+      /** The narrow agent starting shows the blocked run's passes ran; none may start the broad one. */
+      const expectOnlyNarrow = (taskId: string, devRunId: TaskAgentRunId) =>
+        Effect.gen(function* () {
+          const narrow = yield* waitFor(
+            `the narrow blocked-run agent on ${taskId}`,
+            runsOf(repository, taskId).pipe(
+              Effect.map((runs) => runs.find((run) => run.agentId === "narrow")),
+            ),
+          );
+          NodeAssert.equal(narrow.triggerRunId, devRunId);
+          // A pass with no caller at all, as after a restart, is held to the same modes.
+          yield* service.recover;
+          NodeAssert.deepEqual(
+            (yield* runsOf(repository, taskId)).map(({ agentId }) => agentId).sort(),
+            ["dev", "narrow"],
+          );
+        });
+
+      // The release path.
+      const released = yield* repository.upsert(taskInput("released"));
+      yield* service.scheduleTaskChanged({ task: released, reason: "created" });
+      const releasing = yield* devRunOf("released");
+      yield* change(
+        harness,
+        yield* repository.update({
+          actor,
+          id: released.id,
+          status: "Blocked",
+          output: "Need credentials.",
+          assigneeAgentRunId: null,
+        }),
+        releasing.id,
+      );
+      yield* expectOnlyNarrow("released", releasing.id);
+
+      // The task_agent_result path.
+      const reported = yield* repository.upsert(taskInput("reported"));
+      yield* service.scheduleTaskChanged({ task: reported, reason: "created" });
+      const reporting = yield* devRunOf("reported");
+      endRun(reporting.threadId, "completed", {
+        reply: { status: "To Do", summary: "Need credentials.", blocked: true },
+      });
+      yield* expectOnlyNarrow("reported", reporting.id);
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getAgentRunById({ id: reporting.id })).status,
+        "blocked",
+      );
+    }),
+  );
+});
+
+test("a blocked run refused for its modes leaves an older failure to the same agent", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls, endRun } = harness;
+      yield* repository.upsertAgent(agentInput("build"));
+      yield* repository.upsertAgent(
+        agentInput("review", {
+          config: { ...agentInput("review").config, runtimeMode: "approval-required" },
+        }),
+      );
+      // Disabled until both outcomes exist, as when it becomes eligible only on recovery.
+      const helper = agentInput("helper", {
+        enabled: false,
+        startStatuses: [],
+        startRunStatuses: ["failed", "blocked"],
+      });
+      yield* repository.upsertAgent(helper);
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const runOf = (agentId: string) =>
+        waitFor(
+          `${agentId} run`,
+          runsOf(repository, "t").pipe(
+            Effect.map((runs) => runs.find((run) => run.agentId === agentId)),
+          ),
+        );
+      const endedAs = (runId: TaskAgentRunId, status: string) =>
+        waitFor(
+          `run ${runId} to end ${status}`,
+          repository
+            .getAgentRunById({ id: runId })
+            .pipe(
+              Effect.map((run) => (Option.getOrThrow(run).status === status ? true : undefined)),
+            ),
+        );
+      const build = yield* runOf("build");
+      const review = yield* runOf("review");
+      yield* waitFor(
+        "both first turns",
+        Effect.sync(() =>
+          turnsTo(calls, build.threadId).length > 0 && turnsTo(calls, review.threadId).length > 0
+            ? true
+            : undefined,
+        ),
+      );
+
+      endRun(build.threadId, "failed", { lastError: "build broke" });
+      yield* endedAs(build.id, "failed");
+      yield* tick;
+      endRun(review.threadId, "completed", {
+        reply: { status: "To Do", summary: "Need approval.", blocked: true },
+      });
+      yield* endedAs(review.id, "blocked");
+
+      // The newer blocked run is refused for the full-access helper; the failure is not.
+      yield* repository.upsertAgent({ ...helper, enabled: true });
+      yield* service.recover;
+      const helperRun = yield* runOf("helper");
+      NodeAssert.equal(helperRun.triggerRunId, build.id);
+      yield* service.recover;
+      const runs = yield* runsOf(repository, "t");
+      NodeAssert.equal(runs.filter((run) => run.agentId === "helper").length, 1);
+      NodeAssert.equal(
+        runs.some((run) => run.triggerRunId === review.id),
+        false,
+        "the refused blocked run stays unhandled",
+      );
+    }),
+  );
+});
+
+test("a release to Blocked ends the run blocked even when the task changes before it is reconciled", async () => {
+  // Armed with the release's task id: a person's edit lands right when its change is reconciled.
+  const race: { taskId: TaskId | null } = { taskId: null };
+  await withScheduler(
+    (harness) =>
+      Effect.gen(function* () {
+        const { repository, service } = harness;
+        yield* repository.upsertAgent(agentInput("dev"));
+        const task = yield* repository.upsert(taskInput("t"));
+        yield* service.scheduleTaskChanged({ task, reason: "created" });
+        const devRun = yield* waitFor(
+          "developer run",
+          runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+        );
+
+        const blocker = "Missing required credentials.";
+        const releasedTask = yield* repository.update({
+          actor,
+          id: task.id,
+          status: "Blocked",
+          output: blocker,
+          assigneeAgentRunId: null,
+        });
+        race.taskId = task.id;
+        yield* change(harness, releasedTask, devRun.id);
+        const ended = yield* waitFor(
+          "the developer run to end",
+          repository
+            .getAgentRunById({ id: devRun.id })
+            .pipe(
+              Effect.map((run) =>
+                Option.getOrThrow(run).completedAt ? Option.getOrThrow(run) : undefined,
+              ),
+            ),
+        );
+        NodeAssert.equal(race.taskId, null, "the person's edit landed before reconciliation");
+        NodeAssert.equal(ended.status, "blocked");
+        const results = yield* repository.events({ taskId: task.id, kinds: ["task.agent-result"] });
+        NodeAssert.deepEqual(
+          results.events.map(({ payload }) => {
+            const { blocked, summary, status } = payload as Record<string, unknown>;
+            return { blocked, summary, status };
+          }),
+          [{ blocked: true, summary: blocker, status: "Blocked" }],
+        );
+        NodeAssert.equal(
+          Option.getOrThrow(yield* repository.getById({ id: task.id })).status,
+          "Needs Review",
+        );
+      }),
+    undefined,
+    (repository) => ({
+      ...repository,
+      // Reconciling a change first records its history event.
+      appendEvent: (input) =>
+        race.taskId !== null && input.taskId === race.taskId && input.kind === "task.updated"
+          ? Effect.suspend(() => {
+              race.taskId = null;
+              return repository.update({ actor, id: input.taskId, status: "Needs Review" });
+            }).pipe(Effect.andThen(repository.appendEvent(input)))
+          : repository.appendEvent(input),
+    }),
+  );
+});
+
 test("an agent restarts only after a trigger change, and an explicit stop is not undone", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {
@@ -894,6 +1182,63 @@ test("an unarchive keeps its caller's ceiling until the agent starts", async () 
         startCeiling: ceiling,
       });
       yield* waitFor("run on t", runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])));
+    }),
+  );
+});
+
+test("task_create with a tasks list starts one run per task created in a start status", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const tools = yield* Effect.provide(
+        Effect.gen(function* () {
+          return yield* TaskToolService;
+        }),
+        TaskToolServiceLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(TaskRepository, repository),
+              Layer.succeed(TaskAgentService, service),
+              Layer.succeed(TaskPromptSettingsStore, {} as never),
+              Layer.succeed(TaskToolContextResolver, {
+                resolve: () =>
+                  Effect.succeed({
+                    projects: [],
+                    resolvedProject: { project: { id: project, title: "Project" } },
+                  } as never),
+              }),
+              Layer.succeed(ThreadManagementService, {} as never),
+              Layer.succeed(ProjectStoreV2, {} as never),
+              Layer.succeed(InboxProject, {} as never),
+              Layer.succeed(TaskScheduleService, {} as never),
+              deterministicCrypto(),
+            ),
+          ),
+        ),
+      );
+      const result = yield* tools.call({
+        name: "task_create",
+        args: {
+          tasks: ["a", "b", "c"].map((id) => ({
+            id,
+            title: id,
+            description: "",
+            status: id === "b" ? "Backlog" : "To Do",
+          })),
+        },
+        context: { source: "provider", mutationPolicy: "allow", threadId: ThreadId.make("chat") },
+      });
+      NodeAssert.equal(result.isError, false, result.text);
+
+      // Jobs run in order: once a later task's run starts, the list's jobs are done.
+      const next = yield* repository.upsert(taskInput("z"));
+      yield* service.scheduleTaskChanged({ task: next, reason: "created" });
+      yield* waitFor("run on z", runsOf(repository, "z").pipe(Effect.map((runs) => runs[0])));
+      NodeAssert.equal((yield* runsOf(repository, "a")).length, 1);
+      NodeAssert.equal((yield* runsOf(repository, "b")).length, 0);
+      NodeAssert.equal((yield* runsOf(repository, "c")).length, 1);
+      NodeAssert.equal(calls.filter((call) => call.type === "thread.create").length, 3);
     }),
   );
 });
@@ -1969,6 +2314,39 @@ test("the planner's Restore starts no agent: an agent task is Restored before it
         const task = Option.getOrThrow(yield* repository.getById({ id: TaskId.make(id) }));
         NodeAssert.deepEqual([task.status, task.archivedAt], [AGENT_RESTORED_STATUS, null]);
       }
+    }),
+  );
+});
+
+test("a finished run releases its thread's provider sessions", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, endRun, calls } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const run = yield* waitFor(
+        "the run to start",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+      const releases = () =>
+        calls.filter((call) => call.type === "release" && call.threadId === run.threadId);
+
+      // A periodic pass while the provider still works releases nothing.
+      yield* Effect.sleep("1200 millis");
+      NodeAssert.equal(releases().length, 0);
+
+      endRun(run.threadId, "completed", {
+        reply: { status: "Needs Review", summary: "done" },
+      });
+      yield* waitFor(
+        "the provider sessions to be released",
+        Effect.sync(() => releases()[0]),
+      );
+      NodeAssert.equal(
+        Option.getOrThrow(yield* repository.getAgentRunById({ id: run.id })).status,
+        "completed",
+      );
     }),
   );
 });

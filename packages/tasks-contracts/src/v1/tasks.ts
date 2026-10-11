@@ -173,10 +173,9 @@ export const TaskCreateInput = Schema.Struct({
 });
 export type TaskCreateInput = typeof TaskCreateInput.Type;
 
-export const TaskToolCreateInput = Schema.Struct({
+/** One task of task_create, alone or as an item of its tasks list. */
+export const TaskToolCreateItem = Schema.Struct({
   id: Schema.optional(TaskId),
-  projectId: Schema.optional(ProjectId),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   title: TrimmedNonEmptyString,
   description: Schema.String,
   output: Schema.optional(Schema.NullOr(Schema.String)),
@@ -193,13 +192,42 @@ export const TaskToolCreateInput = Schema.Struct({
   /** A routine is always a person task; audience defaults to person for it. */
   kind: Schema.optional(TaskKind),
 });
+export type TaskToolCreateItem = typeof TaskToolCreateItem.Type;
+
+export const TaskToolCreateInput = Schema.Struct({
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  ...TaskToolCreateItem.fields,
+});
 export type TaskToolCreateInput = typeof TaskToolCreateInput.Type;
+
+export const TASK_CREATE_BATCH_LIMIT = 50;
+
+/**
+ * task_create with a tasks list: one project for every task. Items are
+ * decoded one by one, so an invalid item can be named in the error.
+ */
+export const TaskToolCreateBatchInput = Schema.Struct({
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  tasks: Schema.Array(Schema.Unknown),
+});
+
+/** Optional parts of task_context, left out by default to keep chats small. */
+export const TaskToolContextInclude = Schema.Literals([
+  "projects",
+  "providers",
+  "agentCreation",
+  "automationCreation",
+]);
+export type TaskToolContextInclude = typeof TaskToolContextInclude.Type;
 
 export const TaskToolContextInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   modelAlias: Schema.optional(TrimmedNonEmptyString),
+  include: Schema.optional(Schema.Array(TaskToolContextInclude)),
 });
 export type TaskToolContextInput = typeof TaskToolContextInput.Type;
 

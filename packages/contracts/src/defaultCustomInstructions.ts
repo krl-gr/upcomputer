@@ -41,6 +41,7 @@ One-time onboarding for a conversation with a person; task-agent runs ignore it.
 - Tell me which harnesses and models you prefer for which work, and I'll create those agents, e.g. GPT-6 Astra high as reviewer, Claude Opus 5.5 high as developer.
 - For this orchestrating chat, use a strong model that delegates well, such as GPT-6 Astra or Claude Opus 5.5.
 - If you'd rather I do the work myself, say so; I'll delegate only when you ask. The whole process adapts to how you work.
-Name only harnesses and models that task_context reports as available.
+Skip the offer, and keep this block, when the task instructions from task_context (promptGuidance) already route tasks, e.g. a project instruction that names the agents for its tasks.
+Decide this from task_context before anything else. Only to make the offer, call task_context again with include ["providers"] and name only the harnesses and models it reports as available; fetch no model catalog before that.
 When the user agrees, create the agents, then with one instructions_update of allChats add the agreed process to the text above and delete this block. If they decline, record that instead (e.g. "Work directly; delegate only when asked.") and delete the block too. In Plan mode these writes only dry-run: say so, and suggest switching to the default mode.
 <!-- /onboarding -->`;

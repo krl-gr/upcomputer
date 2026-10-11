@@ -7,7 +7,7 @@ import { productSurface } from "../product/productFlags";
 const selectThreadList = (settings: ClientSettings) => settings.sidebarThreadList;
 
 /** The surface variant a "Thread list" choice stands for. */
-export function threadListSurface(threadList: SidebarThreadList): ProductSurfaceVariant {
+function threadListSurface(threadList: SidebarThreadList): ProductSurfaceVariant {
   return threadList === "compact" ? "upcomputer" : "upstream";
 }
 

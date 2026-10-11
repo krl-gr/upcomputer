@@ -2,7 +2,10 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
+import {
+  type McpProviderSessionConfig,
+  wantsOrchestrationInstructions,
+} from "@t3tools/provider-core/server/mcpSession";
 import {
   PI_T3_MCP_EXTENSION_FILENAME,
   PI_T3_MCP_EXTENSION_SOURCE,
@@ -10,6 +13,7 @@ import {
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
+  T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
   T3_PI_USER_INSTRUCTIONS_ENV,
 } from "./mcpExtensionSource.ts";
 import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/userInstructions";
@@ -296,6 +300,7 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
   delete environment[T3_PI_USER_INSTRUCTIONS_ENV];
+  delete environment[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV];
   const userInstructions = hasT3Extension ? currentUserInstructionsBlock() : undefined;
 
   return {
@@ -320,6 +325,9 @@ export function buildPiRpcLaunch(input: {
             [T3_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
               input.mcpSession.authorizationHeader,
             ),
+            ...(wantsOrchestrationInstructions(input.mcpSession)
+              ? {}
+              : { [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit" }),
           }
         : {}),
     },

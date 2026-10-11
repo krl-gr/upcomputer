@@ -168,6 +168,9 @@ jobs:
             fi
           fi
 
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
       - name: Check Up.computer branding
         run: node scripts/check-branding.ts
 

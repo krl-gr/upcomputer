@@ -31,6 +31,7 @@ jobs:
   resolve:
     name: Verify preview eligibility
     if: >-
+      github.repository == 'pingdotgg/t3code' &&
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
@@ -496,6 +497,7 @@ jobs:
     # the build consumed it withdraws the request and drops any older
     # download too.
     if: >-
+      github.repository == 'pingdotgg/t3code' &&
       github.event_name == 'pull_request_target' &&
       (github.event.action == 'closed' ||
       (github.event.action == 'unlabeled' && github.event.label.name == 'preview:mac'))

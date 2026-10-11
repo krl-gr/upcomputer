@@ -518,6 +518,52 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect("passes the session's tool call hints to the turn's context", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-with-tool-call-hints",
+        codexInput: [{ type: "text", text: "queue this" }],
+        runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        hasT3Mcp: true,
+        toolCallHints: [{ name: "task_context", args: "{projectId?}" }],
+      });
+
+      assert.include(
+        params.additionalContext?.t3_code_tool_calls?.value ?? "",
+        "`tools.mcp__t3_code__task_context({projectId?})`",
+      );
+    }),
+  );
+
+  it.effect("omits only the orchestration context when the session's agent does not use it", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-without-orchestration-instructions",
+        codexInput: [{ type: "text", text: "implement this task" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+        hasT3Mcp: true,
+        browserToolsAvailable: true,
+        orchestrationInstructions: false,
+      });
+
+      assert.isUndefined(params.additionalContext?.t3_code_orchestration);
+      assert.include(
+        params.additionalContext?.t3_code_tools?.value ?? "",
+        "Up.computer collaborative browser",
+      );
+      assert.isDefined(params.additionalContext?.t3_code_runtime);
+    }),
+  );
+
   it.effect("omits default-mode collaboration settings without the T3 MCP server", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({

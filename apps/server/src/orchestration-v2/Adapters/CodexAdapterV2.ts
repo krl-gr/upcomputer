@@ -95,7 +95,9 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
+  CODEX_T3_MCP_SERVER,
 } from "../../provider/CodexDeveloperInstructions.ts";
+import type { ToolCallHint } from "../../provider/ToolCallHints.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -719,6 +721,8 @@ export function buildCodexTurnStartParams(input: {
   readonly hasT3Mcp?: boolean;
   readonly browserToolsAvailable?: boolean;
   readonly deviceToolsAvailable?: boolean;
+  readonly orchestrationInstructions?: boolean;
+  readonly toolCallHints?: ReadonlyArray<ToolCallHint>;
   /** ChatGPT token sharing does not accept service tiers. */
   readonly omitServiceTier?: boolean;
   /** What the thread's MCP Apps want the agent to know (`ui/update-model-context`). */
@@ -766,6 +770,8 @@ export function buildCodexTurnStartParams(input: {
             {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
+              orchestration: input.orchestrationInstructions ?? true,
+              ...(input.toolCallHints ? { toolCallHints: input.toolCallHints } : {}),
             },
           )
         : undefined;
@@ -1330,7 +1336,7 @@ export function codexThreadRuntimeParams(input: {
         ? {}
         : {
             mcp_servers: {
-              "t3-code": {
+              [CODEX_T3_MCP_SERVER]: {
                 url: mcpSession.endpoint,
                 http_headers: {
                   Authorization: mcpSession.authorizationHeader,
@@ -6205,6 +6211,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               hasT3Mcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
+              orchestrationInstructions:
+                McpProviderSession.wantsOrchestrationInstructions(mcpSession),
+              ...(mcpSession?.toolCallHints ? { toolCallHints: mcpSession.toolCallHints } : {}),
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
             });

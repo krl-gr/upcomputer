@@ -45,6 +45,13 @@ export function taskRanksBetween(
   );
 }
 
+/** The rank one step after `lower`, or the midpoint to the end when no full step is left. */
+export function taskRankAfter(lower: string): TaskRank | null {
+  const low = decodeTaskRank(lower);
+  if (TASK_RANK_MAX - low >= TASK_RANK_STEP) return encodeTaskRank(low + TASK_RANK_STEP);
+  return taskRankBetween(lower, null);
+}
+
 /** Deterministic spacing used by migration and the bounded exhaustion rebalance. */
 export function rebalancedTaskRanks<Id extends string = TaskId>(
   ids: ReadonlyArray<Id>,

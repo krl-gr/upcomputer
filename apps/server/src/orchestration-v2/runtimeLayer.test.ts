@@ -3467,6 +3467,54 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("keeps a thread's provider sessions attached while its work is active", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-release-idle-thread");
+      const release = (suffix: string) =>
+        orchestrator.dispatch({
+          type: "thread.provider-sessions.release-idle",
+          commandId: CommandId.make(`runtime-layer-release-idle-${suffix}`),
+          threadId,
+          reason: "Test release.",
+        });
+
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-release-idle-create"),
+        threadId,
+        projectId: ProjectId.make("runtime-layer-release-idle-project"),
+        title: "Release idle",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: "/tmp/runtime-layer-release-idle",
+      });
+      // Nothing attached yet: accepted, nothing recorded.
+      yield* release("empty");
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-release-idle-message"),
+        threadId,
+        messageId: MessageId.make("runtime-layer-release-idle-message"),
+        text: "Keep this run active.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+
+      const error = yield* release("active").pipe(Effect.flip);
+      assert.equal(error._tag, "OrchestratorDispatchError");
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(projection.runs[0]?.status, "starting");
+    }),
+  );
+
   it.effect("settles past held automatic runs but not held user messages", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

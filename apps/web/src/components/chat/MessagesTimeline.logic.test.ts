@@ -4848,6 +4848,83 @@ it.each([true, false])(
   },
 );
 
+it.each([true, false])(
+  "a card recorded without a run starts no response of its own, working=%s",
+  (isWorking) => {
+    const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
+    const runId = RunId.make("chat-run");
+    const work = (id: string, second: number, run: RunId | null, notification = false) => ({
+      kind: "work" as const,
+      id,
+      createdAt: time(second),
+      entry: {
+        id,
+        runId: run,
+        createdAt: time(second),
+        label: id,
+        tone: "info" as const,
+        ...(notification ? { itemType: "notification" as const } : {}),
+      },
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          kind: "message" as const,
+          id: "prompt",
+          createdAt: time(0),
+          message: {
+            id: MessageId.make("prompt"),
+            role: "user" as const,
+            text: "Queue the tasks",
+            runId,
+            createdAt: time(0),
+            updatedAt: time(0),
+            streaming: false,
+          },
+        },
+        work("read", 1, runId),
+        // The chat's tasks finished while its agent was still working.
+        work("tasks-done", 10, null, true),
+        work("write", 11, runId),
+        ...(isWorking
+          ? []
+          : [
+              {
+                kind: "message" as const,
+                id: "answer",
+                createdAt: time(15),
+                message: {
+                  id: MessageId.make("answer"),
+                  role: "assistant" as const,
+                  text: "Queued.",
+                  runId,
+                  createdAt: time(15),
+                  updatedAt: time(15),
+                  streaming: false,
+                },
+              },
+            ]),
+      ],
+      latestRun: {
+        runId,
+        status: isWorking ? "running" : "completed",
+        startedAt: time(0),
+        completedAt: isWorking ? null : time(15),
+      },
+      isWorking,
+      activeTurnStartedAt: time(0),
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    // The turn's header stays under its prompt, and the card stays visible beside the work.
+    expect(rows.map((row) => row.id).slice(0, 4)).toEqual(
+      isWorking
+        ? ["prompt", "working-indicator-row", "work-toggle:read", "tasks-done"]
+        : ["prompt", "turn-fold:chat-run", "tasks-done", "answer"],
+    );
+  },
+);
+
 it("keeps the working header in place across worktree setup handoff", () => {
   const snapshot: WorktreeSetupSnapshot = {
     threadId: ThreadId.make("thread-setup"),

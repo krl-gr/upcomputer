@@ -26,6 +26,11 @@ export {
   ThreadManagementService,
 } from "./orchestration-v2/ThreadManagementService.ts";
 export { ProviderRegistry } from "./provider/ProviderRegistry.ts";
+export {
+  namesOrchestrationTool,
+  registerOrchestrationInstructionsResolver,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
+export { registerToolCallHintsResolver, type ToolCallHint } from "./provider/ToolCallHints.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
 export {

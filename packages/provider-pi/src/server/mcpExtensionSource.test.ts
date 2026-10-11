@@ -6,7 +6,11 @@ import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { assert, describe, expect, it } from "@effect/vitest";
 
-import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
+import {
+  PI_T3_MCP_EXTENSION_SOURCE,
+  T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
+  T3_PI_USER_INSTRUCTIONS_ENV,
+} from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
 
 type RequestHook = (
@@ -503,5 +507,26 @@ describe("Pi skill references", () => {
     } finally {
       await NodeFSP.rm(directory, { recursive: true });
     }
+  });
+});
+
+describe("Pi orchestration guidance", () => {
+  const systemPrompt = async (env: Record<string, string>) => {
+    const bridge = await loadMcpBridge({ modern: true, env });
+    const start = bridge.handlers.get("before_agent_start");
+    assert.isDefined(start);
+    const result = await start!({ systemPrompt: "base" }, { ui: { notify: () => undefined } });
+    return result.systemPrompt;
+  };
+
+  it("appends the orchestration block unless the session omits it", async () => {
+    assert.include(await systemPrompt({}), "Up.computer orchestration");
+    assert.equal(
+      await systemPrompt({
+        [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
+        [T3_PI_USER_INSTRUCTIONS_ENV]: "# User instructions",
+      }),
+      "base\n\n# User instructions",
+    );
   });
 });

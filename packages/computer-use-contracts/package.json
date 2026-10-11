@@ -17,7 +17,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@t3tools/contracts": "workspace:*",

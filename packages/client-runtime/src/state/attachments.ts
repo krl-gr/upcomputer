@@ -45,6 +45,8 @@ export function createAttachmentEnvironmentAtoms<R, E>(
  * A structural `_tag` check rather than a schema check: the squashed cause of
  * a failed RPC is not guaranteed to be a decoded error class instance, only a
  * tagged value.
+ *
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   return (

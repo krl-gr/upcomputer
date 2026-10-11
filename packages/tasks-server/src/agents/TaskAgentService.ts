@@ -49,9 +49,14 @@ export type TaskChangedReason =
 export type TaskAgentChangedReason = "upserted" | "deleted";
 
 export interface TaskChangedInput {
+  /** The task as this change left it. */
   readonly task: Task;
   readonly reason: TaskChangedReason;
-  /** A run that gave up its claim in this change; it ends as completed. */
+  /**
+   * A run that gave up its claim in this change. It ends as completed, or as
+   * blocked (see BLOCKED_TASK_STATUS), decided from `task`, so an edit made
+   * before the change is reconciled does not change the run's outcome.
+   */
   readonly releasedRunId?: TaskAgentRunId | null;
   /**
    * The broadest modes an agent this change starts may run in, checked against
@@ -120,6 +125,20 @@ export function releasedRunId(input: {
     ? TaskAgentRunId.make(before.assigneeAgentRunId)
     : null;
 }
+
+/**
+ * The status a run's final, releasing task_update sets to report that it
+ * cannot continue: the run then ends as blocked, as a task_agent_result with
+ * blocked:true ends it. Compared without case or spacing.
+ */
+export const BLOCKED_TASK_STATUS = "Blocked";
+
+export function isBlockedTaskStatus(status: string): boolean {
+  return status.trim().replace(/\s+/g, " ").toLowerCase() === BLOCKED_TASK_STATUS.toLowerCase();
+}
+
+/** Longest task output a blocked release copies into its result event. */
+const RELEASE_SUMMARY_MAX_LENGTH = 2_000;
 
 /** What a person can do about a run that ended without a result. */
 export const TASK_AGENT_RUN_RECOVERY_HINT =
@@ -226,6 +245,23 @@ Inspect it with agent_run_transcript when that tool is available. Leave "status"
 `;
 }
 
+/**
+ * How a run learns whether it holds its task. The server claims the task when
+ * the run starts unless another active run holds it (see startAgentRun).
+ */
+function claimLine(task: Task, runId: TaskAgentRunId): string {
+  return task.assigneeAgentRunId === runId
+    ? `- This run holds the task: the server set assigneeAgentRunId to "${runId}" when the run started. Do not claim it again.`
+    : `- Claim the task by setting assigneeAgentRunId to "${runId}".`;
+}
+
+/** The task's output when the run started, so the agent need not fetch it. */
+function outputSection(task: Task): string {
+  const output = task.output?.trim();
+  return output ? `\nCurrent output:\n${output}\n` : "";
+}
+
+/** `task` is read after the run started, so it shows the run's claim and current output. */
 function prompt(
   agent: TaskAgent,
   task: Task,
@@ -250,7 +286,7 @@ Assigned task:
 
 Description:
 ${task.description || "(empty)"}
-
+${outputSection(task)}
 Metadata:
 ${taskMetadata(task.metadata)}
 
@@ -260,16 +296,17 @@ Agent run identity:
 - threadId: ${threadId}
 ${triggerSection(trigger)}
 Task system protocol:
-- Work only on the assigned task.
-- Use task_get before work if the task may have changed.
-- Claim the task by setting assigneeAgentRunId to "${runId}".
+- Work only on the assigned task. The task above, with its output, is current as of this run's start; call task_get only when you need its events or another run may have changed it since.
+${claimLine(task, runId)}
 - Update task status and append concise findings as work proceeds.
 - Keep task output synchronized with the latest concise result when explicitly continuing work in this thread.
 - Downstream task ancestry is recorded automatically from this thread by the server.
-- Always finish with a fenced task_agent_result JSON block.
+- Set the task's final status yourself with task_update, as your last call and with assigneeAgentRunId null in the same update. Releasing the task ends this run at once, so do everything else first; nothing is needed after it.
+- If you cannot continue, make that final update with status "${BLOCKED_TASK_STATUS}" and the blocker and what you need in the output. The run then ends as blocked, which reports it to the chat that created the task and to agents that handle blocked runs.
+- If you end without releasing the task, finish with a fenced task_agent_result JSON block. Its "status" never overrides a status you set during this run; add it, with an existing status name, only if you did not set one.
 
 ~~~task_agent_result
-{"status":"ready for review","summary":"Outcome summary.","blocked":false,"events":[]}
+{"summary":"Outcome summary.","blocked":false,"events":[]}
 ~~~`.trim();
 }
 
@@ -412,6 +449,27 @@ const make = Effect.gen(function* () {
       });
     });
 
+  /**
+   * Releases the provider sessions of an ended task-agent run's thread now
+   * instead of after the provider idle timeout, so a finished run keeps no
+   * provider process. The orchestrator refuses while the thread still has
+   * active, queued or blocked work, and changes nothing else on the thread. A
+   * later message (a continuation) attaches a session again.
+   */
+  const releaseEndedRunSessions = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      yield* threads.dispatch({
+        type: "thread.provider-sessions.release-idle",
+        commandId: CommandId.make(yield* randomId("task-agent-session-release")),
+        threadId,
+        reason: "Task-agent run ended.",
+      });
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logDebug("Task-agent provider sessions not released", { threadId, cause }),
+      ),
+    );
+
   const finalizeRun = (input: {
     readonly run: {
       readonly id: TaskAgentRunId;
@@ -473,6 +531,11 @@ const make = Effect.gen(function* () {
           events: input.events ?? [],
         });
       }),
+    ).pipe(
+      // A run stopped mid-turn releases from its v2 run's terminal event instead.
+      Effect.tap((finalized) =>
+        finalized ? releaseEndedRunSessions(input.run.threadId) : Effect.void,
+      ),
     );
 
   /** A released run finished its work; every other reason ends it as stopped. */
@@ -509,6 +572,53 @@ const make = Effect.gen(function* () {
             ]
           : [],
       });
+    });
+
+  /**
+   * A run that released its task finished its work. A release to the Blocked
+   * status reports a blocker instead: the run ends as blocked with a result
+   * event, and agents waiting on blocked runs start.
+   */
+  const releaseRun = (
+    run: {
+      readonly id: TaskAgentRunId;
+      readonly taskId: Task["id"];
+      readonly agentId: TaskAgent["id"];
+      readonly threadId: ThreadId;
+    },
+    task: Task,
+  ) =>
+    Effect.gen(function* () {
+      if (!isBlockedTaskStatus(task.status)) return yield* stopActiveRun(run, "released");
+      const summary =
+        task.output?.trim().slice(0, RELEASE_SUMMARY_MAX_LENGTH) ||
+        `Task agent set status "${task.status}".`;
+      const finalized = yield* finalizeRun({
+        run,
+        finalizingStatus: "finalizing:stopped",
+        status: "blocked",
+        interrupt: true,
+        events: [
+          {
+            id: TaskEventId.make(`${run.id}:task-agent-result`),
+            taskId: run.taskId,
+            kind: "task.agent-result",
+            payload: {
+              source: "task_update",
+              agentId: run.agentId,
+              agentRunId: run.id,
+              threadId: run.threadId,
+              status: task.status,
+              blocked: true,
+              summary,
+            },
+            createdAt: yield* now,
+          },
+        ],
+      });
+      // Agents waiting on blocked runs start as they do for a result block,
+      // within this run's modes (see startAgent).
+      if (finalized) yield* scheduleRunFinished(task.id);
     });
 
   /** Lets agents waiting on run statuses see a run that just ended. */
@@ -700,10 +810,20 @@ const make = Effect.gen(function* () {
   const reconcileActiveRuns = Effect.gen(function* () {
     const activeRuns = yield* repository.listAllActiveAgentRuns();
     const timestamp = yield* now;
-    yield* Effect.forEach(activeRuns, (run) => reconcileRun(run, timestamp), {
-      discard: true,
-      concurrency: 1,
-    });
+    yield* Effect.forEach(
+      activeRuns,
+      (run) =>
+        reconcileRun(run, timestamp).pipe(
+          // A result consumed here ends the run outside finalizeRun.
+          Effect.andThen(repository.getAgentRunById({ id: run.id })),
+          Effect.flatMap((ended) =>
+            Option.isSome(ended) && ended.value.completedAt !== null
+              ? releaseEndedRunSessions(run.threadId)
+              : Effect.void,
+          ),
+        ),
+      { discard: true, concurrency: 1 },
+    );
   });
 
   /**
@@ -747,26 +867,47 @@ const make = Effect.gen(function* () {
 
       let trigger: RunTrigger | null = null;
       if (agent.startRunStatuses.length > 0) {
-        const triggerRun = yield* repository.findRunStatusTrigger({
+        const triggerRuns = yield* repository.findRunStatusTriggers({
           taskId: task.id,
           agentId: agent.id,
           statuses: agent.startRunStatuses,
           completedAfter: agent.createdAt,
         });
-        if (Option.isNone(triggerRun)) return;
-        const triggerAgent = yield* repository.getAgentById({ id: triggerRun.value.agentId });
-        // A failed run's provider error is its thread's last error, as V1's session error was.
-        const failedShell =
-          triggerRun.value.status === "failed"
-            ? yield* threads
-                .getThreadShell(triggerRun.value.threadId)
-                .pipe(Effect.orElseSucceed(() => null))
-            : null;
-        trigger = {
-          run: triggerRun.value,
-          agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
-          reason: failedShell?.lastError?.trim() || null,
-        };
+        for (const triggerRun of triggerRuns) {
+          const triggerShell =
+            triggerRun.status === "failed" || triggerRun.status === "blocked"
+              ? yield* threads
+                  .getThreadShell(triggerRun.threadId)
+                  .pipe(Effect.orElseSucceed(() => null))
+              : null;
+          // A blocked run reported its own outcome, by result or release, so an agent
+          // acting on it runs within that run's modes, whichever pass starts it. A
+          // refused run stays unhandled and the agent may take an older one instead.
+          if (
+            triggerRun.status === "blocked" &&
+            (triggerShell === null ||
+              broaderRunMode(agentRunModes(agent.config), {
+                runtimeMode: triggerShell.runtimeMode,
+                interactionMode: triggerShell.interactionMode,
+              }) !== null)
+          ) {
+            yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
+              taskId: task.id,
+              agentId: agent.id,
+              triggerRunId: triggerRun.id,
+            });
+            continue;
+          }
+          const triggerAgent = yield* repository.getAgentById({ id: triggerRun.agentId });
+          trigger = {
+            run: triggerRun,
+            agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
+            // A failed run's provider error is its thread's last error, as V1's session error was.
+            reason: triggerRun.status === "failed" ? triggerShell?.lastError?.trim() || null : null,
+          };
+          break;
+        }
+        if (trigger === null) return;
       } else {
         const [latestRun] = yield* repository.searchAgentRuns({
           taskId: task.id,
@@ -821,6 +962,8 @@ const make = Effect.gen(function* () {
           ({ id, audience }) => audience === "agent" || id === task.id,
         );
         const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
+        // Read after the run started: it carries the run's claim and current output.
+        const startedTask = globallyOrderedTasks[globalIndex] ?? task;
         const globalPosition = {
           index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
           total: globallyOrderedTasks.length,
@@ -847,7 +990,7 @@ const make = Effect.gen(function* () {
           commandId: CommandId.make(yield* randomId("task-agent-turn-start")),
           threadId,
           messageId: taskAgentRunMessageId(run.id),
-          text: prompt(agent, task, run.id, threadId, settings, globalPosition, trigger),
+          text: prompt(agent, startedTask, run.id, threadId, settings, globalPosition, trigger),
           attachments: [],
           modelSelection,
           mode: "auto",
@@ -931,7 +1074,7 @@ const make = Effect.gen(function* () {
             const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
             const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
             if (stopReason !== null) yield* stopActiveRun(run, stopReason);
-            else if (run.id === releasedRunId) yield* stopActiveRun(run, "released");
+            else if (run.id === releasedRunId) yield* releaseRun(run, queuedTask);
           }),
         { discard: true, concurrency: 1 },
       );
@@ -1102,13 +1245,20 @@ const make = Effect.gen(function* () {
 
           if (message.type === "send") {
             pending.current = { continuation, task };
+            const startedTask = Option.getOrElse(
+              yield* repository
+                .getById({ id: task.id })
+                .pipe(Effect.orElseSucceed(() => Option.none<Task>())),
+              () => task,
+            );
             const sent = yield* Effect.exit(
               sendTurn(
                 taskAgentRunMessageId(continuation.id),
                 `Task-agent run continued:
 This thread continues ended run ${run.id} (status "${run.status}") as a new run.
 - agentRunId: ${continuation.id}
-Claim the task with this agentRunId and finish with a fenced task_agent_result JSON block, as before.
+${claimLine(startedTask, continuation.id)}
+Finish as before: release the task in your final task_update, or end with a fenced task_agent_result JSON block.
 
 ${message.text}`,
               ),
@@ -1212,10 +1362,25 @@ ${message.text}`,
           yield* continueFromPersonMessage(event.payload);
           return;
         }
+        if (event.type !== "run.updated") return;
         const active = yield* repository.findActiveAgentRunByThreadId({
           threadId: event.threadId,
         });
         if (Option.isSome(active)) yield* reconcileRun(active.value, yield* now);
+        // Only v2 work of the thread's latest task-agent run, once that run
+        // has ended; later plain conversation in the thread keeps its session.
+        const latest = yield* repository.findLatestAgentRunByThreadId({
+          threadId: event.threadId,
+        });
+        const requestedAt = DateTime.toEpochMillis(event.payload.requestedAt);
+        if (
+          Option.isSome(latest) &&
+          latest.value.completedAt !== null &&
+          Date.parse(latest.value.startedAt) <= requestedAt &&
+          requestedAt <= Date.parse(latest.value.completedAt)
+        ) {
+          yield* releaseEndedRunSessions(event.threadId);
+        }
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to handle a v2 run event for task-agent runs", { cause }),

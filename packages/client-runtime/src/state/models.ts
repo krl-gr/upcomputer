@@ -299,6 +299,7 @@ export function presentThreadShell(
   };
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function scopeThreadShell(
   environmentId: EnvironmentId,
   thread: OrchestrationV2ThreadShell,

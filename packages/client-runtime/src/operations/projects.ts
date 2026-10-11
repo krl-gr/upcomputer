@@ -78,14 +78,17 @@ export type AddProjectCloneFlow =
 const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<SourceControlProviderKind> =
   sourceControlClients.definitions.map((definition) => definition.kind);
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): string {
   return source === "url" ? "Git URL" : sourceControlClients.get(source).pickerLabel;
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): string {
   return source === "url" ? "URL" : sourceControlClients.get(source).repositoryPathHint;
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function addProjectRemoteSourceProvider(
   source: AddProjectRemoteSource,
 ): SourceControlProviderKind | null {

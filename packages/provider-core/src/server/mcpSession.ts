@@ -1,5 +1,17 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
+/**
+ * A `t3-code` MCP tool a product feature wants a thread's agent to call
+ * without looking it up first, with a short argument shape such as
+ * `{id, status?}`. Codex code mode keeps MCP tools out of the model's context,
+ * so without a hint the agent spends a model call on an ALL_TOOLS lookup
+ * before it can call a tool.
+ */
+export interface ToolCallHint {
+  readonly name: string;
+  readonly args: string;
+}
+
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -14,6 +26,14 @@ export interface McpProviderSessionConfig {
    * call would reject.
    */
   readonly browserToolsAvailable: boolean;
+  /**
+   * False when the session's agent should not get the orchestration block,
+   * as decided by `orchestrationInstructionsFor`. The tools stay callable;
+   * this only keeps their long guide out of every model call. Defaults to true.
+   */
+  readonly orchestrationInstructions?: boolean;
+  /** Tools the agent may call without a lookup, as decided by `toolCallHintsFor`. */
+  readonly toolCallHints?: ReadonlyArray<ToolCallHint>;
   /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities?: ReadonlySet<string>;
   /**
@@ -22,6 +42,13 @@ export interface McpProviderSessionConfig {
    * already pointed at the server's daemon; the agent never handles a token.
    */
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+}
+
+/** Whether a session with this MCP config gets the orchestration block. */
+export function wantsOrchestrationInstructions(
+  config: Pick<McpProviderSessionConfig, "orchestrationInstructions"> | undefined,
+): boolean {
+  return config !== undefined && config.orchestrationInstructions !== false;
 }
 
 /** Provider env with the device variables applied over `base`, or `base` untouched. */

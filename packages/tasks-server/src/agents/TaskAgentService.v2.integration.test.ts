@@ -58,6 +58,7 @@ import * as ProviderAdapterRegistry from "../../../../apps/server/src/orchestrat
 import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import * as ProviderReplayHarness from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
+import { limitRecoveryCommand } from "../../../../apps/server/src/orchestration-v2/UsageLimitRecoveryWorker.ts";
 import { checkpointWorkspace } from "../../../provider-testing/src/replayWorkspace.ts";
 import {
   composeExperimentalServerFeatures,
@@ -72,7 +73,7 @@ import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TASKS_SERVER_FEATURE } from "../serverFeature.ts";
 import { TaskAgentService } from "./TaskAgentService.ts";
-import { TaskSourceWake } from "./TaskSourceWake.ts";
+import { SOURCE_SETTLE_MS, TaskSourceWake } from "./TaskSourceWake.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const instanceId = ProviderInstanceId.make("codex-task-agent-test");
@@ -83,6 +84,26 @@ const projectId = ProjectId.make("project:task-agents-v2");
 const HOLD = "[hold-turn]";
 /** A message containing this marker fails its turn. */
 const FAIL = "[fail-turn]";
+/** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
+const LIMIT = "[limit-turn]";
+/** A message containing this marker leaves native background work running after its turn. */
+const BACKGROUND = "[background]";
+
+/** Provider sessions the scripted provider opened, closed and resumed threads in. */
+interface SessionLog {
+  readonly opened: number;
+  readonly closed: number;
+  readonly resumed: number;
+}
+
+/** One provider process per thread, like OpenCode 1.x: detaching its thread stops it. */
+const perThreadCapabilities = {
+  ...CodexProviderCapabilitiesV2,
+  sessions: {
+    ...CodexProviderCapabilitiesV2.sessions,
+    supportsMultipleProviderThreadsPerSession: false,
+  },
+};
 
 interface StartedTurn {
   readonly threadId: ThreadId;
@@ -97,14 +118,22 @@ interface StartedTurn {
  */
 function makeTaskAgentAdapter(
   started: Ref.Ref<ReadonlyArray<StartedTurn>>,
+  sessions: Ref.Ref<SessionLog>,
+  perThreadSessions: boolean,
+  background: Ref.Ref<boolean>,
 ): ProviderAdapter.ProviderAdapterV2["Service"] {
+  const capabilities = perThreadSessions ? perThreadCapabilities : CodexProviderCapabilitiesV2;
   return {
     instanceId,
     driver,
-    getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+    getCapabilities: () => Effect.succeed(capabilities),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (sessionInput) =>
       Effect.gen(function* () {
+        yield* Ref.update(sessions, (log) => ({ ...log, opened: log.opened + 1 }));
+        yield* Effect.addFinalizer(() =>
+          Ref.update(sessions, (log) => ({ ...log, closed: log.closed + 1 })),
+        );
         const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
         const held = new Map<ProviderTurnId, ProviderAdapter.ProviderAdapterV2TurnInput>();
         const now = yield* DateTime.now;
@@ -139,12 +168,15 @@ function makeTaskAgentAdapter(
             status: "ready",
             cwd: sessionInput.runtimePolicy.cwd ?? "/fallback",
             model: sessionInput.modelSelection.model,
-            capabilities: CodexProviderCapabilitiesV2,
+            capabilities,
             createdAt: now,
             updatedAt: now,
             lastError: null,
           },
           events: Stream.fromQueue(events),
+          // Native background work only the provider knows about, like Claude's background Bash.
+          hasPendingBackgroundWork: Ref.get(background),
+          hasPendingBackgroundWorkForThread: () => Ref.get(background),
           ensureThread: (threadInput) =>
             Effect.gen(function* () {
               const createdAt = yield* DateTime.now;
@@ -170,7 +202,10 @@ function makeTaskAgentAdapter(
                 updatedAt: createdAt,
               } satisfies OrchestrationV2ProviderThread;
             }),
-          resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
+          resumeThread: ({ providerThread }) =>
+            Ref.update(sessions, (log) => ({ ...log, resumed: log.resumed + 1 })).pipe(
+              Effect.as(providerThread),
+            ),
           startTurn: (input) =>
             Effect.gen(function* () {
               yield* Ref.update(started, (turns) => [
@@ -184,9 +219,31 @@ function makeTaskAgentAdapter(
               ]);
               const at = yield* DateTime.now;
               const id = ProviderTurnId.make(`provider-turn:${input.attemptId}`);
+              if (input.message.text.includes(BACKGROUND)) yield* Ref.set(background, true);
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
+                return;
+              }
+              if (input.message.text.includes(LIMIT)) {
+                yield* Queue.offer(events, providerTurn(input, id, "failed", at));
+                yield* Queue.offer(events, {
+                  type: "turn.terminal",
+                  driver,
+                  providerThreadId: input.providerThread.id,
+                  providerTurnId: id,
+                  runOrdinal: input.runOrdinal,
+                  failureItemOrdinal: input.runOrdinal * 100 + 2,
+                  status: "failed",
+                  failure: {
+                    class: "usage_limit",
+                    message: "Plan limit reached.",
+                    code: "usageLimitExceeded",
+                    retryable: null,
+                    resetAt: DateTime.formatIso(DateTime.add(at, { seconds: 2 })),
+                  },
+                  threadDisposition: "reusable",
+                });
                 return;
               }
               if (input.message.text.includes(FAIL)) {
@@ -322,17 +379,36 @@ const task: Task = {
 
 const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
 
+interface SliceOptions {
+  readonly perThreadSessions?: boolean;
+  readonly providerSessionIdleTimeoutMs?: number;
+}
+
 /**
  * Upstream's v2 runtime with a scripted provider, plus the tasks feature
  * composed through the product seam: the hooks core reads for its runtime
  * services and its MCP server, with the product provided as the CLI does.
  */
-function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<StartedTurn>>) {
+function makeLayer(
+  name: string,
+  cwd: string,
+  started: Ref.Ref<ReadonlyArray<StartedTurn>>,
+  sessions: Ref.Ref<SessionLog>,
+  background: Ref.Ref<boolean>,
+  options: SliceOptions,
+) {
   const db = SqlitePersistence.layerMemory;
   const runtime = ProviderReplayHarness.layerWithRegistry(
     { name, runtimePolicyOverride: { cwd } },
-    ProviderAdapterRegistry.layerSingle(makeTaskAgentAdapter(started)),
-    { databaseLayer: db },
+    ProviderAdapterRegistry.layerSingle(
+      makeTaskAgentAdapter(started, sessions, options.perThreadSessions ?? false, background),
+    ),
+    {
+      databaseLayer: db,
+      ...(options.providerSessionIdleTimeoutMs === undefined
+        ? {}
+        : { providerSessionIdleTimeoutMs: options.providerSessionIdleTimeoutMs }),
+    },
   );
   const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
     Layer.provideMerge(runtime),
@@ -351,7 +427,6 @@ function makeLayer(name: string, cwd: string, started: Ref.Ref<ReadonlyArray<Sta
     Layer.provide(Layer.succeed(ServerProduct, TASKS_PRODUCT)),
   );
   // Feature services are erased at the product boundary; the tests read them.
-  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   return composed as Layer.Layer<
     Layer.Success<typeof composed> | TaskRepository | TaskAgentService | TaskSourceWake,
     Layer.Error<typeof composed>
@@ -442,6 +517,8 @@ const runSlice = <A, E>(
   body: (
     services: Effect.Success<typeof slice> & {
       readonly started: Ref.Ref<ReadonlyArray<StartedTurn>>;
+      readonly sessions: Ref.Ref<SessionLog>;
+      readonly background: Ref.Ref<boolean>;
       readonly cwd: string;
     },
   ) => Effect.Effect<
@@ -455,15 +532,18 @@ const runSlice = <A, E>(
     | ProjectStore.ProjectStoreV2
     | ThreadManagementService.ThreadManagementService
   >,
+  options: SliceOptions = {},
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(name);
       const started = yield* Ref.make<ReadonlyArray<StartedTurn>>([]);
+      const sessions = yield* Ref.make<SessionLog>({ opened: 0, closed: 0, resumed: 0 });
+      const background = yield* Ref.make(false);
       return yield* Effect.gen(function* () {
         const services = yield* slice;
-        return yield* body({ ...services, started, cwd });
-      }).pipe(Effect.provide(makeLayer(name, cwd, started)));
+        return yield* body({ ...services, started, sessions, background, cwd });
+      }).pipe(Effect.provide(makeLayer(name, cwd, started, sessions, background, options)));
     }),
   );
 
@@ -500,6 +580,217 @@ it.live(
         assert.include(firstTurn.text, `agentRunId: ${run.id}`);
       }),
     ),
+);
+
+it.live("a started run holds its task and ends when its final update releases it", () =>
+  runSlice("task-agent-v2-claim", ({ repository, taskAgents, runsOf, runWithStatus, started }) =>
+    Effect.gen(function* () {
+      yield* repository.upsertAgent(agent);
+      const created = yield* repository.upsert({
+        ...task,
+        description: `Address the review. ${HOLD}`,
+        output: "Reviewer: the README example is wrong.",
+      });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      const run = yield* eventually(
+        "the run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+      const claimed = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+      assert.strictEqual(claimed.assigneeAgentRunId, run.id);
+      // The prompt carries what the agent would otherwise fetch with task_get.
+      const firstTurn = yield* eventually(
+        "the provider turn",
+        Ref.get(started).pipe(Effect.map((turns) => Option.fromNullishOr(turns[0]))),
+      );
+      assert.include(
+        firstTurn.text,
+        `This run holds the task: the server set assigneeAgentRunId to "${run.id}"`,
+      );
+      assert.include(firstTurn.text, "Current output:\nReviewer: the README example is wrong.");
+      assert.notInclude(firstTurn.text, "Claim the task by setting");
+
+      const released = yield* callTaskTool(run.threadId, "task_update", {
+        id: task.id,
+        status: "Needs Review",
+        assigneeAgentRunId: null,
+      });
+      assert.isFalse(released.isError, released.text);
+      const done = yield* eventually("the run to complete", runWithStatus(run.id, "completed"));
+      assert.isNotNull(done.completedAt);
+      const updated = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+      assert.strictEqual(updated.status, "Needs Review");
+      assert.isNull(updated.assigneeAgentRunId);
+    }),
+  ),
+);
+
+it.live("a run that releases its task as Blocked ends blocked and wakes its chat at once", () =>
+  runSlice("task-agent-v2-blocked-release", ({ repository, taskAgents, runsOf, threads, cwd }) =>
+    Effect.gen(function* () {
+      const projectStore = yield* ProjectStore.ProjectStoreV2;
+      yield* projectStore.apply({
+        sequence: 1,
+        eventId: EventId.make("event:task-agents-v2-blocked:project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: timestamp,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "project.created",
+        payload: {
+          projectId,
+          title: "Task agents",
+          workspaceRoot: cwd,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      });
+      const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-blocked:chat");
+      yield* threads.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("command:task-agents-v2-blocked:chat"),
+        threadId: chatThreadId,
+        projectId,
+        title: "Chat",
+        modelSelection: agentModel,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const helper: TaskAgent = {
+        ...agent,
+        id: TaskAgentId.make("task-agent:v2-blocked-helper"),
+        name: "Blocked helper",
+        startStatuses: [],
+        startRunStatuses: ["blocked"],
+      };
+      yield* repository.upsertAgent(agent);
+      yield* repository.upsertAgent(helper);
+      const created = yield* repository.upsert({
+        ...task,
+        description: `Needs credentials. ${HOLD}`,
+        sourceThreadId: chatThreadId,
+      });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      const run = yield* eventually(
+        "the run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+
+      const released = yield* callTaskTool(run.threadId, "task_update", {
+        id: task.id,
+        status: "Blocked",
+        output: "Missing required credentials. Need user input.",
+        assigneeAgentRunId: null,
+      });
+      assert.isFalse(released.isError, released.text);
+      const ended = yield* eventually(
+        "the run to end",
+        runsOf.pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(
+              runs.find((candidate) => candidate.id === run.id && candidate.completedAt),
+            ),
+          ),
+        ),
+      );
+      assert.strictEqual(ended.status, "blocked");
+      const { events } = yield* repository.events({
+        taskId: task.id,
+        kinds: ["task.agent-result"],
+      });
+      assert.lengthOf(events, 1);
+      assert.include(events[0]?.payload, { blocked: true, agentRunId: run.id });
+      const helperRun = yield* eventually(
+        "the blocked-run agent to start",
+        runsOf.pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.agentId === helper.id)),
+          ),
+        ),
+      );
+      assert.strictEqual(helperRun.triggerRunId, run.id);
+
+      // No settle wait: the chat hears at once, while the helper still runs.
+      const wake = yield* TaskSourceWake;
+      yield* wake.sweep;
+      const records = yield* threads.getThreadRecords(chatThreadId, ["messages"]);
+      const notified = records.messages.filter(
+        (message) => message.notification?.source.kind === "task_agent_run",
+      );
+      assert.lengthOf(notified, 1);
+      assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" is blocked`);
+      assert.include(notified[0]?.text, `run ${run.id}`);
+      assert.include(notified[0]?.text, "Summary: Missing required credentials. Need user input.");
+      assert.notInclude(notified[0]?.text, "No run for this chat's tasks is in progress now.");
+    }),
+  ),
+);
+
+it.live("a Blocked release starts only blocked-run agents within the releasing run's modes", () =>
+  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf }) =>
+    Effect.gen(function* () {
+      const supervised: TaskAgent = {
+        ...agent,
+        config: { ...agent.config, runtimeMode: "approval-required" },
+      };
+      const broadHelper: TaskAgent = {
+        ...agent,
+        id: TaskAgentId.make("task-agent:v2-blocked-broad"),
+        name: "Full-access helper",
+        startStatuses: [],
+        startRunStatuses: ["blocked"],
+      };
+      const narrowHelper: TaskAgent = {
+        ...supervised,
+        id: TaskAgentId.make("task-agent:v2-blocked-narrow"),
+        name: "Supervised helper",
+        startStatuses: [],
+        startRunStatuses: ["blocked"],
+      };
+      yield* repository.upsertAgent(supervised);
+      yield* repository.upsertAgent(broadHelper);
+      yield* repository.upsertAgent(narrowHelper);
+      const created = yield* repository.upsert({ ...task, description: `Work. ${HOLD}` });
+      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+      const run = yield* eventually(
+        "the run to start",
+        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+
+      const released = yield* callTaskTool(run.threadId, "task_update", {
+        id: task.id,
+        status: "Blocked",
+        output: "Need user input.",
+        assigneeAgentRunId: null,
+      });
+      assert.isFalse(released.isError, released.text);
+      const narrowRun = yield* eventually(
+        "the supervised helper to start",
+        runsOf.pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.agentId === narrowHelper.id)),
+          ),
+        ),
+      );
+      assert.strictEqual(narrowRun.triggerRunId, run.id);
+      assert.strictEqual(
+        (yield* runsOf).find((candidate) => candidate.id === run.id)?.status,
+        "blocked",
+      );
+      // A pass with no caller, as after a restart, is held to the blocked run's modes too.
+      yield* taskAgents.recover;
+      assert.isUndefined((yield* runsOf).find((candidate) => candidate.agentId === broadHelper.id));
+    }),
+  ),
 );
 
 it.live("the run completes from its final message's task_agent_result", () =>
@@ -724,6 +1015,248 @@ it.live(
     ),
 );
 
+/** The session log once `count` sessions closed and none is open. */
+const sessionsReleased = (sessions: Ref.Ref<SessionLog>, count: number) =>
+  Ref.get(sessions).pipe(
+    Effect.map((log) =>
+      log.closed === count && log.opened === count ? Option.some(log) : Option.none(),
+    ),
+  );
+
+it.live(
+  "a finished run releases its provider session, and a continuation resumes in a new one",
+  () =>
+    runSlice(
+      "task-agent-v2-release",
+      ({ createTask, runWithStatus, taskAgents, threads, started, sessions }) =>
+        Effect.gen(function* () {
+          const first = yield* createTask;
+          yield* eventually("the first run to complete", runWithStatus(first.id, "completed"));
+          yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+          const released = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+          assert.lengthOf(released.providerSessions, 0);
+          // Releasing the session leaves the thread itself as it was.
+          assert.isNull(released.thread.settledOverride);
+
+          const message = yield* taskAgents.messageRun({ id: first.id, text: "Please continue." });
+          assert.isTrue(message.ok);
+          if (!message.ok) return;
+          yield* eventually(
+            "the continuation to complete",
+            runWithStatus(message.run.id, "completed"),
+          );
+          const turns = yield* Ref.get(started);
+          assert.lengthOf(turns, 2);
+          assert.include(turns[1]?.text ?? "", "Please continue.");
+          const log = yield* eventually(
+            "the continuation's session to close",
+            sessionsReleased(sessions, 2),
+          );
+          // The new session resumed the thread's provider conversation.
+          assert.strictEqual(log.resumed, 1);
+        }),
+      { perThreadSessions: true },
+    ),
+);
+
+it.live("a run that ends on a usage limit releases its session and still resumes at reset", () =>
+  runSlice(
+    "task-agent-v2-release-limit",
+    ({ createTaskWith, runWithStatus, runsOf, threads, started, sessions }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(`Hit the provider limit. ${LIMIT}`);
+        yield* eventually("the run to fail", runWithStatus(first.id, "failed"));
+        yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+        const shell = yield* threads.getThreadShell(first.threadId);
+        assert.isDefined(shell);
+        if (shell === undefined || shell === null) return;
+        assert.strictEqual(shell.lastErrorClass, "usage_limit");
+        assert.notStrictEqual(shell.settledOverride, "settled");
+
+        // The usage-limit worker's own steps: arm recovery, then resume at reset.
+        const arm = limitRecoveryCommand(shell, true, Date.now());
+        assert.strictEqual(arm?.type, "thread.metadata.update");
+        yield* threads.dispatch(arm!);
+        const armed = yield* threads.getThreadShell(first.threadId);
+        assert.strictEqual(armed?.limitRecovery?.autoResume, true);
+        const resume = limitRecoveryCommand(armed!, true, Date.parse(armed!.usageLimitResetAt!));
+        assert.strictEqual(resume?.type, "message.dispatch");
+        // The orchestrator resumes only once the reset time has passed.
+        yield* Effect.sleep(Date.parse(armed!.usageLimitResetAt!) - Date.now() + 50);
+        yield* threads.dispatch(resume!);
+        yield* eventually(
+          "the resumed run to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.continuesRunId === first.id && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        assert.lengthOf(yield* Ref.get(started), 2);
+        yield* eventually("the resumed run's session to close", sessionsReleased(sessions, 2));
+      }),
+    { perThreadSessions: true },
+  ),
+);
+
+it.live(
+  "releasing a stopped run's session keeps the thread's pin, active state and pull request watch",
+  () =>
+    runSlice(
+      "task-agent-v2-release-kept",
+      ({ createTaskWith, taskAgents, threads, v2Runs, sessions }) =>
+        Effect.gen(function* () {
+          const first = yield* createTaskWith(`Keep working. ${HOLD}`);
+          const v2RunWithStatus = (status: OrchestrationV2Run["status"]) =>
+            v2Runs(first.threadId).pipe(
+              Effect.map((runs) => Option.fromNullishOr(runs.find((run) => run.status === status))),
+            );
+          yield* eventually("the v2 run to be running", v2RunWithStatus("running"));
+          const threadId = first.threadId;
+          yield* threads.dispatch({
+            type: "thread.pin",
+            commandId: CommandId.make("command:release-kept:pin"),
+            threadId,
+          });
+          yield* threads.dispatch({
+            type: "thread.unsettle",
+            commandId: CommandId.make("command:release-kept:unsettle"),
+            threadId,
+            reason: "user",
+          });
+          yield* threads.dispatch({
+            type: "thread.pull-request.watch",
+            commandId: CommandId.make("command:release-kept:watch"),
+            threadId,
+            host: "github.com",
+            repository: "t3tools/demo",
+            number: 7,
+            watching: true,
+            link: { url: "https://github.com/t3tools/demo/pull/7", source: "manual" },
+          });
+          const before = (yield* threads.getThreadRecords(threadId, ["runs"])).thread;
+          assert.isNotNull(before.pinnedAt ?? null);
+          assert.strictEqual(before.settledOverride, "active");
+          assert.isDefined(before.pullRequests?.[0]?.watch);
+
+          yield* taskAgents.stopRun({ id: first.id });
+          yield* eventually("the v2 run to be interrupted", v2RunWithStatus("interrupted"));
+          yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+          const after = (yield* threads.getThreadRecords(threadId, ["runs"])).thread;
+          assert.deepStrictEqual(after.pinnedAt, before.pinnedAt);
+          assert.strictEqual(after.settledOverride, "active");
+          assert.deepStrictEqual(after.pullRequests?.[0]?.watch, before.pullRequests?.[0]?.watch);
+        }),
+      { perThreadSessions: true },
+    ),
+);
+
+it.live("a later plain turn in a finished run's thread keeps its provider session", () =>
+  runSlice(
+    "task-agent-v2-release-plain",
+    ({ createTask, runWithStatus, runsOf, repository, v2Runs, sendAsPerson, sessions }) =>
+      Effect.gen(function* () {
+        const first = yield* createTask;
+        yield* eventually("the first run to complete", runWithStatus(first.id, "completed"));
+        yield* eventually("the provider session to close", sessionsReleased(sessions, 1));
+
+        const person = { type: "person" } as const;
+        yield* repository.setArchived({ ids: [task.id], archived: true, actor: person });
+        yield* sendAsPerson(first.threadId, "Archived task: just answer.");
+        yield* eventually(
+          "the plain turn to complete",
+          v2Runs(first.threadId).pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.ordinal === 2 && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        // A wrongful release would follow the turn's terminal event within milliseconds.
+        yield* Effect.sleep("500 millis");
+        assert.deepInclude(yield* Ref.get(sessions), { opened: 2, closed: 1 });
+
+        // The task's next run uses that session and releases it when it ends.
+        yield* repository.setArchived({ ids: [task.id], archived: false, actor: person });
+        yield* sendAsPerson(first.threadId, "continue");
+        yield* eventually(
+          "the continuation to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.continuesRunId === first.id && run.status === "completed"),
+              ),
+            ),
+          ),
+        );
+        yield* eventually("the session to close", sessionsReleased(sessions, 2));
+      }),
+    { perThreadSessions: true },
+  ),
+);
+
+/**
+ * A run that ends while the provider still holds native background work keeps
+ * its session: the release asks the provider and leaves the session to the
+ * idle timeout, which releases it once that work and its delivery finish.
+ */
+const keepsSessionForBackgroundWork = (name: string, description: string, endStatus: string) =>
+  runSlice(
+    name,
+    ({ createTaskWith, runWithStatus, threads, sessions, background }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(description);
+        yield* eventually("the run to end", runWithStatus(first.id, endStatus));
+        const sql = yield* SqlClient.SqlClient;
+        // Every release attempt of the ended run has asked the provider.
+        yield* eventually(
+          "the release to ask the provider",
+          sql<{ readonly status: string }>`
+            SELECT status FROM orchestration_v2_effect_outbox
+            WHERE thread_id = ${first.threadId}
+              AND effect_type = 'provider-session.release-idle'
+          `.pipe(
+            Effect.map((rows) =>
+              rows.length > 0 && rows.every((row) => row.status === "succeeded")
+                ? Option.some(rows)
+                : Option.none(),
+            ),
+          ),
+        );
+        assert.deepInclude(yield* Ref.get(sessions), { opened: 1, closed: 0 });
+        const kept = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+        assert.lengthOf(kept.providerSessions, 1);
+        assert.notStrictEqual(kept.providerSessions[0]?.status, "stopped");
+
+        // The background work finishes and its result is delivered.
+        yield* Ref.set(background, false);
+        yield* eventually("the idle timeout to close the session", sessionsReleased(sessions, 1));
+        // The idle timeout stopped the session; a release would have detached it.
+        const released = yield* threads.getThreadRecords(first.threadId, ["providerSessions"]);
+        assert.strictEqual(released.providerSessions[0]?.status, "stopped");
+      }),
+    { perThreadSessions: true, providerSessionIdleTimeoutMs: 300 },
+  );
+
+it.live("a run that completes with native background work keeps its session until it ends", () =>
+  keepsSessionForBackgroundWork(
+    "task-agent-v2-release-background",
+    `Start a background job. ${BACKGROUND}`,
+    "completed",
+  ),
+);
+
+it.live("a run that fails with native background work keeps its session until it ends", () =>
+  keepsSessionForBackgroundWork(
+    "task-agent-v2-release-background-failed",
+    `Start a background job, then fail. ${BACKGROUND} ${FAIL}`,
+    "failed",
+  ),
+);
+
 const mcpClient = McpSchema.McpServerClient.of({
   clientId: 1,
   protocolVersion: "2025-06-18",
@@ -738,7 +1271,7 @@ const mcpClient = McpSchema.McpServerClient.of({
 });
 
 it.live("a chat creates a task through the task MCP tools and the started run reports back", () =>
-  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd, started, sendAsPerson }) =>
+  runSlice("task-agent-v2-mcp", ({ repository, threads, cwd, started, sendAsPerson, v2Runs }) =>
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -844,53 +1377,91 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       const fetched = yield* callTool("task_get", { id: createdTask.id });
       assert.include(textOf(fetched), "Needs Review");
 
-      // The chat hears about the finished run once, as a queued notification turn.
-      const wake = yield* TaskSourceWake;
-      const notificationsOf = threads
-        .getThreadRecords(chatThreadId, ["messages"])
-        .pipe(
-          Effect.map((records) =>
-            records.messages.filter(
-              (message) => message.notification?.source.kind === "task_agent_run",
-            ),
+      // The chat's own turn ends before its tasks settle.
+      const [heldRun] = yield* v2Runs(chatThreadId);
+      assert.isDefined(heldRun);
+      yield* threads.dispatch({
+        type: "run.interrupt",
+        commandId: CommandId.make("command:task-agents-v2:chat-interrupt"),
+        threadId: chatThreadId,
+        runId: heldRun!.id,
+      });
+      yield* eventually(
+        "the chat's held run to end",
+        v2Runs(chatThreadId).pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.status === "interrupted")),
           ),
-        );
-      const [notified] = yield* eventually(
-        "the source chat notification",
+        ),
+      );
+
+      // The chat sees the finished run as a card once its tasks have settled, without a
+      // model turn. Ending the run earlier stands in for the wait.
+      const sql = yield* SqlClient.SqlClient;
+      const settledAt = new Date(Date.now() - SOURCE_SETTLE_MS).toISOString();
+      yield* sql`UPDATE task_agent_runs SET completed_at = ${settledAt} WHERE id = ${run.id}`;
+      const wake = yield* TaskSourceWake;
+      const cardsOf = threads
+        .getThreadRecords(chatThreadId, ["turnItems"], { turnItemTypes: ["notification"] })
+        .pipe(Effect.map((records) => records.turnItems));
+      const [card] = yield* eventually(
+        "the source chat card",
         Effect.gen(function* () {
           yield* wake.sweep;
-          const messages = yield* notificationsOf;
-          return messages.length > 0 ? Option.some(messages) : Option.none();
+          const cards = yield* cardsOf;
+          return cards.length > 0 ? Option.some(cards) : Option.none();
         }),
       );
       yield* wake.sweep;
-      assert.lengthOf(yield* notificationsOf, 1);
-      assert.strictEqual(notified?.senderThreadId, run.threadId);
-      assert.strictEqual(notified?.createdBy, "agent");
-      assert.strictEqual(notified?.creationSource, "server");
-      assert.deepStrictEqual(notified?.notification, {
-        source: {
-          kind: "task_agent_run",
-          tasks: [{ id: createdTask.id, title: task.title }],
-          childThreadId: run.threadId,
-        },
-        outcome: "completed",
-        summary: `Task "${task.title}" completed`,
+      assert.lengthOf(yield* cardsOf, 1);
+      assert(card?.type === "notification");
+      assert.isNull(card.runId);
+      assert.deepStrictEqual(card.source, {
+        kind: "task_agent_run",
+        tasks: [{ id: createdTask.id, title: task.title, status: "Needs Review" }],
       });
-      assert.include(notified?.text, "Summary: Handled 1");
-      // The queue delivers it as a turn of its own once the chat is idle.
-      yield* eventually(
-        "the notification turn",
-        threads
-          .getThreadRecords(chatThreadId, ["runs"])
-          .pipe(
-            Effect.map((records) =>
-              Option.fromNullishOr(
-                records.runs.find((candidate) => candidate.userMessageId === notified?.id),
-              ),
-            ),
-          ),
+      assert.strictEqual(card.outcome, "completed");
+      assert.strictEqual(card.summary, `Task "${task.title}" done`);
+      assert.include(card.detail, "Summary: Handled 1");
+      // No message was queued and no turn started in the chat beyond its own held one.
+      const chat = yield* threads.getThreadRecords(chatThreadId, ["runs", "messages"]);
+      assert.deepStrictEqual(
+        chat.runs.map(({ id }) => id),
+        [heldRun!.id],
       );
+      assert.lengthOf(chat.messages, 1);
+      assert.lengthOf(
+        (yield* Ref.get(started)).filter((turn) => turn.threadId === chatThreadId),
+        1,
+      );
+
+      // The next turn the chat takes for another reason carries the card, once.
+      const chatTurns = Ref.get(started).pipe(
+        Effect.map((turns) => turns.filter((turn) => turn.threadId === chatThreadId)),
+      );
+      const turnNumber = (count: number) =>
+        chatTurns.pipe(
+          Effect.map((turns) =>
+            turns.length >= count ? Option.some(turns[count - 1]!) : Option.none(),
+          ),
+        );
+      yield* sendAsPerson(chatThreadId, "How did it go?");
+      const first = yield* eventually("the chat's next turn", turnNumber(2));
+      assert.include(first.text, "Note: these notifications were shown in this thread");
+      assert.include(first.text, `- Task "${task.title}" done`);
+      assert.include(first.text, "Summary: Handled 1");
+      assert.isTrue(first.text.endsWith("User message:\nHow did it go?"));
+      yield* eventually(
+        "the chat's first run to complete",
+        v2Runs(chatThreadId).pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(runs.find((candidate) => candidate.status === "completed")),
+          ),
+        ),
+      );
+      yield* sendAsPerson(chatThreadId, "Thanks.");
+      const second = yield* eventually("the chat's turn after that", turnNumber(3));
+      assert.strictEqual(second.text, "Thanks.");
     }),
   ),
 );

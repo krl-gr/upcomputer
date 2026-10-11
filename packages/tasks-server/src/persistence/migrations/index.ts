@@ -1,3 +1,8 @@
+import { UpdateDefaultQueueStatePromptsMigration } from "./029_UpdateDefaultQueueStatePrompts.ts";
+import { UpdateDefaultBatchCreatePromptsMigration } from "./028_UpdateDefaultBatchCreatePrompts.ts";
+import { UpdateDefaultBlockedReleasePromptsMigration } from "./027_UpdateDefaultBlockedReleasePrompts.ts";
+import { UpdateDefaultRunStartPromptsMigration } from "./026_UpdateDefaultRunStartPrompts.ts";
+import { UpdateDefaultQueuePromptsMigration } from "./025_UpdateDefaultQueuePrompts.ts";
 import { TaskAutomationRankMigration } from "./024_TaskAutomationRank.ts";
 import { TaskScheduleRemindersMigration } from "./023_TaskScheduleReminders.ts";
 import { TaskSettingsMigration } from "./022_TaskSettings.ts";
@@ -86,5 +91,26 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 22, name: "TaskSettings", run: TaskSettingsMigration },
     { version: 23, name: "TaskScheduleReminders", run: TaskScheduleRemindersMigration },
     { version: 24, name: "TaskAutomationRank", run: TaskAutomationRankMigration },
+    { version: 25, name: "UpdateDefaultQueuePrompts", run: UpdateDefaultQueuePromptsMigration },
+    {
+      version: 26,
+      name: "UpdateDefaultRunStartPrompts",
+      run: UpdateDefaultRunStartPromptsMigration,
+    },
+    {
+      version: 27,
+      name: "UpdateDefaultBlockedReleasePrompts",
+      run: UpdateDefaultBlockedReleasePromptsMigration,
+    },
+    {
+      version: 28,
+      name: "UpdateDefaultBatchCreatePrompts",
+      run: UpdateDefaultBatchCreatePromptsMigration,
+    },
+    {
+      version: 29,
+      name: "UpdateDefaultQueueStatePrompts",
+      run: UpdateDefaultQueueStatePromptsMigration,
+    },
   ],
 } as const;

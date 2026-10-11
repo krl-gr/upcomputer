@@ -1,0 +1,56 @@
+---
+import LegalPage from "../components/LegalPage.astro";
+import Layout from "../layouts/Layout.astro";
+import { GITHUB_REPOSITORY_URL } from "../lib/site";
+---
+
+<Layout title="Privacy Policy · Up.computer" description="What the Up.computer app and website collect.">
+  <LegalPage
+    title="Privacy Policy"
+    description="What the Up.computer app and this website collect, and what they don’t."
+    effectiveDate="October 3, 2026"
+  >
+    <h2>Who operates Up.computer</h2>
+    <p>
+      Up.computer is operated by Kirill Gurianov. Privacy and data requests can be sent to{" "}
+      <a href="mailto:support@up.computer">support@up.computer</a>.
+    </p>
+
+    <h2>Your data stays on your computer</h2>
+    <p>
+      Projects, chats, and settings are stored on your computer. When you ask an agent to work, the
+      content it needs goes to the provider you chose, such as Claude Code or Codex, under that
+      provider’s own terms. Websites and apps an agent opens through the browser or computer use see
+      what it sends them.
+    </p>
+
+    <h2>App telemetry</h2>
+    <p>
+      The app sends usage events to PostHog: app version, operating system, processor architecture,
+      provider, model, interaction and access mode, counts, durations, and error categories. Events
+      never include prompts, responses, file contents, file paths, or credentials. They are tied to a
+      pseudonymous ID: a SHA-256 hash of your local Codex or Claude Code account ID if there is one,
+      otherwise of a random ID the app creates. Set <code>UPCOMPUTER_TELEMETRY_ENABLED=false</code>
+      to turn it off. The code is{" "}
+      <a href={`${GITHUB_REPOSITORY_URL}/tree/main/apps/server/src/telemetry`} target="_blank" rel="noopener noreferrer">open source</a>.
+    </p>
+
+    <h2>Website</h2>
+    <p>
+      This website counts page views, Core Web Vitals, and clicks on download, GitHub, and changelog
+      links with PostHog, without cookies, persistent identifiers, or session replay. It respects Do
+      Not Track and Global Privacy Control. Hosting logs may include IP address, user agent, time,
+      and requested path for security and reliability.
+    </p>
+
+    <h2>Retention and your choices</h2>
+    <p>
+      Local data stays until you delete it. Telemetry is kept only as long as it helps operate and
+      improve the app. Data held by providers follows their policies. Send access or deletion
+      requests to the contact above.
+    </p>
+
+    <h2>Changes</h2>
+    <p>Updates will be published on this page with a new effective date.</p>
+  </LegalPage>
+</Layout>

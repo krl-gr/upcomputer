@@ -143,7 +143,7 @@ it.effect("a task created over RPC without a project goes to the Inbox, at its p
     assert.equal(mine.projectId, yield* (yield* InboxProject).ensure);
     assert.deepStrictEqual([mine.audience, mine.kind], ["person", "task"]);
     const order = (yield* (yield* TaskRepository).page({})).tasks.map(({ title }) => title);
-    assert.deepStrictEqual(order, ["second", "sign the contract", "first"]);
+    assert.deepStrictEqual(order, ["first", "second", "sign the contract"]);
 
     // A routine must be a person task; the error says so.
     const refused = yield* Effect.flip(

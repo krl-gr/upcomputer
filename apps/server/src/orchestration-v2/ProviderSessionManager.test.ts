@@ -38,6 +38,8 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { registerOrchestrationInstructionsResolver } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { registerToolCallHintsResolver } from "../provider/ToolCallHints.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -1909,6 +1911,52 @@ it.effect(
             }).pipe(Layer.orDie),
           }),
         ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 records the thread's orchestration block and tool call hints",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const mcpConfigs = yield* Ref.make<
+        ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
+      >([]);
+      const narrowed = ThreadId.make("thread-provider-session-manager-task-agent");
+      const chat = ThreadId.make("thread-provider-session-manager-chat");
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        yield* registerOrchestrationInstructionsResolver((threadId) =>
+          Effect.succeed(threadId === narrowed ? false : undefined),
+        );
+        yield* registerToolCallHintsResolver((threadId) =>
+          Effect.succeed(threadId === chat ? [{ name: "task_get", args: "{id}" }] : []),
+        );
+        for (const threadId of [narrowed, chat]) {
+          const providerSessionId = yield* idAllocator.allocate.providerSession({
+            providerInstanceId: modelSelection.instanceId,
+            threadId,
+          });
+          yield* eventSink.write({
+            events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+          });
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+          yield* manager.close(providerSessionId);
+        }
+        const [taskAgent, chatSession] = yield* Ref.get(mcpConfigs);
+        assert.isFalse(taskAgent?.orchestrationInstructions);
+        assert.isTrue(chatSession?.orchestrationInstructions);
+        assert.deepEqual(taskAgent?.toolCallHints, []);
+        assert.deepEqual(chatSession?.toolCallHints, [{ name: "task_get", args: "{id}" }]);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 1_000, mcpConfigs })),
+        Effect.scoped,
       );
     }),
 );

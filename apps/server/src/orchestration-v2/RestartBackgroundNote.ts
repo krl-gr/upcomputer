@@ -185,14 +185,15 @@ export function isRestartNoteContinuation(
  * about yet. The note belongs to the provider thread that lost the work: turns
  * on another provider (after a switch) neither owe it nor deliver it. A later
  * completed turn on the same provider thread proves delivery, so the pending
- * set is derived rather than cleared. Compactions and
+ * set is derived rather than cleared. Slash commands (compactions included) and
  * resumed turns carry no note, and a rolled-back run left native history, so
  * none of them counts as delivery. A note continuation's own prompt is the note.
  */
 export function pendingRestartCancelledBackgroundWork(input: {
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly providerTurns: ReadonlyArray<ProviderTurnState>;
-  readonly compactionMessageIds: ReadonlySet<string>;
+  /** Native slash commands, /compact included: they must start the prompt. */
+  readonly commandMessageIds: ReadonlySet<string>;
   readonly run: Pick<
     OrchestrationV2Run,
     | "id"
@@ -206,13 +207,13 @@ export function pendingRestartCancelledBackgroundWork(input: {
   /** Include earlier attempts: a steer replaces the attempt but not the run. */
   readonly attempts: ReadonlyArray<Attempt>;
 }): ReadonlyArray<Work> {
-  const isCompaction = (run: typeof input.run) => input.compactionMessageIds.has(run.userMessageId);
-  // The current run prepends the note unless it is a compaction or a
+  const isCommand = (run: typeof input.run) => input.commandMessageIds.has(run.userMessageId);
+  // The current run prepends the note unless it is a slash command or a
   // continuation (whose own prompt is the note, or which resumes natively).
   if (
     input.run.providerThreadId === null ||
     input.run.restartContinuationOfRunId !== undefined ||
-    isCompaction(input.run)
+    isCommand(input.run)
   )
     return [];
   const providerThreadId = input.run.providerThreadId;
@@ -231,7 +232,7 @@ export function pendingRestartCancelledBackgroundWork(input: {
         input.attempts.some(
           (attempt) => attempt.runId === candidate.id && deliveredAttemptIds.has(attempt.id),
         )) &&
-      !isCompaction(candidate) &&
+      !isCommand(candidate) &&
       (candidate.restartContinuationOfRunId === undefined ||
         isRestartNoteContinuation(candidate, input.runs, input.providerTurns, input.attempts)),
   );

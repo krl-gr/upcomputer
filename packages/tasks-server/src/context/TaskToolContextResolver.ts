@@ -6,7 +6,7 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { TaskToolContextInput } from "@t3tools/tasks-contracts/v1";
+import type { TaskToolContextInclude, TaskToolContextInput } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -75,6 +75,24 @@ export interface TaskToolContextResolution {
   readonly resolvedModel: TaskResolvedModel | null;
   readonly warnings: ReadonlyArray<string>;
   readonly errors: ReadonlyArray<string>;
+}
+
+/**
+ * The resolution as tools return it. Every project and every provider's model
+ * catalog are large and only needed to pick another project or a model, so
+ * they are left out unless included; projects are also listed when the
+ * project could not be resolved, so the caller can pick one.
+ */
+export function compactTaskToolContext(
+  resolution: TaskToolContextResolution,
+  include: ReadonlyArray<TaskToolContextInclude> = [],
+) {
+  const { projects, providers, ...rest } = resolution;
+  return {
+    ...rest,
+    ...(include.includes("projects") || rest.resolvedProject === null ? { projects } : {}),
+    ...(include.includes("providers") ? { providers } : {}),
+  };
 }
 
 export interface TaskToolContextResolverShape {

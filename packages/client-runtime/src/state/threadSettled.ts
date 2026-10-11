@@ -35,6 +35,8 @@ interface QueuedThreadShell {
  * failed start (or stale data — shells from older servers can carry user
  * messages with no latestTurn at all), not pending work. Without this bound
  * such threads would be permanently unsettleable.
+ *
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const DAY_MS = 24 * 60 * 60 * 1_000;

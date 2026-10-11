@@ -275,6 +275,7 @@ it.effect(
           closeInstance: () => Effect.void,
           release: () => Effect.void,
           detach: () => Effect.void,
+          hasPendingBackgroundWork: () => Effect.succeed(false),
         }),
       );
       const layerControl = ProviderTurnControlService.layer.pipe(

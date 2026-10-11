@@ -12,6 +12,7 @@ import {
   PI_T3_MCP_EXTENSION_FILENAME,
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
+  T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_USER_INSTRUCTIONS_ENV,
@@ -72,6 +73,16 @@ describe("pi T3 MCP injection", () => {
     assert.equal(launch.env[T3_MCP_BEARER_ENV], "secret-pi-token");
     assert.equal(launch.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
     assert.equal(launch.env[T3_PI_MCP_EXTENSION_PATH_ENV], "/tmp/cache/pi-t3-mcp-extension.ts");
+    assert.isUndefined(launch.env[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]);
+
+    const withoutOrchestration = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: { [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "inherited" },
+      mcpSession: { ...mcpSession, orchestrationInstructions: false },
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+    });
+    assert.isTrue(withoutOrchestration.hasT3Mcp);
+    assert.equal(withoutOrchestration.env[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV], "omit");
 
     const permissionOnly = buildPiRpcLaunch({
       launchArgs: [],

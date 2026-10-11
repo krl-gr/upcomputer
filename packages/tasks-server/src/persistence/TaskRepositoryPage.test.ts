@@ -1,7 +1,13 @@
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { TaskAgentId, TaskAgentRunId, TaskAutomationId, TaskId } from "@t3tools/tasks-contracts/v1";
+import {
+  TaskAgentId,
+  TaskAgentRunId,
+  TaskAutomationId,
+  TaskId,
+  TaskRank,
+} from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -138,14 +144,14 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
       const routine = { audience: "person", kind: "routine" } as const;
-      // A new task goes first, so these are created last to first.
-      yield* repository.upsert(task("k-5-routine", [], routine));
+      // A new task joins the end, so these are created first to last.
+      yield* repository.upsert(task("k-1-task"));
+      yield* repository.upsert(task("k-2-routine", ["gym"], routine));
+      yield* repository.upsert(task("k-3-mine", ["gym"], { audience: "person" }));
       yield* repository.upsert(
         task("k-4-old", [], { ...routine, archivedAt: "2026-10-05T11:00:00.000Z" }),
       );
-      yield* repository.upsert(task("k-3-mine", ["gym"], { audience: "person" }));
-      yield* repository.upsert(task("k-2-routine", ["gym"], routine));
-      yield* repository.upsert(task("k-1-task"));
+      yield* repository.upsert(task("k-5-routine", [], routine));
 
       const ids = (input: Parameters<typeof repository.search>[0]) =>
         repository
@@ -239,8 +245,8 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
   it.effect("reorderMany moves a block in its current order, next to a neighbor or first", () =>
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
-      // Each create prepends, so the global order is the reverse of creation.
-      for (const id of ["rm6", "rm5", "rm4", "rm3", "rm2", "rm1"])
+      // Each create appends, so the global order is the creation order.
+      for (const id of ["rm1", "rm2", "rm3", "rm4", "rm5", "rm6"])
         yield* repository.upsert(task(id));
       const order = () =>
         repository
@@ -277,6 +283,45 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       assert.equal(ownNeighbor._tag, "TaskPersistenceSqlError");
       yield* Effect.flip(repository.reorderMany({ ids: [TaskId.make("missing")] }));
       assert.deepStrictEqual(yield* order(), ["rm4", "rm1", "rm3", "rm6", "rm2", "rm5"]);
+    }),
+  );
+});
+
+it.layer(TestLayer)("TaskRepository order", (it) => {
+  it.effect("new tasks join the end, so a queue created in order runs in that order", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsert({ ...task("first", ["dev"]), status: "To Do" });
+      yield* repository.upsert({ ...task("second", ["dev"]), status: "Backlog" });
+      yield* repository.upsert(task("unrelated"));
+      yield* repository.upsert({ ...task("third", ["dev"]), status: "Backlog" });
+
+      const ids = (input: Parameters<typeof repository.search>[0]) =>
+        repository.search(input).pipe(Effect.map((tasks) => tasks.map(({ id }) => id)));
+      assert.deepStrictEqual(yield* ids({}), ["first", "second", "unrelated", "third"]);
+      // The hand-off takes the head of this list.
+      assert.deepStrictEqual(yield* ids({ status: "Backlog", tags: ["dev"] }), ["second", "third"]);
+
+      // An explicit reorder still decides, and the next new task goes after everything.
+      yield* repository.reorder({ id: TaskId.make("third"), beforeTaskId: TaskId.make("second") });
+      yield* repository.upsert({ ...task("fourth", ["dev"]), status: "Backlog" });
+      assert.deepStrictEqual(yield* ids({ status: "Backlog", tags: ["dev"] }), [
+        "third",
+        "second",
+        "fourth",
+      ]);
+    }),
+  );
+
+  it.effect("appending at the end of the rank space rebalances", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsert({ ...task("last"), rank: TaskRank.make("fffffffffffffffe") });
+      yield* repository.upsert(task("after-last"));
+
+      const tasks = yield* repository.search({});
+      assert.deepStrictEqual(tasks.map(({ id }) => id).slice(-2), ["last", "after-last"]);
+      assert.isBelow(tasks.at(-1)!.rank.localeCompare("fffffffffffffffe"), 0);
     }),
   );
 });

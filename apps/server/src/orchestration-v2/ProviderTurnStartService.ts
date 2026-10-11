@@ -49,6 +49,10 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import {
+  pendingRecordedNotifications,
+  recordedNotificationsNote,
+} from "./RecordedNotificationNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -837,6 +841,24 @@ export const layer: Layer.Layer<
         createdAt: providerThread.createdAt,
         updatedAt: now,
       };
+      // A native slash command (/compact included) must start the prompt, so it carries
+      // no note and delivers none; the next ordinary prompt does.
+      const commandMessageIds = new Set(
+        projection.messages
+          .filter((candidate) => candidate.text.trimStart().startsWith("/"))
+          .map((candidate) => candidate.id),
+      );
+      // Read with this snapshot and recorded on the attempt, so a notification recorded
+      // while the provider starts waits for the next prompt.
+      const recordedNotifications =
+        run.restartContinuationOfRunId !== undefined || commandMessageIds.has(run.userMessageId)
+          ? []
+          : pendingRecordedNotifications({
+              items: projection.turnItems,
+              runs: projection.runs,
+              providerTurns: projection.providerTurns,
+              attempts: projection.attempts,
+            });
       const runningRun: OrchestrationV2Run = {
         ...run,
         status: "running",
@@ -844,6 +866,9 @@ export const layer: Layer.Layer<
       };
       const runningAttempt: OrchestrationV2RunAttempt = {
         ...attempt,
+        ...(recordedNotifications.length === 0
+          ? {}
+          : { promptedNotificationIds: recordedNotifications.map((item) => item.id) }),
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
@@ -962,22 +987,19 @@ export const layer: Layer.Layer<
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds: new Set(
-          projection.messages
-            .filter(
-              (candidate) =>
-                candidate.attachments.length === 0 &&
-                candidate.text.trim().toLowerCase() === "/compact",
-            )
-            .map((candidate) => candidate.id),
-        ),
+        commandMessageIds,
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      // Notes go before the user text, delivered once like the text itself.
+      const turnNote = [
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+        recordedNotificationsNote(recordedNotifications),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1127,7 +1149,7 @@ export const layer: Layer.Layer<
                 tokenCap,
                 modelContextWindow,
                 // The note is sent with the user text, so it spends the same allowance.
-                userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
                 attachments: message.attachments,
                 providerThread: budgetProviderThread,
                 nativeContextEstimate:
@@ -1168,9 +1190,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
-            .filter((part) => part !== "")
-            .join("\n\n");
+          const context = [delivery.context, turnNote].filter((part) => part !== "").join("\n\n");
           // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
@@ -1220,7 +1240,7 @@ export const layer: Layer.Layer<
       const deliverySession =
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
-        restartNote === "" &&
+        turnNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

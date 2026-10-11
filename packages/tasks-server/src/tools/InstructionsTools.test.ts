@@ -108,7 +108,8 @@ async function harness(options: { readonly allChats?: string } = {}) {
     resolve: ({ args }) => {
       const title = args.projectId === undefined ? undefined : projectTitles[args.projectId];
       return Effect.succeed({
-        projects: [],
+        projects: Object.entries(projectTitles).map(([id, title]) => ({ id, title })),
+        providers: [{ instanceId: "codex", models: [{ slug: "gpt-test", name: "GPT Test" }] }],
         resolvedProject:
           title === undefined
             ? null
@@ -657,7 +658,217 @@ test("task_context points at the instructions tools", async () => {
     context.body.promptGuidanceEditing,
     /instructions_update and instructions_revert only when the user explicitly asks/,
   );
-  NodeAssert.deepEqual(context.body.promptGuidance, DEFAULT_TASK_PROMPT_SETTINGS);
+  NodeAssert.deepEqual(context.body.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+  });
+});
+
+test("task_context leaves the catalogs and other guidance out unless included", async () => {
+  const { call } = await harness();
+  const compact = (await call("task_context", { projectId: "project-a" })).body;
+  NodeAssert.equal(compact.resolvedProject.project.title, "Alpha");
+  NodeAssert.equal("projects" in compact, false);
+  NodeAssert.equal("providers" in compact, false);
+  NodeAssert.deepEqual(Object.keys(compact.promptGuidance), ["taskCreation"]);
+  NodeAssert.ok(compact.triggerRules.length > 0);
+
+  const forAgents = (
+    await call("task_context", {
+      projectId: "project-a",
+      include: ["providers", "agentCreation"],
+    })
+  ).body;
+  NodeAssert.equal(forAgents.providers[0].models[0].slug, "gpt-test");
+  NodeAssert.equal("projects" in forAgents, false);
+  NodeAssert.deepEqual(forAgents.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+    agentCreation: DEFAULT_TASK_PROMPT_SETTINGS.agentCreation,
+    taskExecution: DEFAULT_TASK_PROMPT_SETTINGS.taskExecution,
+  });
+
+  const forAutomations = (
+    await call("task_context", {
+      projectId: "project-a",
+      include: ["projects", "automationCreation"],
+    })
+  ).body;
+  NodeAssert.deepEqual(
+    forAutomations.projects.map(({ title }: { title: string }) => title),
+    ["Alpha", "Beta"],
+  );
+  NodeAssert.deepEqual(forAutomations.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+    automationCreation: DEFAULT_TASK_PROMPT_SETTINGS.automationCreation,
+  });
+
+  // An unresolved project lists the projects to pick from.
+  const unresolved = (await call("task_context")).body;
+  NodeAssert.equal(unresolved.resolvedProject, null);
+  NodeAssert.equal(unresolved.projects.length, 2);
+  NodeAssert.equal("providers" in unresolved, false);
+
+  NodeAssert.equal((await call("task_context", { include: ["everything"] })).isError, true);
+});
+
+test("task_context lists the project's enabled agents with their queues", async () => {
+  const { call, run } = await harness();
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };
+  const at = new Date().toISOString();
+  await run(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      const agent = (
+        id: string,
+        fields: {
+          readonly projectId: string | null;
+          readonly enabled?: boolean;
+          readonly startStatuses?: ReadonlyArray<string>;
+          readonly startTags?: ReadonlyArray<string>;
+          readonly startRunStatuses?: ReadonlyArray<"failed">;
+        },
+      ) =>
+        repository.upsertAgent({
+          id: TaskAgentId.make(id),
+          projectId: fields.projectId === null ? null : ProjectId.make(fields.projectId),
+          name: id,
+          enabled: fields.enabled ?? true,
+          startStatuses: fields.startStatuses ?? [],
+          startTags: fields.startTags ?? [],
+          startRunStatuses: fields.startRunStatuses ?? [],
+          config: { role: id, modelSelection, instructions: "Work." },
+          createdAt: at,
+          updatedAt: at,
+        });
+      yield* agent("developer", {
+        projectId: "project-a",
+        startStatuses: ["To Do"],
+        startTags: ["dev"],
+      });
+      yield* agent("reviewer", {
+        projectId: null,
+        startStatuses: ["Needs Review"],
+        startTags: ["dev"],
+      });
+      yield* agent("doctor", { projectId: null, startRunStatuses: ["failed"] });
+      yield* agent("disabled", { projectId: "project-a", enabled: false, startTags: ["dev"] });
+      yield* agent("elsewhere", { projectId: "project-b", startTags: ["dev"] });
+      const task = (id: string, projectId: string, status: string, tags: ReadonlyArray<string>) =>
+        repository.upsert({
+          id: TaskId.make(id),
+          projectId: ProjectId.make(projectId),
+          title: id,
+          description: "",
+          output: null,
+          status,
+          priority: null,
+          createdBy: "test",
+          assigneeAgentRunId: null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          metadata: null,
+          tags,
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+        });
+      yield* task("todo", "project-a", "To Do", ["dev"]);
+      yield* task("working", "project-a", "In Progress", ["dev", "extra"]);
+      yield* task("untagged", "project-a", "In Progress", []);
+      yield* task("parked", "project-a", "Backlog", ["dev"]);
+      yield* task("other-project", "project-b", "To Do", ["dev"]);
+    }),
+  );
+
+  const context = (await call("task_context", { projectId: "project-a" })).body;
+  const byId = Object.fromEntries(
+    context.agents.map((agent: { readonly id: string }) => [agent.id, agent]),
+  );
+  NodeAssert.deepEqual(Object.keys(byId).toSorted(), ["developer", "doctor", "reviewer"]);
+  NodeAssert.deepEqual(byId.developer, {
+    id: "developer",
+    name: "developer",
+    role: "developer",
+    model: "codex/gpt-test",
+    startStatuses: ["To Do"],
+    startTags: ["dev"],
+    queue: { "To Do": 1, "In Progress": 1 },
+    inProgress: ["working"],
+  });
+  NodeAssert.deepEqual(byId.reviewer.queue, { "Needs Review": 0, "In Progress": 1 });
+  NodeAssert.deepEqual(byId.doctor.startRunStatuses, ["failed"]);
+  NodeAssert.equal("queue" in byId.doctor, false);
+
+  // Without a resolved project there is no queue to show.
+  NodeAssert.equal("agents" in (await call("task_context")).body, false);
+});
+
+test("task_context shows a tag-only agent busy once a run holds its To Do task", async () => {
+  const { call, run } = await harness();
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };
+  const at = new Date().toISOString();
+  const claimed = await run(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsertAgent({
+        id: TaskAgentId.make("builder"),
+        projectId: null,
+        name: "builder",
+        enabled: true,
+        startStatuses: [],
+        startTags: ["build"],
+        startRunStatuses: [],
+        config: { role: "builder", modelSelection, instructions: "Work." },
+        createdAt: at,
+        updatedAt: at,
+      });
+      for (const [id, projectId] of [
+        ["claimed", "project-a"],
+        ["other-project", "project-b"],
+      ] as const) {
+        yield* repository.upsert({
+          id: TaskId.make(id),
+          projectId: ProjectId.make(projectId),
+          title: id,
+          description: "",
+          output: null,
+          status: "To Do",
+          priority: null,
+          createdBy: "test",
+          assigneeAgentRunId: null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          metadata: null,
+          tags: ["build"],
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+        });
+        yield* repository.startAgentRun({
+          id: TaskAgentRunId.make(`run-${id}`),
+          taskId: TaskId.make(id),
+          agentId: TaskAgentId.make("builder"),
+          threadId: ThreadId.make(`thread-${id}`),
+          modelSelection,
+          status: "running",
+          startedAt: at,
+          completedAt: null,
+          triggerRunId: null,
+          continuesRunId: null,
+          startableAt: null,
+        });
+      }
+      return yield* repository.getById({ id: TaskId.make("claimed") });
+    }),
+  );
+  // The run claims the task at start and leaves its status alone.
+  NodeAssert.equal(Option.getOrThrow(claimed).status, "To Do");
+  NodeAssert.equal(Option.getOrThrow(claimed).assigneeAgentRunId, "run-claimed");
+
+  const context = (await call("task_context", { projectId: "project-a" })).body;
+  const builder = context.agents.find((agent: { readonly id: string }) => agent.id === "builder");
+  NodeAssert.deepEqual(builder.queue, { "In Progress": 0 });
+  // Its run in project-b stays out of project-a's context.
+  NodeAssert.deepEqual(builder.active, ["claimed"]);
 });
 
 test("a large taskExecution update carries a size warning", async () => {
@@ -1062,15 +1273,13 @@ test("task_context gives the global guidance plus the target project's additions
 
   const forA = (await call("task_context", { projectId: "project-a" })).body.promptGuidance;
   NodeAssert.deepEqual(forA, {
-    ...DEFAULT_TASK_PROMPT_SETTINGS,
     taskCreation: `${DEFAULT_TASK_PROMPT_SETTINGS.taskCreation}\n\nProject "Alpha":\nAlpha creation rule`,
   });
   NodeAssert.ok(!JSON.stringify(forA).includes("Beta creation rule"));
   // Without a resolved project, only the global texts.
-  NodeAssert.deepEqual(
-    (await call("task_context")).body.promptGuidance,
-    DEFAULT_TASK_PROMPT_SETTINGS,
-  );
+  NodeAssert.deepEqual((await call("task_context")).body.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+  });
 });
 
 test("project writes keep the run restriction and dry runs", async () => {

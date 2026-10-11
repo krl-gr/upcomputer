@@ -1,0 +1,48 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Page not found · Up.computer" description="The requested Up.computer page was not found.">
+  <section class="not-found">
+    <p class="code">404</p>
+    <h1>Page not found</h1>
+    <p>The page may have moved or the address may be incorrect.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/">Go home</a>
+      <a class="btn btn-ghost" href="/download">Download</a>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .not-found {
+    width: min(680px, calc(100% - 40px));
+    min-height: 70vh;
+    margin: 0 auto;
+    padding: 180px 0 100px;
+  }
+
+  .code {
+    color: var(--warn);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+
+  h1 {
+    margin: 12px 0;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    font-weight: 500;
+    letter-spacing: -0.05em;
+  }
+
+  .not-found > p:not(.code) {
+    color: var(--fg-muted);
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 28px;
+  }
+</style>

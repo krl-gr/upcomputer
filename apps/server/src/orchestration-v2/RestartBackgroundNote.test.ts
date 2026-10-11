@@ -52,7 +52,7 @@ it("keeps the note for the provider thread that lost the work across a provider 
     pendingRestartCancelledBackgroundWork({
       runs,
       providerTurns: runs.filter((source) => source.id !== target.id).map(turnFor),
-      compactionMessageIds: new Set(),
+      commandMessageIds: new Set(),
       run: target,
       attempts: [{ id: target.activeAttemptId!, runId: target.id }],
     });
@@ -63,6 +63,23 @@ it("keeps the note for the provider thread that lost the work across a provider 
   // Once Claude was told, later Claude turns are not.
   const later = run(4, claudeThread);
   assert.deepEqual(pending(later, [root, onCodex, backOnClaude, later]), []);
+});
+
+it("leaves a slash command without the note, so the next prompt carries it", () => {
+  const root = run(1, claudeThread, { restartCancelledBackgroundWork: lost });
+  const command = run(2, claudeThread);
+  const next = run(3, claudeThread);
+  const pending = (target: OrchestrationV2Run, runs: ReadonlyArray<OrchestrationV2Run>) =>
+    pendingRestartCancelledBackgroundWork({
+      runs,
+      providerTurns: runs.filter((source) => source.id !== target.id).map(turnFor),
+      commandMessageIds: new Set([command.userMessageId]),
+      run: target,
+      attempts: [{ id: target.activeAttemptId!, runId: target.id }],
+    });
+  assert.deepEqual(pending(command, [root, command]), []);
+  // The command's completed turn did not tell the agent.
+  assert.deepEqual(pending(next, [root, command, next]), lost);
 });
 
 it("delivers a resumed queued run's note even after a higher-ordinal run", () => {
@@ -81,7 +98,7 @@ it("delivers a resumed queued run's note even after a higher-ordinal run", () =>
     pendingRestartCancelledBackgroundWork({
       runs,
       providerTurns: [resumed, ranFirst].map(turnFor),
-      compactionMessageIds: new Set(),
+      commandMessageIds: new Set(),
       run: next,
       attempts: [{ id: next.activeAttemptId!, runId: next.id }],
     }),
@@ -148,7 +165,7 @@ it("does not repeat the note when a steer restarts the run on a new attempt", ()
             ]
           : []),
       ],
-      compactionMessageIds: new Set(),
+      commandMessageIds: new Set(),
       run: steered,
       attempts: runAttemptIds.map((id) => ({ id, runId: steered.id })),
     });
@@ -178,7 +195,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
     pendingRestartCancelledBackgroundWork({
       runs: [cut, continuation, later],
       providerTurns: [cutTurn, ...(delivered ? [turnFor(continuation)] : [])],
-      compactionMessageIds: new Set(),
+      commandMessageIds: new Set(),
       run: later,
       attempts: [{ id: later.activeAttemptId!, runId: later.id }],
     });
@@ -206,7 +223,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
       pendingRestartCancelledBackgroundWork({
         runs: [cut, unstarted, later],
         providerTurns: turns,
-        compactionMessageIds: new Set(),
+        commandMessageIds: new Set(),
         run: later,
         attempts: [{ id: later.activeAttemptId!, runId: later.id }],
       }),
@@ -228,7 +245,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
     pendingRestartCancelledBackgroundWork({
       runs: [cut, steered, later],
       providerTurns: turns,
-      compactionMessageIds: new Set(),
+      commandMessageIds: new Set(),
       run: later,
       attempts,
     }),

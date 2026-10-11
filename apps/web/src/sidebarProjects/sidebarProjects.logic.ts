@@ -4,7 +4,7 @@
  */
 
 /** Projects shown before "More". */
-export const SIDEBAR_PROJECT_PREVIEW_COUNT = 3;
+const SIDEBAR_PROJECT_PREVIEW_COUNT = 3;
 
 export interface SidebarProjectsRows<TProject> {
   /** The first projects in the sidebar's project order, plus the selected one. */

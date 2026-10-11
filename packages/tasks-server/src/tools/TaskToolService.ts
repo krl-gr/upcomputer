@@ -39,8 +39,11 @@ import {
   TaskScheduleToolGetInput,
   TaskScheduleUpdateInput,
   TaskSearchInput,
+  TASK_CREATE_BATCH_LIMIT,
   TaskToolContextInput,
+  TaskToolCreateBatchInput,
   TaskToolCreateInput,
+  TaskToolCreateItem,
   TaskUpdateInput,
   type Task,
   type TaskActor,
@@ -78,7 +81,11 @@ import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAg
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
-import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
+import { projectAgentQueues } from "../context/AgentQueues.ts";
+import {
+  compactTaskToolContext,
+  TaskToolContextResolver,
+} from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
@@ -103,6 +110,8 @@ const decoders = {
   task_get: Schema.decodeUnknownEffect(TaskGetInput),
   task_search: Schema.decodeUnknownEffect(TaskSearchInput),
   task_create: Schema.decodeUnknownEffect(TaskToolCreateInput),
+  task_create_batch: Schema.decodeUnknownEffect(TaskToolCreateBatchInput),
+  task_create_item: Schema.decodeUnknownEffect(TaskToolCreateItem),
   task_update: Schema.decodeUnknownEffect(TaskUpdateInput),
   task_reorder: Schema.decodeUnknownEffect(TaskReorderInput),
   task_delete: Schema.decodeUnknownEffect(TaskDeleteInput),
@@ -330,6 +339,51 @@ function toolActor(context: TaskToolInvocationContext, callerRun: TaskAgentRun |
   return context.threadId ? { type: "thread", threadId: context.threadId } : { type: "server" };
 }
 
+/** A task task_create stores: the item's fields in the resolved project, from the calling thread. */
+function newTask(
+  item: TaskToolCreateItem,
+  input: {
+    readonly id: TaskId;
+    readonly projectId: PersistTaskInput["projectId"];
+    readonly timestamp: string;
+    readonly context: TaskToolInvocationContext;
+  },
+): PersistTaskInput {
+  const threadId = input.context.threadId ?? null;
+  return {
+    id: input.id,
+    projectId: input.projectId,
+    title: item.title,
+    description: item.description,
+    output: item.output ?? null,
+    status: item.status,
+    priority: item.priority ?? null,
+    createdBy: item.createdBy ?? "agent",
+    assigneeAgentRunId: item.assigneeAgentRunId ?? null,
+    originThreadId: threadId,
+    sourceThreadId: item.sourceThreadId === undefined ? threadId : item.sourceThreadId,
+    sourceRunId: item.sourceRunId ?? null,
+    metadata: item.metadata ?? null,
+    tags: item.tags ?? [],
+    notBefore: item.notBefore ?? null,
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+    archivedAt: null,
+    ...(item.audience !== undefined ? { audience: item.audience } : {}),
+    ...(item.kind !== undefined ? { kind: item.kind } : {}),
+  };
+}
+
+/** A routine is the user's: its audience defaults to person. */
+function withCreateDefaults<Item extends TaskToolCreateItem>(item: Item): Item {
+  return item.kind === "routine" && item.audience === undefined
+    ? { ...item, audience: "person" as const }
+    : item;
+}
+
+/** The top-level task_create arguments that go with a tasks list. */
+const TASK_CREATE_BATCH_KEYS = new Set(["tasks", "projectId", "workspaceRoot"]);
+
 function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedAt: string): Task {
   return {
     ...existing,
@@ -478,7 +532,7 @@ const make = Effect.gen(function* () {
               ? { project: { id: project.value.id, title: project.value.title }, error: null }
               : {
                   project: null,
-                  error: `Project '${projectId}' was not found. Use task_context to list projects.`,
+                  error: `Project '${projectId}' was not found. Use task_context with include ["projects"] to list projects.`,
                 },
           ),
         );
@@ -515,30 +569,150 @@ const make = Effect.gen(function* () {
       return refusals;
     });
 
+  /**
+   * task_create with a tasks list. Every item is checked before anything is
+   * written, then all tasks are stored in one transaction in list order, so
+   * each joins the end of the global order after the one before it. Agents
+   * are scheduled per task after the commit, as for single creates.
+   */
+  const createTasks = (args: Record<string, unknown>, context: TaskToolInvocationContext) =>
+    Effect.gen(function* () {
+      const input = yield* decoders.task_create_batch(args);
+      const misplaced = Object.keys(args).filter((key) => !TASK_CREATE_BATCH_KEYS.has(key));
+      if (misplaced.length > 0)
+        return {
+          isError: true,
+          text: `With tasks, every task's fields go inside its item. Move ${misplaced.join(", ")} into the items. No task was created.`,
+        };
+      if (input.tasks.length === 0 || input.tasks.length > TASK_CREATE_BATCH_LIMIT)
+        return {
+          isError: true,
+          text: `tasks takes 1 to ${TASK_CREATE_BATCH_LIMIT} tasks; got ${input.tasks.length}. No task was created.`,
+        };
+      const items: TaskToolCreateItem[] = [];
+      for (const [index, raw] of input.tasks.entries()) {
+        const item = yield* Effect.result(decoders.task_create_item(raw));
+        if (Result.isFailure(item)) {
+          const title =
+            typeof raw === "object" && raw !== null && "title" in raw ? raw.title : undefined;
+          return {
+            isError: true,
+            text: `tasks[${index}]${typeof title === "string" ? ` (${JSON.stringify(title)})` : ""} is invalid: ${item.failure.message}\nNo task was created.`,
+          };
+        }
+        const defaulted = withCreateDefaults(item.success);
+        const invalid = taskKindAudienceError(
+          defaulted.kind ?? "task",
+          defaulted.audience ?? "agent",
+        );
+        if (invalid !== null)
+          return {
+            isError: true,
+            text: `tasks[${index}] (${JSON.stringify(defaulted.title)}) is invalid: ${invalid}\nNo task was created.`,
+          };
+        items.push(defaulted);
+      }
+      const ids = items.flatMap((item) => (item.id === undefined ? [] : [item.id]));
+      const repeated = ids.find((id, index) => ids.indexOf(id) !== index);
+      if (repeated !== undefined)
+        return {
+          isError: true,
+          text: `Task id '${repeated}' appears more than once in tasks. No task was created.`,
+        };
+      const resolution = yield* resolver.resolve({
+        args: {
+          ...(input.projectId ? { projectId: input.projectId } : {}),
+          ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+        },
+        invocationContext: context,
+      });
+      // Person tasks without a project go to the Inbox, as in the planner.
+      if (!resolution.resolvedProject && items.some((item) => item.audience !== "person"))
+        return {
+          isError: true,
+          text: json({ error: "Unable to resolve project. No task was created.", resolution }),
+        };
+      if (!resolution.resolvedProject && dryRun(context))
+        return { isError: false, text: json({ dryRun: true, project: "Inbox", tasks: items }) };
+      const projectId = resolution.resolvedProject
+        ? resolution.resolvedProject.project.id
+        : yield* inbox.ensure;
+      const timestamp = yield* now;
+      const tasks: PersistTaskInput[] = [];
+      for (const item of items)
+        tasks.push(
+          newTask(item, {
+            id: item.id ?? TaskId.make(yield* randomId("task")),
+            projectId,
+            timestamp,
+            context,
+          }),
+        );
+      if (dryRun(context))
+        return {
+          isError: false,
+          text: json({ dryRun: true, tasks, resolution: compactTaskToolContext(resolution) }),
+        };
+      const callerRun = context.threadId
+        ? Option.getOrNull(
+            yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
+          )
+        : null;
+      const actor = toolActor(context, callerRun);
+      const saved = yield* repository.withChangeTransaction(
+        Effect.forEach(tasks, (task) => repository.upsert({ ...task, actor })),
+      );
+      for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
+      // The caller wrote the descriptions; echoing them back would only cost tokens.
+      return {
+        isError: false,
+        text: json({
+          tasks: saved.map(({ id, rank, title, status, tags, notBefore }) => ({
+            id,
+            rank,
+            title,
+            status,
+            tags,
+            notBefore,
+          })),
+        }),
+      };
+    });
+
   const call: TaskToolServiceShape["call"] = ({ name, args, context }) =>
     Effect.gen(function* () {
       const isDryRun = dryRun(context);
       switch (name) {
         case "task_context": {
-          const resolution = yield* resolver.resolve({
-            args: yield* decoders.task_context(args),
-            invocationContext: context,
-          });
+          const input = yield* decoders.task_context(args);
+          const include = input.include ?? [];
+          const resolution = yield* resolver.resolve({ args: input, invocationContext: context });
           // The task's target project, which may differ from the chat's.
           const project = resolution.resolvedProject?.project;
+          const guidance = composeTaskPromptSettings(
+            yield* promptSettings.get,
+            project === undefined
+              ? null
+              : {
+                  title: project.title,
+                  settings: (yield* promptSettings.getProject(project.id)).settings,
+                },
+          );
           return {
             isError: false,
             text: json({
-              ...resolution,
-              promptGuidance: composeTaskPromptSettings(
-                yield* promptSettings.get,
-                project === undefined
-                  ? null
-                  : {
-                      title: project.title,
-                      settings: (yield* promptSettings.getProject(project.id)).settings,
-                    },
-              ),
+              ...compactTaskToolContext(resolution, include),
+              ...(project === undefined ? {} : yield* projectAgentQueues(repository, project.id)),
+              // Creating tasks is the common case; the other texts come on request.
+              promptGuidance: {
+                taskCreation: guidance.taskCreation,
+                ...(include.includes("agentCreation")
+                  ? { agentCreation: guidance.agentCreation, taskExecution: guidance.taskExecution }
+                  : {}),
+                ...(include.includes("automationCreation")
+                  ? { automationCreation: guidance.automationCreation }
+                  : {}),
+              },
               promptGuidanceEditing: PROMPT_GUIDANCE_EDITING,
               promptGuidanceScheduling: PROMPT_GUIDANCE_SCHEDULING,
               triggerRules: TASK_TRIGGER_RULES,
@@ -564,12 +738,8 @@ const make = Effect.gen(function* () {
           };
         }
         case "task_create": {
-          const decoded = yield* decoders.task_create(args);
-          // A routine is the user's: its audience defaults to person.
-          const input =
-            decoded.kind === "routine" && decoded.audience === undefined
-              ? { ...decoded, audience: "person" as const }
-              : decoded;
+          if (args.tasks !== undefined) return yield* createTasks(args, context);
+          const input = withCreateDefaults(yield* decoders.task_create(args));
           const invalid = taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent");
           if (invalid !== null) return { isError: true, text: invalid };
           const resolution = yield* resolver.resolve({
@@ -589,36 +759,19 @@ const make = Effect.gen(function* () {
             if (isDryRun)
               return { isError: false, text: json({ dryRun: true, project: "Inbox", input }) };
           }
-          const projectId = resolution.resolvedProject
-            ? resolution.resolvedProject.project.id
-            : yield* inbox.ensure;
-          const timestamp = yield* now;
-          const task: PersistTaskInput = {
+          const task = newTask(input, {
             id: input.id ?? TaskId.make(yield* randomId("task")),
-            projectId,
-            title: input.title,
-            description: input.description,
-            output: input.output ?? null,
-            status: input.status,
-            priority: input.priority ?? null,
-            createdBy: input.createdBy ?? "agent",
-            assigneeAgentRunId: input.assigneeAgentRunId ?? null,
-            originThreadId: context.threadId ?? null,
-            sourceThreadId:
-              input.sourceThreadId === undefined
-                ? (context.threadId ?? null)
-                : input.sourceThreadId,
-            sourceRunId: input.sourceRunId ?? null,
-            metadata: input.metadata ?? null,
-            tags: input.tags ?? [],
-            notBefore: input.notBefore ?? null,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-            archivedAt: null,
-            ...(input.audience !== undefined ? { audience: input.audience } : {}),
-            ...(input.kind !== undefined ? { kind: input.kind } : {}),
-          };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
+            projectId: resolution.resolvedProject
+              ? resolution.resolvedProject.project.id
+              : yield* inbox.ensure,
+            timestamp: yield* now,
+            context,
+          });
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({ dryRun: true, task, resolution: compactTaskToolContext(resolution) }),
+            };
           // An existing id updates that task; a status change is the caller's.
           const callerRun = context.threadId
             ? Option.getOrNull(
@@ -913,7 +1066,11 @@ const make = Effect.gen(function* () {
             createdAt: timestamp,
             updatedAt: timestamp,
           };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({ dryRun: true, agent, resolution: compactTaskToolContext(resolution) }),
+            };
           // An enabled agent starts runs on every matching task right away.
           const createRefusal = agent.enabled
             ? runStartRefusal(context, agentRunModes(agent.config), "Creating an enabled agent")
@@ -921,7 +1078,10 @@ const make = Effect.gen(function* () {
           if (createRefusal !== null) return { isError: true, text: createRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
-          return { isError: false, text: json({ agent: saved, resolution }) };
+          return {
+            isError: false,
+            text: json({ agent: saved, resolution: compactTaskToolContext(resolution) }),
+          };
         }
         case "agent_update": {
           const input = yield* decoders.agent_update(args);
@@ -983,7 +1143,15 @@ const make = Effect.gen(function* () {
               : {}),
             updatedAt: yield* now,
           };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                agent,
+                resolution: resolution && compactTaskToolContext(resolution),
+              }),
+            };
           // Any edit of an enabled agent lets it run again on its matching tasks
           // (see runsAgain); disabling it starts nothing.
           const updateRefusal = agent.enabled
@@ -992,7 +1160,13 @@ const make = Effect.gen(function* () {
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
-          return { isError: false, text: json({ agent: saved, resolution }) };
+          return {
+            isError: false,
+            text: json({
+              agent: saved,
+              resolution: resolution && compactTaskToolContext(resolution),
+            }),
+          };
         }
         case "agent_delete": {
           const input = yield* decoders.agent_delete(args);
@@ -1181,7 +1355,14 @@ const make = Effect.gen(function* () {
             updatedAt: timestamp,
           };
           if (isDryRun)
-            return { isError: false, text: json({ dryRun: true, automation, resolution }) };
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                automation,
+                resolution: compactTaskToolContext(resolution),
+              }),
+            };
           // A plain insert, not an upsert: the tool path must never be able to
           // write over an automation a person has already reviewed.
           const saved = yield* repository.insertAutomation(automation);

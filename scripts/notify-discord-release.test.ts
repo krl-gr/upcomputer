@@ -555,10 +555,12 @@ it.layer(NodeServices.layer)("Discord release CLI and workflow", (it) => {
         parse: [],
         roles: [latestAnnouncement.roleId],
       });
+      // Up.computer's Core Release has no preview channel, and its announce
+      // steps also require the webhook secret.
       assert.ok(
         workflow
           .split("      - name: Announce prerelease on Discord\n")[1]
-          ?.startsWith("        if: needs.preflight.outputs.is_prerelease == 'true'\n"),
+          ?.startsWith("        if: needs.preflight.outputs.is_prerelease == 'true'"),
       );
       assert.ok(workflow.includes("GH_REPO: ${{ github.repository }}"));
       assert.ok(workflow.includes("RELEASE_TAG: ${{ needs.preflight.outputs.tag }}"));
@@ -566,11 +568,6 @@ it.layer(NodeServices.layer)("Discord release CLI and workflow", (it) => {
         !workflowRun(workflow, "Announce latest release on Discord").includes(
           "--release-notes-file",
         ),
-      );
-      assert.ok(
-        workflow
-          .slice(workflow.indexOf("  announce_discord:"))
-          .includes("needs.preflight.outputs.release_channel != 'preview'"),
       );
     }),
   );

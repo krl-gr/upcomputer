@@ -357,6 +357,141 @@ describe("CursorAdapterV2", () => {
     ),
   );
 
+  it.effect.each([true, false])(
+    "prepends the orchestration block to the first prompt only when wanted (%s)",
+    (orchestrationInstructions) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "cursor-v2-orchestration-",
+        });
+        const sentMessages: Array<string> = [];
+        const instanceId = ProviderInstanceId.make("cursor");
+        const threadId = ThreadId.make(`cursor-orchestration-${orchestrationInstructions}`);
+        const modelSelection = { instanceId, model: "composer-2.5" };
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+        });
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-cursor-mcp"),
+          threadId,
+          providerSessionId: "mcp-session-cursor-orchestration",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-cursor-mcp-token",
+          browserToolsAvailable: true,
+          orchestrationInstructions,
+        });
+        yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+        const adapter = yield* makeCursorAdapterV2({
+          instanceId,
+          settings: yield* decodeCursorSettings({}),
+          environment: { HOME: workspace },
+        }).pipe(
+          Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
+            assertComplete: Effect.void,
+            open: () =>
+              Effect.succeed({
+                agentId: "native-cursor-orchestration",
+                listMessages: Effect.succeed([]),
+                close: Effect.void,
+                send: (input) =>
+                  Effect.sync(() => {
+                    sentMessages.push(
+                      typeof input.message === "string" ? input.message : input.message.text,
+                    );
+                    return {
+                      agentId: "native-cursor-orchestration",
+                      runId: "native-cursor-orchestration-run",
+                      wait: Effect.succeed({
+                        id: "native-cursor-orchestration-run",
+                        requestId: "native-request",
+                        status: "finished" as const,
+                        model: { id: "composer-2.5" },
+                        durationMs: 1,
+                      }),
+                      cancel: Effect.void,
+                    };
+                  }),
+              }),
+          }),
+          Effect.provide(TestProviderHost.layer({ cwd: workspace })),
+        );
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("cursor-orchestration-session"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        yield* runtime.startTurn({
+          threadId,
+          providerThread,
+          modelSelection,
+          runtimePolicy,
+          runId: RunId.make("cursor-orchestration-run"),
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: RunAttemptId.make("cursor-orchestration-attempt"),
+          rootNodeId: NodeId.make("cursor-orchestration-root"),
+          appThread: {
+            id: threadId,
+            projectId: ProjectId.make("cursor-orchestration-project"),
+            createdBy: "user",
+            creationSource: "web",
+            title: "Cursor orchestration",
+            providerInstanceId: instanceId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: providerThread.id,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+          message: {
+            messageId: MessageId.make("cursor-orchestration-message"),
+            createdBy: "user",
+            creationSource: "web",
+            text: "Implement the task.",
+            attachments: [],
+          },
+        });
+        yield* runtime.events.pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+        );
+
+        assert.include(sentMessages[0], "Implement the task.");
+        if (orchestrationInstructions) {
+          assert.include(sentMessages[0], "Up.computer orchestration");
+        } else {
+          assert.notInclude(sentMessages[0], "Up.computer orchestration");
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+        ),
+      ),
+  );
+
   it.effect("projects Cursor directory trees and lint diagnostics as file search results", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

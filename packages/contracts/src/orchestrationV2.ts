@@ -626,6 +626,11 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
   ]),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
+  /**
+   * Run-less notifications (`thread.notification.record`) whose note this attempt's prompt
+   * carried. A completed provider turn of the attempt delivers them.
+   */
+  promptedNotificationIds: Schema.optional(Schema.Array(TurnItemId)),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
 
@@ -1191,7 +1196,14 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     // UpComputer task-agent runs that finished for tasks created in this thread.
     Schema.Struct({
       kind: Schema.Literal("task_agent_run"),
-      tasks: Schema.Array(Schema.Struct({ id: TrimmedNonEmptyString, title: Schema.String })),
+      tasks: Schema.Array(
+        Schema.Struct({
+          id: TrimmedNonEmptyString,
+          title: Schema.String,
+          /** The task's status when the notification was recorded. */
+          status: Schema.optional(Schema.String),
+        }),
+      ),
       /** The run's own thread, when the notification reports one run. */
       childThreadId: Schema.optional(ThreadId),
     }),
@@ -3201,6 +3213,17 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
   }),
+  /**
+   * Records a notification in the thread's timeline without a message or a run, so no
+   * provider turn starts. The agent is told on its next turn. The command id names the
+   * timeline item, so a retry records it once.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.notification.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    notification: OrchestrationV2Notification,
+  }),
   /** Records that the provider rollback `requestId` failed for good. */
   Schema.Struct({
     type: Schema.Literal("checkpoint.rollback.fail"),
@@ -3248,6 +3271,24 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.String,
     placeholder: Schema.optional(Schema.String),
     secretStatus: OrchestrationV2SecretRequestStatus,
+  }),
+  /**
+   * Detaches the thread's provider sessions before the provider idle timeout, so a per-thread
+   * provider process stops now. Unlike a settle it leaves the thread itself as it is: lifecycle,
+   * pins, pull request watches and usage-limit recovery. Rejected while the thread has active,
+   * queued or blocked work, including background work. The next turn attaches a session again.
+   *
+   * Without `providerSessionId` it only asks each attached session's provider whether it still
+   * holds background work for the thread. A session that holds none comes back with its id, and
+   * that command detaches it. A session that still holds work is left to the provider idle
+   * timeout, which waits for that work.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.provider-sessions.release-idle"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reason: TrimmedNonEmptyString,
+    providerSessionId: Schema.optional(ProviderSessionId),
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

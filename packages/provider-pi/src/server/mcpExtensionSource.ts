@@ -18,6 +18,8 @@ export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 /** The user's "all chats" instructions block, appended to Pi's system prompt. */
 export const T3_PI_USER_INSTRUCTIONS_ENV = "T3_PI_USER_INSTRUCTIONS";
+/** Set to "omit" when the session's agent should not get the orchestration block. */
+export const T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_PI_ORCHESTRATION_INSTRUCTIONS";
 
 /**
  * Pi tools whose confirmations the bridge raises as file-change approvals.
@@ -36,6 +38,7 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const USER_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_ENV)};
+const ORCHESTRATION_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -454,11 +457,12 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // with "/" and silently break slash-command expansion.
   pi.on("before_agent_start", (event) => {
     const userInstructions = env(USER_INSTRUCTIONS_ENV);
+    const orchestration =
+      env(ORCHESTRATION_INSTRUCTIONS_ENV) === "omit" ? "" : "\\n\\n" + ORCHESTRATION_INSTRUCTIONS;
     return {
       systemPrompt:
         event.systemPrompt +
-        "\\n\\n" +
-        ORCHESTRATION_INSTRUCTIONS +
+        orchestration +
         (userInstructions === undefined ? "" : "\\n\\n" + userInstructions),
     };
   });

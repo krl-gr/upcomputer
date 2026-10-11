@@ -1,7 +1,14 @@
-import { TaskEventId } from "@t3tools/tasks-contracts/v1";
+import {
+  TASK_STATUS_CHANGED_EVENT,
+  TaskEventId,
+  TaskStatusChangedPayload,
+  type TaskAgentRunId,
+  type TaskId,
+} from "@t3tools/tasks-contracts/v1";
 import type { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import type { TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 import type { TaskChangedInput } from "./TaskAgentService.ts";
@@ -18,6 +25,33 @@ function eventKind(value: string | null): string {
     .replace(/^-+|-+$/g, "");
   return normalized ? `task.agent-result.${normalized}` : "task.agent-result.note";
 }
+
+const decodeStatusChange = Schema.decodeUnknownOption(TaskStatusChangedPayload);
+
+/** Status names compare without case or spacing: "done" only respells "Done". */
+function sameStatus(left: string, right: string): boolean {
+  const normalize = (status: string) => status.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
+/** Whether the run itself changed the task status, e.g. with task_update. */
+const runChangedTaskStatus = (
+  repository: TaskRepositoryShape,
+  taskId: TaskId,
+  runId: TaskAgentRunId,
+) =>
+  repository.events({ taskId, kinds: [TASK_STATUS_CHANGED_EVENT], limit: 200 }).pipe(
+    Effect.map(({ events }) =>
+      events.some((event) => {
+        const change = decodeStatusChange(event.payload);
+        return (
+          Option.isSome(change) &&
+          change.value.actor.type === "agent-run" &&
+          change.value.actor.agentRunId === runId
+        );
+      }),
+    ),
+  );
 
 /** The fields read from a v1 or v2 conversation message. */
 interface AssistantMessageLike {
@@ -82,10 +116,20 @@ export const makeTaskAgentResultConsumer =
         return true;
       }
       const task = taskOption.value;
-      const targetStatus = result.status ?? (result.blocked ? "blocked" : null);
+      const reportedStatus = result.status ?? (result.blocked ? "blocked" : null);
+      // The result block reports; it never overwrites a status the run set
+      // itself during the run, and a respelling of the current status is no change.
+      const targetStatus =
+        reportedStatus === null ||
+        sameStatus(reportedStatus, task.status) ||
+        (yield* runChangedTaskStatus(repository, task.id, run.id))
+          ? null
+          : reportedStatus;
       const summary =
         result.summary ??
-        (targetStatus ? `Task agent reported status "${targetStatus}".` : "Task agent completed.");
+        (reportedStatus
+          ? `Task agent reported status "${reportedStatus}".`
+          : "Task agent completed.");
       const events = [
         {
           id: TaskEventId.make(`${run.id}:task-agent-result`),
@@ -96,7 +140,7 @@ export const makeTaskAgentResultConsumer =
             agentId: run.agentId,
             agentRunId: run.id,
             threadId: input.threadId,
-            status: targetStatus,
+            status: reportedStatus,
             blocked: result.blocked,
             summary,
           },

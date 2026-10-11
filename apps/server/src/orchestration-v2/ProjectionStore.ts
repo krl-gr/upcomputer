@@ -414,6 +414,7 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadsWithPullRequests: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadPullRequests>, ProjectionStoreV2Error>;
+  /** Turn items are the run's own plus the thread's notifications recorded without a run. */
   readonly getTurnStartContext: (
     threadId: ThreadId,
     runId: RunId,
@@ -3927,7 +3928,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             `.pipe(Effect.flatMap(decodeRows(decodeContextTransferPayload, threadId)));
             const turnItems = yield* sql<PayloadRow>`
               SELECT payload_json FROM orchestration_v2_projection_turn_items
-              WHERE thread_id = ${threadId} AND run_id = ${runId} ORDER BY ordinal ASC, turn_item_id ASC
+              WHERE thread_id = ${threadId}
+                AND (run_id = ${runId} OR (run_id IS NULL AND type = 'notification'))
+              ORDER BY ordinal ASC, turn_item_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeTurnItemPayload, threadId)));
             const providerSessions = yield* sql<PayloadRow>`
               SELECT sessions.payload_json FROM orchestration_v2_projection_provider_sessions AS sessions
@@ -3936,13 +3939,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE bindings.thread_id = ${threadId}
               ORDER BY sessions.updated_at ASC, sessions.provider_session_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeProviderSessionPayload, threadId)));
-            // Compact retries need their original markers; emptiness is an existence check.
+            // Compact retries need their original markers, and turn notes skip earlier slash
+            // commands (/compact included); emptiness is an existence check.
             const messages = yield* sql<PayloadRow>`
               SELECT payload_json FROM orchestration_v2_projection_messages
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
-                OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
+                OR (role = 'user' AND substr(ltrim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}), 1, 1) = '/')
               ) ORDER BY created_at ASC, message_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeMessagePayload, threadId)));
             const conversation = yield* sql<{ present: number }>`
@@ -6520,7 +6524,10 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 (message.text.trim().toLowerCase() !== "/compact" ||
                   message.attachments.length > 0),
             ),
-            turnItems: projection.turnItems.filter((item) => item.runId === runId),
+            turnItems: projection.turnItems.filter(
+              (item) =>
+                item.runId === runId || (item.runId === null && item.type === "notification"),
+            ),
           })),
         ),
       getTurnStartHistory: (threadId, runIds) =>

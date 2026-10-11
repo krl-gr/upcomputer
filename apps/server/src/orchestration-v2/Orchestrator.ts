@@ -479,6 +479,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "checkpoint.rollback.fail":
     case "thread.background-work.settle":
     case "thread.stop":
+    case "thread.provider-sessions.release-idle":
+    case "thread.notification.record":
     case "provider.switch":
       return command.threadId;
     case "delegated_task.request":
@@ -3533,6 +3535,112 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     },
   );
+
+  /**
+   * Detaches the provider sessions of a thread whose work has ended, and nothing else: the thread
+   * keeps its lifecycle, pins, watches and usage-limit recovery. Commands are decided serially, so
+   * a turn that starts after this attaches a session again through its own effect.
+   *
+   * Native background work (background commands, subagents, completions the provider has not
+   * delivered yet) can outlive the run, and part of it is visible only to the provider. So the
+   * release takes two steps: the first asks each session's provider through a
+   * provider-session.release-idle effect, and a session without such work comes back as a second
+   * command with its id, which detaches it. Both steps check the thread here. A session that still
+   * holds work stays attached for the provider idle timeout, which waits for that work.
+   */
+  const dispatchIdleProviderSessionsRelease = Effect.fn(
+    "orchestrationV2.dispatch.idleProviderSessionsRelease",
+  )(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "thread.provider-sessions.release-idle" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(
+        command.threadId,
+        ["runs", "runtimeRequests", "providerSessions", "providerThreads", "turnItems"],
+        {
+          turnItemTypes: ["command_execution", "dynamic_tool", "subagent"],
+          turnItemStatuses: ["pending", "running", "waiting"],
+        },
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const hasBackgroundWork =
+      derivePendingBackgroundWork({
+        latestRun: projection.runs.at(-1),
+        providerThreads: projection.providerThreads,
+        turnItems: projection.turnItems,
+        activeProviderThreadId: projection.thread.activeProviderThreadId,
+        runs: projection.runs,
+      }).length > 0;
+    if (
+      projection.runs.some((run) => isBlockingRun(run) || run.status === "queued") ||
+      projection.runtimeRequests.some((request) => request.status === "pending") ||
+      hasBackgroundWork
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} has active, blocked or background work; its provider sessions stay attached.`,
+      });
+    }
+    const now = yield* DateTime.now;
+    const liveSessions = projection.providerSessions.filter(
+      (session) =>
+        session.status !== "stopped" &&
+        session.status !== "error" &&
+        (command.providerSessionId === undefined || session.id === command.providerSessionId),
+    );
+    for (const session of liveSessions) {
+      if (command.providerSessionId === undefined) {
+        yield* Ref.update(effects, (existing) => [
+          ...existing,
+          {
+            id: `effect:${command.commandId}:provider-session.release-idle:${session.id}`,
+            commandId: command.commandId,
+            threadId: command.threadId,
+            request: {
+              type: "provider-session.release-idle",
+              providerSessionId: session.id,
+              detail: command.reason,
+            },
+          } satisfies PendingOrchestrationEffectV2,
+        ]);
+        continue;
+      }
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "provider-session.detached",
+        threadId: command.threadId,
+        driver: session.driver,
+        providerInstanceId: session.providerInstanceId,
+        occurredAt: now,
+        payload: { providerSessionId: session.id, detachedAt: now, reason: command.reason },
+      });
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        {
+          id: `effect:${command.commandId}:provider-session.detach:${session.id}`,
+          commandId: command.commandId,
+          threadId: command.threadId,
+          request: {
+            type: "provider-session.detach",
+            providerSessionId: session.id,
+            detail: command.reason,
+          },
+        } satisfies PendingOrchestrationEffectV2,
+      ]);
+    }
+  });
 
   const dispatchThreadFork = Effect.fn("orchestrationV2.dispatch.threadFork")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "thread.fork" }>,
@@ -7291,6 +7399,53 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  /** A notification of its own in the timeline: no message, run or effect. */
+  const dispatchNotificationRecord = Effect.fn("orchestrationV2.dispatch.notificationRecord")(
+    function* (
+      command: Extract<
+        OrchestrationV2ServerCommand,
+        { readonly type: "thread.notification.record" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const thread = yield* projectionStore
+        .getThread(command.threadId)
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const now = yield* DateTime.now;
+      const turnItem: OrchestrationV2TurnItem = {
+        id: idAllocator.derive.recordedNotificationTurnItem({ commandId: command.commandId }),
+        threadId: command.threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: yield* nextTurnItemOrdinal({ thread }),
+        status: "completed",
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        type: "notification",
+        ...command.notification,
+      };
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: turnItem,
+      });
+    },
+  );
+
   const dispatchRuntimeRequestRespond = (
     command: Extract<OrchestrationV2Command, { readonly type: "runtime-request.respond" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -10849,6 +11004,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.background-work.settle":
         yield* dispatchBackgroundWorkSettle(command, events, effects);
         break;
+      case "thread.provider-sessions.release-idle":
+        yield* dispatchIdleProviderSessionsRelease(command, events, effects);
+        break;
       case "thread.fork":
         yield* dispatchThreadFork(command, events);
         break;
@@ -10870,6 +11028,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "secret_request.record":
         yield* dispatchSecretRequestRecord(command, events);
+        break;
+      case "thread.notification.record":
+        yield* dispatchNotificationRecord(command, events);
         break;
       default:
         return yield* dispatchUnsupported(command);
@@ -10958,13 +11119,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const plan = yield* dispatchOnce(command).pipe(
       Effect.flatMap((planned) =>
-        // A settle that finds the provider already ended everything, or a
-        // stop that finds nothing running, has nothing to record. That is
-        // its expected outcome, not a failure.
+        // A settle that finds the provider already ended everything, a stop
+        // that finds nothing running, or a release that finds no attached
+        // session has nothing to record. That is its expected outcome, not a
+        // failure. A release's first step records nothing either: it only
+        // schedules its effects.
         planned.events.length > 0 ||
         command.type === "thread.background-work.settle" ||
         command.type === "thread.stop" ||
-        command.type === "subagent.stop"
+        command.type === "subagent.stop" ||
+        command.type === "thread.provider-sessions.release-idle"
           ? Effect.succeed(planned)
           : Effect.fail(
               new OrchestratorDispatchError({
@@ -11014,7 +11178,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ),
     );
 
-    if (plan.events.length === 0) {
+    if (plan.events.length === 0 && plan.effects.length === 0) {
       // A settle that ended nothing still records its receipt: a replayed Stop
       // effect then finds it instead of settling work that appeared since.
       const resultSequence = yield* Effect.gen(function* () {

@@ -87,6 +87,7 @@ import {
   TASK_RANK_STEP,
   encodeTaskRank,
   rebalancedTaskRanks,
+  taskRankAfter,
   taskRankBetween,
   taskRanksBetween,
 } from "./taskRank.ts";
@@ -946,10 +947,10 @@ const makeTaskRepository = Effect.gen(function* () {
     execute: () => sql`SELECT id, rank FROM tasks ORDER BY rank ASC, id ASC`,
   });
 
-  const getFirstTaskRankRow = SqlSchema.findOneOption({
+  const getLastTaskRankRow = SqlSchema.findOneOption({
     Request: Schema.Void,
     Result: Schema.Struct({ rank: Task.fields.rank }),
-    execute: () => sql`SELECT rank FROM tasks ORDER BY rank ASC, id ASC LIMIT 1`,
+    execute: () => sql`SELECT rank FROM tasks ORDER BY rank DESC, id DESC LIMIT 1`,
   });
 
   const listTaskTags = SqlSchema.findAll({
@@ -1429,7 +1430,7 @@ const makeTaskRepository = Effect.gen(function* () {
       `,
   });
 
-  const findRunStatusTriggerRow = SqlSchema.findOneOption({
+  const runStatusTriggerRows = SqlSchema.findAll({
     Request: Schema.Struct({
       taskId: TaskId,
       agentId: TaskAgentId,
@@ -1467,7 +1468,6 @@ const makeTaskRepository = Effect.gen(function* () {
               AND d.started_at >= r.completed_at
           )
         ORDER BY r.completed_at DESC, r.id ASC
-        LIMIT 1
       `,
   });
 
@@ -1863,15 +1863,17 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
-  const prependRank = () =>
-    getFirstTaskRankRow().pipe(
-      Effect.flatMap((first) => {
-        if (Option.isNone(first)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
-        const candidate = taskRankBetween(null, first.value.rank);
+  // New tasks join the end of the order, so tasks created one after another
+  // keep that order in the list and in every queue hand-off that follows it.
+  const appendRank = () =>
+    getLastTaskRankRow().pipe(
+      Effect.flatMap((last) => {
+        if (Option.isNone(last)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
+        const candidate = taskRankAfter(last.value.rank);
         if (candidate) return Effect.succeed(candidate);
         return listTaskIdRows().pipe(
-          Effect.flatMap(rebalanceTaskRows),
-          Effect.as(encodeTaskRank(TASK_RANK_STEP / 2n)),
+          Effect.tap(rebalanceTaskRows),
+          Effect.map((rows) => encodeTaskRank(BigInt(rows.length + 1) * TASK_RANK_STEP)),
         );
       }),
     );
@@ -1881,7 +1883,7 @@ const makeTaskRepository = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           const existing = yield* getById({ id: task.id });
-          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* prependRank());
+          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* appendRank());
           const origin = Option.isSome(existing)
             ? {
                 rootThreadId: existing.value.rootThreadId,
@@ -2918,6 +2920,19 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.gen(function* () {
           const inserted = yield* startAgentRunRow(input);
           if (inserted.length === 0) return Option.none<TaskAgentRun>();
+          // The run holds its task from the start, unless another active run
+          // holds it; the agent does not spend a turn claiming it.
+          yield* sql`
+            UPDATE tasks
+            SET assignee_worker_id = ${input.id},
+              updated_at = ${input.startedAt}
+            WHERE id = ${input.taskId}
+              AND (assignee_worker_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM task_agent_runs
+                WHERE id = tasks.assignee_worker_id
+                  AND completed_at IS NULL
+              ))
+          `;
           return yield* getAgentRunById({ id: input.id });
         }),
       )
@@ -3093,8 +3108,8 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
-  const findRunStatusTrigger: TaskRepositoryShape["findRunStatusTrigger"] = (input) =>
-    findRunStatusTriggerRow({
+  const findRunStatusTriggers: TaskRepositoryShape["findRunStatusTriggers"] = (input) =>
+    runStatusTriggerRows({
       taskId: input.taskId,
       agentId: input.agentId,
       statusesJson: JSON.stringify(input.statuses),
@@ -3102,8 +3117,8 @@ const makeTaskRepository = Effect.gen(function* () {
     }).pipe(
       Effect.mapError(
         toSqlOrDecodeError(
-          "TaskRepository.findRunStatusTrigger:query",
-          "TaskRepository.findRunStatusTrigger:decodeRows",
+          "TaskRepository.findRunStatusTriggers:query",
+          "TaskRepository.findRunStatusTriggers:decodeRows",
         ),
       ),
     );
@@ -3519,7 +3534,7 @@ const makeTaskRepository = Effect.gen(function* () {
     finalizeAgentRun: (input) =>
       withChanges(finalizeAgentRun(input), (changed) => (changed ? [input.taskId] : []), true),
     searchAgentRuns,
-    findRunStatusTrigger,
+    findRunStatusTriggers,
     upsertAutomation,
     insertAutomation,
     reorderAutomation,

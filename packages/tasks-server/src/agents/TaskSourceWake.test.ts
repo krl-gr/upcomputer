@@ -7,9 +7,11 @@ import {
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { TaskAgentId, TaskAgentRunId, TaskId } from "@t3tools/tasks-contracts/v1";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   runExperimentalFeatureMigrations,
@@ -24,7 +26,11 @@ import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts"
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import {
+  SOURCE_MAX_WAIT_MS,
+  SOURCE_SETTLE_MS,
   SOURCE_WAKE_MAX_ATTEMPTS,
+  reportsWithoutWake,
+  sourceRunsCard,
   sourceWakeMessage,
   TaskSourceWake,
   TaskSourceWakeLive,
@@ -39,6 +45,7 @@ const row = (overrides: Partial<PendingWakeRow>): PendingWakeRow => ({
   agentName: "Developer",
   taskId: "task-1",
   taskTitle: "Fix the build",
+  taskStatus: "Needs Review",
   sourceThreadId: "thread-chat",
   sourceIsRunThread: 0,
   taskArchived: 0,
@@ -66,19 +73,20 @@ describe("TaskSourceWake", () => {
   it("reports one run with its thread and summary", () => {
     const run = row({});
     if (!wakesSourceChat(run)) throw new Error("expected a wake");
-    const message = sourceWakeMessage([run]);
+    const message = sourceWakeMessage([run], true);
     expect(message.notification).toEqual({
       source: {
         kind: "task_agent_run",
-        tasks: [{ id: "task-1", title: "Fix the build" }],
+        tasks: [{ id: "task-1", title: "Fix the build", status: "Needs Review" }],
         childThreadId: "thread-run-1",
       },
       outcome: "completed",
       summary: 'Task "Fix the build" completed',
     });
     expect(message.text).toContain(
-      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed. Summary: Fixed it.',
+      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed, task now Needs Review. Summary: Fixed it.',
     );
+    expect(message.text).toContain("No run for this chat's tasks is in progress now.");
   });
 
   it("batches runs that finished together into one message", () => {
@@ -95,17 +103,57 @@ describe("TaskSourceWake", () => {
     ].filter(wakesSourceChat);
     const [first, ...rest] = runs;
     if (first === undefined) throw new Error("expected wakes");
-    const message = sourceWakeMessage([first, ...rest]);
+    const message = sourceWakeMessage([first, ...rest], false);
     expect(message.notification.outcome).toBe("failed");
     expect(message.notification.summary).toBe("2 task runs finished: Fix the build, Docs");
     expect(message.notification.source).toEqual({
       kind: "task_agent_run",
       tasks: [
-        { id: "task-1", title: "Fix the build" },
-        { id: "task-2", title: "Docs" },
+        { id: "task-1", title: "Fix the build", status: "Needs Review" },
+        { id: "task-2", title: "Docs", status: "Needs Review" },
       ],
     });
+    // Other work still runs: no idle line.
     expect(message.text.split("\n")).toHaveLength(4);
+  });
+
+  it("reports runs that all completed as a card, with each task once", () => {
+    const runs = [
+      row({}),
+      row({ runId: "run-2", runThreadId: "thread-run-2", agentName: "Reviewer" }),
+      row({
+        runId: "run-3",
+        runThreadId: "thread-run-3",
+        taskId: "task-2",
+        taskTitle: "Docs",
+        taskStatus: "Done",
+        summary: null,
+      }),
+    ].filter(wakesSourceChat);
+    const [first, ...rest] = runs;
+    if (first === undefined) throw new Error("expected runs");
+    expect(reportsWithoutWake(runs)).toBe(true);
+    expect(reportsWithoutWake([...runs, { ...first, status: "blocked" }])).toBe(false);
+    expect(reportsWithoutWake([{ ...first, status: "failed" }])).toBe(false);
+    expect(reportsWithoutWake([{ ...first, status: "interrupted" }])).toBe(false);
+    const card = sourceRunsCard([first, ...rest]);
+    expect(card.source).toEqual({
+      kind: "task_agent_run",
+      tasks: [
+        { id: "task-1", title: "Fix the build", status: "Needs Review" },
+        { id: "task-2", title: "Docs", status: "Done" },
+      ],
+    });
+    expect(card.outcome).toBe("completed");
+    expect(card.summary).toBe("2 tasks done: Fix the build, Docs");
+    expect(card.detail?.split("\n")).toEqual([
+      "Task-agent runs finished for tasks created in this chat:",
+      '- Task "Fix the build" (task-1), run run-1 by agent "Developer": completed, task now Needs Review. Summary: Fixed it.',
+      '- Task "Fix the build" (task-1), run run-2 by agent "Reviewer": completed, task now Needs Review. Summary: Fixed it.',
+      '- Task "Docs" (task-2), run run-3 by agent "Developer": completed, task now Done.',
+      "Read a task with task_get when you need its full output.",
+    ]);
+    expect(sourceRunsCard([first]).summary).toBe('Task "Fix the build" done');
   });
 });
 
@@ -119,12 +167,19 @@ const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "g
  */
 function fakeDispatch(fail: (threadId: string) => "transient" | "permanent" | null) {
   const handled = new Set<string>();
-  const delivered: Array<{ readonly threadId: string; readonly text: string }> = [];
+  /** A wake starts a model turn; a card is only recorded. Its text is the card's detail. */
+  const delivered: Array<{
+    readonly threadId: string;
+    readonly kind: "wake" | "card";
+    readonly text: string;
+  }> = [];
   const attempts: string[] = [];
   const service = {
     dispatch: (command: OrchestrationV2ServerCommand) =>
       Effect.gen(function* () {
-        if (command.type !== "message.dispatch") return yield* Effect.die("unexpected command");
+        if (command.type !== "message.dispatch" && command.type !== "thread.notification.record") {
+          return yield* Effect.die("unexpected command");
+        }
         attempts.push(command.threadId);
         if (handled.has(command.commandId)) return { sequence: 0 };
         const failure = fail(command.threadId);
@@ -141,7 +196,15 @@ function fakeDispatch(fail: (threadId: string) => "transient" | "permanent" | nu
           });
         }
         handled.add(command.commandId);
-        delivered.push({ threadId: command.threadId, text: command.text });
+        delivered.push(
+          command.type === "message.dispatch"
+            ? { threadId: command.threadId, kind: "wake", text: command.text }
+            : {
+                threadId: command.threadId,
+                kind: "card",
+                text: command.notification.detail ?? "",
+              },
+        );
         return { sequence: delivered.length };
       }),
   };
@@ -152,7 +215,8 @@ const withWake = <A, E>(
   dispatch: ReturnType<typeof fakeDispatch>,
   body: Effect.Effect<A, E, TaskRepository | TaskSourceWake | SqlClient.SqlClient>,
 ) =>
-  body.pipe(
+  // Runs below end at `at`; by the first sweep their chats have settled.
+  Effect.andThen(TestClock.setTime(Date.parse(at) + 60_000), body).pipe(
     Effect.provide(
       Layer.mergeAll(TaskSourceWakeLive, TaskRepositoryLive).pipe(
         Layer.provideMerge(
@@ -166,8 +230,12 @@ const withWake = <A, E>(
     ),
   );
 
-/** A finished run of a task created in `sourceThreadId`. */
-const finishedRun = (id: string, sourceThreadId: string) =>
+/** A run of a task created in `sourceThreadId`, finished at `at` unless still running. */
+const finishedRun = (
+  id: string,
+  sourceThreadId: string,
+  status: "completed" | "failed" | "running" = "completed",
+) =>
   Effect.gen(function* () {
     const repository = yield* TaskRepository;
     yield* repository.upsertAgent({
@@ -206,9 +274,9 @@ const finishedRun = (id: string, sourceThreadId: string) =>
       agentId: TaskAgentId.make("agent"),
       threadId: ThreadId.make(`thread-${id}`),
       modelSelection,
-      status: "completed",
+      status,
       startedAt: at,
-      completedAt: at,
+      completedAt: status === "running" ? null : at,
       triggerRunId: null,
       continuesRunId: null,
     });
@@ -228,10 +296,157 @@ const wakeState = Effect.gen(function* () {
   };
 });
 
+/** Ends a running run now. */
+const finishNow = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const completedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* sql`
+      UPDATE task_agent_runs SET status = 'completed', completed_at = ${completedAt}
+      WHERE id = ${id}
+    `;
+  });
+
 /** Makes every waiting batch due now, as if its retry time passed. */
 const retryNow = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`UPDATE task_source_wake_batches SET retry_at = NULL`;
+});
+
+describe("TaskSourceWake settling", () => {
+  it.effect("a chat sees completed runs as one card once its tasks have settled", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("r1", "chat");
+        yield* finishedRun("r2", "chat", "running");
+        yield* finishedRun("r-other", "other-chat");
+        // The chat's second task still runs; another chat is not held up by it.
+        yield* wake.sweep;
+        assert.deepStrictEqual(
+          dispatch.delivered.map((message) => message.threadId),
+          ["other-chat"],
+        );
+        assert.deepStrictEqual(yield* wakeState, { told: ["r-other"], batches: [] });
+
+        // Its last run just ended: a run it triggers may still start.
+        yield* finishNow("r2");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+
+        yield* TestClock.adjust(SOURCE_SETTLE_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 2);
+        const message = dispatch.delivered[1]!;
+        assert.strictEqual(message.threadId, "chat");
+        // Recorded in the chat; its model is not woken for it.
+        assert.deepStrictEqual(
+          dispatch.delivered.map((report) => report.kind),
+          ["card", "card"],
+        );
+        assert.include(message.text, "run r1");
+        assert.include(message.text, "run r2");
+        assert.deepStrictEqual(yield* wakeState, {
+          told: ["r-other", "r1", "r2"],
+          batches: [],
+        });
+      }),
+    );
+  });
+
+  it.effect("a failed run wakes its chat at once, with the completed runs waiting", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("r1", "chat");
+        yield* finishedRun("r2", "chat", "running");
+        yield* finishedRun("r3", "chat", "failed");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        // The completed run goes with the failure into one model wake.
+        assert.strictEqual(message!.kind, "wake");
+        assert.include(message!.text, "run r1");
+        assert.include(message!.text, "run r3");
+        assert.include(message!.text, ": failed");
+        // The failure that released the batch comes first.
+        assert.isBelow(message!.text.indexOf("run r3"), message!.text.indexOf("run r1"));
+        assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r3"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect(
+    "a completed run behind work that never settles goes out after the longest wait",
+    () => {
+      const dispatch = fakeDispatch(() => null);
+      return withWake(
+        dispatch,
+        Effect.gen(function* () {
+          const wake = yield* TaskSourceWake;
+          yield* finishedRun("r1", "chat");
+          yield* finishedRun("r2", "chat", "running");
+          yield* wake.sweep;
+          assert.lengthOf(dispatch.delivered, 0);
+
+          yield* TestClock.setTime(Date.parse(at) + SOURCE_MAX_WAIT_MS);
+          yield* wake.sweep;
+          yield* wake.sweep;
+          assert.lengthOf(dispatch.delivered, 1);
+          const [message] = dispatch.delivered;
+          assert.strictEqual(message!.kind, "card");
+          assert.include(message!.text, "run r1");
+          assert.notInclude(message!.text, "run r2");
+          // r2 still runs: the report does not say the chat's work is done.
+          assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
+          assert.deepStrictEqual(yield* wakeState, { told: ["r1"], batches: [] });
+        }),
+      );
+    },
+  );
+
+  it.effect("an urgent batch split by the sweep window sends the failure first, not idle", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const wake = yield* TaskSourceWake;
+        for (let index = 0; index < 200; index += 1) {
+          yield* finishedRun(`r${String(index).padStart(3, "0")}`, "chat");
+        }
+        yield* finishedRun("r-failed", "chat", "failed");
+        // Newer than every completed run, so it would not fit a window in end order.
+        const failedAt = new Date(Date.parse(at) + 1_000).toISOString();
+        yield* sql`UPDATE task_agent_runs SET completed_at = ${failedAt} WHERE id = 'r-failed'`;
+        yield* finishedRun("r-active", "chat", "running");
+        yield* wake.sweep;
+        assert.isAtLeast(dispatch.delivered.length, 1);
+        const [first] = dispatch.delivered;
+        assert.strictEqual(first!.kind, "wake");
+        const lines = first!.text.split("\n");
+        assert.include(lines[1], "run r-failed");
+        const reported = () =>
+          dispatch.delivered.flatMap((message) =>
+            message.text.split("\n").filter((line) => line.startsWith("- Task ")),
+          );
+        // The completed run left out of the window waits while r-active runs.
+        yield* wake.sweep;
+        assert.lengthOf(reported(), 200);
+        yield* TestClock.setTime(Date.parse(at) + SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(reported(), 201);
+        for (const message of dispatch.delivered) {
+          assert.notInclude(message.text, "No run for this chat's tasks is in progress now.");
+        }
+      }),
+    );
+  });
 });
 
 describe("TaskSourceWake batches", () => {

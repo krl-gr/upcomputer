@@ -1,3 +1,5 @@
+import { TASK_CREATE_BATCH_LIMIT } from "@t3tools/tasks-contracts/v1";
+
 import type { TaskToolSpec } from "./TaskToolTypes.ts";
 
 const object = (
@@ -62,6 +64,25 @@ const dateTime = {
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
 } as const;
 
+/** One task of task_create; required unless the call passes a tasks list. */
+const taskCreateFields = {
+  id,
+  title: id,
+  description: { type: "string" },
+  output: { type: ["string", "null"] },
+  status: id,
+  priority: { type: ["string", "null"] },
+  createdBy: id,
+  assigneeAgentRunId: { type: ["string", "null"] },
+  sourceThreadId: { type: ["string", "null"] },
+  sourceRunId: { type: ["string", "null"] },
+  metadata: {},
+  tags,
+  notBefore: dateTime,
+  audience,
+  kind,
+} as const;
+
 /** Server trigger semantics returned by task_context; not user-editable guidance. */
 export const TASK_TRIGGER_RULES = [
   "An enabled agent starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
@@ -73,7 +94,7 @@ export const TASK_TRIGGER_RULES = [
   "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is archived, the agent is disabled, or the agent has another active run on the task.",
   "A task is for agents or for a person (audience). Person tasks and routines are the user's own work: an agent never starts on them by status alone. An agent starts on a person task only when the task has every one of the agent's start tags, or after its audience is set to agent.",
   "Archiving is separate from status: no status archives a task. An archived task keeps its status, is hidden by default, never starts agents, and its active runs end. Unarchiving it is a trigger change, so a matching agent can start again.",
-  "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
+  "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue: a task_agent_result with blocked:true, or a final task_update that releases the task with status Blocked. An agent starts for a blocked run only if its runtime and interaction modes are no broader than that run's. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
 
 /**
@@ -120,8 +141,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_context",
     description:
-      "Resolve task project, model context, and configurable task orchestration guidance for this turn.",
-    inputSchema: object({ projectId: id, workspaceRoot: id, modelSelection, modelAlias: id }),
+      'Resolve the task project and model, and return what creating tasks needs: the user\'s taskCreation guidance, triggerRules, and agents: the project\'s enabled agents with their start statuses and tags and their queues (tasks with all of an agent\'s startTags, counted per start status and In Progress, with the In Progress ids; active names the tasks the agent\'s runs hold now, in any status). include adds more that creating tasks does not need: "agentCreation" (with taskExecution, which every run gets) and "providers" (every provider with its models) before agent_create or agent_update, or before naming models to the user; "automationCreation" before automation_create; "projects" (every project) to pick another project. Projects are also listed when the project cannot be resolved.',
+    inputSchema: object({
+      projectId: id,
+      workspaceRoot: id,
+      modelSelection,
+      modelAlias: id,
+      include: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["projects", "providers", "agentCreation", "automationCreation"],
+        },
+      },
+    }),
   },
   {
     type: "function",
@@ -165,30 +198,18 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description:
-      "Create a task in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Set audience to person for work the user does themselves; without a resolved project such a task goes to the Inbox project.",
-    inputSchema: object(
-      {
-        id,
-        projectId: id,
-        workspaceRoot: id,
-        title: id,
-        description: { type: "string" },
-        output: { type: ["string", "null"] },
-        status: id,
-        priority: { type: ["string", "null"] },
-        createdBy: id,
-        assigneeAgentRunId: { type: ["string", "null"] },
-        sourceThreadId: { type: ["string", "null"] },
-        sourceRunId: { type: ["string", "null"] },
-        metadata: {},
-        tags,
-        notBefore: dateTime,
-        audience,
-        kind,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Set audience to person for work the user does themselves; without a resolved project such a task goes to the Inbox project. To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks join the end of the global order in the order given. One task returns the task; a list returns each task's id, rank, title, status, tags and notBefore.`,
+    inputSchema: object({
+      projectId: id,
+      workspaceRoot: id,
+      ...taskCreateFields,
+      tasks: {
+        type: "array",
+        minItems: 1,
+        maxItems: TASK_CREATE_BATCH_LIMIT,
+        items: object(taskCreateFields, ["title", "description", "status"]),
       },
-      ["title", "description", "status"],
-    ),
+    }),
   },
   {
     type: "function",
@@ -354,7 +375,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      "Create a task-agent definition. Call task_context first and follow its agentCreation guidance and triggerRules.",
+      'Create a task-agent definition. Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
     inputSchema: object(
       {
         id,
@@ -384,7 +405,8 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "agent_update",
-    description: "Update a task-agent definition.",
+    description:
+      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first.',
     inputSchema: object(
       {
         id,
@@ -484,7 +506,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "automation_create",
     description:
-      "Propose a scheduled automation that creates a task on a cron schedule. Call task_context first and follow its automationCreation guidance. The automation is saved as an inert draft and only a person can activate it.",
+      'Propose a scheduled automation that creates a task on a cron schedule. Call task_context with include ["automationCreation"] first and follow its automationCreation guidance. The automation is saved as an inert draft and only a person can activate it.',
     inputSchema: object(
       {
         projectId: id,
@@ -531,14 +553,14 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "instructions_get",
     description:
-      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance; and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable. With projectId: that project's additions to the four task fields, which are added after the global texts for tasks in that project (empty until written), their own revision, and the global texts for context.",
+      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance (the latter two on request); and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable. With projectId: that project's additions to the four task fields, which are added after the global texts for tasks in that project (empty until written), their own revision, and the global texts for context.",
     inputSchema: object({ projectId: instructionsProjectId }),
   },
   {
     type: "function",
     mutation: "write",
     name: "instructions_update",
-    description: `Call only when the user explicitly asks in this conversation to save, change or remove an instruction or rule, or says yes after you asked; never on your own initiative, and never to record a preference the user stated only for the current work: follow that now instead. Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. When the rule concerns one project ("in this project…", or it names a project), write it to that project with its projectId (from task_context) and the revision from instructions_get with the same projectId: it is added after the global text for that project's tasks only. Otherwise edit the global fields without projectId. Rules for one specific agent belong in that agent's instructions (agent_update); rules about a repository's code belong in its AGENTS.md. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    description: `Call only when the user explicitly asks in this conversation to save, change or remove an instruction or rule, or says yes after you asked; never on your own initiative, and never to record a preference the user stated only for the current work: follow that now instead. Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. When the rule concerns one project ("in this project…", or it names a project), write it to that project with its projectId (from task_context; include ["projects"] for another project) and the revision from instructions_get with the same projectId: it is added after the global text for that project's tasks only. Otherwise edit the global fields without projectId. Rules for one specific agent belong in that agent's instructions (agent_update); rules about a repository's code belong in its AGENTS.md. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
     inputSchema: object(
       {
         projectId: instructionsProjectId,

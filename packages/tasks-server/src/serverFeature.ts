@@ -6,6 +6,8 @@ import {
   eraseExperimentalServerLayer,
   forkParked,
 } from "../../../apps/server/src/extensionApi.ts";
+import { TaskAgentOrchestrationInstructionsLive } from "./agents/TaskAgentOrchestrationInstructions.ts";
+import { TaskChatToolHintsLive } from "./tools/TaskChatToolHints.ts";
 import { TaskAgentService, TaskAgentServiceLive } from "./agents/TaskAgentService.ts";
 import { TaskSourceWakeLive } from "./agents/TaskSourceWake.ts";
 import { TaskAutomationServiceLive } from "./automations/TaskAutomationService.ts";
@@ -63,9 +65,12 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
       ownerId: TASKS_FEATURE_ID,
       version: 1,
       layer: eraseExperimentalServerLayer(
-        Layer.mergeAll(TaskRecoveryLive, TaskReminderSweeperLive).pipe(
-          Layer.provideMerge(TaskServicesLive),
-        ),
+        Layer.mergeAll(
+          TaskRecoveryLive,
+          TaskReminderSweeperLive,
+          TaskAgentOrchestrationInstructionsLive,
+          TaskChatToolHintsLive,
+        ).pipe(Layer.provideMerge(TaskServicesLive)),
       ),
     },
   ],
