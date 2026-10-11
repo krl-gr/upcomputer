@@ -75,6 +75,7 @@ import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAg
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
+import { projectAgentQueues } from "../context/AgentQueues.ts";
 import {
   compactTaskToolContext,
   TaskToolContextResolver,
@@ -655,6 +656,7 @@ const make = Effect.gen(function* () {
             isError: false,
             text: json({
               ...compactTaskToolContext(resolution, include),
+              ...(project === undefined ? {} : yield* projectAgentQueues(repository, project.id)),
               // Creating tasks is the common case; the other texts come on request.
               promptGuidance: {
                 taskCreation: guidance.taskCreation,
