@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
@@ -35,6 +36,9 @@ import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.t
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
+const encodeCustomInstructionsJson = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Struct({ customInstructions: Schema.String })),
+);
 
 const makeServerSettingsLayer = () =>
   ServerSettingsModule.layer.pipe(
@@ -131,6 +135,36 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.equal(persisted.responseStreamingMode, "turn");
       assert.deepEqual(persisted.projectSettingsOverrides, settings.projectSettingsOverrides);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect.each([false, true])(
+    "upgrades a saved retired instructions line, leaving edited text alone (edited: %s)",
+    (custom) =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const retired =
+          "Record the user's process preferences in these shared instructions (instructions_update, field per topic), not in AGENTS.md or memory files. Rules for one agent go into that agent's own instructions.";
+        // An edited copy of the retired line, as a user may have reworded it.
+        const line = custom ? retired.replace("Record", "Always record") : retired;
+        const current = DEFAULT_CUSTOM_INSTRUCTIONS.split("\n")[1] ?? "";
+        assert.match(
+          current,
+          /^Change these shared instructions only when the user explicitly asks/,
+        );
+        const saved = `Work is delegated.\n${line}\nAnswer in English.`;
+        yield* fs.writeFileString(
+          config.settingsPath,
+          yield* encodeCustomInstructionsJson({ customInstructions: saved }),
+        );
+
+        const settings = yield* service.getSettings;
+        assert.equal(
+          settings.customInstructions,
+          custom ? saved : `Work is delegated.\n${current}\nAnswer in English.`,
+        );
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("saves through a symlinked settings file without replacing the link", () =>

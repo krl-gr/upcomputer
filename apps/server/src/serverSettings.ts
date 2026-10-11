@@ -11,6 +11,7 @@
  * @module ServerSettings
  */
 import {
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
@@ -30,6 +31,8 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  TrimmedString,
+  upgradeCustomInstructions,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -357,9 +360,23 @@ const PersistedResponseStreamingMode = Schema.Union([
     }),
   ),
 );
+// A saved all-chats text still carrying a retired default line gets the
+// current line; edited text no longer matches and is kept as written.
+const PersistedCustomInstructions = TrimmedString.pipe(
+  Schema.decodeTo(
+    Schema.String,
+    SchemaTransformation.transform({
+      decode: upgradeCustomInstructions,
+      encode: (text) => text,
+    }),
+  ),
+);
 const ServerSettingsJson = fromLenientJson(
   Schema.Struct({
     ...ServerSettings.fields,
+    customInstructions: PersistedCustomInstructions.pipe(
+      Schema.withDecodingDefault(Effect.succeed(DEFAULT_CUSTOM_INSTRUCTIONS)),
+    ),
     responseStreamingMode: PersistedResponseStreamingMode.pipe(
       Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
     ),

@@ -191,6 +191,20 @@ test("instructions tools are served with read and write classifications", () => 
   });
 });
 
+test("instructions writes are described as user-requested only", () => {
+  const descriptions = Object.fromEntries(
+    TASK_TOOL_SPECS.map((spec) => [spec.name, spec.description] as const),
+  );
+  NodeAssert.match(
+    descriptions.instructions_update ?? "",
+    /^Call only when the user explicitly asks .*never on your own initiative, and never to record a preference the user stated only for the current work/,
+  );
+  NodeAssert.match(
+    descriptions.instructions_revert ?? "",
+    /^Call only when the user explicitly asks .*never on your own initiative\./,
+  );
+});
+
 test("update, history and revert round-trip with a new change per edit", async () => {
   const { call } = await harness();
 
@@ -639,7 +653,10 @@ test("task_context points at the instructions tools", async () => {
   const { call } = await harness();
   const context = await call("task_context");
   NodeAssert.equal(context.isError, false, context.text);
-  NodeAssert.match(context.body.promptGuidanceEditing, /instructions_update/);
+  NodeAssert.match(
+    context.body.promptGuidanceEditing,
+    /instructions_update and instructions_revert only when the user explicitly asks/,
+  );
   NodeAssert.deepEqual(context.body.promptGuidance, DEFAULT_TASK_PROMPT_SETTINGS);
 });
 

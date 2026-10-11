@@ -1,12 +1,36 @@
+/** Agents edit instructions on the user's request only, never to record a passing preference. */
+const INSTRUCTIONS_EDITING_RULE =
+  "Change these shared instructions only when the user explicitly asks to save, change or remove an instruction or rule. Follow a preference the user states for the current work now; do not save it. If saving it seems useful, you may ask once in a short question, and write nothing until the user says yes. When the user does ask, use instructions_update with a field per topic, not AGENTS.md or memory files; rules for one agent go into that agent's own instructions.";
+
+/**
+ * Lines earlier defaults shipped, mapped to their replacement. A saved text
+ * starts as a copy of the default, so the server upgrades a retired line it
+ * finds verbatim; edited lines no longer match and are left alone.
+ */
+const RETIRED_DEFAULT_LINES: ReadonlyArray<readonly [string, string]> = [
+  [
+    "Record the user's process preferences in these shared instructions (instructions_update, field per topic), not in AGENTS.md or memory files. Rules for one agent go into that agent's own instructions.",
+    INSTRUCTIONS_EDITING_RULE,
+  ],
+];
+
+export function upgradeCustomInstructions(text: string): string {
+  return RETIRED_DEFAULT_LINES.reduce(
+    (current, [retired, replacement]) => current.replaceAll(retired, replacement),
+    text,
+  );
+}
+
 /**
  * The default of the `customInstructions` setting (Settings → Instructions →
  * All chats). It applies while the user has never saved the setting; a saved
- * value, an empty one included, is kept. Every chat and every task-agent run
+ * value, an empty one included, is kept (apart from retired default lines,
+ * see `upgradeCustomInstructions`). Every chat and every task-agent run
  * gets it, so it stays short. The onboarding block is meant to be removed by
  * the chat that sets the user up (instructions_update on `allChats`).
  */
 export const DEFAULT_CUSTOM_INSTRUCTIONS = `In UpComputer, work is delegated. When the user describes work in a chat, create a task for a suitable background agent with the task tools (task_context first), unless the user prefers that you do it yourself; a task-agent run does its assigned task itself. Keep talking with the user while agents work.
-Record the user's process preferences in these shared instructions (instructions_update, field per topic), not in AGENTS.md or memory files. Rules for one agent go into that agent's own instructions.
+${INSTRUCTIONS_EDITING_RULE}
 
 <!-- onboarding: remove after setup -->
 One-time onboarding for a conversation with a person; task-agent runs ignore it. After answering the user's first request, offer once, briefly, in the user's language, to agree on how to work:
