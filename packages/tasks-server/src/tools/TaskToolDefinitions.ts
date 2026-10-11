@@ -82,8 +82,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_context",
     description:
-      "Resolve task project, model context, and configurable task orchestration guidance for this turn.",
-    inputSchema: object({ projectId: id, workspaceRoot: id, modelSelection, modelAlias: id }),
+      'Resolve the task project and model, and return the user\'s task guidance for this turn: taskCreation and triggerRules. include adds more: "agentCreation" (with taskExecution, which every run gets) and "providers" (every provider with its models) before agent_create or agent_update, or before naming models to the user; "automationCreation" before automation_create; "projects" (every project) to pick another project. Projects are also listed when the project cannot be resolved.',
+    inputSchema: object({
+      projectId: id,
+      workspaceRoot: id,
+      modelSelection,
+      modelAlias: id,
+      include: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["projects", "providers", "agentCreation", "automationCreation"],
+        },
+      },
+    }),
   },
   {
     type: "function",
@@ -227,7 +239,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      "Create a task-agent definition. Call task_context first and follow its agentCreation guidance and triggerRules.",
+      'Create a task-agent definition. Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
     inputSchema: object(
       {
         id,
@@ -257,7 +269,8 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "agent_update",
-    description: "Update a task-agent definition.",
+    description:
+      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first.',
     inputSchema: object(
       {
         id,
@@ -357,7 +370,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "automation_create",
     description:
-      "Propose a scheduled automation that creates a task on a cron schedule. Call task_context first and follow its automationCreation guidance. The automation is saved as an inert draft and only a person can activate it.",
+      'Propose a scheduled automation that creates a task on a cron schedule. Call task_context with include ["automationCreation"] first and follow its automationCreation guidance. The automation is saved as an inert draft and only a person can activate it.',
     inputSchema: object(
       {
         projectId: id,
@@ -404,14 +417,14 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "instructions_get",
     description:
-      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance; and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable. With projectId: that project's additions to the four task fields, which are added after the global texts for tasks in that project (empty until written), their own revision, and the global texts for context.",
+      "Read the user's shared instructions (Settings → Instructions): allChats, which is part of the prompt of every chat and every task-agent run; taskCreation, agentCreation and automationCreation, which task_context returns as promptGuidance (the latter two on request); and taskExecution, which is part of every task-agent run's prompt. Returns each field's text and length, the current revision to pass to instructions_update, and the triggerRules, which are server behavior and not editable. With projectId: that project's additions to the four task fields, which are added after the global texts for tasks in that project (empty until written), their own revision, and the global texts for context.",
     inputSchema: object({ projectId: instructionsProjectId }),
   },
   {
     type: "function",
     mutation: "write",
     name: "instructions_update",
-    description: `Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. When the rule concerns one project ("in this project…", or it names a project), write it to that project with its projectId (from task_context) and the revision from instructions_get with the same projectId: it is added after the global text for that project's tasks only. Otherwise edit the global fields without projectId. Rules for one specific agent belong in that agent's instructions (agent_update); rules about a repository's code belong in its AGENTS.md. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    description: `Replace the whole text of one shared instructions field. Call instructions_get first and pass its revision as expectedRevision; if the instructions changed since, the write is refused: read again and redo the edit on the current text. Integrate the user's request into the right field: keep the existing text, add or change only what was asked, keep it concise, and do not rewrite unrelated parts. allChats is in every chat and every task-agent run, and taskExecution in every run: keep both short, put task-only rules in the task fields, and tell the user when one grows large. When the rule concerns one project ("in this project…", or it names a project), write it to that project with its projectId (from task_context; include ["projects"] for another project) and the revision from instructions_get with the same projectId: it is added after the global text for that project's tasks only. Otherwise edit the global fields without projectId. Rules for one specific agent belong in that agent's instructions (agent_update); rules about a repository's code belong in its AGENTS.md. reason says why, in a few words. After writing, tell the user in one or two lines what was added or changed and in which field; instructions_revert undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
     inputSchema: object(
       {
         projectId: instructionsProjectId,

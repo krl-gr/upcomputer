@@ -152,11 +152,21 @@ export const TaskToolCreateInput = Schema.Struct({
 });
 export type TaskToolCreateInput = typeof TaskToolCreateInput.Type;
 
+/** Optional parts of task_context, left out by default to keep chats small. */
+export const TaskToolContextInclude = Schema.Literals([
+  "projects",
+  "providers",
+  "agentCreation",
+  "automationCreation",
+]);
+export type TaskToolContextInclude = typeof TaskToolContextInclude.Type;
+
 export const TaskToolContextInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   modelAlias: Schema.optional(TrimmedNonEmptyString),
+  include: Schema.optional(Schema.Array(TaskToolContextInclude)),
 });
 export type TaskToolContextInput = typeof TaskToolContextInput.Type;
 

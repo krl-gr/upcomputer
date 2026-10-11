@@ -72,7 +72,10 @@ import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAg
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
-import { TaskToolContextResolver } from "../context/TaskToolContextResolver.ts";
+import {
+  compactTaskToolContext,
+  TaskToolContextResolver,
+} from "../context/TaskToolContextResolver.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
   composeTaskPromptSettings,
@@ -456,7 +459,7 @@ const make = Effect.gen(function* () {
               ? { project: { id: project.value.id, title: project.value.title }, error: null }
               : {
                   project: null,
-                  error: `Project '${projectId}' was not found. Use task_context to list projects.`,
+                  error: `Project '${projectId}' was not found. Use task_context with include ["projects"] to list projects.`,
                 },
           ),
         );
@@ -498,25 +501,34 @@ const make = Effect.gen(function* () {
       const isDryRun = dryRun(context);
       switch (name) {
         case "task_context": {
-          const resolution = yield* resolver.resolve({
-            args: yield* decoders.task_context(args),
-            invocationContext: context,
-          });
+          const input = yield* decoders.task_context(args);
+          const include = input.include ?? [];
+          const resolution = yield* resolver.resolve({ args: input, invocationContext: context });
           // The task's target project, which may differ from the chat's.
           const project = resolution.resolvedProject?.project;
+          const guidance = composeTaskPromptSettings(
+            yield* promptSettings.get,
+            project === undefined
+              ? null
+              : {
+                  title: project.title,
+                  settings: (yield* promptSettings.getProject(project.id)).settings,
+                },
+          );
           return {
             isError: false,
             text: json({
-              ...resolution,
-              promptGuidance: composeTaskPromptSettings(
-                yield* promptSettings.get,
-                project === undefined
-                  ? null
-                  : {
-                      title: project.title,
-                      settings: (yield* promptSettings.getProject(project.id)).settings,
-                    },
-              ),
+              ...compactTaskToolContext(resolution, include),
+              // Creating tasks is the common case; the other texts come on request.
+              promptGuidance: {
+                taskCreation: guidance.taskCreation,
+                ...(include.includes("agentCreation")
+                  ? { agentCreation: guidance.agentCreation, taskExecution: guidance.taskExecution }
+                  : {}),
+                ...(include.includes("automationCreation")
+                  ? { automationCreation: guidance.automationCreation }
+                  : {}),
+              },
               promptGuidanceEditing: PROMPT_GUIDANCE_EDITING,
               triggerRules: TASK_TRIGGER_RULES,
             }),
@@ -573,7 +585,11 @@ const make = Effect.gen(function* () {
             updatedAt: timestamp,
             archivedAt: null,
           };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, task, resolution }) };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({ dryRun: true, task, resolution: compactTaskToolContext(resolution) }),
+            };
           // An existing id updates that task; a status change is the caller's.
           const callerRun = context.threadId
             ? Option.getOrNull(
@@ -798,7 +814,11 @@ const make = Effect.gen(function* () {
             createdAt: timestamp,
             updatedAt: timestamp,
           };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({ dryRun: true, agent, resolution: compactTaskToolContext(resolution) }),
+            };
           // An enabled agent starts runs on every matching task right away.
           const createRefusal = agent.enabled
             ? runStartRefusal(context, agentRunModes(agent.config), "Creating an enabled agent")
@@ -806,7 +826,10 @@ const make = Effect.gen(function* () {
           if (createRefusal !== null) return { isError: true, text: createRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
-          return { isError: false, text: json({ agent: saved, resolution }) };
+          return {
+            isError: false,
+            text: json({ agent: saved, resolution: compactTaskToolContext(resolution) }),
+          };
         }
         case "agent_update": {
           const input = yield* decoders.agent_update(args);
@@ -868,7 +891,15 @@ const make = Effect.gen(function* () {
               : {}),
             updatedAt: yield* now,
           };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, agent, resolution }) };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                agent,
+                resolution: resolution && compactTaskToolContext(resolution),
+              }),
+            };
           // Any edit of an enabled agent lets it run again on its matching tasks
           // (see runsAgain); disabling it starts nothing.
           const updateRefusal = agent.enabled
@@ -877,7 +908,13 @@ const make = Effect.gen(function* () {
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
-          return { isError: false, text: json({ agent: saved, resolution }) };
+          return {
+            isError: false,
+            text: json({
+              agent: saved,
+              resolution: resolution && compactTaskToolContext(resolution),
+            }),
+          };
         }
         case "agent_delete": {
           const input = yield* decoders.agent_delete(args);
@@ -1066,7 +1103,14 @@ const make = Effect.gen(function* () {
             updatedAt: timestamp,
           };
           if (isDryRun)
-            return { isError: false, text: json({ dryRun: true, automation, resolution }) };
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                automation,
+                resolution: compactTaskToolContext(resolution),
+              }),
+            };
           // A plain insert, not an upsert: the tool path must never be able to
           // write over an automation a person has already reviewed.
           const saved = yield* repository.insertAutomation(automation);

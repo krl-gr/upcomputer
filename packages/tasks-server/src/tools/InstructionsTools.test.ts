@@ -106,7 +106,8 @@ async function harness(options: { readonly allChats?: string } = {}) {
     resolve: ({ args }) => {
       const title = args.projectId === undefined ? undefined : projectTitles[args.projectId];
       return Effect.succeed({
-        projects: [],
+        projects: Object.entries(projectTitles).map(([id, title]) => ({ id, title })),
+        providers: [{ instanceId: "codex", models: [{ slug: "gpt-test", name: "GPT Test" }] }],
         resolvedProject:
           title === undefined
             ? null
@@ -636,7 +637,56 @@ test("task_context points at the instructions tools", async () => {
   const context = await call("task_context");
   NodeAssert.equal(context.isError, false, context.text);
   NodeAssert.match(context.body.promptGuidanceEditing, /instructions_update/);
-  NodeAssert.deepEqual(context.body.promptGuidance, DEFAULT_TASK_PROMPT_SETTINGS);
+  NodeAssert.deepEqual(context.body.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+  });
+});
+
+test("task_context leaves the catalogs and other guidance out unless included", async () => {
+  const { call } = await harness();
+  const compact = (await call("task_context", { projectId: "project-a" })).body;
+  NodeAssert.equal(compact.resolvedProject.project.title, "Alpha");
+  NodeAssert.equal("projects" in compact, false);
+  NodeAssert.equal("providers" in compact, false);
+  NodeAssert.deepEqual(Object.keys(compact.promptGuidance), ["taskCreation"]);
+  NodeAssert.ok(compact.triggerRules.length > 0);
+
+  const forAgents = (
+    await call("task_context", {
+      projectId: "project-a",
+      include: ["providers", "agentCreation"],
+    })
+  ).body;
+  NodeAssert.equal(forAgents.providers[0].models[0].slug, "gpt-test");
+  NodeAssert.equal("projects" in forAgents, false);
+  NodeAssert.deepEqual(forAgents.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+    agentCreation: DEFAULT_TASK_PROMPT_SETTINGS.agentCreation,
+    taskExecution: DEFAULT_TASK_PROMPT_SETTINGS.taskExecution,
+  });
+
+  const forAutomations = (
+    await call("task_context", {
+      projectId: "project-a",
+      include: ["projects", "automationCreation"],
+    })
+  ).body;
+  NodeAssert.deepEqual(
+    forAutomations.projects.map(({ title }: { title: string }) => title),
+    ["Alpha", "Beta"],
+  );
+  NodeAssert.deepEqual(forAutomations.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+    automationCreation: DEFAULT_TASK_PROMPT_SETTINGS.automationCreation,
+  });
+
+  // An unresolved project lists the projects to pick from.
+  const unresolved = (await call("task_context")).body;
+  NodeAssert.equal(unresolved.resolvedProject, null);
+  NodeAssert.equal(unresolved.projects.length, 2);
+  NodeAssert.equal("providers" in unresolved, false);
+
+  NodeAssert.equal((await call("task_context", { include: ["everything"] })).isError, true);
 });
 
 test("a large taskExecution update carries a size warning", async () => {
@@ -1041,15 +1091,13 @@ test("task_context gives the global guidance plus the target project's additions
 
   const forA = (await call("task_context", { projectId: "project-a" })).body.promptGuidance;
   NodeAssert.deepEqual(forA, {
-    ...DEFAULT_TASK_PROMPT_SETTINGS,
     taskCreation: `${DEFAULT_TASK_PROMPT_SETTINGS.taskCreation}\n\nProject "Alpha":\nAlpha creation rule`,
   });
   NodeAssert.ok(!JSON.stringify(forA).includes("Beta creation rule"));
   // Without a resolved project, only the global texts.
-  NodeAssert.deepEqual(
-    (await call("task_context")).body.promptGuidance,
-    DEFAULT_TASK_PROMPT_SETTINGS,
-  );
+  NodeAssert.deepEqual((await call("task_context")).body.promptGuidance, {
+    taskCreation: DEFAULT_TASK_PROMPT_SETTINGS.taskCreation,
+  });
 });
 
 test("project writes keep the run restriction and dry runs", async () => {
