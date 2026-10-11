@@ -6,7 +6,7 @@ UpComputer ships on upstream core but does not ship every upstream feature. It h
 
 - `ProductFlags` lists the hideable features: `pullRequests`, `terminalSurface`, `terminal`, `threadSettlement`, `devices`, `mcpOAuth`, `scheduledTaskWebhooks`, `defaultBrowser`, `cliCommand`, `mcpApps`, `usageDataNotice`. The terminal is split in two: `terminalSurface` is the terminal as a right-panel surface (its launcher entry and `+` menu item, its tab, the `terminal.*` shortcuts that only act while a terminal has focus, and the terminal font setting); `terminal` is everything else (the bottom drawer and its `terminal.toggle` shortcut, project scripts and `script.*`, "Run in terminal", the worktree setup terminal, the running-terminal badge on thread rows).
 - `UPSTREAM_PRODUCT_FLAGS` shows everything. Core without a product composition uses it, so stock core and upstream's own tests behave as upstream.
-- `UPCOMPUTER_PRODUCT_FLAGS` shows `terminalSurface`, `mcpOAuth`, `scheduledTaskWebhooks` and `mcpApps` and hides every other flag. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
+- `UPCOMPUTER_PRODUCT_FLAGS` shows `terminalSurface`, `mcpOAuth`, `scheduledTaskWebhooks`, `defaultBrowser` and `mcpApps` and hides every other flag. The public build (`apps/server/src/product/publicProduct.ts`, `apps/web/src/product/productEntry.ts`) and pro pass it to `composeExperimentalServerFeatures` / `composeExperimentalWebFeatures`.
 - A table in the same module maps each flag to the capabilities, keybinding commands, settings search items and right-panel launchers it hides.
 
 ## Server hooks
@@ -19,7 +19,7 @@ The composition carries the flags; upstream files read them through `ServerProdu
 - `server.ts`, `mcpOAuth`: outside agents cannot sign in to `/mcp`. The OAuth endpoints answer 404 (`whenProductFeatureOr` with the stand-ins in `product/hiddenHttpGroups.ts`, since the HTTP API keeps the group), and `/mcp` gets no `McpClientAuthenticator`, so it accepts only provider-session tokens and advertises no OAuth metadata.
 - `server.ts`, `scheduledTaskWebhooks`: the hook route answers 404 the same way, and `scheduledTasks/ScheduledTaskService.ts` refuses to save a webhook schedule, so an agent's `schedule_task` cannot create one.
 
-`defaultBrowser` is read at build time: `scripts/build-desktop-artifact.ts` registers the macOS `http`/`https` protocols and web page document types only when `UPCOMPUTER_PRODUCT_FLAGS.defaultBrowser` is on, so macOS never lists the app as a default browser.
+`defaultBrowser` is read at build time: `scripts/build-desktop-artifact.ts` registers the macOS `http`/`https` protocols and web page document types only when `UPCOMPUTER_PRODUCT_FLAGS.defaultBrowser` is on; without them macOS never lists the app as a default browser. Local Test builds register them too (only the app's own schemes are left out there), so a Local Test install also appears in the list.
 
 The terminal and device services stay: worktree setup scripts run in a server terminal, and the device service idles unless device support is turned on in settings, which the product hides.
 

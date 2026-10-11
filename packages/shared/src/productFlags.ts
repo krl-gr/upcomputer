@@ -68,7 +68,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   devices: false,
   mcpOAuth: true,
   scheduledTaskWebhooks: true,
-  defaultBrowser: false,
+  defaultBrowser: true,
   cliCommand: false,
   mcpApps: true,
   usageDataNotice: false,
