@@ -7,7 +7,7 @@ import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 /**
- * Settings → `t3` command: puts the desktop app's bundled CLI on PATH, or takes
+ * Settings → `up` command: puts the desktop app's bundled CLI on PATH, or takes
  * it off again. Hidden where the desktop build has no launcher to install.
  */
 export function CliCommandSettingsRow() {
@@ -39,7 +39,7 @@ export function CliCommandSettingsRow() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: action === "install" ? "Could not install t3" : "Could not remove t3",
+              title: action === "install" ? "Could not install up" : "Could not remove up",
               description: error instanceof Error ? error.message : "Something went wrong.",
             }),
           );
@@ -52,12 +52,12 @@ export function CliCommandSettingsRow() {
   if (!bridge || !state?.supported) return null;
   const installed = state.installedPath !== null;
   const description = state.shadowedBy
-    ? `Another t3 at ${state.shadowedBy} runs first in a new terminal. Remove it to use Up.computer's.`
+    ? `Another up at ${state.shadowedBy} runs first in a new terminal. Remove it to use Up.computer's.`
     : !installed
-      ? "Run Up.computer's CLI as `t3` from any terminal."
+      ? "Run Up.computer's CLI as `up` from any terminal."
       : state.onPath
         ? `Installed at ${state.installedPath}. Open a new terminal to use it.`
-        : `Installed at ${state.installedPath}, which is not on your PATH yet. Add its folder to your PATH to run \`t3\`.`;
+        : `Installed at ${state.installedPath}, which is not on your PATH yet. Add its folder to your PATH to run \`up\`.`;
 
   return (
     <SettingsRow

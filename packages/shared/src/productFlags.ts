@@ -36,7 +36,7 @@ export interface ProductFlags {
   readonly scheduledTaskWebhooks: boolean;
   /** The macOS desktop app offering itself as the default web browser. */
   readonly defaultBrowser: boolean;
-  /** Installing the `t3` command on the PATH from Settings. */
+  /** Installing the CLI on the PATH from Settings: `up` in Up.computer, `t3` upstream. */
   readonly cliCommand: boolean;
   /** MCP apps rendered and run inline in threads. */
   readonly mcpApps: boolean;
@@ -69,7 +69,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   mcpOAuth: true,
   scheduledTaskWebhooks: true,
   defaultBrowser: true,
-  cliCommand: false,
+  cliCommand: true,
   mcpApps: true,
   usageDataNotice: false,
 });
