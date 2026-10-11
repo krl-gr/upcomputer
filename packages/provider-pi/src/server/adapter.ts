@@ -94,6 +94,7 @@ import {
 import {
   buildPiRpcLaunch,
   materializePiT3McpExtension,
+  writePiUserInstructions,
   resolvePiLaunchArgs,
 } from "./mcpInjection.ts";
 import { PI_FILE_CHANGE_TOOLS } from "./mcpExtensionSource.ts";
@@ -2623,6 +2624,16 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               !continuation && compactCommand === null
                 ? yield* resolvePromptPayload(turnInput.message.text, turnInput.message.attachments)
                 : null;
+            // The extension reads the user's instructions on each prompt, so
+            // a long-lived Pi process picks up a change or a clear here.
+            if (payload !== null) {
+              yield* writePiUserInstructions(extensionPath).pipe(
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Could not refresh Pi's user instructions", { cause }),
+                ),
+              );
+            }
             const startedAt = yield* DateTime.now;
             const syntheticNativeTurnId = `${state.providerThread.id}:attempt:${turnInput.attemptId}`;
             const providerTurn: OrchestrationV2ProviderTurn = {

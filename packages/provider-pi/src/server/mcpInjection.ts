@@ -14,8 +14,9 @@ import {
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
-  T3_PI_USER_INSTRUCTIONS_ENV,
+  T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/userInstructions";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
@@ -254,6 +255,29 @@ export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtensio
   return dest;
 });
 
+const PI_T3_USER_INSTRUCTIONS_FILENAME = "pi-t3-user-instructions.md";
+
+/** Where the extension next to `extensionPath` reads the user's instructions. */
+export function piUserInstructionsPath(extensionPath: string): string {
+  const normalized = extensionPath.replace(/\\/g, "/");
+  return `${normalized.slice(0, normalized.lastIndexOf("/") + 1)}${PI_T3_USER_INSTRUCTIONS_FILENAME}`;
+}
+
+/**
+ * Writes the current "all chats" instructions for the extension next to
+ * `extensionPath`, empty when there are none. Sessions share the file, as they
+ * share the instructions; the rename keeps a concurrent read from seeing half a file.
+ */
+export const writePiUserInstructions = Effect.fn("writePiUserInstructions")(function* (
+  extensionPath: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const dest = piUserInstructionsPath(extensionPath);
+  const temporary = `${dest}.${yield* randomUuidV4}.tmp`;
+  yield* fs.writeFileString(temporary, currentUserInstructionsBlock() ?? "");
+  yield* fs.rename(temporary, dest);
+});
+
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
   readonly environment: NodeJS.ProcessEnv;
@@ -299,16 +323,18 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
-  delete environment[T3_PI_USER_INSTRUCTIONS_ENV];
+  delete environment[T3_PI_USER_INSTRUCTIONS_PATH_ENV];
   delete environment[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV];
-  const userInstructions = hasT3Extension ? currentUserInstructionsBlock() : undefined;
 
   return {
     args,
     env: {
       ...environment,
       ...(hasT3Extension && input.extensionPath !== undefined
-        ? { [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
+        ? {
+            [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath,
+            [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: piUserInstructionsPath(input.extensionPath),
+          }
         : {}),
       ...(hasT3Extension && input.runtimeMode !== undefined
         ? {
@@ -316,9 +342,6 @@ export function buildPiRpcLaunch(input: {
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
-      ...(userInstructions === undefined
-        ? {}
-        : { [T3_PI_USER_INSTRUCTIONS_ENV]: userInstructions }),
       ...(hasT3Mcp && input.mcpSession !== undefined
         ? {
             [T3_MCP_URL_ENV]: input.mcpSession.endpoint,

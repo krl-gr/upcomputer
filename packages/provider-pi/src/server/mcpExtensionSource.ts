@@ -16,8 +16,12 @@ export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
-/** The user's "all chats" instructions block, appended to Pi's system prompt. */
-export const T3_PI_USER_INSTRUCTIONS_ENV = "T3_PI_USER_INSTRUCTIONS";
+/**
+ * File holding the user's "all chats" instructions block, appended to Pi's
+ * system prompt. The extension reads it on every prompt, since a Pi process
+ * outlives a change to the instructions; the adapter rewrites it before each turn.
+ */
+export const T3_PI_USER_INSTRUCTIONS_PATH_ENV = "T3_PI_USER_INSTRUCTIONS_PATH";
 /** Set to "omit" when the session's agent should not get the orchestration block. */
 export const T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_PI_ORCHESTRATION_INSTRUCTIONS";
 
@@ -37,7 +41,7 @@ const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
-const USER_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_ENV)};
+const USER_INSTRUCTIONS_PATH_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
@@ -347,6 +351,36 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
 
   const endpoint = env(URL_ENV);
   const token = env(TOKEN_ENV);
+
+  // The user's instructions are read on every prompt, so a running session
+  // follows a change or a clear. Missing file means no instructions.
+  const userInstructions = async () => {
+    const path = env(USER_INSTRUCTIONS_PATH_ENV);
+    if (path === undefined) return "";
+    try {
+      return (await NodeFSP.readFile(path, "utf8")).trim();
+    } catch {
+      return "";
+    }
+  };
+
+  // Deliver guidance through pi's real system-prompt channel. Wrapping the
+  // first user message instead would stop it from starting with "/" and
+  // silently break slash-command expansion. Registered before the MCP check:
+  // the user's instructions apply without MCP, the orchestration block
+  // describes MCP tools and needs them.
+  pi.on("before_agent_start", async (event) => {
+    const instructions = await userInstructions();
+    const orchestration =
+      endpoint === undefined || token === undefined || env(ORCHESTRATION_INSTRUCTIONS_ENV) === "omit"
+        ? ""
+        : "\\n\\n" + ORCHESTRATION_INSTRUCTIONS;
+    return {
+      systemPrompt:
+        event.systemPrompt + orchestration + (instructions === "" ? "" : "\\n\\n" + instructions),
+    };
+  });
+
   if (endpoint === undefined || token === undefined) {
     pi.on("session_start", async (_event, ctx) => {
       ctx.ui.notify(
@@ -450,21 +484,6 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(\`t3-code MCP unavailable: \${message}\`, "warning");
     }
-  });
-
-  // Deliver orchestration guidance through pi's real system-prompt channel.
-  // Wrapping the first user message instead would stop it from starting
-  // with "/" and silently break slash-command expansion.
-  pi.on("before_agent_start", (event) => {
-    const userInstructions = env(USER_INSTRUCTIONS_ENV);
-    const orchestration =
-      env(ORCHESTRATION_INSTRUCTIONS_ENV) === "omit" ? "" : "\\n\\n" + ORCHESTRATION_INSTRUCTIONS;
-    return {
-      systemPrompt:
-        event.systemPrompt +
-        orchestration +
-        (userInstructions === undefined ? "" : "\\n\\n" + userInstructions),
-    };
   });
 }
 `;

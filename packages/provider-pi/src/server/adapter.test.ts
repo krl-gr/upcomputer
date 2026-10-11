@@ -22,6 +22,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
@@ -38,6 +39,10 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { handoffBudget } from "@t3tools/provider-core/server/handoffBudget";
+import {
+  USER_INSTRUCTIONS_HEADING,
+  setUserInstructions,
+} from "@t3tools/provider-core/server/userInstructions";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { toolOutputImages, compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import {
@@ -3315,6 +3320,44 @@ describe("PiAdapterV2", () => {
         secondTerminal.type === "turn.terminal" && secondTerminal.status === "completed",
       );
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("hands a running session the user's instructions as they are at each turn", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const fake = yield* makeFakePi;
+      // No MCP session: the instructions must still reach Pi.
+      const { runtime, takeEvent } = yield* openRuntime(fake);
+      const path = fake.lastSpawn().env.T3_PI_USER_INSTRUCTIONS_PATH;
+      assert.isDefined(path);
+      assert.isUndefined(fake.lastSpawn().env.T3_MCP_URL);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      const promptWith = Effect.fnUntraced(function* (instructions: string, runOrdinal: number) {
+        setUserInstructions(instructions);
+        yield* startTurn(runtime, providerThread, "default", [], "Hello", undefined, runOrdinal);
+        yield* fake.takeRequest("prompt");
+        const written = yield* fileSystem.readFileString(path!);
+        yield* fake.emit({ type: "agent_start" });
+        yield* fake.emit({ type: "agent_settled" });
+        yield* takeEvent((event) => event.type === "turn.terminal");
+        return written;
+      });
+
+      // Changed after the process started, then cleared.
+      assert.equal(
+        yield* promptWith("Be brief.", 1),
+        `# ${USER_INSTRUCTIONS_HEADING}\n\nBe brief.`,
+      );
+      assert.equal(yield* promptWith("", 2), "");
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => setUserInstructions(""))),
+      Effect.scoped,
+      Effect.provide(layerTest),
+    ),
   );
 
   it.effect("shows compaction progress and completes the same activity row", () =>

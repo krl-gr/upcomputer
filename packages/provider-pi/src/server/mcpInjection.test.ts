@@ -15,12 +15,14 @@ import {
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
-  T3_PI_USER_INSTRUCTIONS_ENV,
+  T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import {
   buildPiRpcLaunch,
   materializePiT3McpExtension,
+  piUserInstructionsPath,
   resolvePiLaunchArgs,
+  writePiUserInstructions,
 } from "./mcpInjection.ts";
 
 const threadId = ThreadId.make("thread-pi-t3-mcp");
@@ -123,25 +125,24 @@ describe("pi T3 MCP injection", () => {
     assert.equal(launch.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
   });
 
-  it("hands the user's all-chats instructions to the extension, and nothing once they are empty", () => {
-    const launch = () =>
-      buildPiRpcLaunch({
-        launchArgs: [],
-        environment: { [T3_PI_USER_INSTRUCTIONS_ENV]: "inherited" },
-        mcpSession: undefined,
-        extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
-      });
-    try {
-      setUserInstructions("Be brief.");
-      assert.equal(
-        launch().env[T3_PI_USER_INSTRUCTIONS_ENV],
-        `# ${USER_INSTRUCTIONS_HEADING}\n\nBe brief.`,
-      );
-      setUserInstructions("  ");
-      assert.isUndefined(launch().env[T3_PI_USER_INSTRUCTIONS_ENV]);
-    } finally {
-      setUserInstructions("");
-    }
+  it("points the extension at the user's instructions file beside it", () => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: { [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md" },
+      mcpSession: undefined,
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+    });
+    assert.equal(
+      launch.env[T3_PI_USER_INSTRUCTIONS_PATH_ENV],
+      "/tmp/cache/pi-t3-user-instructions.md",
+    );
+    const withoutExtension = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: { [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md" },
+      mcpSession: undefined,
+      extensionPath: undefined,
+    });
+    assert.isUndefined(withoutExtension.env[T3_PI_USER_INSTRUCTIONS_PATH_ENV]);
   });
 
   it("forces tools and user extensions off for unattended text generation", () => {
@@ -208,5 +209,29 @@ describe("pi T3 MCP injection", () => {
       assert.include(mcpSource, "mcp__t3-code__");
       assert.include(mcpSource, "mcp__t3_code__");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "writes the current user instructions for the extension, and nothing once cleared",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cacheDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pi-instructions-" });
+        const extensionPath = yield* materializePiT3McpExtension(cacheDir);
+        const written = Effect.gen(function* () {
+          yield* writePiUserInstructions(extensionPath);
+          return yield* fs.readFileString(piUserInstructionsPath(extensionPath));
+        });
+        setUserInstructions("Be brief.");
+        assert.equal(yield* written, `# ${USER_INSTRUCTIONS_HEADING}\n\nBe brief.`);
+        setUserInstructions("  ");
+        assert.equal(yield* written, "");
+        // Only the extension and its instructions: no temporary file is left behind.
+        assert.equal((yield* fs.readDirectory(cacheDir)).length, 2);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => setUserInstructions(""))),
+        Effect.scoped,
+        Effect.provide(NodeServices.layer),
+      ),
   );
 });

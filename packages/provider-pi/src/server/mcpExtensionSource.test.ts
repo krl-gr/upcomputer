@@ -9,7 +9,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import {
   PI_T3_MCP_EXTENSION_SOURCE,
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
-  T3_PI_USER_INSTRUCTIONS_ENV,
+  T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
 
@@ -511,22 +511,60 @@ describe("Pi skill references", () => {
 });
 
 describe("Pi orchestration guidance", () => {
-  const systemPrompt = async (env: Record<string, string>) => {
+  const startHook = async (env: Record<string, string>) => {
     const bridge = await loadMcpBridge({ modern: true, env });
     const start = bridge.handlers.get("before_agent_start");
     assert.isDefined(start);
-    const result = await start!({ systemPrompt: "base" }, { ui: { notify: () => undefined } });
-    return result.systemPrompt;
+    return async () =>
+      (await start!({ systemPrompt: "base" }, { ui: { notify: () => undefined } })).systemPrompt;
+  };
+
+  const withInstructionsFile = async (test: (path: string) => Promise<void>) => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "pi-instructions-"));
+    try {
+      await test(NodePath.join(directory, "pi-t3-user-instructions.md"));
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true });
+    }
   };
 
   it("appends the orchestration block unless the session omits it", async () => {
-    assert.include(await systemPrompt({}), "Up.computer orchestration");
-    assert.equal(
-      await systemPrompt({
+    assert.include(await (await startHook({}))(), "Up.computer orchestration");
+    await withInstructionsFile(async (path) => {
+      await NodeFSP.writeFile(path, "# User instructions\n");
+      const systemPrompt = await startHook({
         [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
-        [T3_PI_USER_INSTRUCTIONS_ENV]: "# User instructions",
-      }),
-      "base\n\n# User instructions",
-    );
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: path,
+      });
+      assert.equal(await systemPrompt(), "base\n\n# User instructions");
+    });
+  });
+
+  it("follows changed and cleared user instructions in a running session", async () => {
+    await withInstructionsFile(async (path) => {
+      const systemPrompt = await startHook({
+        [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: path,
+      });
+      assert.equal(await systemPrompt(), "base");
+      await NodeFSP.writeFile(path, "# Old");
+      assert.equal(await systemPrompt(), "base\n\n# Old");
+      await NodeFSP.writeFile(path, "# New");
+      assert.equal(await systemPrompt(), "base\n\n# New");
+      await NodeFSP.writeFile(path, "");
+      assert.equal(await systemPrompt(), "base");
+    });
+  });
+
+  it("gives a session without MCP the user's instructions but no orchestration block", async () => {
+    await withInstructionsFile(async (path) => {
+      await NodeFSP.writeFile(path, "# User instructions");
+      const systemPrompt = await startHook({
+        T3_MCP_URL: "",
+        T3_MCP_BEARER_TOKEN: "",
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: path,
+      });
+      assert.equal(await systemPrompt(), "base\n\n# User instructions");
+    });
   });
 });
