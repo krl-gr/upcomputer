@@ -182,7 +182,9 @@ it.effect("refuses webhook schedules in a product that hides them", () =>
     }).pipe(
       Effect.provideService(
         ServerProduct,
-        composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }),
+        composeExperimentalServerFeatures([], {
+          flags: { ...UPCOMPUTER_PRODUCT_FLAGS, scheduledTaskWebhooks: false },
+        }),
       ),
     ),
   ),
