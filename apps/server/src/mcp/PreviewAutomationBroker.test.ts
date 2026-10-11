@@ -1000,7 +1000,7 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
         ).pipe(Effect.forkScoped);
       const status = (providerSessionId: string) =>
         broker.invoke<string>({
-          scope: { ...scope, providerSessionId },
+          scope: { ...scope, thread: { ...scope.thread, providerSessionId } },
           operation: "status",
           input: {},
         });
@@ -1021,7 +1021,12 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
 
       alwaysUseChrome = true;
       expect(yield* status("session-1")).toBe("chrome");
-      expect(yield* status("session-2")).toBe("chrome");
+
+      // Turned off again, new sessions go back to the environment browser. A
+      // session Chrome served stays there, as every session keeps one runtime.
+      alwaysUseChrome = false;
+      expect(yield* status("session-2")).toBe("environment-browser");
+      expect(yield* status("session-1")).toBe("chrome");
     }),
   ),
 );
