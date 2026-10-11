@@ -21,6 +21,8 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
+import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
+import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
 
@@ -168,6 +170,21 @@ it.effect("gives webhook tasks a relay URL when the environment has a managed tu
         );
       }),
     { relayHookBaseUrl: "https://relay.example.com/v1/hooks/0123456789abcdef" },
+  ),
+);
+
+it.effect("refuses webhook schedules in a product that hides them", () =>
+  withService(({ service }) =>
+    Effect.gen(function* () {
+      const input = yield* webhookTaskInput();
+      const error = yield* service.upsert(input).pipe(Effect.flip);
+      assert.equal(error.message, "Webhook schedules are not available in this build.");
+    }).pipe(
+      Effect.provideService(
+        ServerProduct,
+        composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }),
+      ),
+    ),
   ),
 );
 

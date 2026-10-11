@@ -47,6 +47,7 @@ import {
   type SessionPhase,
   type TurnDiffSummary,
 } from "./types";
+import { isProductFeatureShown } from "./product/productFlags";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
 import { shallow } from "zustand/vanilla/shallow";
@@ -731,7 +732,9 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
     }
 
     const mcpApp =
-      item.type === "dynamic_tool" && item.status === "completed"
+      isProductFeatureShown("mcpApps") &&
+      item.type === "dynamic_tool" &&
+      item.status === "completed"
         ? mcpAppFromToolItem(item)
         : undefined;
     if (mcpApp !== undefined) {

@@ -94,6 +94,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { isProductFeatureShown } from "../../product/productFlags";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -1167,7 +1168,10 @@ function ScheduledTaskEditorDialog({
                 >
                   <Toggle value="fixed">At a time</Toggle>
                   <Toggle value="interval">Every interval</Toggle>
-                  <Toggle value="webhook">On webhook</Toggle>
+                  {isProductFeatureShown("scheduledTaskWebhooks") ||
+                  draft.scheduleMode === "webhook" ? (
+                    <Toggle value="webhook">On webhook</Toggle>
+                  ) : null}
                 </ToggleGroup>
               </div>
 

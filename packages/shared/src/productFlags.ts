@@ -27,6 +27,21 @@ export interface ProductFlags {
   readonly threadSettlement: boolean;
   /** Devices and simulators: the device panel, its settings, the device agent tools. */
   readonly devices: boolean;
+  /** Outside agents signing in to `/mcp` with OAuth, and the `/connect-agent` approval page. */
+  readonly mcpOAuth: boolean;
+  /**
+   * Scheduled tasks that run on a webhook: the "On webhook" trigger, the hook
+   * route, and UpComputer Connect holding webhook requests while offline.
+   */
+  readonly scheduledTaskWebhooks: boolean;
+  /** The macOS desktop app offering itself as the default web browser. */
+  readonly defaultBrowser: boolean;
+  /** Installing the `t3` command on the PATH from Settings. */
+  readonly cliCommand: boolean;
+  /** MCP apps rendered and run inline in threads. */
+  readonly mcpApps: boolean;
+  /** Upstream's notes on anonymous usage data, in onboarding and in Settings, with its privacy link. */
+  readonly usageDataNotice: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -37,6 +52,12 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   terminal: true,
   threadSettlement: true,
   devices: true,
+  mcpOAuth: true,
+  scheduledTaskWebhooks: true,
+  defaultBrowser: true,
+  cliCommand: true,
+  mcpApps: true,
+  usageDataNotice: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -45,6 +66,12 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   terminal: false,
   threadSettlement: false,
   devices: false,
+  mcpOAuth: false,
+  scheduledTaskWebhooks: false,
+  defaultBrowser: false,
+  cliCommand: false,
+  mcpApps: false,
+  usageDataNotice: false,
 });
 
 /**
@@ -180,6 +207,42 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "device-platform-support",
     ],
     rightPanelSurfaces: ["Device"],
+  },
+  mcpOAuth: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  scheduledTaskWebhooks: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: ["hold-webhooks-while-offline"],
+    rightPanelSurfaces: [],
+  },
+  defaultBrowser: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  cliCommand: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: ["cli-command"],
+    rightPanelSurfaces: [],
+  },
+  mcpApps: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  usageDataNotice: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: ["privacy-policy"],
+    rightPanelSurfaces: [],
   },
 };
 

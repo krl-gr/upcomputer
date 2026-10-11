@@ -20,6 +20,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
+import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import {
   resolveUpcomputerLocalBuildIdentity,
   UPCOMPUTER_APP_ID,
@@ -2787,6 +2788,26 @@ function resolveDesktopProtocols(version: string) {
   return resolveUpcomputerLocalBuildIdentity(version) ? [] : DESKTOP_PROTOCOLS;
 }
 
+// Upstream offers the macOS app as the default web browser, which opens each
+// link in a new thread's browser panel. The product's `defaultBrowser` flag
+// decides it. macOS lists an app under Default web browser only when it opens
+// web pages as documents as well as http and https links.
+const MAC_DEFAULT_BROWSER = UPCOMPUTER_PRODUCT_FLAGS.defaultBrowser
+  ? {
+      protocols: [{ name: "Web site URL", schemes: ["http", "https"], role: "Viewer" }],
+      extendInfo: {
+        CFBundleDocumentTypes: [
+          {
+            CFBundleTypeName: "Web page",
+            CFBundleTypeRole: "Viewer",
+            LSHandlerRank: "Alternate",
+            LSItemContentTypes: ["public.html", "public.xhtml"],
+          },
+        ],
+      },
+    }
+  : { protocols: [], extendInfo: {} };
+
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -2863,8 +2884,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "Up.computer connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "Up.computer captures the active window when you use the window capture shortcut.",
+        ...MAC_DEFAULT_BROWSER.extendInfo,
       },
-      protocols: resolveDesktopProtocols(version),
+      protocols: [...resolveDesktopProtocols(version), ...MAC_DEFAULT_BROWSER.protocols],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {

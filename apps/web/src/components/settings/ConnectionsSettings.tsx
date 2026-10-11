@@ -1958,7 +1958,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           />
         }
       />
-      {managedTunnelActive ? (
+      {managedTunnelActive && isProductFeatureShown("scheduledTaskWebhooks") ? (
         <SettingsRow
           title={searchableSetting("hold-webhooks-while-offline").title}
           description="Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: UpComputer Connect only forwards requests and stores nothing."

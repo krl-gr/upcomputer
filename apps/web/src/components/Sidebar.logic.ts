@@ -24,6 +24,7 @@ import {
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn, normalizeSearchText } from "../lib/utils";
+import { isProductFeatureShown } from "../product/productFlags";
 import { isLatestRunSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import {
@@ -1099,9 +1100,10 @@ export function searchSidebarThreads<
   const titleMatches: T[] = [];
   const contentMatches: T[] = [];
   for (const thread of threads) {
-    const matchesTitle = [thread.title, ...threadPullRequestSearchTerms(thread)].some((term) =>
-      term.toLowerCase().includes(normalizedQuery),
-    );
+    const matchesTitle = [
+      thread.title,
+      ...(isProductFeatureShown("pullRequests") ? threadPullRequestSearchTerms(thread) : []),
+    ].some((term) => term.toLowerCase().includes(normalizedQuery));
     if (matchesTitle) {
       titleMatches.push(thread);
     } else if (

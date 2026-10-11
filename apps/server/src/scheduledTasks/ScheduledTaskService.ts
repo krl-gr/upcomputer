@@ -45,6 +45,7 @@ import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import { isProductFeatureShown } from "../product/ServerProduct.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
   redactHeaders,
@@ -1000,6 +1001,12 @@ export const layer = Layer.effect(
 
     const upsert: ScheduledTaskService["Service"]["upsert"] = (input) =>
       Effect.gen(function* () {
+        if (
+          input.schedule.type === "webhook" &&
+          !(yield* isProductFeatureShown("scheduledTaskWebhooks"))
+        ) {
+          return yield* taskError("Webhook schedules are not available in this build.");
+        }
         const now = yield* localNow;
         const uuid =
           input.commandId === undefined

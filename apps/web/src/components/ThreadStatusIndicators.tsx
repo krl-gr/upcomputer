@@ -1085,8 +1085,10 @@ export function ThreadSearchPullRequestNumber({
   enabled?: boolean;
   settled?: boolean;
 }) {
+  // A build without pull requests does not find threads by them.
+  const searchQuery = isProductFeatureShown("pullRequests") ? query : "";
   const matchedLink = visibleThreadPullRequests(thread.pullRequests).find((pr) =>
-    pullRequestMatchesSearchQuery({ pullRequests: [pr] }, query),
+    pullRequestMatchesSearchQuery({ pullRequests: [pr] }, searchQuery),
   );
   const fallbackCandidates =
     thread.pullRequests.length === 0
@@ -1095,7 +1097,7 @@ export function ThreadSearchPullRequestNumber({
   const legacyReference = matchedLink
     ? undefined
     : fallbackCandidates.find(
-        (pr) => pr != null && pullRequestMatchesSearchQuery({ linkedPullRequest: pr }, query),
+        (pr) => pr != null && pullRequestMatchesSearchQuery({ linkedPullRequest: pr }, searchQuery),
       );
   const legacyStatus = useLinkedThreadPullRequest(
     thread.environmentId,

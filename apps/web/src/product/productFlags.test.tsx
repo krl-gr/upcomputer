@@ -155,9 +155,11 @@ describe("hidden upstream features in the web app", () => {
         "keybinding-pullRequest.copyNumber",
         "keybinding-thread.settle",
         "composer-collapse",
+        "cli-command",
+        "privacy-policy",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(10);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(12);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });

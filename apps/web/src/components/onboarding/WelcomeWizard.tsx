@@ -39,6 +39,7 @@ import { APP_BASE_NAME } from "../../branding";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
+import { isProductFeatureShown } from "../../product/productFlags";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
 import {
@@ -428,21 +429,23 @@ function ConnectionStep({
         </p>
       ) : null}
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-          Up.computer collects anonymous usage data to help us improve it. To read more about how
-          your data is used and how to opt out, see our{" "}
-          <a
-            className="underline underline-offset-2 hover:text-foreground"
-            href={PRIVACY_POLICY_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            privacy policy
-          </a>
-          .
-        </p>
+        {isProductFeatureShown("usageDataNotice") ? (
+          <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
+            Up.computer collects anonymous usage data to help us improve it. To read more about how
+            your data is used and how to opt out, see our{" "}
+            <a
+              className="underline underline-offset-2 hover:text-foreground"
+              href={PRIVACY_POLICY_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              privacy policy
+            </a>
+            .
+          </p>
+        ) : null}
         <Button
-          className="shrink-0 self-end"
+          className="shrink-0 self-end sm:ml-auto"
           ref={continueRef}
           autoFocus={!expandPairingInitially}
           disabled={!ready || isPairing}

@@ -185,7 +185,9 @@ import {
   productFeatureLayer,
   productHttpRoutesLayer,
   whenProductFeature,
+  whenProductFeatureOr,
 } from "./product/ServerProduct.ts";
+import { hiddenMcpOAuthLayer, hiddenWebhooksLayer } from "./product/hiddenHttpGroups.ts";
 import * as UserInstructions from "./provider/UserInstructions.ts";
 import { cutoverV1OnServerStart } from "./upcomputerCutover/V1Cutover.ts";
 
@@ -705,13 +707,25 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),
-      Layer.provide(McpOAuthHttp.layer.pipe(Layer.provide(McpOAuth.layer))),
+      Layer.provide(
+        whenProductFeatureOr(
+          "mcpOAuth",
+          McpOAuthHttp.layer.pipe(Layer.provide(McpOAuth.layer)),
+          hiddenMcpOAuthLayer,
+        ),
+      ),
       Layer.provide(CloudHttp.layer),
       Layer.provide(OrchestrationHttp.layer),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
-      Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
+      Layer.provide(
+        whenProductFeatureOr(
+          "scheduledTaskWebhooks",
+          WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer)),
+          hiddenWebhooksLayer,
+        ),
+      ),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
     ),
     ServerHttp.layerOtlpTracesProxyRoute,
@@ -730,7 +744,7 @@ const layerMakeRoutes = Layer.mergeAll(
   // what dispatch can actually serve.
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
-    Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+    Layer.provide(whenProductFeature("mcpOAuth", McpOAuth.layerMcpClientAuthenticator)),
   ),
 ).pipe(
   // Guides read through the same pull request service as every other surface.

@@ -351,6 +351,23 @@ export function whenProductFeature<E, R>(
   );
 }
 
+/**
+ * Hook for an upstream layer that something else always needs, such as the
+ * handlers of an HTTP API group: `hidden` stands in when the product hides
+ * that feature.
+ */
+export function whenProductFeatureOr<A, E1, R1, E2, R2>(
+  flag: ProductFlag,
+  layer: Layer.Layer<A, E1, R1>,
+  hidden: Layer.Layer<A, E2, R2>,
+): Layer.Layer<A, E1 | E2, R1 | R2> {
+  return Layer.unwrap(
+    Effect.map(isProductFeatureShown(flag), (shown): Layer.Layer<A, E1 | E2, R1 | R2> =>
+      shown ? layer : hidden,
+    ),
+  );
+}
+
 /** Built-in drivers followed by the product's; a product cannot replace a built-in kind. */
 export function withProductProviderDrivers(
   builtIn: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>>,

@@ -20,6 +20,7 @@ import {
   productFeatureLayer,
   productMcpToolsLayer,
   whenProductFeature,
+  whenProductFeatureOr,
   withProductDefaultInstances,
   withProductProviderDrivers,
 } from "./ServerProduct.ts";
@@ -213,6 +214,27 @@ describe("server product composition", () => {
 
       yield* startJobs(composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }));
       expect(yield* Ref.get(started)).toEqual([]);
+    }),
+  );
+
+  it.effect("puts the stand-in in place of a layer the product hides", () =>
+    Effect.gen(function* () {
+      const notes = (text: string) => Layer.succeed(FeatureNotes, { read: Effect.succeed(text) });
+      const read = (product?: ReturnType<typeof composeExperimentalServerFeatures>) =>
+        Effect.gen(function* () {
+          return yield* (yield* FeatureNotes).read;
+        }).pipe(
+          Effect.provide(
+            whenProductFeatureOr("mcpOAuth", notes("oauth"), notes("hidden")).pipe(
+              product ? Layer.provide(Layer.succeed(ServerProduct, product)) : (layer) => layer,
+            ),
+          ),
+        );
+
+      expect(yield* read()).toBe("oauth");
+      expect(
+        yield* read(composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS })),
+      ).toBe("hidden");
     }),
   );
 });
