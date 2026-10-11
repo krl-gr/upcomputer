@@ -15,10 +15,12 @@ import {
   type PullRequestRef,
 } from "@t3tools/contracts";
 import type { ReviewGuideGenerationInput } from "@t3tools/provider-core/server/textGeneration";
+import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
+import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -377,6 +379,34 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
         );
         const result = yield* Effect.flip(service.generate(reference));
         assert.include(result.message, "Review guides are off");
+      }),
+    ),
+  );
+
+  it.effect("refuses to write a guide in a product that hides pull requests", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const repositories = yield* makeRepositories;
+        const stored = yield* Deferred.make<void>();
+        const context = yield* Layer.build(
+          makeLayer({
+            ...repositories,
+            stored,
+            generate: () =>
+              Effect.die("a guide must not be written while pull requests are hidden"),
+          }),
+        );
+        const service = Context.get(
+          context,
+          PullRequestReviewGuideService.PullRequestReviewGuideService,
+        );
+        const result = yield* Effect.flip(service.generate(reference)).pipe(
+          Effect.provideService(
+            ServerProduct,
+            composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }),
+          ),
+        );
+        assert.include(result.message, "not available in this build");
       }),
     ),
   );

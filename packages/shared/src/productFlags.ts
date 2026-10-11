@@ -11,7 +11,10 @@
 import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 
 export interface ProductFlags {
-  /** Pull requests: the PR page, panels, badges, PR watch and sync, the PR agent tools. */
+  /**
+   * Pull requests: the PR page, panels, badges, PR watch and sync, review guides, the PR agent
+   * tools.
+   */
   readonly pullRequests: boolean;
   /**
    * The terminal as a right-panel surface: its launcher entry, its tab, the
@@ -171,6 +174,9 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "remove-agent-credits-on-merge",
       "github-routing",
       "auto-settle-merged-threads",
+      "review-guides",
+      "review-guide-model",
+      "review-guide-instructions",
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
   },

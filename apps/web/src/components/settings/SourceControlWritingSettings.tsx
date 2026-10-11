@@ -43,6 +43,7 @@ import {
 } from "./settingsLayout";
 import { BranchNamingSettings } from "./BranchNamingSettings";
 import { searchableSetting } from "./settingsSearch";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; description: string }> =
   {
@@ -388,6 +389,7 @@ export function SourceControlWritingSettingsSection() {
       <SettingsRow
         serverScoped
         settingKeys={["reviewGuidesEnabled"]}
+        hidden={!isProductFeatureShown("pullRequests")}
         mixed={mixedReviewGuidesEnabled}
         {...searchableSetting("review-guides")}
         description="Adds a Guide tab to pull requests: an agent writes a tour of the change, stop by stop, with the calls a maintainer should make."
@@ -401,7 +403,8 @@ export function SourceControlWritingSettingsSection() {
         }
       />
 
-      {settings.reviewGuidesEnabled || mixedReviewGuidesEnabled ? (
+      {isProductFeatureShown("pullRequests") &&
+      (settings.reviewGuidesEnabled || mixedReviewGuidesEnabled) ? (
         <>
           <SettingsRow
             serverScoped

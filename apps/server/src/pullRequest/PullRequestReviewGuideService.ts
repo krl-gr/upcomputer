@@ -41,6 +41,7 @@ import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import * as ServerConfig from "../config.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
+import { isProductFeatureShown } from "../product/ServerProduct.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -382,6 +383,13 @@ const make = Effect.gen(function* () {
   const generate: PullRequestReviewGuideService["Service"]["generate"] = Effect.fn(
     "PullRequestReviewGuideService.generate",
   )(function* (input) {
+    // Guides belong to pull requests, so a product that hides them never spends a model run here.
+    if (!(yield* isProductFeatureShown("pullRequests"))) {
+      return yield* new PullRequestOperationError({
+        operation: "generateReviewGuide",
+        detail: "Review guides are not available in this build.",
+      });
+    }
     // A beta the server owns, so every client and agent sees the same answer.
     const settings = yield* serverSettings.getSettings.pipe(
       Effect.mapError(

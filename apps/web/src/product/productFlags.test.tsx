@@ -156,9 +156,12 @@ describe("hidden upstream features in the web app", () => {
         "keybinding-thread.settle",
         "composer-collapse",
         "remove-agent-credits-on-merge",
+        "review-guides",
+        "review-guide-model",
+        "review-guide-instructions",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(11);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(14);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
