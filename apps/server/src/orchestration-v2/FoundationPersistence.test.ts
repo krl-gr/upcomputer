@@ -3249,6 +3249,98 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
       assert.lengthOf((yield* projectionStore.getThreadProjection(threadId)).turnItems, 151);
     }),
   );
+
+  it.effect("positions a notification recorded without a run after the latest run", () =>
+    Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:foundation-recorded-notification");
+      const runId = RunId.make("run:foundation-recorded-notification");
+      const item = (id: string, itemRunId: RunId | null) => ({
+        id: TurnItemId.make(`turn-item:foundation-recorded-notification:${id}`),
+        threadId,
+        runId: itemRunId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed" as const,
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      });
+      const itemEvent = (payload: OrchestrationV2TurnItem) =>
+        ({
+          id: EventId.make(`event:${payload.id}`),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload,
+        }) satisfies OrchestrationV2DomainEvent;
+      yield* eventSink.write({
+        events: [
+          threadCreatedEvent({
+            id: "event:foundation-recorded-notification:thread",
+            thread: makeThread(threadId, now),
+            now,
+          }),
+          {
+            id: EventId.make("event:foundation-recorded-notification:run"),
+            type: "run.created",
+            threadId,
+            runId,
+            providerInstanceId,
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId,
+              ordinal: 1,
+              providerInstanceId,
+              modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make("message:foundation-recorded-notification"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "completed",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+          itemEvent({ ...item("reply", runId), type: "system_notice", message: "Run output" }),
+        ],
+      });
+      yield* eventSink.write({
+        events: [
+          itemEvent({
+            ...item("card", null),
+            type: "notification",
+            source: { kind: "task_agent_run", tasks: [] },
+            outcome: "completed",
+            summary: "1 task done",
+          }),
+          // Other items without a run stay history from before the first run.
+          itemEvent({ ...item("imported", null), type: "system_notice", message: "Imported" }),
+        ],
+      });
+      const ordinals = Object.fromEntries(
+        (yield* projectionStore.getThreadProjection(threadId)).turnItems.map((turnItem) => [
+          turnItem.id.split(":").at(-1),
+          turnItem.ordinal,
+        ]),
+      );
+      assert.isAbove(ordinals.card!, ordinals.reply!);
+      assert.isAbove(ordinals.reply!, 1_000_000);
+      assert.isBelow(ordinals.imported!, 1_000_000);
+    }),
+  );
 });
 
 it.live("keeps claiming new work after repeated idle periods", () =>

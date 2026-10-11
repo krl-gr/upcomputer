@@ -17,11 +17,16 @@ export class TurnItemPositionStoreError extends Schema.TaggedError<TurnItemPosit
 const isTurnItemPositionStoreError = Schema.is(TurnItemPositionStoreError);
 
 export interface TurnItemPositionStoreV2Shape {
+  /**
+   * Run items are positioned in their run's band. Items without a run are history from
+   * before the first run, unless `afterLatestRun` places one after the thread's latest run.
+   */
   readonly allocate: (input: {
     readonly threadId: ThreadId;
     readonly turnItemId: TurnItemId;
     readonly runId: RunId | null;
     readonly runOrdinal?: number;
+    readonly afterLatestRun?: boolean;
   }) => Effect.Effect<number, TurnItemPositionStoreError>;
   readonly normalize: (
     item: OrchestrationV2TurnItem,
@@ -44,17 +49,24 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
       turnItemId,
       runId,
       runOrdinal: suppliedRunOrdinal,
+      afterLatestRun = false,
     }) =>
       Effect.gen(function* () {
         const runRows =
-          runId === null
-            ? []
-            : yield* sql<{ readonly ordinal: number }>`
+          runId !== null
+            ? yield* sql<{ readonly ordinal: number }>`
                 SELECT ordinal
                 FROM orchestration_v2_projection_runs
                 WHERE thread_id = ${threadId} AND run_id = ${runId}
                 LIMIT 1
-              `;
+              `
+            : afterLatestRun
+              ? yield* sql<{ readonly ordinal: number | null }>`
+                  SELECT MAX(ordinal) AS ordinal
+                  FROM orchestration_v2_projection_runs
+                  WHERE thread_id = ${threadId}
+                `
+              : [];
         const runOrdinal = suppliedRunOrdinal ?? runRows[0]?.ordinal ?? null;
         const lowerBound = runOrdinal === null ? 0 : runOrdinal * 1_000_000;
         const upperBound = runOrdinal === null ? 999_999 : lowerBound + 999_999;
@@ -101,6 +113,9 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           turnItemId: item.id,
           runId: item.runId,
           ...(runOrdinal === undefined ? {} : { runOrdinal }),
+          // A notification recorded without a run (thread.notification.record) happened
+          // after the runs the thread has so far, not before them.
+          afterLatestRun: item.runId === null && item.type === "notification",
         }).pipe(Effect.map((ordinal) => (item.ordinal === ordinal ? item : { ...item, ordinal }))),
     });
   }),
