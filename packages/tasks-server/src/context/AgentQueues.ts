@@ -1,6 +1,7 @@
 import type { ProjectId } from "@t3tools/contracts";
-import type { Task, TaskAgent } from "@t3tools/tasks-contracts/v1";
+import type { Task, TaskAgent, TaskAgentRun } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import type { TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 
@@ -14,7 +15,9 @@ const MAX_TASKS_PER_STATUS = 500;
  * An enabled agent that can start on the project's tasks, as task_context
  * lists it. queue counts the unarchived tasks that carry all of its startTags,
  * per start status and In Progress; inProgress names the In Progress ones. An
- * agent with startRunStatuses starts on failed runs, not on a queue.
+ * agent with startRunStatuses starts on failed runs, not on a queue. active
+ * names the tasks its active runs hold in any status, so a run that started
+ * on a To Do task of a tag-only agent shows it busy before In Progress.
  */
 export interface AgentQueue {
   readonly id: string;
@@ -26,6 +29,7 @@ export interface AgentQueue {
   readonly startRunStatuses?: ReadonlyArray<string>;
   readonly queue?: Readonly<Record<string, number>>;
   readonly inProgress?: ReadonlyArray<string>;
+  readonly active?: ReadonlyArray<string>;
 }
 
 /** The statuses whose tasks agentQueues needs. */
@@ -36,8 +40,12 @@ export function queueStatuses(agents: ReadonlyArray<TaskAgent>): ReadonlyArray<s
 export function agentQueues(
   agents: ReadonlyArray<TaskAgent>,
   tasks: ReadonlyArray<Task>,
+  activeRuns: ReadonlyArray<Pick<TaskAgentRun, "agentId" | "taskId">>,
 ): ReadonlyArray<AgentQueue> {
   return agents.map((agent) => {
+    const active = [
+      ...new Set(activeRuns.filter((run) => run.agentId === agent.id).map((run) => run.taskId)),
+    ];
     const base = {
       id: agent.id,
       name: agent.name,
@@ -46,8 +54,9 @@ export function agentQueues(
       startStatuses: agent.startStatuses,
       startTags: agent.startTags,
     };
+    const activeField = active.length > 0 ? { active } : {};
     if (agent.startRunStatuses.length > 0) {
-      return { ...base, startRunStatuses: agent.startRunStatuses };
+      return { ...base, startRunStatuses: agent.startRunStatuses, ...activeField };
     }
     const mine = tasks.filter((task) => agent.startTags.every((tag) => task.tags.includes(tag)));
     const queue = Object.fromEntries(
@@ -56,7 +65,7 @@ export function agentQueues(
       ),
     );
     const inProgress = mine.filter((task) => task.status === IN_PROGRESS).map((task) => task.id);
-    return { ...base, queue, ...(inProgress.length > 0 ? { inProgress } : {}) };
+    return { ...base, queue, ...(inProgress.length > 0 ? { inProgress } : {}), ...activeField };
   });
 }
 
@@ -73,8 +82,25 @@ export const projectAgentQueues = (repository: TaskRepositoryShape, projectId: P
       queued.length === 0 ? [] : queueStatuses(queued),
       (status) => repository.search({ projectId, status, limit: MAX_TASKS_PER_STATUS }),
     );
+    const agentIds = new Set(agents.map((agent) => agent.id));
+    const runs = (yield* repository.listAllActiveAgentRuns()).filter((run) =>
+      agentIds.has(run.agentId),
+    );
+    // Global agents also run in other projects; only this project's tasks show.
+    const held = yield* Effect.forEach(new Set(runs.map((run) => run.taskId)), (id) =>
+      repository.getById({ id }),
+    );
+    const projectTaskIds = new Set(
+      held.flatMap((task) =>
+        Option.isSome(task) && task.value.projectId === projectId ? [task.value.id] : [],
+      ),
+    );
     return {
-      agents: agentQueues(agents, tasks.flat()),
+      agents: agentQueues(
+        agents,
+        tasks.flat(),
+        runs.filter((run) => projectTaskIds.has(run.taskId)),
+      ),
       ...(enabled.length > agents.length ? { agentsOmitted: enabled.length - agents.length } : {}),
     };
   });

@@ -781,6 +781,75 @@ test("task_context lists the project's enabled agents with their queues", async 
   NodeAssert.equal("agents" in (await call("task_context")).body, false);
 });
 
+test("task_context shows a tag-only agent busy once a run holds its To Do task", async () => {
+  const { call, run } = await harness();
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };
+  const at = new Date().toISOString();
+  const claimed = await run(
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      yield* repository.upsertAgent({
+        id: TaskAgentId.make("builder"),
+        projectId: null,
+        name: "builder",
+        enabled: true,
+        startStatuses: [],
+        startTags: ["build"],
+        startRunStatuses: [],
+        config: { role: "builder", modelSelection, instructions: "Work." },
+        createdAt: at,
+        updatedAt: at,
+      });
+      for (const [id, projectId] of [
+        ["claimed", "project-a"],
+        ["other-project", "project-b"],
+      ] as const) {
+        yield* repository.upsert({
+          id: TaskId.make(id),
+          projectId: ProjectId.make(projectId),
+          title: id,
+          description: "",
+          output: null,
+          status: "To Do",
+          priority: null,
+          createdBy: "test",
+          assigneeAgentRunId: null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          metadata: null,
+          tags: ["build"],
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+        });
+        yield* repository.startAgentRun({
+          id: TaskAgentRunId.make(`run-${id}`),
+          taskId: TaskId.make(id),
+          agentId: TaskAgentId.make("builder"),
+          threadId: ThreadId.make(`thread-${id}`),
+          modelSelection,
+          status: "running",
+          startedAt: at,
+          completedAt: null,
+          triggerRunId: null,
+          continuesRunId: null,
+          startableAt: null,
+        });
+      }
+      return yield* repository.getById({ id: TaskId.make("claimed") });
+    }),
+  );
+  // The run claims the task at start and leaves its status alone.
+  NodeAssert.equal(Option.getOrThrow(claimed).status, "To Do");
+  NodeAssert.equal(Option.getOrThrow(claimed).assigneeAgentRunId, "run-claimed");
+
+  const context = (await call("task_context", { projectId: "project-a" })).body;
+  const builder = context.agents.find((agent: { readonly id: string }) => agent.id === "builder");
+  NodeAssert.deepEqual(builder.queue, { "In Progress": 0 });
+  // Its run in project-b stays out of project-a's context.
+  NodeAssert.deepEqual(builder.active, ["claimed"]);
+});
+
 test("a large taskExecution update carries a size warning", async () => {
   const { call } = await harness();
   const updated = await call("instructions_update", {

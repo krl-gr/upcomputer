@@ -101,7 +101,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_context",
     description:
-      'Resolve the task project and model, and return what creating tasks needs: the user\'s taskCreation guidance, triggerRules, and agents: the project\'s enabled agents with their start statuses and tags and their queues (tasks with all of an agent\'s startTags, counted per start status and In Progress, with the In Progress ids). include adds more that creating tasks does not need: "agentCreation" (with taskExecution, which every run gets) and "providers" (every provider with its models) before agent_create or agent_update, or before naming models to the user; "automationCreation" before automation_create; "projects" (every project) to pick another project. Projects are also listed when the project cannot be resolved.',
+      'Resolve the task project and model, and return what creating tasks needs: the user\'s taskCreation guidance, triggerRules, and agents: the project\'s enabled agents with their start statuses and tags and their queues (tasks with all of an agent\'s startTags, counted per start status and In Progress, with the In Progress ids; active names the tasks the agent\'s runs hold now, in any status). include adds more that creating tasks does not need: "agentCreation" (with taskExecution, which every run gets) and "providers" (every provider with its models) before agent_create or agent_update, or before naming models to the user; "automationCreation" before automation_create; "projects" (every project) to pick another project. Projects are also listed when the project cannot be resolved.',
     inputSchema: object({
       projectId: id,
       workspaceRoot: id,
