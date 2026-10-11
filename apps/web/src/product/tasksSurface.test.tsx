@@ -26,12 +26,21 @@ await vi.hoisted(async () => {
     disconnect() {}
   };
   window.Element.prototype.getAnimations ??= () => [];
+  // The planner asks for the window's width; a narrow one, like the panel's.
+  window.matchMedia ??= (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  });
 });
 
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelTabs } = await import("../components/RightPanelTabs");
+const { ProductRightPanelSurface } = await import("./ProductSlots");
+const { SidebarProvider } = await import("../components/ui/sidebar");
 
 // The UpComputer product, with or without the Tasks feature composed in.
 const product = vi.hoisted(() => ({ tasks: true }));
@@ -53,6 +62,139 @@ vi.mock("./productEntry", async () => {
   };
 });
 
+// One environment with a Tasks server holding a routine and a task in Health and in Life OS.
+const tasksServer = vi.hoisted(() => {
+  const at = "2026-10-11T10:00:00.000Z";
+  const row = (id: string, projectId: string, kind: "task" | "routine") => ({
+    id,
+    rank: id,
+    projectId,
+    title: id,
+    description: "",
+    output: null,
+    status: "To Do",
+    priority: null,
+    createdBy: "person",
+    assigneeAgentRunId: null,
+    sourceThreadId: null,
+    sourceRunId: null,
+    rootThreadId: null,
+    parentTaskId: null,
+    parentRunId: null,
+    metadata: null,
+    tags: [],
+    createdAt: at,
+    updatedAt: at,
+    archivedAt: null,
+    notBefore: null,
+    triggerChangedAt: at,
+    audience: "person",
+    kind,
+    runCounts: [],
+  });
+  const rows = [
+    row("Health routine", "health", "routine"),
+    row("Life OS routine", "life-os", "routine"),
+    row("Health task", "health", "task"),
+    row("Life OS task", "life-os", "task"),
+  ];
+  const pageInputs: Array<{ readonly projectId?: string; readonly kind?: string }> = [];
+  const tasks = new Proxy(
+    {
+      page: async (input: { readonly projectId?: string; readonly kind?: string }) => {
+        pageInputs.push(input);
+        return {
+          tasks: rows.filter(
+            (task) =>
+              (input.projectId === undefined || task.projectId === input.projectId) &&
+              (input.kind === undefined || task.kind === input.kind),
+          ),
+          nextCursor: null,
+          statuses: ["To Do"],
+        };
+      },
+      scheduleRange: async () => ({ entries: [], tasks: [] }),
+      scheduleProgress: async () => ({ progress: [] }),
+      // Like the server, a subscription starts with a sync.
+      subscribe: (listener: (change: unknown) => void) => {
+        queueMicrotask(() =>
+          listener({
+            kind: "sync",
+            sequence: 1,
+            taskIds: [],
+            listChanged: true,
+            runsChanged: false,
+            rootThreadIds: [],
+          }),
+        );
+        return () => undefined;
+      },
+    } as Record<string, unknown>,
+    { get: (target, key: string) => target[key] ?? (async () => ({})) },
+  );
+  return { client: { tasks }, pageInputs };
+});
+
+vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async () => {
+  const { resolveTasksWebAccess } = await import("@t3tools/tasks-web/rpc");
+  return {
+    readTasksWebAccess: () => resolveTasksWebAccess({ availability: "enabled" }),
+    readTasksWebClient: () => tasksServer.client,
+    readPlannerAvailability: () => "enabled",
+    usePlannerAvailability: () => "enabled",
+    useTasksWebAccessRevision: () => 0,
+  };
+});
+
+vi.mock("../../../../packages/tasks-web/src/ui/useWorkspaceData.ts", async () => {
+  const { resolveTasksWebAccess } = await import("@t3tools/tasks-web/rpc");
+  const environmentId = "local";
+  const project = (id: string, name: string) => ({
+    environmentId,
+    id,
+    name,
+    workspaceRoot: `/projects/${id}`,
+    favicon: { environmentId, id, workspaceRoot: `/projects/${id}` },
+  });
+  const projects = [project("life-os", "Life OS"), project("health", "Health")];
+  const data = {
+    taskTargets: [
+      {
+        environmentId,
+        client: tasksServer.client,
+        access: resolveTasksWebAccess({ availability: "enabled" }),
+        projectNameById: new Map(projects.map((item) => [item.id, item.name])),
+      },
+    ],
+    projects,
+    agentProjects: [],
+    tasks: { tasks: [], statuses: [] },
+    agents: { agents: [], runs: [] },
+    tasksStatus: "ready",
+    agentsStatus: "ready",
+    getClient: () => tasksServer.client,
+    canMutateTasks: () => true,
+    canMutateAgents: () => true,
+    reload: () => undefined,
+  };
+  const groups = projects.map((item) => ({
+    ...item,
+    projectKey: item.id,
+    displayName: item.name,
+    groupedProjectCount: 1,
+    environmentPresence: "local-only",
+    allRemoteMembersAreDesktopLocal: false,
+    allRemoteMembersAreWsl: false,
+    memberProjects: [item],
+    memberProjectRefs: [{ environmentId, projectId: item.id }],
+    remoteEnvironmentLabels: [],
+  }));
+  return {
+    useTasksWorkspaceData: () => data,
+    useSidebarProjectSnapshots: () => groups,
+  };
+});
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
@@ -64,6 +206,8 @@ afterEach(() => {
   root = null;
   container = null;
   product.tasks = true;
+  window.localStorage.clear();
+  tasksServer.pageInputs.length = 0;
 });
 
 const previewSurface = {
@@ -191,5 +335,50 @@ describe("the Tasks surface in the right panel", () => {
     product.tasks = true;
     renderPanel([], undefined);
     expect(launcherKeys()).toBe("BTFD");
+  });
+});
+
+describe("the Tasks surface's content", () => {
+  // The thread beside the panel is in Life OS; the page's filters decide what is listed.
+  function renderTasks(storage: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(storage)) {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    }
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    act(() =>
+      root!.render(
+        <SidebarProvider>
+          <ProductRightPanelSurface
+            featureSurfaceId="tasks"
+            environmentId={"local" as never}
+            threadId={"thread" as never}
+            projectId={"life-os" as never}
+          />
+        </SidebarProvider>,
+      ),
+    );
+  }
+  const shows = (text: string) => document.body.textContent?.includes(text) === true;
+
+  it("lists the planner's routines in every project, not only the thread's", async () => {
+    renderTasks({ "tasks.view": "planner", "tasks.planner.kind": "routine" });
+
+    await vi.waitFor(() => expect(shows("Health routine")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS routine")).toBe(true);
+    expect(tasksServer.pageInputs.filter((input) => input.projectId !== undefined)).toEqual([]);
+  });
+
+  it("filters the table by the page's project, not the thread's", async () => {
+    renderTasks({ "tasks.view": "table" });
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(true);
+    act(() => root?.unmount());
+    container?.remove();
+
+    renderTasks({ "tasks.view": "table", "upcomputer:pages:project": "health" });
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(false);
   });
 });

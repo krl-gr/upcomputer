@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -63,8 +63,6 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
-  /** The projects the lists show; null for all. */
-  readonly projectIds: readonly ProjectId[] | null;
   readonly panel: boolean;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
@@ -109,15 +107,15 @@ function PlannerBody(props: {
   const [weekSelection, setWeekSelection] = useState<WeekSelection>(NO_SELECTION);
   const [entryMenu, setEntryMenu] = useState<EntryMenuTarget | null>(null);
 
-  // The page lists every project; the right panel, the thread's. Rows keep their project chips.
+  // The planner lists every project for now; rows keep their project chips.
   useEffect(() => {
     store.setQuery({
-      projectIds: props.projectIds,
+      projectIds: null,
       archiveVisible: showArchived,
       audience: props.audience,
       kind: props.kind,
     });
-  }, [store, props.projectIds, showArchived, props.audience, props.kind]);
+  }, [store, showArchived, props.audience, props.kind]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
@@ -386,7 +384,7 @@ function PlannerBody(props: {
         windows={openWindows}
         snapshot={snapshot}
         queueDate={markedDate}
-        defaultProjectId={props.projectIds?.[0] ?? null}
+        defaultProjectId={null}
         docked={props.panel}
       />
     </PlannerContext>
@@ -448,14 +446,8 @@ export function PlannerView(props: {
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
-  /**
-   * The right panel's planner: the thread's environment when it serves Tasks,
-   * its lists limited to `projectIds` (null for all), task windows inside it.
-   */
-  readonly panel?: {
-    readonly environmentId: EnvironmentId;
-    readonly projectIds: readonly ProjectId[] | null;
-  };
+  /** The right panel's planner: the page's lists in a stacked layout, task windows inside it. */
+  readonly panel?: boolean;
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
@@ -464,29 +456,23 @@ export function PlannerView(props: {
     () => props.taskTargets.filter((target) => target.access.canReadTasks),
     [props.taskTargets],
   );
-  const pinnedEnvironment = candidates.some(
-    (target) => target.environmentId === props.panel?.environmentId,
-  )
-    ? (props.panel?.environmentId ?? null)
-    : null;
   const environmentId = useMemo(
-    () => pinnedEnvironment ?? pickEnvironment(candidates, storedEnvironment, primaryEnvironmentId),
-    [pinnedEnvironment, candidates, storedEnvironment, primaryEnvironmentId],
+    () => pickEnvironment(candidates, storedEnvironment, primaryEnvironmentId),
+    [candidates, storedEnvironment, primaryEnvironmentId],
   );
   const plannerProjects = useMemo(
     () => plannerProjectsOf(props.projects, environmentId),
     [props.projects, environmentId],
   );
-  // The panel's planner stays in the thread's environment.
   const environmentOptions = useMemo(
     () =>
-      (pinnedEnvironment ? [] : candidates).map((target) => ({
+      candidates.map((target) => ({
         id: target.environmentId,
         label:
           environments.find((environment) => environment.environmentId === target.environmentId)
             ?.label ?? target.environmentId,
       })),
-    [pinnedEnvironment, candidates, environments],
+    [candidates, environments],
   );
   const availability = usePlannerAvailability(environmentId);
   const [audience, setAudience] = useStoredPlannerAudience();
@@ -561,8 +547,7 @@ export function PlannerView(props: {
             <PlannerBody
               key={environmentId}
               environmentId={environmentId}
-              projectIds={pinnedEnvironment ? (props.panel?.projectIds ?? null) : null}
-              panel={props.panel !== undefined}
+              panel={props.panel === true}
               projects={plannerProjects}
               viewSwitch={props.viewSwitch}
               environments={environmentOptions}
