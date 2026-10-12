@@ -1,5 +1,5 @@
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { LayoutGridIcon, MessageSquareDashedIcon } from "lucide-react";
+import { MessageSquareDashedIcon } from "lucide-react";
 import { useMemo } from "react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "../components/ProjectFavicon";
@@ -16,9 +16,25 @@ import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
  * select of the Tasks, Agents and Automations pages so both look the same.
  */
 
-/** "All projects". Sized by its container, like the sidebar button's own icons. */
+/**
+ * "All projects": the site's four-tile mark, filling the same box as a
+ * project's icon. Sized by its container, like the sidebar button's own icons.
+ */
 export function AllProjectsIcon(props: { readonly className?: string }) {
-  return <LayoutGridIcon className={props.className} />;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      fillOpacity={0.45}
+      aria-hidden="true"
+      className={props.className}
+    >
+      <rect x="0" y="0" width="7" height="7" rx="1.5" />
+      <rect x="9" y="0" width="7" height="7" rx="1.5" />
+      <rect x="0" y="9" width="7" height="7" rx="1.5" />
+      <rect x="9" y="9" width="7" height="7" rx="1.5" />
+    </svg>
+  );
 }
 
 /** "No project", the primary environment's Scratch project. */
