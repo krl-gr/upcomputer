@@ -86,8 +86,6 @@ const HOLD = "[hold-turn]";
 const FAIL = "[fail-turn]";
 /** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
 const LIMIT = "[limit-turn]";
-/** A message containing this marker leaves native background work running after its turn. */
-const BACKGROUND = "[background]";
 
 /** Provider sessions the scripted provider opened, closed and resumed threads in. */
 interface SessionLog {
@@ -219,7 +217,6 @@ function makeTaskAgentAdapter(
               ]);
               const at = yield* DateTime.now;
               const id = ProviderTurnId.make(`provider-turn:${input.attemptId}`);
-              if (input.message.text.includes(BACKGROUND)) yield* Ref.set(background, true);
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
@@ -1203,12 +1200,18 @@ it.live("a later plain turn in a finished run's thread keeps its provider sessio
  * A run that ends while the provider still holds native background work keeps
  * its session: the release asks the provider and leaves the session to the
  * idle timeout, which releases it once that work and its delivery finish.
+ *
+ * The provider reports the work from the session's start: the short idle
+ * timeout runs from the moment the session opens, and on a loaded machine the
+ * turn can start after it, so work reported only from the turn would let the
+ * idle timeout close the session before the run ends.
  */
 const keepsSessionForBackgroundWork = (name: string, description: string, endStatus: string) =>
   runSlice(
     name,
     ({ createTaskWith, runWithStatus, threads, sessions, background }) =>
       Effect.gen(function* () {
+        yield* Ref.set(background, true);
         const first = yield* createTaskWith(description);
         yield* eventually("the run to end", runWithStatus(first.id, endStatus));
         const sql = yield* SqlClient.SqlClient;
@@ -1245,7 +1248,7 @@ const keepsSessionForBackgroundWork = (name: string, description: string, endSta
 it.live("a run that completes with native background work keeps its session until it ends", () =>
   keepsSessionForBackgroundWork(
     "task-agent-v2-release-background",
-    `Start a background job. ${BACKGROUND}`,
+    "Start a background job.",
     "completed",
   ),
 );
@@ -1253,7 +1256,7 @@ it.live("a run that completes with native background work keeps its session unti
 it.live("a run that fails with native background work keeps its session until it ends", () =>
   keepsSessionForBackgroundWork(
     "task-agent-v2-release-background-failed",
-    `Start a background job, then fail. ${BACKGROUND} ${FAIL}`,
+    `Start a background job, then fail. ${FAIL}`,
     "failed",
   ),
 );
