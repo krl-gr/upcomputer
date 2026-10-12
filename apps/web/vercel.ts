@@ -1,9 +1,9 @@
 import { matchers, routes, type Transform, type VercelConfig } from "@vercel/config/v1";
 
-const ROUTER_HOST = "app.t3.codes";
+const ROUTER_HOST = "app.up.computer";
 const HOSTED_WEB_CHANNEL_COOKIE = "t3code_web_channel";
-const LATEST_ORIGIN = "https://latest.app.t3.codes";
-const NIGHTLY_ORIGIN = "https://nightly.app.t3.codes";
+const LATEST_ORIGIN = "https://latest.app.up.computer";
+const NIGHTLY_ORIGIN = "https://nightly.app.up.computer";
 const CLEAN_CHANNEL_QUERY_TRANSFORMS = [
   {
     type: "request.query",

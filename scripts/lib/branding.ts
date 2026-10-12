@@ -290,6 +290,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: "apps/desktop/resources/dmg/dmg-background-nightly.svg", forbids: ["T3 Code"] },
   { path: ".gitignore", requires: [".upcomputer"] },
   { path: ".env.example", forbids: ["relay.t3.codes", "T3CODE_CLERK_PUBLISHABLE_KEY=pk_"] },
+  { path: "apps/web/vercel.ts", requires: ['"app.up.computer"'], forbids: ["t3.codes"] },
   // Release and Connect workflows.
   {
     path: ".github/workflows/release.yml",
