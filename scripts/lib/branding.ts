@@ -84,6 +84,16 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/CodexAdapterV2\.test\.ts$/,
     line: /clientInfo: \{ name: "T3 Code"|userAgent: "T3 Code\//,
   },
+  // Muse MSP `initialize` clientInfo, which the Muse replay fixtures pin, and
+  // the replay helper that renames upstream's product in those fixtures.
+  {
+    path: /^packages\/provider-muse\/src\/server\/sdk\.ts$/,
+    line: /clientInfo: \{ name: "t3_code", title: "T3 Code"/,
+  },
+  {
+    path: /^apps\/server\/src\/orchestration-v2\/testkit\/ReplayRuntimeInstructions\.ts$/,
+    line: /replaceAll\("T3 Code", UPCOMPUTER_PRODUCT_NAME\)/,
+  },
   // Output of the ACP mock agent (apps/server/scripts), which is test data.
   {
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/AcpAdapterV2\.test\.ts$/,
