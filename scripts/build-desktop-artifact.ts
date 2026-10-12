@@ -1438,6 +1438,62 @@ ${associatedDomains}
 `;
 }
 
+const DEVELOPER_ID_APPLICATION_PREFIX = "Developer ID Application: ";
+
+/**
+ * Picks the Developer ID Application identity from `security find-identity`
+ * output. Returns the name without its prefix, the form electron-builder's
+ * `mac.identity` accepts; it then signs by certificate hash, so duplicate
+ * certificates under one name are fine.
+ */
+export function parseDeveloperIdApplicationIdentity(
+  findIdentityOutput: string,
+): string | undefined {
+  for (const line of findIdentityOutput.split("\n")) {
+    const name = /^\s*\d+\)\s+[0-9A-F]{40}\s+"([^"]+)"/u.exec(line)?.[1];
+    if (name?.startsWith(DEVELOPER_ID_APPLICATION_PREFIX)) {
+      return name.slice(DEVELOPER_ID_APPLICATION_PREFIX.length);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Local test and demo builds sign with the Developer ID in the login keychain,
+ * without notarization. A stable signature keeps their macOS permissions across
+ * updates, and the re-signed computer use helper matches the TCC grant the
+ * signed Alpha app already holds for the same helper bundle id.
+ */
+export function usesLocalMacSigning(options: {
+  readonly platform: typeof BuildPlatform.Type;
+  readonly signed: boolean;
+  readonly version: string;
+}): boolean {
+  return (
+    options.platform === "mac" &&
+    !options.signed &&
+    resolveUpcomputerLocalBuildIdentity(options.version) !== undefined
+  );
+}
+
+const resolveLocalMacSigningIdentity = Effect.fn("resolveLocalMacSigningIdentity")(function* () {
+  const result = yield* spawnAndCollectOutput(
+    ChildProcess.make("security", ["find-identity", "-v", "-p", "codesigning"]),
+  ).pipe(Effect.orElseSucceed(() => undefined));
+  const identity =
+    result?.exitCode === 0 ? parseDeveloperIdApplicationIdentity(result.stdout) : undefined;
+  if (identity) {
+    yield* Effect.log(
+      `[desktop-artifact] Signing local build with "${DEVELOPER_ID_APPLICATION_PREFIX}${identity}" (no notarization).`,
+    );
+  } else {
+    yield* Effect.logWarning(
+      "[desktop-artifact] No Developer ID Application identity in the keychain; building this local build unsigned. macOS permissions will not survive updates.",
+    );
+  }
+  return identity;
+});
+
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
   arch: typeof BuildArch.Type,
@@ -2826,6 +2882,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // source file was never written fails the electron-builder step.
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  // Keychain identity for an unnotarized local build; see usesLocalMacSigning.
+  macLocalSigningIdentity?: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: resolveDesktopAppId(version),
@@ -2887,7 +2945,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ...MAC_DEFAULT_BROWSER.extendInfo,
       },
       protocols: [...resolveDesktopProtocols(version), ...MAC_DEFAULT_BROWSER.protocols],
-      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      ...(signed || macLocalSigningIdentity
+        ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") }
+        : {}),
+      ...(macLocalSigningIdentity ? { identity: macLocalSigningIdentity, notarize: false } : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -3923,6 +3984,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      usesLocalMacSigning({
+        platform: options.platform,
+        signed: options.signed,
+        version: appVersion,
+      })
+        ? yield* resolveLocalMacSigningIdentity()
+        : undefined,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -4014,6 +4082,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     // takes seconds on a many-core runner instead of about two minutes.
     buildEnv.XZ_DEFAULTS = "-T0";
   }
+  // Local macOS signing names its keychain identity explicitly and never
+  // notarizes, so it keeps this scrub of release credentials too.
   if (!options.signed) {
     buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
     delete buildEnv.CSC_LINK;

@@ -41,6 +41,7 @@ import {
   MacPasskeySigningConfigurationResolutionError,
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
+  parseDeveloperIdApplicationIdentity,
   preflightLinuxDesktopBuild,
   preflightMacDesktopBuild,
   preflightWindowsDesktopBuild,
@@ -70,6 +71,7 @@ import {
   stageLinuxCaptureHelper,
   stageWslRuntimeArchive,
   bundlesWslRuntime,
+  usesLocalMacSigning,
   STAGE_INSTALL_ARGS,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
@@ -2136,6 +2138,82 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
+
+  it.effect("signs macOS release, local test and unsigned builds differently", () =>
+    Effect.gen(function* () {
+      const release = (yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        undefined,
+      )).mac as Record<string, unknown>;
+      assert.match(String(release.sign), /[\\/]scripts[\\/]sign-macos\.ts$/);
+      assert.notProperty(release, "identity");
+      assert.notProperty(release, "notarize");
+
+      const localTest = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.33-localtest.10",
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "arm64",
+        "Example Dev (ABCDE12345)",
+      );
+      const localTestMac = localTest.mac as Record<string, unknown>;
+      assert.equal(localTest.appId, "computer.up.upcomputer.localtest");
+      assert.match(String(localTestMac.sign), /[\\/]scripts[\\/]sign-macos\.ts$/);
+      assert.equal(localTestMac.identity, "Example Dev (ABCDE12345)");
+      assert.isFalse(localTestMac.notarize);
+      assert.notProperty(localTestMac, "entitlements");
+
+      const unsigned = (yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.33-localtest.10",
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "arm64",
+      )).mac as Record<string, unknown>;
+      assert.notProperty(unsigned, "sign");
+      assert.notProperty(unsigned, "identity");
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it("signs only unsigned macOS local builds with the keychain identity", () => {
+    assert.isTrue(
+      usesLocalMacSigning({ platform: "mac", signed: false, version: "0.0.33-localtest.10" }),
+    );
+    assert.isFalse(
+      usesLocalMacSigning({ platform: "mac", signed: true, version: "0.0.33-localtest.10" }),
+    );
+    assert.isFalse(usesLocalMacSigning({ platform: "mac", signed: false, version: "0.0.33" }));
+    assert.isFalse(
+      usesLocalMacSigning({ platform: "linux", signed: false, version: "0.0.33-localtest.10" }),
+    );
+  });
+
+  it("finds the Developer ID Application identity in security find-identity output", () => {
+    const hash = (digit: string) => digit.repeat(40);
+    const output = [
+      `  1) ${hash("A")} "Apple Development: Example Dev (ZZZZZ99999)"`,
+      `  2) ${hash("B")} "Developer ID Application: Example Dev (ABCDE12345)"`,
+      `  3) ${hash("C")} "Developer ID Application: Example Dev (ABCDE12345)"`,
+      "     3 valid identities found",
+    ].join("\n");
+
+    assert.equal(parseDeveloperIdApplicationIdentity(output), "Example Dev (ABCDE12345)");
+    assert.isUndefined(parseDeveloperIdApplicationIdentity("     0 valid identities found\n"));
+  });
 
   it.effect("uses the nightly DMG background for nightly macOS builds", () =>
     Effect.gen(function* () {
