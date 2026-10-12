@@ -374,7 +374,7 @@ export function WeekHeader(props: {
             <MoreHorizontalIcon />
           </PopoverTrigger>
           <PopoverPopup align="end" padding="compact">
-            <div className="flex w-44 flex-col gap-1">
+            <div className="flex w-fit flex-col gap-1">
               <Popover open={goToOpen} onOpenChange={setGoToOpen}>
                 <PopoverTrigger
                   render={<Button size="sm" variant="ghost" className="justify-start" />}
@@ -411,6 +411,7 @@ export function WeekHeader(props: {
                 Days shown
               </span>
               <ToggleGroup
+                className="w-full"
                 value={[String(props.dayCount)]}
                 onValueChange={(value) => {
                   const next = Number(value[0]);
@@ -419,13 +420,14 @@ export function WeekHeader(props: {
                 }}
               >
                 {DAY_COUNT_OPTIONS.map((count) => (
-                  <ToggleGroupItem key={count} value={String(count)}>
+                  <ToggleGroupItem key={count} value={String(count)} className="flex-1">
                     {count}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
               <span className="px-2 pt-2 text-xs font-semibold text-muted-foreground">View</span>
               <ToggleGroup
+                className="w-full"
                 value={[preferences.weekViewMode]}
                 onValueChange={(value) => {
                   const next = value[0];
@@ -433,8 +435,12 @@ export function WeekHeader(props: {
                     props.onPreferencesChange({ weekViewMode: next });
                 }}
               >
-                <ToggleGroupItem value="queue">Queue</ToggleGroupItem>
-                <ToggleGroupItem value="calendar">Calendar</ToggleGroupItem>
+                <ToggleGroupItem value="queue" className="flex-1">
+                  Queue
+                </ToggleGroupItem>
+                <ToggleGroupItem value="calendar" className="flex-1">
+                  Calendar
+                </ToggleGroupItem>
               </ToggleGroup>
             </div>
           </PopoverPopup>
