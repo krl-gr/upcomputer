@@ -25,7 +25,10 @@ export class MobileRegistrations extends Context.Service<
     readonly registerDevice: (input: {
       readonly userId: string;
       readonly payload: RelayDeviceRegistrationRequest;
-    }) => Effect.Effect<{ readonly ok: true }, MobileRegistrationError>;
+    }) => Effect.Effect<
+      { readonly ok: true },
+      MobileRegistrationError | Devices.WebPushSubscriptionConflictError
+    >;
     readonly registerLiveActivity: (input: {
       readonly userId: string;
       readonly payload: RelayLiveActivityRegistrationRequest;

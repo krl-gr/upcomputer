@@ -9,6 +9,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as SqlError from "effect/sql/SqlError";
 import { and, eq, ne } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
@@ -20,12 +21,34 @@ export class DeviceRegistrationPersistenceError extends Schema.TaggedError<Devic
   {
     userId: Schema.String,
     deviceId: Schema.String,
-    stage: Schema.Literals(["claim-push-token", "claim-push-to-start-token", "upsert-device"]),
+    stage: Schema.Literals([
+      "transaction",
+      "find-push-token-holders",
+      "claim-push-token",
+      "claim-push-to-start-token",
+      "upsert-device",
+    ]),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
     return `Failed to persist mobile device registration for ${this.userId}/${this.deviceId} during ${this.stage}.`;
+  }
+}
+
+/**
+ * Another account holds this web push endpoint and the request did not prove
+ * it comes from the same browser.
+ */
+export class WebPushSubscriptionConflictError extends Schema.TaggedError<WebPushSubscriptionConflictError>()(
+  "WebPushSubscriptionConflictError",
+  {
+    userId: Schema.String,
+    deviceId: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Web push endpoint for ${this.userId}/${this.deviceId} belongs to another account.`;
   }
 }
 
@@ -92,7 +115,10 @@ export class Devices extends Context.Service<
     readonly register: (input: {
       readonly userId: string;
       readonly registration: RelayDeviceRegistrationRequest;
-    }) => Effect.Effect<void, DeviceRegistrationPersistenceError>;
+    }) => Effect.Effect<
+      void,
+      DeviceRegistrationPersistenceError | WebPushSubscriptionConflictError
+    >;
     readonly unregister: (input: {
       readonly userId: string;
       readonly deviceId: string;
@@ -117,8 +143,68 @@ export class Devices extends Context.Service<
   }
 >()("t3code-relay/agentActivity/Devices") {}
 
+/** Compares secrets without exiting early on the first differing character. */
+function sameSecret(stored: string | null, presented: string): boolean {
+  if (stored === null || stored.length !== presented.length) return false;
+  let difference = 0;
+  for (let index = 0; index < stored.length; index++) {
+    difference |= stored.charCodeAt(index) ^ presented.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
 export const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
+
+  /**
+   * A web endpoint moves to another account only with the subscription's own
+   * keys. The auth secret is known only to the browser and the relay, so a
+   * matching pair shows the same browser signed in to a different account;
+   * an endpoint alone is not proof of ownership. Locks the holding rows for
+   * the surrounding transaction.
+   */
+  const ensureWebPushEndpointOwnership = Effect.fnUntraced(function* (input: {
+    readonly userId: string;
+    readonly deviceId: string;
+    readonly subscription: RelayWebPushSubscription;
+  }) {
+    const holders = yield* db
+      .select({
+        userId: relayMobileDevices.userId,
+        platform: relayMobileDevices.platform,
+        p256dh: relayMobileDevices.webPushP256dh,
+        auth: relayMobileDevices.webPushAuth,
+      })
+      .from(relayMobileDevices)
+      .where(eq(relayMobileDevices.pushToken, input.subscription.endpoint))
+      .for("update")
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new DeviceRegistrationPersistenceError({
+              userId: input.userId,
+              deviceId: input.deviceId,
+              stage: "find-push-token-holders",
+              cause,
+            }),
+        ),
+      );
+    const foreign = holders.some(
+      (holder) =>
+        holder.userId !== input.userId &&
+        holder.platform === "web" &&
+        !(
+          sameSecret(holder.auth, input.subscription.auth) &&
+          sameSecret(holder.p256dh, input.subscription.p256dh)
+        ),
+    );
+    if (foreign) {
+      return yield* new WebPushSubscriptionConflictError({
+        userId: input.userId,
+        deviceId: input.deviceId,
+      });
+    }
+  });
 
   return Devices.of({
     register: Effect.fn("relay.devices.register")(function* (input) {
@@ -135,98 +221,129 @@ export const make = Effect.gen(function* () {
       // the raw Proxy into the fiber runtime, which spins the isolate at 100%
       // CPU (registrations then hang until the client aborts) — keep every db
       // chain directly yielded.
-      if (pushToken) {
-        yield* db
-          .update(relayMobileDevices)
-          .set({ pushToken: null, updatedAt })
-          .where(eq(relayMobileDevices.pushToken, pushToken))
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new DeviceRegistrationPersistenceError({
-                  userId: input.userId,
-                  deviceId: registration.deviceId,
-                  stage: "claim-push-token",
-                  cause,
-                }),
-            ),
-          );
-      }
-      if (registration.pushToStartToken) {
-        yield* db
-          .update(relayMobileDevices)
-          .set({ pushToStartToken: null, updatedAt })
-          .where(eq(relayMobileDevices.pushToStartToken, registration.pushToStartToken))
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new DeviceRegistrationPersistenceError({
-                  userId: input.userId,
-                  deviceId: registration.deviceId,
-                  stage: "claim-push-to-start-token",
-                  cause,
-                }),
-            ),
-          );
-      }
+      const write = Effect.gen(function* () {
+        if (registration.webPush) {
+          yield* ensureWebPushEndpointOwnership({
+            userId: input.userId,
+            deviceId: registration.deviceId,
+            subscription: registration.webPush,
+          });
+        }
+        if (pushToken) {
+          yield* db
+            .update(relayMobileDevices)
+            .set({ pushToken: null, updatedAt })
+            .where(
+              registration.webPush
+                ? eq(relayMobileDevices.pushToken, pushToken)
+                : // A native token never takes over a web subscription.
+                  and(
+                    eq(relayMobileDevices.pushToken, pushToken),
+                    ne(relayMobileDevices.platform, "web"),
+                  ),
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DeviceRegistrationPersistenceError({
+                    userId: input.userId,
+                    deviceId: registration.deviceId,
+                    stage: "claim-push-token",
+                    cause,
+                  }),
+              ),
+            );
+        }
+        if (registration.pushToStartToken) {
+          yield* db
+            .update(relayMobileDevices)
+            .set({ pushToStartToken: null, updatedAt })
+            .where(eq(relayMobileDevices.pushToStartToken, registration.pushToStartToken))
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DeviceRegistrationPersistenceError({
+                    userId: input.userId,
+                    deviceId: registration.deviceId,
+                    stage: "claim-push-to-start-token",
+                    cause,
+                  }),
+              ),
+            );
+        }
 
-      yield* db
-        .insert(relayMobileDevices)
-        .values({
-          userId: input.userId,
-          deviceId: registration.deviceId,
-          label: registration.label,
-          platform: registration.platform,
-          iosMajorVersion: registration.iosMajorVersion ?? null,
-          androidApiLevel: registration.androidApiLevel ?? null,
-          appVersion: registration.appVersion ?? null,
-          bundleId: registration.bundleId ?? null,
-          apsEnvironment: registration.apsEnvironment ?? null,
-          pushToken: pushToken ?? null,
-          pushToStartToken: registration.pushToStartToken ?? null,
-          webPushP256dh: registration.webPush?.p256dh ?? null,
-          webPushAuth: registration.webPush?.auth ?? null,
-          preferencesJson: registration.preferences,
-          createdAt: updatedAt,
-          updatedAt,
-        })
-        .onConflictDoUpdate({
-          target: [relayMobileDevices.userId, relayMobileDevices.deviceId],
-          set: {
-            platform: registration.platform,
+        yield* db
+          .insert(relayMobileDevices)
+          .values({
+            userId: input.userId,
+            deviceId: registration.deviceId,
             label: registration.label,
+            platform: registration.platform,
             iosMajorVersion: registration.iosMajorVersion ?? null,
             androidApiLevel: registration.androidApiLevel ?? null,
             appVersion: registration.appVersion ?? null,
-            // Preserve routing from newer app builds when an older build
-            // re-registers without these fields.
-            bundleId: sql`coalesce(excluded.bundle_id, ${relayMobileDevices.bundleId})`,
-            apsEnvironment: sql`coalesce(
-                excluded.aps_environment,
-                ${relayMobileDevices.apsEnvironment}
-              )`,
-            pushToken: sql`coalesce(excluded.push_token, ${relayMobileDevices.pushToken})`,
-            pushToStartToken: sql`coalesce(
-                excluded.push_to_start_token,
-                ${relayMobileDevices.pushToStartToken}
-              )`,
+            bundleId: registration.bundleId ?? null,
+            apsEnvironment: registration.apsEnvironment ?? null,
+            pushToken: pushToken ?? null,
+            pushToStartToken: registration.pushToStartToken ?? null,
             webPushP256dh: registration.webPush?.p256dh ?? null,
             webPushAuth: registration.webPush?.auth ?? null,
             preferencesJson: registration.preferences,
+            createdAt: updatedAt,
             updatedAt,
-          },
-        })
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new DeviceRegistrationPersistenceError({
+          })
+          .onConflictDoUpdate({
+            target: [relayMobileDevices.userId, relayMobileDevices.deviceId],
+            set: {
+              platform: registration.platform,
+              label: registration.label,
+              iosMajorVersion: registration.iosMajorVersion ?? null,
+              androidApiLevel: registration.androidApiLevel ?? null,
+              appVersion: registration.appVersion ?? null,
+              // Preserve routing from newer app builds when an older build
+              // re-registers without these fields.
+              bundleId: sql`coalesce(excluded.bundle_id, ${relayMobileDevices.bundleId})`,
+              apsEnvironment: sql`coalesce(
+                  excluded.aps_environment,
+                  ${relayMobileDevices.apsEnvironment}
+                )`,
+              pushToken: sql`coalesce(excluded.push_token, ${relayMobileDevices.pushToken})`,
+              pushToStartToken: sql`coalesce(
+                  excluded.push_to_start_token,
+                  ${relayMobileDevices.pushToStartToken}
+                )`,
+              webPushP256dh: registration.webPush?.p256dh ?? null,
+              webPushAuth: registration.webPush?.auth ?? null,
+              preferencesJson: registration.preferences,
+              updatedAt,
+            },
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new DeviceRegistrationPersistenceError({
+                  userId: input.userId,
+                  deviceId: registration.deviceId,
+                  stage: "upsert-device",
+                  cause,
+                }),
+            ),
+          );
+      });
+      // Checking who holds the endpoint and claiming it must not interleave
+      // with another registration of the same endpoint.
+      yield* db.$client.withTransaction(write).pipe(
+        Effect.mapError((cause) =>
+          SqlError.isSqlError(cause)
+            ? new DeviceRegistrationPersistenceError({
                 userId: input.userId,
                 deviceId: registration.deviceId,
-                stage: "upsert-device",
+                stage: "transaction",
                 cause,
-              }),
-          ),
-        );
+              })
+            : cause,
+        ),
+      );
     }),
     unregister: Effect.fn("relay.devices.unregister")(function* (input) {
       yield* Effect.annotateCurrentSpan({

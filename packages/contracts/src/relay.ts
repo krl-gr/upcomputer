@@ -658,6 +658,19 @@ export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedErr
   }
 }
 
+export class RelayWebPushSubscriptionConflictError extends Schema.TaggedError<RelayWebPushSubscriptionConflictError>()(
+  "RelayWebPushSubscriptionConflictError",
+  {
+    code: Schema.Literal("web_push_subscription_conflict"),
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 409 },
+) {
+  override get message(): string {
+    return "Relay refused the web push subscription: another account holds it";
+  }
+}
+
 export class RelayInternalError extends Schema.TaggedError<RelayInternalError>()(
   "RelayInternalError",
   {
@@ -684,6 +697,7 @@ export const RelayProtectedError = Schema.Union([
   RelayEnvironmentLinkLimitExceededError,
   RelayAgentActivityPublishProofExpiredError,
   RelayAgentActivityPublishProofInvalidError,
+  RelayWebPushSubscriptionConflictError,
   RelayInternalError,
 ]);
 export type RelayProtectedError = typeof RelayProtectedError.Type;
@@ -1076,7 +1090,7 @@ export const RelayRegisterDeviceEndpoint = HttpApiEndpoint.post(
     headers: RelayDpopRequestHeaders,
     payload: RelayDeviceRegistrationRequest,
     success: RelayOkResponse,
-    error: RelayAuthAndInternalErrors,
+    error: [RelayAuthInvalidError, RelayWebPushSubscriptionConflictError, RelayInternalError],
   },
 ).annotate(OpenApi.Summary, "Register or update a mobile device");
 
