@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_SERVER_SETTINGS,
   MessageId,
   ThreadId,
   type OrchestrationV2Notification,
@@ -14,7 +15,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { forkParked, ThreadManagementService } from "../../../../apps/server/src/extensionApi.ts";
+import {
+  forkParked,
+  ServerSettingsService,
+  ThreadManagementService,
+} from "../../../../apps/server/src/extensionApi.ts";
 
 const SWEEP_INTERVAL = "2 seconds";
 const SWEEP_LIMIT = 200;
@@ -139,9 +144,15 @@ function runLines(runs: ReadonlyArray<WakeRun>): string[] {
   });
 }
 
-/** Whether the chat only needs to see the runs: all completed, nothing to act on. */
-export function reportsWithoutWake(runs: ReadonlyArray<WakeRun>): boolean {
-  return runs.every((run) => run.status === "completed");
+/**
+ * Whether the chat only needs to see the runs: all completed, nothing to act on, and
+ * the person turned off waking a chat on task completion (`wakeChatOnTaskCompletion`).
+ */
+export function reportsWithoutWake(
+  runs: ReadonlyArray<WakeRun>,
+  wakeOnCompletion: boolean,
+): boolean {
+  return !wakeOnCompletion && runs.every((run) => run.status === "completed");
 }
 
 /**
@@ -228,12 +239,14 @@ const WakeBatchRow = Schema.Struct({
 });
 
 /**
- * Tells the chat a task came from when its runs finish. Runs that all completed are
- * recorded as a card in the chat without waking its model, which reads them with its next
- * turn. A batch with a blocked, failed or interrupted run wakes the chat the way upstream's
- * pull request watch wakes a thread: a queued, server-created notification message that
- * v2's durable queue delivers once the chat is idle. Finished runs are swept from storage,
- * so runs that end together reach their chat as one report and a restart loses none.
+ * Tells the chat a task came from when its runs finish. A batch wakes the chat the way
+ * upstream's pull request watch wakes a thread: a queued, server-created notification
+ * message that v2's durable queue delivers once the chat is idle. With the
+ * `wakeChatOnTaskCompletion` setting off, runs that all completed are instead recorded as a
+ * card in the chat without waking its model, which reads them with its next turn; a batch
+ * with a blocked, failed or interrupted run still wakes it. Finished runs are swept from
+ * storage, so runs that end together reach their chat as one report and a restart loses
+ * none.
  *
  * A completed run waits until none of the chat's tasks has had a run in progress for
  * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
@@ -249,6 +262,7 @@ const WakeBatchRow = Schema.Struct({
 export const makeTaskSourceWake = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const threads = yield* ThreadManagementService;
+  const settings = yield* ServerSettingsService;
 
   const runColumns = sql`
     run.id AS "runId",
@@ -446,7 +460,12 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       if (first === undefined) return yield* acknowledge(batch.id);
       const commandId = CommandId.make(`task-source-wake:${batch.id}`);
       const threadId = ThreadId.make(batch.sourceThreadId);
-      const send = reportsWithoutWake(runs)
+      // Read per batch, so a change applies to the next report without a restart.
+      const wakeOnCompletion = yield* settings.getSettings.pipe(
+        Effect.map((current) => current.wakeChatOnTaskCompletion),
+        Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS.wakeChatOnTaskCompletion),
+      );
+      const send = reportsWithoutWake(runs, wakeOnCompletion)
         ? threads.dispatch({
             type: "thread.notification.record",
             commandId,

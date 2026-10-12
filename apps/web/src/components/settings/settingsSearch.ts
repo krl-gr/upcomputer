@@ -535,6 +535,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["base directory folder browser path home"],
   },
   {
+    id: "wake-chat-on-task-completion",
+    title: "Wake chat when tasks complete",
+    to: "/settings/general",
+    searchTerms: ["task agent run done finished orchestrator notify reply tokens card delegate"],
+  },
+  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",
