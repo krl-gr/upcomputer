@@ -652,6 +652,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
         ? ["Add project base directory"]
         : []),
+      ...(settings.wakeChatOnTaskCompletion !== DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion
+        ? ["Wake chat when tasks complete"]
+        : []),
       ...(settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin
         ? ["Unpin confirmation"]
         : []),
@@ -695,6 +698,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
+      settings.wakeChatOnTaskCompletion,
       settings.diffFilesCollapsed,
       settings.diffIgnoreWhitespace,
       settings.diffLayout,
@@ -837,6 +841,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+      wakeChatOnTaskCompletion: DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
@@ -3120,6 +3125,38 @@ export function GeneralSettingsPanel() {
               placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
               spellCheck={false}
               aria-label="Add project base directory"
+            />
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="tasks" title="Tasks">
+        <SettingsRow
+          serverScoped
+          settingKeys={["wakeChatOnTaskCompletion"]}
+          {...searchableSetting("wake-chat-on-task-completion")}
+          description="The chat that created a task replies when its runs complete. Turning this off saves tokens, but the chat does not react to completed tasks until you message it. Blocked or failed runs always wake the chat."
+          resetAction={
+            settings.wakeChatOnTaskCompletion !==
+            DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion ? (
+              <SettingResetButton
+                label="wake chat when tasks complete"
+                onClick={() =>
+                  updateSettings({
+                    wakeChatOnTaskCompletion: DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["wakeChatOnTaskCompletion"]}
+              checked={settings.wakeChatOnTaskCompletion}
+              onCheckedChange={(checked) =>
+                updateSettings({ wakeChatOnTaskCompletion: Boolean(checked) })
+              }
+              aria-label="Wake chat when tasks complete"
             />
           }
         />

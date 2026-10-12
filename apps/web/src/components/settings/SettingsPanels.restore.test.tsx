@@ -78,6 +78,17 @@ describe("restoring V2 settings", () => {
     expect(state.update.mock.calls[0]?.[0][key]).toBe(DEFAULT_UNIFIED_SETTINGS[key]);
   });
 
+  it("restores waking a chat when tasks complete after it was turned off", async () => {
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, wakeChatOnTaskCompletion: false };
+    hooks.beginRender();
+    const restore = useSettingsRestore();
+
+    expect(restore.changedSettingLabels).toEqual(["Wake chat when tasks complete"]);
+    await restore.restoreDefaults();
+
+    expect(state.update.mock.calls[0]?.[0].wakeChatOnTaskCompletion).toBe(true);
+  });
+
   it("does not reset settings after cancellation", async () => {
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, autoResumeLimitedThreads: true };
     state.confirm.mockResolvedValue(false);
