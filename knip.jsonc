@@ -86,7 +86,8 @@
       "ignoreDependencies": ["jsdom", "@t3tools/tasks-contracts"],
       // Worktree setup (scripts/setup-worktree.ts) runs this directly.
       // Up.computer pro imports the build-time extension API by path.
-      "entry": ["scripts/warm-dep-cache.ts", "src/extensionApi.ts!"],
+      // The browser registers the web push service worker by URL (src/cloud/webPush.ts).
+      "entry": ["scripts/warm-dep-cache.ts", "src/extensionApi.ts!", "public/push-sw.js"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.

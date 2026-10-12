@@ -95,7 +95,11 @@ export function addProjectRemoteSourceProvider(
   return source === "url" ? null : source;
 }
 
-/** A clone source named in a route or link, or `url` for anything this client does not ship. */
+/**
+ * A clone source named in a route or link, or `url` for anything this client does not ship.
+ *
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
+ */
 export function parseAddProjectRemoteSource(
   value: string | null | undefined,
 ): AddProjectRemoteSource {

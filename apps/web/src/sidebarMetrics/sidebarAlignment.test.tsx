@@ -416,7 +416,7 @@ function measureHeader(): MeasuredHeader {
   };
 }
 
-const NAV = ["Tasks", "Agents", "Automations"];
+const NAV = ["Tasks", "Agents"];
 const PROJECT_ROWS = ["All projects", "UpComputer", "Site", "Docs", "No project", "More"];
 const ROWS = ["Search", ...NAV, "Projects", ...PROJECT_ROWS, "Threads", ...THREAD_TITLES];
 
@@ -489,7 +489,7 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
   });
 
   it("puts one gap between the nav rows, Projects and Threads", () => {
-    const sectionGaps = gapsBetween([row("Automations"), row("Projects")]).concat(
+    const sectionGaps = gapsBetween([row(NAV.at(-1)!), row("Projects")]).concat(
       gapsBetween([row("More"), row("Threads")]),
     );
     expect(sectionGaps).toEqual([sectionGaps[0], sectionGaps[0]]);
@@ -641,7 +641,7 @@ function measureText(input: { readonly names: ReadonlyArray<string>; readonly al
 }
 
 // Inactive rows of each kind; "Tasks", "All projects" and the first thread are active.
-const RESTING_ROWS = ["Agents", "Automations", "UpComputer", "Site", "No project", "More"];
+const RESTING_ROWS = ["Agents", "UpComputer", "Site", "No project", "More"];
 const RESTING_THREADS = THREAD_TITLES.slice(1);
 
 describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chromium)", () => {

@@ -32,6 +32,8 @@ const LINKS_PER_BATCH = 400;
 /**
  * Removes each parsed thread row's pull request links from `snapshot` in place and returns
  * them in row order, for `deferPullRequests` once the rows are decoded.
+ *
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function detachPullRequests(snapshot: unknown): ReadonlyArray<unknown> {
   if (!Predicate.isObject(snapshot)) return [];
@@ -48,6 +50,8 @@ export function detachPullRequests(snapshot: unknown): ReadonlyArray<unknown> {
 /**
  * Attaches a `loadPullRequests` that decodes the detached links after yielding to the host.
  * A thread whose links cannot be read gets none; its row stays usable.
+ *
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function deferPullRequests<S extends OrchestrationV2ShellSnapshot>(
   snapshot: S,
