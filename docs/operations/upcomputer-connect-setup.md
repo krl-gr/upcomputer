@@ -31,15 +31,15 @@ V1 renamed these (`upcomputer-*+jwt`, `/.well-known/upcomputer/environment`). v2
 
 What is ours:
 
-| What                            | Value                                                                         |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| Product name in the UI and CLI  | UpComputer Connect                                                            |
-| Push and Live Activity title    | `Up.computer`                                                                 |
-| Desktop renderer origins        | `upcomputer://app`, `upcomputer-dev://app`                                    |
-| macOS bundle ID (passkeys)      | `computer.up.upcomputer`                                                      |
-| Clerk JWT template and audience | `upcomputer-relay` (our choice; upstream uses `t3-relay` and `t3-code-relay`) |
-| API and tunnel zones            | `up.computer` (relay at `relay.up.computer`), `upconnect.dev`                 |
-| Hosted app URL                  | `https://up.computer` (`DEFAULT_HOSTED_APP_URL`)                              |
+| What                            | Value                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Product name in the UI and CLI  | UpComputer Connect                                                                                     |
+| Push and Live Activity title    | `Up.computer`                                                                                          |
+| Desktop renderer origins        | `upcomputer://app`, `upcomputer-dev://app`                                                             |
+| macOS bundle ID (passkeys)      | `computer.up.upcomputer`                                                                               |
+| Clerk JWT template and audience | `t3-relay` template, `t3-code-relay` audience (same as upstream; already set up in our Clerk instance) |
+| API and tunnel zones            | `up.computer` (relay at `relay.up.computer`), `upconnect.dev`                                          |
+| Hosted app URL                  | `https://up.computer` (`DEFAULT_HOSTED_APP_URL`)                                                       |
 
 ## 0. Decide names first
 
@@ -49,8 +49,8 @@ Write these down before creating accounts. Several of them are baked into deploy
 | -------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
 | API zone                   | `up.computer`             | The relay is served at `https://relay.up.computer` for the `prod` stage.                     |
 | Tunnel zone                | `upconnect.dev`           | Each linked environment gets a hostname below it. Use a separate registrable domain.         |
-| Clerk JWT template name    | `upcomputer-relay`        | Clients request Clerk tokens from this template.                                             |
-| Clerk JWT audience (`aud`) | `upcomputer-relay`        | The relay rejects Clerk tokens with any other audience.                                      |
+| Clerk JWT template name    | `t3-relay`                | Clients request Clerk tokens from this template.                                             |
+| Clerk JWT audience (`aud`) | `t3-code-relay`           | The relay rejects Clerk tokens with any other audience.                                      |
 | iOS bundle ID              | `<ios-bundle-id>`         | Also the APNs topic.                                                                         |
 | PlanetScale database       | `upcomputerrelay`, `PS_5` | One ARM node in `eu-central` (Frankfurt), $5/month. A local edit to `infra/relay/src/db.ts`. |
 
@@ -65,7 +65,7 @@ Create the Cloudflare, PlanetScale (Postgres), Axiom and Clerk production accoun
 - **Cloudflare**: account `b823638a401eee95b6263c88ca5b5572` with both zones. The relay starts on
   Workers Free; switch to Workers Paid if the Worker hits CPU limit errors (1102).
 - **PlanetScale**: organization `gurianovks`. The first deploy creates the database.
-- **Clerk JWT template**: name `upcomputer-relay`, claims `{ "aud": "upcomputer-relay" }`.
+- **Clerk JWT template**: name `t3-relay`, claims `{ "aud": "t3-code-relay" }`.
 - **Clerk desktop redirects**: add `upcomputer://app/` and `upcomputer-dev://app/` to the SSO
   redirect allowlist, and `upcomputer://app` (production) to the Backend API `allowed_origins`.
   Preserve existing entries.
@@ -93,8 +93,8 @@ environment-scoped variables. Set that switch as a **repository** variable, and 
 | `PLANETSCALE_ORGANIZATION`  | `production` variable         | `deploy-relay.yml`                | `gurianovks`                         |
 | `AXIOM_ORG_ID`              | `production` variable         | `deploy-relay.yml`                | Axiom organization ID                |
 | `CLERK_PUBLISHABLE_KEY`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `pk_live_...`                        |
-| `CLERK_JWT_AUDIENCE`        | `production` variable         | `deploy-relay.yml`                | `upcomputer-relay`                   |
-| `CLERK_JWT_TEMPLATE`        | `production` variable         | `release.yml`                     | `upcomputer-relay`                   |
+| `CLERK_JWT_AUDIENCE`        | `production` variable         | `deploy-relay.yml`                | `t3-code-relay`                      |
+| `CLERK_JWT_TEMPLATE`        | `production` variable         | `release.yml`                     | `t3-relay`                           |
 | `CLERK_CLI_OAUTH_CLIENT_ID` | `production` variable         | `release.yml`                     | Clerk OAuth application client ID    |
 | `APNS_ENABLED`              | `production` variable, later  | `deploy-relay.yml`                | `true` once APNs keys exist          |
 | `APNS_*`                    | `production` variables, later | `deploy-relay.yml`                | Only with `APNS_ENABLED=true`        |
@@ -121,7 +121,7 @@ them from the process environment, then the repository-root `.env.local`, then `
 | ----------------------------------------- | ------------------------- | --------------------------- |
 | `T3CODE_RELAY_URL`                        | Desktop backend, CLI, web | `https://relay.up.computer` |
 | `T3CODE_CLERK_PUBLISHABLE_KEY`            | Desktop backend, CLI, web | `pk_live_...`               |
-| `T3CODE_CLERK_JWT_TEMPLATE`               | Web and desktop renderer  | `upcomputer-relay`          |
+| `T3CODE_CLERK_JWT_TEMPLATE`               | Web and desktop renderer  | `t3-relay`                  |
 | `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID`        | Desktop backend, CLI      | Clerk OAuth client ID       |
 | `T3CODE_RELAY_CLIENT_OTLP_TRACES_URL`     | Optional, client tracing  | From the relay stack output |
 | `T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET` | Optional, client tracing  | From the relay stack output |
@@ -137,7 +137,7 @@ repository-root `.env`.
 1. Create the accounts and tokens in section 1.
 2. Set every value in section 2 except the switch (`RELAY_API_ZONE_NAME`).
 3. Optional dry run from a trusted machine: copy `infra/relay/.env.example` to `infra/relay/.env`,
-   set our values (JWT audience `upcomputer-relay`), and run
+   set our values (JWT audience `t3-code-relay`), and run
    `vp run --filter t3code-relay deploy -- --stage prod --dry-run`.
 4. Set `RELAY_API_ZONE_NAME` as a repository variable and push to `main` (or re-run the workflow).
    Watch **Deploy UpComputer Connect relay**.
@@ -162,5 +162,5 @@ repository-root `.env`.
 ## 6. What an iOS client needs
 
 Upstream's iOS client speaks the same protocol. It needs our relay URL, Clerk publishable key and
-JWT template `upcomputer-relay`, registration under Clerk **Native applications**, and an APNs
+JWT template `t3-relay`, registration under Clerk **Native applications**, and an APNs
 bundle ID equal to `APNS_BUNDLE_ID`.
