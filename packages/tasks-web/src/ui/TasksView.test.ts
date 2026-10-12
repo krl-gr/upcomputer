@@ -356,8 +356,7 @@ test("task details caption tags as Tags, with no Labels left in tasks-web text",
     2,
     "detail and create",
   );
-  NodeAssert.equal(source.match(/placeholder="Add tags…"/g)?.length, 2);
-  NodeAssert.equal(source.match(/aria-label="Task tags"/g)?.length, 2);
+  NodeAssert.equal(source.match(/<TagChipsField\b/g)?.length, 2, "both edit tags as chips");
   const uiDir = new URL("./", import.meta.url);
   for (const file of NodeFS.readdirSync(uiDir)) {
     if (!file.endsWith(".tsx")) continue;

@@ -36,6 +36,7 @@ import {
   instructionsSaveInput,
   promptsAfterReload,
 } from "./instructionsSave.ts";
+import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 
 // "All chats" edits the core `customInstructions` setting, which every agent
 // harness adds to its prompt. The other tabs edit the Tasks prompt settings.
@@ -213,10 +214,15 @@ function InstructionsEditor({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  // Cancel and Restore replace the text even while the editor has focus,
+  // which a new editor does and an outside value would not.
+  const [resets, setResets] = useState(0);
   const customInstructions = customInstructionsDraft?.text ?? savedCustomInstructions;
   const promptsDirty = !sameSettings(saved, draft);
   const customInstructionsDirty = customInstructions !== savedCustomInstructions;
   const dirty = promptsDirty || customInstructionsDirty;
+  // The editor has no maxLength; All chats is limited where it is stored.
+  const allChatsTooLong = customInstructions.length > CUSTOM_INSTRUCTIONS_MAX_CHARS;
   // A project has no All chats text.
   const tabs = project === null ? TABS : PROMPT_TABS;
   const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
@@ -275,8 +281,9 @@ function InstructionsEditor({
       !(await ensureLocalApi().dialogs.confirm(DISCARD_MESSAGE, { variant: "destructive" })),
   });
 
+  const editorDisabled = saving || (editingAllChats ? environmentId === null : loading || !api);
   const save = useCallback(async () => {
-    if (!dirty || saving || (promptsDirty && !api)) return;
+    if (!dirty || saving || (promptsDirty && !api) || allChatsTooLong) return;
     if (customInstructionsDirty && environmentId === null) return;
     setSaving(true);
     setError(undefined);
@@ -334,6 +341,7 @@ function InstructionsEditor({
       setSaving(false);
     }
   }, [
+    allChatsTooLong,
     api,
     customInstructions,
     customInstructionsDirty,
@@ -417,12 +425,15 @@ function InstructionsEditor({
           </details>
         ) : null}
         <SettingsGroup className="transition-colors focus-within:border-ring">
-          <textarea
+          <LazyMarkdownEditor
+            key={`${tab.id}:${resets}`}
             value={editingAllChats ? customInstructions : draft[tab.id]}
-            disabled={saving || (editingAllChats ? environmentId === null : loading || !api)}
-            maxLength={editingAllChats ? CUSTOM_INSTRUCTIONS_MAX_CHARS : undefined}
-            aria-label={`${tab.label} instructions`}
-            className="field-sizing-content block min-h-[50dvh] w-full resize-none appearance-none overflow-auto rounded-[inherit] bg-transparent px-3 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-[26rem] sm:px-4 [&::-webkit-resizer]:hidden"
+            disabled={editorDisabled}
+            ariaLabel={`${tab.label} instructions`}
+            className={cn(
+              "min-h-[50dvh] px-3 py-3 text-sm text-foreground sm:min-h-[26rem] sm:px-4",
+              editorDisabled && "opacity-60",
+            )}
             placeholder={
               editingAllChats
                 ? "Instructions every agent follows in every chat, e.g. answer in Russian, never commit without asking."
@@ -432,8 +443,7 @@ function InstructionsEditor({
                     ? "Add guidance…"
                     : `Add guidance for ${project.title}…`
             }
-            onChange={(event) => {
-              const value = event.currentTarget.value;
+            onChange={(value) => {
               if (editingAllChats) {
                 setCustomInstructionsDraft((current) => ({
                   text: value,
@@ -449,6 +459,12 @@ function InstructionsEditor({
             }}
           />
         </SettingsGroup>
+        {editingAllChats && allChatsTooLong ? (
+          <p className="px-3 text-xs text-destructive sm:px-4">
+            All chats instructions can be at most {CUSTOM_INSTRUCTIONS_MAX_CHARS.toLocaleString()}{" "}
+            characters; this text has {customInstructions.length.toLocaleString()}.
+          </p>
+        ) : null}
         {error ? <p className="px-3 text-xs text-destructive sm:px-4">{error}</p> : null}
 
         <div
@@ -476,6 +492,7 @@ function InstructionsEditor({
             }
             onClick={() => {
               const promptKey = tab.id;
+              setResets((count) => count + 1);
               if (promptKey === ALL_CHATS_TAB.id) {
                 setCustomInstructionsDraft((current) => ({
                   text: DEFAULT_CUSTOM_INSTRUCTIONS,
@@ -499,13 +516,14 @@ function InstructionsEditor({
               onClick={() => {
                 setPrompts({ saved: serverPrompts, draft: serverPrompts });
                 setCustomInstructionsDraft(undefined);
+                setResets((count) => count + 1);
               }}
             >
               Cancel
             </Button>
             <Button
               type="button"
-              disabled={!dirty || saving || (promptsDirty && !api)}
+              disabled={!dirty || saving || (promptsDirty && !api) || allChatsTooLong}
               onClick={() => void save()}
             >
               {saving ? "Saving…" : "Save changes"}

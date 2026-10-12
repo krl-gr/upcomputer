@@ -27,7 +27,14 @@ export interface PendingOp {
 export type TaskPatch = Partial<
   Pick<
     PlannerTask,
-    "title" | "description" | "projectId" | "status" | "archivedAt" | "audience" | "tags"
+    | "title"
+    | "description"
+    | "projectId"
+    | "status"
+    | "archivedAt"
+    | "audience"
+    | "tags"
+    | "metadata"
   >
 >;
 

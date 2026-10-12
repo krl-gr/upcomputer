@@ -278,7 +278,7 @@ function AutomationSettings(props: {
   readonly automation: TaskAutomationListItem | null;
   readonly defaultProjectId: string | null;
 }) {
-  const { automations, windows, projects, markdownCwd } = usePlanner();
+  const { automations, windows, projects } = usePlanner();
   const { automation } = props;
   const [form, setForm] = useState<AutomationFormState>(() =>
     automation
@@ -544,8 +544,6 @@ function AutomationSettings(props: {
             <DescriptionField
               value={form.description}
               onChange={(description) => setForm({ ...form, description })}
-              cwd={markdownCwd}
-              rows={6}
             />
           </div>
         </div>

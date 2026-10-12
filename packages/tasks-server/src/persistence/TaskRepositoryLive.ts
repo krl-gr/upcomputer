@@ -34,6 +34,8 @@ import {
   TaskThreadRunCountsResult,
   DEFAULT_TASK_REMINDER_LEAD_MINUTES,
   PERSON_DONE_STATUS,
+  personTaskStatusError,
+  statusForPersonAudience,
   taskKindAudienceError,
 } from "@t3tools/tasks-contracts/v1";
 import { ModelSelection, ThreadId } from "@t3tools/contracts";
@@ -1922,8 +1924,24 @@ const makeTaskRepository = Effect.gen(function* () {
               operation: "TaskRepository.upsert:kind",
               detail: invalid,
             });
+          // A task handed back to a person reopens unless it is done. Person
+          // statuses are checked when they are set, so an older person task
+          // with another status still takes other edits.
+          const becomesPerson =
+            previous !== undefined && previous.audience !== "person" && audience === "person";
+          const status = becomesPerson ? statusForPersonAudience(task.status) : task.status;
+          const invalidStatus =
+            previous === undefined || previous.status !== status
+              ? personTaskStatusError(audience, status)
+              : null;
+          if (invalidStatus !== null)
+            return yield* new TaskPersistenceSqlError({
+              operation: "TaskRepository.upsert:status",
+              detail: invalidStatus,
+            });
           const persisted: Task = {
             ...task,
+            status,
             rank,
             ...origin,
             notBefore,
@@ -1934,7 +1952,14 @@ const makeTaskRepository = Effect.gen(function* () {
               Option.isNone(existing) && origin.parentRunId ? origin.parentRunId : task.sourceRunId,
             triggerChangedAt: !previous
               ? task.updatedAt
-              : triggerFieldsChanged(previous, { ...task, notBefore, archivedAt, audience, kind })
+              : triggerFieldsChanged(previous, {
+                    ...task,
+                    status,
+                    notBefore,
+                    archivedAt,
+                    audience,
+                    kind,
+                  })
                 ? yield* nowIso
                 : previous.triggerChangedAt,
           };
@@ -3113,19 +3138,27 @@ const makeTaskRepository = Effect.gen(function* () {
               : yield* sql<{
                   status: string;
                   kind: TaskKind;
+                  audience: TaskAudience;
                   archivedAt: string | null;
-                }>`SELECT status, kind, archived_at AS "archivedAt" FROM tasks
+                }>`SELECT status, kind, audience, archived_at AS "archivedAt" FROM tasks
                   WHERE id = ${input.taskId}`;
+          // A run's status is an agent status: a task a person took back meanwhile keeps its own.
+          const taskStatus =
+            input.taskStatus !== undefined &&
+            statusBefore[0] !== undefined &&
+            personTaskStatusError(statusBefore[0].audience, input.taskStatus) !== null
+              ? undefined
+              : input.taskStatus;
           if (
-            input.taskStatus !== undefined ||
+            taskStatus !== undefined ||
             input.taskOutput !== undefined ||
             input.releaseAssignment
           ) {
             yield* sql`
             UPDATE tasks
             SET status = CASE
-                  WHEN ${input.taskStatus ?? null} IS NULL THEN status
-                  ELSE ${input.taskStatus ?? null}
+                  WHEN ${taskStatus ?? null} IS NULL THEN status
+                  ELSE ${taskStatus ?? null}
                 END,
               output = CASE
                 WHEN ${input.taskOutput === undefined ? 0 : 1} = 0 THEN output
@@ -3138,7 +3171,7 @@ const makeTaskRepository = Effect.gen(function* () {
                 ELSE assignee_worker_id
               END,
               trigger_changed_at = CASE
-                WHEN ${input.taskStatus ?? null} IS NOT NULL AND ${input.taskStatus ?? null} <> status
+                WHEN ${taskStatus ?? null} IS NOT NULL AND ${taskStatus ?? null} <> status
                   THEN ${input.completedAt}
                 ELSE trigger_changed_at
               END,
@@ -3148,24 +3181,24 @@ const makeTaskRepository = Effect.gen(function* () {
           }
           const before = statusBefore[0];
           const from = before?.status;
-          if (before !== undefined && input.taskStatus !== undefined) {
+          if (before !== undefined && taskStatus !== undefined) {
             const archived = before.archivedAt !== null;
             yield* followTask({
               taskId: input.taskId,
               kind: before.kind,
               from: { status: before.status, archived },
-              to: { status: input.taskStatus, archived },
+              to: { status: taskStatus, archived },
               at: input.completedAt,
             });
           }
-          if (from !== undefined && input.taskStatus !== undefined && from !== input.taskStatus) {
+          if (from !== undefined && taskStatus !== undefined && from !== taskStatus) {
             yield* insertHistoryEvent({
               id: `${input.id}:task-status-changed`,
               taskId: input.taskId,
               kind: TASK_STATUS_CHANGED_EVENT,
               payload: {
                 from,
-                to: input.taskStatus,
+                to: taskStatus,
                 actor: { type: "agent-run", agentRunId: input.id } satisfies TaskActor,
               },
               createdAt: input.completedAt,

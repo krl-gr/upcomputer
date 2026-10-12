@@ -56,6 +56,9 @@ import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
+import { TagChipsField } from "./TagChipsField.tsx";
+import { tagSuggestions } from "./tagSuggestions.ts";
+import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
 const STATUS_ORDER = [
@@ -148,6 +151,43 @@ function selectedProjectKey(form: TaskFormState): string {
 
 function errorDescription(error: unknown): string {
   return error instanceof Error ? error.message : "An unexpected error occurred.";
+}
+
+const DESCRIPTION_EDITOR_CLASS =
+  "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
+
+/**
+ * A task's description in the table detail, saved when the field loses focus.
+ * The edit stays shown until the saved (or an agent's newer) text arrives.
+ */
+function DetailDescriptionEditor(props: {
+  readonly value: string;
+  readonly disabled: boolean;
+  readonly onSave: (description: string) => void;
+}) {
+  const [draft, setDraft] = useState<{ readonly base: string; readonly text: string }>();
+  const text = draft?.base === props.value ? draft.text : undefined;
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  });
+  return (
+    <LazyMarkdownEditor
+      value={text ?? props.value}
+      disabled={props.disabled}
+      placeholder="Description…"
+      ariaLabel="Task description"
+      className={DESCRIPTION_EDITOR_CLASS}
+      onChange={(next) => {
+        textRef.current = next;
+        setDraft({ base: props.value, text: next });
+      }}
+      onBlur={() => {
+        const description = textRef.current?.trim();
+        if (description !== undefined && description !== props.value) props.onSave(description);
+      }}
+    />
+  );
 }
 
 function shortTaskId(id: string): string {
@@ -877,24 +917,13 @@ export function TasksView(props: TasksViewProps) {
                 defaultOpen={!hasSelectedTaskOutput}
               >
                 {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                  <textarea
-                    key={`${selectedTask.id}:${selectedTask.description}`}
-                    className="field-sizing-content min-h-36 w-full resize-none appearance-none overflow-auto border-0 bg-transparent px-3 py-2 text-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground focus:bg-transparent focus:outline-none [&::-webkit-resizer]:hidden"
-                    defaultValue={selectedTask.description}
+                  <DetailDescriptionEditor
+                    key={`${taskKey(selectedTask)}:description-editor`}
+                    value={selectedTask.description}
                     disabled={updatingField === "description"}
-                    placeholder="Description…"
-                    aria-label="Task description"
-                    onBlur={(event) => {
-                      const description = event.currentTarget.value.trim();
-                      if (description !== selectedTask.description)
-                        void updateTaskInline(selectedTask, "description", { description });
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.currentTarget.value = selectedTask.description;
-                        event.currentTarget.blur();
-                      }
-                    }}
+                    onSave={(description) =>
+                      void updateTaskInline(selectedTask, "description", { description })
+                    }
                   />
                 ) : selectedTask.description.trim() ? (
                   <p className="whitespace-pre-wrap px-3 py-2 text-lg leading-8 text-foreground">
@@ -1056,39 +1085,33 @@ export function TasksView(props: TasksViewProps) {
                       <span className="truncate">{selectedTask.projectName ?? "—"}</span>
                     </span>
                   </DetailSidebarRow>
-                  <DetailSidebarRow
-                    label="Tags"
-                    controlSelector={
-                      props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
-                    }
-                  >
-                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                      <input
-                        key={`${selectedTask.updatedAt}:tags`}
-                        className={DETAIL_INPUT_CLASS}
-                        defaultValue={selectedTask.tags.join(", ")}
-                        disabled={updatingField === "tags"}
-                        placeholder="Add tags…"
-                        aria-label="Task tags"
-                        onBlur={(event) => {
-                          const tags = splitListInput(event.currentTarget.value);
-                          if (tags.join("\u0000") !== selectedTask.tags.join("\u0000"))
-                            void updateTaskInline(selectedTask, "tags", { tags });
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                          if (event.key === "Escape") {
-                            event.currentTarget.value = selectedTask.tags.join(", ");
-                            event.currentTarget.blur();
+                  {/* A person task's tags stay hidden; the planner hands it to an agent. */}
+                  {selectedTask.audience === "person" ? null : (
+                    <DetailSidebarRow label="Tags">
+                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                        <TagChipsField
+                          tags={selectedTask.tags}
+                          disabled={updatingField === "tags"}
+                          suggest={(query) =>
+                            tagSuggestions({
+                              query,
+                              taskTags: selectedTask.tags,
+                              projectId: selectedTask.projectId,
+                              agents: props.agents.filter(
+                                (agent) => agent.environmentId === selectedTask.environmentId,
+                              ),
+                              knownTags: tagOptions,
+                            })
                           }
-                        }}
-                      />
-                    ) : selectedTask.tags.length > 0 ? (
-                      selectedTask.tags.join(", ")
-                    ) : (
-                      "—"
-                    )}
-                  </DetailSidebarRow>
+                          onChange={(tags) => void updateTaskInline(selectedTask, "tags", { tags })}
+                        />
+                      ) : selectedTask.tags.length > 0 ? (
+                        selectedTask.tags.join(", ")
+                      ) : (
+                        "—"
+                      )}
+                    </DetailSidebarRow>
+                  )}
                   <DetailSidebarRow label="Created">
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
@@ -1226,14 +1249,12 @@ export function TasksView(props: TasksViewProps) {
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <textarea
-                className="min-h-36 w-full flex-1 resize-none appearance-none overflow-auto border-0 bg-transparent px-3 py-2 text-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground focus:bg-transparent focus:outline-none [&::-webkit-resizer]:hidden"
+              <LazyMarkdownEditor
                 value={form.description}
                 placeholder="Description…"
-                aria-label="Task description"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, description: event.target.value }))
-                }
+                ariaLabel="Task description"
+                className={DESCRIPTION_EDITOR_CLASS}
+                onChange={(description) => setForm((current) => ({ ...current, description }))}
               />
             </main>
             <DetailColumn stacked={panel}>
@@ -1307,14 +1328,22 @@ export function TasksView(props: TasksViewProps) {
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Tags" controlSelector="input">
-                    <input
-                      className={DETAIL_INPUT_CLASS}
-                      value={form.tags}
-                      placeholder="Add tags…"
-                      aria-label="Task tags"
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, tags: event.target.value }))
+                  <DetailSidebarRow label="Tags">
+                    <TagChipsField
+                      tags={splitListInput(form.tags)}
+                      suggest={(query) =>
+                        tagSuggestions({
+                          query,
+                          taskTags: splitListInput(form.tags),
+                          projectId: form.projectId || null,
+                          agents: props.agents.filter(
+                            (agent) => agent.environmentId === form.environmentId,
+                          ),
+                          knownTags: tagOptions,
+                        })
+                      }
+                      onChange={(tags) =>
+                        setForm((current) => ({ ...current, tags: tags.join(", ") }))
                       }
                     />
                   </DetailSidebarRow>

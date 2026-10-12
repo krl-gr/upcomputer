@@ -66,6 +66,22 @@ const clientFor = vi.hoisted(() => {
   };
 });
 
+// The Milkdown editor has its own tests; here it is a field with its props.
+vi.mock("../markdown/LazyMarkdownEditor.tsx", () => ({
+  LazyMarkdownEditor: (props: {
+    value: string;
+    disabled?: boolean;
+    className?: string;
+    onChange: (value: string) => void;
+  }) =>
+    createElement("textarea", {
+      value: props.value,
+      disabled: props.disabled,
+      className: props.className,
+      onChange: (event: { currentTarget: { value: string } }) =>
+        props.onChange(event.currentTarget.value),
+    }),
+}));
 vi.mock("../../../../apps/web/src/components/ui/button.tsx", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) =>
     createElement("button", props, children),

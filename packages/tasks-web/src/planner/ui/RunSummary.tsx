@@ -10,15 +10,12 @@ import { usePlanner } from "./plannerContext.ts";
 
 /**
  * What agents did and may do with a task, in its row and window: "Agents"
- * for an agent task (a window opened from an automation shows one), its
- * tags, the latest run's status and the run counts (a click opens the task
- * in the table, which lists its runs).
+ * and the tags of an agent task (a window opened from an automation shows
+ * one), the latest run's status and the run counts (a click opens the task
+ * in the table, which lists its runs). A person task's tags stay hidden:
+ * handing it to an agent is the window's "Hand to an agent".
  */
-export function RunSummary(props: {
-  readonly task: PlannerTask;
-  /** Off where the tags are edited instead. */
-  readonly showTags?: boolean;
-}) {
+export function RunSummary(props: { readonly task: PlannerTask }) {
   const { triggerTags, openInTable } = usePlanner();
   const { task } = props;
   const latest = taskRunPresentation(task.latestRunStatus ?? undefined, false);
@@ -26,14 +23,14 @@ export function RunSummary(props: {
   return (
     <>
       {task.audience === "agent" ? (
-        <TablePill>
-          <BotIcon className="size-3.5" aria-hidden />
-          Agents
-        </TablePill>
+        <>
+          <TablePill>
+            <BotIcon className="size-3.5" aria-hidden />
+            Agents
+          </TablePill>
+          <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+        </>
       ) : null}
-      {props.showTags === false ? null : (
-        <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-      )}
       {latest ? (
         <span className={cn("text-xs", latest.className)} data-latest-run-status="">
           {latest.label}

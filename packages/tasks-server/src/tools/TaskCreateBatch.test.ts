@@ -99,10 +99,14 @@ function harness(
     Effect.gen(function* () {
       return yield* (yield* TaskToolService).call({ name: "task_create", args, context });
     });
+  const update = (args: Record<string, unknown>) =>
+    Effect.gen(function* () {
+      return yield* (yield* TaskToolService).call({ name: "task_update", args, context: chat });
+    });
   const stored = Effect.gen(function* () {
     return yield* (yield* TaskRepository).search({ limit: 50, kind: "all" });
   });
-  return { layer, scheduled, create, stored };
+  return { layer, scheduled, create, update, stored };
 }
 
 const item = (title: string, status: string, extra: Record<string, unknown> = {}) => ({
@@ -356,4 +360,43 @@ it("the task_create schema requires every listed task's audience and explains it
   assert.match(schema.properties.audience.description, /^Required\./);
   assert.include(schema.properties.audience.description, '"for me"');
   assert.notInclude(schema.properties.audience.description, "default");
+});
+
+it.effect("a person task is To Do or Done on create, in a list and on update", () => {
+  const { layer, create, update, stored } = harness();
+  return Effect.gen(function* () {
+    const mine = (title: string, status: string) => item(title, status, { audience: "person" });
+    const single = yield* create(mine("deferred", "Backlog"));
+    assert.isTrue(single.isError);
+    assert.match(single.text, /person task's status is "To Do" \(open\) or "Done", not "Backlog"/);
+    assert.match(single.text, /leave it unscheduled or set notBefore/);
+    const list = yield* create({ tasks: [mine("ok", "To Do"), mine("later", "In Progress")] });
+    assert.isTrue(list.isError);
+    assert.match(list.text, /^tasks\[1\] \("later"\) is invalid: A person task's status/);
+    assert.lengthOf(yield* stored, 0);
+
+    const created = yield* create(mine("call the bank", "To Do"));
+    assert.isFalse(created.isError, created.text);
+    const id = JSON.parse(created.text).task.id;
+    const refused = yield* update({ id, status: "Blocked" });
+    assert.isTrue(refused.isError);
+    assert.match(refused.text, /not "Blocked".*The task was not changed/);
+    const done = yield* update({ id, status: "Done" });
+    assert.isFalse(done.isError, done.text);
+
+    // Agent statuses stay free; a status set with the hand-back must suit a person.
+    const agentTask = yield* create(item("build", "In Progress"));
+    const agentId = JSON.parse(agentTask.text).task.id;
+    const mixed = yield* update({ id: agentId, audience: "person", status: "Review" });
+    assert.isTrue(mixed.isError);
+    const handedBack = yield* update({ id: agentId, audience: "person" });
+    assert.isFalse(handedBack.isError, handedBack.text);
+    assert.deepStrictEqual(
+      (yield* stored).map(({ title, status, audience }) => [title, status, audience]),
+      [
+        ["call the bank", "Done", "person"],
+        ["build", "To Do", "person"],
+      ],
+    );
+  }).pipe(Effect.provide(layer));
 });

@@ -53,6 +53,7 @@ import {
   type TaskAutomation,
   type InstructionsField,
   type TaskPromptSettingsChange,
+  personTaskStatusError,
   taskKindAudienceError,
 } from "@t3tools/tasks-contracts/v1";
 import * as Crypto from "effect/Crypto";
@@ -617,7 +618,9 @@ const make = Effect.gen(function* () {
             isError: true,
             text: `${named} is invalid: ${item.failure.message}\nNo task was created.`,
           };
-        const invalid = taskKindAudienceError(item.success.kind ?? "task", item.success.audience);
+        const invalid =
+          taskKindAudienceError(item.success.kind ?? "task", item.success.audience) ??
+          personTaskStatusError(item.success.audience, item.success.status);
         if (invalid !== null)
           return {
             isError: true,
@@ -758,8 +761,10 @@ const make = Effect.gen(function* () {
           if (lacksAudience(args))
             return { isError: true, text: `${AUDIENCE_REQUIRED} No task was created.` };
           const input = yield* decoders.task_create(args);
-          const invalid = taskKindAudienceError(input.kind ?? "task", input.audience);
-          if (invalid !== null) return { isError: true, text: invalid };
+          const invalid =
+            taskKindAudienceError(input.kind ?? "task", input.audience) ??
+            personTaskStatusError(input.audience, input.status);
+          if (invalid !== null) return { isError: true, text: `${invalid} No task was created.` };
           const resolution = yield* resolver.resolve({
             args: {
               ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -820,11 +825,18 @@ const make = Effect.gen(function* () {
           }
           const before = yield* repository.getById({ id: input.id });
           if (Option.isSome(before)) {
-            const invalid = taskKindAudienceError(
-              input.kind ?? before.value.kind,
-              input.audience ?? before.value.audience,
-            );
-            if (invalid !== null) return { isError: true, text: invalid };
+            // A status set with the update must suit the audience it ends with;
+            // a task handed to a person without one reopens (see upsert).
+            const invalid =
+              taskKindAudienceError(
+                input.kind ?? before.value.kind,
+                input.audience ?? before.value.audience,
+              ) ??
+              (input.status !== undefined
+                ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
+                : null);
+            if (invalid !== null)
+              return { isError: true, text: `${invalid} The task was not changed.` };
           }
           const callerRun = context.threadId
             ? Option.getOrNull(

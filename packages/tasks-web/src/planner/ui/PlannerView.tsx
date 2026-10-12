@@ -19,6 +19,7 @@ import {
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
+import type { HandOffAgent } from "../logic/handOff.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
 import { WorkspaceViewLayout } from "../../ui/WorkspaceViewLayout.tsx";
 import {
@@ -69,6 +70,7 @@ function PlannerBody(props: {
   readonly kind: PlannerKind;
   readonly onKindChange: (kind: PlannerKind) => void;
   readonly triggerTags: ReadonlySet<string>;
+  readonly agents: readonly HandOffAgent[];
   readonly onOpenTask: (taskId: string) => void;
 }) {
   const store = plannerStoreFor(props.environmentId);
@@ -174,9 +176,9 @@ function PlannerBody(props: {
       projects: props.projects,
       projectById: new Map(props.projects.map((project) => [project.id, project])),
       preferences,
-      markdownCwd: undefined,
       kind: props.kind,
       triggerTags: props.triggerTags,
+      agents: props.agents,
       openInTable: props.onOpenTask,
       openInPlanner: (taskId: string) => windows.openDetail(taskId),
     }),
@@ -189,6 +191,7 @@ function PlannerBody(props: {
       preferences,
       props.kind,
       props.triggerTags,
+      props.agents,
       props.onOpenTask,
     ],
   );
@@ -422,11 +425,7 @@ export function PlannerView(props: {
   readonly projects: readonly TasksWebProject[];
   readonly taskTargets: readonly TasksStateTarget[];
   /** Every environment's agents; the planner suggests and marks their trigger tags. */
-  readonly agents: ReadonlyArray<{
-    readonly environmentId: string;
-    readonly enabled: boolean;
-    readonly startTags: ReadonlyArray<string>;
-  }>;
+  readonly agents: ReadonlyArray<HandOffAgent & { readonly environmentId: string }>;
   readonly onShowTable: () => void;
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
@@ -461,10 +460,11 @@ export function PlannerView(props: {
   );
   const availability = usePlannerAvailability(environmentId);
   const [kind, setKind] = useStoredPlannerKind();
-  const triggerTags = useMemo(
-    () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),
+  const agents = useMemo(
+    () => props.agents.filter((agent) => agent.environmentId === environmentId),
     [props.agents, environmentId],
   );
+  const triggerTags = useMemo(() => agentTriggerTags(agents), [agents]);
   const { onOpenTask } = props;
   const openTask = useCallback(
     (taskId: string) => {
@@ -555,6 +555,7 @@ export function PlannerView(props: {
                 kind={kind}
                 onKindChange={setKind}
                 triggerTags={triggerTags}
+                agents={agents}
                 onOpenTask={openTask}
               />
             )}
