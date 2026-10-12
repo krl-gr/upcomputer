@@ -45,7 +45,7 @@ export const UPCOMPUTER_LOCAL_TEST_APP_NAME = "UpComputer Local Test";
 export const UPCOMPUTER_LOCAL_TEST_APP_ID = "computer.up.upcomputer.localtest";
 export const UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME = ".upcomputer-local-test";
 
-export function isUpcomputerLocalTestVersion(version: string): boolean {
+function isUpcomputerLocalTestVersion(version: string): boolean {
   return /^\d+\.\d+\.\d+-localtest\.\d+$/.test(version);
 }
 
@@ -54,11 +54,11 @@ export function isUpcomputerLocalTestVersion(version: string): boolean {
  * data. Like the local test build it has its own state, bundle id and no
  * update feed, so it can run next to Alpha and Local Test.
  */
-export const UPCOMPUTER_DEMO_APP_NAME = "Up.computer Demo";
-export const UPCOMPUTER_DEMO_APP_ID = "computer.up.upcomputer.demo";
-export const UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME = ".upcomputer-demo";
+const UPCOMPUTER_DEMO_APP_NAME = "Up.computer Demo";
+const UPCOMPUTER_DEMO_APP_ID = "computer.up.upcomputer.demo";
+const UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME = ".upcomputer-demo";
 
-export function isUpcomputerDemoVersion(version: string): boolean {
+function isUpcomputerDemoVersion(version: string): boolean {
   return /^\d+\.\d+\.\d+-demo\.\d+$/.test(version);
 }
 

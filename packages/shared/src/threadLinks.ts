@@ -43,6 +43,7 @@ export function formatThreadLink(threadId: string, label: string): string {
   return `[${cleaned || threadId}](${THREAD_LINK_HREF_PREFIX}${threadId})`;
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function hasThreadLinks(markdown: string): boolean {
   return markdown.includes(`](${THREAD_LINK_HREF_PREFIX}`);
 }
