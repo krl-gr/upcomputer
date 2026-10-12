@@ -218,7 +218,7 @@ export function TaskReorderHandle(props: {
       disabled={!props.enabled}
       className="cursor-grab rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
       aria-label={`Reorder ${props.task.title}`}
-      title="Drag to reorder globally. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
+      title="Drag to reorder globally. Agent queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
       onClick={(event) => event.stopPropagation()}
       onDragStart={(event) => {
         event.stopPropagation();

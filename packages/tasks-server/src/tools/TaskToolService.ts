@@ -585,7 +585,8 @@ const make = Effect.gen(function* () {
   /**
    * task_create with a tasks list. Every item is checked before anything is
    * written, then all tasks are stored in one transaction in list order, so
-   * each joins the end of the global order after the one before it. Agents
+   * each goes to the top above the one before it: the first ends lowest, and
+   * a queue, which runs from the bottom, takes them in list order. Agents
    * are scheduled per task after the commit, as for single creates.
    */
   const createTasks = (args: Record<string, unknown>, context: TaskToolInvocationContext) =>

@@ -103,8 +103,9 @@ function harness(
     Effect.gen(function* () {
       return yield* (yield* TaskToolService).call({ name: "task_update", args, context: chat });
     });
+  // From the bottom: new tasks go on top, so this is the order they were created in.
   const stored = Effect.gen(function* () {
-    return yield* (yield* TaskRepository).search({ limit: 50, kind: "all" });
+    return yield* (yield* TaskRepository).search({ limit: 50, kind: "all", from: "bottom" });
   });
   return { layer, scheduled, create, update, stored };
 }
@@ -147,13 +148,25 @@ it.effect(
       assert.notProperty(created[0], "description");
       assert.equal(created[2].notBefore, "2026-10-12T07:00:00.000Z");
 
+      // New tasks go to the top, the list's first task lowest: queues run
+      // from the bottom, so the list runs in the order given.
+      const repository = yield* TaskRepository;
+      assert.deepStrictEqual(
+        (yield* repository.search({})).map(({ title }) => title),
+        ["third", "second", "first", "earlier"],
+      );
+      const queue = yield* repository.search({ tags: ["dev"], from: "bottom" });
+      assert.deepStrictEqual(
+        queue.map(({ title }) => title),
+        ["first", "second"],
+      );
       const tasks = yield* stored;
       assert.deepStrictEqual(
         tasks.map(({ title }) => title),
         ["earlier", "first", "second", "third"],
       );
       const ranks = tasks.map(({ rank }) => rank);
-      assert.deepStrictEqual(ranks, ranks.toSorted());
+      assert.deepStrictEqual(ranks, ranks.toSorted().toReversed());
       assert.equal(new Set(ranks).size, ranks.length);
       const first = tasks[1]!;
       assert.equal(first.description, "Do first.");

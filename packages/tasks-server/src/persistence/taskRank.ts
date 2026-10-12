@@ -45,19 +45,31 @@ export function taskRanksBetween(
   );
 }
 
-/** The rank one step after `lower`, or the midpoint to the end when no full step is left. */
-export function taskRankAfter(lower: string): TaskRank | null {
-  const low = decodeTaskRank(lower);
-  if (TASK_RANK_MAX - low >= TASK_RANK_STEP) return encodeTaskRank(low + TASK_RANK_STEP);
-  return taskRankBetween(lower, null);
-}
-
-/** Deterministic spacing used by migration and the bounded exhaustion rebalance. */
+/**
+ * Deterministic spacing used by migration and the bounded exhaustion
+ * rebalance. `offset` leaves that much rank space free above the first task.
+ */
 export function rebalancedTaskRanks<Id extends string = TaskId>(
   ids: ReadonlyArray<Id>,
+  offset = 0n,
 ): ReadonlyMap<Id, TaskRank> {
-  if (BigInt(ids.length + 1) * TASK_RANK_STEP > TASK_RANK_MAX) {
+  if (offset + BigInt(ids.length + 1) * TASK_RANK_STEP > TASK_RANK_MAX) {
     throw new RangeError("The task store is too large to rebalance ranks.");
   }
-  return new Map(ids.map((id, index) => [id, encodeTaskRank(BigInt(index + 1) * TASK_RANK_STEP)]));
+  return new Map(
+    ids.map((id, index) => [id, encodeTaskRank(offset + BigInt(index + 1) * TASK_RANK_STEP)]),
+  );
+}
+
+/**
+ * The spacing of `rebalancedTaskRanks`, moved to the middle of the rank space.
+ * New tasks go to the top, so a rebalance that leaves the first task at the
+ * bottom of the space would run out of room again after a few dozen tasks.
+ */
+export function centeredTaskRanks<Id extends string = TaskId>(
+  ids: ReadonlyArray<Id>,
+): ReadonlyMap<Id, TaskRank> {
+  const used = BigInt(ids.length + 1) * TASK_RANK_STEP;
+  const free = used > TASK_RANK_MAX ? 0n : (TASK_RANK_MAX - used) / 2n;
+  return rebalancedTaskRanks(ids, free - (free % TASK_RANK_STEP));
 }
