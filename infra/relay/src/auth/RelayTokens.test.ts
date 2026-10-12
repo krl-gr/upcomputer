@@ -164,7 +164,7 @@ describe("RelayTokens", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("rejects mobile registration scope on a web public client token", () =>
+  it.effect("accepts mobile registration scope on a web public client token for web push", () =>
     Effect.gen(function* () {
       const relayTokens = yield* RelayTokens.RelayTokens;
       const token = yield* signRelayJwt({
@@ -174,7 +174,7 @@ describe("RelayTokens", () => {
           iss: "https://relay.example.test",
           aud: "https://relay.example.test",
           sub: "user_123",
-          jti: "web-token-invalid-mobile-scope",
+          jti: "web-token-mobile-scope",
           iat: 100,
           exp: 200,
           client_id: "t3-web",
@@ -183,7 +183,9 @@ describe("RelayTokens", () => {
         },
       });
 
-      expect(yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 150 })).toBeNull();
+      expect(
+        (yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 150 }))?.scope,
+      ).toEqual(["environment:connect", "mobile:registration"]);
     }).pipe(Effect.provide(layer)),
   );
 });

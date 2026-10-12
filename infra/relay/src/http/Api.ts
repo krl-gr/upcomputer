@@ -1300,6 +1300,12 @@ export const layerServerApi = HttpApiBuilder.group(
               reason: "upstream_unavailable",
               traceId,
             }),
+          WebPushDeliveryError: (_error, traceId) =>
+            new RelayInternalError({
+              code: "internal_error",
+              reason: "upstream_unavailable",
+              traceId,
+            }),
         }),
         mapRelayCommonApiErrors("not_authorized"),
       ),

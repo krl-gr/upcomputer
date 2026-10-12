@@ -200,8 +200,10 @@ describe("Devices", () => {
 
       expect(condition).not.toBeNull();
       expect(dialect.sqlToQuery(condition!)).toEqual({
-        sql: '"relay_mobile_devices"."user_id" = $1',
-        params: ["user-2"],
+        sql:
+          '(("relay_mobile_devices"."user_id" = $1) and ' +
+          '("relay_mobile_devices"."platform" <> $2))',
+        params: ["user-2", "web"],
       });
       expect(listed).toEqual([
         {
@@ -221,6 +223,101 @@ describe("Devices", () => {
             enabled: true,
           },
           updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+      ]);
+    }).pipe(
+      Effect.provide(Devices.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)))),
+    );
+  });
+
+  it.effect("stores a web device's subscription, claiming its endpoint as the push token", () => {
+    const updateConditions: Array<SQL> = [];
+    const insertedValues: Array<Record<string, unknown>> = [];
+    const dialect = new PgDialect();
+    const fakeDb = {
+      update: () => ({
+        set: () => ({
+          where: (condition: SQL) => {
+            updateConditions.push(condition);
+            return Effect.void;
+          },
+        }),
+      }),
+      insert: () => ({
+        values: (values: Record<string, unknown>) => {
+          insertedValues.push(values);
+          return { onConflictDoUpdate: () => Effect.void };
+        },
+      }),
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      const devices = yield* Devices.Devices;
+      yield* devices.register({
+        userId: "user-2",
+        registration: {
+          deviceId: "browser" as RelayDeviceRegistrationRequest["deviceId"],
+          label: "Safari on iPhone",
+          platform: "web",
+          webPush: {
+            endpoint: "https://web.push.apple.com/abc",
+            p256dh: "public-key",
+            auth: "secret",
+          },
+          preferences: { ...registration.preferences, liveActivitiesEnabled: false },
+        },
+      });
+
+      expect(updateConditions.map((condition) => dialect.sqlToQuery(condition))).toEqual([
+        {
+          sql: '"relay_mobile_devices"."push_token" = $1',
+          params: ["https://web.push.apple.com/abc"],
+        },
+      ]);
+      expect(insertedValues).toEqual([
+        expect.objectContaining({
+          platform: "web",
+          pushToken: "https://web.push.apple.com/abc",
+          webPushP256dh: "public-key",
+          webPushAuth: "secret",
+          pushToStartToken: null,
+        }),
+      ]);
+    }).pipe(
+      Effect.provide(Devices.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)))),
+    );
+  });
+
+  it.effect("removes a gone web subscription only while the device still holds it", () => {
+    const deleteConditions: Array<SQL> = [];
+    const dialect = new PgDialect();
+    const fakeDb = {
+      delete: (table: unknown) => {
+        expect(table).toBe(relayMobileDevices);
+        return {
+          where: (condition: SQL) => {
+            deleteConditions.push(condition);
+            return Effect.void;
+          },
+        };
+      },
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      const devices = yield* Devices.Devices;
+      yield* devices.removeWebPushSubscription({
+        userId: "user-2",
+        deviceId: "browser",
+        endpoint: "https://web.push.apple.com/abc",
+      });
+      expect(deleteConditions.map((condition) => dialect.sqlToQuery(condition))).toEqual([
+        {
+          sql:
+            '(("relay_mobile_devices"."user_id" = $1) and ' +
+            '("relay_mobile_devices"."device_id" = $2) and ' +
+            '("relay_mobile_devices"."platform" = $3) and ' +
+            '("relay_mobile_devices"."push_token" = $4))',
+          params: ["user-2", "browser", "web", "https://web.push.apple.com/abc"],
         },
       ]);
     }).pipe(

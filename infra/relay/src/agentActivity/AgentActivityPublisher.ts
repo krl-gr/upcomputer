@@ -21,9 +21,11 @@ import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as ApnsDeliveries from "./ApnsDeliveries.ts";
 import * as FcmDeliveries from "./FcmDeliveries.ts";
+import * as WebPushDeliveries from "./WebPushDeliveries.ts";
 
 export type AgentActivityPublishError =
   | FcmDeliveries.FcmDeliveryError
+  | WebPushDeliveries.WebPushDeliveryError
   | AgentActivityRows.AgentActivityRowUpsertPersistenceError
   | AgentActivityRows.AgentActivityRowDeletePersistenceError
   | AgentActivityRows.AgentActivityRowListPersistenceError
@@ -53,6 +55,7 @@ export const make = Effect.gen(function* () {
   const liveActivities = yield* LiveActivities.LiveActivities;
   const apnsDeliveries = yield* ApnsDeliveries.ApnsDeliveries;
   const fcmDeliveries = yield* FcmDeliveries.FcmDeliveries;
+  const webPushDeliveries = yield* WebPushDeliveries.WebPushDeliveries;
 
   const publishForDeliveryUser = Effect.fnUntraced(function* (input: {
     readonly deliveryUser: EnvironmentLinks.AgentAwarenessDeliveryUserRecord;
@@ -83,6 +86,12 @@ export const make = Effect.gen(function* () {
     const deliveriesByTarget = yield* Effect.forEach(
       targets,
       Effect.fnUntraced(function* (target) {
+        if (target.platform === "web") {
+          // Web devices only get alerts; there is no Live Activity to update.
+          return input.deliveryUser.notificationsEnabled
+            ? [yield* webPushDeliveries.enqueue({ target, state: input.state })]
+            : [];
+        }
         if (target.platform === "android") {
           return [yield* fcmDeliveries.enqueue({ target, state: input.state })];
         }
@@ -124,7 +133,7 @@ export const make = Effect.gen(function* () {
         { concurrency: 2 },
       );
       const target = targets.find((row) => row.device_id === input.deviceId) ?? null;
-      if (target === null) {
+      if (target === null || target.platform === "web") {
         return null;
       }
       if (target.platform === "android") {

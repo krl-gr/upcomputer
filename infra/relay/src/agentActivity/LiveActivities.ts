@@ -66,7 +66,7 @@ export class LiveActivityDeliveryMarkPersistenceError extends Schema.TaggedError
 export interface DeviceRow {
   readonly user_id: string;
   readonly device_id: string;
-  readonly platform: "ios" | "android";
+  readonly platform: "ios" | "android" | "web";
   readonly ios_major_version: number | null;
   readonly app_version: string | null;
   readonly bundle_id: string | null;
