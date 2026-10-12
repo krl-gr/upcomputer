@@ -283,7 +283,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_schedule_get",
     description:
-      "Read the user's planner schedule. An entry means the user plans to work on a task on a day, optionally at a start time for a duration; status open, done or skipped is independent of the task's status. Pass from and to (at most 62 days, both included) for the entries of those days in order, with their tasks; or taskId for one task's entries by date (limit up to 500, then pass nextCursor as cursor).",
+      "Read the user's planner schedule. An entry means the user plans to work on a task on a day, optionally at a start time for a duration; marking an entry open, done or skipped leaves the task's status alone, while closing a regular task moves its entries: Done makes its open entries up to today done and deletes later ones, cancelling or archiving skips them, and reopening a Done task reopens today's entry it closed. Pass from and to (at most 62 days, both included) for the entries of those days in order, with their tasks; or taskId for one task's entries by date (limit up to 500, then pass nextCursor as cursor).",
     inputSchema: object({
       from: scheduleDate,
       to: scheduleDate,

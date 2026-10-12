@@ -62,6 +62,14 @@ export function makeScheduleQueries(sql: SqlClient.SqlClient) {
       ORDER BY date, position`,
   });
 
+  const allForTask = SqlSchema.findAll({
+    Request: TaskId,
+    Result: TaskScheduleEntry,
+    execute: (taskId) => sql`
+      SELECT ${COLUMNS} FROM task_schedule_entries WHERE task_id = ${taskId}
+      ORDER BY date, position`,
+  });
+
   const forTask = SqlSchema.findAll({
     Request: Schema.Struct({
       taskId: TaskId,
@@ -228,6 +236,7 @@ export function makeScheduleQueries(sql: SqlClient.SqlClient) {
     byIds,
     onDates,
     inRange,
+    allForTask,
     forTask,
     progress,
     upsert,
