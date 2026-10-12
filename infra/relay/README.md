@@ -86,15 +86,18 @@ vp run --filter t3code-relay deploy
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
 connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
-file from the relay directory. Runtime secrets include Clerk, APNs, and optional FCM credentials. Set
-`APNS_ENABLED=false` for an Android-only development deployment without Apple credentials. Production adopts
-the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference
-the production-owned zones.
+file from the relay directory. Runtime secrets include Clerk and optional FCM and APNs credentials.
+APNs is off unless `APNS_ENABLED=true`; only then are the `APNS_*` values required. Production
+adopts the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages
+reference the production-owned zones. Up.computer serves the relay at `relay.up.computer` (API zone
+`up.computer`) and managed endpoints below `upconnect.dev`; see
+[UpComputer Connect setup](../../docs/operations/upcomputer-connect-setup.md).
 
 The `prod` Alchemy stage owns the retained PlanetScale database and is the shared hosted relay for
-stable and nightly clients. Every other stage references that database and provisions an isolated
-PlanetScale branch and runtime role for local development, so deploy `prod` before creating
-developer stages:
+stable and nightly clients. Up.computer runs it as `upcomputerrelay`, a single `PS_5` node on AWS
+ARM in `eu-central` (Frankfurt), set in [`src/db.ts`](./src/db.ts). Every other stage references
+that database and provisions an isolated PlanetScale branch and runtime role for local development,
+so deploy `prod` before creating developer stages:
 
 ```sh
 vp run --filter t3code-relay deploy -- --stage prod
@@ -118,7 +121,8 @@ one of those outputs changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it 
 ### Deployment CI
 
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
-the shared Alchemy `prod` stage on every push to `main`. Stable and nightly release builds both
+the shared Alchemy `prod` stage on every push to `main` of `krl-gr/upcomputer`, once the repository
+variable `RELAY_API_ZONE_NAME` (or `RELAY_DOMAIN`) is set. Stable and nightly release builds both
 resolve their static public config from the same
 `production` GitHub environment. Pull requests do not deploy relay stages. Developers can
 deploy personal non-production stages locally with any stage name other than `prod`.
@@ -136,23 +140,23 @@ The repository must define these Actions secrets shared by relay deployments:
 - `PLANETSCALE_API_TOKEN`
 - `AXIOM_TOKEN`
 
+`RELAY_API_ZONE_NAME` and `RELAY_DOMAIN` (only when overriding the derived production relay
+domain) must be repository variables: the deploy job's condition cannot read environment-scoped
+variables.
+
 The `production` GitHub environment must define these Actions variables:
 
-- `RELAY_API_ZONE_NAME`
 - `RELAY_TUNNEL_ZONE_NAME`
-- `RELAY_DOMAIN` if overriding the derived production relay domain
 - `CLERK_PUBLISHABLE_KEY`
 - `CLERK_JWT_AUDIENCE`
 - `CLERK_JWT_TEMPLATE`
-- `APNS_ENVIRONMENT`
-- `APNS_TEAM_ID`
-- `APNS_KEY_ID`
-- `APNS_BUNDLE_ID`
+- `APNS_ENABLED` set to `true`, plus `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID` and
+  `APNS_BUNDLE_ID`, only when APNs is enabled
 
 The `production` GitHub environment must define these Actions secrets:
 
 - `CLERK_SECRET_KEY`
-- `APNS_PRIVATE_KEY`
+- `APNS_PRIVATE_KEY` when APNs is enabled
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they

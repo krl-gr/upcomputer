@@ -24,7 +24,7 @@ working against our relay and environments:
 | Bootstrap token type              | `urn:t3:params:oauth:token-type:environment-bootstrap` |
 | Relay DPoP `client_id` for mobile | `t3-mobile`                                            |
 | Relay and environment JWT `typ`   | upstream's values, unchanged                           |
-| Relay stack and resource names    | `T3CodeRelay`, `t3coderelay`, `t3-code-relay-*`        |
+| Relay stack and resource names    | `T3CodeRelay`, `t3-code-relay-*` (database excepted)   |
 | Build and runtime variable names  | `T3CODE_*` (`UPCOMPUTER_*` aliases also work)          |
 
 V1 renamed these (`upcomputer-*+jwt`, `/.well-known/upcomputer/environment`). v2 does not.
@@ -38,30 +38,33 @@ What is ours:
 | Desktop renderer origins        | `upcomputer://app`, `upcomputer-dev://app`                                    |
 | macOS bundle ID (passkeys)      | `computer.up.upcomputer`                                                      |
 | Clerk JWT template and audience | `upcomputer-relay` (our choice; upstream uses `t3-relay` and `t3-code-relay`) |
-| API and tunnel zones            | `<api-zone>`, `<tunnel-zone>`                                                 |
+| API and tunnel zones            | `up.computer` (relay at `relay.up.computer`), `upconnect.dev`                 |
 | Hosted app URL                  | `https://up.computer` (`DEFAULT_HOSTED_APP_URL`)                              |
 
 ## 0. Decide names first
 
 Write these down before creating accounts. Several of them are baked into deployed resources.
 
-| Decision                    | Value used in this doc         | Notes                                                                                              |
-| --------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
-| API zone                    | `<api-zone>`                   | The relay is served at `https://relay.<api-zone>` for the `prod` stage.                            |
-| Tunnel zone                 | `<tunnel-zone>`                | Each linked environment gets a hostname below it. Use a separate registrable domain.               |
-| Clerk JWT template name     | `upcomputer-relay`             | Clients request Clerk tokens from this template.                                                   |
-| Clerk JWT audience (`aud`)  | `upcomputer-relay`             | The relay rejects Clerk tokens with any other audience.                                            |
-| iOS bundle ID               | `<ios-bundle-id>`              | Also the APNs topic.                                                                               |
-| PlanetScale region and size | `us-west`, `PS_20`, 2 replicas | Set in `infra/relay/src/db.ts` upstream. Changing it is a local edit that future merges must keep. |
+| Decision                   | Value used in this doc    | Notes                                                                                        |
+| -------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| API zone                   | `up.computer`             | The relay is served at `https://relay.up.computer` for the `prod` stage.                     |
+| Tunnel zone                | `upconnect.dev`           | Each linked environment gets a hostname below it. Use a separate registrable domain.         |
+| Clerk JWT template name    | `upcomputer-relay`        | Clients request Clerk tokens from this template.                                             |
+| Clerk JWT audience (`aud`) | `upcomputer-relay`        | The relay rejects Clerk tokens with any other audience.                                      |
+| iOS bundle ID              | `<ios-bundle-id>`         | Also the APNs topic.                                                                         |
+| PlanetScale database       | `upcomputerrelay`, `PS_5` | One ARM node in `eu-central` (Frankfurt), $5/month. A local edit to `infra/relay/src/db.ts`. |
 
 Use a tunnel zone that serves nothing else. Tunnel hostnames route to code running on users'
 machines, so they must not share cookies or an origin with the API zone, the website or Clerk.
 
 ## 1. Accounts
 
-Create the Cloudflare (Workers Paid), PlanetScale (Postgres), Axiom and Clerk production accounts
-as the [relay README](../../infra/relay/README.md#deployment) describes. Up.computer specifics:
+Create the Cloudflare, PlanetScale (Postgres), Axiom and Clerk production accounts as the
+[relay README](../../infra/relay/README.md#deployment) describes. Up.computer specifics:
 
+- **Cloudflare**: account `b823638a401eee95b6263c88ca5b5572` with both zones. The relay starts on
+  Workers Free; switch to Workers Paid if the Worker hits CPU limit errors (1102).
+- **PlanetScale**: organization `gurianovks`. The first deploy creates the database.
 - **Clerk JWT template**: name `upcomputer-relay`, claims `{ "aud": "upcomputer-relay" }`.
 - **Clerk desktop redirects**: add `upcomputer://app/` and `upcomputer-dev://app/` to the SSO
   redirect allowlist, and `upcomputer://app` (production) to the Backend API `allowed_origins`.
@@ -71,7 +74,8 @@ as the [relay README](../../infra/relay/README.md#deployment) describes. Up.comp
 - **Desktop passkeys** (optional): an explicit macOS App ID `computer.up.upcomputer` with Associated
   Domains, a provisioning profile for it, and the same Team ID and bundle ID under Clerk's Native API
   settings. Without the profile, release builds are signed as V1 was and passkeys stay off.
-- **APNs** can wait for an iOS app. The relay needs APNs values unless `APNS_ENABLED=false`.
+- **APNs** can wait for an iOS app. The relay sends no APNs and needs no Apple values until
+  `APNS_ENABLED=true`.
 
 ## 2. GitHub configuration
 
@@ -79,32 +83,33 @@ Both workflows run in the `production` GitHub environment. The deploy and releas
 when `RELAY_API_ZONE_NAME` or `RELAY_DOMAIN` is set, and a job-level condition cannot read
 environment-scoped variables. Set that switch as a **repository** variable, and set it last.
 
-| Name                        | Kind                          | Read by                           | Value                               |
-| --------------------------- | ----------------------------- | --------------------------------- | ----------------------------------- |
-| `RELAY_API_ZONE_NAME`       | Repository variable           | `deploy-relay.yml`, `release.yml` | `<api-zone>`                        |
-| `RELAY_DOMAIN`              | Repository variable, optional | `deploy-relay.yml`, `release.yml` | Only to override `relay.<api-zone>` |
-| `RELAY_TUNNEL_ZONE_NAME`    | `production` variable         | `deploy-relay.yml`                | `<tunnel-zone>`                     |
-| `RELAY_TUNNEL_CLEANUP_MODE` | `production` variable         | `deploy-relay.yml`                | `off`, `dry-run` or `enabled`       |
-| `CLOUDFLARE_ACCOUNT_ID`     | `production` variable         | `deploy-relay.yml`, `release.yml` | Cloudflare account ID               |
-| `PLANETSCALE_ORGANIZATION`  | `production` variable         | `deploy-relay.yml`                | PlanetScale organization            |
-| `AXIOM_ORG_ID`              | `production` variable         | `deploy-relay.yml`                | Axiom organization ID               |
-| `CLERK_PUBLISHABLE_KEY`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `pk_live_...`                       |
-| `CLERK_JWT_AUDIENCE`        | `production` variable         | `deploy-relay.yml`                | `upcomputer-relay`                  |
-| `CLERK_JWT_TEMPLATE`        | `production` variable         | `release.yml`                     | `upcomputer-relay`                  |
-| `CLERK_CLI_OAUTH_CLIENT_ID` | `production` variable         | `release.yml`                     | Clerk OAuth application client ID   |
-| `APNS_*`                    | `production` variables        | `deploy-relay.yml`                | See the relay README                |
-| `CLOUDFLARE_API_TOKEN`      | `production` secret           | `deploy-relay.yml`, `release.yml` | Deploy token                        |
-| `PLANETSCALE_API_TOKEN_ID`  | `production` secret           | `deploy-relay.yml`                | Service token ID                    |
-| `PLANETSCALE_API_TOKEN`     | `production` secret           | `deploy-relay.yml`                | Service token value                 |
-| `AXIOM_TOKEN`               | `production` secret           | `deploy-relay.yml`                | Axiom personal access token         |
-| `CLERK_SECRET_KEY`          | `production` secret           | `deploy-relay.yml`                | `sk_live_...`                       |
-| `APNS_PRIVATE_KEY`          | `production` secret           | `deploy-relay.yml`                | Full `.p8` text                     |
-| `FCM_SERVICE_ACCOUNT`       | `production` secret, optional | `deploy-relay.yml`                | Firebase service account JSON       |
+| Name                        | Kind                          | Read by                           | Value                                |
+| --------------------------- | ----------------------------- | --------------------------------- | ------------------------------------ |
+| `RELAY_API_ZONE_NAME`       | Repository variable           | `deploy-relay.yml`, `release.yml` | `up.computer`                        |
+| `RELAY_DOMAIN`              | Repository variable, optional | `deploy-relay.yml`, `release.yml` | Only to override `relay.up.computer` |
+| `RELAY_TUNNEL_ZONE_NAME`    | `production` variable         | `deploy-relay.yml`                | `upconnect.dev`                      |
+| `RELAY_TUNNEL_CLEANUP_MODE` | `production` variable         | `deploy-relay.yml`                | `off`, `dry-run` or `enabled`        |
+| `CLOUDFLARE_ACCOUNT_ID`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `b823638a401eee95b6263c88ca5b5572`   |
+| `PLANETSCALE_ORGANIZATION`  | `production` variable         | `deploy-relay.yml`                | `gurianovks`                         |
+| `AXIOM_ORG_ID`              | `production` variable         | `deploy-relay.yml`                | Axiom organization ID                |
+| `CLERK_PUBLISHABLE_KEY`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `pk_live_...`                        |
+| `CLERK_JWT_AUDIENCE`        | `production` variable         | `deploy-relay.yml`                | `upcomputer-relay`                   |
+| `CLERK_JWT_TEMPLATE`        | `production` variable         | `release.yml`                     | `upcomputer-relay`                   |
+| `CLERK_CLI_OAUTH_CLIENT_ID` | `production` variable         | `release.yml`                     | Clerk OAuth application client ID    |
+| `APNS_ENABLED`              | `production` variable, later  | `deploy-relay.yml`                | `true` once APNs keys exist          |
+| `APNS_*`                    | `production` variables, later | `deploy-relay.yml`                | Only with `APNS_ENABLED=true`        |
+| `CLOUDFLARE_API_TOKEN`      | `production` secret           | `deploy-relay.yml`, `release.yml` | Deploy token                         |
+| `PLANETSCALE_API_TOKEN_ID`  | `production` secret           | `deploy-relay.yml`                | Service token ID                     |
+| `PLANETSCALE_API_TOKEN`     | `production` secret           | `deploy-relay.yml`                | Service token value                  |
+| `AXIOM_TOKEN`               | `production` secret           | `deploy-relay.yml`                | Axiom personal access token          |
+| `CLERK_SECRET_KEY`          | `production` secret           | `deploy-relay.yml`                | `sk_live_...`                        |
+| `APNS_PRIVATE_KEY`          | `production` secret, later    | `deploy-relay.yml`                | Full `.p8` text                      |
+| `FCM_SERVICE_ACCOUNT`       | `production` secret, optional | `deploy-relay.yml`                | Firebase service account JSON        |
 
-`deploy-relay.yml` deploys the Alchemy `prod` stage on every push to `main` once the switch is set,
-on GitHub-hosted runners. `release.yml` reads the relay's public client config and the client
-tracing token from the deployed stack state, so deploy the relay before the first release with
-Connect.
+`deploy-relay.yml` deploys the Alchemy `prod` stage on every push to `main` of `krl-gr/upcomputer`
+once the switch is set, on GitHub-hosted runners. `release.yml` reads the relay's public client
+config and the client tracing token from the deployed stack state, so deploy the relay before the
+first release with Connect.
 
 ## 3. Build-time public config
 
@@ -114,7 +119,7 @@ them from the process environment, then the repository-root `.env.local`, then `
 
 | Name                                      | Used by                   | Value                       |
 | ----------------------------------------- | ------------------------- | --------------------------- |
-| `T3CODE_RELAY_URL`                        | Desktop backend, CLI, web | `https://relay.<api-zone>`  |
+| `T3CODE_RELAY_URL`                        | Desktop backend, CLI, web | `https://relay.up.computer` |
 | `T3CODE_CLERK_PUBLISHABLE_KEY`            | Desktop backend, CLI, web | `pk_live_...`               |
 | `T3CODE_CLERK_JWT_TEMPLATE`               | Web and desktop renderer  | `upcomputer-relay`          |
 | `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID`        | Desktop backend, CLI      | Clerk OAuth client ID       |
@@ -136,12 +141,12 @@ repository-root `.env`.
    `vp run --filter t3code-relay deploy -- --stage prod --dry-run`.
 4. Set `RELAY_API_ZONE_NAME` as a repository variable and push to `main` (or re-run the workflow).
    Watch **Deploy UpComputer Connect relay**.
-5. Verify: `curl -fsS https://relay.<api-zone>/health` succeeds, the commit has the status
+5. Verify: `curl -fsS https://relay.up.computer/health` succeeds, the commit has the status
    **Relay deploy / production**, and requests appear in the Axiom view
    `t3-code-relay-recent-spans-prod`.
 6. Build the desktop app with the public config from section 3 (or run a Core release), sign in,
    and enable Connect under **Settings** > **Connections**. A second signed-in device should
-   connect to the environment through a hostname under `<tunnel-zone>`.
+   connect to the environment through a hostname under `upconnect.dev`.
 
 ## 5. Privacy
 
