@@ -26,6 +26,15 @@ const V1 = {
   updateRepository: "krl-gr/upcomputer",
 } as const;
 
+// macOS also registers http and https so the app can be the default web
+// browser (product flag `defaultBrowser`). Local builds keep this entry; only
+// the app's own schemes stay off them.
+const MAC_WEB_BROWSER_PROTOCOL = {
+  name: "Web site URL",
+  schemes: ["http", "https"],
+  role: "Viewer",
+} as const;
+
 const releaseEnvironment = Layer.mergeAll(
   NodeServices.layer,
   ConfigProvider.layer(ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: V1.updateRepository } })),
@@ -90,6 +99,7 @@ it.effect("packages releases with the V1 app id, schemes and update feed", () =>
     );
     assert.deepStrictEqual((mac.mac as Record<string, unknown>).protocols, [
       { name: "Up.computer", schemes: V1.schemes },
+      MAC_WEB_BROWSER_PROTOCOL,
     ]);
     const linux = yield* createBuildConfig(
       "linux",
@@ -144,7 +154,9 @@ it.effect("keeps local test and demo builds off the Alpha bundle id, schemes and
       assert.equal(config.appId, appId);
       assert.equal(config.productName, productName);
       assert.notProperty(config, "publish");
-      assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, []);
+      assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, [
+        MAC_WEB_BROWSER_PROTOCOL,
+      ]);
     }
   }).pipe(Effect.provide(releaseEnvironment)),
 );
