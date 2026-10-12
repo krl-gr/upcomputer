@@ -860,6 +860,7 @@ jobs:
               --prod \
               --skip-domain \
               --yes \
+              --archive=tgz \
               --token "$VERCEL_TOKEN" \
               "${vercel_scope_args[@]}" \
               --build-env "APP_VERSION=${{ needs.preflight.outputs.version }}" \
