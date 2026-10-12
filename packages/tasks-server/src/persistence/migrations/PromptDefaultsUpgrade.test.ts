@@ -94,6 +94,7 @@ const assertUpgraded = (upgraded: Effect.Success<typeof state>) => {
       "UpdateDefaultBatchCreatePrompts",
       "UpdateDefaultQueueStatePrompts",
       "UpdateDefaultFeedOrderPrompts",
+      "TasksNewestFirst",
     ],
   );
   // An edited text stays the user's; an unedited one gets the current default.
@@ -113,11 +114,11 @@ const assertUpgraded = (upgraded: Effect.Success<typeof state>) => {
   });
 };
 
-it.effect("a database at 19 runs 20..30 and keeps the user's edited texts", () =>
+it.effect("a database at 19 runs 20..31 and keeps the user's edited texts", () =>
   Effect.gen(function* () {
     yield* migrateThrough(19);
     yield* seed(BEFORE_25.taskCreation);
-    yield* migrateThrough(30);
+    yield* migrateThrough(31);
 
     const upgraded = yield* state;
     assertUpgraded(upgraded);
@@ -129,7 +130,7 @@ it.effect("a database at 19 runs 20..30 and keeps the user's edited texts", () =
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
-it.effect("a database already at 24 runs 25..30 only", () =>
+it.effect("a database already at 24 runs 25..31 only", () =>
   Effect.gen(function* () {
     yield* migrateThrough(24);
     const editedTaskCreation = "Development goes to the developer agent.";
@@ -140,7 +141,7 @@ it.effect("a database already at 24 runs 25..30 only", () =>
     `;
     assert.isDefined(settingsRows);
     assert.equal(settingsRows!.count, 1);
-    yield* migrateThrough(30);
+    yield* migrateThrough(31);
 
     const upgraded = yield* state;
     assertUpgraded(upgraded);
@@ -149,7 +150,7 @@ it.effect("a database already at 24 runs 25..30 only", () =>
       "task-prompt-change-default-update-26-taskExecution",
     ]);
     // Running again changes nothing.
-    yield* migrateThrough(30);
+    yield* migrateThrough(31);
     assert.deepStrictEqual(yield* state, upgraded);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
