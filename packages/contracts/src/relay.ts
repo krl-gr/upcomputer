@@ -58,7 +58,7 @@ export type RelayDeviceRegistrationPlatform = typeof RelayDeviceRegistrationPlat
  * build), Opera and Brave use FCM; Safari uses Apple; Firefox uses Mozilla;
  * legacy Edge uses WNS.
  */
-export const WEB_PUSH_SERVICE_HOSTS = [
+const WEB_PUSH_SERVICE_HOSTS = [
   "fcm.googleapis.com",
   "*.push.apple.com",
   "*.push.services.mozilla.com",
