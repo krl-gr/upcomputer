@@ -166,3 +166,21 @@ test("unmount/recreate discards late snapshots and request failures retain the l
   NodeAssert.equal(h.opens, 2);
   NodeAssert.equal(h.closes, 2);
 });
+
+test("the chat header opening a thread its sidebar row follows reads nothing again", async () => {
+  const h = harness();
+  const row = h.store.subscribe(thread("a"), () => {});
+  await until(() => h.store.get(thread("a")).length > 0);
+  const counts = h.store.get(thread("a"));
+  const header = h.store.subscribe(thread("a"), () => {});
+  await NodeTimersPromises.setTimeout(20);
+  NodeAssert.equal(h.queries.length, 1);
+  NodeAssert.equal(h.store.get(thread("a")), counts);
+  // A thread without a mounted row is read once.
+  const other = h.store.subscribe(thread("b"), () => {});
+  await until(() => h.store.get(thread("b")).length > 0);
+  NodeAssert.deepEqual(h.queries[1], ["b"]);
+  header();
+  other();
+  row();
+});
