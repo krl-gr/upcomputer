@@ -87,6 +87,10 @@ jobs:
       (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # Reads the CI workflow's runs for the released commit.
+      actions: read
     outputs:
       release_channel: ${{ steps.release_meta.outputs.release_channel }}
       version: ${{ steps.release_meta.outputs.version }}
@@ -99,6 +103,39 @@ jobs:
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
       ref: ${{ github.sha }}
     steps:
+      # CI already ran lint, typecheck and every test on this commit, each
+      # suite on its own runner. The release relies on that run instead of
+      # repeating it: the repeat ran the whole monorepo's tests on one runner,
+      # where timing-sensitive tests failed although CI had passed them.
+      - name: Require green CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          # CI starts within seconds of a push and takes about ten minutes, so
+          # a release dispatched right after a merge waits for it.
+          for poll in $(seq 1 40); do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=20" --jq '.workflow_runs')
+            passed=$(jq -r '[.[] | select(.conclusion == "success")][0].html_url // empty' <<<"$runs")
+            if [[ -n "$passed" ]]; then
+              echo "CI passed for $SHA: $passed"
+              exit 0
+            fi
+            if jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
+              echo "CI for $SHA is still running; checking again in 30 s."
+            elif jq -e 'length > 0' <<<"$runs" >/dev/null; then
+              failed=$(jq -r '.[0] | "\(.conclusion): \(.html_url)"' <<<"$runs")
+              echo "::error::CI did not pass for $SHA ($failed). Fix it or re-run the failed CI jobs, then dispatch the release again."
+              exit 1
+            elif (( poll > 4 )); then
+              echo "::error::CI never ran for $SHA. The release ships only a commit with a green CI run; release a commit of main that CI checked."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::CI for $SHA did not finish within 20 minutes. Dispatch the release again once it passes."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -110,9 +147,6 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
-
-      - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
 
       - id: release_meta
         name: Resolve release version
@@ -168,20 +202,8 @@ jobs:
             fi
           fi
 
-      - name: Install browser secret helper build libraries
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-
       - name: Check Up.computer branding
         run: node scripts/check-branding.ts
-
-      - name: Check
-        run: vp check
-
-      - name: Typecheck
-        run: vp run typecheck
-
-      - name: Test
-        run: vp run test
 
       - id: previous_tag
         name: Resolve previous release tag

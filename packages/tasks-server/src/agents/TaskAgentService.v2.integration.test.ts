@@ -86,8 +86,6 @@ const HOLD = "[hold-turn]";
 const FAIL = "[fail-turn]";
 /** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
 const LIMIT = "[limit-turn]";
-/** A message containing this marker leaves native background work running after its turn. */
-const BACKGROUND = "[background]";
 
 /** Provider sessions the scripted provider opened, closed and resumed threads in. */
 interface SessionLog {
@@ -219,7 +217,6 @@ function makeTaskAgentAdapter(
               ]);
               const at = yield* DateTime.now;
               const id = ProviderTurnId.make(`provider-turn:${input.attemptId}`);
-              if (input.message.text.includes(BACKGROUND)) yield* Ref.set(background, true);
               yield* Queue.offer(events, providerTurn(input, id, "running", at));
               if (input.message.text.includes(HOLD)) {
                 held.set(id, input);
@@ -627,117 +624,132 @@ it.live("a started run holds its task and ends when its final update releases it
 );
 
 it.live("a run that releases its task as Blocked ends blocked and wakes its chat at once", () =>
-  runSlice("task-agent-v2-blocked-release", ({ repository, taskAgents, runsOf, threads, cwd }) =>
-    Effect.gen(function* () {
-      const projectStore = yield* ProjectStore.ProjectStoreV2;
-      yield* projectStore.apply({
-        sequence: 1,
-        eventId: EventId.make("event:task-agents-v2-blocked:project"),
-        aggregateKind: "project",
-        aggregateId: projectId,
-        occurredAt: timestamp,
-        commandId: null,
-        causationEventId: null,
-        correlationId: null,
-        metadata: {},
-        type: "project.created",
-        payload: {
+  runSlice(
+    "task-agent-v2-blocked-release",
+    ({ repository, taskAgents, runsOf, threads, started, cwd }) =>
+      Effect.gen(function* () {
+        const projectStore = yield* ProjectStore.ProjectStoreV2;
+        yield* projectStore.apply({
+          sequence: 1,
+          eventId: EventId.make("event:task-agents-v2-blocked:project"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Task agents",
+            workspaceRoot: cwd,
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+        const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-blocked:chat");
+        yield* threads.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("command:task-agents-v2-blocked:chat"),
+          threadId: chatThreadId,
           projectId,
-          title: "Task agents",
-          workspaceRoot: cwd,
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      });
-      const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-blocked:chat");
-      yield* threads.dispatch({
-        type: "thread.create",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("command:task-agents-v2-blocked:chat"),
-        threadId: chatThreadId,
-        projectId,
-        title: "Chat",
-        modelSelection: agentModel,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-      });
-      const helper: TaskAgent = {
-        ...agent,
-        id: TaskAgentId.make("task-agent:v2-blocked-helper"),
-        name: "Blocked helper",
-        startStatuses: [],
-        startRunStatuses: ["blocked"],
-      };
-      yield* repository.upsertAgent(agent);
-      yield* repository.upsertAgent(helper);
-      const created = yield* repository.upsert({
-        ...task,
-        description: `Needs credentials. ${HOLD}`,
-        sourceThreadId: chatThreadId,
-      });
-      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
-      const run = yield* eventually(
-        "the run to start",
-        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
-      );
-
-      const released = yield* callTaskTool(run.threadId, "task_update", {
-        id: task.id,
-        status: "Blocked",
-        output: "Missing required credentials. Need user input.",
-        assigneeAgentRunId: null,
-      });
-      assert.isFalse(released.isError, released.text);
-      const ended = yield* eventually(
-        "the run to end",
-        runsOf.pipe(
-          Effect.map((runs) =>
-            Option.fromNullishOr(
-              runs.find((candidate) => candidate.id === run.id && candidate.completedAt),
+          title: "Chat",
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        const helper: TaskAgent = {
+          ...agent,
+          id: TaskAgentId.make("task-agent:v2-blocked-helper"),
+          name: "Blocked helper",
+          startStatuses: [],
+          startRunStatuses: ["blocked"],
+        };
+        yield* repository.upsertAgent(agent);
+        yield* repository.upsertAgent(helper);
+        const created = yield* repository.upsert({
+          ...task,
+          description: `Needs credentials. ${HOLD}`,
+          sourceThreadId: chatThreadId,
+        });
+        yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+        const run = yield* eventually(
+          "the run to start",
+          runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+        );
+        // The run row is stored before its thread's turn starts; the agent calls
+        // tools only from its live turn.
+        yield* eventually(
+          "the held provider turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
             ),
           ),
-        ),
-      );
-      assert.strictEqual(ended.status, "blocked");
-      const { events } = yield* repository.events({
-        taskId: task.id,
-        kinds: ["task.agent-result"],
-      });
-      assert.lengthOf(events, 1);
-      assert.include(events[0]?.payload, { blocked: true, agentRunId: run.id });
-      const helperRun = yield* eventually(
-        "the blocked-run agent to start",
-        runsOf.pipe(
-          Effect.map((runs) =>
-            Option.fromNullishOr(runs.find((candidate) => candidate.agentId === helper.id)),
-          ),
-        ),
-      );
-      assert.strictEqual(helperRun.triggerRunId, run.id);
+        );
 
-      // No settle wait: the chat hears at once, while the helper still runs.
-      const wake = yield* TaskSourceWake;
-      yield* wake.sweep;
-      const records = yield* threads.getThreadRecords(chatThreadId, ["messages"]);
-      const notified = records.messages.filter(
-        (message) => message.notification?.source.kind === "task_agent_run",
-      );
-      assert.lengthOf(notified, 1);
-      assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" is blocked`);
-      assert.include(notified[0]?.text, `run ${run.id}`);
-      assert.include(notified[0]?.text, "Summary: Missing required credentials. Need user input.");
-      assert.notInclude(notified[0]?.text, "No run for this chat's tasks is in progress now.");
-    }),
+        const released = yield* callTaskTool(run.threadId, "task_update", {
+          id: task.id,
+          status: "Blocked",
+          output: "Missing required credentials. Need user input.",
+          assigneeAgentRunId: null,
+        });
+        assert.isFalse(released.isError, released.text);
+        const ended = yield* eventually(
+          "the run to end",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((candidate) => candidate.id === run.id && candidate.completedAt),
+              ),
+            ),
+          ),
+        );
+        assert.strictEqual(ended.status, "blocked");
+        const { events } = yield* repository.events({
+          taskId: task.id,
+          kinds: ["task.agent-result"],
+        });
+        assert.lengthOf(events, 1);
+        assert.include(events[0]?.payload, { blocked: true, agentRunId: run.id });
+        const helperRun = yield* eventually(
+          "the blocked-run agent to start",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(runs.find((candidate) => candidate.agentId === helper.id)),
+            ),
+          ),
+        );
+        assert.strictEqual(helperRun.triggerRunId, run.id);
+
+        // No settle wait: the chat hears at once, while the helper still runs.
+        const wake = yield* TaskSourceWake;
+        yield* wake.sweep;
+        const records = yield* threads.getThreadRecords(chatThreadId, ["messages"]);
+        const notified = records.messages.filter(
+          (message) => message.notification?.source.kind === "task_agent_run",
+        );
+        assert.lengthOf(notified, 1);
+        assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" is blocked`);
+        assert.include(notified[0]?.text, `run ${run.id}`);
+        assert.include(
+          notified[0]?.text,
+          "Summary: Missing required credentials. Need user input.",
+        );
+        assert.notInclude(notified[0]?.text, "No run for this chat's tasks is in progress now.");
+      }),
   ),
 );
 
 it.live("a Blocked release starts only blocked-run agents within the releasing run's modes", () =>
-  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf }) =>
+  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf, started }) =>
     Effect.gen(function* () {
       const supervised: TaskAgent = {
         ...agent,
@@ -765,6 +777,16 @@ it.live("a Blocked release starts only blocked-run agents within the releasing r
       const run = yield* eventually(
         "the run to start",
         runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+      // The run row is stored before its thread's turn starts; the agent calls
+      // tools only from its live turn.
+      yield* eventually(
+        "the held provider turn",
+        Ref.get(started).pipe(
+          Effect.map((turns) =>
+            Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
+          ),
+        ),
       );
 
       const released = yield* callTaskTool(run.threadId, "task_update", {
@@ -1203,12 +1225,18 @@ it.live("a later plain turn in a finished run's thread keeps its provider sessio
  * A run that ends while the provider still holds native background work keeps
  * its session: the release asks the provider and leaves the session to the
  * idle timeout, which releases it once that work and its delivery finish.
+ *
+ * The provider reports the work from the session's start: the short idle
+ * timeout runs from the moment the session opens, and on a loaded machine the
+ * turn can start after it, so work reported only from the turn would let the
+ * idle timeout close the session before the run ends.
  */
 const keepsSessionForBackgroundWork = (name: string, description: string, endStatus: string) =>
   runSlice(
     name,
     ({ createTaskWith, runWithStatus, threads, sessions, background }) =>
       Effect.gen(function* () {
+        yield* Ref.set(background, true);
         const first = yield* createTaskWith(description);
         yield* eventually("the run to end", runWithStatus(first.id, endStatus));
         const sql = yield* SqlClient.SqlClient;
@@ -1245,7 +1273,7 @@ const keepsSessionForBackgroundWork = (name: string, description: string, endSta
 it.live("a run that completes with native background work keeps its session until it ends", () =>
   keepsSessionForBackgroundWork(
     "task-agent-v2-release-background",
-    `Start a background job. ${BACKGROUND}`,
+    "Start a background job.",
     "completed",
   ),
 );
@@ -1253,7 +1281,7 @@ it.live("a run that completes with native background work keeps its session unti
 it.live("a run that fails with native background work keeps its session until it ends", () =>
   keepsSessionForBackgroundWork(
     "task-agent-v2-release-background-failed",
-    `Start a background job, then fail. ${BACKGROUND} ${FAIL}`,
+    `Start a background job, then fail. ${FAIL}`,
     "failed",
   ),
 );

@@ -84,15 +84,22 @@ describe("Planner availability", () => {
     rpc.request.mockResolvedValueOnce({ entries: [], tasks: [] });
     const environmentId = EnvironmentId.make("planner-answers-before-subscribe");
     const seen: Array<string | null> = [];
+    let reachEnabled = () => {};
+    const enabled = new Promise<void>((resolve) => {
+      reachEnabled = resolve;
+    });
     function View() {
-      seen.push(usePlannerAvailability(environmentId));
+      const availability = usePlannerAvailability(environmentId);
+      seen.push(availability);
+      if (availability === "enabled") reachEnabled();
       return null;
     }
     // Outside act, as in the browser: the render starts the probe, its answer
-    // lands in a microtask, and React subscribes later in a passive effect.
+    // lands in a microtask, and React subscribes later in a passive effect and
+    // renders again from its scheduler. A view the answer never reaches stays
+    // "loading" and fails this test on its timeout.
     const view = create(createElement(View));
-    await settle();
-    await settle();
+    await enabled;
     expect(seen[0]).toBe("loading");
     expect(seen.at(-1)).toBe("enabled");
     view.unmount();

@@ -23,7 +23,7 @@ This document covers the unified release workflow for stable and nightly desktop
   - The stable tag is created on the nightly's commit when the GitHub Release is published.
   - Pushing a `vX.Y.Z` tag by hand still works and builds exactly the tagged commit. Use it when
     the commit to ship is not the latest nightly, such as a cherry-picked fix on a release branch.
-- Runs lint, typecheck, and tests alongside artifact builds. Publishing waits for every check.
+- Does not run lint, typecheck, or tests again. The preflight requires a green CI run on the commit it ships; see [Green CI first](#green-ci-first).
 - Reads the shared production T3 Connect relay URL and Clerk client configuration before packaging clients.
 - Builds the platform-independent JS (server bundle, web client, Electron main) once in the `build_bundle` job and hands it to every platform job as the `js-bundle` artifact; the platform jobs only package it, so no runner rebuilds it.
 - Builds six desktop artifacts in parallel for both channels, each as its own job (`desktop_<platform>_<arch>`, one call of `release-desktop.yml`) on hardware of its own architecture, gated only on the bundle. The Windows jobs embed the same-arch Linux CLI archive as the WSL runtime and wait for that artifact partway through, not for the whole Linux job:
@@ -51,6 +51,12 @@ This document covers the unified release workflow for stable and nightly desktop
   - stable releases are aliased to the `latest` hosted app channel
   - nightly releases are aliased to the `nightly` hosted app channel
 - Signing is optional and auto-detected per platform from secrets.
+
+## Green CI first
+
+The release ships only a commit that CI (`.github/workflows/ci.yml`) passed. Its preflight looks up the CI runs for the released commit and continues once one of them has succeeded, waiting up to 20 minutes while CI is still running, so a release dispatched right after a merge to `main` waits for that merge's CI. It stops with an error when CI failed, was cancelled, or never ran for the commit: fix `main` or re-run the failed CI jobs, then dispatch the release again. Only the branding check runs in the preflight itself.
+
+CI runs each suite on its own runner. Running the whole monorepo's tests again on the single preflight runner made timing-sensitive tests fail there although CI had passed them, so a release never repeats CI's checks.
 
 ## Pull request macOS previews
 
