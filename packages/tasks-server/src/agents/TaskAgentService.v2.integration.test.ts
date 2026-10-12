@@ -624,117 +624,132 @@ it.live("a started run holds its task and ends when its final update releases it
 );
 
 it.live("a run that releases its task as Blocked ends blocked and wakes its chat at once", () =>
-  runSlice("task-agent-v2-blocked-release", ({ repository, taskAgents, runsOf, threads, cwd }) =>
-    Effect.gen(function* () {
-      const projectStore = yield* ProjectStore.ProjectStoreV2;
-      yield* projectStore.apply({
-        sequence: 1,
-        eventId: EventId.make("event:task-agents-v2-blocked:project"),
-        aggregateKind: "project",
-        aggregateId: projectId,
-        occurredAt: timestamp,
-        commandId: null,
-        causationEventId: null,
-        correlationId: null,
-        metadata: {},
-        type: "project.created",
-        payload: {
+  runSlice(
+    "task-agent-v2-blocked-release",
+    ({ repository, taskAgents, runsOf, threads, started, cwd }) =>
+      Effect.gen(function* () {
+        const projectStore = yield* ProjectStore.ProjectStoreV2;
+        yield* projectStore.apply({
+          sequence: 1,
+          eventId: EventId.make("event:task-agents-v2-blocked:project"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Task agents",
+            workspaceRoot: cwd,
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+        const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-blocked:chat");
+        yield* threads.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("command:task-agents-v2-blocked:chat"),
+          threadId: chatThreadId,
           projectId,
-          title: "Task agents",
-          workspaceRoot: cwd,
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      });
-      const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-blocked:chat");
-      yield* threads.dispatch({
-        type: "thread.create",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("command:task-agents-v2-blocked:chat"),
-        threadId: chatThreadId,
-        projectId,
-        title: "Chat",
-        modelSelection: agentModel,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-      });
-      const helper: TaskAgent = {
-        ...agent,
-        id: TaskAgentId.make("task-agent:v2-blocked-helper"),
-        name: "Blocked helper",
-        startStatuses: [],
-        startRunStatuses: ["blocked"],
-      };
-      yield* repository.upsertAgent(agent);
-      yield* repository.upsertAgent(helper);
-      const created = yield* repository.upsert({
-        ...task,
-        description: `Needs credentials. ${HOLD}`,
-        sourceThreadId: chatThreadId,
-      });
-      yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
-      const run = yield* eventually(
-        "the run to start",
-        runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
-      );
-
-      const released = yield* callTaskTool(run.threadId, "task_update", {
-        id: task.id,
-        status: "Blocked",
-        output: "Missing required credentials. Need user input.",
-        assigneeAgentRunId: null,
-      });
-      assert.isFalse(released.isError, released.text);
-      const ended = yield* eventually(
-        "the run to end",
-        runsOf.pipe(
-          Effect.map((runs) =>
-            Option.fromNullishOr(
-              runs.find((candidate) => candidate.id === run.id && candidate.completedAt),
+          title: "Chat",
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        const helper: TaskAgent = {
+          ...agent,
+          id: TaskAgentId.make("task-agent:v2-blocked-helper"),
+          name: "Blocked helper",
+          startStatuses: [],
+          startRunStatuses: ["blocked"],
+        };
+        yield* repository.upsertAgent(agent);
+        yield* repository.upsertAgent(helper);
+        const created = yield* repository.upsert({
+          ...task,
+          description: `Needs credentials. ${HOLD}`,
+          sourceThreadId: chatThreadId,
+        });
+        yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+        const run = yield* eventually(
+          "the run to start",
+          runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+        );
+        // The run row is stored before its thread's turn starts; the agent calls
+        // tools only from its live turn.
+        yield* eventually(
+          "the held provider turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
             ),
           ),
-        ),
-      );
-      assert.strictEqual(ended.status, "blocked");
-      const { events } = yield* repository.events({
-        taskId: task.id,
-        kinds: ["task.agent-result"],
-      });
-      assert.lengthOf(events, 1);
-      assert.include(events[0]?.payload, { blocked: true, agentRunId: run.id });
-      const helperRun = yield* eventually(
-        "the blocked-run agent to start",
-        runsOf.pipe(
-          Effect.map((runs) =>
-            Option.fromNullishOr(runs.find((candidate) => candidate.agentId === helper.id)),
-          ),
-        ),
-      );
-      assert.strictEqual(helperRun.triggerRunId, run.id);
+        );
 
-      // No settle wait: the chat hears at once, while the helper still runs.
-      const wake = yield* TaskSourceWake;
-      yield* wake.sweep;
-      const records = yield* threads.getThreadRecords(chatThreadId, ["messages"]);
-      const notified = records.messages.filter(
-        (message) => message.notification?.source.kind === "task_agent_run",
-      );
-      assert.lengthOf(notified, 1);
-      assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" is blocked`);
-      assert.include(notified[0]?.text, `run ${run.id}`);
-      assert.include(notified[0]?.text, "Summary: Missing required credentials. Need user input.");
-      assert.notInclude(notified[0]?.text, "No run for this chat's tasks is in progress now.");
-    }),
+        const released = yield* callTaskTool(run.threadId, "task_update", {
+          id: task.id,
+          status: "Blocked",
+          output: "Missing required credentials. Need user input.",
+          assigneeAgentRunId: null,
+        });
+        assert.isFalse(released.isError, released.text);
+        const ended = yield* eventually(
+          "the run to end",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((candidate) => candidate.id === run.id && candidate.completedAt),
+              ),
+            ),
+          ),
+        );
+        assert.strictEqual(ended.status, "blocked");
+        const { events } = yield* repository.events({
+          taskId: task.id,
+          kinds: ["task.agent-result"],
+        });
+        assert.lengthOf(events, 1);
+        assert.include(events[0]?.payload, { blocked: true, agentRunId: run.id });
+        const helperRun = yield* eventually(
+          "the blocked-run agent to start",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(runs.find((candidate) => candidate.agentId === helper.id)),
+            ),
+          ),
+        );
+        assert.strictEqual(helperRun.triggerRunId, run.id);
+
+        // No settle wait: the chat hears at once, while the helper still runs.
+        const wake = yield* TaskSourceWake;
+        yield* wake.sweep;
+        const records = yield* threads.getThreadRecords(chatThreadId, ["messages"]);
+        const notified = records.messages.filter(
+          (message) => message.notification?.source.kind === "task_agent_run",
+        );
+        assert.lengthOf(notified, 1);
+        assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" is blocked`);
+        assert.include(notified[0]?.text, `run ${run.id}`);
+        assert.include(
+          notified[0]?.text,
+          "Summary: Missing required credentials. Need user input.",
+        );
+        assert.notInclude(notified[0]?.text, "No run for this chat's tasks is in progress now.");
+      }),
   ),
 );
 
 it.live("a Blocked release starts only blocked-run agents within the releasing run's modes", () =>
-  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf }) =>
+  runSlice("task-agent-v2-blocked-ceiling", ({ repository, taskAgents, runsOf, started }) =>
     Effect.gen(function* () {
       const supervised: TaskAgent = {
         ...agent,
@@ -762,6 +777,16 @@ it.live("a Blocked release starts only blocked-run agents within the releasing r
       const run = yield* eventually(
         "the run to start",
         runsOf.pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+      );
+      // The run row is stored before its thread's turn starts; the agent calls
+      // tools only from its live turn.
+      yield* eventually(
+        "the held provider turn",
+        Ref.get(started).pipe(
+          Effect.map((turns) =>
+            Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
+          ),
+        ),
       );
 
       const released = yield* callTaskTool(run.threadId, "task_update", {
