@@ -702,6 +702,21 @@ describe("ClientSettings composer collapse", () => {
   });
 });
 
+describe("ServerSettings task completion wake", () => {
+  it("wakes a chat on task completion when no value is stored", () => {
+    expect(decodeServerSettings({}).wakeChatOnTaskCompletion).toBe(true);
+  });
+
+  it("keeps a stored opt-out", () => {
+    expect(decodeServerSettings({ wakeChatOnTaskCompletion: false })).toMatchObject({
+      wakeChatOnTaskCompletion: false,
+    });
+    expect(decodeServerSettingsPatch({ wakeChatOnTaskCompletion: false })).toEqual({
+      wakeChatOnTaskCompletion: false,
+    });
+  });
+});
+
 describe("ServerSettings thread settlement", () => {
   it("defaults merge settlement on and inactivity settlement to three days", () => {
     const settings = decodeServerSettings({});

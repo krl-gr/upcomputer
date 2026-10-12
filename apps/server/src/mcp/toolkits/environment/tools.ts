@@ -18,6 +18,7 @@ const PreferenceFields = {
   defaultThreadEnvMode: ServerSettings.fields.defaultThreadEnvMode,
   newWorktreesStartFromOrigin: ServerSettings.fields.newWorktreesStartFromOrigin,
   enableProviderUpdateChecks: ServerSettings.fields.enableProviderUpdateChecks,
+  wakeChatOnTaskCompletion: ServerSettings.fields.wakeChatOnTaskCompletion,
   backgroundActivity: Schema.Struct({ profile: BackgroundActivityProfileSelection }),
   sourceControlWritingStyle: Schema.Struct({
     mode: Schema.String,
@@ -59,6 +60,12 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
     defaultThreadEnvMode: ServerSettingsPatch.fields.defaultThreadEnvMode,
     newWorktreesStartFromOrigin: ServerSettingsPatch.fields.newWorktreesStartFromOrigin,
     enableProviderUpdateChecks: ServerSettingsPatch.fields.enableProviderUpdateChecks,
+    wakeChatOnTaskCompletion: Schema.optionalKey(
+      Schema.Boolean.annotate({
+        description:
+          "Whether a chat's model takes a turn when the task runs it delegated all complete. False records them as a card instead, which saves tokens; blocked, failed and interrupted runs wake the chat either way.",
+      }),
+    ),
     backgroundActivity: Schema.optionalKey(Schema.Struct({ profile: BackgroundActivityProfile })),
     sourceControlWritingStyle: ServerSettingsPatch.fields.sourceControlWritingStyle,
   }),

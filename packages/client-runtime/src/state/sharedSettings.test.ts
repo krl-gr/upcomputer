@@ -131,6 +131,7 @@ describe("pickSharedServerSettings", () => {
       "snoozeLimitedThreads",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
+      "wakeChatOnTaskCompletion",
     ]);
   });
 });
