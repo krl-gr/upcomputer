@@ -23,7 +23,10 @@ test("agent row isolates switch activation while preserving row and name navigat
         ),
       },
     },
-    server: { middlewareMode: true },
+    // Parallel test files each start a server: no HMR socket on Vite's fixed
+    // port and no client dependency optimizer writing the shared cache.
+    server: { middlewareMode: true, ws: false },
+    optimizeDeps: { noDiscovery: true },
     ssr: { noExternal: ["@base-ui/react"], external: ["lucide"] },
   });
   context.onTestFinished(() => vite.close());

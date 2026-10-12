@@ -208,7 +208,8 @@ async function compileAppCss(): Promise<string> {
     // Off the app's own cache, which the dev server uses.
     cacheDir: `${NodeOS.tmpdir()}/upcomputer-composer-look-vite`,
     plugins: [tailwindcss()],
-    server: { middlewareMode: true, hmr: false, watch: null },
+    // No HMR socket: it would take Vite's fixed port, which parallel tests share.
+    server: { middlewareMode: true, hmr: false, ws: false, watch: null },
   });
   try {
     const module = await server.ssrLoadModule("/src/index.css?inline");
