@@ -80,7 +80,6 @@ function AutomationsBody(props: {
       projects: props.projects,
       projectById: new Map(props.projects.map((project) => [project.id, project])),
       preferences,
-      markdownCwd: undefined,
       kind: "task",
       triggerTags: props.triggerTags,
       openInTable: (taskId) => onOpenTask(environmentId, taskId),

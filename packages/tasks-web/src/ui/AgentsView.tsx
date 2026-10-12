@@ -64,8 +64,11 @@ import {
 } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
+import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 
 const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
+const INSTRUCTIONS_EDITOR_CLASS =
+  "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
 const RUNTIME_MODES: ReadonlyArray<{ value: RuntimeMode; label: string }> = [
   { value: "approval-required", label: "Supervised" },
   { value: "auto-accept-edits", label: "Auto-accept edits" },
@@ -773,27 +776,16 @@ export function AgentsView(props: AgentsViewProps) {
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               {canEditAgent ? (
-                <textarea
-                  className="min-h-36 w-full flex-1 resize-none appearance-none overflow-auto border-0 bg-transparent px-3 py-2 text-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground focus:bg-transparent focus:outline-none [&::-webkit-resizer]:hidden"
+                <LazyMarkdownEditor
                   value={form.instructions}
                   placeholder="Instructions…"
-                  aria-label="Agent instructions"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, instructions: event.target.value }))
-                  }
+                  ariaLabel="Agent instructions"
+                  className={INSTRUCTIONS_EDITOR_CLASS}
+                  onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
                   onBlur={() => {
                     const instructions = form.instructions.trim();
                     if (instructions && instructions !== editingAgent.config.instructions) {
                       commitForm({ ...form, instructions });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      setForm((current) => ({
-                        ...current,
-                        instructions: editingAgent.config.instructions,
-                      }));
-                      event.currentTarget.blur();
                     }
                   }}
                 />
@@ -1119,14 +1111,12 @@ export function AgentsView(props: AgentsViewProps) {
         <div className="flex min-h-0 w-full flex-1 py-5">
           <div className="flex min-h-0 min-w-0 flex-1 gap-5">
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <textarea
-                className="min-h-36 w-full flex-1 resize-none appearance-none overflow-auto border-0 bg-transparent px-3 py-2 text-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground focus:bg-transparent focus:outline-none [&::-webkit-resizer]:hidden"
+              <LazyMarkdownEditor
                 value={form.instructions}
                 placeholder="Instructions…"
-                aria-label="Agent instructions"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, instructions: event.target.value }))
-                }
+                ariaLabel="Agent instructions"
+                className={INSTRUCTIONS_EDITOR_CLASS}
+                onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
               />
             </main>
             <DetailColumn>

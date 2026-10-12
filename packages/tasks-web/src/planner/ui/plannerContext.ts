@@ -22,8 +22,6 @@ export interface PlannerContextValue {
   readonly projects: readonly PlannerProject[];
   readonly projectById: ReadonlyMap<string, PlannerProject>;
   readonly preferences: PlannerPreferences;
-  /** A project directory for markdown links in descriptions. */
-  readonly markdownCwd: string | undefined;
   /** Whether the list shows tasks or routines. */
   readonly kind: PlannerKind;
   /** Tags an enabled agent of this environment starts on. */

@@ -25,7 +25,6 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
-import { Textarea } from "../../../../../apps/web/src/components/ui/textarea.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { TablePill } from "../../ui/TablePill.tsx";
 import { useQueueInstancesByTaskId, useTaskById } from "../data/hooks.ts";
@@ -48,7 +47,7 @@ import { TagsField } from "./TagsField.tsx";
 import { isFinished } from "./TaskRow.tsx";
 import { TitleInput } from "./TitleInput.tsx";
 
-/** Wande's "Open full screen" for a description: a large editor in a dialog. */
+/** Wande's "Open full screen" for a description: the same editor, large, in a dialog. */
 function FullScreenDescription(props: {
   readonly open: boolean;
   readonly value: string;
@@ -62,13 +61,11 @@ function FullScreenDescription(props: {
           <DialogTitle>Description</DialogTitle>
         </DialogHeader>
         <DialogPanel>
-          <Textarea
+          <DescriptionField
             value={props.value}
-            rows={24}
-            placeholder="Description (markdown)"
-            aria-label="Description"
+            onChange={props.onChange}
             autoFocus
-            onChange={(event) => props.onChange(event.currentTarget.value)}
+            className="min-h-[60vh] text-sm"
           />
         </DialogPanel>
       </DialogPopup>
@@ -93,8 +90,7 @@ export function TaskDetailWindow(
     readonly queueDate: string | null;
   },
 ) {
-  const { store, windows, projects, preferences, markdownCwd, openInTable, openInPlanner } =
-    usePlanner();
+  const { store, windows, projects, preferences, openInTable, openInPlanner } = usePlanner();
   const window = props.window;
   const viewMode = window.kind === "detail" ? window.viewMode : "description";
   const task = useTaskById(store, props.snapshot, props.taskId);
@@ -139,6 +135,9 @@ export function TaskDetailWindow(
       toastManager.add({ type: "warning", title: "Please enter a task title" });
       return;
     }
+    // The draft store, not this render: Escape can close in the event that
+    // ended the editor's last edit.
+    const description = readDraft(draftKey).description ?? task.description;
     const patch = {
       ...(next !== task.title ? { title: next } : {}),
       ...(description !== task.description ? { description } : {}),
@@ -295,12 +294,13 @@ export function TaskDetailWindow(
             onSave={(tags) => void store.updateTask(task.id, { tags })}
           />
           {viewMode === "description" ? (
-            <DescriptionField
-              value={description}
-              onChange={(value) => updateDraft({ description: value })}
-              cwd={markdownCwd}
-              rows={10}
-            />
+            // One editor per draft: the full screen dialog takes it over while open.
+            fullScreen ? null : (
+              <DescriptionField
+                value={description}
+                onChange={(value) => updateDraft({ description: value })}
+              />
+            )
           ) : (
             <ScheduleTable taskId={task.id} entries={entries} />
           )}
@@ -340,7 +340,7 @@ export function TaskDetailWindow(
 export function CreateTaskWindow(
   props: WindowFrameProps & { readonly defaultProjectId: string | null },
 ) {
-  const { store, windows, projects, markdownCwd } = usePlanner();
+  const { store, windows, projects } = usePlanner();
   const window = props.window;
   const initial = window.kind === "create" ? window.initial : {};
   const kind = initial.kind ?? "task";
@@ -421,13 +421,12 @@ export function CreateTaskWindow(
             onChange={(next) => updateDraft({ projectId: next ?? "" })}
           />
         </div>
-        <DescriptionField
-          value={draft.description ?? ""}
-          onChange={(value) => updateDraft({ description: value })}
-          cwd={markdownCwd}
-          rows={3}
-          autoEdit
-        />
+        {fullScreen ? null : (
+          <DescriptionField
+            value={draft.description ?? ""}
+            onChange={(value) => updateDraft({ description: value })}
+          />
+        )}
       </div>
       <FullScreenDescription
         open={fullScreen}

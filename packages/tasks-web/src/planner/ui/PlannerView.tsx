@@ -174,7 +174,6 @@ function PlannerBody(props: {
       projects: props.projects,
       projectById: new Map(props.projects.map((project) => [project.id, project])),
       preferences,
-      markdownCwd: undefined,
       kind: props.kind,
       triggerTags: props.triggerTags,
       openInTable: props.onOpenTask,
