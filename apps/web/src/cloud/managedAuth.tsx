@@ -13,6 +13,7 @@ import { runtime } from "../lib/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveRelayClerkTokenOptions } from "./publicConfig";
+import { forgetWebPushDevice } from "./webPush";
 
 export function deactivateManagedRelayAuthentication(): void {
   setManagedRelaySession(appAtomRegistry, null);
@@ -54,6 +55,8 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
       accountTransitionRef.current = previousTransition.then(async () => {
         const results = await Promise.all([
           removeRelayEnvironments(),
+          // The previous account's alerts must stop on this device.
+          settlePromise(forgetWebPushDevice),
           settleAsyncResult(() =>
             runtime.runPromiseExit(
               ManagedRelay.ManagedRelayClient.pipe(

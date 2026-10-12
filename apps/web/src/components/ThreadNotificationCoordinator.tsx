@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
+import { listenForWebPushNavigation } from "../cloud/webPush";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -76,6 +77,16 @@ export function ThreadNotificationCoordinator() {
       document.removeEventListener("keydown", unlockNotificationAudio);
     };
   }, [mode]);
+
+  const navigate = useNavigate();
+  // A clicked web push notification routes the already open app to its thread.
+  useEffect(
+    () =>
+      listenForWebPushNavigation(({ environmentId, threadId }) => {
+        void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } });
+      }),
+    [navigate],
+  );
 
   if (mode === "off" && !inAppNotificationsEnabled) return null;
 
