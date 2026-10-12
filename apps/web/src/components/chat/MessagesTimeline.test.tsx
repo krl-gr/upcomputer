@@ -260,7 +260,8 @@ function stubDomGlobals() {
 }
 
 beforeEach(stubDomGlobals);
-// Cold transformation of the full chat dependency graph needs extra time on slower CI workers.
+// The first import transforms the component's whole module graph; on GitHub-hosted runners under the
+// full monorepo test run it takes over 30 s.
 beforeAll(async () => {
   Object.defineProperty(window, "matchMedia", { value: matchMedia, configurable: true });
   ({ MessagesTimeline, resolvePreviewAnnotationImage } = await import("./MessagesTimeline"));
