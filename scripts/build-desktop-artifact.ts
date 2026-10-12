@@ -2588,8 +2588,8 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
   }
 
   for (const output of [
-    { suffix: "", width: 640, height: 432 },
-    { suffix: "@2x", width: 1280, height: 864 },
+    { suffix: "", width: 960, height: 432 },
+    { suffix: "@2x", width: 1920, height: 864 },
   ] as const) {
     const targetPath = path.join(
       stageResourcesDir,
@@ -2966,14 +2966,17 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       title: `${resolveDesktopProductName(version)} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
-        width: 640,
+        // Finder on macOS 26 ignores the stored window size and opens the
+        // installer at its default 920x436, so the artwork is 40px wider than
+        // that and centred on x=460. Older Finders open the full 960.
+        width: 960,
         // The DMG backend derives bounds from the image, including Finder's
         // 32px title bar. Keep the last 32px of the artwork free of content.
         height: 432,
       },
       contents: [
-        { x: 166, y: 214, type: "file" },
-        { x: 474, y: 214, type: "link", path: "/Applications" },
+        { x: 306, y: 214, type: "file" },
+        { x: 614, y: 214, type: "link", path: "/Applications" },
       ],
       iconSize: 120,
       iconTextSize: 12,
