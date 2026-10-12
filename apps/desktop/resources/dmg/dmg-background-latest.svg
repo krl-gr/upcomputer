@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="864" viewBox="0 0 640 432">
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="864" viewBox="0 0 960 432">
+  <!-- Finder on macOS 26 opens the installer at 920x436 whatever size the DMG
+       stores, so the art is centred on x=460 and the last 40pt are spare. -->
   <defs>
     <linearGradient id="veil" x1="0" y1="0" x2="0" y2="1">
       <stop stop-color="#B7B7B7" stop-opacity="0"/>
@@ -12,13 +14,13 @@
       <stop offset="1" stop-color="#B5B5B5"/>
     </linearGradient>
   </defs>
-  <rect width="640" height="432" fill="#E9E9EB"/>
-  <path d="M-60 293C95 220 214 304 362 256S559 191 707 257" stroke="url(#veil)" stroke-width="146" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M-60 306C113 252 223 298 367 272S553 242 707 280" stroke="url(#silk)" stroke-width="86" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M-60 266C113 212 223 258 367 232S553 202 707 240" stroke="#F5F5F5" stroke-width="0.8" fill="none" opacity="0.42" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="960" height="432" fill="#E9E9EB"/>
+  <path d="M-86.2 293C136.6 220 307.6 304 520.4 256S803.6 191 1016.3 257" stroke="url(#veil)" stroke-width="146" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-86.2 306C162.4 252 320.6 298 527.6 272S794.9 242 1016.3 280" stroke="url(#silk)" stroke-width="86" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-86.2 266C162.4 212 320.6 258 527.6 232S794.9 202 1016.3 240" stroke="#F5F5F5" stroke-width="0.8" fill="none" opacity="0.42" stroke-linecap="round" stroke-linejoin="round"/>
   <!-- Up.computer name in place of upstream's T3 wordmark. -->
   <text x="32" y="44" fill="#303034" font-family="Helvetica" font-size="20" font-weight="700">Up.computer</text>
-  <text x="320" y="104" fill="#303034" font-family="Helvetica" font-size="23" font-weight="700" text-anchor="middle">Drag Up.computer into Applications.</text>
-  <path d="M270 204Q320 179 370 204M358 190L370 204L351 209" stroke="#505057" stroke-width="2.2" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="320" y="367" fill="#626269" font-family="Helvetica" font-size="12" font-weight="400" text-anchor="middle">Once copied, open it from Applications.</text>
+  <text x="460" y="104" fill="#303034" font-family="Helvetica" font-size="23" font-weight="700" text-anchor="middle">Drag Up.computer into Applications.</text>
+  <path d="M410 204Q460 179 510 204M498 190L510 204L491 209" stroke="#505057" stroke-width="2.2" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="460" y="367" fill="#626269" font-family="Helvetica" font-size="12" font-weight="400" text-anchor="middle">Once copied, open it from Applications.</text>
 </svg>
