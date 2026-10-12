@@ -20,7 +20,8 @@ The relay currently owns:
 - Provisioning and tracking managed environment endpoints.
 - Issuing short-lived credentials used to connect clients to linked environments.
 - Listing linked environments and registered mobile devices for an account.
-- Registering mobile notification preferences and APNs or FCM tokens.
+- Registering mobile notification preferences and APNs or FCM tokens, and browser web push
+  subscriptions.
 - Receiving published agent activity and delivering notifications or Live Activity updates.
 - Persisting relay state and exposing relay-specific traces for diagnostics.
 
@@ -152,12 +153,15 @@ The `production` GitHub environment must define these Actions variables:
 - `CLERK_JWT_TEMPLATE`
 - `APNS_ENABLED` set to `true`, plus `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID` and
   `APNS_BUNDLE_ID`, only when APNs is enabled
+- `WEB_PUSH_ENABLED` set to `true`, plus `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_SUBJECT`, only
+  when web push is enabled
 
 The `production` GitHub environment must define these Actions secrets:
 
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY` when APNs is enabled
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
+- `WEB_PUSH_VAPID_PRIVATE_KEY` when web push is enabled
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
 are not bound into the relay Worker. The production deployment uses an Axiom personal access token,

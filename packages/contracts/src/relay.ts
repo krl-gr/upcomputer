@@ -43,10 +43,23 @@ export type RelayAgentAwarenessPreferences = typeof RelayAgentAwarenessPreferenc
 export const RelayApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type RelayApnsEnvironment = typeof RelayApnsEnvironment.Type;
 
+// A browser or home-screen web app registers as a `web` device with its push
+// subscription. Device listings stay mobile-only (`RelayAgentAwarenessPlatform`),
+// so installed clients keep decoding them.
+export const RelayDeviceRegistrationPlatform = Schema.Literals(["ios", "android", "web"]);
+export type RelayDeviceRegistrationPlatform = typeof RelayDeviceRegistrationPlatform.Type;
+
+export const RelayWebPushSubscription = Schema.Struct({
+  endpoint: TrimmedNonEmptyString.check(Schema.isPattern(/^https:\/\/\S+$/)),
+  p256dh: TrimmedNonEmptyString,
+  auth: TrimmedNonEmptyString,
+});
+export type RelayWebPushSubscription = typeof RelayWebPushSubscription.Type;
+
 export const RelayDeviceRegistrationRequest = Schema.Struct({
   deviceId: TrimmedNonEmptyString,
   label: TrimmedNonEmptyString,
-  platform: RelayAgentAwarenessPlatform,
+  platform: RelayDeviceRegistrationPlatform,
   iosMajorVersion: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(18))),
   androidApiLevel: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))),
   appVersion: Schema.optional(TrimmedNonEmptyString),
@@ -58,15 +71,24 @@ export const RelayDeviceRegistrationRequest = Schema.Struct({
   apsEnvironment: Schema.optional(RelayApnsEnvironment),
   pushToken: Schema.optional(TrimmedNonEmptyString),
   pushToStartToken: Schema.optional(TrimmedNonEmptyString),
+  webPush: Schema.optional(RelayWebPushSubscription),
   preferences: RelayAgentAwarenessPreferences,
 }).check(
   Schema.makeFilter((device) =>
-    device.platform === "ios"
-      ? device.iosMajorVersion !== undefined
-      : device.androidApiLevel !== undefined &&
+    device.platform === "web"
+      ? device.webPush !== undefined &&
+        device.pushToken === undefined &&
         device.iosMajorVersion === undefined &&
+        device.androidApiLevel === undefined &&
         device.apsEnvironment === undefined &&
-        device.pushToStartToken === undefined,
+        device.pushToStartToken === undefined
+      : device.webPush === undefined &&
+        (device.platform === "ios"
+          ? device.iosMajorVersion !== undefined
+          : device.androidApiLevel !== undefined &&
+            device.iosMajorVersion === undefined &&
+            device.apsEnvironment === undefined &&
+            device.pushToStartToken === undefined),
   ),
 );
 export type RelayDeviceRegistrationRequest = typeof RelayDeviceRegistrationRequest.Type;

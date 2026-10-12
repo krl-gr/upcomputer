@@ -69,7 +69,12 @@ const allowedScopesByClientId: Record<
     RelayEnvironmentStatusScope,
     RelayMobileRegistrationScope,
   ]),
-  [RelayWebClientId]: new Set([RelayEnvironmentConnectScope, RelayEnvironmentStatusScope]),
+  // The web app registers itself as a web push device through the mobile routes.
+  [RelayWebClientId]: new Set([
+    RelayEnvironmentConnectScope,
+    RelayEnvironmentStatusScope,
+    RelayMobileRegistrationScope,
+  ]),
 };
 
 function resolveDpopAccessTokenScopes(input: {

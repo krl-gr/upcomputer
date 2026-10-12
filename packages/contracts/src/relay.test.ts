@@ -48,6 +48,37 @@ describe("mobile device platforms", () => {
   });
 });
 
+describe("web push devices", () => {
+  const web = {
+    deviceId: "browser",
+    label: "Safari on iPhone",
+    platform: "web",
+    webPush: {
+      endpoint: "https://web.push.apple.com/abc",
+      p256dh: "public-key",
+      auth: "secret",
+    },
+    preferences: device.preferences,
+  };
+
+  it("accepts a web device with its push subscription", () => {
+    expect(decodeDevice(web)._tag).toBe("Success");
+  });
+
+  it("rejects web devices without a subscription or with mobile fields, and subscriptions on mobile", () => {
+    expect(decodeDevice({ ...web, webPush: undefined })._tag).toBe("Failure");
+    expect(decodeDevice({ ...web, pushToken: "token" })._tag).toBe("Failure");
+    expect(decodeDevice({ ...web, iosMajorVersion: 18 })._tag).toBe("Failure");
+    expect(
+      decodeDevice({ ...web, webPush: { ...web.webPush, endpoint: "http://push.test/abc" } })._tag,
+    ).toBe("Failure");
+    expect(
+      decodeDevice({ ...device, platform: "android", androidApiLevel: 36, webPush: web.webPush })
+        ._tag,
+    ).toBe("Failure");
+  });
+});
+
 describe("RelayApi security", () => {
   it("describes DPoP access tokens using the HTTP DPoP authorization scheme", () => {
     const document = OpenApi.fromApi(RelayApi);

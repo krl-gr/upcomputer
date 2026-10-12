@@ -122,6 +122,7 @@ describe("loadRepoEnv", () => {
       relayClientOtlpTracesUrl: undefined,
       relayClientOtlpTracesDataset: undefined,
       relayClientOtlpTracesToken: undefined,
+      webPushVapidPublicKey: undefined,
     });
   });
 
@@ -142,6 +143,19 @@ describe("loadRepoEnv", () => {
       VITE_RELAY_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
       VITE_RELAY_OTLP_TRACES_DATASET: "relay-client-traces",
       VITE_RELAY_OTLP_TRACES_TOKEN: "relay-client-token",
+    });
+  });
+
+  it("projects the web push VAPID public key to the web build alias", () => {
+    expect(
+      loadRepoEnv({
+        baseEnv: { UPCOMPUTER_WEB_PUSH_VAPID_PUBLIC_KEY: "BPublicKey" },
+        repoRoot: makeTemporaryDirectory(),
+      }),
+    ).toEqual({
+      UPCOMPUTER_WEB_PUSH_VAPID_PUBLIC_KEY: "BPublicKey",
+      T3CODE_WEB_PUSH_VAPID_PUBLIC_KEY: "BPublicKey",
+      VITE_WEB_PUSH_VAPID_PUBLIC_KEY: "BPublicKey",
     });
   });
 

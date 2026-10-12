@@ -1,9 +1,12 @@
 import * as Config from "effect/Config";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+
+import { decodeBase64Url, isP256PublicKey } from "./agentActivity/webPushCrypto.ts";
 
 export const ApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type ApnsEnvironment = typeof ApnsEnvironment.Type;
@@ -14,6 +17,59 @@ export type ApnsEnvironment = typeof ApnsEnvironment.Type;
  * no APNs jobs.
  */
 export const apnsEnabledConfig = Config.Boolean("APNS_ENABLED").pipe(Config.withDefault(false));
+
+/**
+ * Web push (browsers and home-screen web apps) needs a VAPID key pair, so it
+ * stays off until WEB_PUSH_ENABLED=true. While off, the relay reads no
+ * `WEB_PUSH_*` value and enqueues no web push jobs.
+ */
+export const webPushEnabledConfig = Config.Boolean("WEB_PUSH_ENABLED").pipe(
+  Config.withDefault(false),
+);
+
+export interface WebPushCredentials {
+  /** base64url uncompressed P-256 point, the browser's `applicationServerKey`. */
+  readonly publicKey: string;
+  /** base64url P-256 private scalar. */
+  readonly privateKey: Redacted.Redacted<string>;
+  /** VAPID contact: a mailto: or https: URL. */
+  readonly subject: string;
+}
+
+// Messages name the variable but never echo its value: the private key is a secret.
+const invalidConfig = (name: string, expected: string) =>
+  new Config.ConfigError(
+    new ConfigProvider.SourceError({ message: `${name} must be ${expected}.` }),
+  );
+
+export const webPushCredentialsConfig: Config.Config<WebPushCredentials> = Config.all({
+  publicKey: Config.String("WEB_PUSH_VAPID_PUBLIC_KEY").pipe(
+    Config.map((value) => value.trim()),
+    Config.mapEffect((value) => {
+      const bytes = decodeBase64Url(value);
+      return bytes && isP256PublicKey(bytes)
+        ? Effect.succeed(value)
+        : Effect.fail(
+            invalidConfig("WEB_PUSH_VAPID_PUBLIC_KEY", "a base64url uncompressed P-256 public key"),
+          );
+    }),
+  ),
+  privateKey: Config.Redacted("WEB_PUSH_VAPID_PRIVATE_KEY").pipe(
+    Config.mapEffect((value) =>
+      decodeBase64Url(Redacted.value(value))?.length === 32
+        ? Effect.succeed(Redacted.make(Redacted.value(value).trim()))
+        : Effect.fail(invalidConfig("WEB_PUSH_VAPID_PRIVATE_KEY", "a base64url P-256 private key")),
+    ),
+  ),
+  subject: Config.String("WEB_PUSH_SUBJECT").pipe(
+    Config.map((value) => value.trim()),
+    Config.mapEffect((value) =>
+      /^(mailto:\S+|https:\/\/\S+)$/.test(value)
+        ? Effect.succeed(value)
+        : Effect.fail(invalidConfig("WEB_PUSH_SUBJECT", "a mailto: or https: URL")),
+    ),
+  ),
+});
 
 export const ManagedEndpointCleanupMode = Schema.Literals(["off", "dry-run", "enabled"]);
 export type ManagedEndpointCleanupMode = typeof ManagedEndpointCleanupMode.Type;
@@ -68,6 +124,8 @@ export class RelayConfiguration extends Context.Service<
     readonly relayIssuer: string;
     readonly apns: ApnsCredentials | null;
     readonly fcmServiceAccount?: Redacted.Redacted<string>;
+    /** Null while WEB_PUSH_ENABLED is off. */
+    readonly webPush?: WebPushCredentials | null;
     readonly clerkSecretKey: Redacted.Redacted<string>;
     readonly clerkPublishableKey: string;
     readonly clerkJwtAudience: string;

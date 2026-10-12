@@ -19,13 +19,20 @@ import * as LiveActivities from "./LiveActivities.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as AgentActivityPublisher from "./AgentActivityPublisher.ts";
 import * as FcmDeliveries from "./FcmDeliveries.ts";
+import * as WebPushDeliveries from "./WebPushDeliveries.ts";
 
 const layerPublisher = AgentActivityPublisher.layer.pipe(
   Layer.provide(
-    Layer.succeed(FcmDeliveries.FcmDeliveries, {
-      enqueue: () => Effect.succeed(null),
-      process: () => Effect.void,
-    }),
+    Layer.mergeAll(
+      Layer.succeed(FcmDeliveries.FcmDeliveries, {
+        enqueue: () => Effect.succeed(null),
+        process: () => Effect.void,
+      }),
+      Layer.succeed(WebPushDeliveries.WebPushDeliveries, {
+        enqueue: () => Effect.succeed(null),
+        process: () => Effect.void,
+      }),
+    ),
   ),
 );
 import * as ApnsDeliveries from "./ApnsDeliveries.ts";
@@ -57,6 +64,8 @@ function makeDevices(
     register: () => Effect.void,
     unregister: () => Effect.void,
     listForUser: () => Effect.succeed([]),
+    findWebPushTarget: () => Effect.succeed(null),
+    removeWebPushSubscription: () => Effect.void,
     ...overrides,
   };
 }

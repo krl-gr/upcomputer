@@ -76,6 +76,7 @@ Create the Cloudflare, PlanetScale (Postgres), Axiom and Clerk production accoun
   settings. Without the profile, release builds are signed as V1 was and passkeys stay off.
 - **APNs** can wait for an iOS app. The relay sends no APNs and needs no Apple values until
   `APNS_ENABLED=true`.
+- **Web push** needs no account, only a VAPID key pair. See [section 7](#7-web-push).
 
 ## 2. GitHub configuration
 
@@ -83,28 +84,32 @@ Both workflows run in the `production` GitHub environment. The deploy and releas
 when `RELAY_API_ZONE_NAME` or `RELAY_DOMAIN` is set, and a job-level condition cannot read
 environment-scoped variables. Set that switch as a **repository** variable, and set it last.
 
-| Name                        | Kind                          | Read by                           | Value                                |
-| --------------------------- | ----------------------------- | --------------------------------- | ------------------------------------ |
-| `RELAY_API_ZONE_NAME`       | Repository variable           | `deploy-relay.yml`, `release.yml` | `up.computer`                        |
-| `RELAY_DOMAIN`              | Repository variable, optional | `deploy-relay.yml`, `release.yml` | Only to override `relay.up.computer` |
-| `RELAY_TUNNEL_ZONE_NAME`    | `production` variable         | `deploy-relay.yml`                | `upconnect.dev`                      |
-| `RELAY_TUNNEL_CLEANUP_MODE` | `production` variable         | `deploy-relay.yml`                | `off`, `dry-run` or `enabled`        |
-| `CLOUDFLARE_ACCOUNT_ID`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `b823638a401eee95b6263c88ca5b5572`   |
-| `PLANETSCALE_ORGANIZATION`  | `production` variable         | `deploy-relay.yml`                | `gurianovks`                         |
-| `AXIOM_ORG_ID`              | `production` variable         | `deploy-relay.yml`                | Axiom organization ID                |
-| `CLERK_PUBLISHABLE_KEY`     | `production` variable         | `deploy-relay.yml`, `release.yml` | `pk_live_...`                        |
-| `CLERK_JWT_AUDIENCE`        | `production` variable         | `deploy-relay.yml`                | `t3-code-relay`                      |
-| `CLERK_JWT_TEMPLATE`        | `production` variable         | `release.yml`                     | `t3-relay`                           |
-| `CLERK_CLI_OAUTH_CLIENT_ID` | `production` variable         | `release.yml`                     | Clerk OAuth application client ID    |
-| `APNS_ENABLED`              | `production` variable, later  | `deploy-relay.yml`                | `true` once APNs keys exist          |
-| `APNS_*`                    | `production` variables, later | `deploy-relay.yml`                | Only with `APNS_ENABLED=true`        |
-| `CLOUDFLARE_API_TOKEN`      | `production` secret           | `deploy-relay.yml`, `release.yml` | Deploy token                         |
-| `PLANETSCALE_API_TOKEN_ID`  | `production` secret           | `deploy-relay.yml`                | Service token ID                     |
-| `PLANETSCALE_API_TOKEN`     | `production` secret           | `deploy-relay.yml`                | Service token value                  |
-| `AXIOM_TOKEN`               | `production` secret           | `deploy-relay.yml`                | Axiom personal access token          |
-| `CLERK_SECRET_KEY`          | `production` secret           | `deploy-relay.yml`                | `sk_live_...`                        |
-| `APNS_PRIVATE_KEY`          | `production` secret, later    | `deploy-relay.yml`                | Full `.p8` text                      |
-| `FCM_SERVICE_ACCOUNT`       | `production` secret, optional | `deploy-relay.yml`                | Firebase service account JSON        |
+| Name                         | Kind                          | Read by                           | Value                                |
+| ---------------------------- | ----------------------------- | --------------------------------- | ------------------------------------ |
+| `RELAY_API_ZONE_NAME`        | Repository variable           | `deploy-relay.yml`, `release.yml` | `up.computer`                        |
+| `RELAY_DOMAIN`               | Repository variable, optional | `deploy-relay.yml`, `release.yml` | Only to override `relay.up.computer` |
+| `RELAY_TUNNEL_ZONE_NAME`     | `production` variable         | `deploy-relay.yml`                | `upconnect.dev`                      |
+| `RELAY_TUNNEL_CLEANUP_MODE`  | `production` variable         | `deploy-relay.yml`                | `off`, `dry-run` or `enabled`        |
+| `CLOUDFLARE_ACCOUNT_ID`      | `production` variable         | `deploy-relay.yml`, `release.yml` | `b823638a401eee95b6263c88ca5b5572`   |
+| `PLANETSCALE_ORGANIZATION`   | `production` variable         | `deploy-relay.yml`                | `gurianovks`                         |
+| `AXIOM_ORG_ID`               | `production` variable         | `deploy-relay.yml`                | Axiom organization ID                |
+| `CLERK_PUBLISHABLE_KEY`      | `production` variable         | `deploy-relay.yml`, `release.yml` | `pk_live_...`                        |
+| `CLERK_JWT_AUDIENCE`         | `production` variable         | `deploy-relay.yml`                | `t3-code-relay`                      |
+| `CLERK_JWT_TEMPLATE`         | `production` variable         | `release.yml`                     | `t3-relay`                           |
+| `CLERK_CLI_OAUTH_CLIENT_ID`  | `production` variable         | `release.yml`                     | Clerk OAuth application client ID    |
+| `APNS_ENABLED`               | `production` variable, later  | `deploy-relay.yml`                | `true` once APNs keys exist          |
+| `APNS_*`                     | `production` variables, later | `deploy-relay.yml`                | Only with `APNS_ENABLED=true`        |
+| `WEB_PUSH_ENABLED`           | `production` variable, later  | `deploy-relay.yml`, `release.yml` | `true` once the VAPID keys are set   |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`  | `production` variable, later  | `deploy-relay.yml`, `release.yml` | See [section 7](#7-web-push)         |
+| `WEB_PUSH_SUBJECT`           | `production` variable, later  | `deploy-relay.yml`                | `mailto:` or `https:` contact        |
+| `CLOUDFLARE_API_TOKEN`       | `production` secret           | `deploy-relay.yml`, `release.yml` | Deploy token                         |
+| `PLANETSCALE_API_TOKEN_ID`   | `production` secret           | `deploy-relay.yml`                | Service token ID                     |
+| `PLANETSCALE_API_TOKEN`      | `production` secret           | `deploy-relay.yml`                | Service token value                  |
+| `AXIOM_TOKEN`                | `production` secret           | `deploy-relay.yml`                | Axiom personal access token          |
+| `CLERK_SECRET_KEY`           | `production` secret           | `deploy-relay.yml`                | `sk_live_...`                        |
+| `APNS_PRIVATE_KEY`           | `production` secret, later    | `deploy-relay.yml`                | Full `.p8` text                      |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | `production` secret, later    | `deploy-relay.yml`                | See [section 7](#7-web-push)         |
+| `FCM_SERVICE_ACCOUNT`        | `production` secret, optional | `deploy-relay.yml`                | Firebase service account JSON        |
 
 `deploy-relay.yml` deploys the Alchemy `prod` stage on every push to `main` of `krl-gr/upcomputer`
 once the switch is set, on GitHub-hosted runners. `release.yml` reads the relay's public client
@@ -126,6 +131,7 @@ them from the process environment, then the repository-root `.env.local`, then `
 | `T3CODE_RELAY_CLIENT_OTLP_TRACES_URL`     | Optional, client tracing  | From the relay stack output |
 | `T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET` | Optional, client tracing  | From the relay stack output |
 | `T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN`   | Optional, client tracing  | From the relay stack output |
+| `T3CODE_WEB_PUSH_VAPID_PUBLIC_KEY`        | Optional, web push        | `WEB_PUSH_VAPID_PUBLIC_KEY` |
 
 The web UI shows Connect only when the relay URL, publishable key and JWT template are all set. The
 desktop backend and CLI enable it only when the relay URL, publishable key and CLI OAuth client ID
@@ -157,6 +163,8 @@ repository-root `.env`.
   devices (labels, OS version, push tokens).
 - **Agent activity notifications send thread titles** when the user turns on agent activity
   publishing (off by default). The relay forwards them to Apple or Google for push notifications.
+  Web push payloads are encrypted for the receiving browser, so its push service (Apple, Google or
+  Mozilla) sees only the endpoint and timing.
 - **Traces**: relay request spans in Axiom include request paths and user IDs.
 
 ## 6. What an iOS client needs
@@ -164,3 +172,39 @@ repository-root `.env`.
 Upstream's iOS client speaks the same protocol. It needs our relay URL, Clerk publishable key and
 JWT template `t3-relay`, registration under Clerk **Native applications**, and an APNs
 bundle ID equal to `APNS_BUNDLE_ID`.
+
+## 7. Web push
+
+Web push delivers the same agent alerts to the web app while it is closed: desktop browsers,
+Android Chrome, and on iPhone or iPad (iOS 16.4 or newer) the web app added to the Home Screen. It
+is off until `WEB_PUSH_ENABLED=true`; while off the relay reads no `WEB_PUSH_*` value and release
+builds carry no web push key, so the web app shows no option for it.
+
+1. Generate a key pair once: `vp run --filter t3code-relay web-push:vapid-keys`. It prints
+   `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_VAPID_PRIVATE_KEY`. Keep the private key out of chats
+   and files.
+2. In the `production` environment set the variables `WEB_PUSH_VAPID_PUBLIC_KEY` and
+   `WEB_PUSH_SUBJECT` (for example `mailto:` plus a monitored address), and the secret
+   `WEB_PUSH_VAPID_PRIVATE_KEY`.
+3. Set the `production` variable `WEB_PUSH_ENABLED=true` and redeploy the relay (run **Deploy
+   UpComputer Connect relay** from `main`). A wrong key or subject fails the deploy with the variable
+   name; the private key value is never printed.
+4. Run a release. `release.yml` passes the public key into the desktop and hosted web builds as
+   `T3CODE_WEB_PUSH_VAPID_PUBLIC_KEY` only while `WEB_PUSH_ENABLED=true`.
+
+Keep the key pair. Replacing it invalidates every browser subscription: each device has to turn
+notifications on again. To stop web push, set `WEB_PUSH_ENABLED=false`, redeploy the relay, and
+release, so the web app stops offering it.
+
+After the relay and the hosted app are live, check by hand:
+
+- **iPhone**: open the hosted app in Safari. **Settings** > **General** asks to add it to the Home
+  Screen. Add it, open it from the icon, sign in to Connect, choose **Enable on this device** and
+  allow notifications. Lock the phone and let an agent finish or ask for input: the alert appears
+  and tapping it opens the thread.
+- **Desktop browser**: enable it the same way in Chrome or Firefox, close the tab, and trigger an
+  alert. Clicking it opens the thread; with the app open in a tab, it routes that tab instead.
+- **Turn off and sign out**: **Turn off on this device** stops alerts on that device only, and
+  signing out of Connect turns it off there too.
+- **Relay**: the Axiom view shows `relay.web_push.send` spans. A device whose subscription expired
+  disappears after the push service answers 404 or 410.

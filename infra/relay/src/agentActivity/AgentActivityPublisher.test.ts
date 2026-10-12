@@ -8,14 +8,21 @@ import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as AgentActivityPublisher from "./AgentActivityPublisher.ts";
 import * as FcmDeliveries from "./FcmDeliveries.ts";
+import * as WebPushDeliveries from "./WebPushDeliveries.ts";
 import * as ApnsDeliveries from "./ApnsDeliveries.ts";
 
 const layerPublisher = AgentActivityPublisher.layer.pipe(
   Layer.provide(
-    Layer.succeed(FcmDeliveries.FcmDeliveries, {
-      enqueue: () => Effect.succeed(null),
-      process: () => Effect.void,
-    }),
+    Layer.mergeAll(
+      Layer.succeed(FcmDeliveries.FcmDeliveries, {
+        enqueue: () => Effect.succeed(null),
+        process: () => Effect.void,
+      }),
+      Layer.succeed(WebPushDeliveries.WebPushDeliveries, {
+        enqueue: () => Effect.succeed(null),
+        process: () => Effect.void,
+      }),
+    ),
   ),
 );
 
@@ -190,12 +197,93 @@ describe("AgentActivityPublisher", () => {
                   }),
                 process: () => Effect.void,
               }),
+              Layer.succeed(WebPushDeliveries.WebPushDeliveries, {
+                enqueue: () => Effect.die("web push for a mobile device"),
+                process: () => Effect.void,
+              }),
             ),
           ),
         ),
       ),
     );
   });
+
+  it.effect.each([
+    { notificationsEnabled: true, expected: 1 },
+    { notificationsEnabled: false, expected: 0 },
+  ])(
+    "routes web devices to web push only, and only while the environment notifies ($notificationsEnabled)",
+    ({ notificationsEnabled, expected }) => {
+      const web: LiveActivities.TargetRow = {
+        ...target("browser"),
+        platform: "web",
+        ios_major_version: null,
+        push_token: "https://push.test/subscription",
+        push_to_start_token: null,
+      };
+      const webCalls: Array<
+        Parameters<WebPushDeliveries.WebPushDeliveries["Service"]["enqueue"]>[0]
+      > = [];
+      return Effect.gen(function* () {
+        const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+        yield* publisher.publish({
+          environmentId: state.environmentId,
+          environmentPublicKey: "key",
+          threadId: state.threadId,
+          state,
+        });
+        expect(
+          yield* publisher.replayForLiveActivityRegistration({
+            userId: web.user_id,
+            deviceId: web.device_id,
+          }),
+        ).toBeNull();
+        expect(webCalls).toEqual(expected ? [{ target: web, state }] : []);
+      }).pipe(
+        Effect.provide(
+          AgentActivityPublisher.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+                Layer.succeed(
+                  EnvironmentLinks.EnvironmentLinks,
+                  makeEnvironmentLinks({
+                    listDeliveryUsersForEnvironment: () =>
+                      Effect.succeed([
+                        { userId: web.user_id, notificationsEnabled, liveActivitiesEnabled: true },
+                      ]),
+                  }),
+                ),
+                Layer.succeed(
+                  LiveActivities.LiveActivities,
+                  makeLiveActivities({ listTargets: () => Effect.succeed([web]) }),
+                ),
+                Layer.succeed(
+                  ApnsDeliveries.ApnsDeliveries,
+                  makeApnsDeliveries({
+                    sendForTarget: () => Effect.die("APNs for a web device"),
+                    sendPushNotificationForTarget: () => Effect.die("APNs for a web device"),
+                  }),
+                ),
+                Layer.succeed(FcmDeliveries.FcmDeliveries, {
+                  enqueue: () => Effect.die("FCM for a web device"),
+                  process: () => Effect.void,
+                }),
+                Layer.succeed(WebPushDeliveries.WebPushDeliveries, {
+                  enqueue: (input) =>
+                    Effect.sync(() => {
+                      webCalls.push(input);
+                      return null;
+                    }),
+                  process: () => Effect.void,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 
   it.effect("replays the latest aggregate when a Live Activity token registers", () => {
     const registeredTarget: LiveActivities.TargetRow = {

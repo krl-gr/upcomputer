@@ -1,13 +1,15 @@
 import type {
+  RelayAgentAwarenessPreferences,
   RelayClientDeviceRecord,
   RelayDeviceRegistrationRequest,
+  RelayWebPushSubscription,
 } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
@@ -53,6 +55,37 @@ export class DeviceListPersistenceError extends Schema.TaggedError<DeviceListPer
   }
 }
 
+export class WebPushTargetLookupPersistenceError extends Schema.TaggedError<WebPushTargetLookupPersistenceError>()(
+  "WebPushTargetLookupPersistenceError",
+  {
+    userId: Schema.String,
+    deviceId: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to read the web push subscription of ${this.userId}/${this.deviceId}.`;
+  }
+}
+
+export interface WebPushTarget {
+  readonly subscription: RelayWebPushSubscription;
+  readonly preferences: RelayAgentAwarenessPreferences;
+}
+
+export class WebPushSubscriptionRemovalPersistenceError extends Schema.TaggedError<WebPushSubscriptionRemovalPersistenceError>()(
+  "WebPushSubscriptionRemovalPersistenceError",
+  {
+    userId: Schema.String,
+    deviceId: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to remove the web push subscription of ${this.userId}/${this.deviceId}.`;
+  }
+}
+
 export class Devices extends Context.Service<
   Devices,
   {
@@ -67,6 +100,20 @@ export class Devices extends Context.Service<
     readonly listForUser: (input: {
       readonly userId: string;
     }) => Effect.Effect<ReadonlyArray<RelayClientDeviceRecord>, DeviceListPersistenceError>;
+    /** The current subscription of a web device, or null once it is gone. */
+    readonly findWebPushTarget: (input: {
+      readonly userId: string;
+      readonly deviceId: string;
+    }) => Effect.Effect<WebPushTarget | null, WebPushTargetLookupPersistenceError>;
+    /**
+     * Forgets a web device whose push service reported the subscription gone.
+     * Matches the endpoint, so a device that has re-subscribed meanwhile stays.
+     */
+    readonly removeWebPushSubscription: (input: {
+      readonly userId: string;
+      readonly deviceId: string;
+      readonly endpoint: string;
+    }) => Effect.Effect<void, WebPushSubscriptionRemovalPersistenceError>;
   }
 >()("t3code-relay/agentActivity/Devices") {}
 
@@ -80,17 +127,19 @@ export const make = Effect.gen(function* () {
       });
       const updatedAt = DateTime.formatIso(yield* DateTime.now);
       const registration = input.registration;
+      // A web device's subscription endpoint is its push token.
+      const pushToken = registration.webPush?.endpoint ?? registration.pushToken;
 
       // The drizzle handle is alchemy's lazy proxy chain: it only becomes a
       // real Effect when consumed via `yield*`. Handing it to Effect.all sends
       // the raw Proxy into the fiber runtime, which spins the isolate at 100%
       // CPU (registrations then hang until the client aborts) — keep every db
       // chain directly yielded.
-      if (registration.pushToken) {
+      if (pushToken) {
         yield* db
           .update(relayMobileDevices)
           .set({ pushToken: null, updatedAt })
-          .where(eq(relayMobileDevices.pushToken, registration.pushToken))
+          .where(eq(relayMobileDevices.pushToken, pushToken))
           .pipe(
             Effect.mapError(
               (cause) =>
@@ -133,8 +182,10 @@ export const make = Effect.gen(function* () {
           appVersion: registration.appVersion ?? null,
           bundleId: registration.bundleId ?? null,
           apsEnvironment: registration.apsEnvironment ?? null,
-          pushToken: registration.pushToken ?? null,
+          pushToken: pushToken ?? null,
           pushToStartToken: registration.pushToStartToken ?? null,
+          webPushP256dh: registration.webPush?.p256dh ?? null,
+          webPushAuth: registration.webPush?.auth ?? null,
           preferencesJson: registration.preferences,
           createdAt: updatedAt,
           updatedAt,
@@ -159,6 +210,8 @@ export const make = Effect.gen(function* () {
                 excluded.push_to_start_token,
                 ${relayMobileDevices.pushToStartToken}
               )`,
+            webPushP256dh: registration.webPush?.p256dh ?? null,
+            webPushAuth: registration.webPush?.auth ?? null,
             preferencesJson: registration.preferences,
             updatedAt,
           },
@@ -233,32 +286,99 @@ export const make = Effect.gen(function* () {
           updatedAt: relayMobileDevices.updatedAt,
         })
         .from(relayMobileDevices)
-        .where(eq(relayMobileDevices.userId, input.userId))
+        // Listings are for mobile clients; web devices manage themselves.
+        .where(
+          and(eq(relayMobileDevices.userId, input.userId), ne(relayMobileDevices.platform, "web")),
+        )
         .pipe(
           Effect.mapError(
             (cause) => new DeviceListPersistenceError({ userId: input.userId, cause }),
           ),
         );
-      return rows.map((row) => ({
-        deviceId: row.deviceId,
-        label: row.label,
-        platform: row.platform,
-        iosMajorVersion: row.iosMajorVersion,
-        androidApiLevel: row.androidApiLevel,
-        appVersion: row.appVersion,
-        notifications: {
-          enabled: row.preferences.notificationsEnabled,
-          notifyOnApproval: row.preferences.notifyOnApproval,
-          notifyOnInput: row.preferences.notifyOnInput,
-          notifyOnCompletion: row.preferences.notifyOnCompletion,
-          notifyOnFailure: row.preferences.notifyOnFailure,
-        },
-        liveActivities: {
-          enabled: row.preferences.liveActivitiesEnabled,
-        },
-        updatedAt: row.updatedAt,
-      }));
+      return rows.flatMap(({ platform, ...row }) =>
+        platform === "web"
+          ? []
+          : [
+              {
+                deviceId: row.deviceId,
+                label: row.label,
+                platform,
+                iosMajorVersion: row.iosMajorVersion,
+                androidApiLevel: row.androidApiLevel,
+                appVersion: row.appVersion,
+                notifications: {
+                  enabled: row.preferences.notificationsEnabled,
+                  notifyOnApproval: row.preferences.notifyOnApproval,
+                  notifyOnInput: row.preferences.notifyOnInput,
+                  notifyOnCompletion: row.preferences.notifyOnCompletion,
+                  notifyOnFailure: row.preferences.notifyOnFailure,
+                },
+                liveActivities: {
+                  enabled: row.preferences.liveActivitiesEnabled,
+                },
+                updatedAt: row.updatedAt,
+              },
+            ],
+      );
     }),
+    findWebPushTarget: Effect.fn("relay.devices.find_web_push_target")(function* (input) {
+      const rows = yield* db
+        .select({
+          endpoint: relayMobileDevices.pushToken,
+          p256dh: relayMobileDevices.webPushP256dh,
+          auth: relayMobileDevices.webPushAuth,
+          preferences: relayMobileDevices.preferencesJson,
+        })
+        .from(relayMobileDevices)
+        .where(
+          and(
+            eq(relayMobileDevices.userId, input.userId),
+            eq(relayMobileDevices.deviceId, input.deviceId),
+            eq(relayMobileDevices.platform, "web"),
+          ),
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new WebPushTargetLookupPersistenceError({
+                userId: input.userId,
+                deviceId: input.deviceId,
+                cause,
+              }),
+          ),
+        );
+      const row = rows[0];
+      if (!row?.endpoint || !row.p256dh || !row.auth) return null;
+      return {
+        subscription: { endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth },
+        preferences: row.preferences,
+      };
+    }),
+    removeWebPushSubscription: Effect.fn("relay.devices.remove_web_push_subscription")(
+      function* (input) {
+        yield* Effect.annotateCurrentSpan({ "relay.mobile.device_id": input.deviceId });
+        yield* db
+          .delete(relayMobileDevices)
+          .where(
+            and(
+              eq(relayMobileDevices.userId, input.userId),
+              eq(relayMobileDevices.deviceId, input.deviceId),
+              eq(relayMobileDevices.platform, "web"),
+              eq(relayMobileDevices.pushToken, input.endpoint),
+            ),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new WebPushSubscriptionRemovalPersistenceError({
+                  userId: input.userId,
+                  deviceId: input.deviceId,
+                  cause,
+                }),
+            ),
+          );
+      },
+    ),
   });
 });
 

@@ -52,6 +52,8 @@ export interface SettingsSearchItem {
   // Its row only renders in the desktop app, so a browser result would land on
   // an anchor that isn't there.
   readonly desktopOnly?: boolean;
+  // Its row only renders in a browser, never in the desktop app.
+  readonly browserOnly?: boolean;
   readonly macOnly?: boolean;
   // Its row only renders on Windows desktop, so other desktop platforms must
   // not expose a result that points to a missing anchor.
@@ -397,6 +399,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Thread notifications",
     to: "/settings/general",
     searchTerms: ["notification sound alert completion input approval desktop"],
+  },
+  {
+    id: "web-push-notifications",
+    title: "Notifications on this device",
+    to: "/settings/general",
+    searchTerms: ["web push phone iphone android home screen browser closed alerts"],
+    browserOnly: true,
+    cloudOnly: true,
   },
   {
     id: "in-app-notifications",
@@ -1171,6 +1181,7 @@ export function searchSettings(
   return items
     .flatMap((item, index) => {
       if (!isElectron && item.desktopOnly === true) return [];
+      if (isElectron && item.browserOnly === true) return [];
       if (item.releaseChannelOnly && !isElectron && HOSTED_APP_CHANNEL === null) return [];
       if (item.macOnly && !isMacPlatform(platform)) return [];
       if (item.windowsOnly && !isWindowsPlatform(platform)) return [];

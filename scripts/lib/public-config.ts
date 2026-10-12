@@ -17,6 +17,7 @@ export interface T3CodePublicConfig {
   readonly relayClientOtlpTracesUrl: string | undefined;
   readonly relayClientOtlpTracesDataset: string | undefined;
   readonly relayClientOtlpTracesToken: string | undefined;
+  readonly webPushVapidPublicKey: string | undefined;
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -104,6 +105,12 @@ export function loadRepoEnv({
           VITE_RELAY_OTLP_TRACES_TOKEN: config.relayClientOtlpTracesToken,
         }
       : {}),
+    ...(config.webPushVapidPublicKey
+      ? {
+          T3CODE_WEB_PUSH_VAPID_PUBLIC_KEY: config.webPushVapidPublicKey,
+          VITE_WEB_PUSH_VAPID_PUBLIC_KEY: config.webPushVapidPublicKey,
+        }
+      : {}),
   };
 }
 
@@ -156,6 +163,11 @@ export function resolvePublicConfig(...sources: readonly Environment[]): T3CodeP
       sources,
       "T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN",
       "VITE_RELAY_OTLP_TRACES_TOKEN",
+    ),
+    webPushVapidPublicKey: firstNonEmpty(
+      sources,
+      "T3CODE_WEB_PUSH_VAPID_PUBLIC_KEY",
+      "VITE_WEB_PUSH_VAPID_PUBLIC_KEY",
     ),
   };
 }
