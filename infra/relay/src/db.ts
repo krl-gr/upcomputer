@@ -44,14 +44,19 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
   });
 
   const mode = relayDatabaseMode(stage);
+  // Up.computer: one PS_5 node on AWS ARM (SKU PS_5_AWS_ARM, $5/month), sized
+  // for about 100 users. `eu-central` is PlanetScale's slug for AWS
+  // eu-central-1 (Frankfurt). Region, arch and replicas are create-only:
+  // changing them replaces the database.
   const database =
     mode === "shared-database"
       ? yield* Planetscale.PostgresDatabase("RelayPostgresDatabase", {
-          name: "t3coderelay",
-          region: { slug: "us-west" },
-          clusterSize: "PS_80",
+          name: "upcomputerrelay",
+          region: { slug: "eu-central" },
+          clusterSize: "PS_5",
+          arch: "arm",
           migrations: { dir: schema.out, table: "relay_migrations" },
-          replicas: 2,
+          replicas: 0,
         }).pipe(RemovalPolicy.retain())
       : yield* Planetscale.PostgresDatabase.ref("RelayPostgresDatabase", {
           stage: "prod",
@@ -80,6 +85,8 @@ export const RelayHyperdrive = Effect.gen(function* () {
     caching: {
       disabled: true,
     },
-    originConnectionLimit: 40,
+    // Workers Free caps Hyperdrive at about 20 origin connections, and a
+    // single PS_5 node has little room for more.
+    originConnectionLimit: 20,
   });
 });
