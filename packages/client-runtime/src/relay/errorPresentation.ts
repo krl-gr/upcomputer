@@ -60,6 +60,8 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
       return "Relay rejected an expired agent activity publish proof.";
     case "RelayAgentActivityPublishProofInvalidError":
       return `Relay rejected the agent activity publish proof (${error.reason}).`;
+    case "RelayWebPushSubscriptionConflictError":
+      return "Relay refused the notification subscription because another account holds it.";
     case "RelayInternalError":
       return `Relay encountered an internal error (${error.reason}).`;
   }

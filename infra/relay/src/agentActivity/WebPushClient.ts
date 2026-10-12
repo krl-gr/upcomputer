@@ -1,10 +1,11 @@
-import type { RelayWebPushSubscription } from "@t3tools/contracts/relay";
+import { isAllowedWebPushEndpoint, type RelayWebPushSubscription } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
@@ -24,7 +25,7 @@ const VAPID_TOKEN_LIFETIME_SECONDS = 12 * 60 * 60;
 export class WebPushClientError extends Schema.TaggedError<WebPushClientError>()(
   "WebPushClientError",
   {
-    operation: Schema.Literals(["configuration", "encrypt", "authorize", "send"]),
+    operation: Schema.Literals(["configuration", "endpoint", "encrypt", "authorize", "send"]),
     status: Schema.NullOr(Schema.Number),
     cause: Schema.optional(Schema.Defect()),
   },
@@ -33,10 +34,13 @@ export class WebPushClientError extends Schema.TaggedError<WebPushClientError>()
     return `Web push ${this.operation} failed${this.status === null ? "" : ` (${this.status})`}.`;
   }
 
-  /** Retrying cannot help: the subscription or the request itself is rejected. */
+  /**
+   * Retrying cannot help: the subscription or the request itself is rejected.
+   * A push service never redirects, so a 3xx is treated as a rejection too.
+   */
   get permanent(): boolean {
-    if (this.operation === "encrypt") return true;
-    return this.status !== null && this.status >= 400 && this.status < 500 && this.status !== 429;
+    if (this.operation === "endpoint" || this.operation === "encrypt") return true;
+    return this.status !== null && this.status >= 300 && this.status < 500 && this.status !== 429;
   }
 }
 
@@ -83,6 +87,11 @@ export const make = Effect.gen(function* () {
       if (!credentials) {
         return yield* new WebPushClientError({ operation: "configuration", status: null });
       }
+      // Registration checks the endpoint too; this covers rows stored before
+      // that check existed.
+      if (!isAllowedWebPushEndpoint(message.subscription.endpoint)) {
+        return yield* new WebPushClientError({ operation: "endpoint", status: null });
+      }
       const key = yield* signingKey;
       const userAgentPublicKey = decodeBase64Url(message.subscription.p256dh);
       const authSecret = decodeBase64Url(message.subscription.auth);
@@ -127,6 +136,8 @@ export const make = Effect.gen(function* () {
           ),
         )
         .pipe(
+          // A redirect would send the message to a host nobody validated.
+          Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
           Effect.timeout(WEB_PUSH_HTTP_TIMEOUT),
           Effect.mapError(
             (cause) => new WebPushClientError({ operation: "send", status: null, cause }),

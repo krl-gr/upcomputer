@@ -33,6 +33,7 @@ import {
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { ThreadManagementSendInput } from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
+import { handOffAgents, handOffPatch } from "../../../tasks-web/src/planner/logic/handOff.ts";
 import { AllChatsInstructionsLive } from "../persistence/AllChatsInstructions.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskRepository, type TaskRepositoryShape } from "../persistence/TaskRepository.ts";
@@ -134,6 +135,39 @@ test("a person task starts only an agent with start tags it carries, and a routi
   );
   NodeAssert.equal(startsForTask(agent({ startTags: [] }), task({ status: "new" }), nowMs), true);
   NodeAssert.equal(startsForTask(agent(), { ...person, kind: "routine" }, nowMs), false);
+});
+
+test("every agent Hand to an agent offers starts on the task it is handed", () => {
+  const nowMs = Date.parse(now);
+  const person = task({ audience: "person", status: "To Do", tags: ["mine"] });
+  const agents = [
+    agent({ id: TaskAgentId.make("developer"), name: "Developer", startStatuses: ["To Do"] }),
+    agent({
+      id: TaskAgentId.make("reviewer"),
+      name: "Reviewer",
+      startStatuses: ["Needs Review"],
+      startTags: [],
+    }),
+    agent({ id: TaskAgentId.make("any"), name: "Any status", startStatuses: [], startTags: [] }),
+    agent({
+      id: TaskAgentId.make("fixer"),
+      name: "Fixer",
+      startStatuses: [],
+      startTags: [],
+      startRunStatuses: ["failed"],
+    }),
+  ];
+
+  const offered = handOffAgents(agents, person.projectId);
+  NodeAssert.deepEqual(
+    offered.map(({ name }) => name),
+    ["Any status", "Developer", "Reviewer"],
+    "an agent that starts only on another agent's run is not offered",
+  );
+  for (const chosen of offered) {
+    const handedOff = { ...person, ...handOffPatch(person, chosen) } as Task;
+    NodeAssert.equal(startsForTask(chosen, handedOff, nowMs), true, chosen.name);
+  }
 });
 
 test("a started run keeps running while its task's status and tags change", () => {

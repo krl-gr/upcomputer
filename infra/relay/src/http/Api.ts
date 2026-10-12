@@ -52,6 +52,7 @@ import {
   RelayManagedEndpointRecoveryProofPayload,
   type RelayDpopAccessTokenScope,
   RelayInternalError,
+  RelayWebPushSubscriptionConflictError,
 } from "@t3tools/contracts/relay";
 import {
   normalizeRelayIssuer,
@@ -762,15 +763,25 @@ export const layerMobileApi = HttpApiBuilder.group(
     return handlers
       .handle(
         "registerDevice",
-        Effect.fn("relay.api.mobile.registerDevice")(function* (args) {
-          const { payload } = args;
-          const { userId, token } = yield* RelayClientPrincipal;
-          const proofKeyThumbprint = yield* requireDpopPrincipalScope("mobile:registration");
-          yield* requireDpopThumbprint(proofKeyThumbprint, {
-            expectedAccessToken: token,
-          }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs));
-          return yield* registrations.registerDevice({ userId, payload });
-        }, mapRelayCommonApiErrors("invalid_dpop")),
+        Effect.fn("relay.api.mobile.registerDevice")(
+          function* (args) {
+            const { payload } = args;
+            const { userId, token } = yield* RelayClientPrincipal;
+            const proofKeyThumbprint = yield* requireDpopPrincipalScope("mobile:registration");
+            yield* requireDpopThumbprint(proofKeyThumbprint, {
+              expectedAccessToken: token,
+            }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs));
+            return yield* registrations.registerDevice({ userId, payload });
+          },
+          mapRelayCommonApiErrors("invalid_dpop"),
+          mapErrorTags({
+            WebPushSubscriptionConflictError: (_error, traceId) =>
+              new RelayWebPushSubscriptionConflictError({
+                code: "web_push_subscription_conflict",
+                traceId,
+              }),
+          }),
+        ),
       )
       .handle(
         "registerLiveActivity",

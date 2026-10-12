@@ -1,4 +1,6 @@
 import * as Context from "effect/Context";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
@@ -49,10 +51,66 @@ export type RelayApnsEnvironment = typeof RelayApnsEnvironment.Type;
 export const RelayDeviceRegistrationPlatform = Schema.Literals(["ios", "android", "web"]);
 export type RelayDeviceRegistrationPlatform = typeof RelayDeviceRegistrationPlatform.Type;
 
+/**
+ * Push services the relay delivers web push to. The relay POSTs to the
+ * subscription endpoint, so any other host would let a signed-in user aim the
+ * relay at an arbitrary server. `*.` admits subdomains only. Chrome, Edge (FCM
+ * build), Opera and Brave use FCM; Safari uses Apple; Firefox uses Mozilla;
+ * legacy Edge uses WNS.
+ */
+export const WEB_PUSH_SERVICE_HOSTS = [
+  "fcm.googleapis.com",
+  "*.push.apple.com",
+  "*.push.services.mozilla.com",
+  "*.notify.windows.com",
+] as const;
+
+export const MAX_WEB_PUSH_ENDPOINT_LENGTH = 2048;
+
+/**
+ * Whether the relay may send to this subscription endpoint: an https URL on a
+ * known push service, without credentials or a non-default port. IP literals
+ * never match a listed host. The relay checks this on registration and again
+ * before every send, since stored rows may predate the check.
+ */
+export function isAllowedWebPushEndpoint(endpoint: string): boolean {
+  if (endpoint.length > MAX_WEB_PUSH_ENDPOINT_LENGTH) return false;
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+  const host = url.hostname;
+  return WEB_PUSH_SERVICE_HOSTS.some((pattern) =>
+    pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) : host === pattern,
+  );
+}
+
+function base64UrlByteLength(value: string): number | null {
+  const decoded = Base64Url.decode(value);
+  return Result.isSuccess(decoded) ? decoded.success.length : null;
+}
+
 export const RelayWebPushSubscription = Schema.Struct({
-  endpoint: TrimmedNonEmptyString.check(Schema.isPattern(/^https:\/\/\S+$/)),
-  p256dh: TrimmedNonEmptyString,
-  auth: TrimmedNonEmptyString,
+  endpoint: TrimmedNonEmptyString.check(
+    Schema.makeFilter(isAllowedWebPushEndpoint, {
+      expected: "an https endpoint of a supported web push service",
+    }),
+  ),
+  // An uncompressed P-256 point (RFC 8291 section 3.2).
+  p256dh: TrimmedNonEmptyString.check(
+    Schema.makeFilter((value) => base64UrlByteLength(value) === 65, {
+      expected: "a base64url P-256 public key",
+    }),
+  ),
+  // The 16-byte authentication secret (RFC 8291 section 3.2).
+  auth: TrimmedNonEmptyString.check(
+    Schema.makeFilter((value) => base64UrlByteLength(value) === 16, {
+      expected: "a base64url 16-byte authentication secret",
+    }),
+  ),
 });
 export type RelayWebPushSubscription = typeof RelayWebPushSubscription.Type;
 
@@ -600,6 +658,19 @@ export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedErr
   }
 }
 
+export class RelayWebPushSubscriptionConflictError extends Schema.TaggedError<RelayWebPushSubscriptionConflictError>()(
+  "RelayWebPushSubscriptionConflictError",
+  {
+    code: Schema.Literal("web_push_subscription_conflict"),
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 409 },
+) {
+  override get message(): string {
+    return "Relay refused the web push subscription: another account holds it";
+  }
+}
+
 export class RelayInternalError extends Schema.TaggedError<RelayInternalError>()(
   "RelayInternalError",
   {
@@ -626,6 +697,7 @@ export const RelayProtectedError = Schema.Union([
   RelayEnvironmentLinkLimitExceededError,
   RelayAgentActivityPublishProofExpiredError,
   RelayAgentActivityPublishProofInvalidError,
+  RelayWebPushSubscriptionConflictError,
   RelayInternalError,
 ]);
 export type RelayProtectedError = typeof RelayProtectedError.Type;
@@ -1018,7 +1090,7 @@ export const RelayRegisterDeviceEndpoint = HttpApiEndpoint.post(
     headers: RelayDpopRequestHeaders,
     payload: RelayDeviceRegistrationRequest,
     success: RelayOkResponse,
-    error: RelayAuthAndInternalErrors,
+    error: [RelayAuthInvalidError, RelayWebPushSubscriptionConflictError, RelayInternalError],
   },
 ).annotate(OpenApi.Summary, "Register or update a mobile device");
 

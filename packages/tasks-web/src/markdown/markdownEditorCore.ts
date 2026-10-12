@@ -26,7 +26,7 @@ import { insertTableCommand } from "@milkdown/preset-gfm";
 import { EditorState, Plugin, PluginKey, TextSelection } from "@milkdown/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/prose/view";
 
-import { configureMarkdownFormat, markdownPresets } from "./markdownFormat.ts";
+import { configureMarkdownFormat, markdownPresets, safeLinkHref } from "./markdownFormat.ts";
 
 /** An open `/` menu: where it shows and the text typed after the slash. */
 export interface SlashMenuState {
@@ -74,6 +74,23 @@ function taskToggleClick(view: EditorView, event: MouseEvent): boolean {
     }
   }
   return false;
+}
+
+/**
+ * A link never navigates the app's own window: the editor cancels every click
+ * on one and opens only http(s) and mailto links through `onOpenLink`. Cmd+click
+ * (Ctrl+click) opens a link while editing, where a plain click edits it; while
+ * the field is read-only a plain click opens it too.
+ */
+function openLinkClick(view: EditorView, event: MouseEvent, hooks: MarkdownEditorHooks): boolean {
+  if (!(event.target instanceof Element)) return false;
+  const anchor = event.target.closest("a");
+  if (!anchor || !view.dom.contains(anchor)) return false;
+  event.preventDefault();
+  if (event.type !== "click" || (view.editable && !(event.metaKey || event.ctrlKey))) return false;
+  const href = safeLinkHref(anchor.getAttribute("href"));
+  if (href && /^(https?:|mailto:)/i.test(href.trim())) hooks.onOpenLink(href.trim());
+  return true;
 }
 
 /** The `/query` before the cursor in a text block, as in wande. */
@@ -143,15 +160,8 @@ function editorPlugin(hooks: MarkdownEditorHooks) {
           reportMenu(view);
           return false;
         },
-      },
-      // Cmd+click (Ctrl+click) opens a link; a plain click edits it.
-      handleClick: (_view, _pos, event) => {
-        if (!(event.metaKey || event.ctrlKey) || !(event.target instanceof Element)) return false;
-        const href = event.target.closest("a")?.getAttribute("href");
-        if (!href || !/^(https?:|mailto:)/i.test(href)) return false;
-        event.preventDefault();
-        hooks.onOpenLink(href);
-        return true;
+        click: (view, event) => openLinkClick(view, event, hooks),
+        auxclick: (view, event) => openLinkClick(view, event, hooks),
       },
       decorations: (state) => {
         const { doc } = state;

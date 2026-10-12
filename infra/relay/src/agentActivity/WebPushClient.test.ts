@@ -3,6 +3,7 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -114,6 +115,7 @@ describe("WebPushClient", () => {
     { status: 503, permanent: false },
     { status: 403, permanent: true },
     { status: 413, permanent: true },
+    { status: 302, permanent: true },
   ])("fails a $status response (permanent: $permanent)", ({ status, permanent }) =>
     Effect.gen(function* () {
       const client = yield* WebPushClient.WebPushClient;
@@ -122,6 +124,56 @@ describe("WebPushClient", () => {
       expect(error.permanent).toBe(permanent);
     }).pipe(Effect.provide(layerTest(config, status))),
   );
+
+  it.effect.each([
+    "https://attacker.example/arbitrary",
+    "https://127.0.0.1/admin",
+    "https://user:pass@fcm.googleapis.com/fcm/send/abc",
+    "https://fcm.googleapis.com:8443/fcm/send/abc",
+  ])("refuses to send to a stored endpoint outside the push services: %s", (endpoint) => {
+    const requests: HttpClientRequest.HttpClientRequest[] = [];
+    return Effect.gen(function* () {
+      const client = yield* WebPushClient.WebPushClient;
+      const error = yield* client
+        .send({ ...message, subscription: { ...message.subscription, endpoint } })
+        .pipe(Effect.flip);
+      expect(error.operation).toBe("endpoint");
+      expect(error.permanent).toBe(true);
+      expect(requests).toHaveLength(0);
+    }).pipe(Effect.provide(layerTest(config, 201, requests)));
+  });
+
+  it.effect("does not follow a redirect from the push service", () => {
+    const inits: RequestInit[] = [];
+    const fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      inits.push(init ?? {});
+      return new Response(null, {
+        status: 307,
+        headers: { location: "https://attacker.example/" },
+      });
+    }) as typeof globalThis.fetch;
+    return Effect.gen(function* () {
+      const client = yield* WebPushClient.WebPushClient;
+      const error = yield* client.send(message).pipe(Effect.flip);
+      expect(inits).toHaveLength(1);
+      expect(inits[0]?.redirect).toBe("manual");
+      expect(error).toMatchObject({ operation: "send", status: 307 });
+      expect(error.permanent).toBe(true);
+    }).pipe(
+      Effect.provide(
+        WebPushClient.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(RelayConfiguration.RelayConfiguration, config),
+              Layer.succeed(WebCrypto.WebCrypto, { subtle }),
+              FetchHttpClient.layer,
+            ),
+          ),
+        ),
+      ),
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+    );
+  });
 
   it.effect("sends nothing without VAPID credentials", () => {
     const requests: HttpClientRequest.HttpClientRequest[] = [];
