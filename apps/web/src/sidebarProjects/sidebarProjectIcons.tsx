@@ -17,23 +17,23 @@ import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
  */
 
 /**
- * "All projects": the site's four-tile mark, filling the same box as a
- * project's icon. Sized by its container, like the sidebar button's own icons.
+ * "All projects": four tiles like project monograms' backgrounds, in the
+ * row's icon color. Sized by its container, like the sidebar button's own icons.
  */
 export function AllProjectsIcon(props: { readonly className?: string }) {
   return (
     <svg
       viewBox="0 0 16 16"
       fill="currentColor"
-      fillOpacity={0.45}
+      fillOpacity={0.28}
       aria-hidden="true"
       data-icon="all-projects"
       className={props.className}
     >
-      <rect x="0" y="0" width="7" height="7" rx="1.5" />
-      <rect x="9" y="0" width="7" height="7" rx="1.5" />
-      <rect x="0" y="9" width="7" height="7" rx="1.5" />
-      <rect x="9" y="9" width="7" height="7" rx="1.5" />
+      <rect x="1" y="1" width="6" height="6" rx="1.5" />
+      <rect x="9" y="1" width="6" height="6" rx="1.5" />
+      <rect x="1" y="9" width="6" height="6" rx="1.5" />
+      <rect x="9" y="9" width="6" height="6" rx="1.5" />
     </svg>
   );
 }
