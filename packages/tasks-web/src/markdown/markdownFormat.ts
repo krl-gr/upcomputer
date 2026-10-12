@@ -1,6 +1,6 @@
 import { remarkStringifyOptionsCtx } from "@milkdown/core";
 import type { Ctx } from "@milkdown/ctx";
-import { commonmark, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
+import { commonmark, linkSchema, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 
 interface MdastParent {
@@ -46,7 +46,66 @@ export const markdownPresets = [
 // `file\_name.ts` is only noise for the agents that read the text.
 const INTRAWORD_UNDERSCORE_ESCAPE = /(?<=[\p{L}\p{N}])\\_(?=[\p{L}\p{N}])/gu;
 
+// Schemes a link may navigate to. A link without a scheme is relative or an
+// anchor and stays in the app.
+const SAFE_LINK_SCHEMES = new Set(["http", "https", "mailto"]);
+// oxlint-disable-next-line no-control-regex -- browsers strip these around a URL
+const SURROUNDING_URL_CONTROLS = /^[\u0000-\u0020]+|[\u0000-\u0020]+$/g;
+
+/**
+ * The href a link may keep, or null for one that would run code (`javascript:`,
+ * `data:`, `vbscript:`). Browsers drop tabs and newlines inside a URL and
+ * control characters and spaces around it before reading the scheme, so the
+ * scheme is read the same way.
+ */
+export function safeLinkHref(href: unknown): string | null {
+  if (typeof href !== "string") return null;
+  const normalized = href.replace(/[\t\n\r]/g, "").replace(SURROUNDING_URL_CONTROLS, "");
+  const scheme = /^([a-z][a-z\d+.-]*):/i.exec(normalized)?.[1];
+  return scheme === undefined || SAFE_LINK_SCHEMES.has(scheme.toLowerCase()) ? href : null;
+}
+
+/**
+ * Agents and pasted text can carry `[text](javascript:...)`. Such a link loads
+ * as plain text, and no `<a>` the editor renders carries an unsafe href, in
+ * either the editable or the read-only state.
+ */
+function configureSafeLinks(ctx: Ctx) {
+  ctx.update(linkSchema.key, (base) => (schemaCtx) => {
+    const schema = base(schemaCtx);
+    return {
+      ...schema,
+      parseDOM: [
+        {
+          tag: "a[href]",
+          getAttrs: (dom) => {
+            if (!(dom instanceof HTMLElement)) return false;
+            const href = safeLinkHref(dom.getAttribute("href"));
+            return href === null ? false : { href, title: dom.getAttribute("title") };
+          },
+        },
+      ],
+      toDOM: (mark, inline) => {
+        const href = safeLinkHref(mark.attrs.href);
+        const [, attrs] = schema.toDOM!(mark, inline) as [string, Record<string, unknown>];
+        return ["a", { ...attrs, href: href ?? undefined }];
+      },
+      parseMarkdown: {
+        match: schema.parseMarkdown.match,
+        runner: (state, node, markType) => {
+          if (safeLinkHref(node.url) === null) {
+            state.next(node.children);
+            return;
+          }
+          schema.parseMarkdown.runner(state, node, markType);
+        },
+      },
+    };
+  });
+}
+
 export function configureMarkdownFormat(ctx: Ctx) {
+  configureSafeLinks(ctx);
   ctx.update(remarkStringifyOptionsCtx, (options) => {
     const text = options.handlers?.text;
     return {

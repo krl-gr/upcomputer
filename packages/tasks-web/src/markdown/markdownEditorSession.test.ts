@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { editorViewCtx } from "@milkdown/core";
+import { DOMParser } from "@milkdown/prose/model";
 import type { EditorView } from "@milkdown/prose/view";
 import { TextSelection } from "@milkdown/prose/state";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { MarkdownEditorSession } from "./markdownEditorCore.ts";
+import { safeLinkHref } from "./markdownFormat.ts";
 
 // Agents' style the editor should keep: `*` bullets would come back as `-`.
 const AGENT_TEXT = [
@@ -21,8 +23,9 @@ const AGENT_TEXT = [
 
 const sessions: MarkdownEditorSession[] = [];
 
-async function open(initial: string) {
+async function open(initial: string, options: { readonly editable?: boolean } = {}) {
   let value = initial;
+  const onOpenLink = vi.fn<(href: string) => void>();
   const onChange = vi.fn((next: string) => {
     value = next;
   });
@@ -37,8 +40,8 @@ async function open(initial: string) {
       onBlur: () => undefined,
       onSlashMenu: () => undefined,
       onKey: () => false,
-      onOpenLink: () => undefined,
-      isEditable: () => true,
+      onOpenLink,
+      isEditable: () => options.editable ?? true,
       placeholder: () => "",
       ariaLabel: () => "Description",
     },
@@ -50,7 +53,9 @@ async function open(initial: string) {
   return {
     session,
     view,
+    root,
     onChange,
+    onOpenLink,
     setValue: (next: string) => {
       value = next;
       session.valueChanged();
@@ -131,5 +136,95 @@ describe("MarkdownEditorSession", () => {
     editor.blur();
     expect(editor.text()).toBe("Agent text");
     expect(editor.onChange).not.toHaveBeenCalled();
+  });
+});
+
+const UNSAFE_LINKS = [
+  "[click](javascript:window.__xss=1)",
+  "[click](JaVaScRiPt:window.__xss=1)",
+  "[click](<\tjavascript:window.__xss=1>)",
+  "[click](data:text/html,<script>window.__xss=1</script>)",
+  "[click](vbscript:msgbox)",
+  "<javascript:window.__xss=1>",
+];
+
+describe("links", () => {
+  it.each([
+    "javascript:alert(1)",
+    "JaVaScRiPt:alert(1)",
+    " javascript:alert(1)",
+    "\u0001javascript:alert(1)",
+    "java\tscript:alert(1)",
+    "java\nscript:alert(1)",
+    "data:text/html,x",
+    "vbscript:msgbox",
+    "file:///etc/passwd",
+  ])("refuses the href %j", (href) => {
+    expect(safeLinkHref(href)).toBeNull();
+  });
+
+  it.each([
+    "https://up.computer",
+    "HTTP://up.computer",
+    "mailto:a@b.c",
+    "#notes",
+    "/docs",
+    "a/b.md",
+  ])("keeps the href %j", (href) => {
+    expect(safeLinkHref(href)).toBe(href);
+  });
+
+  it.each([true, false])("loads code links as plain text (editable: %s)", async (editable) => {
+    for (const markdown of UNSAFE_LINKS) {
+      const editor = await open(markdown, { editable });
+      expect(editor.root.querySelectorAll("a")).toHaveLength(0);
+      expect(editor.text()).not.toBe("");
+    }
+  });
+
+  it("drops a code link from pasted HTML and never renders one", async () => {
+    const editor = await open("");
+    const { schema } = editor.view.state;
+    const pasted = document.createElement("div");
+    pasted.innerHTML =
+      '<p><a href=" JaVaScRiPt:window.__xss=1">pasted</a> <a href="https://up.computer">ok</a></p>';
+    const doc = DOMParser.fromSchema(schema).parse(pasted);
+    // A mark that reached the document some other way still renders without its href.
+    const forged = schema.text("forged", [schema.marks.link!.create({ href: "javascript:1" })]);
+    const { tr } = editor.view.state;
+    editor.view.dispatch(
+      tr.replaceWith(0, tr.doc.content.size, doc.content).insert(tr.doc.content.size - 1, forged),
+    );
+
+    const hrefs = [...editor.root.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://up.computer", null]);
+    expect(editor.text()).toContain("pasted");
+  });
+
+  it("keeps a click on a link from navigating the app, and opens web links read-only", async () => {
+    const editor = await open("[site](https://up.computer) and [notes](#notes)", {
+      editable: false,
+    });
+    const [site, notes] = [...editor.root.querySelectorAll("a")];
+    const clickSite = new MouseEvent("click", { bubbles: true, cancelable: true });
+    site!.dispatchEvent(clickSite);
+    const clickNotes = new MouseEvent("click", { bubbles: true, cancelable: true });
+    notes!.dispatchEvent(clickNotes);
+
+    expect(clickSite.defaultPrevented).toBe(true);
+    expect(clickNotes.defaultPrevented).toBe(true);
+    expect(editor.onOpenLink.mock.calls).toEqual([["https://up.computer"]]);
+  });
+
+  it("opens a link only on Cmd+click while editing", async () => {
+    const editor = await open("[site](https://up.computer)");
+    const link = editor.root.querySelector("a")!;
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(plain);
+    expect(plain.defaultPrevented).toBe(true);
+    expect(editor.onOpenLink).not.toHaveBeenCalled();
+
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true }));
+    expect(editor.onOpenLink).toHaveBeenCalledWith("https://up.computer");
   });
 });
