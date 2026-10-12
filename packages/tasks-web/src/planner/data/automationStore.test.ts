@@ -81,6 +81,7 @@ function harness(rows: TaskAutomationListItem[]) {
   };
   const store = new AutomationStore(client as never, {
     batchMs: 5,
+    releaseMs: 20,
     onError: (title) => errors.push(title),
   });
   return {
@@ -103,6 +104,9 @@ function harness(rows: TaskAutomationListItem[]) {
       }),
     count: (name: string) => calls.filter((call) => call.method === name).length,
     ids: () => store.getSnapshot().automations.map(({ id }) => id),
+    get live() {
+      return emit !== undefined;
+    },
   };
 }
 
@@ -214,5 +218,30 @@ describe("automation store", () => {
     NodeAssert.equal(await h.store.remove("a"), true);
     NodeAssert.deepEqual(h.ids(), ["new"]);
     release();
+  });
+
+  test("a remount within the release grace reads nothing again, and a read keeps unchanged rows", async () => {
+    const h = harness([automation("a", "0000000100000000"), automation("b", "0000000200000000")]);
+    const release = h.store.retain();
+    await until(() => h.store.getSnapshot().status === "ready");
+    const [a, b] = h.store.getSnapshot().automations;
+    // A thread switch: the panel's views unmount and mount again in one commit.
+    release();
+    const again = h.store.retain();
+    await NodeTimersPromises.setTimeout(30);
+    NodeAssert.equal(h.count("search"), 1);
+    NodeAssert.ok(h.live);
+
+    h.setRows([
+      automation("a", "0000000100000000"),
+      automation("b", "0000000200000000", { taskCount: 3 }),
+    ]);
+    h.emit({ listChanged: true });
+    await until(() => h.store.getSnapshot().automations[1]?.taskCount === 3);
+    NodeAssert.equal(h.store.getSnapshot().automations[0], a);
+    NodeAssert.notEqual(h.store.getSnapshot().automations[1], b);
+
+    again();
+    await until(() => !h.live);
   });
 });

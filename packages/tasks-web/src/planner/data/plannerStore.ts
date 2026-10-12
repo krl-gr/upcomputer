@@ -31,6 +31,7 @@ import type { ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
+import { reuseRows, sameRow } from "../../state/recent.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import type { PlannerKind } from "./preferences.ts";
@@ -87,6 +88,8 @@ export interface ProgressWindow {
 
 export interface PlannerStoreOptions {
   readonly batchMs?: number;
+  /** How long the store stays live after its last release. */
+  readonly releaseMs?: number;
   readonly onError?: (title: string, error: unknown) => void;
   readonly now?: () => string;
 }
@@ -231,6 +234,7 @@ export class PlannerStore {
   private readonly scheduleWatchers = new Map<string, number>();
 
   private retained = 0;
+  private releaseTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubscribe: (() => void) | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private flushing = false;
@@ -244,12 +248,14 @@ export class PlannerStore {
   private readonly target: TasksStateTarget;
   private readonly client: TasksWebRpcClient;
   private readonly batchMs: number;
+  private readonly releaseMs: number;
   private readonly onError: (title: string, error: unknown) => void;
   private readonly now: () => string;
 
   constructor(target: TasksStateTarget, options: PlannerStoreOptions = {}) {
     this.client = target.client;
     this.batchMs = options.batchMs ?? 150;
+    this.releaseMs = options.releaseMs ?? 1_000;
     this.onError = options.onError ?? (() => undefined);
     this.now = options.now ?? (() => new Date().toISOString());
     // List pages go through the store first, so their rows meet the stale-read guard.
@@ -299,14 +305,29 @@ export class PlannerStore {
   /** Keeps the store live while the planner is on screen; data stays cached after release. */
   retain(): () => void {
     this.retained += 1;
-    if (this.retained === 1) this.start();
+    if (this.retained === 1) {
+      // Retained again within the grace (the Tasks panel remounting with a
+      // thread switch): still live, so nothing is read again.
+      if (this.releaseTimer !== undefined) clearTimeout(this.releaseTimer);
+      else this.start();
+      this.releaseTimer = undefined;
+    }
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.retained -= 1;
-      if (this.retained === 0) this.stop();
+      if (this.retained === 0)
+        this.releaseTimer = setTimeout(() => {
+          this.releaseTimer = undefined;
+          this.stop();
+        }, this.releaseMs);
     };
+  }
+
+  /** Following the change stream: retained, or released less than `releaseMs` ago. */
+  private get live() {
+    return this.retained > 0 || this.releaseTimer !== undefined;
   }
 
   private start() {
@@ -319,6 +340,8 @@ export class PlannerStore {
         this.emit();
       },
     );
+    // Lists come from the lanes: a snapshot taken while stopped has none.
+    this.emit();
   }
 
   private stop() {
@@ -339,7 +362,7 @@ export class PlannerStore {
       JSON.stringify(query.projectIds) === JSON.stringify(this.query.projectIds);
     if (same) return;
     this.query = query;
-    if (this.retained > 0) {
+    if (this.live) {
       for (const lane of this.lanes) lane.loader.dispose();
       this.buildLanes();
       for (const lane of this.lanes) lane.loader.refresh();
@@ -535,9 +558,13 @@ export class PlannerStore {
           ...(window ? { from: window.from, to: window.to } : {}),
         });
         if (window !== this.progressWindow) continue;
-        for (const id of part) this.progress.delete(id);
-        for (const item of result.progress)
-          this.progress.set(item.taskId, { total: item.total, handled: item.handled });
+        const answered = new Set(result.progress.map((item) => item.taskId as string));
+        for (const id of part) if (!answered.has(id)) this.progress.delete(id);
+        for (const item of result.progress) {
+          const previous = this.progress.get(item.taskId);
+          const next = { total: item.total, handled: item.handled };
+          this.progress.set(item.taskId, previous && sameRow(previous, next) ? previous : next);
+        }
       } catch {
         // A missing chip is not worth a toast; the next change asks again.
       }
@@ -550,7 +577,11 @@ export class PlannerStore {
         taskId: taskId as TaskId,
         limit: 500,
       });
-      if (this.scheduleWatchers.has(taskId)) this.schedules.set(taskId, result.entries);
+      if (this.scheduleWatchers.has(taskId))
+        this.schedules.set(
+          taskId,
+          reuseRows(this.schedules.get(taskId) ?? [], result.entries, (entry) => entry.id),
+        );
     } catch {
       // The table keeps its last rows; the next change asks again.
     }
@@ -578,7 +609,9 @@ export class PlannerStore {
       if (this.deletedTasks.has(row.id)) continue;
       if ((this.taskSeq.get(row.id) ?? 0) > start) continue;
       this.missingTasks.delete(row.id);
-      this.tasks.set(row.id, row);
+      // A background read keeps unchanged rows, so the planner repaints only what changed.
+      const previous = this.tasks.get(row.id);
+      this.tasks.set(row.id, previous && sameRow(previous, row) ? previous : row);
       this.taskSeq.set(row.id, start);
     }
   }
@@ -586,7 +619,8 @@ export class PlannerStore {
   private mergeFetchedEntry(entry: TaskScheduleEntry, start: number) {
     if (this.deletedEntries.has(entry.id)) return;
     if ((this.entrySeq.get(entry.id) ?? 0) > start) return;
-    this.entries.set(entry.id, entry);
+    const previous = this.entries.get(entry.id);
+    this.entries.set(entry.id, previous && sameRow(previous, entry) ? previous : entry);
     this.entrySeq.set(entry.id, start);
   }
 
