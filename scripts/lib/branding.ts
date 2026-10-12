@@ -304,7 +304,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   // Release and Connect workflows.
   {
     path: ".github/workflows/release.yml",
-    requires: ['echo "tag=core-v$version"', "--filter @t3tools/desktop ensure:electron"],
+    requires: ['echo "tag=core-v$version"', "--filter=@t3tools/scripts..."],
     forbids: ["blacksmith-", "app.t3.codes"],
   },
   {
