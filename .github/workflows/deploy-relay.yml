@@ -84,7 +84,10 @@ jobs:
               - --filter=t3code-relay...
 
       - name: Deploy production relay stage
-        run: vp run --filter t3code-relay deploy --stage prod --yes --no-input ${{ inputs.force && '--force' || '' }}
+        # Alchemy runs straight from the relay package: `vp run` would load every
+        # workspace package's config, and only the relay's dependencies are installed.
+        working-directory: infra/relay
+        run: ./node_modules/.bin/alchemy deploy --stage prod --yes --no-input ${{ inputs.force && '--force' || '' }}
         env:
           # The PublishClientConfig action writes the client env here instead
           # of the repo-root .env; nothing on the runner reads it.
