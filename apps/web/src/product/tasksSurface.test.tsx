@@ -1,6 +1,6 @@
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import type { ComponentProps } from "react";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 // The jsdom test environment cannot load this repo's test setup (it imports
 // `node:sea`), so the DOM is installed by hand before React loads.
@@ -374,6 +374,14 @@ describe("the Tasks surface in the right panel", () => {
 });
 
 describe("the Tasks surface's content", () => {
+  // The panel loads lazily, and its module graph alone can outlast a test's
+  // wait on a busy CI runner. Load it once up front so each test waits only
+  // on its own render.
+  beforeAll(async () => {
+    const { WEB_PRODUCT } = await import("./productEntry");
+    await Promise.all(WEB_PRODUCT.rightPanelSurfaces.map((surface) => surface.load()));
+  }, 60_000);
+
   // The thread beside the panel is in Life OS; the page's filters decide what is listed.
   function renderTasks(storage: Record<string, unknown>) {
     for (const [key, value] of Object.entries(storage)) {
