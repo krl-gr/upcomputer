@@ -175,7 +175,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "read",
     name: "task_search",
     description:
-      "Search tasks in ascending global rank order. Project, status, and tag filters preserve relative global order within this environment. Archived tasks are left out unless archive says otherwise. By default only regular agent tasks: ask for routines with kind routine, or tasks and routines with kind all.",
+      "Search tasks in this environment's global order, from the top by default. New tasks go to the top; an agent's queue runs from the bottom, so from bottom with the agent's tag, a status and limit 1 returns its next task in that status. Project, status, and tag filters preserve relative global order. Archived tasks are left out unless archive says otherwise. By default only regular agent tasks: ask for routines with kind routine, or tasks and routines with kind all.",
     inputSchema: object({
       projectId: id,
       status: id,
@@ -198,6 +198,12 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         description:
           "active (default): tasks that are not archived. archived: only archived tasks. all: both.",
       },
+      from: {
+        type: "string",
+        enum: ["top", "bottom"],
+        description:
+          "top (default): the newest end first. bottom: the other end first, where agents' queues start.",
+      },
       limit: { type: "number" },
     }),
   },
@@ -205,7 +211,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks join the end of the global order in the order given. One task returns the task; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks go to the top of the global order and agents' queues run from the bottom, so a list runs in the order given: its first task ends up lowest. One task returns the task; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
     inputSchema: object({
       projectId: id,
       workspaceRoot: id,
@@ -246,7 +252,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_reorder",
     description:
-      "Move one task in this environment's global order using semantic neighbors. The task and neighbors must belong to the same environment; omit afterTaskId at the beginning or beforeTaskId at the end.",
+      "Move one task in this environment's global order using semantic neighbors. Agents' queues run from the bottom, so a task moved lower runs sooner. The task and neighbors must belong to the same environment; omit afterTaskId at the top or beforeTaskId at the bottom.",
     inputSchema: object({ id, beforeTaskId: id, afterTaskId: id }, ["id"]),
   },
   {

@@ -94,8 +94,8 @@ import {
 import {
   TASK_RANK_STEP,
   encodeTaskRank,
+  centeredTaskRanks,
   rebalancedTaskRanks,
-  taskRankAfter,
   taskRankBetween,
   taskRanksBetween,
 } from "./taskRank.ts";
@@ -863,6 +863,7 @@ const makeTaskRepository = Effect.gen(function* () {
       excludeAutomationTasks: Schema.Number,
       afterRank: Schema.NullOr(Task.fields.rank),
       afterId: Schema.NullOr(TaskId),
+      fromBottom: Schema.Boolean,
       limit: Schema.Number,
     }),
     Result: TaskDbRow,
@@ -879,6 +880,7 @@ const makeTaskRepository = Effect.gen(function* () {
       excludeAutomationTasks,
       afterRank,
       afterId,
+      fromBottom,
       limit,
     }) =>
       sql`
@@ -906,7 +908,7 @@ const makeTaskRepository = Effect.gen(function* () {
           )
           AND (${afterRank} IS NULL OR rank > ${afterRank}
             OR (rank = ${afterRank} AND id > ${afterId}))
-        ORDER BY rank ASC, id ASC
+        ORDER BY ${fromBottom ? sql`rank DESC, id DESC` : sql`rank ASC, id ASC`}
         LIMIT ${limit}
       `,
   });
@@ -965,10 +967,10 @@ const makeTaskRepository = Effect.gen(function* () {
     execute: () => sql`SELECT id, rank FROM tasks ORDER BY rank ASC, id ASC`,
   });
 
-  const getLastTaskRankRow = SqlSchema.findOneOption({
+  const getFirstTaskRankRow = SqlSchema.findOneOption({
     Request: Schema.Void,
     Result: Schema.Struct({ rank: Task.fields.rank }),
-    execute: () => sql`SELECT rank FROM tasks ORDER BY rank DESC, id DESC LIMIT 1`,
+    execute: () => sql`SELECT rank FROM tasks ORDER BY rank ASC, id ASC LIMIT 1`,
   });
 
   const listTaskTags = SqlSchema.findAll({
@@ -1869,8 +1871,11 @@ const makeTaskRepository = Effect.gen(function* () {
       ),
     );
 
-  const rebalanceTaskRows = (rows: ReadonlyArray<{ readonly id: TaskId }>) => {
-    const ranks = rebalancedTaskRanks(rows.map(({ id }) => id));
+  const rebalanceTaskRows = (
+    rows: ReadonlyArray<{ readonly id: TaskId }>,
+    spacing: typeof rebalancedTaskRanks = rebalancedTaskRanks,
+  ) => {
+    const ranks = spacing(rows.map(({ id }) => id));
     return clearTaskRanks().pipe(
       Effect.andThen(
         Effect.forEach(rows, ({ id }) => setTaskRank({ id, rank: ranks.get(id)! }), {
@@ -1878,20 +1883,37 @@ const makeTaskRepository = Effect.gen(function* () {
           concurrency: 1,
         }),
       ),
+      Effect.as(ranks),
     );
   };
 
-  // New tasks join the end of the order, so tasks created one after another
-  // keep that order in the list and in every queue hand-off that follows it.
-  const appendRank = () =>
-    getLastTaskRankRow().pipe(
-      Effect.flatMap((last) => {
-        if (Option.isNone(last)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
-        const candidate = taskRankAfter(last.value.rank);
+  /**
+   * New tasks go to the top, so the list reads newest first. Agent queues run
+   * from the bottom, so tasks created one after another run in that order.
+   */
+  const prependRank = () =>
+    getFirstTaskRankRow().pipe(
+      Effect.flatMap((first) => {
+        if (Option.isNone(first)) return Effect.succeed(encodeTaskRank(TASK_RANK_STEP));
+        const candidate = taskRanksBetween(null, first.value.rank, 1)?.[0];
         if (candidate) return Effect.succeed(candidate);
+        // No room above the first task: center the order in the rank space.
         return listTaskIdRows().pipe(
-          Effect.tap(rebalanceTaskRows),
-          Effect.map((rows) => encodeTaskRank(BigInt(rows.length + 1) * TASK_RANK_STEP)),
+          Effect.flatMap((rows) =>
+            rebalanceTaskRows(rows, centeredTaskRanks).pipe(
+              Effect.map((ranks) => ranks.get(rows[0]!.id)!),
+            ),
+          ),
+          Effect.flatMap((top) => {
+            const rank = taskRanksBetween(null, top, 1)?.[0];
+            return rank
+              ? Effect.succeed(rank)
+              : Effect.fail(
+                  toTaskPersistenceSqlError("TaskRepository.upsert:exhausted")(
+                    "Unable to allocate a task rank after rebalance",
+                  ),
+                );
+          }),
         );
       }),
     );
@@ -1901,7 +1923,7 @@ const makeTaskRepository = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           const existing = yield* getById({ id: task.id });
-          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* appendRank());
+          const rank = task.rank ?? Option.getOrUndefined(existing)?.rank ?? (yield* prependRank());
           const origin = Option.isSome(existing)
             ? {
                 rootThreadId: existing.value.rootThreadId,
@@ -2014,6 +2036,7 @@ const makeTaskRepository = Effect.gen(function* () {
         ...listFilters(input),
         afterRank: null,
         afterId: null,
+        fromBottom: input.from === "bottom",
         limit,
       }),
       listTaskTags(),
@@ -2115,6 +2138,7 @@ const makeTaskRepository = Effect.gen(function* () {
             ...listFilters(input),
             afterRank: input.cursor?.rank ?? null,
             afterId: input.cursor?.id ?? null,
+            fromBottom: false,
             limit: limit + 1,
           });
           const visible = rows.slice(0, limit);

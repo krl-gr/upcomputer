@@ -145,14 +145,14 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
       const routine = { audience: "person", kind: "routine" } as const;
-      // A new task joins the end, so these are created first to last.
-      yield* repository.upsert(task("k-1-task"));
-      yield* repository.upsert(task("k-2-routine", ["gym"], routine));
-      yield* repository.upsert(task("k-3-mine", ["gym"], { audience: "person" }));
+      // A new task goes to the top, so these are created last to first.
+      yield* repository.upsert(task("k-5-routine", [], routine));
       yield* repository.upsert(
         task("k-4-old", [], { ...routine, archivedAt: "2026-10-05T11:00:00.000Z" }),
       );
-      yield* repository.upsert(task("k-5-routine", [], routine));
+      yield* repository.upsert(task("k-3-mine", ["gym"], { audience: "person" }));
+      yield* repository.upsert(task("k-2-routine", ["gym"], routine));
+      yield* repository.upsert(task("k-1-task"));
 
       const ids = (input: Parameters<typeof repository.search>[0]) =>
         repository
@@ -246,8 +246,8 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
   it.effect("reorderMany moves a block in its current order, next to a neighbor or first", () =>
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
-      // Each create appends, so the global order is the creation order.
-      for (const id of ["rm1", "rm2", "rm3", "rm4", "rm5", "rm6"])
+      // Each create goes on top, so creating them last to first gives rm1..rm6.
+      for (const id of ["rm6", "rm5", "rm4", "rm3", "rm2", "rm1"])
         yield* repository.upsert(task(id));
       const order = () =>
         repository
@@ -289,7 +289,7 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
 });
 
 it.layer(TestLayer)("TaskRepository order", (it) => {
-  it.effect("new tasks join the end, so a queue created in order runs in that order", () =>
+  it.effect("new tasks go to the top, and a queue runs from the bottom in creation order", () =>
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
       yield* repository.upsert({ ...task("first", ["dev"]), status: "To Do" });
@@ -299,30 +299,46 @@ it.layer(TestLayer)("TaskRepository order", (it) => {
 
       const ids = (input: Parameters<typeof repository.search>[0]) =>
         repository.search(input).pipe(Effect.map((tasks) => tasks.map(({ id }) => id)));
-      assert.deepStrictEqual(yield* ids({}), ["first", "second", "unrelated", "third"]);
-      // The hand-off takes the head of this list.
-      assert.deepStrictEqual(yield* ids({ status: "Backlog", tags: ["dev"] }), ["second", "third"]);
+      assert.deepStrictEqual(yield* ids({}), ["third", "unrelated", "second", "first"]);
+      // The hand-off takes the bottom task of the agent's Backlog.
+      const backlog = { status: "Backlog", tags: ["dev"] };
+      assert.deepStrictEqual(yield* ids({ ...backlog, from: "bottom", limit: 1 }), ["second"]);
+      assert.deepStrictEqual(yield* ids({ from: "bottom" }), [
+        "first",
+        "second",
+        "unrelated",
+        "third",
+      ]);
 
-      // An explicit reorder still decides, and the next new task goes after everything.
-      yield* repository.reorder({ id: TaskId.make("third"), beforeTaskId: TaskId.make("second") });
+      // Moving a task lower makes it run sooner, and the next new task goes on top.
+      yield* repository.reorder({ id: TaskId.make("third"), afterTaskId: TaskId.make("second") });
       yield* repository.upsert({ ...task("fourth", ["dev"]), status: "Backlog" });
-      assert.deepStrictEqual(yield* ids({ status: "Backlog", tags: ["dev"] }), [
+      assert.deepStrictEqual(yield* ids({ ...backlog, from: "bottom" }), [
         "third",
         "second",
         "fourth",
       ]);
+      assert.deepStrictEqual(yield* ids({ ...backlog, from: "bottom", limit: 1 }), ["third"]);
     }),
   );
 
-  it.effect("appending at the end of the rank space rebalances", () =>
+  it.effect("prepending at the top of the rank space centers the order", () =>
     Effect.gen(function* () {
       const repository = yield* TaskRepository;
-      yield* repository.upsert({ ...task("last"), rank: TaskRank.make("fffffffffffffffe") });
-      yield* repository.upsert(task("after-last"));
+      yield* repository.upsert({ ...task("top"), rank: TaskRank.make("0000000000000001") });
+      yield* repository.upsert({ ...task("below"), rank: TaskRank.make("0000000000000002") });
+      yield* repository.upsert(task("new"));
 
       const tasks = yield* repository.search({});
-      assert.deepStrictEqual(tasks.map(({ id }) => id).slice(-2), ["last", "after-last"]);
-      assert.isBelow(tasks.at(-1)!.rank.localeCompare("fffffffffffffffe"), 0);
+      assert.deepStrictEqual(tasks.map(({ id }) => id).slice(0, 3), ["new", "top", "below"]);
+      // Room above the top again: the next tasks take a full step each, no rebalance.
+      assert.isAbove(tasks[0]!.rank.localeCompare("4000000000000000"), 0);
+      yield* repository.upsert(task("newer"));
+      const after = yield* repository.search({});
+      assert.deepStrictEqual(
+        after.slice(1).map(({ rank }) => rank),
+        tasks.map(({ rank }) => rank),
+      );
     }),
   );
 });

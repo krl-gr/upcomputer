@@ -281,7 +281,7 @@ export type TaskAudienceFilter = typeof TaskAudienceFilter.Type;
 export const TaskKindFilter = Schema.Literals(["task", "routine", "all"]);
 export type TaskKindFilter = typeof TaskKindFilter.Type;
 
-export const TaskSearchInput = Schema.Struct({
+const TaskListFilterFields = {
   projectId: Schema.optional(ProjectId),
   status: Schema.optional(TrimmedNonEmptyString),
   /** Leaves out tasks in these statuses. */
@@ -299,6 +299,14 @@ export const TaskSearchInput = Schema.Struct({
   /** Leaves out tasks an automation created (`createdBy` `automation:<id>`). */
   excludeAutomationTasks: Schema.optional(Schema.Boolean),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(500))),
+};
+export const TaskSearchInput = Schema.Struct({
+  ...TaskListFilterFields,
+  /**
+   * top (default): the global order from the top. bottom: from the bottom, so
+   * an agent's next queued task comes first.
+   */
+  from: Schema.optional(Schema.Literals(["top", "bottom"])),
 });
 export type TaskSearchInput = typeof TaskSearchInput.Type;
 
@@ -309,7 +317,7 @@ export const TaskPageCursor = Schema.Struct({
 });
 export type TaskPageCursor = typeof TaskPageCursor.Type;
 export const TaskPageInput = Schema.Struct({
-  ...TaskSearchInput.fields,
+  ...TaskListFilterFields,
   cursor: Schema.optional(TaskPageCursor),
 });
 export type TaskPageInput = typeof TaskPageInput.Type;
