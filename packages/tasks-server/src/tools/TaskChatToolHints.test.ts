@@ -29,7 +29,7 @@ it("derives the chat's call shapes from the task tool definitions", () => {
     CHAT_TOOL_CALL_HINTS.map(({ name, args }) => `${name}(${args})`),
     [
       "task_context({projectId?, workspaceRoot?, include?})",
-      "task_create({projectId?, workspaceRoot?, tasks?: [{title, description, status, tags?, metadata?}]})",
+      "task_create({projectId?, workspaceRoot?, tasks?: [{title, description, status, audience, tags?, metadata?}]})",
       "task_search({projectId?, status?, tags?, limit?})",
       "task_get({id})",
       "task_update({id, status?, output?, tags?})",

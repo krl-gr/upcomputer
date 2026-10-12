@@ -28,6 +28,7 @@ import { TaskPromptSettingsStoreLive } from "../persistence/TaskPromptSettingsSt
 import { TaskRepository, type TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
+import { TASK_TOOL_SPECS } from "./TaskToolDefinitions.ts";
 import { TaskToolService, TaskToolServiceLive } from "./TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
@@ -108,6 +109,7 @@ const item = (title: string, status: string, extra: Record<string, unknown> = {}
   title,
   description: `Do ${title}.`,
   status,
+  audience: "agent",
   ...extra,
 });
 
@@ -261,10 +263,18 @@ it.effect("a list sets each item's audience, and routines are the user's", () =>
       tasks: [
         item("agent work", "To Do"),
         item("my errand", "To Do", { audience: "person" }),
-        item("weekly review", "To Do", { kind: "routine" }),
+        item("weekly review", "To Do", { kind: "routine", audience: "person" }),
       ],
     });
     assert.isFalse(result.isError, result.text);
+    // The result says whose each task is and where it shows.
+    const { shownIn, tasks: created } = JSON.parse(result.text);
+    assert.deepStrictEqual(
+      created.map(({ audience }: { audience: string }) => audience),
+      ["agent", "person", "person"],
+    );
+    assert.match(shownIn.person, /user's planner/);
+    assert.match(shownIn.agent, /agents' table/);
     assert.deepStrictEqual(
       (yield* stored).map(({ title, audience, kind }) => [title, audience, kind]),
       [
@@ -289,7 +299,7 @@ it.effect("without a project, a list of person tasks goes to the Inbox", () => {
     const result = yield* create({
       tasks: [
         item("mine", "To Do", { audience: "person" }),
-        item("also mine", "To Do", { kind: "routine" }),
+        item("also mine", "To Do", { kind: "routine", audience: "person" }),
       ],
     });
     assert.isFalse(result.isError, result.text);
@@ -301,4 +311,49 @@ it.effect("without a project, a list of person tasks goes to the Inbox", () => {
       ],
     );
   }).pipe(Effect.provide(layer));
+});
+
+it.effect("a task without an audience is refused, alone or in a list", () => {
+  const { layer, create, stored } = harness();
+  return Effect.gen(function* () {
+    const { audience: _audience, ...unassigned } = item("call the bank", "To Do");
+    const single = yield* create(unassigned);
+    assert.isTrue(single.isError);
+    assert.match(single.text, /^audience is required: person when the user does the task/);
+    assert.match(single.text, /No task was created/);
+
+    const listed = yield* create({ tasks: [item("ok", "To Do"), unassigned] });
+    assert.isTrue(listed.isError);
+    assert.match(listed.text, /^tasks\[1\] \("call the bank"\) is invalid: audience is required/);
+    assert.lengthOf(yield* stored, 0);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("one task's result names its audience and where it shows", () => {
+  const { layer, create } = harness();
+  return Effect.gen(function* () {
+    const mine = JSON.parse(
+      (yield* create(item("call the bank", "To Do", { audience: "person" }))).text,
+    );
+    assert.equal(mine.audience, "person");
+    assert.match(mine.shownIn, /^Person task: shown in the user's planner/);
+    assert.equal(mine.task.audience, "person");
+    const theirs = JSON.parse((yield* create(item("fix the build", "To Do"))).text);
+    assert.equal(theirs.audience, "agent");
+    assert.match(theirs.shownIn, /^Agent task: shown in the agents' table/);
+  }).pipe(Effect.provide(layer));
+});
+
+it("the task_create schema requires every listed task's audience and explains it", () => {
+  const schema = TASK_TOOL_SPECS.find(({ name }) => name === "task_create")?.inputSchema as {
+    properties: {
+      audience: { enum: string[]; description: string };
+      tasks: { items: { required: string[] } };
+    };
+  };
+  assert.include(schema.properties.tasks.items.required, "audience");
+  assert.deepStrictEqual(schema.properties.audience.enum, ["person", "agent"]);
+  assert.match(schema.properties.audience.description, /^Required\./);
+  assert.include(schema.properties.audience.description, '"for me"');
+  assert.notInclude(schema.properties.audience.description, "default");
 });

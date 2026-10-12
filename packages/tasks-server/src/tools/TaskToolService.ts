@@ -49,6 +49,7 @@ import {
   type TaskActor,
   type TaskAgent,
   type TaskAgentRun,
+  type TaskAudience,
   type TaskAutomation,
   type InstructionsField,
   type TaskPromptSettingsChange,
@@ -369,17 +370,28 @@ function newTask(
     createdAt: input.timestamp,
     updatedAt: input.timestamp,
     archivedAt: null,
-    ...(item.audience !== undefined ? { audience: item.audience } : {}),
+    audience: item.audience,
     ...(item.kind !== undefined ? { kind: item.kind } : {}),
   };
 }
 
-/** A routine is the user's: its audience defaults to person. */
-function withCreateDefaults<Item extends TaskToolCreateItem>(item: Item): Item {
-  return item.kind === "routine" && item.audience === undefined
-    ? { ...item, audience: "person" as const }
-    : item;
-}
+/**
+ * task_create refuses a task without an audience before decoding, with this
+ * instead of a schema error: the agent must decide whose task it is.
+ */
+const AUDIENCE_REQUIRED =
+  'audience is required: person when the user does the task themselves (they asked for it as theirs: "for me", "my task", "I\'ll do it", "remind me"), agent when an agent does it. A routine is always person.';
+
+const lacksAudience = (raw: unknown) =>
+  typeof raw === "object" && raw !== null && (raw as { audience?: unknown }).audience === undefined;
+
+/** Where task_create's tasks show, so a caller sees at once whose task it made. */
+const SHOWN_IN: Record<TaskAudience, string> = {
+  person:
+    "Person task: shown in the user's planner (Me), not in the agents' table. No agent starts on it by status.",
+  agent:
+    "Agent task: shown in the agents' table (Agents), not in the user's planner. Agents start on it by their triggers.",
+};
 
 /** The top-level task_create arguments that go with a tasks list. */
 const TASK_CREATE_BATCH_KEYS = new Set(["tasks", "projectId", "workspaceRoot"]);
@@ -591,26 +603,27 @@ const make = Effect.gen(function* () {
         };
       const items: TaskToolCreateItem[] = [];
       for (const [index, raw] of input.tasks.entries()) {
-        const item = yield* Effect.result(decoders.task_create_item(raw));
-        if (Result.isFailure(item)) {
-          const title =
-            typeof raw === "object" && raw !== null && "title" in raw ? raw.title : undefined;
+        const title =
+          typeof raw === "object" && raw !== null && "title" in raw ? raw.title : undefined;
+        const named = `tasks[${index}]${typeof title === "string" ? ` (${JSON.stringify(title)})` : ""}`;
+        if (lacksAudience(raw))
           return {
             isError: true,
-            text: `tasks[${index}]${typeof title === "string" ? ` (${JSON.stringify(title)})` : ""} is invalid: ${item.failure.message}\nNo task was created.`,
+            text: `${named} is invalid: ${AUDIENCE_REQUIRED}\nNo task was created.`,
           };
-        }
-        const defaulted = withCreateDefaults(item.success);
-        const invalid = taskKindAudienceError(
-          defaulted.kind ?? "task",
-          defaulted.audience ?? "agent",
-        );
+        const item = yield* Effect.result(decoders.task_create_item(raw));
+        if (Result.isFailure(item))
+          return {
+            isError: true,
+            text: `${named} is invalid: ${item.failure.message}\nNo task was created.`,
+          };
+        const invalid = taskKindAudienceError(item.success.kind ?? "task", item.success.audience);
         if (invalid !== null)
           return {
             isError: true,
-            text: `tasks[${index}] (${JSON.stringify(defaulted.title)}) is invalid: ${invalid}\nNo task was created.`,
+            text: `${named} is invalid: ${invalid}\nNo task was created.`,
           };
-        items.push(defaulted);
+        items.push(item.success);
       }
       const ids = items.flatMap((item) => (item.id === undefined ? [] : [item.id]));
       const repeated = ids.find((id, index) => ids.indexOf(id) !== index);
@@ -664,14 +677,17 @@ const make = Effect.gen(function* () {
       );
       for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
       // The caller wrote the descriptions; echoing them back would only cost tokens.
+      const audiences = [...new Set(saved.map(({ audience }) => audience))];
       return {
         isError: false,
         text: json({
-          tasks: saved.map(({ id, rank, title, status, tags, notBefore }) => ({
+          shownIn: Object.fromEntries(audiences.map((audience) => [audience, SHOWN_IN[audience]])),
+          tasks: saved.map(({ id, rank, title, status, audience, tags, notBefore }) => ({
             id,
             rank,
             title,
             status,
+            audience,
             tags,
             notBefore,
           })),
@@ -739,8 +755,10 @@ const make = Effect.gen(function* () {
         }
         case "task_create": {
           if (args.tasks !== undefined) return yield* createTasks(args, context);
-          const input = withCreateDefaults(yield* decoders.task_create(args));
-          const invalid = taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent");
+          if (lacksAudience(args))
+            return { isError: true, text: `${AUDIENCE_REQUIRED} No task was created.` };
+          const input = yield* decoders.task_create(args);
+          const invalid = taskKindAudienceError(input.kind ?? "task", input.audience);
           if (invalid !== null) return { isError: true, text: invalid };
           const resolution = yield* resolver.resolve({
             args: {
@@ -780,7 +798,14 @@ const make = Effect.gen(function* () {
             : null;
           const saved = yield* repository.upsert({ ...task, actor: toolActor(context, callerRun) });
           yield* taskAgents.scheduleTaskChanged({ task: saved, reason: "created" });
-          return { isError: false, text: json({ task: saved }) };
+          return {
+            isError: false,
+            text: json({
+              audience: saved.audience,
+              shownIn: SHOWN_IN[saved.audience],
+              task: saved,
+            }),
+          };
         }
         case "task_update": {
           const input = yield* decoders.task_update(args);

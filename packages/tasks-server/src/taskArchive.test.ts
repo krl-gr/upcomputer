@@ -665,7 +665,11 @@ it.effect("a status change through create records the person or agent that made 
     yield* recreate("Done");
 
     const create = (status: string, context: TaskToolInvocationContext) =>
-      call("task_create", { id: "t", title: "t", description: "", status }, context);
+      call(
+        "task_create",
+        { id: "t", title: "t", description: "", status, audience: "agent" },
+        context,
+      );
     yield* create("Review", chat);
     const runId = TaskAgentRunId.make("run-1");
     const runThread = ThreadId.make("thread-run-1");
@@ -699,7 +703,12 @@ it.effect(
   () => {
     const { layer, call } = harness();
     return Effect.gen(function* () {
-      yield* call("task_create", { title: "for agents", description: "", status: "To Do" });
+      yield* call("task_create", {
+        title: "for agents",
+        description: "",
+        status: "To Do",
+        audience: "agent",
+      });
       const created = yield* call("task_create", {
         title: "for me",
         description: "",
@@ -728,7 +737,12 @@ it.effect("task_search offers kind and finds routines without an audience", () =
       | { properties: Record<string, { enum?: unknown }> }
       | undefined;
     assert.deepStrictEqual(schema?.properties.kind?.enum, ["task", "routine", "all"]);
-    yield* call("task_create", { title: "for agents", description: "", status: "To Do" });
+    yield* call("task_create", {
+      title: "for agents",
+      description: "",
+      status: "To Do",
+      audience: "agent",
+    });
     yield* call("task_create", {
       title: "for me",
       description: "",
@@ -740,6 +754,7 @@ it.effect("task_search offers kind and finds routines without an audience", () =
       description: "",
       status: "To Do",
       kind: "routine",
+      audience: "person",
     });
     const titles = (args: Record<string, unknown>) =>
       call("task_search", args).pipe(
@@ -752,7 +767,7 @@ it.effect("task_search offers kind and finds routines without an audience", () =
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("task_create makes a routine the person's and refuses one for agents", () => {
+it.effect("task_create keeps a routine the person's and refuses one for agents", () => {
   const { layer, call, scheduled } = harness();
   return Effect.gen(function* () {
     const created = yield* call("task_create", {
@@ -760,6 +775,7 @@ it.effect("task_create makes a routine the person's and refuses one for agents",
       description: "",
       status: "To Do",
       kind: "routine",
+      audience: "person",
       tags: ["dev"],
     });
     assert.deepStrictEqual([created.task.kind, created.task.audience], ["routine", "person"]);
