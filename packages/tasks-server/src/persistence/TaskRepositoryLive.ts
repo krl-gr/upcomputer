@@ -60,6 +60,12 @@ import {
   serverTimeZone,
   type ReminderSettings,
 } from "../schedule/reminders.ts";
+import {
+  followTaskState,
+  movesEntries,
+  reopensTask,
+  type FollowedTaskState,
+} from "../schedule/followTaskState.ts";
 import { makeScheduleQueries } from "./scheduleQueries.ts";
 import {
   CompleteTaskAutomationRunInput,
@@ -327,6 +333,12 @@ function scheduleDatesOf(events: ReadonlyArray<PendingTaskChange>) {
   const dates = [...new Set(events.flatMap((event) => event.scheduleDates ?? []))].toSorted();
   return dates.length > 0 ? { scheduleDates: dates } : {};
 }
+/** Dates whose entries followed their task during a write, for that write's change. */
+class FollowedScheduleDates extends Context.Reference<string[] | undefined>(
+  "@t3tools/tasks-server/FollowedScheduleDates",
+  { defaultValue: () => undefined },
+) {}
+
 class TaskChangeBatch extends Context.Reference<
   | {
       readonly owner: object;
@@ -435,15 +447,16 @@ const makeTaskRepository = Effect.gen(function* () {
     runsChanged = false,
     rootMembershipTaskId?: TaskId,
     scheduleDates?: (result: A) => ReadonlyArray<string>,
-  ) =>
-    sql
+  ) => {
+    const followed: string[] = [];
+    return sql
       .withTransaction(
         Effect.gen(function* () {
           const before = yield* listRevision();
           const rootsBefore = rootMembershipTaskId
             ? yield* rootsForTasks([rootMembershipTaskId])
             : [];
-          const result = yield* effect;
+          const result = yield* effect.pipe(Effect.provideService(FollowedScheduleDates, followed));
           const rootsAfter = runsChanged
             ? yield* rootsForTasks(ids(result))
             : rootMembershipTaskId
@@ -465,7 +478,9 @@ const makeTaskRepository = Effect.gen(function* () {
           Effect.gen(function* () {
             const taskIds = ids(result);
             if (taskIds.length === 0) return;
-            const dates = scheduleDates?.(result) ?? [];
+            const dates = [
+              ...new Set([...(scheduleDates?.(result) ?? []), ...followed]),
+            ].toSorted();
             const event = {
               taskIds,
               listChanged,
@@ -484,6 +499,7 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
         Effect.uninterruptible,
       );
+  };
 
   const rootsForTasks = Effect.fn("TaskRepository.rootsForTasks")(function* (
     ids: readonly TaskId[],
@@ -1923,6 +1939,14 @@ const makeTaskRepository = Effect.gen(function* () {
                 : previous.triggerChangedAt,
           };
           yield* upsertTaskRow(persisted);
+          if (previous)
+            yield* followTask({
+              taskId: task.id,
+              kind: persisted.kind,
+              from: { status: previous.status, archived: previous.archivedAt !== null },
+              to: { status: persisted.status, archived: persisted.archivedAt !== null },
+              at: persisted.updatedAt,
+            });
           if (previous && previous.status !== persisted.status) {
             yield* insertHistoryEvent({
               taskId: task.id,
@@ -2186,6 +2210,13 @@ const makeTaskRepository = Effect.gen(function* () {
                 trigger_changed_at = ${timestamp}
               WHERE id = ${id}
             `;
+            yield* followTask({
+              taskId: id,
+              kind: existing.value.kind,
+              from: { status: existing.value.status, archived: existing.value.archivedAt !== null },
+              to: { status: existing.value.status, archived: input.archived },
+              at: timestamp,
+            });
             yield* insertHistoryEvent({
               taskId: id,
               kind: input.archived ? TASK_ARCHIVED_EVENT : TASK_UNARCHIVED_EVENT,
@@ -2609,6 +2640,58 @@ const makeTaskRepository = Effect.gen(function* () {
   });
   const nowMillis = Effect.map(DateTime.now, DateTime.toEpochMillis);
 
+  /** When the task last became Done, from its history. */
+  const lastDoneAt = (taskId: TaskId) =>
+    sql<{ createdAt: string }>`SELECT created_at AS "createdAt" FROM task_events
+      WHERE task_id = ${taskId} AND kind = ${TASK_STATUS_CHANGED_EVENT}
+        AND json_extract(payload_json, '$.to') = ${PERSON_DONE_STATUS}
+      ORDER BY created_at DESC, rowid DESC LIMIT 1`.pipe(
+      Effect.map((rows) => rows[0]?.createdAt ?? null),
+    );
+
+  /**
+   * Moves a regular task's entries with a change of its state, inside the
+   * write that made it, whoever wrote it (`followTaskState`, doc 5.3). The
+   * dates go out with that write's change. Routines are planned day by day
+   * and keep their entries.
+   */
+  const followTask = (input: {
+    readonly taskId: TaskId;
+    readonly kind: TaskKind;
+    readonly from: FollowedTaskState;
+    readonly to: FollowedTaskState;
+    readonly at: string;
+  }) =>
+    Effect.gen(function* () {
+      if (input.kind === "routine" || !movesEntries(input.from, input.to)) return;
+      const entries = yield* schedule.allForTask(input.taskId);
+      if (entries.length === 0) return;
+      const settings = reminderSettingsOf(yield* readScheduleSettings);
+      const now = yield* DateTime.now;
+      // Today as the schedule's zone sees it, as for reminders.
+      const today = Option.match(DateTime.makeZoned(now, { timeZone: settings.timeZone }), {
+        onNone: () => DateTime.formatIsoDateUtc(now),
+        onSome: DateTime.formatIsoDate,
+      });
+      const doneAt = reopensTask(input.from, input.to) ? yield* lastDoneAt(input.taskId) : null;
+      const { updated, deleted } = followTaskState({
+        entries,
+        from: input.from,
+        to: input.to,
+        today,
+        at: input.at,
+        doneAt,
+      });
+      const millis = DateTime.toEpochMillis(now);
+      yield* Effect.forEach(
+        updated,
+        (entry) => schedule.upsert({ ...entry, remindAt: reminderAt(entry, settings, millis) }),
+        { discard: true, concurrency: 1 },
+      );
+      if (deleted.length > 0) yield* schedule.deleteByIds(deleted.map(({ id }) => id));
+      (yield* FollowedScheduleDates)?.push(...[...updated, ...deleted].map(({ date }) => date));
+    });
+
   /**
    * Recomputes the reminder of every entry the settings or the passing time
    * can change. Entries more than a day before today (in any zone) have
@@ -3027,7 +3110,12 @@ const makeTaskRepository = Effect.gen(function* () {
           const statusBefore =
             input.taskStatus === undefined
               ? []
-              : yield* sql<{ status: string }>`SELECT status FROM tasks WHERE id = ${input.taskId}`;
+              : yield* sql<{
+                  status: string;
+                  kind: TaskKind;
+                  archivedAt: string | null;
+                }>`SELECT status, kind, archived_at AS "archivedAt" FROM tasks
+                  WHERE id = ${input.taskId}`;
           if (
             input.taskStatus !== undefined ||
             input.taskOutput !== undefined ||
@@ -3058,7 +3146,18 @@ const makeTaskRepository = Effect.gen(function* () {
             WHERE id = ${input.taskId}
           `;
           }
-          const from = statusBefore[0]?.status;
+          const before = statusBefore[0];
+          const from = before?.status;
+          if (before !== undefined && input.taskStatus !== undefined) {
+            const archived = before.archivedAt !== null;
+            yield* followTask({
+              taskId: input.taskId,
+              kind: before.kind,
+              from: { status: before.status, archived },
+              to: { status: input.taskStatus, archived },
+              at: input.completedAt,
+            });
+          }
           if (from !== undefined && input.taskStatus !== undefined && from !== input.taskStatus) {
             yield* insertHistoryEvent({
               id: `${input.id}:task-status-changed`,

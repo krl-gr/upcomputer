@@ -418,17 +418,26 @@ progress chips refresh). `listChanged` stays false for schedule-only writes.
 
 ### 5.3 Entry state vs task state
 
-They stay independent, as in wande:
+An entry never changes its task; a task's state change moves its entries.
+This differs from wande, where both stay independent: the task can be closed
+from anywhere (an agent's `task_update`, the table, another client), and an
+open entry of a closed task left the plan looking unfinished.
 
 - Marking an entry done means "that session happened". The task keeps its
   status. A task worked on over several days has several done entries and
   stays `To Do` until the person marks it done.
-- Marking the task `Done` does not touch its entries. Entry cards render the
-  joined task state, so an open entry of a done task is visibly a done task
-  (struck-through title).
-- Archiving a task keeps its entries (they are history); cards render the
-  archived state. Unarchiving shows them normally again.
+- The task becoming `Done`, by any write: its open entries up to today become
+  done, open entries on later dates are deleted. "Today" is the date in the
+  schedule's time zone (5.4).
+- The task leaving `Done` for work: only today's entry that became done with
+  it, and was not changed since, is open again. Its history event of becoming
+  `Done` gives the time to match.
+- The task cancelled (status `Cancelled` or `Canceled`) or archived: its open
+  entries become skipped. Unarchiving moves nothing.
 - Deleting a task deletes its entries.
+- Routines are left alone: their entries follow the day, not the task.
+- Entry cards still render the joined task state, so an entry of a done or
+  archived task is struck through whatever its own status.
 - `skipped` (wande's instance `archived`) means "planned but not done, and
   not carried over". It counts as handled in progress, as in wande
   (`done | archived` over total).

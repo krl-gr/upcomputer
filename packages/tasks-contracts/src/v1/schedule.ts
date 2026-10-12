@@ -39,7 +39,9 @@ export type TaskScheduleDuration = typeof TaskScheduleDuration.Type;
 
 /**
  * `done`: the session happened. `skipped`: planned, not done and not carried
- * over. Both count as handled. Independent of the task's own status.
+ * over. Both count as handled. Marking an entry leaves the task's status
+ * alone; a task's status change moves its open entries (Done, cancelled,
+ * archived), except a routine's.
  */
 export const TaskScheduleEntryStatus = Schema.Literals(["open", "done", "skipped"]);
 export type TaskScheduleEntryStatus = typeof TaskScheduleEntryStatus.Type;

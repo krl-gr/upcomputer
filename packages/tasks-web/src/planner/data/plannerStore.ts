@@ -792,7 +792,7 @@ export class PlannerStore {
     );
   }
 
-  /** Wande's Done button: status Done, entries untouched. */
+  /** Wande's Done button: status Done. The server moves the task's entries (doc 5.3). */
   async markDone(ids: readonly string[]): Promise<void> {
     await Promise.all(ids.map((id) => this.updateTask(id, { status: PERSON_DONE_STATUS })));
   }
