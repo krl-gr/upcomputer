@@ -44,7 +44,13 @@ interface StoredDevice {
  * The devices table in memory, for the statements `register` issues. Records
  * whether each statement ran inside `withTransaction`.
  */
-function memoryDevicesDb(rows: Array<StoredDevice>) {
+function memoryDevicesDb(
+  rows: Array<StoredDevice>,
+  options: {
+    /** The ownership check reads a snapshot taken before a concurrent commit. */
+    readonly selectSnapshot?: ReadonlyArray<StoredDevice>;
+  } = {},
+) {
   const dialect = new PgDialect();
   const statements: Array<{ readonly statement: string; readonly inTransaction: boolean }> = [];
   let inTransaction = false;
@@ -53,8 +59,14 @@ function memoryDevicesDb(rows: Array<StoredDevice>) {
     const query = dialect.sqlToQuery(condition);
     const token = query.params[0];
     const nativeOnly = query.sql.includes('"platform" <>');
+    const ownedOnly = query.sql.includes('"user_id" =');
+    const [, userId, auth, p256dh] = query.params;
     return (row: StoredDevice) =>
-      row.pushToken === token && (!nativeOnly || row.platform !== "web");
+      row.pushToken === token &&
+      (!nativeOnly || row.platform !== "web") &&
+      (!ownedOnly ||
+        row.userId === userId ||
+        (row.webPushAuth === auth && row.webPushP256dh === p256dh));
   };
   const db = {
     $client: {
@@ -70,7 +82,7 @@ function memoryDevicesDb(rows: Array<StoredDevice>) {
           for: (strength: string) => {
             record(`select for ${strength}`);
             return Effect.succeed(
-              rows.filter(tokenCondition(condition)).map((row) => ({
+              (options.selectSnapshot ?? rows).filter(tokenCondition(condition)).map((row) => ({
                 userId: row.userId,
                 platform: row.platform,
                 p256dh: row.webPushP256dh,
@@ -165,6 +177,35 @@ describe("Devices web push endpoint ownership", () => {
       expect(statements).toEqual([{ statement: "select for update", inTransaction: true }]);
     }).pipe(provideDb(db));
   });
+
+  it.effect(
+    "keeps a concurrently moved endpoint when the ownership check saw a stale snapshot",
+    () => {
+      // The endpoint moved from user-a to user-c after this request's check read
+      // its snapshot, so the check found no holder to compare keys with.
+      const rows = [
+        { ...storedBrowser("user-a", "browser-a"), pushToken: null },
+        storedBrowser("user-c", "browser-c"),
+      ];
+      const { db } = memoryDevicesDb(rows, { selectSnapshot: [] });
+      return Effect.gen(function* () {
+        const devices = yield* Devices.Devices;
+        yield* devices
+          .register({
+            userId: "user-b",
+            registration: webRegistration("browser-b", {
+              ...browserKeys,
+              auth: "attacker-auth-secret",
+            }),
+          })
+          .pipe(Effect.ignore);
+
+        expect(rows.find((row) => row.userId === "user-c")).toEqual(
+          storedBrowser("user-c", "browser-c"),
+        );
+      }).pipe(provideDb(db));
+    },
+  );
 
   it.effect("moves the endpoint when the same browser signs in to another account", () => {
     const rows = [storedBrowser("user-a", "browser-a")];

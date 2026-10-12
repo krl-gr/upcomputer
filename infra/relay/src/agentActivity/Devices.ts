@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
@@ -235,7 +235,21 @@ export const make = Effect.gen(function* () {
             .set({ pushToken: null, updatedAt })
             .where(
               registration.webPush
-                ? eq(relayMobileDevices.pushToken, pushToken)
+                ? // The ownership rule is repeated here because Postgres
+                  // rechecks an UPDATE's condition on rows committed after the
+                  // check above read its snapshot: a concurrent move of the
+                  // endpoint to a third account must not be cleared by a
+                  // request without that subscription's keys.
+                  and(
+                    eq(relayMobileDevices.pushToken, pushToken),
+                    or(
+                      eq(relayMobileDevices.userId, input.userId),
+                      and(
+                        eq(relayMobileDevices.webPushAuth, registration.webPush.auth),
+                        eq(relayMobileDevices.webPushP256dh, registration.webPush.p256dh),
+                      ),
+                    ),
+                  )
                 : // A native token never takes over a web subscription.
                   and(
                     eq(relayMobileDevices.pushToken, pushToken),
