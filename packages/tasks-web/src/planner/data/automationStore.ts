@@ -16,6 +16,7 @@ import type {
 } from "@t3tools/tasks-contracts/v1";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
+import { reuseRows } from "../../state/recent.ts";
 
 export interface AutomationSnapshot {
   /** In the person's order. */
@@ -33,6 +34,8 @@ export interface AutomationAnchor {
 
 export interface AutomationStoreOptions {
   readonly batchMs?: number;
+  /** How long the store stays live after its last release. */
+  readonly releaseMs?: number;
   readonly onError?: (title: string, error: unknown) => void;
   readonly now?: () => number;
   /** How long after a due run the list is read again (the scheduler ticks every 30 s). */
@@ -89,12 +92,14 @@ export class AutomationStore {
   private reading = false;
   private readAgain = false;
   private retained = 0;
+  private releaseTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubscribe: (() => void) | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private dueTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly client: TasksWebRpcClient;
   private readonly batchMs: number;
+  private readonly releaseMs: number;
   private readonly onError: (title: string, error: unknown) => void;
   private readonly now: () => number;
   private readonly afterDueMs: number;
@@ -102,6 +107,7 @@ export class AutomationStore {
   constructor(client: TasksWebRpcClient, options: AutomationStoreOptions = {}) {
     this.client = client;
     this.batchMs = options.batchMs ?? 500;
+    this.releaseMs = options.releaseMs ?? 1_000;
     this.onError = options.onError ?? (() => undefined);
     this.now = options.now ?? Date.now;
     this.afterDueMs = options.afterDueMs ?? 35_000;
@@ -129,14 +135,29 @@ export class AutomationStore {
   /** Keeps the list live while a list or window shows it; data stays cached after release. */
   retain(): () => void {
     this.retained += 1;
-    if (this.retained === 1) this.start();
+    if (this.retained === 1) {
+      // Retained again within the grace (the Tasks panel remounting with a
+      // thread switch): still live, so nothing is read again.
+      if (this.releaseTimer !== undefined) clearTimeout(this.releaseTimer);
+      else this.start();
+      this.releaseTimer = undefined;
+    }
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.retained -= 1;
-      if (this.retained === 0) this.stop();
+      if (this.retained === 0)
+        this.releaseTimer = setTimeout(() => {
+          this.releaseTimer = undefined;
+          this.stop();
+        }, this.releaseMs);
     };
+  }
+
+  /** Following the change stream: retained, or released less than `releaseMs` ago. */
+  private get live() {
+    return this.retained > 0 || this.releaseTimer !== undefined;
   }
 
   private start() {
@@ -177,7 +198,7 @@ export class AutomationStore {
       const { automations } = await this.client.automations.search({ limit: SEARCH_LIMIT });
       if (this.writes !== start) this.readAgain = true;
       else {
-        this.rows = automations;
+        this.rows = reuseRows(this.rows, automations, (row) => row.id);
         this.error = null;
       }
     } catch (error) {
@@ -189,7 +210,7 @@ export class AutomationStore {
       this.emit();
       if (this.readAgain) {
         this.readAgain = false;
-        if (this.retained > 0) this.schedule(0);
+        if (this.live) this.schedule(0);
       }
     }
   }
@@ -198,7 +219,7 @@ export class AutomationStore {
   private armDue() {
     clearTimeout(this.dueTimer);
     this.dueTimer = undefined;
-    if (this.retained === 0) return;
+    if (!this.live) return;
     const due = this.rows
       .filter((row) => row.status === "enabled" && row.nextRunAt !== null)
       .map((row) => Date.parse(row.nextRunAt!))
@@ -330,7 +351,7 @@ export class AutomationStore {
     if (this.pendingOrder?.op === op) this.pendingOrder = null;
     this.emit();
     // A move that ran out of room renumbers every automation on the server.
-    if (saved !== null && this.retained > 0) this.schedule(0);
+    if (saved !== null && this.live) this.schedule(0);
     return saved !== null;
   }
 }

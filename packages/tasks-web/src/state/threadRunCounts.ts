@@ -23,10 +23,13 @@ export class ThreadRunCountsStore {
   get = (id: ThreadId): readonly TaskRunCount[] => this.snapshots.get(id) ?? EMPTY;
 
   subscribe = (id: ThreadId, listener: () => void) => {
-    const callbacks = this.listeners.get(id) ?? new Set();
+    // A thread already followed (its sidebar row, when the chat header opens it)
+    // is kept current by the stream; only a new one is read.
+    const followed = this.listeners.get(id);
+    const callbacks = followed ?? new Set();
     callbacks.add(listener);
     this.listeners.set(id, callbacks);
-    this.pending.add(id);
+    if (!followed) this.pending.add(id);
     if (!this.stop) this.stop = this.client.tasks.subscribe(this.changed);
     this.schedule();
     let active = true;

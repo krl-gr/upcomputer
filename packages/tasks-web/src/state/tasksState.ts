@@ -2,6 +2,7 @@ import type { Task, TaskSearchInput } from "@t3tools/tasks-contracts/v1";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
+import { reuseRows, sameEnvironmentStatuses } from "./recent.ts";
 
 export type ScopedTask = Task & {
   readonly environmentId: EnvironmentId;
@@ -87,4 +88,32 @@ export async function loadTasksState(
   // environment id rather than pretending that ranks are atomic across databases.
   const tasks = entries.flatMap(([, state]) => state.tasks).sort(compareScopedTaskOrder);
   return { byEnvironment, tasks };
+}
+
+const taskRowKey = (row: ScopedTask) => `${row.environmentId}:${row.id}`;
+
+/** `next` with the unchanged tasks of `previous`, or `previous` itself when nothing changed. */
+export function reuseTasksState(previous: TasksDataState, next: TasksDataState): TasksDataState {
+  const tasks = reuseRows(previous.tasks, next.tasks, taskRowKey);
+  if (
+    tasks === previous.tasks &&
+    sameEnvironmentStatuses(previous.byEnvironment, next.byEnvironment)
+  )
+    return previous;
+  return { ...next, tasks };
+}
+
+/** Only the environments `readable` allows, for showing kept data before a load answers. */
+export function readableTasksState(
+  state: TasksDataState,
+  readable: (environmentId: string) => boolean,
+): TasksDataState {
+  const environments = Object.keys(state.byEnvironment);
+  if (environments.every(readable)) return state;
+  return {
+    byEnvironment: Object.fromEntries(
+      Object.entries(state.byEnvironment).filter(([environmentId]) => readable(environmentId)),
+    ),
+    tasks: state.tasks.filter((task) => readable(task.environmentId)),
+  };
 }

@@ -99,6 +99,7 @@ function harness() {
   const calls: Array<{ method: string; input: any }> = [];
   const errors: string[] = [];
   let emitChange: ((change: TaskChange) => void) | undefined;
+  let subscribes = 0;
   let pageTasks: PlannerTask[] = [task("a", "0000000000000001"), task("b", "0000000000000002")];
   let rangeEntries: TaskScheduleEntry[] = [];
   const handlers: Record<string, Handler> = {
@@ -143,6 +144,7 @@ function harness() {
     tasks: {
       ...tasks,
       subscribe: (listener: (change: TaskChange) => void) => {
+        subscribes += 1;
         emitChange = listener;
         return () => {
           emitChange = undefined;
@@ -156,7 +158,7 @@ function harness() {
       client,
       access: { canReadTasks: true },
     } as never,
-    { batchMs: 5, onError: (title) => errors.push(title), now: () => T },
+    { batchMs: 5, releaseMs: 20, onError: (title) => errors.push(title), now: () => T },
   );
   return {
     store,
@@ -173,6 +175,12 @@ function harness() {
     count: (name: string) => calls.filter((call) => call.method === name).length,
     reset: () => {
       calls.length = 0;
+    },
+    get subscribes() {
+      return subscribes;
+    },
+    get live() {
+      return emitChange !== undefined;
     },
   };
 }
@@ -631,5 +639,63 @@ describe("planner store: routines", () => {
     const created = h.calls.find((call) => call.method === "create")!.input;
     NodeAssert.deepEqual([created.kind, created.audience], ["routine", "person"]);
     NodeAssert.ok(h.store.getSnapshot().active.ids.includes("new"));
+  });
+});
+
+describe("planner store: between mounts", () => {
+  test("a remount within the release grace stays live and reads nothing again", async () => {
+    const h = harness();
+    await started(h);
+    const active = h.store.getSnapshot().active;
+    // `started` holds one retain; the panel's planner adds and drops another on a thread switch.
+    const release = h.store.retain();
+    release();
+    const again = h.store.retain();
+    await NodeTimersPromises.setTimeout(40);
+    NodeAssert.equal(h.subscribes, 1);
+    NodeAssert.equal(h.calls.length, 0);
+    NodeAssert.equal(h.store.getSnapshot().active, active);
+    again();
+    NodeAssert.ok(h.live);
+  });
+
+  test("the last release stops following changes after the grace; a later mount starts from the kept pages", async () => {
+    const h = harness();
+    const release = h.store.retain();
+    h.emit(change({ kind: "sync", listChanged: true }));
+    await until(() => h.store.getSnapshot().active.status === "Exhausted");
+    release();
+    NodeAssert.ok(h.live);
+    await until(() => !h.live);
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, []);
+    // Mounted again later: rows at once from the kept pages, then one background read.
+    h.reset();
+    h.store.retain();
+    NodeAssert.equal(h.store.getSnapshot().active.status, "Exhausted");
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["a", "b"]);
+    NodeAssert.equal(h.subscribes, 2);
+  });
+
+  test("a background read keeps the objects of unchanged tasks and entries", async () => {
+    const h = harness();
+    h.setRange([entry("e1", "a", "2026-10-07", "1"), entry("e2", "b", "2026-10-07", "2")]);
+    await started(h);
+    const tasks = h.store.getSnapshot().view.tasks;
+    const [e1, e2] = h.store.getSnapshot().view.days.get("2026-10-07")!;
+    h.setPage([task("a", "0000000000000001"), task("b", "0000000000000002", { title: "B" })]);
+    h.setRange([
+      entry("e1", "a", "2026-10-07", "1"),
+      entry("e2", "b", "2026-10-07", "2", { startTime: "09:00" }),
+    ]);
+    h.emit(change({ kind: "sync", listChanged: true }));
+    await until(() => h.store.getSnapshot().view.tasks.get("b")?.title === "B");
+    await until(
+      () => h.store.getSnapshot().view.days.get("2026-10-07")?.[1]?.startTime === "09:00",
+    );
+    const next = h.store.getSnapshot();
+    NodeAssert.equal(next.view.tasks.get("a"), tasks.get("a"));
+    NodeAssert.notEqual(next.view.tasks.get("b"), tasks.get("b"));
+    NodeAssert.equal(next.view.days.get("2026-10-07")?.[0], e1);
+    NodeAssert.notEqual(next.view.days.get("2026-10-07")?.[1], e2);
   });
 });
