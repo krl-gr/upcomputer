@@ -82,7 +82,8 @@ export interface TaskQueryLane {
 }
 
 /**
- * Task page queries for the current filters. The task search API takes a single
+ * Task page queries for the current filters, of agent tasks only: the
+ * person's tasks are the planner's. The task search API takes a single
  * `projectId`, so a project with several member projects in one environment gets
  * one lane per project; "all projects" is one unscoped lane per environment.
  * Environments without a matching project get no lane. Tags are matched by the
@@ -99,6 +100,7 @@ export function planTaskQueryLanes(input: {
 }): TaskQueryLane[] {
   const keys = orderedProjectFilterKeys(input.projectFilter);
   const filterSearch = {
+    audience: "agent" as const,
     ...(input.statusFilter === ALL_FILTER ? {} : { status: input.statusFilter }),
     ...(input.tags && input.tags.length > 0 ? { tags: [...input.tags] } : {}),
     ...(input.archive && input.archive !== "active" ? { archive: input.archive } : {}),

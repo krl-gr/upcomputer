@@ -33,7 +33,7 @@ import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
-import type { PlannerAudience, PlannerKind } from "./preferences.ts";
+import type { PlannerKind } from "./preferences.ts";
 import {
   addEntries,
   moveEntries,
@@ -75,12 +75,7 @@ export interface PlannerQuery {
   /** Projects the lists show; null for all. */
   readonly projectIds: readonly ProjectId[] | null;
   readonly archiveVisible: boolean;
-  /**
-   * Whose tasks the lists show. Routines are the person's: Agents shows
-   * automations instead (their own store), All shows both.
-   */
-  readonly audience: PlannerAudience;
-  /** Tasks or routines. */
+  /** Tasks or routines, the person's in both: agent tasks are the table's. */
   readonly kind: PlannerKind;
 }
 
@@ -124,28 +119,15 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
 }
 
 /**
- * What the list shows in each cell of the planner's grid: Tasks or Routines
- * by Mine, Agents or All. The agents' routines are automations, so Routines ×
- * Agents lists automations only and Routines × All lists both.
- */
-export function plannerListShows(kind: PlannerKind, audience: PlannerAudience) {
-  return {
-    tasks: !(kind === "routine" && audience === "agent"),
-    automations: kind === "routine" && audience !== "person",
-  } as const;
-}
-
-/**
- * The task lists of the planner's grid. Tasks leave out what automations
- * created: those tasks are reached from their automation's window.
+ * The planner's task lists: the person's tasks or routines. Agent tasks are
+ * the table's, and so are the tasks automations created.
  */
 function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search: TaskPageInput }> {
-  if (!plannerListShows(query.kind, query.audience).tasks) return [];
   const projects: ReadonlyArray<ProjectId | undefined> = query.projectIds ?? [undefined];
   const base =
     query.kind === "routine"
       ? ({ audience: "person", kind: "routine" } as const)
-      : ({ audience: query.audience, kind: "task", excludeAutomationTasks: true } as const);
+      : ({ audience: "person", kind: "task", excludeAutomationTasks: true } as const);
   return projects.flatMap((projectId) => {
     const scope = projectId === undefined ? {} : { projectId };
     return [
@@ -177,16 +159,27 @@ function laneQueries(query: PlannerQuery): Array<{ list: PlannerListKey; search:
 export function belongsToList(
   task: PlannerTask,
   list: PlannerListKey,
-  query: Pick<PlannerQuery, "projectIds" | "audience" | "kind">,
+  query: Pick<PlannerQuery, "projectIds" | "kind">,
 ): boolean {
-  if (task.kind !== query.kind) return false;
-  if (!plannerListShows(query.kind, query.audience).tasks) return false;
-  if (query.kind === "task" && query.audience !== "all" && task.audience !== query.audience)
-    return false;
+  if (task.kind !== query.kind || task.audience !== "person") return false;
   if (task.createdBy.startsWith(AUTOMATION_TASK_CREATOR_PREFIX)) return false;
   if (query.projectIds !== null && !query.projectIds.includes(task.projectId)) return false;
   const finished = task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
   return list === "archive" ? finished : !finished;
+}
+
+/**
+ * The days without agent tasks' entries: the planner is the person's, and
+ * an agent task's entries stay stored for when it is taken back.
+ */
+function personDays(view: PlannerView): PlannerView["days"] {
+  const days = new Map<string, readonly TaskScheduleEntry[]>();
+  for (const [date, entries] of view.days)
+    days.set(
+      date,
+      entries.filter((entry) => view.tasks.get(entry.taskId)?.audience !== "agent"),
+    );
+  return days;
 }
 
 const compareTasks = (left: PlannerTask, right: PlannerTask) =>
@@ -222,7 +215,6 @@ export class PlannerStore {
   private query: PlannerQuery = {
     projectIds: null,
     archiveVisible: false,
-    audience: "person",
     kind: "task",
   };
   private lanes: Lane[] = [];
@@ -343,7 +335,6 @@ export class PlannerStore {
   setQuery(query: PlannerQuery) {
     const same =
       query.archiveVisible === this.query.archiveVisible &&
-      query.audience === this.query.audience &&
       query.kind === this.query.kind &&
       JSON.stringify(query.projectIds) === JSON.stringify(this.query.projectIds);
     if (same) return;
@@ -681,6 +672,7 @@ export class PlannerStore {
     for (const [date, entries] of byDate) days.set(date, entries.sort(compareEntries));
     let view: PlannerView = { tasks, lists, days };
     for (const op of this.ops) view = op.apply(view);
+    view = { ...view, days: personDays(view) };
     const listState = (list: PlannerListKey): PlannerListState => {
       const lanes = this.lanes.filter((lane) => lane.list === list);
       return {

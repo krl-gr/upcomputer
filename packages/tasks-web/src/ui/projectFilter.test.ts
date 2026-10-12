@@ -66,7 +66,7 @@ test("create forms preselect the first available member project in sidebar order
   NodeAssert.equal(preferredProject([], keys), undefined);
 });
 
-test("task queries run one lane per member project, scoped to its environment", () => {
+test("task queries run one lane per member project, scoped to its environment, agent tasks only", () => {
   const targets = [
     target("laptop", ["p-main", "p-worktree", "p-other"]),
     target("remote", ["p-remote"]),
@@ -82,14 +82,14 @@ test("task queries run one lane per member project, scoped to its environment", 
     );
 
   NodeAssert.deepEqual(lanes(repoFilter, "Backlog"), [
-    ["laptop", { projectId: "p-main", status: "Backlog", limit: 100 }],
-    ["laptop", { projectId: "p-worktree", status: "Backlog", limit: 100 }],
-    ["remote", { projectId: "p-remote", status: "Backlog", limit: 100 }],
+    ["laptop", { projectId: "p-main", audience: "agent", status: "Backlog", limit: 100 }],
+    ["laptop", { projectId: "p-worktree", audience: "agent", status: "Backlog", limit: 100 }],
+    ["remote", { projectId: "p-remote", audience: "agent", status: "Backlog", limit: 100 }],
   ]);
   NodeAssert.deepEqual(lanes(null), [
-    ["laptop", { limit: 100 }],
-    ["remote", { limit: 100 }],
-    ["ci", { limit: 100 }],
+    ["laptop", { audience: "agent", limit: 100 }],
+    ["remote", { audience: "agent", limit: 100 }],
+    ["ci", { audience: "agent", limit: 100 }],
   ]);
 
   const keys = planTaskQueryLanes({
@@ -109,9 +109,11 @@ test("task queries run one lane per member project, scoped to its environment", 
       archive: mode,
       pageSize: 100,
     }).map((lane) => lane.search);
-  NodeAssert.deepEqual(archive("active"), [{ limit: 100 }]);
-  NodeAssert.deepEqual(archive("archived"), [{ archive: "archived", limit: 100 }]);
-  NodeAssert.deepEqual(archive("all"), [{ archive: "all", limit: 100 }]);
+  NodeAssert.deepEqual(archive("active"), [{ audience: "agent", limit: 100 }]);
+  NodeAssert.deepEqual(archive("archived"), [
+    { audience: "agent", archive: "archived", limit: 100 },
+  ]);
+  NodeAssert.deepEqual(archive("all"), [{ audience: "agent", archive: "all", limit: 100 }]);
 });
 
 test("the tag filter asks the server for tasks with every selected tag", () => {
@@ -125,7 +127,7 @@ test("the tag filter asks the server for tasks with every selected tag", () => {
   // The server's task page requires every tag in `tags` (AND), see TaskRepositoryLive.
   NodeAssert.deepEqual(
     lanes.map((lane) => lane.search),
-    [{ status: "To Do", tags: ["browser-use", "ui"], limit: 100 }],
+    [{ audience: "agent", status: "To Do", tags: ["browser-use", "ui"], limit: 100 }],
   );
   const withoutTags = planTaskQueryLanes({
     targets: [target("laptop", ["p-main"])],

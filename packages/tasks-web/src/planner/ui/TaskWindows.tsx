@@ -43,7 +43,7 @@ import { usePlanner } from "./plannerContext.ts";
 import { ScheduleTable } from "./ScheduleTable.tsx";
 import { RunSummary } from "./RunSummary.tsx";
 import { ConfirmDeleteDialog, ConfirmHandOffDialog } from "./TaskDialogs.tsx";
-import { noteCreatedInMine } from "./TaskList.tsx";
+import { toastAudienceMoved } from "./audienceMoved.ts";
 import { TagsField } from "./TagsField.tsx";
 import { isFinished } from "./TaskRow.tsx";
 import { TitleInput } from "./TitleInput.tsx";
@@ -93,7 +93,8 @@ export function TaskDetailWindow(
     readonly queueDate: string | null;
   },
 ) {
-  const { store, windows, projects, preferences, markdownCwd, openInTable } = usePlanner();
+  const { store, windows, projects, preferences, markdownCwd, openInTable, openInPlanner } =
+    usePlanner();
   const window = props.window;
   const viewMode = window.kind === "detail" ? window.viewMode : "description";
   const task = useTaskById(store, props.snapshot, props.taskId);
@@ -188,14 +189,12 @@ export function TaskDetailWindow(
               {routine ? null : <MenuSeparator />}
               {routine ? null : task?.audience === "agent" ? (
                 <MenuItem
-                  onClick={() => {
-                    void store.updateTask(task.id, { audience: "person" });
-                    toastManager.add({
-                      type: "info",
-                      title: "Taken back from agents",
-                      description: "It is in Mine now. Runs already started keep running.",
-                    });
-                  }}
+                  onClick={() =>
+                    void store.updateTask(task.id, { audience: "person" }).then((moved) => {
+                      if (moved)
+                        toastAudienceMoved("person", task.title, () => openInPlanner(task.id));
+                    })
+                  }
                 >
                   Take back from agents
                 </MenuItem>
@@ -317,7 +316,11 @@ export function TaskDetailWindow(
         open={handingOff}
         title={task?.title ?? "This task"}
         onOpenChange={setHandingOff}
-        onConfirm={() => void store.updateTask(props.taskId, { audience: "agent" })}
+        onConfirm={() =>
+          void store.updateTask(props.taskId, { audience: "agent" }).then((moved) => {
+            if (moved) toastAudienceMoved("agent", title, () => openInTable(props.taskId));
+          })
+        }
       />
       <ConfirmDeleteDialog
         open={menuDelete}
@@ -337,7 +340,7 @@ export function TaskDetailWindow(
 export function CreateTaskWindow(
   props: WindowFrameProps & { readonly defaultProjectId: string | null },
 ) {
-  const { store, windows, projects, markdownCwd, audience } = usePlanner();
+  const { store, windows, projects, markdownCwd } = usePlanner();
   const window = props.window;
   const initial = window.kind === "create" ? window.initial : {};
   const kind = initial.kind ?? "task";
@@ -369,10 +372,7 @@ export function CreateTaskWindow(
       ...(initial.afterTaskId ? { afterTaskId: initial.afterTaskId } : {}),
     });
     setSaving(false);
-    if (created) {
-      close();
-      noteCreatedInMine(audience, kind);
-    }
+    if (created) close();
   };
   return (
     <FloatingWindow

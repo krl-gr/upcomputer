@@ -77,9 +77,9 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 export const PLANNER_PREFERENCES_KEY = "tasks.planner.preferences";
 export const PLANNER_VIEW_KEY = "tasks.planner.view";
 export const PLANNER_ENVIRONMENT_KEY = "tasks.planner.environment";
-export const PLANNER_AUDIENCE_KEY = "tasks.planner.audience";
 export const PLANNER_KIND_KEY = "tasks.planner.kind";
 export const TASKS_VIEW_KEY = "tasks.view";
+export const TABLE_SECTION_KEY = "tasks.table.section";
 
 export function usePlannerPreferences() {
   const [stored, setStored] = useLocalStorage(
@@ -128,30 +128,22 @@ export function usePlannerViewState() {
 }
 
 const TasksViewSchema = Schema.Literals(["planner", "table"]);
+/**
+ * Whose work the Tasks page shows, one axis: Me is the planner (person tasks
+ * and routines), Agents is the table (agent tasks and automations).
+ */
 export type TasksViewMode = typeof TasksViewSchema.Type;
 
-/** The Tasks page's last mode, Planner or Table. */
+/** The Tasks page's last side, Me (planner) or Agents (table). */
 export function useStoredTasksView() {
   return useLocalStorage<TasksViewMode, TasksViewMode>(TASKS_VIEW_KEY, "planner", TasksViewSchema);
 }
 
 const PlannerEnvironmentSchema = Schema.NullOr(Schema.String);
 
-/** The environment the planner shows when several serve Tasks. */
+/** The environment the planner and the automations show when several serve Tasks. */
 export function useStoredPlannerEnvironment() {
   return useLocalStorage(PLANNER_ENVIRONMENT_KEY, null, PlannerEnvironmentSchema);
-}
-
-const PlannerAudienceSchema = Schema.Literals(["person", "agent", "all"]);
-/** Whose tasks the planner lists: Mine (person), Agents (agent) or All. */
-export type PlannerAudience = typeof PlannerAudienceSchema.Type;
-
-export function useStoredPlannerAudience() {
-  return useLocalStorage<PlannerAudience, PlannerAudience>(
-    PLANNER_AUDIENCE_KEY,
-    "person",
-    PlannerAudienceSchema,
-  );
 }
 
 const PlannerKindSchema = Schema.Literals(["task", "routine"]);
@@ -160,6 +152,18 @@ export type PlannerKind = typeof PlannerKindSchema.Type;
 
 export function useStoredPlannerKind() {
   return useLocalStorage<PlannerKind, PlannerKind>(PLANNER_KIND_KEY, "task", PlannerKindSchema);
+}
+
+const TableSectionSchema = Schema.Literals(["tasks", "automations"]);
+/** What the Agents table lists: the agents' tasks or the automations that create them. */
+export type TableSection = typeof TableSectionSchema.Type;
+
+export function useStoredTableSection() {
+  return useLocalStorage<TableSection, TableSection>(
+    TABLE_SECTION_KEY,
+    "tasks",
+    TableSectionSchema,
+  );
 }
 
 /** A scroll position kept per device, written at most every 150 ms (wande's behavior). */
@@ -196,13 +200,12 @@ export function scrollMemory(key: string) {
 }
 
 /**
- * Makes the planner open on the agents' routines (Routines × Agents), in one
+ * Makes the Tasks page open on the automations (Agents, Automations), in one
  * environment when given: where the former Automations page sends its links.
  */
-export function storeAgentRoutinesView(environmentId: string | null) {
-  setLocalStorageItem(TASKS_VIEW_KEY, "planner", TasksViewSchema);
-  setLocalStorageItem(PLANNER_KIND_KEY, "routine", PlannerKindSchema);
-  setLocalStorageItem(PLANNER_AUDIENCE_KEY, "agent", PlannerAudienceSchema);
+export function storeAutomationsView(environmentId: string | null) {
+  setLocalStorageItem(TASKS_VIEW_KEY, "table", TasksViewSchema);
+  setLocalStorageItem(TABLE_SECTION_KEY, "automations", TableSectionSchema);
   if (environmentId)
     setLocalStorageItem(PLANNER_ENVIRONMENT_KEY, environmentId, PlannerEnvironmentSchema);
 }
