@@ -51,7 +51,7 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
       : support !== "supported"
         ? "This browser cannot receive push notifications. Use a current browser over HTTPS."
         : !session
-          ? "Sign in to Up.computer Connect in Connections to get agent alerts here while Up.computer is closed."
+          ? "Sign in to UpComputer Connect in Connections to get agent alerts here while Up.computer is closed."
           : enabled
             ? "Agent alerts reach this device while Up.computer is closed."
             : "Get alerts when an agent finishes, fails, or needs input or approval, even while Up.computer is closed.");
@@ -81,7 +81,7 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
       console.error("[web-push] Updating notifications on this device failed", error);
       setMessage(
         enabled
-          ? "Notifications are off on this device, but Up.computer Connect could not be updated."
+          ? "Notifications are off on this device, but UpComputer Connect could not be updated."
           : "Could not turn on notifications on this device. Try again.",
       );
       setEnabled(enabled ? false : await readWebPushEnabled(session.accountId).catch(() => false));

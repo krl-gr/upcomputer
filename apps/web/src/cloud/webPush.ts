@@ -175,7 +175,7 @@ const requireClerkToken = (session: ManagedRelaySession) =>
         token
           ? Effect.succeed(token)
           : Effect.fail(
-              new ManagedRelaySessionError({ message: "Sign in to Up.computer Connect first." }),
+              new ManagedRelaySessionError({ message: "Sign in to UpComputer Connect first." }),
             ),
       ),
     );
