@@ -7,6 +7,7 @@ import type {
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
+import { reuseRows, sameEnvironmentStatuses } from "./recent.ts";
 
 export type ScopedTaskAgent = TaskAgent & {
   readonly environmentId: EnvironmentId;
@@ -132,4 +133,39 @@ export async function loadAgentsState(
     .flatMap(([, state]) => state.runs)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   return { byEnvironment, agents, runs };
+}
+
+const agentRowKey = (row: { readonly environmentId: string; readonly id: string }) =>
+  `${row.environmentId}:${row.id}`;
+
+/** `next` with the unchanged agents and runs of `previous`, or `previous` itself when nothing changed. */
+export function reuseAgentsState(
+  previous: AgentsDataState,
+  next: AgentsDataState,
+): AgentsDataState {
+  const agents = reuseRows(previous.agents, next.agents, agentRowKey);
+  const runs = reuseRows(previous.runs, next.runs, agentRowKey);
+  if (
+    agents === previous.agents &&
+    runs === previous.runs &&
+    sameEnvironmentStatuses(previous.byEnvironment, next.byEnvironment)
+  )
+    return previous;
+  return { ...next, agents, runs };
+}
+
+/** Only the environments `readable` allows, for showing kept data before a load answers. */
+export function readableAgentsState(
+  state: AgentsDataState,
+  readable: (environmentId: string) => boolean,
+): AgentsDataState {
+  const environments = Object.keys(state.byEnvironment);
+  if (environments.every(readable)) return state;
+  return {
+    byEnvironment: Object.fromEntries(
+      Object.entries(state.byEnvironment).filter(([environmentId]) => readable(environmentId)),
+    ),
+    agents: state.agents.filter((agent) => readable(agent.environmentId)),
+    runs: state.runs.filter((run) => readable(run.environmentId)),
+  };
 }

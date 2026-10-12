@@ -1,4 +1,5 @@
 import type { TaskPageCursor, TaskPageResult } from "@t3tools/tasks-contracts/v1";
+import { RecentMap, reuseRows } from "./recent.ts";
 import type { TasksStateTarget, ScopedTask } from "./tasksState.ts";
 
 export type ScopedTaskListItem = ScopedTask & {
@@ -50,31 +51,27 @@ export function reuseTaskPage(
   next: TaskPageState,
 ): TaskPageState {
   if (!previous) return next;
-  const byId = new Map(previous.tasks.map((task) => [task.id, task]));
-  const tasks = next.tasks.map((task) => {
-    const old = byId.get(task.id);
-    return old && JSON.stringify(old) === JSON.stringify(task) ? old : task;
-  });
-  const sameTasks =
-    tasks.length === previous.tasks.length &&
-    tasks.every((task, index) => task === previous.tasks[index]);
+  const tasks = reuseRows(previous.tasks, next.tasks, (task) => task.id);
   const sameStatuses =
     next.statuses.length === previous.statuses.length &&
     next.statuses.every((status, index) => status === previous.statuses[index]);
   if (
-    sameTasks &&
+    tasks === previous.tasks &&
     sameStatuses &&
     next.pages === previous.pages &&
     JSON.stringify(next.nextCursor) === JSON.stringify(previous.nextCursor) &&
     next.error === previous.error
   )
     return previous;
-  return {
-    ...next,
-    tasks: sameTasks ? previous.tasks : tasks,
-    statuses: sameStatuses ? previous.statuses : next.statuses,
-  };
+  return { ...next, tasks, statuses: sameStatuses ? previous.statuses : next.statuses };
 }
+
+/**
+ * The last page of recent query lanes, by lane key (environment, project and
+ * search), for every mount of the Tasks table. Only lanes of an environment
+ * whose tasks are readable read it.
+ */
+export const recentTaskPages = new RecentMap<string, TaskPageState>(24);
 
 /** Provider health/config updates must not tear down task query lanes. */
 export function sameTaskTargets(

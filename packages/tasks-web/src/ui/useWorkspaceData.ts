@@ -6,6 +6,10 @@ import {
   loadAgentsState,
   loadTasksState,
   compareScopedTaskOrder,
+  readableAgentsState,
+  readableTasksState,
+  reuseAgentsState,
+  reuseTasksState,
   type AgentsDataState,
   type AgentsStateTarget,
   type TasksDataState,
@@ -36,6 +40,10 @@ import type { TasksWebProject } from "./shared.ts";
 
 const EMPTY_TASKS: TasksDataState = { byEnvironment: {}, tasks: [] };
 const EMPTY_AGENTS: AgentsDataState = { byEnvironment: {}, agents: [], runs: [] };
+
+/** The last load of any mount: the Tasks panel mounts again with every thread. */
+let recentTasks = EMPTY_TASKS;
+let recentAgents = EMPTY_AGENTS;
 
 export interface TasksWorkspaceData {
   readonly taskTargets: readonly TasksStateTarget[];
@@ -145,11 +153,6 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
   // recompute access for every environment, including saved remotes.
   const serverConfigs = useServerConfigs();
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [tasks, setTasks] = useState<TasksDataState>(EMPTY_TASKS);
-  const [agents, setAgents] = useState<AgentsDataState>(EMPTY_AGENTS);
-  const [loading, setLoading] = useState(true);
-  const priorTasks = useRef<TasksDataState>(EMPTY_TASKS);
-  const priorAgents = useRef<AgentsDataState>(EMPTY_AGENTS);
 
   const environmentIds = useMemo(
     () => [...new Set(projects.map(({ environmentId }) => environmentId))],
@@ -175,6 +178,28 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
     }
     return result;
   }, [environmentIds, reloadVersion, serverConfigs, accessRevision]);
+
+  // The last loaded data of readable environments shows until this mount's
+  // load answers; `loading` still waits for that answer.
+  const [tasks, setTasks] = useState<TasksDataState>(() =>
+    loadLegacyTasks
+      ? readableTasksState(
+          recentTasks,
+          (environmentId) =>
+            clientsAndAccess.get(environmentId as EnvironmentId)?.access.canReadTasks === true,
+        )
+      : EMPTY_TASKS,
+  );
+  const [agents, setAgents] = useState<AgentsDataState>(() =>
+    readableAgentsState(
+      recentAgents,
+      (environmentId) =>
+        clientsAndAccess.get(environmentId as EnvironmentId)?.access.canReadAgents === true,
+    ),
+  );
+  const [loading, setLoading] = useState(true);
+  const priorTasks = useRef<TasksDataState>(tasks);
+  const priorAgents = useRef<AgentsDataState>(agents);
 
   const previousTaskTargets = useRef<readonly TasksStateTarget[]>([]);
   const taskTargets = useMemo(() => {
@@ -249,10 +274,15 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
           .flatMap((state) => state.runs)
           .sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
       };
-      priorTasks.current = mergedTasks;
-      priorAgents.current = mergedAgents;
-      setTasks(mergedTasks);
-      setAgents(mergedAgents);
+      // Unchanged rows keep their objects, so a background load repaints nothing.
+      const shownTasks = reuseTasksState(priorTasks.current, mergedTasks);
+      const shownAgents = reuseAgentsState(priorAgents.current, mergedAgents);
+      priorTasks.current = shownTasks;
+      priorAgents.current = shownAgents;
+      if (loadLegacyTasks) recentTasks = shownTasks;
+      recentAgents = shownAgents;
+      setTasks(shownTasks);
+      setAgents(shownAgents);
       setLoading(false);
     });
     return () => {

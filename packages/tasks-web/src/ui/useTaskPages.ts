@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
-import type { TaskPageState, ScopedTaskListItem } from "../state/taskPages.ts";
+import {
+  recentTaskPages,
+  type TaskPageState,
+  type ScopedTaskListItem,
+} from "../state/taskPages.ts";
 import type { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
-import { planTaskQueryLanes, type ViewProjectFilter } from "./projectFilter.ts";
+import { planTaskQueryLanes, type TaskQueryLane, type ViewProjectFilter } from "./projectFilter.ts";
 
 const PAGE_SIZE = 100;
+
+function recentPage(lane: TaskQueryLane) {
+  return lane.target.access.canReadTasks ? recentTaskPages.get(lane.key) : undefined;
+}
+
+function loadedState(page: TaskPageState): TaskPageLoadState {
+  return { page, initialLoading: false, loadingMore: false, error: undefined };
+}
 
 /**
  * Paged task queries for the Tasks view: the header's project, task status,
@@ -18,11 +30,6 @@ export function useTaskPages(
   tags: readonly string[],
   archive: TaskArchiveFilter,
 ) {
-  const [byLane, setByLane] = useState<Record<string, TaskPageLoadState>>({});
-  const loaders = useRef<TaskPageLoader[]>([]);
-  const pageCache = useRef<Record<string, TaskPageState>>({});
-  const queryKey = useRef("");
-  const taskCache = useRef<readonly ScopedTaskListItem[]>([]);
   const lanes = useMemo(
     () =>
       planTaskQueryLanes({
@@ -35,29 +42,57 @@ export function useTaskPages(
       }),
     [targets, projectFilter, statusFilter, tags, archive],
   );
+  // A lane seen recently shows its last rows on the first render.
+  const [byLane, setByLane] = useState<Record<string, TaskPageLoadState>>(() =>
+    Object.fromEntries(
+      lanes.flatMap((lane) => {
+        const page = recentPage(lane);
+        return page ? [[lane.key, loadedState(page)]] : [];
+      }),
+    ),
+  );
+  const loaders = useRef<TaskPageLoader[]>([]);
+  const taskCache = useRef<readonly ScopedTaskListItem[]>([]);
 
   useEffect(() => {
     let disposed = false;
-    const key = JSON.stringify(lanes.map((lane) => lane.key));
-    const sameQuery = queryKey.current === key;
-    queryKey.current = key;
-    const cached = sameQuery ? pageCache.current : {};
-    pageCache.current = cached;
-    // Keep already displayed rows while replacing the query, but start each new
-    // query at its first page. No empty-table flash during synchronization.
-    setByLane((previous) =>
-      Object.fromEntries(
-        lanes.map((lane) => [
-          lane.key,
-          {
-            page: previous[lane.key]?.page,
-            initialLoading: !sameQuery || !previous[lane.key]?.page,
-            loadingMore: false,
-            error: undefined,
-          },
-        ]),
-      ),
-    );
+    const cached = new Map<string, TaskPageState>();
+    for (const lane of lanes) {
+      const page = recentPage(lane);
+      if (page) cached.set(lane.key, page);
+      else if (!lane.target.access.canReadTasks) recentTaskPages.delete(lane.key);
+    }
+    // A recent lane starts from its last rows and refreshes in the background;
+    // another keeps the rows on screen until its first page. No empty-table flash.
+    setByLane((previous) => {
+      const next = Object.fromEntries(
+        lanes.map((lane) => {
+          const page = cached.get(lane.key);
+          const shown = previous[lane.key];
+          return [
+            lane.key,
+            page
+              ? shown?.page === page &&
+                !shown.initialLoading &&
+                !shown.loadingMore &&
+                shown.error === undefined
+                ? shown
+                : loadedState(page)
+              : {
+                  page: shown?.page,
+                  initialLoading: true,
+                  loadingMore: false,
+                  error: undefined,
+                },
+          ];
+        }),
+      );
+      const keys = Object.keys(next);
+      return keys.length === Object.keys(previous).length &&
+        keys.every((key) => next[key] === previous[key])
+        ? previous
+        : next;
+    });
     const lanesByTarget = new Map<TasksStateTarget, TaskPageLoader[]>();
     loaders.current = lanes.map((lane) => {
       const loader = new TaskPageLoader(
@@ -65,7 +100,7 @@ export function useTaskPages(
         lane.search,
         (state) => {
           if (disposed) return;
-          if (state.page) pageCache.current[lane.key] = state.page;
+          if (state.page) recentTaskPages.set(lane.key, state.page);
           setByLane((previous) => ({
             ...previous,
             [lane.key]: {
@@ -75,7 +110,7 @@ export function useTaskPages(
           }));
         },
         150,
-        cached[lane.key],
+        cached.get(lane.key),
       );
       lanesByTarget.set(lane.target, [...(lanesByTarget.get(lane.target) ?? []), loader]);
       return loader;
