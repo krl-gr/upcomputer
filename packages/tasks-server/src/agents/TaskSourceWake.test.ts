@@ -22,6 +22,7 @@ import {
   OrchestratorDispatchError,
 } from "../../../../apps/server/src/orchestration-v2/Orchestrator.ts";
 import { ServerActivation } from "../../../../apps/server/src/serverActivation.ts";
+import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
@@ -132,10 +133,18 @@ describe("TaskSourceWake", () => {
     ].filter(wakesSourceChat);
     const [first, ...rest] = runs;
     if (first === undefined) throw new Error("expected runs");
-    expect(reportsWithoutWake(runs)).toBe(true);
-    expect(reportsWithoutWake([...runs, { ...first, status: "blocked" }])).toBe(false);
-    expect(reportsWithoutWake([{ ...first, status: "failed" }])).toBe(false);
-    expect(reportsWithoutWake([{ ...first, status: "interrupted" }])).toBe(false);
+    // Only with waking on completion turned off.
+    expect(reportsWithoutWake(runs, false)).toBe(true);
+    expect(reportsWithoutWake(runs, true)).toBe(false);
+    for (const wakeOnCompletion of [true, false]) {
+      expect(reportsWithoutWake([...runs, { ...first, status: "blocked" }], wakeOnCompletion)).toBe(
+        false,
+      );
+      expect(reportsWithoutWake([{ ...first, status: "failed" }], wakeOnCompletion)).toBe(false);
+      expect(reportsWithoutWake([{ ...first, status: "interrupted" }], wakeOnCompletion)).toBe(
+        false,
+      );
+    }
     const card = sourceRunsCard([first, ...rest]);
     expect(card.source).toEqual({
       kind: "task_agent_run",
@@ -214,6 +223,7 @@ function fakeDispatch(fail: (threadId: string) => "transient" | "permanent" | nu
 const withWake = <A, E>(
   dispatch: ReturnType<typeof fakeDispatch>,
   body: Effect.Effect<A, E, TaskRepository | TaskSourceWake | SqlClient.SqlClient>,
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
 ) =>
   // Runs below end at `at`; by the first sweep their chats have settled.
   Effect.andThen(TestClock.setTime(Date.parse(at) + 60_000), body).pipe(
@@ -224,6 +234,7 @@ const withWake = <A, E>(
         ),
         Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
         Layer.provide(Layer.succeed(ThreadManagementService, dispatch.service as never)),
+        Layer.provide(ServerSettings.layerTest(settings).pipe(Layer.orDie)),
         // The background sweep stays parked; the tests sweep by hand.
         Layer.provide(Layer.succeed(ServerActivation, Effect.never)),
       ),
@@ -313,8 +324,37 @@ const retryNow = Effect.gen(function* () {
   yield* sql`UPDATE task_source_wake_batches SET retry_at = NULL`;
 });
 
+const WAKE_OFF = { wakeChatOnTaskCompletion: false };
+
 describe("TaskSourceWake settling", () => {
-  it.effect("a chat sees completed runs as one card once its tasks have settled", () => {
+  it.effect("by default a chat's model wakes once for completed runs after they settle", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("r1", "chat");
+        yield* finishedRun("r2", "chat", "running");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* finishNow("r2");
+        yield* TestClock.adjust(SOURCE_SETTLE_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        // One model wake for the batch, no card beside it.
+        assert.strictEqual(message!.kind, "wake");
+        assert.strictEqual(message!.threadId, "chat");
+        assert.include(message!.text, "run r1");
+        assert.include(message!.text, "run r2");
+        assert.include(message!.text, "No run for this chat's tasks is in progress now.");
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r2"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("with waking off a chat sees completed runs as one card once they settle", () => {
     const dispatch = fakeDispatch(() => null);
     return withWake(
       dispatch,
@@ -353,33 +393,41 @@ describe("TaskSourceWake settling", () => {
           batches: [],
         });
       }),
+      WAKE_OFF,
     );
   });
 
-  it.effect("a failed run wakes its chat at once, with the completed runs waiting", () => {
-    const dispatch = fakeDispatch(() => null);
-    return withWake(
-      dispatch,
-      Effect.gen(function* () {
-        const wake = yield* TaskSourceWake;
-        yield* finishedRun("r1", "chat");
-        yield* finishedRun("r2", "chat", "running");
-        yield* finishedRun("r3", "chat", "failed");
-        yield* wake.sweep;
-        assert.lengthOf(dispatch.delivered, 1);
-        const [message] = dispatch.delivered;
-        // The completed run goes with the failure into one model wake.
-        assert.strictEqual(message!.kind, "wake");
-        assert.include(message!.text, "run r1");
-        assert.include(message!.text, "run r3");
-        assert.include(message!.text, ": failed");
-        // The failure that released the batch comes first.
-        assert.isBelow(message!.text.indexOf("run r3"), message!.text.indexOf("run r1"));
-        assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
-        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r3"], batches: [] });
-      }),
-    );
-  });
+  it.effect.each([
+    ["on", {}],
+    ["off", WAKE_OFF],
+  ] as const)(
+    "a failed run wakes its chat at once, with the completed runs waiting (waking %s)",
+    ([, settings]) => {
+      const dispatch = fakeDispatch(() => null);
+      return withWake(
+        dispatch,
+        Effect.gen(function* () {
+          const wake = yield* TaskSourceWake;
+          yield* finishedRun("r1", "chat");
+          yield* finishedRun("r2", "chat", "running");
+          yield* finishedRun("r3", "chat", "failed");
+          yield* wake.sweep;
+          assert.lengthOf(dispatch.delivered, 1);
+          const [message] = dispatch.delivered;
+          // The completed run goes with the failure into one model wake.
+          assert.strictEqual(message!.kind, "wake");
+          assert.include(message!.text, "run r1");
+          assert.include(message!.text, "run r3");
+          assert.include(message!.text, ": failed");
+          // The failure that released the batch comes first.
+          assert.isBelow(message!.text.indexOf("run r3"), message!.text.indexOf("run r1"));
+          assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
+          assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r3"], batches: [] });
+        }),
+        settings,
+      );
+    },
+  );
 
   it.effect(
     "a completed run behind work that never settles goes out after the longest wait",
@@ -399,7 +447,7 @@ describe("TaskSourceWake settling", () => {
           yield* wake.sweep;
           assert.lengthOf(dispatch.delivered, 1);
           const [message] = dispatch.delivered;
-          assert.strictEqual(message!.kind, "card");
+          assert.strictEqual(message!.kind, "wake");
           assert.include(message!.text, "run r1");
           assert.notInclude(message!.text, "run r2");
           // r2 still runs: the report does not say the chat's work is done.

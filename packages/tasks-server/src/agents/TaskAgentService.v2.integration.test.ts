@@ -531,6 +531,7 @@ const runSlice = <A, E>(
     | McpServer.McpServer
     | ProjectStore.ProjectStoreV2
     | ThreadManagementService.ThreadManagementService
+    | ServerSettings.ServerSettingsService
   >,
   options: SliceOptions = {},
 ) =>
@@ -1270,9 +1271,11 @@ const mcpClient = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
-it.live("a chat creates a task through the task MCP tools and the started run reports back", () =>
+it.live("a chat creates a task through MCP tools and, waking off, hears back as a card", () =>
   runSlice("task-agent-v2-mcp", ({ repository, threads, cwd, started, sendAsPerson, v2Runs }) =>
     Effect.gen(function* () {
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ wakeChatOnTaskCompletion: false });
       const server = yield* McpServer.McpServer;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const toolNames = new Set(server.tools.map(({ tool }) => tool.name));
@@ -1464,6 +1467,93 @@ it.live("a chat creates a task through the task MCP tools and the started run re
       const second = yield* eventually("the chat's turn after that", turnNumber(3));
       assert.strictEqual(second.text, "Thanks.");
     }),
+  ),
+);
+
+it.live("by default a completed run wakes its chat's model, with no card beside it", () =>
+  runSlice(
+    "task-agent-v2-completed-wake",
+    ({ repository, taskAgents, runsOf, threads, started, cwd }) =>
+      Effect.gen(function* () {
+        const projectStore = yield* ProjectStore.ProjectStoreV2;
+        yield* projectStore.apply({
+          sequence: 1,
+          eventId: EventId.make("event:task-agents-v2-completed-wake:project"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Task agents",
+            workspaceRoot: cwd,
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+        const chatThreadId = ThreadIdBrand.make("thread:task-agents-v2-completed-wake:chat");
+        yield* threads.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("command:task-agents-v2-completed-wake:chat"),
+          threadId: chatThreadId,
+          projectId,
+          title: "Chat",
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* repository.upsertAgent(agent);
+        const created = yield* repository.upsert({ ...task, sourceThreadId: chatThreadId });
+        yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+        const run = yield* eventually(
+          "the run to complete",
+          runsOf.pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(runs.find((candidate) => candidate.status === "completed")),
+            ),
+          ),
+        );
+
+        // Ending the run earlier stands in for the settle wait.
+        const sql = yield* SqlClient.SqlClient;
+        const settledAt = new Date(Date.now() - SOURCE_SETTLE_MS).toISOString();
+        yield* sql`UPDATE task_agent_runs SET completed_at = ${settledAt} WHERE id = ${run.id}`;
+        const wake = yield* TaskSourceWake;
+        const chatTurn = yield* eventually(
+          "the chat's model to wake",
+          Effect.gen(function* () {
+            yield* wake.sweep;
+            const turns = yield* Ref.get(started);
+            return Option.fromNullishOr(turns.find((turn) => turn.threadId === chatThreadId));
+          }),
+        );
+        assert.include(chatTurn.text, `run ${run.id}`);
+        assert.include(chatTurn.text, ": completed");
+        assert.include(chatTurn.text, "No run for this chat's tasks is in progress now.");
+        yield* wake.sweep;
+        const records = yield* threads.getThreadRecords(chatThreadId, ["messages", "turnItems"], {
+          turnItemTypes: ["notification"],
+        });
+        const notified = records.messages.filter(
+          (message) => message.notification?.source.kind === "task_agent_run",
+        );
+        assert.lengthOf(notified, 1);
+        assert.strictEqual(notified[0]?.notification?.summary, `Task "${task.title}" completed`);
+        // The wake is the chat's report: no run-less card was recorded.
+        assert.isFalse(
+          records.turnItems.some((item) => item.type === "notification" && item.runId === null),
+        );
+      }),
   ),
 );
 
