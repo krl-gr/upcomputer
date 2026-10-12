@@ -9,6 +9,7 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as Result from "effect/Result";
 
 import { APP_VERSION } from "../branding";
+import { isElectron } from "../env";
 import { runtime } from "../lib/runtime";
 import { randomUUID } from "../lib/utils";
 import { trimNonEmpty } from "./publicConfig";
@@ -156,8 +157,22 @@ function writeStoredDevice(device: StoredWebPushDevice | null) {
   }
 }
 
+/**
+ * The service worker container, or null where there is none. The desktop
+ * app's custom scheme has no service worker access, and reading
+ * `navigator.serviceWorker` there throws.
+ */
+function serviceWorkers(): ServiceWorkerContainer | null {
+  if (isElectron) return null;
+  try {
+    return navigator.serviceWorker ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function readSubscription(): Promise<PushSubscription | null> {
-  const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
+  const registration = await serviceWorkers()?.getRegistration(SERVICE_WORKER_SCOPE);
   return (await registration?.pushManager.getSubscription()) ?? null;
 }
 
@@ -262,7 +277,7 @@ export async function disableWebPush(session: ManagedRelaySession | null): Promi
 
 /** Signing out of Connect stops this device's alerts for that account. */
 export async function forgetWebPushDevice(): Promise<void> {
-  if (!readStoredDevice() || !("serviceWorker" in navigator)) return;
+  if (!readStoredDevice() || !serviceWorkers()) return;
   await disableWebPush(null);
 }
 
@@ -270,7 +285,8 @@ export async function forgetWebPushDevice(): Promise<void> {
 export function listenForWebPushNavigation(
   open: (thread: { readonly environmentId: string; readonly threadId: string }) => void,
 ): () => void {
-  if (!("serviceWorker" in navigator)) return () => {};
+  const container = serviceWorkers();
+  if (!container) return () => {};
   const onMessage = (event: MessageEvent) => {
     const data: unknown = event.data;
     if (
@@ -286,7 +302,7 @@ export function listenForWebPushNavigation(
       open({ environmentId: data.environmentId, threadId: data.threadId });
     }
   };
-  navigator.serviceWorker.addEventListener("message", onMessage);
-  navigator.serviceWorker.startMessages();
-  return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  container.addEventListener("message", onMessage);
+  container.startMessages();
+  return () => container.removeEventListener("message", onMessage);
 }
