@@ -17,6 +17,7 @@ import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { TablePill } from "../../ui/TablePill.tsx";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import { progressLabel, type ScheduleProgressCount } from "../logic/progress.ts";
+import { titleEditResult } from "../logic/titleEdit.ts";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
@@ -27,7 +28,23 @@ export function isFinished(task: PlannerTask) {
   return task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
 }
 
-/** Wande's TitleArea: the title, edited in place; Enter saves, Escape cancels. */
+/** The caret nearest a viewport point, or null when the browser cannot tell. */
+function caretRangeAt(x: number, y: number): Range | null {
+  if (typeof document.caretPositionFromPoint === "function") {
+    const position = document.caretPositionFromPoint(x, y);
+    if (!position) return null;
+    const range = document.createRange();
+    range.setStart(position.offsetNode, position.offset);
+    return range;
+  }
+  return document.caretRangeFromPoint(x, y);
+}
+
+/**
+ * Wande's TitleArea: the title, edited in place; Enter saves, Escape cancels.
+ * Editing turns the same element plain-text editable, so the row keeps its
+ * size and the caret lands where the person clicked.
+ */
 function TitleArea(props: {
   readonly title: string;
   readonly done: boolean;
@@ -35,60 +52,81 @@ function TitleArea(props: {
   readonly onEditingChange: (editing: boolean) => void;
   readonly onSave: (title: string) => void;
 }) {
-  const [value, setValue] = useState(props.title);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const clickPoint = useRef<{ x: number; y: number } | null>(null);
+  const active = useRef(false);
+  // The text is owned here, not by React, so the browser's edits never fight a
+  // React text node; a remote rename waits until the edit ends.
   useLayoutEffect(() => {
-    if (props.editing) {
-      ref.current?.focus();
-      ref.current?.select();
+    if (!props.editing && ref.current) ref.current.textContent = props.title;
+  }, [props.editing, props.title]);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!props.editing || !element) return;
+    active.current = true;
+    element.focus({ preventScroll: true });
+    const point = clickPoint.current;
+    const range = point ? caretRangeAt(point.x, point.y) : null;
+    const caret = document.createRange();
+    if (range && element.contains(range.startContainer)) {
+      caret.setStart(range.startContainer, range.startOffset);
+    } else {
+      caret.selectNodeContents(element);
+      caret.collapse(false);
     }
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(caret);
   }, [props.editing]);
+  const finish = () => {
+    active.current = false;
+    props.onEditingChange(false);
+  };
   const save = () => {
-    const title = value.trim();
-    if (!title) {
+    if (!active.current) return;
+    const result = titleEditResult(ref.current?.textContent ?? "", props.title);
+    if (result.kind === "empty") {
       toastManager.add({ type: "warning", title: "Title cannot be empty" });
       return;
     }
-    if (title !== props.title) props.onSave(title);
-    props.onEditingChange(false);
+    if (result.kind === "save") props.onSave(result.title);
+    finish();
   };
-  if (!props.editing)
-    return (
-      <div
-        className={cn(
-          "w-full cursor-text whitespace-pre-wrap break-words text-sm font-medium text-foreground",
-          props.done && "text-muted-foreground line-through",
-        )}
-        onClick={(event) => {
-          event.stopPropagation();
-          setValue(props.title);
-          props.onEditingChange(true);
-        }}
-      >
-        {props.title}
-      </div>
-    );
   return (
-    <textarea
+    <div
       ref={ref}
-      className="field-sizing-content w-full resize-none overflow-hidden bg-transparent p-0 text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
-      value={value}
-      placeholder="Untitled"
-      aria-label="Task title"
-      onChange={(event) => setValue(event.currentTarget.value)}
+      className={cn(
+        "min-h-[1lh] w-full cursor-text whitespace-pre-wrap break-words text-sm font-medium text-foreground outline-none",
+        props.done && "text-muted-foreground line-through",
+      )}
+      {...(props.editing
+        ? {
+            contentEditable: "plaintext-only" as const,
+            role: "textbox",
+            "aria-label": "Task title",
+          }
+        : {})}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (props.editing) return;
+        clickPoint.current = { x: event.clientX, y: event.clientY };
+        props.onEditingChange(true);
+      }}
       onBlur={save}
       onKeyDown={(event) => {
+        if (!props.editing) return;
         event.stopPropagation();
-        if (event.key === "Enter") {
+        if (event.key === "Enter" && !event.nativeEvent.isComposing) {
           event.preventDefault();
           save();
         } else if (event.key === "Escape") {
           event.preventDefault();
-          setValue(props.title);
-          props.onEditingChange(false);
+          finish();
         }
       }}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        if (props.editing) event.stopPropagation();
+      }}
     />
   );
 }
