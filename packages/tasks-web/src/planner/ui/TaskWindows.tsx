@@ -8,7 +8,6 @@ import {
   MoreHorizontalIcon,
   XIcon,
 } from "lucide-react";
-import { PERSON_DONE_STATUS, PERSON_OPEN_STATUS } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import {
@@ -26,13 +25,13 @@ import {
   MenuTrigger,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
-import { TablePill } from "../../ui/TablePill.tsx";
 import { useQueueInstancesByTaskId, useTaskById } from "../data/hooks.ts";
 import type { PlannerSnapshot } from "../data/plannerStore.ts";
 import { todayKey } from "../logic/dates.ts";
 import { countProgress, progressLabel, weekRangeOf } from "../logic/progress.ts";
 import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
 import type { PlannerWindow } from "../windows/windowStore.ts";
+import { handOffAgents, handOffPatch } from "../logic/handOff.ts";
 import { DescriptionField } from "./DescriptionField.tsx";
 import { AutomationWindow } from "./AutomationWindow.tsx";
 import { FloatingWindow, FloatingWindowDocked } from "./FloatingWindow.tsx";
@@ -43,7 +42,6 @@ import { ScheduleTable } from "./ScheduleTable.tsx";
 import { RunSummary } from "./RunSummary.tsx";
 import { ConfirmDeleteDialog, ConfirmHandOffDialog } from "./TaskDialogs.tsx";
 import { toastAudienceMoved } from "./audienceMoved.ts";
-import { TagsField } from "./TagsField.tsx";
 import { isFinished } from "./TaskRow.tsx";
 import { TitleInput } from "./TitleInput.tsx";
 
@@ -90,7 +88,8 @@ export function TaskDetailWindow(
     readonly queueDate: string | null;
   },
 ) {
-  const { store, windows, projects, preferences, openInTable, openInPlanner } = usePlanner();
+  const { store, windows, projects, preferences, agents, openInTable, openInPlanner } =
+    usePlanner();
   const window = props.window;
   const viewMode = window.kind === "detail" ? window.viewMode : "description";
   const task = useTaskById(store, props.snapshot, props.taskId);
@@ -146,10 +145,10 @@ export function TaskDetailWindow(
     close();
   };
   const finished = task ? isFinished(task) : false;
-  const statusLabel =
-    task && task.status !== PERSON_OPEN_STATUS && task.status !== PERSON_DONE_STATUS
-      ? task.status
-      : null;
+  const agentsForTask = useMemo(
+    () => (task ? handOffAgents(agents, task.projectId) : []),
+    [agents, task],
+  );
 
   return (
     <FloatingWindow
@@ -199,7 +198,7 @@ export function TaskDetailWindow(
                 </MenuItem>
               ) : (
                 <MenuItem disabled={!task} onClick={() => setHandingOff(true)}>
-                  Hand to agents
+                  Hand to an agent…
                 </MenuItem>
               )}
               <MenuSeparator />
@@ -259,8 +258,7 @@ export function TaskDetailWindow(
                 </IconAction>
               </>
             )}
-            {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
-            <RunSummary task={task} showTags={false} />
+            <RunSummary task={task} />
             {props.queueDate && preferences.weekViewMode === "queue" ? (
               <IconAction
                 label={`Add to queue for ${props.queueDate}`}
@@ -288,11 +286,6 @@ export function TaskDetailWindow(
               {progress ? <span>{progress}</span> : null}
             </IconAction>
           </div>
-          <TagsField
-            key={task.tags.join("\u0000")}
-            tags={task.tags}
-            onSave={(tags) => void store.updateTask(task.id, { tags })}
-          />
           {viewMode === "description" ? (
             // One editor per draft: the full screen dialog takes it over while open.
             fullScreen ? null : (
@@ -315,12 +308,15 @@ export function TaskDetailWindow(
       <ConfirmHandOffDialog
         open={handingOff}
         title={task?.title ?? "This task"}
+        agents={agentsForTask}
         onOpenChange={setHandingOff}
-        onConfirm={() =>
-          void store.updateTask(props.taskId, { audience: "agent" }).then((moved) => {
+        onConfirm={(agentId) => {
+          if (!task) return;
+          const agent = agentsForTask.find(({ id }) => id === agentId) ?? null;
+          void store.updateTask(task.id, handOffPatch(task, agent)).then((moved) => {
             if (moved) toastAudienceMoved("agent", title, () => openInTable(props.taskId));
-          })
-        }
+          });
+        }}
       />
       <ConfirmDeleteDialog
         open={menuDelete}

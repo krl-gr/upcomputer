@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import {
   AlertDialog,
@@ -16,6 +18,13 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../../../../../apps/web/src/components/ui/dialog.tsx";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../../apps/web/src/components/ui/select.tsx";
 import type { PlannerTask } from "../data/pendingOps.ts";
 
 /** Confirms deleting tasks or entries; deleting a task also deletes its entries. */
@@ -50,36 +59,85 @@ export function ConfirmDeleteDialog(props: {
   );
 }
 
+const ANY_AGENT = "any";
+
+function HandOffBody(props: {
+  readonly title: string;
+  readonly agents: readonly { readonly id: string; readonly name: string }[];
+  readonly onConfirm: (agentId: string | null) => void;
+  readonly onClose: () => void;
+}) {
+  // One agent is the obvious pick; with several the person chooses.
+  const [choice, setChoice] = useState<string | null>(
+    props.agents.length === 1 ? props.agents[0]!.id : props.agents.length === 0 ? ANY_AGENT : null,
+  );
+  const agent = props.agents.find(({ id }) => id === choice);
+  return (
+    <>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Hand to an agent</AlertDialogTitle>
+        <AlertDialogDescription>
+          {agent
+            ? `"${props.title}" moves from your planner to Agents with ${agent.name}'s start tags, so ${agent.name} starts on it. You can take it back from its details there.`
+            : `"${props.title}" becomes an agent task and moves from your planner to Agents. An enabled agent whose status, tags and project match starts on it now. You can take it back from its details there.`}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      {props.agents.length > 0 ? (
+        <div className="px-6 pb-6">
+          <Select value={choice} onValueChange={setChoice}>
+            <SelectTrigger aria-label="Agent">
+              <SelectValue>
+                {choice === ANY_AGENT ? "No particular agent" : (agent?.name ?? "Choose an agent")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {props.agents.map(({ id, name }) => (
+                <SelectItem key={id} value={id}>
+                  {name}
+                </SelectItem>
+              ))}
+              <SelectItem value={ANY_AGENT}>No particular agent</SelectItem>
+            </SelectPopup>
+          </Select>
+        </div>
+      ) : null}
+      <AlertDialogFooter>
+        <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+        <Button
+          disabled={choice === null}
+          onClick={() => {
+            props.onConfirm(agent ? agent.id : null);
+            props.onClose();
+          }}
+        >
+          {agent ? `Hand to ${agent.name}` : "Hand to agents"}
+        </Button>
+      </AlertDialogFooter>
+    </>
+  );
+}
+
 /**
- * Confirms handing a person task to agents: from then on every agent whose
- * triggers match starts on it, as on any agent task.
+ * Confirms handing a person task to agents, to a chosen agent of its project
+ * or to whichever agent's triggers match, as on any agent task.
  */
 export function ConfirmHandOffDialog(props: {
   readonly open: boolean;
   readonly title: string;
-  readonly onConfirm: () => void;
+  /** The agents that can take it, by name. */
+  readonly agents: readonly { readonly id: string; readonly name: string }[];
+  readonly onConfirm: (agentId: string | null) => void;
   readonly onOpenChange: (open: boolean) => void;
 }) {
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
       <AlertDialogPopup>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Hand to agents</AlertDialogTitle>
-          <AlertDialogDescription>
-            {`"${props.title}" becomes an agent task and moves from your planner to Agents. An enabled agent whose status, tags and project match starts on it now. You can take it back from its details there.`}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button
-            onClick={() => {
-              props.onConfirm();
-              props.onOpenChange(false);
-            }}
-          >
-            Hand to agents
-          </Button>
-        </AlertDialogFooter>
+        <HandOffBody
+          title={props.title}
+          agents={props.agents}
+          onConfirm={props.onConfirm}
+          onClose={() => props.onOpenChange(false)}
+        />
       </AlertDialogPopup>
     </AlertDialog>
   );

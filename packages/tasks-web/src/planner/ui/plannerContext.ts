@@ -1,6 +1,7 @@
 import { createContext, use } from "react";
 
 import type { PlannerKind, PlannerPreferences } from "../data/preferences.ts";
+import type { HandOffAgent } from "../logic/handOff.ts";
 import type { AutomationStore } from "../data/automationStore.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
 import type { WindowStore } from "../windows/windowStore.ts";
@@ -26,6 +27,8 @@ export interface PlannerContextValue {
   readonly kind: PlannerKind;
   /** Tags an enabled agent of this environment starts on. */
   readonly triggerTags: ReadonlySet<string>;
+  /** The environment's agents, for handing a person task to one. */
+  readonly agents: readonly HandOffAgent[];
   /** Opens a task in the table, which shows its agent runs. */
   readonly openInTable: (taskId: string) => void;
   /** Opens a task's window in the planner, switching to it from the table. */

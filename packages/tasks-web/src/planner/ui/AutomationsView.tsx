@@ -17,6 +17,7 @@ import {
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
+import type { HandOffAgent } from "../logic/handOff.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
 import { WorkspaceViewLayout } from "../../ui/WorkspaceViewLayout.tsx";
 import {
@@ -46,6 +47,7 @@ function AutomationsBody(props: {
   readonly windows: WindowStore;
   readonly projects: readonly PlannerProject[];
   readonly triggerTags: ReadonlySet<string>;
+  readonly agents: readonly HandOffAgent[];
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
 }) {
@@ -82,6 +84,7 @@ function AutomationsBody(props: {
       preferences,
       kind: "task",
       triggerTags: props.triggerTags,
+      agents: props.agents,
       openInTable: (taskId) => onOpenTask(environmentId, taskId),
       openInPlanner: (taskId) => onOpenInPlanner(environmentId, taskId),
     }),
@@ -93,6 +96,7 @@ function AutomationsBody(props: {
       props.projects,
       preferences,
       props.triggerTags,
+      props.agents,
       onOpenTask,
       onOpenInPlanner,
     ],
@@ -130,11 +134,7 @@ export function AutomationsView(props: {
   readonly viewSwitch: ReactNode;
   readonly projects: readonly TasksWebProject[];
   readonly taskTargets: readonly TasksStateTarget[];
-  readonly agents: ReadonlyArray<{
-    readonly environmentId: string;
-    readonly enabled: boolean;
-    readonly startTags: ReadonlyArray<string>;
-  }>;
+  readonly agents: ReadonlyArray<HandOffAgent & { readonly environmentId: string }>;
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   /** Opens a task's window in the planner, after it was taken back from agents. */
@@ -167,10 +167,11 @@ export function AutomationsView(props: {
       })),
     [candidates, environments],
   );
-  const triggerTags = useMemo(
-    () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),
+  const agents = useMemo(
+    () => props.agents.filter((agent) => agent.environmentId === environmentId),
     [props.agents, environmentId],
   );
+  const triggerTags = useMemo(() => agentTriggerTags(agents), [agents]);
   const availability = usePlannerAvailability(environmentId);
   const ready = environmentId !== null && availability === "enabled";
   const windows =
@@ -231,6 +232,7 @@ export function AutomationsView(props: {
             windows={windows}
             projects={projects}
             triggerTags={triggerTags}
+            agents={agents}
             onOpenTask={props.onOpenTask}
             onOpenInPlanner={props.onOpenInPlanner}
           />
