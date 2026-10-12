@@ -129,6 +129,8 @@ Optional `production` environment variables:
 
 - `APNS_ENABLED` set to `true` to deliver iOS pushes and Live Activities, with `APNS_ENVIRONMENT`,
   `APNS_TEAM_ID`, `APNS_KEY_ID` and `APNS_BUNDLE_ID`. APNs is off without it.
+- `WEB_PUSH_ENABLED` set to `true` to deliver web push, with `WEB_PUSH_VAPID_PUBLIC_KEY` and
+  `WEB_PUSH_SUBJECT`. Release builds then carry the public key. Web push is off without it.
 
 - `RELAY_DOMAIN` when overriding the derived `relay.<RELAY_API_ZONE_NAME>` domain
 - `RELAY_TUNNEL_CLEANUP_MODE` with `off`, `dry-run`, or `enabled`. Missing and blank values use
@@ -140,6 +142,7 @@ Required `production` environment secrets:
 
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY` when APNs is enabled
+- `WEB_PUSH_VAPID_PRIVATE_KEY` when web push is enabled
 
 After changing a variable or secret, run the **Deploy T3 Connect relay** workflow manually from
 `main` with **force** unchecked. Alchemy compares the values the Worker reads and redeploys it when
