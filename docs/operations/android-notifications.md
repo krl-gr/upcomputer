@@ -96,7 +96,7 @@ The Android native handler must already be configured with that device and accou
 
 ### Hosted delivery
 
-The existing Alchemy deployment provisions Cloudflare Workers, delivery queues, Hyperdrive, tunnel/DNS resources, PlanetScale Postgres, and Axiom observability by default. It requires credentials for the enabled services and private Clerk configuration; the repository's public app settings do not grant deployment access. Set `APNS_ENABLED=false` in an Android-only development relay to skip Apple delivery and its credential requirements. APNs remains enabled by default.
+The existing Alchemy deployment provisions Cloudflare Workers, delivery queues, Hyperdrive, tunnel/DNS resources, PlanetScale Postgres, and Axiom observability by default. It requires credentials for the enabled services and private Clerk configuration; the repository's public app settings do not grant deployment access. APNs is off unless `APNS_ENABLED=true`, so an Android-only relay needs no Apple credentials.
 
 #### Personal stage in the existing deployment accounts
 

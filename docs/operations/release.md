@@ -124,12 +124,11 @@ Required `production` environment variables:
 - `CLERK_JWT_AUDIENCE`
 - `CLERK_JWT_TEMPLATE`
 - `CLERK_CLI_OAUTH_CLIENT_ID`
-- `APNS_ENVIRONMENT`
-- `APNS_TEAM_ID`
-- `APNS_KEY_ID`
-- `APNS_BUNDLE_ID`
 
 Optional `production` environment variables:
+
+- `APNS_ENABLED` set to `true` to deliver iOS pushes and Live Activities, with `APNS_ENVIRONMENT`,
+  `APNS_TEAM_ID`, `APNS_KEY_ID` and `APNS_BUNDLE_ID`. APNs is off without it.
 
 - `RELAY_DOMAIN` when overriding the derived `relay.<RELAY_API_ZONE_NAME>` domain
 - `RELAY_TUNNEL_CLEANUP_MODE` with `off`, `dry-run`, or `enabled`. Missing and blank values use
@@ -140,7 +139,7 @@ Optional `production` environment variables:
 Required `production` environment secrets:
 
 - `CLERK_SECRET_KEY`
-- `APNS_PRIVATE_KEY`
+- `APNS_PRIVATE_KEY` when APNs is enabled
 
 After changing a variable or secret, run the **Deploy T3 Connect relay** workflow manually from
 `main` with **force** unchecked. Alchemy compares the values the Worker reads and redeploys it when

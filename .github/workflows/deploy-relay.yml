@@ -51,6 +51,9 @@ jobs:
       RELAY_LEGACY_TUNNEL_CLEANUP_MODE: ${{ vars.RELAY_LEGACY_TUNNEL_CLEANUP_MODE }}
       CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+      # APNs stays off until the variable is set to true. Only then does the
+      # deploy read the APNS_* variables and the APNS_PRIVATE_KEY secret.
+      APNS_ENABLED: ${{ vars.APNS_ENABLED || 'false' }}
       APNS_ENVIRONMENT: ${{ vars.APNS_ENVIRONMENT }}
       APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
       APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}

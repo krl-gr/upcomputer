@@ -4,10 +4,21 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import {
+  apnsEnabledConfig,
   legacyManagedEndpointCleanupModeConfig,
   legacyTunnelGraceMinutesConfig,
   managedEndpointCleanupModeConfig,
 } from "./Config.ts";
+
+it.effect.each([
+  { name: "missing", env: {}, expected: false },
+  { name: "false", env: { APNS_ENABLED: "false" }, expected: false },
+  { name: "true", env: { APNS_ENABLED: "true" }, expected: true },
+] as const)("loads $name APNS_ENABLED as $expected", ({ env, expected }) =>
+  Effect.gen(function* () {
+    expect(yield* apnsEnabledConfig.parse(ConfigProvider.fromEnv({ env }))).toBe(expected);
+  }),
+);
 
 it.effect.each([
   { name: "missing", env: {}, expected: "off" },

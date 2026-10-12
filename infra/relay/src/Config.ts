@@ -8,6 +8,13 @@ import * as Schema from "effect/Schema";
 export const ApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type ApnsEnvironment = typeof ApnsEnvironment.Type;
 
+/**
+ * APNs delivery needs Apple credentials (`APNS_*`), so it stays off until
+ * APNS_ENABLED=true. While off, the relay reads no `APNS_*` value and enqueues
+ * no APNs jobs.
+ */
+export const apnsEnabledConfig = Config.Boolean("APNS_ENABLED").pipe(Config.withDefault(false));
+
 export const ManagedEndpointCleanupMode = Schema.Literals(["off", "dry-run", "enabled"]);
 export type ManagedEndpointCleanupMode = typeof ManagedEndpointCleanupMode.Type;
 const decodeManagedEndpointCleanupMode = Schema.decodeUnknownEffect(ManagedEndpointCleanupMode);

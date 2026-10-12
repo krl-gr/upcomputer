@@ -139,7 +139,7 @@ export const layer = Api.make(
     //
     // 2. Create bindings
     //
-    const apnsEnabled = yield* Config.Boolean("APNS_ENABLED").pipe(Config.withDefault(true));
+    const apnsEnabled = yield* RelayConfiguration.apnsEnabledConfig;
     const apnsCredentials = apnsEnabled
       ? {
           environment: yield* Config.schema(RelayConfiguration.ApnsEnvironment, "APNS_ENVIRONMENT"),
