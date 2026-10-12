@@ -1,0 +1,96 @@
+/* The Milkdown editor in task descriptions and instructions. Text styles come
+   from .chat-markdown, so it looks like the rendered markdown elsewhere; this
+   file only adds what an editor needs. Loaded with the editor's own chunk. */
+
+.markdown-editor .markdown-editor-content {
+  min-height: inherit;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown-editor .milkdown {
+  min-height: inherit;
+}
+
+.markdown-editor .markdown-editor-placeholder::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+
+/* Wande's checkboxes: a box in the item's left gutter, toggled by a click there. */
+.markdown-editor li[data-item-type="task"] {
+  position: relative;
+  list-style: none;
+  margin-left: calc(-1 * var(--list-gutter, 1.25rem));
+  padding-left: 1.5rem;
+}
+
+.markdown-editor li[data-item-type="task"]::before {
+  content: "";
+  position: absolute;
+  top: 0.3em;
+  left: 0;
+  width: 0.95em;
+  height: 0.95em;
+  border: 1.5px solid var(--input);
+  border-radius: 0.25em;
+  background: var(--background);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.markdown-editor li[data-item-type="task"][data-checked="true"]::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.markdown-editor li[data-item-type="task"][data-checked="true"]::after {
+  content: "";
+  position: absolute;
+  top: 0.42em;
+  left: 0.34em;
+  width: 0.28em;
+  height: 0.52em;
+  border-right: 2px solid var(--primary-foreground);
+  border-bottom: 2px solid var(--primary-foreground);
+  transform: rotate(45deg);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.markdown-editor li[data-item-type="task"][data-checked="true"] > p {
+  color: var(--muted-foreground);
+}
+
+.markdown-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.markdown-editor .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.markdown-editor td,
+.markdown-editor th {
+  position: relative;
+}
+
+.markdown-block-handle {
+  position: fixed;
+  z-index: 200;
+  transition: opacity 0.15s ease;
+}
+
+.markdown-block-handle[data-show="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
