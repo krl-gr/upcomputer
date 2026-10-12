@@ -119,7 +119,7 @@ test("Agents show the project as an icon, a global agent as All projects, none f
 
   const globalRow = row({ agent: agent(null, null), showProject: true });
   NodeAssert.match(globalRow, /aria-label="All projects"[^>]*data-project-icon="all"/);
-  NodeAssert.match(globalRow, /lucide-layout-grid/, "the sidebar's All projects icon");
+  NodeAssert.match(globalRow, /data-icon="all-projects"/, "the sidebar's All projects icon");
 
   NodeAssert.doesNotMatch(
     row({ agent: agent("project-1", "UpComputer"), showProject: false }),
@@ -175,6 +175,6 @@ test("the project select lists each project once, in the sidebar's order and ico
   const chosen = trigger("upcomputer");
   NodeAssert.match(chosen, /aria-label="Filter by project"/);
   NodeAssert.match(chosen, />UC<[\s\S]*>UpComputer</);
-  NodeAssert.match(trigger(null), /lucide-layout-grid[\s\S]*>All projects</);
+  NodeAssert.match(trigger(null), /data-icon="all-projects"[\s\S]*>All projects</);
   NodeAssert.match(trigger("deleted-project"), />All projects</);
 });

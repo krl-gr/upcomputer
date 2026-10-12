@@ -27,6 +27,7 @@ export function AllProjectsIcon(props: { readonly className?: string }) {
       fill="currentColor"
       fillOpacity={0.45}
       aria-hidden="true"
+      data-icon="all-projects"
       className={props.className}
     >
       <rect x="0" y="0" width="7" height="7" rx="1.5" />
