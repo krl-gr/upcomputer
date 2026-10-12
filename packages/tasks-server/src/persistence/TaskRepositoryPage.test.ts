@@ -105,7 +105,7 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       yield* repository.upsert(task("f-mine", [], { audience: "person" }));
       yield* repository.upsert(task("f-done", [], { audience: "person", status: "Done" }));
       yield* repository.upsert(
-        task("f-routine", [], { audience: "person", kind: "routine", status: "Weekly" }),
+        task("f-routine", [], { audience: "person", kind: "routine", status: "Done" }),
       );
 
       const ids = (input: Parameters<typeof repository.page>[0]) =>
@@ -136,7 +136,8 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       const personPage = yield* repository.page({ audience: "person", status: "Done" });
       assert.include(personPage.statuses, "To Do", "facets ignore the selected status");
       assert.notInclude(personPage.statuses, "Backlog", "facets follow the audience");
-      assert.notInclude(personPage.statuses, "Weekly", "facets follow the kind");
+      const routinePage = yield* repository.page({ kind: "routine" });
+      assert.deepStrictEqual(routinePage.statuses, ["Done"], "facets follow the kind");
     }),
   );
 

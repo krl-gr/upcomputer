@@ -55,6 +55,21 @@ export const PERSON_DONE_STATUS = "Done" as const;
  */
 export const AGENT_RESTORED_STATUS = "Restored" as const;
 
+/**
+ * Why a person task cannot have this status, or null. A person task is open
+ * or done; archive is separate, and deferring is a schedule or notBefore.
+ */
+export function personTaskStatusError(audience: TaskAudience, status: string): string | null {
+  return audience === "person" && status !== PERSON_OPEN_STATUS && status !== PERSON_DONE_STATUS
+    ? `A person task's status is "${PERSON_OPEN_STATUS}" (open) or "${PERSON_DONE_STATUS}", not "${status}". To defer it, leave it unscheduled or set notBefore.`
+    : null;
+}
+
+/** The status a task keeps when it becomes a person task: Done stays done, any other reopens. */
+export function statusForPersonAudience(status: string): string {
+  return status === PERSON_DONE_STATUS ? PERSON_DONE_STATUS : PERSON_OPEN_STATUS;
+}
+
 /** Why a kind and audience cannot go together, or null. Routines are person tasks. */
 export function taskKindAudienceError(kind: TaskKind, audience: TaskAudience): string | null {
   return kind === "routine" && audience !== "person"

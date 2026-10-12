@@ -14,6 +14,7 @@ import {
   TaskEventId,
   TaskId,
   TasksRpcGroup,
+  personTaskStatusError,
   taskKindAudienceError,
   type TaskAutomation,
 } from "@t3tools/tasks-contracts/v1";
@@ -104,10 +105,9 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const agents = yield* TaskAgentService;
               const crypto = yield* Crypto.Crypto;
-              const invalid = taskKindAudienceError(
-                input.kind ?? "task",
-                input.audience ?? "agent",
-              );
+              const invalid =
+                taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent") ??
+                personTaskStatusError(input.audience ?? "agent", input.status);
               if (invalid !== null) return yield* Effect.fail(taskError(invalid));
               const projectId = input.projectId ?? (yield* (yield* InboxProject).ensure);
               const timestamp = yield* now;
@@ -216,10 +216,14 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const agents = yield* TaskAgentService;
               const before = yield* repository.getById({ id: input.id });
               if (Option.isSome(before)) {
-                const invalid = taskKindAudienceError(
-                  input.kind ?? before.value.kind,
-                  input.audience ?? before.value.audience,
-                );
+                const invalid =
+                  taskKindAudienceError(
+                    input.kind ?? before.value.kind,
+                    input.audience ?? before.value.audience,
+                  ) ??
+                  (input.status !== undefined
+                    ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
+                    : null);
                 if (invalid !== null) return yield* Effect.fail(taskError(invalid));
               }
               const task = yield* repository.update({ ...input, actor: { type: "person" } });

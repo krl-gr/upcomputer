@@ -169,7 +169,8 @@ test("today is the date in the schedule's time zone", () =>
 test("reopening a Done task reopens only today's entry it closed", () =>
   Effect.gen(function* () {
     const schedule = yield* TaskScheduleService;
-    const task = yield* createTask("task");
+    // An agent task, so it can reopen into an agent status.
+    const task = yield* createTask("task", { audience: "agent" });
     const [, , doneByHand] = yield* plan(task, monday, wednesday, wednesday);
     yield* schedule.update({ id: doneByHand!, status: "done" });
 
@@ -223,7 +224,8 @@ test("cancelling or archiving skips open entries; deleting removes them", () =>
   Effect.gen(function* () {
     const schedule = yield* TaskScheduleService;
     const repository = yield* TaskRepository;
-    const cancelled = yield* createTask("cancelled");
+    // Cancelled is an agent status; a person task is only To Do or Done.
+    const cancelled = yield* createTask("cancelled", { audience: "agent" });
     const [done] = yield* plan(cancelled, monday, wednesday, thursday);
     yield* schedule.update({ id: done!, status: "done" });
     yield* setStatus(cancelled, "Cancelled");

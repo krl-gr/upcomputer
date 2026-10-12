@@ -35,13 +35,13 @@ const createAudience = {
   type: "string",
   enum: ["person", "agent"],
   description:
-    'Required. Who does the task. person: the user does it themselves; use it whenever the user asks for a task for themselves ("for me", "my task", "I\'ll do it", "remind me to", "мне", "для меня", "я сделаю", "напомни"). It shows in the user\'s planner, and no agent starts on it by status alone. agent: an agent does the work; it shows in the agents\' table, and agents start on it by their triggers. A routine is always person.',
+    'Required. Who does the task. person: the user does it themselves; use it whenever the user asks for a task for themselves ("for me", "my task", "I\'ll do it", "remind me to", "мне", "для меня", "я сделаю", "напомни"). It shows in the user\'s planner, and no agent starts on it by status alone. agent: an agent does the work; it shows in the agents\' table, and agents start on it by their triggers. A routine is always person. A person task\'s status is To Do (open) or Done; to defer one, leave it unscheduled or set notBefore.',
 } as const;
 const updateAudience = {
   type: "string",
   enum: ["person", "agent"],
   description:
-    "Who does the task. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries. agent: shown in the agents' table; agents start on it by their triggers. agent hands the user's task to agents; person takes it back for the user.",
+    "Who does the task. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries. agent: shown in the agents' table; agents start on it by their triggers. agent hands the user's task to agents; person takes it back for the user and reopens it as To Do unless it is Done. A person task's status is To Do or Done.",
 } as const;
 const kind = {
   type: "string",
