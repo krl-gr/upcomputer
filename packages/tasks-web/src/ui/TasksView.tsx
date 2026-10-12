@@ -56,6 +56,8 @@ import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
+import { TagChipsField } from "./TagChipsField.tsx";
+import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
 
@@ -1083,39 +1085,33 @@ export function TasksView(props: TasksViewProps) {
                       <span className="truncate">{selectedTask.projectName ?? "—"}</span>
                     </span>
                   </DetailSidebarRow>
-                  <DetailSidebarRow
-                    label="Tags"
-                    controlSelector={
-                      props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
-                    }
-                  >
-                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                      <input
-                        key={`${selectedTask.updatedAt}:tags`}
-                        className={DETAIL_INPUT_CLASS}
-                        defaultValue={selectedTask.tags.join(", ")}
-                        disabled={updatingField === "tags"}
-                        placeholder="Add tags…"
-                        aria-label="Task tags"
-                        onBlur={(event) => {
-                          const tags = splitListInput(event.currentTarget.value);
-                          if (tags.join("\u0000") !== selectedTask.tags.join("\u0000"))
-                            void updateTaskInline(selectedTask, "tags", { tags });
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                          if (event.key === "Escape") {
-                            event.currentTarget.value = selectedTask.tags.join(", ");
-                            event.currentTarget.blur();
+                  {/* A person task's tags stay hidden; the planner hands it to an agent. */}
+                  {selectedTask.audience === "person" ? null : (
+                    <DetailSidebarRow label="Tags">
+                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                        <TagChipsField
+                          tags={selectedTask.tags}
+                          disabled={updatingField === "tags"}
+                          suggest={(query) =>
+                            tagSuggestions({
+                              query,
+                              taskTags: selectedTask.tags,
+                              projectId: selectedTask.projectId,
+                              agents: props.agents.filter(
+                                (agent) => agent.environmentId === selectedTask.environmentId,
+                              ),
+                              knownTags: tagOptions,
+                            })
                           }
-                        }}
-                      />
-                    ) : selectedTask.tags.length > 0 ? (
-                      selectedTask.tags.join(", ")
-                    ) : (
-                      "—"
-                    )}
-                  </DetailSidebarRow>
+                          onChange={(tags) => void updateTaskInline(selectedTask, "tags", { tags })}
+                        />
+                      ) : selectedTask.tags.length > 0 ? (
+                        selectedTask.tags.join(", ")
+                      ) : (
+                        "—"
+                      )}
+                    </DetailSidebarRow>
+                  )}
                   <DetailSidebarRow label="Created">
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
@@ -1332,14 +1328,22 @@ export function TasksView(props: TasksViewProps) {
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Tags" controlSelector="input">
-                    <input
-                      className={DETAIL_INPUT_CLASS}
-                      value={form.tags}
-                      placeholder="Add tags…"
-                      aria-label="Task tags"
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, tags: event.target.value }))
+                  <DetailSidebarRow label="Tags">
+                    <TagChipsField
+                      tags={splitListInput(form.tags)}
+                      suggest={(query) =>
+                        tagSuggestions({
+                          query,
+                          taskTags: splitListInput(form.tags),
+                          projectId: form.projectId || null,
+                          agents: props.agents.filter(
+                            (agent) => agent.environmentId === form.environmentId,
+                          ),
+                          knownTags: tagOptions,
+                        })
+                      }
+                      onChange={(tags) =>
+                        setForm((current) => ({ ...current, tags: tags.join(", ") }))
                       }
                     />
                   </DetailSidebarRow>
