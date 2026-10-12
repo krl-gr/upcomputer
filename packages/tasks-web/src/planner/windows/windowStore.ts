@@ -3,7 +3,8 @@
  * they are still open after leaving /tasks and coming back (wande keeps them
  * across tabs). One detail window per task and per automation, any number of
  * create windows; a focused window comes to the front. The Tasks surface in the
- * right panel keeps its own windows, apart from the page's.
+ * right panel keeps its own windows, apart from the page's, and the Agents
+ * side's Automations section its own, apart from the planner's.
  */
 import { useSyncExternalStore } from "react";
 
@@ -158,9 +159,11 @@ export class WindowStore {
 
 const stores = new Map<string, WindowStore>();
 
+export type WindowSurface = "page" | "panel" | "automations-page" | "automations-panel";
+
 export function windowStoreFor(
   environmentId: string,
-  surface: "page" | "panel" = "page",
+  surface: WindowSurface = "page",
 ): WindowStore {
   const key = `${surface}:${environmentId}`;
   let store = stores.get(key);

@@ -66,7 +66,7 @@ export function ConfirmHandOffDialog(props: {
         <AlertDialogHeader>
           <AlertDialogTitle>Hand to agents</AlertDialogTitle>
           <AlertDialogDescription>
-            {`"${props.title}" becomes an agent task and leaves Mine. An enabled agent whose status, tags and project match starts on it now. Take it back from its window under Agents or All.`}
+            {`"${props.title}" becomes an agent task and moves from your planner to Agents. An enabled agent whose status, tags and project match starts on it now. You can take it back from its details there.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -1,13 +1,22 @@
 import { useCallback, useMemo, type ReactNode } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 
-import { useStoredTasksView, type TasksViewMode } from "../planner/data/preferences.ts";
+import {
+  useStoredPlannerEnvironment,
+  useStoredTableSection,
+  useStoredTasksView,
+  type TasksViewMode,
+} from "../planner/data/preferences.ts";
+import { AutomationsView } from "../planner/ui/AutomationsView.tsx";
 import { PlannerView } from "../planner/ui/PlannerView.tsx";
 import { TasksViewSwitch } from "../planner/ui/TasksViewSwitch.tsx";
+import { windowStoreFor } from "../planner/windows/windowStore.ts";
 import { taskKey } from "./shared.ts";
+import { TableSectionSwitch } from "./TableSectionSwitch.tsx";
 import { useTaskPages } from "./useTaskPages.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
@@ -16,15 +25,19 @@ import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 import { useTasksPageFilters } from "./pageFilters.ts";
 
 /**
- * /tasks has two modes: the Planner (person tasks, wande's layout, one
- * environment) and the Table (every task, every environment). The URL's
- * `view` wins, then the last choice; a `task` link always opens the table.
- * Only the table filters by project; the planner leaves the stored choice
- * (shared with Agents) as it is and lists every project.
+ * /tasks has two sides, one switch: Me is the planner (person tasks and
+ * routines, wande's layout, one environment), Agents is the table (agent
+ * tasks of every environment, or the automations). The URL's `view` wins,
+ * then the last choice; a `task` link always opens the table's task details,
+ * whatever the task's audience. Only the table filters by project; the
+ * planner leaves the stored choice (shared with Agents) as it is and lists
+ * every project.
  */
 export default function TasksRoute() {
   const navigate = useNavigate();
   const [storedView, setStoredView] = useStoredTasksView();
+  const [storedSection, setSection] = useStoredTableSection();
+  const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
   const urlView = useLocation({
     select: (location) => {
       const view = (location.search as Record<string, unknown>).view;
@@ -38,6 +51,7 @@ export default function TasksRoute() {
     },
   });
   const view: TasksViewMode = hasTask ? "table" : (urlView ?? storedView);
+  const section = hasTask ? "tasks" : storedSection;
   const setView = useCallback(
     (next: TasksViewMode) => {
       setStoredView(next);
@@ -45,24 +59,73 @@ export default function TasksRoute() {
     },
     [navigate, setStoredView],
   );
-  return view === "planner" ? (
-    <PlannerRoute
-      viewSwitch={<TasksViewSwitch value={view} onChange={setView} icons />}
-      onShowTable={() => setView("table")}
-    />
+  // A task taken back from agents: its window in the planner, in its environment.
+  const openInPlanner = useCallback(
+    (environmentId: EnvironmentId, taskId: string) => {
+      setPlannerEnvironment(environmentId);
+      windowStoreFor(environmentId).openDetail(taskId);
+      setView("planner");
+    },
+    [setPlannerEnvironment, setView],
+  );
+  if (view === "planner")
+    return (
+      <PlannerRoute
+        viewSwitch={<TasksViewSwitch value={view} onChange={setView} />}
+        onShowTable={() => setView("table")}
+      />
+    );
+  const viewSwitch = (
+    <>
+      <TasksViewSwitch value={view} onChange={setView} />
+      <TableSectionSwitch value={section} onChange={setSection} />
+    </>
+  );
+  return section === "automations" ? (
+    <AutomationsRoute viewSwitch={viewSwitch} onOpenInPlanner={openInPlanner} />
   ) : (
-    <TasksTableRoute viewSwitch={<TasksViewSwitch value={view} onChange={setView} />} />
+    <TasksTableRoute viewSwitch={viewSwitch} onOpenInPlanner={openInPlanner} />
+  );
+}
+
+function useNavigateBack() {
+  const navigate = useNavigate();
+  const canGoBack = useCanGoBack();
+  return useCallback(() => {
+    if (canGoBack) window.history.back();
+    else void navigate({ to: "/" } as never);
+  }, [canGoBack, navigate]);
+}
+
+function AutomationsRoute(props: {
+  readonly viewSwitch: ReactNode;
+  readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
+}) {
+  const navigate = useNavigate();
+  const data = useTasksWorkspaceData(false);
+  const navigateBack = useNavigateBack();
+  return (
+    <AutomationsView
+      viewSwitch={props.viewSwitch}
+      projects={data.projects}
+      taskTargets={data.taskTargets}
+      agents={data.agents.agents}
+      onOpenTask={(environmentId, taskId) => {
+        void navigate({
+          to: "/tasks",
+          search: { task: taskKey({ environmentId, id: taskId }) },
+        } as never);
+      }}
+      onOpenInPlanner={props.onOpenInPlanner}
+      onNavigateBack={navigateBack}
+    />
   );
 }
 
 function PlannerRoute(props: { readonly viewSwitch: ReactNode; readonly onShowTable: () => void }) {
   const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
   const data = useTasksWorkspaceData(false);
-  const navigateBack = useCallback(() => {
-    if (canGoBack) window.history.back();
-    else void navigate({ to: "/" } as never);
-  }, [canGoBack, navigate]);
+  const navigateBack = useNavigateBack();
   return (
     <PlannerView
       viewSwitch={props.viewSwitch}
@@ -81,7 +144,10 @@ function PlannerRoute(props: { readonly viewSwitch: ReactNode; readonly onShowTa
   );
 }
 
-function TasksTableRoute(props: { readonly viewSwitch: ReactNode }) {
+function TasksTableRoute(props: {
+  readonly viewSwitch: ReactNode;
+  readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
+}) {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const selectedTaskKey = useLocation({
@@ -164,6 +230,7 @@ function TasksTableRoute(props: { readonly viewSwitch: ReactNode }) {
           params: { environmentId, threadId },
         });
       }}
+      onOpenInPlanner={props.onOpenInPlanner}
     />
   );
 }

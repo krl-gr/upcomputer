@@ -24,7 +24,7 @@ const CHAT_TOOLS: ReadonlyArray<readonly [string, ReadonlyArray<HintField>]> = [
     [
       "projectId",
       "workspaceRoot",
-      { tasks: ["title", "description", "status", "tags", "metadata"] },
+      { tasks: ["title", "description", "status", "audience", "tags", "metadata"] },
     ],
   ],
   ["task_search", ["projectId", "status", "tags", "limit"]],

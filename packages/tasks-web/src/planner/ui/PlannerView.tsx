@@ -26,27 +26,22 @@ import {
   plannerStoreFor,
   useActiveTasksPaginated,
   useArchivedTasksPaginated,
-  useAutomations,
   useDayQueues,
   usePlannerLive,
   usePlannerSnapshot,
   useQueueProgressByTaskIds,
 } from "../data/hooks.ts";
-import { plannerListShows } from "../data/plannerStore.ts";
 import {
   usePlannerPreferences,
   usePlannerViewState,
-  useStoredPlannerAudience,
   useStoredPlannerEnvironment,
   useStoredPlannerKind,
-  type PlannerAudience,
   type PlannerKind,
 } from "../data/preferences.ts";
 import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
 import { plannerIsWide } from "../logic/plannerWidth.ts";
 import { weekRangeOf } from "../logic/progress.ts";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
-import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
@@ -71,8 +66,6 @@ function PlannerBody(props: {
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
   readonly onEnvironmentChange: (environmentId: string) => void;
-  readonly audience: PlannerAudience;
-  readonly onAudienceChange: (audience: PlannerAudience) => void;
   readonly kind: PlannerKind;
   readonly onKindChange: (kind: PlannerKind) => void;
   readonly triggerTags: ReadonlySet<string>;
@@ -88,12 +81,7 @@ function PlannerBody(props: {
   const [viewState, updateViewState] = usePlannerViewState();
   const { wide } = props;
   const [markedDate, setMarkedDate] = useState<string | null>(() => todayKey());
-  const [archiveToggled, setShowArchived] = useState(false);
-  const shows = plannerListShows(props.kind, props.audience);
-  // Routines × Agents lists automations only, which have no archive.
-  const showArchived = archiveToggled && shows.tasks;
-  const showsAutomations = shows.automations;
-  const automations = useAutomations(automationStore, showsAutomations);
+  const [showArchived, setShowArchived] = useState(false);
   const [listSelect, setListSelect] = useState<{ active: boolean; ids: ReadonlySet<string> }>({
     active: false,
     ids: new Set(),
@@ -114,10 +102,9 @@ function PlannerBody(props: {
     store.setQuery({
       projectIds: null,
       archiveVisible: showArchived,
-      audience: props.audience,
       kind: props.kind,
     });
-  }, [store, showArchived, props.audience, props.kind]);
+  }, [store, showArchived, props.kind]);
 
   const active = useActiveTasksPaginated(store, snapshot);
   const archived = useArchivedTasksPaginated(store, snapshot);
@@ -151,9 +138,8 @@ function PlannerBody(props: {
     days: snapshot.view.days,
     listIds: showArchived ? null : active.results.map((task) => task.id),
     allowBottomDrop: active.status === "Exhausted",
-    automations: showsAutomations && !showArchived ? automations.automations : null,
-    onReorderAutomation: (automationId, anchor) =>
-      void automationStore.reorder(automationId, anchor),
+    automations: null,
+    onReorderAutomation: () => undefined,
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
@@ -189,10 +175,10 @@ function PlannerBody(props: {
       projectById: new Map(props.projects.map((project) => [project.id, project])),
       preferences,
       markdownCwd: undefined,
-      audience: props.audience,
       kind: props.kind,
       triggerTags: props.triggerTags,
       openInTable: props.onOpenTask,
+      openInPlanner: (taskId: string) => windows.openDetail(taskId),
     }),
     [
       props.environmentId,
@@ -201,7 +187,6 @@ function PlannerBody(props: {
       windows,
       props.projects,
       preferences,
-      props.audience,
       props.kind,
       props.triggerTags,
       props.onOpenTask,
@@ -316,7 +301,6 @@ function PlannerBody(props: {
             <ListHeader
               viewSwitch={props.viewSwitch}
               onKindChange={props.onKindChange}
-              onAudienceChange={props.onAudienceChange}
               environments={props.environments}
               onEnvironmentChange={props.onEnvironmentChange}
               showArchived={showArchived}
@@ -343,8 +327,6 @@ function PlannerBody(props: {
               tasks={list}
               activeTasks={active.results}
               showArchived={showArchived}
-              automations={showsAutomations ? automations : null}
-              automationIndicator={dnd.indicators.automation}
               progress={progress}
               queueDate={markedDate}
               selectMode={listSelect.active}
@@ -370,9 +352,7 @@ function PlannerBody(props: {
           }
         />
         <DragOverlay dropAnimation={dnd.dropAnimation}>
-          {dnd.active?.kind === "automation" ? (
-            <AutomationDragPreview automation={dnd.active.automation} />
-          ) : dnd.active?.kind === "task" ? (
+          {dnd.active?.kind === "task" ? (
             <TaskDragPreview task={dnd.active.task} />
           ) : dnd.active?.kind === "entry" ? (
             <EntryDragPreview
@@ -394,7 +374,8 @@ function PlannerBody(props: {
   );
 }
 
-function pickEnvironment(
+/** The stored environment if it serves Tasks, else the primary one, else the first. */
+export function pickEnvironment(
   candidates: readonly TasksStateTarget[],
   stored: string | null,
   primary: EnvironmentId | null,
@@ -407,7 +388,7 @@ function pickEnvironment(
   );
 }
 
-function plannerProjectsOf(
+export function plannerProjectsOf(
   projects: readonly TasksWebProject[],
   environmentId: EnvironmentId | null,
 ): readonly PlannerProject[] {
@@ -421,7 +402,7 @@ function plannerProjectsOf(
     }));
 }
 
-function Notice(props: { readonly children: ReactNode; readonly action?: ReactNode }) {
+export function Notice(props: { readonly children: ReactNode; readonly action?: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <p className="max-w-md text-sm text-muted-foreground">{props.children}</p>
@@ -431,9 +412,10 @@ function Notice(props: { readonly children: ReactNode; readonly action?: ReactNo
 }
 
 /**
- * The Planner mode of /tasks: wande's tasks screen for one environment at a
- * time (its schedule order lives in that environment's database). It has no
- * page header: the list and week headers are the title bar row.
+ * The Me side of /tasks, the person's tasks and routines: wande's tasks
+ * screen for one environment at a time (its schedule order lives in that
+ * environment's database). It has no page header: the list and week headers
+ * are the title bar row.
  */
 export function PlannerView(props: {
   readonly viewSwitch: ReactNode;
@@ -478,7 +460,6 @@ export function PlannerView(props: {
     [candidates, environments],
   );
   const availability = usePlannerAvailability(environmentId);
-  const [audience, setAudience] = useStoredPlannerAudience();
   const [kind, setKind] = useStoredPlannerKind();
   const triggerTags = useMemo(
     () => agentTriggerTags(props.agents.filter((agent) => agent.environmentId === environmentId)),
@@ -571,8 +552,6 @@ export function PlannerView(props: {
                 viewSwitch={props.viewSwitch}
                 environments={environmentOptions}
                 onEnvironmentChange={setStoredEnvironment}
-                audience={audience}
-                onAudienceChange={setAudience}
                 kind={kind}
                 onKindChange={setKind}
                 triggerTags={triggerTags}

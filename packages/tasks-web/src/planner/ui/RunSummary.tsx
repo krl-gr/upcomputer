@@ -10,21 +10,22 @@ import { usePlanner } from "./plannerContext.ts";
 
 /**
  * What agents did and may do with a task, in its row and window: "Agents"
- * when the list mixes audiences, its tags, the latest run's status and the
- * run counts (a click opens the task in the table, which lists its runs).
+ * for an agent task (a window opened from an automation shows one), its
+ * tags, the latest run's status and the run counts (a click opens the task
+ * in the table, which lists its runs).
  */
 export function RunSummary(props: {
   readonly task: PlannerTask;
   /** Off where the tags are edited instead. */
   readonly showTags?: boolean;
 }) {
-  const { audience, triggerTags, openInTable } = usePlanner();
+  const { triggerTags, openInTable } = usePlanner();
   const { task } = props;
   const latest = taskRunPresentation(task.latestRunStatus ?? undefined, false);
   const groups = groupTaskRunCounts(task.runCounts);
   return (
     <>
-      {audience === "all" && task.audience === "agent" ? (
+      {task.audience === "agent" ? (
         <TablePill>
           <BotIcon className="size-3.5" aria-hidden />
           Agents

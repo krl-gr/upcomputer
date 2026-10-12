@@ -188,8 +188,11 @@ export const TaskToolCreateItem = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   tags: Schema.optional(Schema.Array(TaskTag)),
   notBefore: Schema.optional(Schema.NullOr(TaskDateTime)),
-  audience: Schema.optional(TaskAudience),
-  /** A routine is always a person task; audience defaults to person for it. */
+  /**
+   * Required from agents, with no default: a missing audience used to make
+   * the user's own tasks agent tasks. A routine is always a person task.
+   */
+  audience: TaskAudience,
   kind: Schema.optional(TaskKind),
 });
 export type TaskToolCreateItem = typeof TaskToolCreateItem.Type;

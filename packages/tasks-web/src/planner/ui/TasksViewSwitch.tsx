@@ -1,4 +1,4 @@
-import { CalendarDaysIcon, TableIcon } from "lucide-react";
+import { BotIcon, UserIcon } from "lucide-react";
 
 import {
   ToggleGroup,
@@ -12,22 +12,22 @@ import {
 import type { TasksViewMode } from "../data/preferences.ts";
 
 const VIEWS = [
-  { value: "planner", label: "Planner", Icon: CalendarDaysIcon },
-  { value: "table", label: "Table", Icon: TableIcon },
+  { value: "planner", label: "Me", Icon: UserIcon },
+  { value: "table", label: "Agents", Icon: BotIcon },
 ] as const;
 
 /**
- * Planner or Table. The table's toolbar shows the names; the planner's list
- * header, short on room, shows icons with the names in tooltips.
+ * Me or Agents, the Tasks page's one axis: Me is the planner with the
+ * person's tasks and routines, Agents the table with the agents' tasks and
+ * automations. Icons, with the names in tooltips.
  */
 export function TasksViewSwitch(props: {
   readonly value: TasksViewMode;
   readonly onChange: (value: TasksViewMode) => void;
-  readonly icons?: boolean;
 }) {
   return (
     <ToggleGroup
-      aria-label="Tasks view"
+      aria-label="Whose tasks"
       variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
@@ -35,20 +35,14 @@ export function TasksViewSwitch(props: {
         if (next === "planner" || next === "table") props.onChange(next);
       }}
     >
-      {VIEWS.map(({ value, label, Icon }) =>
-        props.icons ? (
-          <Tooltip key={value}>
-            <TooltipTrigger render={<ToggleGroupItem value={value} aria-label={label} />}>
-              <Icon />
-            </TooltipTrigger>
-            <TooltipPopup>{label}</TooltipPopup>
-          </Tooltip>
-        ) : (
-          <ToggleGroupItem key={value} value={value}>
-            {label}
-          </ToggleGroupItem>
-        ),
-      )}
+      {VIEWS.map(({ value, label, Icon }) => (
+        <Tooltip key={value}>
+          <TooltipTrigger render={<ToggleGroupItem value={value} aria-label={label} />}>
+            <Icon />
+          </TooltipTrigger>
+          <TooltipPopup>{label}</TooltipPopup>
+        </Tooltip>
+      ))}
     </ToggleGroup>
   );
 }

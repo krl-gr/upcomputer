@@ -30,11 +30,18 @@ const runStatuses = {
   type: "array",
   items: { type: "string", enum: ["failed", "interrupted", "blocked"] },
 } as const;
-const audience = {
+/** task_create's audience: required, so a caller decides whose task it is. */
+const createAudience = {
   type: "string",
-  enum: ["agent", "person"],
+  enum: ["person", "agent"],
   description:
-    "Who the task is for. agent (default): agents start on it by their triggers. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries.",
+    'Required. Who does the task. person: the user does it themselves; use it whenever the user asks for a task for themselves ("for me", "my task", "I\'ll do it", "remind me to", "мне", "для меня", "я сделаю", "напомни"). It shows in the user\'s planner, and no agent starts on it by status alone. agent: an agent does the work; it shows in the agents\' table, and agents start on it by their triggers. A routine is always person.',
+} as const;
+const updateAudience = {
+  type: "string",
+  enum: ["person", "agent"],
+  description:
+    "Who does the task. person: the user's own work, shown in their planner; no agent starts on it by status alone, only an agent whose every start tag the task carries. agent: shown in the agents' table; agents start on it by their triggers. agent hands the user's task to agents; person takes it back for the user.",
 } as const;
 const kind = {
   type: "string",
@@ -79,7 +86,7 @@ const taskCreateFields = {
   metadata: {},
   tags,
   notBefore: dateTime,
-  audience,
+  audience: createAudience,
   kind,
 } as const;
 
@@ -92,7 +99,7 @@ export const TASK_TRIGGER_RULES = [
   "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is archived or deleted, or when the agent is disabled or deleted.",
   "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
   "agent_run_message sends a message to any run's thread, regardless of triggers and notBefore: an active run receives it as its next turn; an ended run continues in its thread as a new run (continuesRunId) that ends like any run. It fails while the task is archived, the agent is disabled, or the agent has another active run on the task.",
-  "A task is for agents or for a person (audience). Person tasks and routines are the user's own work: an agent never starts on them by status alone. An agent starts on a person task only when the task has every one of the agent's start tags, or after its audience is set to agent.",
+  "A task is for agents or for a person (audience). Person tasks and routines are the user's own work, shown in their planner; agent tasks are shown in the agents' table. An agent never starts on a person task by status alone. An agent starts on a person task only when the task has every one of the agent's start tags, or after its audience is set to agent.",
   "Archiving is separate from status: no status archives a task. An archived task keeps its status, is hidden by default, never starts agents, and its active runs end. Unarchiving it is a trigger change, so a matching agent can start again.",
   "failed means the server saw the run break (provider error, missing thread, no result). blocked means the agent itself reported it cannot continue: a task_agent_result with blocked:true, or a final task_update that releases the task with status Blocked. An agent starts for a blocked run only if its runtime and interaction modes are no broader than that run's. interrupted means the app restarted during the run, so after a restart it fires for every run that was active at once. Stopped runs (agent_run_stop, a person stopping the session or interrupting the turn) never trigger agents.",
 ] as const;
@@ -198,7 +205,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Set audience to person for work the user does themselves; without a resolved project such a task goes to the Inbox project. To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks join the end of the global order in the order given. One task returns the task; a list returns each task's id, rank, title, status, tags and notBefore.`,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks join the end of the global order in the order given. One task returns the task; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
     inputSchema: object({
       projectId: id,
       workspaceRoot: id,
@@ -207,7 +214,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         type: "array",
         minItems: 1,
         maxItems: TASK_CREATE_BATCH_LIMIT,
-        items: object(taskCreateFields, ["title", "description", "status"]),
+        items: object(taskCreateFields, ["title", "description", "status", "audience"]),
       },
     }),
   },
@@ -229,7 +236,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         metadata: {},
         tags,
         notBefore: dateTime,
-        audience,
+        audience: updateAudience,
       },
       ["id"],
     ),

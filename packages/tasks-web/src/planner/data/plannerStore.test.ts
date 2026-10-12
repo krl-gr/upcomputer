@@ -9,7 +9,7 @@ import type {
   TaskScheduleEntry,
 } from "@t3tools/tasks-contracts/v1";
 
-import { PlannerStore, plannerListShows } from "./plannerStore.ts";
+import { PlannerStore } from "./plannerStore.ts";
 import type { PlannerTask } from "./pendingOps.ts";
 
 const T = "2026-10-07T10:00:00.000Z";
@@ -411,55 +411,42 @@ describe("planner store: optimistic writes", () => {
   });
 });
 
-describe("planner store: whose tasks", () => {
+describe("planner store: the person's tasks only", () => {
   const ids = (h: ReturnType<typeof harness>) => h.store.getSnapshot().active.ids;
   const pageAudiences = (h: ReturnType<typeof harness>) =>
     h.calls.filter((call) => call.method === "page").map((call) => call.input.audience);
 
-  test("Mine, Agents and All ask the server for their audience and list only it", async () => {
+  test("asks the server for the person's tasks and lists only them", async () => {
     const h = harness();
     h.setPage([
       task("mine", "0000000000000001"),
       task("theirs", "0000000000000002", { audience: "agent", status: "Needs Review" }),
     ]);
     await started(h);
+    // Even an agent row an older server sends along stays out.
     NodeAssert.deepEqual(ids(h), ["mine"]);
 
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent", kind: "task" });
+    h.store.setQuery({ projectIds: null, archiveVisible: true, kind: "task" });
     await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
-    NodeAssert.deepEqual(pageAudiences(h), ["agent"]);
-    NodeAssert.deepEqual(ids(h), ["theirs"]);
-
-    h.reset();
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "all", kind: "task" });
-    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
-    NodeAssert.deepEqual(pageAudiences(h), ["all"]);
-    NodeAssert.deepEqual(ids(h), ["mine", "theirs"]);
+    NodeAssert.deepEqual(pageAudiences(h), ["person", "person", "person"]);
   });
 
   test("Tasks lists leave out what automations created", async () => {
     const h = harness();
     h.setPage([
-      task("theirs", "0000000000000001", { audience: "agent" }),
-      task("generated", "0000000000000002", {
-        audience: "agent",
-        createdBy: "automation:task-automation-1",
-      }),
+      task("mine", "0000000000000001"),
+      task("generated", "0000000000000002", { createdBy: "automation:task-automation-1" }),
     ]);
     await started(h);
-    for (const audience of ["agent", "all"] as const) {
-      h.reset();
-      h.store.setQuery({ projectIds: null, archiveVisible: true, audience, kind: "task" });
-      await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
-      const pages = h.calls.filter((call) => call.method === "page").map((call) => call.input);
-      NodeAssert.ok(pages.length === 3, "active, done and archived");
-      NodeAssert.ok(pages.every((input) => input.excludeAutomationTasks === true));
-      // Even a row an older server sends along stays out.
-      NodeAssert.deepEqual(ids(h), ["theirs"]);
-    }
+    h.store.setQuery({ projectIds: null, archiveVisible: true, kind: "task" });
+    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
+    const pages = h.calls.filter((call) => call.method === "page").map((call) => call.input);
+    NodeAssert.ok(pages.length === 3, "active, done and archived");
+    NodeAssert.ok(pages.every((input) => input.excludeAutomationTasks === true));
+    NodeAssert.deepEqual(ids(h), ["mine"]);
   });
 
-  test("handing a task to agents moves it from Mine to Agents at once", async () => {
+  test("handing a task to agents takes it out of the planner at once", async () => {
     const h = harness();
     const response = deferred<PlannerTask>();
     h.handlers.update = () => response.promise;
@@ -474,20 +461,31 @@ describe("planner store: whose tasks", () => {
     response.resolve(task("a", "0000000000000001", { audience: "agent" }));
     await NodeTimersPromises.setTimeout(10);
     NodeAssert.deepEqual(ids(h), ["b"]);
-    h.setPage([task("a", "0000000000000001", { audience: "agent" })]);
-    h.store.setQuery({ projectIds: null, archiveVisible: false, audience: "agent", kind: "task" });
-    await until(() => ids(h).length === 1 && ids(h)[0] === "a");
+  });
+
+  test("days leave out agent tasks' entries, and show them again once taken back", async () => {
+    const h = harness();
+    h.setRange([
+      entry("mine", "a", "2026-10-07", "0000000000000001"),
+      entry("theirs", "b", "2026-10-07", "0000000000000002"),
+    ]);
+    await started(h);
+    NodeAssert.deepEqual(dayIds(h, "2026-10-07"), ["mine", "theirs"]);
+
+    h.handlers.update = async ({ id, audience }) =>
+      task(id, id === "a" ? "0000000000000001" : "0000000000000002", { audience });
+    await h.store.updateTask("b", { audience: "agent" });
+    NodeAssert.deepEqual(dayIds(h, "2026-10-07"), ["mine"]);
+    // The entry is kept, not deleted: taking the task back shows it again.
+    NodeAssert.equal(h.count("scheduleDelete"), 0);
+    await h.store.updateTask("b", { audience: "person" });
+    NodeAssert.deepEqual(dayIds(h, "2026-10-07"), ["mine", "theirs"]);
   });
 });
 
 describe("planner store: restore", () => {
   const ARCHIVED_AT = "2026-10-01T10:00:00.000Z";
-  const everything = {
-    projectIds: null,
-    archiveVisible: true,
-    audience: "all",
-    kind: "task",
-  } as const;
+  const everything = { projectIds: null, archiveVisible: true, kind: "task" } as const;
 
   /** A fake server that records the order of writes and which agents an unarchive would start. */
   async function restoring(rows: PlannerTask[]) {
@@ -531,10 +529,11 @@ describe("planner store: restore", () => {
       }),
       task("done", "0000000000000002", { audience: "agent", tags: ["dev"], status: "Done" }),
     ]);
+    // The planner lists no agent tasks; a task window restores one (an automation's task).
     const restored = h.store.restore(["archived", "done"]);
     const optimistic = h.store.getSnapshot();
-    NodeAssert.deepEqual(optimistic.active.ids, ["archived", "done"]);
     NodeAssert.equal(optimistic.view.tasks.get("archived")?.status, "Restored");
+    NodeAssert.equal(optimistic.view.tasks.get("archived")?.archivedAt, null);
     NodeAssert.equal(await restored, true);
 
     NodeAssert.deepEqual(writes, [
@@ -548,8 +547,6 @@ describe("planner store: restore", () => {
         [server.get(id)!.status, server.get(id)!.archivedAt],
         ["Restored", null],
       );
-    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["archived", "done"]);
-    NodeAssert.deepEqual(h.store.getSnapshot().archive.ids, []);
   });
 
   test("a failed status write unarchives nothing", async () => {
@@ -567,7 +564,7 @@ describe("planner store: restore", () => {
     NodeAssert.deepEqual(writes, []);
     NodeAssert.equal(h.count("unarchive"), 0);
     NodeAssert.deepEqual(h.errors, ["Could not restore the task"]);
-    NodeAssert.deepEqual(h.store.getSnapshot().archive.ids, ["archived"]);
+    NodeAssert.equal(h.store.getSnapshot().view.tasks.get("archived")?.archivedAt, ARCHIVED_AT);
   });
 
   test("a person task keeps its own Restore: Done is To Do again, archived is only unarchived", async () => {
@@ -585,29 +582,9 @@ describe("planner store: restore", () => {
 });
 
 describe("planner store: routines", () => {
-  const routinesQuery = {
-    projectIds: null,
-    archiveVisible: false,
-    audience: "all",
-    kind: "routine",
-  } as const;
+  const routinesQuery = { projectIds: null, archiveVisible: false, kind: "routine" } as const;
 
-  test("the grid: Routines × Agents lists automations only, Routines × All both", () => {
-    NodeAssert.deepEqual(plannerListShows("task", "person"), { tasks: true, automations: false });
-    NodeAssert.deepEqual(plannerListShows("task", "agent"), { tasks: true, automations: false });
-    NodeAssert.deepEqual(plannerListShows("task", "all"), { tasks: true, automations: false });
-    NodeAssert.deepEqual(plannerListShows("routine", "person"), {
-      tasks: true,
-      automations: false,
-    });
-    NodeAssert.deepEqual(plannerListShows("routine", "agent"), {
-      tasks: false,
-      automations: true,
-    });
-    NodeAssert.deepEqual(plannerListShows("routine", "all"), { tasks: true, automations: true });
-  });
-
-  test("Routines × Mine and × All ask for the person's routines; × Agents asks for no tasks", async () => {
+  test("Routines asks for the person's routines and lists only them", async () => {
     const h = harness();
     h.setPage([
       task("todo", "0000000000000001"),
@@ -616,27 +593,14 @@ describe("planner store: routines", () => {
     await started(h);
     NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["todo"]);
 
-    for (const audience of ["person", "all"] as const) {
-      h.reset();
-      h.store.setQuery({ ...routinesQuery, audience });
-      await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
-      const pages = h.calls.filter((call) => call.method === "page").map((call) => call.input);
-      NodeAssert.deepEqual(
-        pages.map(({ kind, audience }) => [kind, audience]),
-        [["routine", "person"]],
-      );
-      NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["stretch"]);
-    }
-
-    h.reset();
-    h.store.setQuery({ ...routinesQuery, audience: "agent" });
-    await NodeTimersPromises.setTimeout(20);
-    NodeAssert.equal(h.count("page"), 0, "automations come from their own store");
-    NodeAssert.deepEqual(h.store.getSnapshot().active, {
-      ids: [],
-      status: "Exhausted",
-      error: null,
-    });
+    h.store.setQuery(routinesQuery);
+    await until(() => h.store.getSnapshot().active.status === "Exhausted" && h.count("page") > 0);
+    const pages = h.calls.filter((call) => call.method === "page").map((call) => call.input);
+    NodeAssert.deepEqual(
+      pages.map(({ kind, audience }) => [kind, audience]),
+      [["routine", "person"]],
+    );
+    NodeAssert.deepEqual(h.store.getSnapshot().active.ids, ["stretch"]);
   });
 
   test("a routine's progress counts the given week, and a new week asks again", async () => {

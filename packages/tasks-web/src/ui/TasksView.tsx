@@ -35,6 +35,7 @@ import {
   DetailSidebarRow,
   DetailSidebarSection,
 } from "./DetailSidebar.tsx";
+import { toastAudienceMoved } from "../planner/ui/audienceMoved.ts";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
@@ -68,7 +69,9 @@ const STATUS_ORDER = [
   "closed",
 ];
 
-type InlineTaskUpdate = Partial<Pick<ScopedTask, "title" | "description" | "status" | "tags">>;
+type InlineTaskUpdate = Partial<
+  Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience">
+>;
 
 interface TaskFormState {
   readonly title: string;
@@ -77,10 +80,9 @@ interface TaskFormState {
   readonly status: string;
   readonly tags: string;
   readonly description: string;
-  /** Who the new task is for; agent unless the person picks themselves. */
-  readonly audience: TaskAudience;
 }
 
+/** Who does a task, in its details: changing it moves the task between Agents and Me. */
 const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Agents", person: "Me" };
 
 export interface TasksViewProps {
@@ -91,7 +93,7 @@ export interface TasksViewProps {
   readonly projectFilter: ViewProjectFilter | null;
   /** The shared project select, shown at the right of the header. */
   readonly projectSelect?: ReactNode;
-  /** The Planner / Table switch, shown at the left of the header. */
+  /** The Me / Agents switch and the Tasks / Automations switch, at the left of the header. */
   readonly viewSwitch?: ReactNode;
   /** Task status (server), last run (client), tags (server, all required) and archive (server). */
   readonly filters: TasksPageFilters;
@@ -115,6 +117,8 @@ export interface TasksViewProps {
   readonly onNavigateBack: () => void;
   readonly onSelectedTaskKeyChange?: (taskKey: string | null) => void;
   readonly onOpenThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+  /** Opens a task's window in the planner, where a task taken back from agents goes. */
+  readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: wrapped filters, a narrow list, stacked details. */
   readonly layout?: "page" | "panel";
 }
@@ -127,7 +131,6 @@ function emptyForm(project?: TasksWebProject): TaskFormState {
     status: "new",
     tags: "",
     description: "",
-    audience: "agent",
   };
 }
 
@@ -557,13 +560,14 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTask?.id, selectedTask?.environmentId, props.getClient]);
 
   const updateTaskInline = useCallback(
-    async (task: ScopedTask, field: string, update: InlineTaskUpdate) => {
+    async (task: ScopedTask, field: string, update: InlineTaskUpdate): Promise<boolean> => {
       const client = props.getClient(task.environmentId);
-      if (!client) return;
+      if (!client) return false;
       setUpdatingField(field);
       try {
         const updated = await client.tasks.update({ id: task.id, ...update });
         setFetchedTask({ ...task, ...updated });
+        return true;
       } catch (error) {
         toastManager.add(
           stackedThreadToast({
@@ -572,6 +576,7 @@ export function TasksView(props: TasksViewProps) {
             description: errorDescription(error),
           }),
         );
+        return false;
       } finally {
         setUpdatingField(null);
       }
@@ -675,7 +680,8 @@ export function TasksView(props: TasksViewProps) {
         description: form.description.trim(),
         status,
         tags: splitListInput(form.tags),
-        audience: form.audience,
+        // The table is the agents' side; the person's own tasks are made in the planner.
+        audience: "agent",
       });
       toastManager.add({ type: "success", title: "Task created", description: title });
       setCreateModeOpen(false);
@@ -981,6 +987,51 @@ export function TasksView(props: TasksViewProps) {
                       selectedTask.status
                     )}
                   </DetailSidebarRow>
+                  {selectedTask.kind === "routine" ? null : (
+                    <DetailSidebarRow
+                      label="For"
+                      controlSelector={
+                        props.canMutateEnvironment(selectedTask.environmentId)
+                          ? "button"
+                          : undefined
+                      }
+                    >
+                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                        <Select
+                          value={selectedTask.audience}
+                          onValueChange={(audience) => {
+                            if (audience !== "agent" && audience !== "person") return;
+                            if (audience === selectedTask.audience) return;
+                            const task = selectedTask;
+                            void updateTaskInline(task, "audience", { audience }).then((moved) => {
+                              if (!moved) return;
+                              toastAudienceMoved(audience, task.title, () =>
+                                audience === "person"
+                                  ? props.onOpenInPlanner?.(task.environmentId, task.id)
+                                  : selectTaskKey(taskKey(task)),
+                              );
+                            });
+                          }}
+                        >
+                          <SelectTrigger
+                            className={DETAIL_SELECT_TRIGGER_CLASS}
+                            style={{ color: "var(--foreground)" }}
+                            variant="ghost"
+                            aria-label="For"
+                            disabled={updatingField === "audience"}
+                          >
+                            <SelectValue>{AUDIENCE_LABELS[selectedTask.audience]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup>
+                            <SelectItem value="agent">{AUDIENCE_LABELS.agent}</SelectItem>
+                            <SelectItem value="person">{AUDIENCE_LABELS.person}</SelectItem>
+                          </SelectPopup>
+                        </Select>
+                      ) : (
+                        AUDIENCE_LABELS[selectedTask.audience]
+                      )}
+                    </DetailSidebarRow>
+                  )}
                   <DetailSidebarRow label="ID">
                     <button
                       type="button"
@@ -1242,23 +1293,6 @@ export function TasksView(props: TasksViewProps) {
                             {project.name}
                           </SelectItem>
                         ))}
-                      </SelectPopup>
-                    </Select>
-                  </DetailSidebarRow>
-                  <DetailSidebarRow label="For" controlSelector="button">
-                    <Select
-                      value={form.audience}
-                      onValueChange={(value) => {
-                        if (value === "agent" || value === "person")
-                          setForm((current) => ({ ...current, audience: value }));
-                      }}
-                    >
-                      <SelectTrigger className={DETAIL_SELECT_TRIGGER_CLASS} aria-label="For">
-                        <SelectValue>{AUDIENCE_LABELS[form.audience]}</SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup>
-                        <SelectItem value="agent">{AUDIENCE_LABELS.agent}</SelectItem>
-                        <SelectItem value="person">{AUDIENCE_LABELS.person}</SelectItem>
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>

@@ -1225,6 +1225,7 @@ test("task_create with a tasks list starts one run per task created in a start s
             title: id,
             description: "",
             status: id === "b" ? "Backlog" : "To Do",
+            audience: "agent",
           })),
         },
         context: { source: "provider", mutationPolicy: "allow", threadId: ThreadId.make("chat") },

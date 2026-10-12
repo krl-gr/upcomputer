@@ -22,9 +22,7 @@ import {
 import { isElectron } from "../../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../../apps/web/src/extensionApi.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
-import { plannerListShows } from "../data/plannerStore.ts";
-import type { PlannerAudience, PlannerKind } from "../data/preferences.ts";
-import { AudienceSelect } from "./AudienceSelect.tsx";
+import type { PlannerKind } from "../data/preferences.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";
 import { KindSelect, KindSwitch } from "./KindSwitch.tsx";
@@ -37,14 +35,13 @@ export interface PlannerEnvironmentOption {
 
 /**
  * The list column's header, and the planner's title bar row with the week
- * header beside it: Planner / Table, Tasks / Routines, Mine / Agents / All,
- * then New, the list menu (Select, Show archive, environment) and hide the
- * week. In select mode it holds the bulk controls instead.
+ * header beside it: Me / Agents, Tasks / Routines, then New, the list menu
+ * (Select, Show archive, environment) and hide the week. In select mode it
+ * holds the bulk controls instead.
  */
 export function ListHeader(props: {
   readonly viewSwitch: ReactNode;
   readonly onKindChange: (kind: PlannerKind) => void;
-  readonly onAudienceChange: (audience: PlannerAudience) => void;
   /** Listed in the menu only when there is more than one. */
   readonly environments: readonly PlannerEnvironmentOption[];
   readonly onEnvironmentChange: (environmentId: string) => void;
@@ -65,16 +62,9 @@ export function ListHeader(props: {
    */
   readonly titleBar: boolean;
 }) {
-  const { environmentId, windows, audience, kind } = usePlanner();
-  // Routines × Agents: the agents' routines are automations, with no select or archive.
-  const automationsOnly = !plannerListShows(kind, audience).tasks;
+  const { environmentId, windows, kind } = usePlanner();
   const pickEnvironment = props.environments.length > 1;
   const weekBeside = props.canHideWeek && !props.weekHidden;
-  const newLabel = automationsOnly
-    ? "New automation"
-    : kind === "routine"
-      ? "New routine"
-      : "New task";
 
   return (
     <WorkspacePageHeader
@@ -104,67 +94,50 @@ export function ListHeader(props: {
             <div className="flex min-w-0 @min-[26.5rem]:hidden">
               <KindSelect value={kind} onChange={props.onKindChange} />
             </div>
-            <div className="flex min-w-0">
-              <AudienceSelect value={audience} onChange={props.onAudienceChange} />
-            </div>
             <div className="ml-auto flex items-center gap-1">
               <IconAction
-                label={newLabel}
+                label={kind === "routine" ? "New routine" : "New task"}
                 variant="outline"
                 size="icon-sm"
-                onClick={() =>
-                  automationsOnly
-                    ? windows.openCreateAutomation()
-                    : windows.openCreate(kind === "routine" ? { kind } : {})
-                }
+                onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}
               >
                 <PlusIcon />
               </IconAction>
-              {automationsOnly && !pickEnvironment ? null : (
-                <Menu>
-                  <MenuTrigger
-                    render={<Button size="icon-sm" variant="outline" aria-label="List options" />}
+              <Menu>
+                <MenuTrigger
+                  render={<Button size="icon-sm" variant="outline" aria-label="List options" />}
+                >
+                  <MoreHorizontalIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuItem onClick={() => props.onSelectModeChange(true)}>Select</MenuItem>
+                  <MenuCheckboxItem
+                    variant="switch"
+                    checked={props.showArchived}
+                    onCheckedChange={props.onToggleArchived}
                   >
-                    <MoreHorizontalIcon />
-                  </MenuTrigger>
-                  <MenuPopup align="end">
-                    {automationsOnly ? null : (
-                      <>
-                        <MenuItem onClick={() => props.onSelectModeChange(true)}>Select</MenuItem>
-                        <MenuCheckboxItem
-                          variant="switch"
-                          checked={props.showArchived}
-                          onCheckedChange={props.onToggleArchived}
+                    Show archive
+                  </MenuCheckboxItem>
+                  {pickEnvironment ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuGroup>
+                        <MenuGroupLabel>Environment</MenuGroupLabel>
+                        <MenuRadioGroup
+                          value={environmentId}
+                          onValueChange={(value) => props.onEnvironmentChange(String(value))}
                         >
-                          Show archive
-                        </MenuCheckboxItem>
-                      </>
-                    )}
-                    {pickEnvironment ? (
-                      <>
-                        {automationsOnly ? null : <MenuSeparator />}
-                        <MenuGroup>
-                          <MenuGroupLabel>Environment</MenuGroupLabel>
-                          <MenuRadioGroup
-                            value={environmentId}
-                            onValueChange={(value) => props.onEnvironmentChange(String(value))}
-                          >
-                            {props.environments.map((environment) => (
-                              <MenuRadioItem
-                                key={environment.id}
-                                value={environment.id}
-                                closeOnClick
-                              >
-                                {environment.label}
-                              </MenuRadioItem>
-                            ))}
-                          </MenuRadioGroup>
-                        </MenuGroup>
-                      </>
-                    ) : null}
-                  </MenuPopup>
-                </Menu>
-              )}
+                          {props.environments.map((environment) => (
+                            <MenuRadioItem key={environment.id} value={environment.id} closeOnClick>
+                              {environment.label}
+                            </MenuRadioItem>
+                          ))}
+                        </MenuRadioGroup>
+                      </MenuGroup>
+                    </>
+                  ) : null}
+                </MenuPopup>
+              </Menu>
               {props.canHideWeek ? (
                 <IconAction
                   label={props.weekHidden ? "Show the week" : "Hide the week"}

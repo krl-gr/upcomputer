@@ -1349,6 +1349,7 @@ it.live("a chat creates a task through the task MCP tools and the started run re
         title: task.title,
         description: task.description,
         status: "To Do",
+        audience: "agent",
       });
       assert.isFalse(created.isError, textOf(created));
       const createdTask = JSON.parse(textOf(created)).task;

@@ -17,7 +17,7 @@ const kindOf = (value: unknown) => (value === "task" || value === "routine" ? va
 
 /**
  * Tasks / Routines: wande's two tabs, what the planner lists. Sits in the
- * list header left of Mine / Agents / All, its other axis.
+ * list header right of the Me / Agents switch.
  */
 export function KindSwitch(props: {
   readonly value: PlannerKind;
