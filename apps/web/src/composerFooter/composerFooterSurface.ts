@@ -45,6 +45,26 @@ export function composerCollapsesOnScroll(): boolean {
   return productSurface("composerFooter") !== "upcomputer";
 }
 
+/**
+ * Whether the phone composer shrinks to upstream's one-line "Ask anything..."
+ * row while its editor is unfocused. V1's composer stays whole on a phone
+ * too, so with its surface the first tap already lands in the editor.
+ */
+export function isComposerCollapsedOnMobile(input: {
+  isMobileViewport: boolean;
+  forceExpandedOnMobile: boolean;
+  isComposerFocused: boolean;
+  hasMultilinePrompt: boolean;
+}): boolean {
+  return (
+    input.isMobileViewport &&
+    productSurface("composerFooter") !== "upcomputer" &&
+    !input.forceExpandedOnMobile &&
+    !input.isComposerFocused &&
+    !input.hasMultilinePrompt
+  );
+}
+
 const COMPOSER_LOOK_CLASSES = {
   shell: COMPOSER_SHELL_CLASS,
   card: COMPOSER_CARD_CLASS,

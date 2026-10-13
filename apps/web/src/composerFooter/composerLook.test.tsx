@@ -17,6 +17,7 @@ import { ComposerBackdropFade } from "./ComposerBackdropFade";
 import {
   composerBottomSpaceClass,
   composerCollapsesOnScroll,
+  isComposerCollapsedOnMobile,
   composerLookClass,
   composerWidthStyle,
 } from "./composerFooterSurface";
@@ -159,6 +160,24 @@ describe("V1's composer card, fade and full form", () => {
     expect(composerCollapsesOnScroll()).toBe(false);
     surface.composerFooter = "upstream";
     expect(composerCollapsesOnScroll()).toBe(true);
+  });
+
+  it("shows the whole composer on a phone with its surface, upstream's one-line row without", () => {
+    const resting = {
+      isMobileViewport: true,
+      forceExpandedOnMobile: false,
+      isComposerFocused: false,
+      hasMultilinePrompt: false,
+    };
+    expect(isComposerCollapsedOnMobile(resting)).toBe(false);
+
+    surface.composerFooter = "upstream";
+    expect(isComposerCollapsedOnMobile(resting)).toBe(true);
+    expect(isComposerCollapsedOnMobile({ ...resting, isComposerFocused: true })).toBe(false);
+    expect(isComposerCollapsedOnMobile({ ...resting, hasMultilinePrompt: true })).toBe(false);
+    expect(isComposerCollapsedOnMobile({ ...resting, forceExpandedOnMobile: true })).toBe(false);
+    // Desktop never had the one-line phone row.
+    expect(isComposerCollapsedOnMobile({ ...resting, isMobileViewport: false })).toBe(false);
   });
 });
 
