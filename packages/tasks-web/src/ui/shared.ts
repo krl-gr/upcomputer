@@ -15,6 +15,19 @@ export interface TasksWebProject {
   readonly favicon: ProjectFaviconProject;
 }
 
+/**
+ * The environments Tasks loads: every environment with a project, plus the
+ * primary one, which serves Tasks before its first project exists.
+ */
+export function tasksEnvironmentIds(
+  projects: readonly { readonly environmentId: EnvironmentId }[],
+  primaryEnvironmentId: EnvironmentId | null,
+): EnvironmentId[] {
+  const ids = new Set(projects.map(({ environmentId }) => environmentId));
+  if (primaryEnvironmentId !== null) ids.add(primaryEnvironmentId);
+  return [...ids];
+}
+
 export function splitListInput(value: string): string[] {
   return value
     .split(/[,\n]/)
