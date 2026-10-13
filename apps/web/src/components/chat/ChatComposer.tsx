@@ -1140,6 +1140,7 @@ import {
   composerIdlePlaceholder,
   composerCollapsesOnScroll,
   composerLookClass,
+  isComposerCollapsedOnMobile,
   showsUpComputerComposerFooter,
 } from "../../composerFooter/composerFooterSurface";
 import { UpComputerComposerFooter } from "../../composerFooter/UpComputerComposerFooter";
@@ -2483,8 +2484,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     key: 0,
     active: false,
   });
-  const isComposerCollapsedMobile =
-    isMobileViewport && !forceExpandedOnMobile && !isComposerFocused && !hasMultilinePrompt;
+  const isComposerCollapsedMobile = isComposerCollapsedOnMobile({
+    isMobileViewport,
+    forceExpandedOnMobile,
+    isComposerFocused,
+    hasMultilinePrompt,
+  });
 
   // ------------------------------------------------------------------
   // Refs
