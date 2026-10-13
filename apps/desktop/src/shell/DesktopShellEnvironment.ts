@@ -1,4 +1,4 @@
-import { listLoginShellCandidates } from "@t3tools/shared/shell";
+import { listLoginShellCandidates, resolveKnownPosixCliDirs } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -419,6 +419,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
     const mergedPath = mergePaths(config.platform, [
       trimNonEmpty(shellEnvironment.PATH).pipe(Option.orElse(() => launchctlPath)),
       readEnvPath(config.env),
+      trimNonEmpty(resolveKnownPosixCliDirs(config.env).join(":")),
     ]);
 
     if (Option.isSome(mergedPath)) {

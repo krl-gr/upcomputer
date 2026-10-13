@@ -1,17 +1,23 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
+import { ClaudeSettings } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { CommandAvailability, WindowsShellEnvironment } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
 import { assert, it, vi } from "vite-plus/test";
 
 import { fixPath, hydratePosixHome, resolveBaseDir } from "./os-jank.ts";
+import { checkClaudeProviderStatus } from "./provider/ClaudeProvider.ts";
 
 vi.mock("node:child_process", { spy: true });
+
+const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 effectIt.layer(NodeServices.layer)((it) => {
   it.effect("defaults the server home to Up.computer's ~/.upcomputer", () =>
@@ -107,8 +113,53 @@ effectIt.effect("hydrates PATH when the desktop handoff is absent", () =>
         );
 
         assert.equal(probe.mock.calls.length, 1);
-        assert.equal(env.PATH, "/opt/tools/bin:/usr/bin");
+        assert.equal(env.PATH, `/opt/tools/bin:/usr/bin:${NodeOS.userInfo().homedir}/.local/bin`);
       }),
+    (probe) => Effect.sync(() => probe.mockRestore()),
+  ),
+);
+
+// The native Claude and Codex installers write to ~/.local/bin, which a fresh
+// login shell often lacks. The provider recheck after an onboarding install
+// must find the CLI without restarting the server.
+effectIt.effect("finds a CLI installed into ~/.local/bin after startup", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi
+        .spyOn(NodeChildProcess, "execFileSync")
+        .mockReturnValue("__T3CODE_ENV_PATH_START__\n/usr/bin:/bin\n__T3CODE_ENV_PATH_END__\n"),
+    ),
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-local-bin-" });
+        const env: NodeJS.ProcessEnv = { SHELL: "/bin/bash", HOME: home, PATH: "/usr/bin:/bin" };
+
+        yield* fixPath().pipe(
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(HostProcess.Environment, env),
+        );
+        assert.equal(env.PATH, `/usr/bin:/bin:${home}/.local/bin`);
+
+        const settings = decodeClaudeSettings({ binaryPath: "t3-test-claude" });
+        const noCapabilities = () => Effect.succeed(undefined);
+        const before = yield* checkClaudeProviderStatus(settings, noCapabilities, env);
+        assert.isFalse(before.installed);
+
+        const binDirectory = path.join(home, ".local", "bin");
+        const binary = path.join(binDirectory, "t3-test-claude");
+        yield* fileSystem.makeDirectory(binDirectory, { recursive: true });
+        yield* fileSystem.writeFileString(
+          binary,
+          `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "2.1.0 (Claude Code)"; else echo '{"loggedIn":false}'; fi\n`,
+        );
+        yield* fileSystem.chmod(binary, 0o755);
+
+        const after = yield* checkClaudeProviderStatus(settings, noCapabilities, env);
+        assert.isTrue(after.installed);
+        assert.equal(after.version, "2.1.0");
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),
 );
