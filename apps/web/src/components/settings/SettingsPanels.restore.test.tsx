@@ -89,6 +89,17 @@ describe("restoring V2 settings", () => {
     expect(state.update.mock.calls[0]?.[0].wakeChatOnTaskCompletion).toBe(true);
   });
 
+  it("restores the thread details card after it was turned off", async () => {
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, threadDetailsEnabled: false };
+    hooks.beginRender();
+    const restore = useSettingsRestore();
+
+    expect(restore.changedSettingLabels).toEqual(["Thread details"]);
+    await restore.restoreDefaults();
+
+    expect(state.update.mock.calls[0]?.[0].threadDetailsEnabled).toBe(true);
+  });
+
   it("does not reset settings after cancellation", async () => {
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, autoResumeLimitedThreads: true };
     state.confirm.mockResolvedValue(false);

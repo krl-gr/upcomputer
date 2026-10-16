@@ -376,6 +376,15 @@ describe("ClientSettings composer context strip", () => {
   });
 });
 
+describe("ClientSettings thread details", () => {
+  it("defaults the thread details card on and accepts turning it off", () => {
+    expect(decodeClientSettings({}).threadDetailsEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ threadDetailsEnabled: false }).threadDetailsEnabled).toBe(
+      false,
+    );
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
