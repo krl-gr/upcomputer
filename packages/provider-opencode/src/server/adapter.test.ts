@@ -465,7 +465,6 @@ describe("OpenCodeAdapterV2", () => {
         assert.isTrue(Exit.isFailure(yield* Fiber.join(reply)));
         assert.isTrue(signal?.aborted);
         deliver = true;
-        // Failed delivery leaves the request available for an explicit retry.
         yield* harness.runtime.respondToRuntimeRequest(response);
       }).pipe(
         Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
@@ -1415,8 +1414,6 @@ describe("OpenCodeAdapterV2", () => {
           },
         },
       );
-      // A forked run starts on its own row for the same native session, while
-      // the adapter tracks the session under the id it minted.
       const forkedRow = {
         ...harness.providerThread,
         id: ProviderThreadId.make("provider-thread:opencode-test:forked-run-row"),
@@ -2548,7 +2545,6 @@ describe("OpenCodeAdapterV2", () => {
       const fakeClient = {
         event: {
           subscribe: async (_input?: unknown, options?: { readonly signal?: AbortSignal }) => ({
-            // Emits nothing and ends when the pump's abort signal fires.
             stream: {
               [Symbol.asyncIterator]: () => ({
                 next: () =>
@@ -2601,9 +2597,6 @@ describe("OpenCodeAdapterV2", () => {
         runtimePolicy: runtimePolicy("full-access"),
       });
       const now = yield* DateTime.now;
-      // The placeholder row the orchestrator creates for a first run: no
-      // native identity yet. The adapter must bind the created session to
-      // this row instead of minting a second session-keyed row.
       const placeholder: OrchestrationV2ProviderThread = {
         id: ProviderThreadId.make("thread:provider:opencode:native-thread:pending:run:adopt:1"),
         driver: OPENCODE_PROVIDER,
@@ -2629,7 +2622,6 @@ describe("OpenCodeAdapterV2", () => {
       });
       assert.equal(adopted.id, placeholder.id);
       assert.equal(adopted.nativeThreadRef?.nativeId, "ses_native_1");
-      // Without a handed-over row the adapter still derives its own id.
       const minted = yield* session.ensureThread({
         threadId,
         modelSelection,

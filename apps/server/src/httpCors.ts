@@ -14,7 +14,6 @@ export const browserApiCorsAllowedHeaders = [
   ORCHESTRATION_PROTOCOL_HEADER,
 ] as const;
 
-/** Origins of the Electron renderer, packaged and dev. */
 export const DESKTOP_RENDERER_ORIGINS = [
   `${UPCOMPUTER_PROTOCOL_SCHEME}://app`,
   `${UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME}://app`,

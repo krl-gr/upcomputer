@@ -90,10 +90,7 @@ describe("T3 browser developer instructions", () => {
       NodeAssert.doesNotMatch(instructions, /preview_status/);
       NodeAssert.doesNotMatch(instructions, /preview_open/);
       NodeAssert.doesNotMatch(instructions, /Up.computer collaborative browser/);
-      // Steering away from other browser automation must go with the tools;
-      // keeping it would leave the model talked out of its only option.
       NodeAssert.doesNotMatch(instructions, /Do not switch to global browser skills/);
-      // The rest of the collaboration mode is untouched.
       NodeAssert.match(buildCodexDeveloperInstructions(mode), /<collaboration_mode>/);
       NodeAssert.match(buildCodexDeveloperInstructions(mode), /<\/collaboration_mode>/);
     }

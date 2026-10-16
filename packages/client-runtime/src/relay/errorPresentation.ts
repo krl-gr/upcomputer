@@ -78,11 +78,6 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
 export const RELAY_GATEWAY_TIMEOUT_MESSAGE =
   "Relay timed out before it finished the request (HTTP 504). Try again in a few minutes. If it keeps failing, copy the trace ID when you report it.";
 
-/**
- * User-facing detail for a failed relay request: the relay's typed error, or
- * the HTTP status when the relay sent a response the contract does not declare.
- * Null when the request got no response.
- */
 export function relayRequestFailureDetail(error: {
   readonly relayError?: RelayProtectedError | undefined;
   readonly status?: number | undefined;
@@ -93,13 +88,9 @@ export function relayRequestFailureDetail(error: {
   return null;
 }
 
-// A host with a current build gets a new tunnel on its own within minutes of
-// coming back, which clears this reason. While it is still reported, the host
-// is either still off or running a build too old to do that.
 export const RELAY_TUNNEL_RELEASED_MESSAGE =
   "Offline for a while, so its UpComputer Connect tunnel was removed. Start Up.computer on that computer and update it to the latest version to reconnect.";
 
-/** User-facing text for an offline status, or null when the relay gave no known reason. */
 export function relayOfflineReasonMessage(
   status: Pick<RelayEnvironmentStatusResponse, "offlineReason">,
 ): string | null {

@@ -473,7 +473,6 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.deepEqual(alone.additionalContext, {
         "mcp_app_todos_list_todos_item-1": { kind: "untrusted", value: "Filtered to overdue" },
       });
-      // Alongside T3's own context, both are kept.
       const withT3 = yield* CodexAdapterV2.buildCodexTurnStartParams({
         nativeThreadId: "native-app-context",
         codexInput: [{ type: "text", text: "what's on my list?" }],
@@ -662,7 +661,6 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.equal(params.collaborationMode?.settings.model, "gpt-5.4");
       assert.equal(params.collaborationMode?.settings.reasoning_effort, "xhigh");
 
-      // ChatGPT token sharing rejects service tiers, so managed sessions drop a stale pick.
       const managed = yield* CodexAdapterV2.buildCodexTurnStartParams({
         nativeThreadId: "native-model-options",
         codexInput: [{ type: "text", text: "test" }],
@@ -1329,7 +1327,6 @@ describe("CodexAdapterV2 rollback mapping", () => {
       const secondTurn = providerTurn("provider-turn-second", 2, "completed");
       const runningTurn = providerTurn("provider-turn-running", 3, "running");
       const interruptedTurn = providerTurn("provider-turn-interrupted", 4, "interrupted");
-      // `/goal` control turns never reached Codex, so revert must not count them.
       const goalCommandTurn = {
         ...providerTurn("provider-turn-goal-command", 5, "completed"),
         nativeTurnRef: null,
@@ -1656,7 +1653,6 @@ function codexReplayPreamble(input: {
   readonly nativeThreadId: string;
   readonly nativeTurnId: string;
   readonly prompt: string;
-  /** Text the adapter should send, when it differs from what the user typed. */
   readonly sentPrompt?: string;
 }): Array<CodexReplay.CodexAppServerReplayEntry> {
   return [
@@ -1896,7 +1892,6 @@ describe("CodexAdapterV2 session initialize", () => {
         .ensureThread("thread-concurrent-first")
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(initializeAwaitingResponse);
-      // The second thread arrives while the handshake is still unanswered.
       const second = yield* session
         .ensureThread("thread-concurrent-second")
         .pipe(Effect.forkChild({ startImmediately: true }));
@@ -1957,8 +1952,6 @@ describe("CodexAdapterV2 session initialize", () => {
           scenario: "initialize-interrupted",
           entries: [
             ...preamble.slice(0, 2),
-            // Codex handled the interrupted caller's `initialize`, so it
-            // rejects the next one.
             ...preamble.slice(0, 1).map((entry) => withReplayRequestId(entry, 2)),
             {
               type: "emit_inbound",
@@ -2260,8 +2253,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             if (method === "initialize") initializeParams.push(params);
           }),
       );
-      // Codex uses clientInfo.name as the request originator. Replays ignore the
-      // version, so pin the whole value here.
       assert.deepEqual(initializeParams, [
         {
           clientInfo: { name: "T3 Code", title: "T3 Code", version: packageJson.version },
@@ -2293,14 +2284,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const transcript = makeCodexReplayTranscript({
         scenario: "unload-thread",
         entries: [
-          // initialize + thread/start only; no turn runs.
           ...preamble.slice(0, 5),
           {
             type: "expect_outbound",
             label: "thread/unsubscribe",
             frame: { id: 3, method: "thread/unsubscribe", params: { threadId: nativeThreadId } },
           },
-          // Response shape recorded from codex app-server 0.156.1.
           {
             type: "emit_inbound",
             label: "thread/unsubscribe",
@@ -2952,10 +2941,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               itemId: "first-command",
               decision: "acceptForSession",
             }),
-            // Only commands were allowed, so a file change still asks. The user
-            // answers it after the turn ended and the mode changed.
             patchRequest!,
-            // Answered without asking: Codex alone would ask for every new command.
             ...approval({
               id: 101,
               turnId: turnIds[0]!,
@@ -2968,7 +2954,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             patchDecision!,
             turnEvent("turn/completed", turnIds[1]!),
             ...startTurn(2),
-            // Back in the first mode, neither allowance comes back.
             ...approval({
               id: 103,
               turnId: turnIds[2]!,
@@ -3949,7 +3934,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const nativeThreadId = `native-${scenario}-thread`;
         const nativeTurnId = `native-${scenario}-turn`;
         const prompt = "Plan the change.";
-        // 100 deltas, 20 ms apart: a two second stream.
         const deltas = Array.from({ length: 100 }, (_, index) => `step ${index}\n`);
         const transcript = makeCodexReplayTranscript({
           scenario,
@@ -4013,7 +3997,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ? [event.turnItem]
             : [],
         );
-        // One update per 400 ms of the stream, plus the completion.
         assert.isAtLeast(plans.length, 2);
         assert.isAtMost(plans.length, 7);
         assert.equal(planItems.length, plans.length);
@@ -4738,8 +4721,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  // "thread_unloaded": the thread was settled, so T3 unsubscribed and Codex
-  // unloaded it (killing its terminals) before Stop arrived.
   const backgroundStopCases = [true, false, "still_running", "thread_unloaded"] as const;
   const makeBackgroundStopTranscript = (terminated: (typeof backgroundStopCases)[number]) => {
     const stillRunning = terminated === "still_running";
@@ -5026,10 +5007,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     );
   });
 
-  // The app-server exits after the root turn, before the command's own
-  // item/completed (Codex always sends one, so only a lost notification or a
-  // gone process leaves it running). Nothing tracks the command any more, yet
-  // the thread still shows it, and Stop is the only way to clear it.
   it.effect("Stop ends a background command no Codex process tracks any more", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -5514,8 +5491,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.isFalse(yield* harness.hasPendingBackgroundWork);
         assert.lengthOf(harness.continuationRequests, 0);
 
-        // Late provider item/completed after interrupt must not revive the card
-        // or request a background-command wake continuation.
         yield* TestClock.adjust("30 seconds");
         for (let attempt = 0; attempt < 100; attempt++) {
           yield* Effect.yieldNow;
@@ -7092,7 +7067,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const item = yield* Deferred.await(appCaptured);
         assert.equal(harness.terminalEvents()[0]?.status, "completed");
 
-        // The completed tool row is emitted once, with the app, never as a bare row first.
         const completedRows = harness.events.filter(
           (event) =>
             event.type === "turn_item.updated" &&
@@ -7126,7 +7100,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             attachmentId: reference!.attachmentId,
           })!,
         );
-        // Stored with the app's declared policy ahead of its scripts.
         assert.include(stored, "connect-src https://api.weather.test");
         assert.isBelow(stored.indexOf("Content-Security-Policy"), stored.indexOf("<script>"));
         assert.isFalse(yield* harness.hasPendingBackgroundWork);
@@ -7138,9 +7111,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  // The turn fails while the app's resource read is still outstanding (Codex
-  // never answers it), so the capture must be cancelled and its tool row
-  // settled before the terminal event closes ingestion.
   const failedMcpAppTranscript = makeCodexReplayTranscript({
     scenario: "codex-mcp-app-capture-failed-turn",
     entries: [
@@ -7214,7 +7184,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ? [{ index, turnItem: event.turnItem }]
             : [],
         );
-        // Settled once, as a plain tool row, ahead of the terminal event.
         assert.lengthOf(rows, 1);
         assert.isBelow(rows[0]!.index, terminalIndex);
         const output = rows[0]!.turnItem.type === "dynamic_tool" ? rows[0]!.turnItem.output : null;
@@ -8116,7 +8085,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           } else {
             entries.push(stateEntry(nativeStatus, "status-update"));
           }
-          // A known child's turn provides a receipt even after the parent context is released.
           if (nativeStatus === "late-activity-completed") {
             entries.push({
               type: "emit_inbound",
@@ -8746,7 +8714,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               { threadId: nativeThreadId, objective, status: "paused" },
               { goal: codexGoal("paused", 0) },
             ),
-            // The first goal turn carries this run's turn configuration.
             ...withReplayRequestId(
               codexReplayPreamble({
                 nativeThreadId,
@@ -8890,7 +8857,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               threadId: nativeThreadId,
               turn: makeCodexReplayTurn({ id: "goal-turn", status: "completed" }),
             }),
-            // Notifications run in order, so seeing this one proves the turn settled.
             notification("goal accounted", "thread/goal/updated", {
               threadId: nativeThreadId,
               turnId: null,
@@ -8946,7 +8912,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ),
           "the completed turn to be held",
         );
-        // The held turn keeps reading as running, so Stop still reaches the adapter.
         assert.deepEqual(turnStatuses(), ["running"]);
         assert.lengthOf(harness.terminalEvents(), 0);
 
@@ -9032,7 +8997,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ),
           "the continuation to be adopted",
         );
-        // The projection may still name the first turn when Stop is dispatched.
         yield* harness.runtime.interruptTurn({
           providerThread: harness.providerThread,
           providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
@@ -9137,8 +9101,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           requestRuntimeRestart: true,
         });
         yield* harness.firstTerminal;
-        // The settled-turn path terminates the process (the replay expects that
-        // request) before it marks the command interrupted.
         assert.deepEqual(
           harness.terminalEvents().map((event) => event.status),
           ["interrupted"],
@@ -9226,7 +9188,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             ),
           "the goal to be active",
         );
-        // Stop names the first turn while it still runs.
         yield* harness.runtime.interruptTurn({
           providerThread: harness.providerThread,
           providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
