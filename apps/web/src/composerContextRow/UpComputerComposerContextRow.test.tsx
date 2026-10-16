@@ -269,6 +269,23 @@ describe("the row under the composer", () => {
     );
   });
 
+  it("is not shown at all with no control to show", async () => {
+    // Not a git checkout, on the only (primary) environment.
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: UPCOMPUTER.id,
+      worktreePath: null,
+    };
+    await render(<UpComputerComposerContextRow {...rowProps({ isGitRepo: false })} />);
+    expect(container.querySelector("[data-composer-context-row]")).toBeNull();
+
+    // The scratch folder shows no checkout, even when it is a repository.
+    state.serverThread = { ...state.serverThread, projectId: SCRATCH.id };
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(container.querySelector("[data-composer-context-row]")).toBeNull();
+  });
+
   it("leaves the projects and the panel toggles to the header", async () => {
     state.serverThread = {
       environmentId: ENV,

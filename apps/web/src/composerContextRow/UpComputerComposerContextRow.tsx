@@ -20,6 +20,7 @@ import { BranchToolbarEnvModeSelector } from "../components/BranchToolbarEnvMode
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useProject, useThreadShell, useThreadShellsForProjectRefs } from "../state/entities";
+import { hasContextRowControls, resolveContextRowControls } from "./contextRowControls";
 import { CONTEXT_ROW_QUIET_CONTROLS_CLASS, CONTEXT_ROW_SEPARATOR_CLASS } from "./contextRowStyles";
 
 export interface UpComputerComposerContextRowProps {
@@ -134,7 +135,20 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
   const isScratch =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
-  const showGitControls = isGitRepo && !isScratch;
+  const showEnvironmentPicker = Boolean(
+    availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange,
+  );
+  const controls = resolveContextRowControls({
+    isGitRepo,
+    isScratch,
+    showEnvironmentIndicator: shouldShowEnvironmentIndicator({
+      activeEnvironment:
+        availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
+      canPickEnvironment: showEnvironmentPicker,
+    }),
+  });
+  const showEnvironmentIndicator = controls.environment;
+  const showGitControls = controls.git;
 
   useImperativeHandle(
     ref,
@@ -155,18 +169,13 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
     ],
   );
 
-  const showEnvironmentPicker = Boolean(
-    availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange,
-  );
-  const showEnvironmentIndicator =
-    !isScratch &&
-    shouldShowEnvironmentIndicator({
-      activeEnvironment:
-        availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
-      canPickEnvironment: showEnvironmentPicker,
-    });
-
-  if ((serverThread === null && draftThread === null) || !activeProject) return null;
+  if (
+    (serverThread === null && draftThread === null) ||
+    !activeProject ||
+    !hasContextRowControls(controls)
+  ) {
+    return null;
+  }
 
   return (
     <div

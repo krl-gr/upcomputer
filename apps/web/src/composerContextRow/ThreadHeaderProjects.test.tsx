@@ -188,7 +188,29 @@ afterEach(async () => {
 });
 
 describe("the chat's projects in the header", () => {
-  it("shows the own project with its name and the linked ones, and links and unlinks from the list", async () => {
+  it("names a single project next to its icon", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: UPCOMPUTER.id,
+      linkedProjectIds: [],
+    };
+    await render();
+    expect(visibleText(trigger())).toBe("UPUpComputer");
+  });
+
+  it("names the one linked project of a chat without its own", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: SCRATCH.id,
+      linkedProjectIds: [KV.id],
+    };
+    await render();
+    expect(visibleText(trigger())).toBe("KVKv store");
+  });
+
+  it("shows several projects as icons only, and links and unlinks from the list", async () => {
     state.serverThread = {
       environmentId: ENV,
       id: THREAD,
@@ -197,7 +219,7 @@ describe("the chat's projects in the header", () => {
     };
     await render();
     expect(trigger().getAttribute("aria-label")).toBe("Projects: UpComputer, Kv store");
-    expect(visibleText(trigger())).toBe("UPUpComputerKV");
+    expect(visibleText(trigger())).toBe("UPKV");
     expect(container.querySelector("[data-thread-header-no-project]")).toBeNull();
 
     await click(trigger());
@@ -237,7 +259,7 @@ describe("the chat's projects in the header", () => {
     });
   });
 
-  it("shows only the icons of a chat without a project once it links some, up to three", async () => {
+  it("shows up to three project icons, then a count", async () => {
     state.projects = [UPCOMPUTER, KV, RELAY, WEB, DOCS, SCRATCH];
     state.serverThread = {
       environmentId: ENV,

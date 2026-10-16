@@ -36,7 +36,7 @@ import {
 import { useRetargetDraftToProject } from "./useRetargetDraftToProject";
 
 const EMPTY_PROJECT_IDS: ReadonlyArray<string> = [];
-const MAX_LINKED_ICONS = 3;
+const MAX_HEADER_ICONS = 3;
 
 /** A chat without a project: a dashed rounded square where a project icon would be. */
 function NoProjectIcon() {
@@ -51,7 +51,7 @@ function NoProjectIcon() {
 
 /**
  * The chat's projects at the start of the header, where upstream shows its
- * project: the own project's icon and name, the linked projects' icons, or the
+ * project: one project's icon and name, several projects' icons only, or the
  * no-project square. It opens a searchable list to link and unlink projects
  * (`linkedProjectIds`). An unsent chat without a project moves into the chosen
  * one instead; an unsent chat in a project links more after its first message.
@@ -152,11 +152,13 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
     }
   };
 
-  const projectNames = [ownProject, ...linkedProjects].flatMap((project) =>
-    project ? [project.title] : [],
-  );
-  const label = projectNames.length === 0 ? "No project" : projectNames.join(", ");
-  const hiddenLinkedCount = linkedProjects.length - MAX_LINKED_ICONS;
+  const headerProjects = ownProject ? [ownProject, ...linkedProjects] : linkedProjects;
+  const label =
+    headerProjects.length === 0
+      ? "No project"
+      : headerProjects.map((project) => project.title).join(", ");
+  const hiddenProjectCount = headerProjects.length - MAX_HEADER_ICONS;
+  const singleProject = headerProjects.length === 1 ? headerProjects[0] : undefined;
 
   return (
     <>
@@ -186,25 +188,19 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
                 />
               }
             >
-              {ownProject === null && linkedProjects.length === 0 ? <NoProjectIcon /> : null}
-              {ownProject ? (
-                <>
-                  <ProjectFavicon project={ownProject} className="size-3.5" />
-                  {/* The name gives way to the thread title on narrow screens. */}
-                  <WorkspaceBreadcrumbText className="max-w-40 max-sm:hidden">
-                    {ownProject.title}
-                  </WorkspaceBreadcrumbText>
-                </>
+              {headerProjects.length === 0 ? <NoProjectIcon /> : null}
+              {headerProjects.slice(0, MAX_HEADER_ICONS).map((project) => (
+                <ProjectFavicon key={project.id} project={project} className="size-3.5" />
+              ))}
+              {hiddenProjectCount > 0 ? (
+                <span className="text-xs tabular-nums">+{hiddenProjectCount}</span>
               ) : null}
-              {linkedProjects.length > 0 ? (
-                <span className="flex shrink-0 items-center gap-1">
-                  {linkedProjects.slice(0, MAX_LINKED_ICONS).map((project) => (
-                    <ProjectFavicon key={project.id} project={project} className="size-3.5" />
-                  ))}
-                  {hiddenLinkedCount > 0 ? (
-                    <span className="text-xs tabular-nums">+{hiddenLinkedCount}</span>
-                  ) : null}
-                </span>
+              {/* A single project is named, as upstream's; the name gives way to
+                  the thread title on narrow screens. Several show icons only. */}
+              {singleProject ? (
+                <WorkspaceBreadcrumbText className="max-w-40 max-sm:hidden">
+                  {singleProject.title}
+                </WorkspaceBreadcrumbText>
               ) : null}
             </TooltipTrigger>
             <TooltipPopup side="bottom">{label}</TooltipPopup>

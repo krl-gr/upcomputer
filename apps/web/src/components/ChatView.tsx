@@ -293,6 +293,10 @@ import { isProductFeatureShown, terminalCommandTarget } from "~/product/productF
 import { ProductRightPanelSurface } from "~/product/ProductSlots";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
+import {
+  hasContextRowControls,
+  resolveContextRowControls,
+} from "~/composerContextRow/contextRowControls";
 import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
 import {
   composerBottomSpaceClass,
@@ -4279,8 +4283,19 @@ export default function ChatView(props: ChatViewProps) {
   // top-level parent thread.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
-  // Our row under the composer holds the checkout and branch controls.
-  const composerContextRowMounted = showsUpComputerComposerContextRow() && composerMounted;
+  // Our row under the composer holds the environment, checkout and branch
+  // controls; without any of them it is not shown, nor its space.
+  const composerContextRowMounted =
+    showsUpComputerComposerContextRow() &&
+    composerMounted &&
+    activeProject !== null &&
+    hasContextRowControls(
+      resolveContextRowControls({
+        isGitRepo,
+        isScratch: activeProjectIsScratch,
+        showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      }),
+    );
   const threadDetailsEnabled = settings.threadDetailsEnabled;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report a dated id or alias (claude-haiku-4-5-20251001).
