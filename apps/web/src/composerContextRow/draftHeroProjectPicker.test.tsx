@@ -133,7 +133,7 @@ afterEach(async () => {
 });
 
 describe("the empty draft's hero", () => {
-  it('leaves choosing a project to the row\'s "Add project" in a draft without one', async () => {
+  it("leaves choosing a project to the header's project list in a draft without one", async () => {
     await renderHero(SCRATCH);
     expect(container.querySelector("h1")?.textContent).toBe("What should we work on?");
     expect(projectPicker()).toBeNull();

@@ -1,6 +1,6 @@
 /*
- * Which projects the row under the composer shows and offers, as V1's
- * `BranchToolbar` decided it, on upstream's thread links
+ * Which projects the chat header shows and offers (`ThreadHeaderProjects`),
+ * as V1's `BranchToolbar` decided it, on upstream's thread links
  * (`linkedProjectIds`, changed through `threadEnvironment.updateMetadata`).
  */
 
@@ -11,7 +11,7 @@ interface RowProject {
 }
 
 /**
- * What choosing a project from `+` does:
+ * What choosing a project in the header's project list does:
  * - `link`: a started thread links it right away.
  * - `retarget`: an unsent chat without a project moves into it, as V1 did.
  * - null: an unsent chat in a project cannot link yet. V1 kept a pending link
@@ -43,22 +43,6 @@ export function resolveLinkedProjects<Project extends RowProject>(input: {
     const project = byId.get(id);
     return project && project.id !== input.ownProjectId ? [project] : [];
   });
-}
-
-/** The `+` menu: the environment's projects other than the chat's own, linked or scratch ones. */
-export function resolveLinkableProjects<Project extends RowProject>(input: {
-  readonly projects: ReadonlyArray<Project>;
-  readonly environmentId: string;
-  readonly excludedProjectIds: Iterable<string>;
-  readonly isScratchProject: (project: Project) => boolean;
-}): Project[] {
-  const excluded = new Set(input.excludedProjectIds);
-  return input.projects.filter(
-    (project) =>
-      project.environmentId === input.environmentId &&
-      !excluded.has(project.id) &&
-      !input.isScratchProject(project),
-  );
 }
 
 function titleMatchRank(title: string, query: string): number | null {

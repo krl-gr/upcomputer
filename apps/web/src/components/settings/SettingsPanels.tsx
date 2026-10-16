@@ -603,6 +603,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
         ? ["Composer context"]
         : []),
+      ...(settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled
+        ? ["Thread details"]
+        : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
         ? ["Default diff file state"]
@@ -717,6 +720,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.panelAnimationDurationMs,
       settings.responseStreamingMode,
       settings.persistComposerContextStrip,
+      settings.threadDetailsEnabled,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
@@ -810,6 +814,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
+      threadDetailsEnabled: DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
@@ -1435,6 +1440,32 @@ export function AppearanceSettingsPanel() {
                 updateSettings({ persistComposerContextStrip: Boolean(checked) })
               }
               aria-label="Keep composer context visible in active threads"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("thread-details")}
+          description="Show the thread details button with the environment, Open in and Git actions. Turn off to hide the button and its card."
+          resetAction={
+            settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled ? (
+              <SettingResetButton
+                label="thread details"
+                onClick={() =>
+                  updateSettings({
+                    threadDetailsEnabled: DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.threadDetailsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ threadDetailsEnabled: Boolean(checked) })
+              }
+              aria-label="Show thread details"
             />
           }
         />

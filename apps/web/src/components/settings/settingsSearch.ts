@@ -340,6 +340,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "thread-details",
+    title: "Thread details",
+    to: "/settings/appearance",
+    searchTerms: [
+      "environment open in editor git initialize workspace card toggle composer header",
+    ],
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",
