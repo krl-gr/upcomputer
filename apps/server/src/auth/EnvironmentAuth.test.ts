@@ -640,7 +640,8 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         origin: "https://box.tail1234.ts.net",
         "x-forwarded-host": "box.tail1234.ts.net",
       });
-      yield* upgrade({ origin: "t3code://app" });
+      yield* upgrade({ origin: "upcomputer://app" });
+      yield* upgrade({ origin: "upcomputer-dev://app" });
       yield* upgrade({ origin: "http://localhost:5733" });
       yield* upgrade({});
 
@@ -648,6 +649,9 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
       expect(otherPort._tag).toBe("ServerAuthInvalidCredentialError");
       const opaque = yield* Effect.flip(upgrade({ origin: "null" }));
       expect(opaque._tag).toBe("ServerAuthInvalidCredentialError");
+      // Upstream's desktop scheme is not this app's renderer.
+      const upstreamDesktop = yield* Effect.flip(upgrade({ origin: "t3code://app" }));
+      expect(upstreamDesktop._tag).toBe("ServerAuthInvalidCredentialError");
     }).pipe(
       Effect.provide(
         layerEnvironmentAuth({
