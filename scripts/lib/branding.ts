@@ -301,6 +301,16 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: ".gitignore", requires: [".upcomputer"] },
   { path: ".env.example", forbids: ["relay.t3.codes", "T3CODE_CLERK_PUBLISHABLE_KEY=pk_"] },
   { path: "apps/web/vercel.ts", requires: ['"app.up.computer"'], forbids: ["t3.codes"] },
+  // Prompt links open the Up.computer desktop app and the hosted app at app.up.computer.
+  {
+    path: "packages/shared/src/promptLinks.ts",
+    requires: ["UPCOMPUTER_PROTOCOL_SCHEME", "UPCOMPUTER_HOSTED_APP_URL"],
+    forbids: ["/^t3code", 'scheme = "t3code"', "DEFAULT_HOSTED_APP_URL"],
+  },
+  {
+    path: "apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx",
+    forbids: ["t3.codes"],
+  },
   // Release and Connect workflows.
   {
     path: ".github/workflows/release.yml",

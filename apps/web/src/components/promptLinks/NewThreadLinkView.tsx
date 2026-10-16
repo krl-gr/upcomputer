@@ -24,6 +24,7 @@ import { isElectron } from "~/env";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { newProjectId } from "~/lib/utils";
+import { isProductFeatureShown } from "~/product/productFlags";
 import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { allReachableShellsLiveAtom } from "~/state/shell";
@@ -207,6 +208,10 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     if (startedRef.current) return;
     startedRef.current = true;
     openedLinkKeys.add(locationKey);
+    if (link.kind === "pull-request" && !isProductFeatureShown("pullRequests")) {
+      setState({ status: "failed", message: "Up.computer does not open pull request links." });
+      return;
+    }
     if (link.kind === "pull-request") {
       const thread = findPromptLinkPullRequestThread(threads, link.pullRequest);
       if (thread !== undefined) {

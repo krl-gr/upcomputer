@@ -13,7 +13,6 @@ import {
 
 import { type ComposerThreadTarget, useComposerDraftStore } from "~/composerDraftStore";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { configuredHostedAppUrl } from "~/hostedPairing";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
@@ -28,7 +27,9 @@ export function promptLinkFor(
 ): string | null {
   const trimmed = prompt.trim();
   if (trimmed.length === 0 || trimmed.length > PROMPT_LINK_MAX_PROMPT_LENGTH) return null;
-  return buildNewThreadLink({ prompt: trimmed, ...context, origin: configuredHostedAppUrl() });
+  // Without a configured hosted app (desktop and local builds) the link points at app.up.computer.
+  const origin = import.meta.env.VITE_HOSTED_APP_URL?.trim();
+  return buildNewThreadLink({ prompt: trimmed, ...context, ...(origin ? { origin } : {}) });
 }
 
 export function promptLinkRepositoryOf(

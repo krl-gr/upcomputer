@@ -5,6 +5,7 @@ import {
   promptLinkAppPath,
   promptLinkDeepLink,
 } from "@t3tools/shared/promptLinks";
+import { UPCOMPUTER_SITE_URL } from "@t3tools/shared/upcomputerIdentity";
 import { useLocation } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -21,7 +22,7 @@ import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 
 const OPENER_STORAGE_KEY = "t3code:prompt-link-opener";
 const Opener = Schema.NullOr(Schema.Literals(["app", "browser"]));
-const DOWNLOAD_URL = "https://t3.codes/download";
+const DOWNLOAD_URL = `${UPCOMPUTER_SITE_URL}/download/`;
 
 interface LinkSummary {
   readonly prompt: LinkedPrompt | null;
