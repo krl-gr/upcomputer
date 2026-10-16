@@ -131,8 +131,6 @@ import type { UpComputerComposerContextRowProps } from "./UpComputerComposerCont
 
 const { UpComputerComposerContextRow } = await import("./UpComputerComposerContextRow");
 const { BranchToolbar } = await import("../components/BranchToolbar");
-const { PanelLayoutControls } = await import("../components/chat/PanelLayoutControls");
-const { Popover, PopoverCreateHandle, PopoverPopup } = await import("../components/ui/popover");
 const { composerShortcutScope, showsUpComputerComposerContextRow } =
   await import("./composerContextRowSurface");
 
@@ -163,17 +161,6 @@ function rowProps(
     envLocked: false,
     startFromOrigin: false,
     onStartFromOriginChange: vi.fn(),
-    rightPanelOpen: false,
-    rightPanelAvailable: true,
-    rightPanelShortcutLabel: "⌘B",
-    onToggleRightPanel: vi.fn(),
-    threadPanel: {
-      open: false,
-      presentation: "inline",
-      popoverHandle: PopoverCreateHandle(),
-      shortcutLabel: "⌘I",
-      onToggle: vi.fn(),
-    },
     ...overrides,
   };
 }
@@ -206,23 +193,10 @@ function visibleText(element: Element | null) {
   return copy?.textContent;
 }
 
-function buttonByText(text: string) {
-  return Array.from(document.querySelectorAll<HTMLElement>("button")).find(
-    (button) => button.textContent?.trim() === text,
-  );
-}
-
 function optionByText(text: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[role=option]")).find((option) =>
     option.textContent?.includes(text),
   );
-}
-
-function projectIcons() {
-  const projects = container.querySelector("[data-context-row-projects]")!;
-  return Array.from(
-    projects.querySelectorAll<HTMLElement>("button, span[data-context-row-own-project]"),
-  ).map((element) => element.getAttribute("aria-label") ?? element.textContent);
 }
 
 beforeEach(() => {
@@ -247,108 +221,6 @@ afterEach(async () => {
 });
 
 describe("the row under the composer", () => {
-  it("shows the chat's project and its linked projects, and + links another one", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-      linkedProjectIds: [KV.id, "deleted-project"],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-
-    expect(projectIcons()).toEqual(["UP", "Unlink Kv store", "Link a project"]);
-
-    await click(byLabel("Link a project")!);
-    // Only projects the chat has not got yet, and never the scratch folder.
-    expect(
-      Array.from(document.querySelectorAll("[role=option]")).map((o) => o.textContent),
-    ).toEqual(["RERelay"]);
-    await click(optionByText("Relay")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, linkProjectIds: [RELAY.id] },
-    });
-  });
-
-  it("unlinks a linked project from its icon", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-      linkedProjectIds: [KV.id],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    await click(byLabel("Unlink Kv store")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, unlinkProjectIds: [KV.id] },
-    });
-  });
-
-  it('shows V1\'s "Add project" for a chat without a project, and choosing moves the draft there', async () => {
-    state.draftThread = {
-      environmentId: ENV,
-      projectId: SCRATCH.id,
-      worktreePath: null,
-    };
-    const draftId = "draft-1" as UpComputerComposerContextRowProps["draftId"] & string;
-    await render(<UpComputerComposerContextRow {...rowProps({ draftId })} />);
-
-    // Text, not the bare `+`.
-    expect(projectIcons()).toEqual(["Add project"]);
-    const addProject = container.querySelector<HTMLElement>("[data-context-row-project-picker]")!;
-    expect(visibleText(addProject)).toBe("Add project");
-    expect(addProject.querySelector("svg")).toBeNull();
-    // No checkout or branch: the scratch folder is not a project checkout.
-    expect(container.querySelector("[data-context-row-workspace]")?.childElementCount).toBe(0);
-    expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
-
-    // The same menu `+` opens, with "New project…" for a project not added yet.
-    await click(addProject);
-    expect(
-      Array.from(document.querySelectorAll("[role=option]"))
-        .map((o) => o.textContent)
-        .toSorted(),
-    ).toEqual(["KVKv store", "RERelay", "UPUpComputer"]);
-    expect(buttonByText("New project…")).toBeDefined();
-    await click(optionByText("Kv store")!);
-    expect(state.retargetDraft).toHaveBeenCalledWith(draftId, KV);
-    expect(state.updateMetadata).not.toHaveBeenCalled();
-  });
-
-  it("goes back to the project icons and + once a chat without a project links one", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: SCRATCH.id,
-      worktreePath: null,
-      linkedProjectIds: [],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    expect(visibleText(container.querySelector("[data-context-row-projects]"))).toBe("Add project");
-    await click(container.querySelector("[data-context-row-project-picker]")!);
-    await click(optionByText("Kv store")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, linkProjectIds: [KV.id] },
-    });
-
-    state.serverThread = { ...state.serverThread, linkedProjectIds: [KV.id] };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    expect(projectIcons()).toEqual(["Unlink Kv store", "Add project"]);
-    expect(
-      container.querySelector("[data-context-row-project-picker]")?.querySelector("svg"),
-    ).not.toBeNull();
-  });
-
-  it("hides + in an unsent chat that already has a project", async () => {
-    state.draftThread = { environmentId: ENV, projectId: UPCOMPUTER.id, worktreePath: null };
-    await render(<UpComputerComposerContextRow {...rowProps({ draftId: "draft-2" as never })} />);
-    expect(projectIcons()).toEqual(["UP"]);
-  });
-
   it("puts upstream's checkout mode and branch after the project, with upstream's actions", async () => {
     state.draftThread = { environmentId: ENV, projectId: UPCOMPUTER.id, worktreePath: null };
     const onEnvModeChange = vi.fn();
@@ -397,143 +269,36 @@ describe("the row under the composer", () => {
     );
   });
 
-  it("keeps exactly one right-panel toggle, in the row", async () => {
+  it("is not shown at all with no control to show", async () => {
+    // Not a git checkout, on the only (primary) environment.
     state.serverThread = {
       environmentId: ENV,
       id: THREAD,
       projectId: UPCOMPUTER.id,
       worktreePath: null,
     };
-    const onToggleRightPanel = vi.fn();
-    const header = () => (
-      <PanelLayoutControls
-        terminalAvailable
-        terminalOpen={false}
-        terminalShortcutLabel={null}
-        threadPanelOpen={false}
-        threadPanelPresentation="inline"
-        threadPanelShortcutLabel={null}
-        rightPanelAvailable
-        rightPanelOpen={false}
-        rightPanelShortcutLabel={null}
-        onToggleTerminal={vi.fn()}
-        onToggleThreadPanel={vi.fn()}
-        onToggleRightPanel={vi.fn()}
-        // As ChatView passes it.
-        showRightPanelControl={!showsUpComputerComposerContextRow()}
-      />
-    );
-    await render(
-      <>
-        {header()}
-        <UpComputerComposerContextRow {...rowProps({ onToggleRightPanel })} />
-      </>,
-    );
-    const toggles = container.querySelectorAll('[aria-label="Toggle right panel"]');
-    expect(toggles).toHaveLength(1);
-    expect(toggles[0]?.closest("[data-composer-context-row]")).not.toBeNull();
-    await click(toggles[0]!);
-    expect(onToggleRightPanel).toHaveBeenCalledOnce();
+    await render(<UpComputerComposerContextRow {...rowProps({ isGitRepo: false })} />);
+    expect(container.querySelector("[data-composer-context-row]")).toBeNull();
 
-    state.surface = "upstream";
-    await render(header());
-    expect(container.querySelectorAll('[aria-label="Toggle right panel"]')).toHaveLength(1);
+    // The scratch folder shows no checkout, even when it is a repository.
+    state.serverThread = { ...state.serverThread, projectId: SCRATCH.id };
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(container.querySelector("[data-composer-context-row]")).toBeNull();
   });
 
-  it("moves upstream's thread details toggle into the row, just left of the panel toggle", async () => {
+  it("leaves the projects and the panel toggles to the header", async () => {
     state.serverThread = {
       environmentId: ENV,
       id: THREAD,
       projectId: UPCOMPUTER.id,
       worktreePath: null,
+      linkedProjectIds: [KV.id],
     };
-    const onToggle = vi.fn();
-    const header = () => (
-      <PanelLayoutControls
-        terminalAvailable
-        terminalOpen={false}
-        terminalShortcutLabel={null}
-        threadPanelOpen={false}
-        threadPanelPresentation="inline"
-        threadPanelShortcutLabel={null}
-        rightPanelAvailable
-        rightPanelOpen={false}
-        rightPanelShortcutLabel={null}
-        onToggleTerminal={vi.fn()}
-        onToggleThreadPanel={vi.fn()}
-        onToggleRightPanel={vi.fn()}
-        // As ChatView passes them while the row is shown.
-        showThreadPanelControl={!showsUpComputerComposerContextRow()}
-        showRightPanelControl={!showsUpComputerComposerContextRow()}
-      />
-    );
-    const threadPanel = { ...rowProps().threadPanel, open: true, onToggle };
-    await render(
-      <>
-        {header()}
-        <UpComputerComposerContextRow {...rowProps({ threadPanel })} />
-      </>,
-    );
-    const toggles = container.querySelectorAll<HTMLElement>(
-      '[aria-label="Toggle thread details panel"]',
-    );
-    expect(toggles).toHaveLength(1);
-    const details = toggles[0]!;
-    expect(details.closest("[data-composer-context-row]")).not.toBeNull();
-    // Immediately left of the right-panel toggle, at the row's right edge.
-    const row = container.querySelector("[data-composer-context-row]")!;
-    const rightCluster = row.lastElementChild!;
-    expect(
-      Array.from(rightCluster.querySelectorAll("button")).map((button) =>
-        button.getAttribute("aria-label"),
-      ),
-    ).toEqual(["Toggle thread details panel", "Toggle right panel"]);
-    // Drawn like the row's other icons, dim until hovered, bright while open.
-    expect(details.className).toContain("text-(--composer-muted)");
-    expect(details.className).toContain("hover:text-(--composer-bright)");
-    expect(details.getAttribute("aria-pressed")).toBe("true");
-    expect(details.nextElementSibling?.textContent).toBe("Toggle thread details (⌘I)");
-    await click(details);
-    expect(onToggle).toHaveBeenCalledOnce();
-
-    state.surface = "upstream";
-    await render(header());
-    expect(container.querySelectorAll('[aria-label="Toggle thread details panel"]')).toHaveLength(
-      1,
-    );
-  });
-
-  it("opens upstream's thread details popover from the row while the card is a popover", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-    };
-    const popoverHandle = PopoverCreateHandle();
-    const onToggle = vi.fn();
-    await render(
-      <>
-        <Popover handle={popoverHandle}>
-          <PopoverPopup>
-            <span data-testid="thread-details">Thread details</span>
-          </PopoverPopup>
-        </Popover>
-        <UpComputerComposerContextRow
-          {...rowProps({
-            threadPanel: {
-              ...rowProps().threadPanel,
-              presentation: "popover",
-              popoverHandle,
-              onToggle,
-            },
-          })}
-        />
-      </>,
-    );
-    await click(byLabel("Toggle thread details panel")!);
-    expect(document.querySelector('[data-testid="thread-details"]')).not.toBeNull();
-    expect(onToggle).not.toHaveBeenCalled();
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(container.querySelector("[data-composer-context-row]")).not.toBeNull();
+    expect(container.querySelector('[data-testid="favicon"]')).toBeNull();
+    expect(byLabel("Toggle right panel")).toBeNull();
+    expect(byLabel("Toggle thread details panel")).toBeNull();
   });
 });
 

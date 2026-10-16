@@ -75,6 +75,11 @@ vi.mock("../product/ProductSlots", async () => {
   };
 });
 
+// The chat's projects have their own tests (`ThreadHeaderProjects.test.tsx`).
+vi.mock("./ThreadHeaderProjects", () => ({
+  ThreadHeaderProjects: () => <li data-testid="header-projects">projects</li>,
+}));
+
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 const { ChatHeader } = await import("../components/chat/ChatHeader");
@@ -131,10 +136,10 @@ afterEach(async () => {
 });
 
 describe("the chat header", () => {
-  it("shows only the thread title and the run badge under the UpComputer row", async () => {
+  it("leads with the chat's projects instead of upstream's breadcrumb with the UpComputer surface", async () => {
     state.surface = "upcomputer";
     await renderHeader();
-    expect(container.textContent).toBe("Find the worktree fixes1 13");
+    expect(container.textContent).toBe("projectsFind the worktree fixes1 13");
     expect(container.querySelector('[aria-label="New thread in No project"]')).toBeNull();
     expect(container.querySelector('[data-testid="favicon"]')).toBeNull();
     expect(

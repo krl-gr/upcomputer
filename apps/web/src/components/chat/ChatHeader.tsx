@@ -40,6 +40,7 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { ProductChatHeaderAccessory } from "~/product/ProductSlots";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
+import { ThreadHeaderProjects } from "~/composerContextRow/ThreadHeaderProjects";
 import { useClientSettings } from "../../hooks/useSettings";
 
 interface ChatHeaderProps {
@@ -315,6 +316,12 @@ export const ChatHeader = memo(function ChatHeader({
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
+        {showsUpComputerComposerContextRow() ? (
+          <ThreadHeaderProjects
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+          />
+        ) : null}
         {activeProject && !showsUpComputerComposerContextRow() ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">

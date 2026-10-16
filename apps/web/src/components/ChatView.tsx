@@ -293,6 +293,10 @@ import { isProductFeatureShown, terminalCommandTarget } from "~/product/productF
 import { ProductRightPanelSurface } from "~/product/ProductSlots";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
+import {
+  hasContextRowControls,
+  resolveContextRowControls,
+} from "~/composerContextRow/contextRowControls";
 import { ComposerBackdropFade } from "~/composerFooter/ComposerBackdropFade";
 import {
   composerBottomSpaceClass,
@@ -472,6 +476,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel, type ThreadDetailsPanelProps } from "./chat/ThreadDetailsPanel";
+import { resolveThreadDetailsTogglePlacement } from "./chat/threadDetailsTogglePlacement";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   type EnvironmentOption,
@@ -4278,8 +4283,20 @@ export default function ChatView(props: ChatViewProps) {
   // top-level parent thread.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
-  // Our row under the composer holds the right-panel and thread details toggles.
-  const panelControlsInComposerRow = showsUpComputerComposerContextRow() && composerMounted;
+  // Our row under the composer holds the environment, checkout and branch
+  // controls; without any of them it is not shown, nor its space.
+  const composerContextRowMounted =
+    showsUpComputerComposerContextRow() &&
+    composerMounted &&
+    activeProject !== null &&
+    hasContextRowControls(
+      resolveContextRowControls({
+        isGitRepo,
+        isScratch: activeProjectIsScratch,
+        showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      }),
+    );
+  const threadDetailsEnabled = settings.threadDetailsEnabled;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report a dated id or alias (claude-haiku-4-5-20251001).
   const providerSubagentModelSlug = selectedProviderEntry
@@ -8154,7 +8171,7 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      if (command === "threadPanel.toggle") {
+      if (command === "threadPanel.toggle" && threadDetailsEnabled) {
         event.preventDefault();
         event.stopPropagation();
         toggleThreadPanel();
@@ -8398,6 +8415,7 @@ export default function ChatView(props: ChatViewProps) {
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleThreadPanel,
+    threadDetailsEnabled,
     toggleTerminalVisibility,
     composerRef,
     draftId,
@@ -11279,11 +11297,14 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanel,
     onToggleRightPanel: toggleRightPanel,
   } satisfies PanelLayoutControlsProps;
+  const threadDetailsTogglePlacement = resolveThreadDetailsTogglePlacement({
+    enabled: threadDetailsEnabled,
+    rightPanelOwnsTitleBar: inlineRightPanelOwnsTitleBar,
+  });
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow}
-      showRightPanelControl={!panelControlsInComposerRow}
+      showThreadPanelControl={threadDetailsTogglePlacement === "header"}
     />
   );
   const threadPanelHeaderControl = (
@@ -11400,9 +11421,7 @@ export default function ChatView(props: ChatViewProps) {
             />
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-          {inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow
-            ? threadPanelHeaderControl
-            : null}
+          {threadDetailsTogglePlacement === "header-overlay" ? threadPanelHeaderControl : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -11942,7 +11961,7 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
-                    {panelControlsInComposerRow ? (
+                    {composerContextRowMounted ? (
                       <div className="pointer-events-auto">
                         <UpComputerComposerContextRow
                           ref={branchToolbarRef}
@@ -11977,24 +11996,13 @@ export default function ChatView(props: ChatViewProps) {
                               ? onAutoEnvironment
                               : undefined
                           }
-                          rightPanelOpen={rightPanelOpen}
-                          rightPanelAvailable={panelToggleControlProps.rightPanelAvailable}
-                          rightPanelShortcutLabel={panelToggleControlProps.rightPanelShortcutLabel}
-                          onToggleRightPanel={toggleRightPanel}
-                          threadPanel={{
-                            open: threadPanelOpen,
-                            presentation: threadPanelPresentation,
-                            popoverHandle: threadPanelPopoverHandle,
-                            shortcutLabel: panelToggleControlProps.threadPanelShortcutLabel,
-                            onToggle: toggleThreadPanel,
-                          }}
                         />
                       </div>
                     ) : null}
                     <div
                       aria-hidden
                       className={
-                        composerBottomSpaceClass(panelControlsInComposerRow) ??
+                        composerBottomSpaceClass(composerContextRowMounted) ??
                         "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
                       }
                     />
@@ -12048,7 +12056,7 @@ export default function ChatView(props: ChatViewProps) {
               </AlertDialogPopup>
             </AlertDialog>
 
-            <ThreadDetailsPanel {...threadDetailsPanelProps} />
+            {threadDetailsEnabled ? <ThreadDetailsPanel {...threadDetailsPanelProps} /> : null}
 
             {pullRequestDialogState ? (
               <PullRequestThreadDialog

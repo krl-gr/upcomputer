@@ -189,6 +189,20 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  it.effect("appends the native installers' ~/.local/bin after the login shell PATH", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { SHELL: "/bin/zsh", HOME: "/Users/test", PATH: "/usr/bin" };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () => envOutput({ PATH: "/opt/homebrew/bin:/usr/bin:/bin" }),
+      });
+
+      assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin:/bin:/Users/test/.local/bin");
+    }),
+  );
+
   it.effect("hydrates PATH and missing SSH_AUTH_SOCK from the login shell on macOS", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

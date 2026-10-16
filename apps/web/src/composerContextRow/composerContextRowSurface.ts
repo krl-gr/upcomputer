@@ -13,9 +13,9 @@ export function showsUpComputerComposerContextRow(): boolean {
 
 /**
  * Whether the empty draft's hero shows upstream's "No project" picker under
- * its heading. With our row, its "Add project" moves a draft without a
- * project into one (`useRetargetDraftToProject`, the same steps as the hero's
- * picker) and offers "New project…", so the hero leaves it to the row.
+ * its heading. With our surface, the header's project list moves a draft
+ * without a project into one (`useRetargetDraftToProject`, the same steps as
+ * the hero's picker) and offers "New project…", so the hero leaves it there.
  */
 export function showsDraftHeroNoProjectPicker(): boolean {
   return !showsUpComputerComposerContextRow();

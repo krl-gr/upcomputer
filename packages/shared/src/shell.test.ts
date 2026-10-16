@@ -21,6 +21,7 @@ import {
   readPathFromLaunchctl,
   readPathFromLoginShell,
   resolveCommandPath,
+  resolveKnownPosixCliDirs,
   resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
   resolveWindowsEnvironment,
@@ -314,6 +315,17 @@ describe("mergePathValues", () => {
     expect(mergePathValues("/usr/local/bin:/usr/bin", "/usr/bin:/USR/BIN", "linux")).toBe(
       "/usr/local/bin:/usr/bin:/USR/BIN",
     );
+  });
+});
+
+describe("resolveKnownPosixCliDirs", () => {
+  it("returns the native installers' ~/.local/bin", () => {
+    expect(resolveKnownPosixCliDirs({ HOME: "/Users/test" })).toEqual(["/Users/test/.local/bin"]);
+  });
+
+  it("returns nothing without a HOME", () => {
+    expect(resolveKnownPosixCliDirs({ HOME: " " })).toEqual([]);
+    expect(resolveKnownPosixCliDirs({})).toEqual([]);
   });
 });
 

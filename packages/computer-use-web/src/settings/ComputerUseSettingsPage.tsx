@@ -4,7 +4,7 @@ import type {
   ComputerUseStateSnapshot,
 } from "@t3tools/computer-use-contracts/rpc";
 import { CheckIcon, RotateCwIcon, XIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
@@ -131,6 +131,8 @@ function ComputerUseSettingsPage() {
     },
     [api, runAction, settings],
   );
+  // The helper's doctor also opens its own permission window while anything is
+  // missing, so it runs only on an explicit action, never on page open or focus.
   const checkPermissions = useCallback(() => {
     if (!api) return;
     void runAction("doctor", () => api.doctorComputerUse());
@@ -148,26 +150,9 @@ function ComputerUseSettingsPage() {
   );
 
   const permissions = parsePermissions(computerUse?.doctorMessage);
-  const missingPermissions = permissions?.filter(({ granted }) => !granted) ?? [];
   const allowedAppsDirty =
     settings !== undefined &&
     parseLines(allowedAppsDraft).join("\n") !== settings.allowedApps.join("\n");
-
-  // Check permissions once when the page opens with Computer Use on but never checked.
-  const autoCheckedRef = useRef(false);
-  useEffect(() => {
-    if (autoCheckedRef.current || !computerUse?.settings.enabled || computerUse.checkedAt) return;
-    autoCheckedRef.current = true;
-    checkPermissions();
-  }, [checkPermissions, computerUse]);
-
-  // Coming back from System Settings: check again while something is missing.
-  const recheckOnFocus = missingPermissions.length > 0 && !busy;
-  useEffect(() => {
-    if (!recheckOnFocus) return;
-    window.addEventListener("focus", checkPermissions);
-    return () => window.removeEventListener("focus", checkPermissions);
-  }, [checkPermissions, recheckOnFocus]);
 
   let status: ReactNode;
   if (!computerUse) {
@@ -225,27 +210,36 @@ function ComputerUseSettingsPage() {
               <span className="whitespace-pre-wrap text-orange-600 dark:text-orange-300">
                 {computerUse.doctorMessage ?? "The permission check did not pass."}
               </span>
+            ) : checking ? (
+              <span>Checking macOS permissions…</span>
             ) : (
-              <span>
-                {checking ? "Checking macOS permissions…" : "macOS permissions not checked"}
-              </span>
-            )}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label="Check permissions again"
-                    className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    disabled={unavailable || busy}
-                    onClick={checkPermissions}
-                  />
-                }
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={unavailable || busy}
+                onClick={checkPermissions}
               >
-                <RotateCwIcon className={cn("size-3", checking && "animate-spin")} />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Check again</TooltipPopup>
-            </Tooltip>
+                Check macOS permissions
+              </Button>
+            )}
+            {computerUse.checkedAt ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Check permissions again"
+                      className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      disabled={unavailable || busy}
+                      onClick={checkPermissions}
+                    />
+                  }
+                >
+                  <RotateCwIcon className={cn("size-3", checking && "animate-spin")} />
+                </TooltipTrigger>
+                <TooltipPopup side="top">Check again</TooltipPopup>
+              </Tooltip>
+            ) : null}
           </span>
         ) : null}
       </span>
