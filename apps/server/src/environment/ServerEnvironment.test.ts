@@ -262,6 +262,8 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(capabilities.threadSettlement).toBe(false);
       expect(capabilities.threadAutoSettlement).toBe(false);
       expect(capabilities.threadAutoSettleOptOut).toBe(false);
+      expect(capabilities.threadAutoSettlementScope).toBe(false);
+      expect(capabilities.settledWorktreeCleanup).toBe(false);
       // Snooze and the rest of core stay.
       expect(capabilities.threadSnooze).toBe(true);
       expect(capabilities.threadPinning).toBe(true);

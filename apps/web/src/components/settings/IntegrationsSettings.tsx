@@ -1492,7 +1492,7 @@ export function IntegrationsSettingsPanel() {
         ) : (
           previewDefaults
         )}
-        <PullRequestLinksOpenInAppSetting />
+        {isProductFeatureShown("pullRequests") ? <PullRequestLinksOpenInAppSetting /> : null}
       </SettingsSection>
       {isProductFeatureShown("devices") ? <DeviceIntegrationSettings /> : null}
     </SettingsPageContainer>
