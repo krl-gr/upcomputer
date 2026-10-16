@@ -363,7 +363,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const change: TaskPromptSettingsChange = {
         // A failing random source is a defect, not a storage error.
-        id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4)}`,
+        id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4())}`,
         projectId: input.projectId,
         revision: input.revision,
         field: input.field,

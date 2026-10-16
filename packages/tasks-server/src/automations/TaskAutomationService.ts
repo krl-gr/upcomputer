@@ -44,7 +44,7 @@ const make = Effect.gen(function* () {
 
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4.pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
 
   interface FireResult {
     readonly at: string;

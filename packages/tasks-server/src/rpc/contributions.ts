@@ -111,7 +111,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               if (invalid !== null) return yield* Effect.fail(taskError(invalid));
               const projectId = input.projectId ?? (yield* (yield* InboxProject).ensure);
               const timestamp = yield* now;
-              const id = input.id ?? TaskId.make(`task-${yield* crypto.randomUUIDv4}`);
+              const id = input.id ?? TaskId.make(`task-${yield* crypto.randomUUIDv4()}`);
               const upsert = repository.upsert({
                 id,
                 projectId,
@@ -292,7 +292,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const crypto = yield* Crypto.Crypto;
               return yield* repository.appendEvent({
-                id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.randomUUIDv4}`),
+                id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.randomUUIDv4()}`),
                 taskId: input.taskId,
                 kind: input.kind,
                 payload: input.payload ?? null,
@@ -393,7 +393,7 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const taskAgents = yield* TaskAgentService;
               const crypto = yield* Crypto.Crypto;
               const timestamp = yield* now;
-              const id = input.id ?? TaskAgentId.make(`task-agent-${yield* crypto.randomUUIDv4}`);
+              const id = input.id ?? TaskAgentId.make(`task-agent-${yield* crypto.randomUUIDv4()}`);
               const existing = yield* repository.getAgentById({ id });
               const agent = yield* repository.upsertAgent({
                 id,
@@ -469,7 +469,8 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const crypto = yield* Crypto.Crypto;
               const timestamp = yield* now;
               const id =
-                input.id ?? TaskAutomationId.make(`task-automation-${yield* crypto.randomUUIDv4}`);
+                input.id ??
+                TaskAutomationId.make(`task-automation-${yield* crypto.randomUUIDv4()}`);
               const existing = yield* repository.getAutomationById({ id });
               const armed = armAutomationSchedule(input.schedule, status, new Date(timestamp));
               if (Result.isFailure(armed)) return yield* Effect.fail(taskError(armed.failure));
