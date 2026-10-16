@@ -29,6 +29,7 @@ import {
   type McpToolCallResult,
   type McpToolContent,
 } from "./McpComputerUseClient.ts";
+import { stopComputerUseAppAgent } from "./ComputerUseAppAgent.ts";
 import { resolveManagedComputerUseBinaryPath } from "./ManagedComputerUseSidecar.ts";
 
 const decodeSettings = Schema.decodeUnknownSync(ComputerUseSettingsSchema);
@@ -41,6 +42,7 @@ type ComputerUseContent =
 
 interface ComputerUseServiceDependencies {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
+  readonly stopAppAgent?: (executablePath: string) => Promise<unknown>;
 }
 
 export interface ComputerUseToolResult {
@@ -283,6 +285,9 @@ export function createComputerUseService(
   let lastBackendToolNames = new Set<string>();
 
   const readSettings = () => readComputerUseSettings(serverConfig.settingsPath);
+  const stopAppAgent =
+    dependencies.stopAppAgent ??
+    ((executablePath: string) => stopComputerUseAppAgent({ executablePath }));
 
   const snapshotFor = async (settings: ComputerUseSettings): Promise<ComputerUseSnapshot> => {
     const effectiveStatus: ComputerUseSnapshot["status"] = settings.enabled ? status : "disabled";
@@ -353,7 +358,15 @@ export function createComputerUseService(
       await client.stop();
       status = "stopped";
       lastBackendToolNames = new Set();
-      return snapshotFor(await readSettings());
+      const settings = await readSettings();
+      // Doctor alone also starts the helper's app agent, so stop it even if
+      // the MCP client never ran.
+      try {
+        await stopAppAgent(executionSettings(settings).binaryPath);
+      } catch {
+        // A missing managed binary has no agent to stop.
+      }
+      return snapshotFor(settings);
     },
     refreshTools,
     doctor: async () => {

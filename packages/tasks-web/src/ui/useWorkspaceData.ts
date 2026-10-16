@@ -36,7 +36,7 @@ import { buildSidebarProjectSnapshots } from "../../../../apps/web/src/sidebarPr
 import { orderItemsByPreferredIds } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 
 import type { AgentProject } from "./AgentsView.tsx";
-import type { TasksWebProject } from "./shared.ts";
+import { tasksEnvironmentIds, type TasksWebProject } from "./shared.ts";
 
 const EMPTY_TASKS: TasksDataState = { byEnvironment: {}, tasks: [] };
 const EMPTY_AGENTS: AgentsDataState = { byEnvironment: {}, agents: [], runs: [] };
@@ -152,11 +152,12 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
   // These subscriptions make authoritative manifest and connection changes
   // recompute access for every environment, including saved remotes.
   const serverConfigs = useServerConfigs();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [reloadVersion, setReloadVersion] = useState(0);
 
   const environmentIds = useMemo(
-    () => [...new Set(projects.map(({ environmentId }) => environmentId))],
-    [projects],
+    () => tasksEnvironmentIds(projects, primaryEnvironmentId),
+    [projects, primaryEnvironmentId],
   );
   const projectNamesByEnvironment = useMemo(() => {
     const result = new Map<EnvironmentId, Map<ProjectId, string>>();

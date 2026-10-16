@@ -806,6 +806,16 @@ export const isCommandAvailable = Effect.fn("shell.isCommandAvailable")(function
   );
 });
 
+/**
+ * User-level CLI directory the native Claude and Codex installers write to. A
+ * fresh login shell often lacks it, so PATH builders append it after the shell
+ * PATH and a CLI installed while the app runs is found without a restart.
+ */
+export function resolveKnownPosixCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {
+  const home = env.HOME?.trim();
+  return home ? [`${home}/.local/bin`] : [];
+}
+
 export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {
   const appData = env.APPDATA?.trim();
   const localAppData = env.LOCALAPPDATA?.trim();
