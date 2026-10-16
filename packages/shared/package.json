@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./githubMarkdownLinks": {
+      "types": "./src/githubMarkdownLinks.ts",
+      "import": "./src/githubMarkdownLinks.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
@@ -114,6 +118,10 @@
     "./toolActivity": {
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
+    },
+    "./terminalOutput": {
+      "types": "./src/terminalOutput.ts",
+      "import": "./src/terminalOutput.ts"
     },
     "./toolOutput": {
       "types": "./src/toolOutput.ts",
@@ -239,6 +247,10 @@
       "types": "./src/upcomputerIdentity.ts",
       "import": "./src/upcomputerIdentity.ts"
     },
+    "./threadTranscript": {
+      "types": "./src/threadTranscript.ts",
+      "import": "./src/threadTranscript.ts"
+    },
     "./threadReference": {
       "types": "./src/threadReference.ts",
       "import": "./src/threadReference.ts"
@@ -262,6 +274,10 @@
     "./assistantCitations": {
       "types": "./src/assistantCitations.ts",
       "import": "./src/assistantCitations.ts"
+    },
+    "./promptLinks": {
+      "types": "./src/promptLinks.ts",
+      "import": "./src/promptLinks.ts"
     },
     "./threadLinks": {
       "types": "./src/threadLinks.ts",
@@ -497,7 +513,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

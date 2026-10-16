@@ -31,7 +31,10 @@ interface RegisteredTool {
 
 type AgentStartHook = (
   event: { systemPrompt: string },
-  ctx: { ui: { notify: (message: string, severity: string) => void } },
+  ctx: {
+    model?: { api: string };
+    ui: { notify: (message: string, severity: string) => void };
+  },
 ) => Promise<{ systemPrompt: string }>;
 
 export async function loadMcpBridge(

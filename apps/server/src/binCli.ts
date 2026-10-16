@@ -1,3 +1,4 @@
+import { doctorCommand } from "./cli/doctor.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,7 @@ import { browserCommand } from "./cli/browser.ts";
 import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
+import { keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
 import { cutoverV1Command } from "./cli/cutover.ts";
@@ -96,6 +98,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       cutoverV1Command,
       tasksCommand,
       traceCommand,
+      doctorCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
@@ -109,6 +112,7 @@ export function runCli(
 ) {
   // Product entries that call runCli directly get the Up.computer aliases too.
   applyUpcomputerEnvAliases(process.env);
+  keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provideService(ServerProduct, product),

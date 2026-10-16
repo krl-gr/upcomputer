@@ -809,6 +809,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["links default browser in-app browser external open"],
   },
   {
+    id: "pull-request-links-open-in-app",
+    title: "Open pull requests in Up.computer",
+    to: "/settings/integrations",
+    searchTerms: ["pr links github browser external click default pull request view panel"],
+  },
+  {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
     to: "/settings/integrations",

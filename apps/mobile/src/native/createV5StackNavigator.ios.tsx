@@ -23,6 +23,7 @@ import {
 import { useCallback, useRef, useState, type ComponentProps } from "react";
 import { StyleSheet, View } from "react-native";
 import { FormSheet, Stack } from "react-native-screens";
+import { NativeScrollEdgeEffectsContext } from "./NativeScrollViewMarker";
 import { V5StackHeader } from "./V5StackHeader.ios";
 import type { AppNativeStackNavigationOptions } from "./StackHeader";
 import { NativeColumnContent } from "./NativeColumnContent.ios";
@@ -52,7 +53,9 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 }
 
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
-export function V5CardStackView(props: V5StackViewProps) {
+export function V5CardStackView(
+  props: V5StackViewProps & { readonly onRootVisibilityChange?: (visible: boolean) => void },
+) {
   const { preventedRoutes } = usePreventRemoveContext();
   const nativePopSource = useRef<string | null>(null);
   const [screens, setScreens] = useState({
@@ -163,13 +166,14 @@ export function V5CardStackView(props: V5StackViewProps) {
               onNativeDismissPrevented={() => {
                 if (preventedRoutes[route.key]?.preventRemove) descriptor.navigation.goBack();
               }}
-              onWillAppear={() =>
+              onWillAppear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(true);
                 props.navigation.emit({
                   type: "transitionStart",
                   target: route.key,
                   data: { closing: false },
-                })
-              }
+                });
+              }}
               onDidAppear={() => {
                 const source = nativePopSource.current;
                 if (source === route.key) {
@@ -203,6 +207,7 @@ export function V5CardStackView(props: V5StackViewProps) {
                 });
               }}
               onWillDisappear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(false);
                 const state = props.navigation.getState();
                 // JS pushes/pops already changed history. Only native Back leaves
                 // the disappearing card at the router's active index.
@@ -239,7 +244,9 @@ export function V5CardStackView(props: V5StackViewProps) {
                         .nativeContentInsetHorizontally
                     }
                   >
-                    {descriptor.render()}
+                    <NativeScrollEdgeEffectsContext value={descriptor.options.scrollEdgeEffects}>
+                      {descriptor.render()}
+                    </NativeScrollEdgeEffectsContext>
                   </NativeColumnContent>
                 </NavigationRouteContext>
               </NavigationContext>
@@ -265,10 +272,14 @@ export function V5StackView(props: V5StackViewProps) {
     groups.map((group) => {
       const first = group[0]!;
       const descriptor = props.descriptors[first.key]!;
+      const visibleRoute = group.at(-1)!;
       return [
         first.key,
         {
           ...descriptor,
+          navigation: props.descriptors[visibleRoute.key]!.navigation,
+          // Focus belongs to the pushed page inside this presentation group.
+          route: visibleRoute,
           options: modalEnvelopeOptions(descriptor.options),
           render: () => (
             <V5CardStackView

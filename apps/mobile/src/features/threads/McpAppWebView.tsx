@@ -1,3 +1,5 @@
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import * as Dialog from "../../components/ui/Dialog";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import {
   makeMcpAppHost,
@@ -21,11 +23,11 @@ import * as Predicate from "effect/Predicate";
 import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { shareGeneratedAttachment } from "../../lib/attachmentDownload";
 import { mobileHtmlRenderTheme } from "../../lib/htmlRenderTheme";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
@@ -38,14 +40,9 @@ import { useEnvironmentQuery } from "../../state/query";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { MCP_APP_INLINE_MAX_HEIGHT, mcpAppInlineHeight } from "./mcpAppSizing";
 
-/** The feed reserves a fixed box for an app; a taller app scrolls inside it. */
-const MCP_APP_ROW_HEIGHT = 420;
 const ROW_BOTTOM_MARGIN = 8;
-
-export function mcpAppRowHeight() {
-  return MCP_APP_ROW_HEIGHT + ROW_BOTTOM_MARGIN;
-}
 
 // The WebView loads a tiny outer page that hosts the app in a real
 // opaque-origin iframe, as web does, so the app's `window.parent` and the
@@ -86,7 +83,7 @@ const commandFailure = (result: {
 
 const confirm = (title: string, message: string, action: string) =>
   new Promise<boolean>((resolve) => {
-    Alert.alert(
+    Dialog.alert(
       title,
       message,
       [
@@ -104,7 +101,7 @@ const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 /**
  * A captured MCP App, hosted in a WebView over the MCP Apps bridge: inline as
- * a fixed row of the thread feed, or full screen in its own modal screen. A
+ * a content-sized row of the thread feed, or full screen in its own modal screen. A
  * WebView cannot move between the two without reloading, so each is its own
  * view of the app: the inline one is torn down before full screen opens, and
  * comes back when it closes.
@@ -119,7 +116,7 @@ export function ThreadMcpApp(props: {
   readonly revision: string;
   readonly app: McpAppReference;
   readonly width: number;
-  /** Full screen fills its screen; inline is the feed's fixed row. */
+  /** Full screen fills its screen; inline follows the app's reported height. */
   readonly displayMode?: "inline" | "fullscreen";
   /** Full screen only: leaves it, back to the inline row. */
   readonly onExitFullscreen?: () => void;
@@ -128,8 +125,12 @@ export function ThreadMcpApp(props: {
 }) {
   // One reference per app: a new object with the same content (a refetch, a
   // rerender) must not rebuild the host of a document that is already live.
+  const [height, setHeight] = useState(MCP_APP_INLINE_MAX_HEIGHT);
   const [app, setApp] = useState(props.app);
-  if (!mcpAppReferencesEqual(app, props.app)) setApp(props.app);
+  if (!mcpAppReferencesEqual(app, props.app)) {
+    setApp(props.app);
+    setHeight(MCP_APP_INLINE_MAX_HEIGHT);
+  }
   const fullscreen = props.displayMode === "fullscreen";
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -163,6 +164,7 @@ export function ThreadMcpApp(props: {
       fileName: mcpAppFileName(app),
       mimeType: "text/html",
       disposition: "inline" as const,
+      renderIntent: "mcp-app" as const,
     }),
     [app],
   );
@@ -183,6 +185,7 @@ export function ThreadMcpApp(props: {
       return;
     }
     setLoaded(false);
+    setHeight(MCP_APP_INLINE_MAX_HEIGHT);
     // The first URL's token may have expired by now; the asset query keeps
     // a refreshed one, which this new view can load.
     if (asset._tag === "Success") setUri(asset.url);
@@ -194,6 +197,7 @@ export function ThreadMcpApp(props: {
   // loads the asset query's current URL: the first one's token may be gone.
   const setDocumentKey = (next: (value: number) => number) => {
     setLoaded(false);
+    setHeight(MCP_APP_INLINE_MAX_HEIGHT);
     setNavigatedAway(false);
     if (asset._tag === "Success") setUri(asset.url);
     setDocumentKeyState(next);
@@ -296,11 +300,12 @@ export function ThreadMcpApp(props: {
         styles: { variables: mcpAppStyleVariables(current.theme.variables) },
         displayMode: isFullscreen ? "fullscreen" : "inline",
         availableDisplayModes: ["inline", "fullscreen"],
-        // Both are fixed boxes, so the app is told its exact size.
-        containerDimensions: {
-          width: current.props.width,
-          height: isFullscreen ? (current.props.height ?? MCP_APP_ROW_HEIGHT) : MCP_APP_ROW_HEIGHT,
-        },
+        containerDimensions: isFullscreen
+          ? {
+              width: current.props.width,
+              height: current.props.height ?? MCP_APP_INLINE_MAX_HEIGHT,
+            }
+          : { width: current.props.width, maxHeight: MCP_APP_INLINE_MAX_HEIGHT },
         platform: "mobile",
         locale: Intl.DateTimeFormat().resolvedOptions().locale,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -475,9 +480,11 @@ export function ThreadMcpApp(props: {
           void hostRef.current?.teardown().then(() => setClosed(true));
         }
       },
-      // Both modes are fixed boxes, so the app's own height only decides
-      // whether it scrolls inside one.
-      onSizeChanged: () => undefined,
+      onSizeChanged: (size) => {
+        if (latest.current.props.displayMode === "fullscreen") return;
+        const nextHeight = mcpAppInlineHeight(size.height);
+        if (nextHeight !== undefined) setHeight(nextHeight);
+      },
     });
     hostRef.current = next;
     return () => {
@@ -510,7 +517,7 @@ export function ThreadMcpApp(props: {
   if (presentedFullscreen) {
     return (
       <View
-        style={{ height: MCP_APP_ROW_HEIGHT, marginBottom: ROW_BOTTOM_MARGIN }}
+        style={{ height, marginBottom: ROW_BOTTOM_MARGIN }}
         className="items-center justify-center rounded-lg border border-border"
       >
         <Text className="text-sm text-foreground-muted">
@@ -523,7 +530,7 @@ export function ThreadMcpApp(props: {
   if (closed) {
     return (
       <View
-        style={{ height: MCP_APP_ROW_HEIGHT, marginBottom: ROW_BOTTOM_MARGIN }}
+        style={{ height, marginBottom: ROW_BOTTOM_MARGIN }}
         className="items-center justify-center gap-2 rounded-lg border border-border"
       >
         <Text className="text-sm text-foreground-muted">The {app.server} app was closed</Text>
@@ -541,11 +548,7 @@ export function ThreadMcpApp(props: {
   }
 
   return (
-    <View
-      style={
-        fullscreen ? { flex: 1 } : { height: MCP_APP_ROW_HEIGHT, marginBottom: ROW_BOTTOM_MARGIN }
-      }
-    >
+    <View style={fullscreen ? { flex: 1 } : { height, marginBottom: ROW_BOTTOM_MARGIN }}>
       {navigatedAway ? (
         <View className="flex-1 items-center justify-center">
           <Text className="text-sm text-foreground-muted">
@@ -603,7 +606,7 @@ export function ThreadMcpApp(props: {
       ) : null}
       {uri !== null && !loaded && !crashed && !navigatedAway ? (
         <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-          <ActivityIndicator />
+          <AppActivityIndicator />
         </View>
       ) : null}
     </View>

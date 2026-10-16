@@ -17,10 +17,13 @@ import Animated, {
 
 import { USER_INPUT_TOGGLE_DURATION_MS } from "./pendingUserInputLayout";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
-import { ControlPill } from "../../components/ControlPill";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { ControlPill } from "../../components/ui/ControlPill";
 import { cn } from "../../lib/cn";
+import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
+import { useOpenPullRequest } from "../../native/useOpenPullRequest";
+import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import {
   isPendingUserInputOptionSelected,
   type PendingUserInput,
@@ -90,6 +93,19 @@ export interface PendingUserInputCardProps {
 const EXPANDED_CARD_IS_OVERLAY = Platform.OS === "ios";
 
 const CARD_LAYOUT_TRANSITION = LinearTransition.duration(200);
+
+/** Renders question text as markdown so agent-provided links open on tap. */
+function QuestionText(props: { readonly markdown: string }) {
+  const styles = useMarkdownPreviewStyles();
+  const openLink = useOpenPullRequest();
+  return (
+    <SelectableMarkdownText
+      markdown={props.markdown}
+      textStyle={styles.nativeTextStyle}
+      onLinkPress={(href) => void openLink(href)}
+    />
+  );
+}
 
 export function PendingUserInputCard(props: PendingUserInputCardProps) {
   const questionCount = props.pendingUserInput.questions.length;
@@ -265,7 +281,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         style={{ flexShrink: 1 }}
       >
         {!canRespond ? (
-          <Text className="font-sans text-sm leading-5 text-adaptive-neutral-600-400">
+          <Text className="font-sans text-sm leading-5 text-foreground-muted">
             The provider process for this request is no longer available. Interrupt or restart the
             run to continue.
           </Text>
@@ -277,9 +293,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
               <Text className="font-t3-bold text-xs uppercase tracking-[1px] text-foreground-muted">
                 {question.header}
               </Text>
-              <Text className="font-sans text-base leading-snug text-foreground">
-                {question.question}
-              </Text>
+              <QuestionText markdown={question.question} />
               <View className="gap-2">
                 {question.options.map((option) => {
                   const optionValue = option.value ?? option.label.trim();

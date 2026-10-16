@@ -1,3 +1,4 @@
+import type { QueryPersistence } from "./queryPersistence.ts";
 import { createCommandPermissions } from "./commandPermissions.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
 export { runStreamInEnvironment, followStreamInEnvironment } from "./environmentStreams.ts";
@@ -65,6 +66,7 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
     input: Input,
     emit: (value: A) => Effect.Effect<void>,
   ) => Effect.Effect<A, E, R>;
+  readonly persistence?: QueryPersistence<A>;
   readonly staleTimeMs?: number;
   readonly idleTtlMs?: number;
   readonly refreshIntervalMs?: number;
@@ -72,6 +74,8 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
     readonly environmentId: EnvironmentIdType;
     readonly input: Input;
   }) => Atom.Atom<unknown> | undefined;
+  /** A value that can no longer change. It stops the interval and `refreshTrigger` re-reads. */
+  readonly isFinal?: (value: A) => boolean;
 }
 
 interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
@@ -483,8 +487,8 @@ function runInEnvironment<A, E, R>(
  * refreshes on its next read.
  */
 const refreshOnSignalWhileRead =
-  (signal: Atom.Atom<unknown>) =>
-  <A>(self: Atom.Atom<A>): Atom.Atom<A> => {
+  <V>(signal: Atom.Atom<unknown>, isFinal: (value: V) => boolean) =>
+  <A extends V>(self: Atom.Atom<A>): Atom.Atom<A> => {
     // The signal value each registry's data was read under. Held outside the node because the
     // registry can sweep this node while `self` keeps the data, and the rebuilt node must still
     // see a change it missed.
@@ -497,12 +501,30 @@ const refreshOnSignalWhileRead =
         const changed =
           readUnder.has(get.registry) && !Object.is(readUnder.get(get.registry), current);
         readUnder.set(get.registry, current);
-        if (changed) get.refresh(self);
+        if (changed && !isFinal(get.once(self))) get.refresh(self);
         return get.once(self);
       },
       { initialValueTarget: self },
     );
   };
+
+/** `Atom.withRefresh`, except the timer stops once the value is final. */
+const refreshEveryUntilFinal =
+  <V>(intervalMs: number, isFinal: (value: V) => boolean) =>
+  <A extends V>(self: Atom.Atom<A>): Atom.Atom<A> =>
+    Atom.transform(
+      self,
+      (get) => {
+        const value = get(self);
+        if (!isFinal(value)) {
+          // @effect-diagnostics-next-line globalTimers:off - Mirrors `Atom.withRefresh`, outside an Effect runtime.
+          const handle = setTimeout(() => get.refresh(self), intervalMs);
+          get.addFinalizer(() => clearTimeout(handle));
+        }
+        return value;
+      },
+      { initialValueTarget: self },
+    );
 
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, ER>,
@@ -550,10 +572,6 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         const connection = Option.getOrNull(
           AsyncResult.value(get(connectionAtom(target.environmentId))),
         );
-        if (connection === null) {
-          return Effect.never;
-        }
-        const [connectionState, session] = connection;
         const emit = (value: A) =>
           Effect.sync(() => get.setSelf(AsyncResult.success(value, { waiting: true }))).pipe(
             // A value set while the atom builds wins over the build's own
@@ -562,29 +580,64 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
             // inside the build) so the settled result arrives asynchronously.
             Effect.andThen(Effect.promise(() => Promise.resolve())),
           );
-        switch (connectionState.phase) {
-          case "connected":
-            return Option.isSome(session)
-              ? runInEnvironment(target.environmentId, options.execute(target.input, emit))
-              : Effect.never;
-          case "connecting":
-          case "backoff":
-            return Effect.never;
-          case "available":
-          case "offline":
-          case "blocked":
-            if (connectionState.lastFailure !== null) {
-              return Effect.fail(connectionState.lastFailure);
-            }
-            return Effect.fail(
-              new EnvironmentRpcUnavailableError({
-                environmentId: target.environmentId,
-                message: `Environment ${target.environmentId} is ${
-                  connectionState.phase === "available" ? "not connected" : connectionState.phase
-                }.`,
-              }),
-            );
-        }
+        const execute = (): Effect.Effect<
+          A,
+          | E
+          | ConnectionAttemptError
+          | EnvironmentRegistry.EnvironmentNotRegisteredError
+          | EnvironmentRpcUnavailableError,
+          | EnvironmentRegistry.EnvironmentRegistry
+          | AtomRegistry.AtomRegistry
+          | Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>
+        > => {
+          if (connection === null) return Effect.never;
+          const [connectionState, session] = connection;
+          switch (connectionState.phase) {
+            case "connected":
+              return Option.isSome(session)
+                ? runInEnvironment(target.environmentId, options.execute(target.input, emit))
+                : Effect.never;
+            case "connecting":
+            case "backoff":
+              return Effect.never;
+            case "available":
+            case "offline":
+            case "blocked":
+              if (connectionState.lastFailure !== null) {
+                return Effect.fail(connectionState.lastFailure);
+              }
+              return Effect.fail(
+                new EnvironmentRpcUnavailableError({
+                  environmentId: target.environmentId,
+                  message: `Environment ${target.environmentId} is ${
+                    connectionState.phase === "available" ? "not connected" : connectionState.phase
+                  }.`,
+                }),
+              );
+          }
+        };
+        if (!options.persistence) return execute();
+        const persistence = options.persistence;
+        const cacheKey = JSON.stringify([options.label, target.input]);
+        const previous = Option.flatMap(
+          get.self<AsyncResult.AsyncResult<A, unknown>>(),
+          AsyncResult.value,
+        );
+        return Effect.gen(function* () {
+          const cached = Option.isSome(previous)
+            ? previous
+            : yield* persistence.load(target.environmentId, cacheKey);
+          if (
+            Option.isSome(cached) &&
+            (connection === null || connection[0].phase !== "connected")
+          ) {
+            return cached.value;
+          }
+          if (Option.isNone(previous) && Option.isSome(cached)) yield* emit(cached.value);
+          return yield* execute().pipe(
+            Effect.tap((value) => persistence.save(target.environmentId, cacheKey, value)),
+          );
+        });
       })
       .pipe(
         Atom.swr({
@@ -593,15 +646,17 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         }),
         Atom.setIdleTTL(idleTtlMs),
       );
+    const isFinal = (result: AsyncResult.AsyncResult<A, unknown>) =>
+      options.isFinal !== undefined && Option.exists(AsyncResult.value(result), options.isFinal);
     const intervalQuery =
       options.refreshIntervalMs === undefined
         ? queryAtom
-        : queryAtom.pipe(Atom.withRefresh(options.refreshIntervalMs));
+        : queryAtom.pipe(refreshEveryUntilFinal(options.refreshIntervalMs, isFinal));
     const refreshTrigger = options.refreshTrigger?.(target);
     return (
       refreshTrigger === undefined
         ? intervalQuery
-        : intervalQuery.pipe(refreshOnSignalWhileRead(refreshTrigger))
+        : intervalQuery.pipe(refreshOnSignalWhileRead(refreshTrigger, isFinal))
     ).pipe(Atom.setIdleTTL(idleTtlMs), Atom.withLabel(`${options.label}:${key}`));
   });
   return (target) => family(environmentRpcKey(target));
@@ -675,6 +730,7 @@ export function createEnvironmentRpcQueryAtomFamily<
       EnvironmentRpcFailure<TTag> | EnvironmentRpcUnavailableError,
       EnvironmentSupervisor.EnvironmentSupervisor | EnvironmentRegistry.EnvironmentRegistry
     >;
+    readonly persistence?: QueryPersistence<EnvironmentRpcSuccess<TTag>>;
     readonly staleTimeMs?: number;
     readonly idleTtlMs?: number;
     readonly refreshIntervalMs?: number;
@@ -682,16 +738,19 @@ export function createEnvironmentRpcQueryAtomFamily<
       readonly environmentId: EnvironmentIdType;
       readonly input: EnvironmentRpcInput<TTag>;
     }) => Atom.Atom<unknown> | undefined;
+    readonly isFinal?: (value: EnvironmentRpcSuccess<TTag>) => boolean;
   },
 ) {
   return createEnvironmentQueryAtomFamily(runtime, {
     label: options.label,
+    ...(options.persistence === undefined ? {} : { persistence: options.persistence }),
     ...(options.staleTimeMs === undefined ? {} : { staleTimeMs: options.staleTimeMs }),
     ...(options.idleTtlMs === undefined ? {} : { idleTtlMs: options.idleTtlMs }),
     ...(options.refreshIntervalMs === undefined
       ? {}
       : { refreshIntervalMs: options.refreshIntervalMs }),
     ...(options.refreshTrigger === undefined ? {} : { refreshTrigger: options.refreshTrigger }),
+    ...(options.isFinal === undefined ? {} : { isFinal: options.isFinal }),
     execute: (
       input: EnvironmentRpcInput<TTag>,
       emit: (value: EnvironmentRpcSuccess<TTag>) => Effect.Effect<void>,

@@ -1792,6 +1792,11 @@ export const OrchestrationV2DomainEvent = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.pull-request-link-updated"),
+    payload: ThreadPullRequestLink,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
     type: Schema.Literal("run.created"),
     payload: OrchestrationV2Run,
   }),
@@ -1925,6 +1930,14 @@ export const OrchestrationV2ThreadProjection = Schema.Struct({
   updatedAt: Schema.DateTimeUtc,
 });
 export type OrchestrationV2ThreadProjection = typeof OrchestrationV2ThreadProjection.Type;
+
+export const OrchestrationV2ThreadTranscript = Schema.Struct({
+  threadId: ThreadId,
+  title: Schema.String,
+  updatedAt: Schema.DateTimeUtc,
+  items: Schema.Array(OrchestrationV2ProjectedTurnItem),
+});
+export type OrchestrationV2ThreadTranscript = typeof OrchestrationV2ThreadTranscript.Type;
 
 export const OrchestrationV2ShellThreadStatus = Schema.Union([
   Schema.Literal("idle"),
@@ -2614,6 +2627,11 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.pull-request-link-updated"),
+    payload: ThreadPullRequestLink,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("run.created"),
     payload: OrchestrationV2RunJson,
   }),
@@ -2866,6 +2884,7 @@ export const OrchestrationV2Command = Schema.Union([
     branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     expectedWorktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+    expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     /** Reject unless no message or run has landed on this thread. */
     expectedEmpty: Schema.optional(Schema.Boolean),
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
@@ -3142,6 +3161,7 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,
+    workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
     // Omitted behaves as "settled_only" (no wake while the parent has a live
     // run); producers that want fire-and-forget wakes must set "always".
     completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
@@ -3236,7 +3256,9 @@ const OrchestrationV2InternalCommand = Schema.Union([
    * Follows a Stop once its provider returned: background work the settled
    * thread still shows on that provider thread is no longer reported by any
    * provider process, so it is marked interrupted. Only the stopped turn's run
-   * and older runs are settled; a later run's work is its own.
+   * and older runs are settled; a later run's work is its own. A subagent target
+   * limits repair to that task and its runless child work, using a confirmed
+   * provider outcome.
    */
   Schema.Struct({
     type: Schema.Literal("thread.background-work.settle"),
@@ -3244,6 +3266,17 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     providerThreadId: ProviderThreadId,
     providerTurnId: ProviderTurnId,
+    subagent: Schema.optional(
+      Schema.Struct({
+        id: NodeId,
+        stoppedAt: Schema.DateTimeUtc,
+        outcome: Schema.Struct({
+          status: Schema.Literals(["completed", "failed", "cancelled"]),
+          completedAt: Schema.DateTimeUtc,
+          result: Schema.NullOr(Schema.String),
+        }),
+      }),
+    ),
   }),
   /**
    * Stop for one thread, whatever it is doing: interrupts its running turn, holds its queue,
@@ -3312,7 +3345,43 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   subscribeArchivedShell: "orchestration.subscribeArchivedShell",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
+  subscribeCommandOutput: "orchestration.subscribeCommandOutput",
 } as const;
+
+export const OrchestrationV2SubscribeCommandOutputInput = Schema.Struct({
+  threadId: ThreadId,
+  itemId: TurnItemId,
+});
+export type OrchestrationV2SubscribeCommandOutputInput =
+  typeof OrchestrationV2SubscribeCommandOutputInput.Type;
+
+/**
+ * Output of one command row, separate from the thread stream so it is never
+ * persisted as events and only reaches clients that show the row expanded.
+ * `replace` carries the whole bounded tail (first frame, or after the client
+ * fell behind); `append` extends it. Text is terminal output, not display
+ * text: `replace` carries the cleaned tail plus the cursor and style escapes
+ * needed to resume, and `append` carries raw chunks. Clients must feed both
+ * through `appendTerminalOutput` from `@t3tools/shared/terminalOutput`.
+ * The stream ends after a frame with `running: false`.
+ */
+export const OrchestrationV2CommandOutputFrame = Schema.Struct({
+  kind: Schema.Literals(["replace", "append"]),
+  text: Schema.String,
+  /** Earlier output was dropped to keep the tail bounded. */
+  truncated: Schema.Boolean,
+  running: Schema.Boolean,
+});
+export type OrchestrationV2CommandOutputFrame = typeof OrchestrationV2CommandOutputFrame.Type;
+
+export class OrchestrationV2CommandOutputError extends Schema.TaggedError<OrchestrationV2CommandOutputError>()(
+  "OrchestrationV2CommandOutputError",
+  {
+    threadId: ThreadId,
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
 
 export const OrchestrationV2ArchivedShellSnapshot = Schema.Struct({
   schemaVersion: PositiveInt,
@@ -3485,6 +3554,11 @@ const knownDomainEventTypes: ReadonlySet<string> = new Set(
     return "literals" in type ? type.literals : [type.literal];
   }),
 );
+
+/** Whether `type` is an {@link OrchestrationV2DomainEvent} discriminant in this build. */
+export function isKnownOrchestrationV2EventType(type: string): boolean {
+  return knownDomainEventTypes.has(type);
+}
 
 /**
  * A thread event whose type this build does not know, or a turn-item.updated
@@ -3840,6 +3914,10 @@ export const OrchestrationV2RpcSchemas = {
   subscribeThread: {
     input: OrchestrationV2SubscribeThreadInput,
     output: OrchestrationV2ThreadStreamItem,
+  },
+  subscribeCommandOutput: {
+    input: OrchestrationV2SubscribeCommandOutputInput,
+    output: OrchestrationV2CommandOutputFrame,
   },
 } as const;
 

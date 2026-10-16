@@ -7,19 +7,12 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { type ReactNode, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { showConfirmDialog } from "../../components/ConfirmDialogHost";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import * as Dialog from "../../components/ui/Dialog";
+import { Menu } from "../../components/ui/Menu";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -45,14 +38,7 @@ function endpointLabel(environment: RelayClientEnvironmentRecord): string {
 function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm: () => void) {
   const title = "Deregister server?";
   const message = `“${environment.label}” will be removed from this account. T3 Connect access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.`;
-  if (process.env.EXPO_OS === "ios") {
-    Alert.alert(title, message, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Deregister", style: "destructive", onPress: onConfirm },
-    ]);
-    return;
-  }
-  showConfirmDialog({ title, message, confirmText: "Deregister", destructive: true, onConfirm });
+  Dialog.confirm({ title, message, confirmText: "Deregister", destructive: true, onConfirm });
 }
 
 /**
@@ -109,7 +95,7 @@ export function T3ConnectProfilePage() {
       traceId,
       cause,
     });
-    Alert.alert(
+    Dialog.alert(
       "Could not deregister server",
       traceId ? `${message}\n\nTrace ID: ${traceId}` : message,
       traceId
@@ -167,7 +153,7 @@ export function T3ConnectProfilePage() {
         </>
       ) : isInitialLoad ? (
         <View className="flex-row items-center gap-3 px-6 py-4">
-          <ActivityIndicator colorClassName={"accent-clerk-foreground-muted"} size="small" />
+          <AppActivityIndicator colorClassName={"accent-clerk-foreground-muted"} size="small" />
           <Text className="text-base text-clerk-foreground-muted">Loading environments</Text>
         </View>
       ) : environments.length > 0 ? (
@@ -178,9 +164,12 @@ export function T3ConnectProfilePage() {
             subtitle={`${linkedAtLabel(environment.linkedAt)} · ${endpointLabel(environment)}`}
             accessory={
               deregisteringEnvironmentId === environment.environmentId ? (
-                <ActivityIndicator colorClassName={"accent-clerk-foreground-muted"} size="small" />
+                <AppActivityIndicator
+                  colorClassName={"accent-clerk-foreground-muted"}
+                  size="small"
+                />
               ) : (
-                <ControlPillMenu
+                <Menu
                   actions={ENVIRONMENT_MENU_ACTIONS}
                   isAnchoredToRight
                   onPressAction={() =>
@@ -202,7 +191,7 @@ export function T3ConnectProfilePage() {
                       />
                     </View>
                   </Pressable>
-                </ControlPillMenu>
+                </Menu>
               )
             }
           />

@@ -120,6 +120,13 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         expect(descriptor.capabilities.serverSelfUpdate).toBe(
           mode === "web" ? undefined : "desktop-managed",
         );
+        expect(descriptor.capabilities).toMatchObject({
+          settledWorktreeCleanup: true,
+          storageCleanupRun: true,
+          projectWorktreeCleanup: true,
+          worktreesDirectory: true,
+          threadAutoSettlementScope: true,
+        });
       }
     }),
   );
@@ -173,14 +180,15 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         }),
         Effect.provideService(Crypto.Crypto, {
           ...crypto,
-          randomUUIDv4: Effect.gen(function* () {
-            const id = yield* crypto.randomUUIDv4;
-            if (--remaining === 0) {
-              yield* Deferred.succeed(bothGenerated, undefined);
-            }
-            yield* Deferred.await(bothGenerated);
-            return id;
-          }),
+          randomUUIDv4: (() =>
+            Effect.gen(function* () {
+              const id = yield* crypto.randomUUIDv4();
+              if (--remaining === 0) {
+                yield* Deferred.succeed(bothGenerated, undefined);
+              }
+              yield* Deferred.await(bothGenerated);
+              return id;
+            })) as Crypto.Crypto["randomUUIDv4"],
         }),
       );
 
@@ -224,6 +232,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.threadPullRequests).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.serverResolvedCommandContext).toBe(true);
+      expect(second.capabilities.projectProviderInstanceOverrides).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
       expect(second.capabilities.threadSettlement).toBe(true);
       expect(second.capabilities.threadAutoSettlement).toBe(true);

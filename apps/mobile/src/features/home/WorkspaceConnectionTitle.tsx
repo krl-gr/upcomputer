@@ -1,10 +1,11 @@
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Animated, Platform, Pressable, View } from "react-native";
+import { Animated, Platform, Pressable, View } from "react-native";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
-import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import {
   brandTitleOffset,
   CompactBrandTitle,
@@ -134,7 +135,7 @@ export function WorkspaceConnectionTitle(props: {
         ]}
       >
         {status.showsProgress ? (
-          <ActivityIndicator
+          <AppActivityIndicator
             colorClassName={"accent-icon-muted"}
             size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
           />

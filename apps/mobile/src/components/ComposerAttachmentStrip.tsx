@@ -1,10 +1,12 @@
-import { SymbolView } from "../components/AppSymbol";
+import { FilePreviewGallery, useFilePreviewGallery } from "./FilePreviewGallery";
+import { composerImageGallery } from "../lib/composerImageGallery";
+import { SymbolView } from "./ui/AppSymbol";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
-import { AppText as Text } from "./AppText";
+import { AppText as Text } from "./ui/AppText";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import {
   isFileBackedComposerAttachment,
@@ -15,7 +17,7 @@ import {
 import { resolveOwnedComposerAttachmentFileUri } from "../lib/composerAttachmentFiles";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
 import { type MediaActionsSource } from "../lib/mediaActionsSource";
-import { PresentationSource } from "./NativePresentation";
+import { PresentationSource } from "./ui/NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -186,6 +188,7 @@ function ComposerImageAttachment(
   props: ComposerAttachmentThumbnailProps & { readonly attachment: DraftComposerImageAttachment },
 ) {
   const { attachment } = props;
+  const withGallery = useFilePreviewGallery();
   const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
   const previewUri = useComposerImagePreviewUri(attachment);
   const sourceIdentifier = `draft-image:${attachment.id}`;
@@ -197,16 +200,18 @@ function ComposerImageAttachment(
         disabled={!props.onPressPreview}
         onPress={() =>
           props.onPressPreview?.(
-            // File-backed images open through the retain-lease + container
-            // rebase path; legacy drafts still carry their inline bytes.
-            isFileBackedComposerAttachment(attachment)
-              ? { kind: "image", attachment, name: attachment.name, sourceIdentifier }
-              : {
-                  kind: "image",
-                  uri: attachment.dataUrl ?? attachment.previewUri,
-                  name: attachment.name,
-                  sourceIdentifier,
-                },
+            withGallery(
+              // File-backed images open through the retain-lease + container
+              // rebase path; legacy drafts still carry their inline bytes.
+              isFileBackedComposerAttachment(attachment)
+                ? { kind: "image", attachment, name: attachment.name, sourceIdentifier }
+                : {
+                    kind: "image",
+                    uri: attachment.dataUrl ?? attachment.previewUri,
+                    name: attachment.name,
+                    sourceIdentifier,
+                  },
+            ),
           )
         }
       >
@@ -332,6 +337,7 @@ function ComposerVideoAttachment(props: {
  * Attachment thumbnails used by the thread composer and the new-task draft screen.
  */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
+  const gallery = useMemo(() => composerImageGallery(props.attachments), [props.attachments]);
   const size = props.imageSize ?? 72;
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
@@ -342,51 +348,53 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   }
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="always"
-      className="grow-0"
-    >
-      <View className="flex-row gap-2.5">
-        {props.attachments.map((attachment) => (
-          <View
-            key={attachment.id}
-            className="relative"
-            style={{
-              paddingTop: removeButtonGutter,
-              paddingRight: removeButtonGutter,
-            }}
-          >
-            <ComposerAttachmentThumbnail
-              environmentId={props.environmentId}
-              attachment={attachment}
-              size={size}
-              borderRadius={radius}
-              onPressPreview={props.onPressPreview}
-              onPressVideo={props.onPressVideo}
-              onPressDocument={props.onPressDocument}
-            />
-            <Pressable
-              className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+    <FilePreviewGallery value={gallery}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+        className="grow-0"
+      >
+        <View className="flex-row gap-2.5">
+          {props.attachments.map((attachment) => (
+            <View
+              key={attachment.id}
+              className="relative"
               style={{
-                top: removeButtonPlacement === "gutter" ? 0 : 4,
-                right: removeButtonPlacement === "gutter" ? 0 : 4,
+                paddingTop: removeButtonGutter,
+                paddingRight: removeButtonGutter,
               }}
-              hitSlop={6}
-              onPress={() => props.onRemove(attachment.id)}
             >
-              <SymbolView
-                name="xmark"
-                size={9}
-                tintColor="#ffffff"
-                type="monochrome"
-                weight="bold"
+              <ComposerAttachmentThumbnail
+                environmentId={props.environmentId}
+                attachment={attachment}
+                size={size}
+                borderRadius={radius}
+                onPressPreview={props.onPressPreview}
+                onPressVideo={props.onPressVideo}
+                onPressDocument={props.onPressDocument}
               />
-            </Pressable>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
+              <Pressable
+                className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+                style={{
+                  top: removeButtonPlacement === "gutter" ? 0 : 4,
+                  right: removeButtonPlacement === "gutter" ? 0 : 4,
+                }}
+                hitSlop={6}
+                onPress={() => props.onRemove(attachment.id)}
+              >
+                <SymbolView
+                  name="xmark"
+                  size={9}
+                  tintColor="#ffffff"
+                  type="monochrome"
+                  weight="bold"
+                />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </FilePreviewGallery>
   );
 }

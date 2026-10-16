@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useThreadShell, useThreadShells } from "../../state/entities";
@@ -120,7 +120,7 @@ export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   }, [awaitingUser, exitRequested, focused, navigation]);
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <View className="flex-1 bg-screen" style={{ paddingTop: insets.top }}>
       <View className="h-11 flex-row items-center justify-between px-3">
         <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
           {app?.server ?? "App"}

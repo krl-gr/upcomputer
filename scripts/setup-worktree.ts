@@ -19,10 +19,14 @@ if (!projectRoot) {
 const worktree = NodePath.dirname(import.meta.dirname);
 
 // `shell` resolves `vp` through PATH, including Windows command shims.
-const install = NodeChildProcess.spawnSync("vp i", {
+// Setup has no one answering install prompts. Pass pnpm's confirmation flag
+// through vp and leave stdin closed so other prompts fail instead of hanging.
+// Install exactly the locked dependencies so setup never rewrites the lockfile.
+// A stale lockfile must fail setup rather than silently resolving a new one.
+const install = NodeChildProcess.spawnSync("vp i --frozen-lockfile -- --yes", {
   cwd: worktree,
   shell: true,
-  stdio: "inherit",
+  stdio: ["ignore", "inherit", "inherit"],
 });
 if (install.status !== 0) process.exit(install.status ?? 1);
 

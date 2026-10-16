@@ -233,9 +233,9 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: "scripts/dev-runner.ts", requires: ["UPCOMPUTER_HOME_DIRECTORY_NAME"] },
   // Schemes, home, hosted URL and branch names shared by server and clients.
   {
-    path: "apps/server/src/http.ts",
-    requires: ["UPCOMPUTER_PROTOCOL_SCHEME"],
-    forbids: ['"t3code://app"'],
+    path: "apps/server/src/httpCors.ts",
+    requires: ["UPCOMPUTER_PROTOCOL_SCHEME", "UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME"],
+    forbids: ['"t3code://app"', '"t3code-dev://app"'],
   },
   {
     path: "apps/server/src/os-jank.ts",

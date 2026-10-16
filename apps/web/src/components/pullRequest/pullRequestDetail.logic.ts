@@ -1109,7 +1109,8 @@ export function buildPullRequestReferenceContext(
   input: PullRequestContextMetadata,
 ): ReviewCommentContext {
   const comment = pullRequestContextComment(input, []);
-  return { ...comment, id: `pr-reference:${input.number}` };
+  // Keyed by URL: the draft upserts by id, and two repositories can share a number.
+  return { ...comment, id: `pr-reference:${input.url}` };
 }
 
 /** What the agent is asked to do with a question, as opposed to a task. */
@@ -1339,11 +1340,26 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "enable-auto-merge": false,
   "disable-auto-merge": false,
   revert: false,
+  "delete-branch": false,
   "approve-workflows": true,
 };
 
 export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): boolean {
   return ACTION_NEEDS_HOST_REFRESH[action];
+}
+
+export function canDeletePullRequestBranch(
+  detail: Pick<PullRequestDetail, "state"> & {
+    readonly capabilities: Pick<PullRequestDetail["capabilities"], "actions" | "deleteBranch">;
+    readonly viewerPermissions: Pick<PullRequestDetail["viewerPermissions"], "actions">;
+  },
+): boolean {
+  return (
+    detail.state !== "open" &&
+    detail.capabilities.deleteBranch === true &&
+    detail.capabilities.actions.includes("delete-branch") &&
+    detail.viewerPermissions.actions.includes("delete-branch")
+  );
 }
 
 type SnapshotStorage = Pick<Storage, "getItem" | "setItem">;

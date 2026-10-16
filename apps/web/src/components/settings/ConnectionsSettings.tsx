@@ -1829,7 +1829,9 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   const {
     isSignedIn,
     linkState: primaryCloudLinkState,
+    linkRevoked,
     managedTunnelActive,
+    managedTunnelOutOfSync,
     publishAgentActivity,
     holdWebhooksWhileOffline,
     operationError,
@@ -1918,9 +1920,13 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         <SettingsRow
           title={searchableSetting("t3-connect").title}
           description={
-            managedTunnelActive
-              ? "This environment is available to your other devices through UpComputer Connect."
-              : "Make this environment available to your other devices through UpComputer Connect."
+            linkRevoked
+              ? "This environment was removed from UpComputer Connect. Turn it on to link it again."
+              : managedTunnelActive
+                ? "This environment is available to your other devices through UpComputer Connect."
+                : managedTunnelOutOfSync
+                  ? "UpComputer Connect is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn UpComputer Connect on to repair it."
+                  : "Make this environment available to your other devices through UpComputer Connect."
           }
           status={operationError ?? primaryCloudLinkState.error}
           control={
@@ -1937,6 +1943,11 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
               onCheckedChange={(enabled) => void updateManagedTunnel(enabled)}
             />
           }
+        />
+      ) : linkRevoked ? (
+        <SettingsRow
+          title={searchableSetting("t3-connect").title}
+          description="This environment was removed from UpComputer Connect. Run `t3 connect link` on the host to link it again."
         />
       ) : null}
       <SettingsRow

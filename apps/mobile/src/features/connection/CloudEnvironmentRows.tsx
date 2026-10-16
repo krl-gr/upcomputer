@@ -1,10 +1,8 @@
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
-import { SymbolView } from "../../components/AppSymbol";
-import {
-  connectionStatusText,
-  type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -13,11 +11,11 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, type TextLayoutEvent, View } from "react-native";
+import { Pressable, type TextLayoutEvent, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
-import { ThemedSwitch } from "../../components/ThemedSwitch";
+import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
@@ -25,6 +23,7 @@ import { serverEnvironment } from "../../state/server";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
 interface CloudEnvironmentRowsProps {
@@ -151,7 +150,7 @@ function CloudEnvironmentRowsContent(
         </View>
       ) : controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
-          <ActivityIndicator colorClassName={"accent-icon"} />
+          <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>
@@ -306,7 +305,7 @@ function CloudEnvironmentRowShell(props: {
   const shouldPulse = isRetrying;
   const statusText =
     props.statusText ??
-    connectionStatusText({
+    environmentStatusText({
       phase: props.connectionState,
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,

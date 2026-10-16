@@ -1,5 +1,6 @@
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { NativeHeaderToolbar } from "../../native/StackHeader";
+import { Toolbar } from "../../components/ui/Toolbar";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
@@ -7,8 +8,8 @@ import { Platform, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text } from "../../components/AppText";
+import { AndroidSheetHeader } from "../../components/ui/AndroidScreenHeader";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
 import { splitEnvironmentSections } from "../connection/environmentSections";
@@ -54,15 +55,15 @@ function ConfiguredConnectOnboardingRouteScreen() {
     cloudEnvironments: null,
   });
 
-  // Pull-to-refresh tracks its own spinner instead of discovery's refreshing
-  // flag, so background refreshes (e.g. the sign-in one) don't yank the
-  // content down.
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const handlePullRefresh = useCallback(() => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
     void (async () => {
-      setIsPullRefreshing(true);
-      await refreshRelayEnvironments();
-      setIsPullRefreshing(false);
+      setIsRefreshing(true);
+      try {
+        await refreshRelayEnvironments();
+      } finally {
+        setIsRefreshing(false);
+      }
     })();
   }, [refreshRelayEnvironments]);
 
@@ -87,14 +88,24 @@ function ConfiguredConnectOnboardingRouteScreen() {
       {Platform.OS === "android" ? (
         <AndroidSheetHeader
           title="Set up T3 Connect"
-          actions={[{ accessibilityLabel: "Close", icon: "xmark", onPress: handleClose }]}
+          actions={[
+            {
+              accessibilityLabel: "Refresh environments",
+              disabled: isRefreshing,
+              icon: "arrow.clockwise",
+              loading: isRefreshing,
+              onPress: handleRefresh,
+            },
+            { accessibilityLabel: "Close", icon: "xmark", onPress: handleClose },
+          ]}
         />
       ) : (
-        <NativeHeaderToolbar placement="right">
-          <NativeHeaderToolbar.Button icon="xmark" onPress={handleClose} separateBackground />
-        </NativeHeaderToolbar>
+        <Toolbar placement="right">
+          <Toolbar.Button icon="xmark" onPress={handleClose} separateBackground />
+        </Toolbar>
       )}
       <ScrollView
+        nestedScrollEnabled
         alwaysBounceVertical
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -106,7 +117,9 @@ function ConfiguredConnectOnboardingRouteScreen() {
           paddingTop: 16,
         }}
         refreshControl={
-          <RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} />
+          Platform.OS === "ios" ? (
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+          ) : undefined
         }
       >
         {isSignedIn ? (

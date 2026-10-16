@@ -1,3 +1,4 @@
+import * as Dialog from "../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
   threadRuntimeIsActive,
@@ -18,7 +19,6 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
 
 import { createDebugLogger } from "../lib/debugLog";
 import { scopedThreadKey } from "../lib/scopedEntities";
@@ -26,7 +26,10 @@ import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn"
 import { serializeComposerMessageForServer, uploadedComposerContext } from "../lib/composerContext";
 import { prepareTurnAttachments, type PreparedTurnAttachments } from "../lib/attachmentUpload";
 import { randomHex } from "../lib/uuid";
-import { isModelSelectionUnavailable } from "../lib/modelOptions";
+import {
+  describeUnavailableModelSelection,
+  isModelSelectionUnavailable,
+} from "../lib/modelOptions";
 import {
   retainAcknowledgedThreadMessage,
   forgetAcknowledgedThreadMessage,
@@ -40,6 +43,7 @@ import {
   recordPendingThreadCreationOutcome,
 } from "./pending-thread-creation";
 import { serverEnvironment } from "./server";
+import { gitEnvironment } from "./git";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "./session";
 import {
   confirmThreadOutboxMessageQueued,
@@ -525,6 +529,7 @@ export async function restoreRejectedQueuedMessage(
               mode: queuedMessage.creation.workspaceMode,
               branch: queuedMessage.creation.branch,
               worktreePath: queuedMessage.creation.worktreePath,
+              pullRequestReference: queuedMessage.creation.pullRequestReference,
               ...(queuedMessage.creation.startFromOrigin !== undefined
                 ? { startFromOrigin: queuedMessage.creation.startFromOrigin }
                 : {}),
@@ -658,6 +663,9 @@ async function preserveUploadedAttachmentsForEditor(
 
 export function useThreadOutboxDrain(): void {
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const preparePullRequest = useAtomCommand(gitEnvironment.preparePullRequestThread, {
+    reportFailure: false,
+  });
   const setThreadRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
   });
@@ -750,7 +758,7 @@ export function useThreadOutboxDrain(): void {
     let mounted = true;
     const load = async () => {
       if ((await threadOutboxManager.load()) || !mounted) return;
-      Alert.alert(
+      Dialog.alert(
         "Some queued messages could not be loaded",
         "Unreadable records and attachment files are still saved. Other messages can still be sent.",
         [
@@ -811,11 +819,13 @@ export function useThreadOutboxDrain(): void {
       );
       if (!serverConfig) return false;
       const settings = resolveQueuedThreadSettings(queuedMessage, thread, serverConfig.providers);
-      if (isModelSelectionUnavailable(serverConfig, settings.modelSelection)) {
-        return restoreQueuedMessage(
-          queuedMessage,
-          "Antigravity model unavailable. Set it up on web or desktop, or choose another model.",
+      if (isModelSelectionUnavailable(serverConfig, settings.modelSelection, thread.projectId)) {
+        const { title, detail } = describeUnavailableModelSelection(
+          serverConfig,
+          settings.modelSelection,
+          thread.projectId,
         );
+        return restoreQueuedMessage(queuedMessage, `${title}. ${detail}`);
       }
       const { reportFailure } = makeDeliveryHelpers(queuedMessage);
 
@@ -893,11 +903,13 @@ export function useThreadOutboxDrain(): void {
         serverEnvironment.configValueAtom(queuedMessage.environmentId),
       );
       if (!currentConfig) return false;
-      if (isModelSelectionUnavailable(currentConfig, settings.modelSelection)) {
-        return restoreQueuedMessage(
-          persistedMessage,
-          "Antigravity model unavailable. Set it up on web or desktop, or choose another model.",
+      if (isModelSelectionUnavailable(currentConfig, settings.modelSelection, thread.projectId)) {
+        const { title, detail } = describeUnavailableModelSelection(
+          currentConfig,
+          settings.modelSelection,
+          thread.projectId,
         );
+        return restoreQueuedMessage(persistedMessage, `${title}. ${detail}`);
       }
       const sendSettings = resolveQueuedThreadSettings(
         queuedMessage,
@@ -990,11 +1002,13 @@ export function useThreadOutboxDrain(): void {
         },
         serverConfig.providers,
       );
-      if (isModelSelectionUnavailable(serverConfig, settings.modelSelection)) {
-        return restoreQueuedMessage(
-          queuedMessage,
-          "Antigravity model unavailable. Set it up on web or desktop, or choose another model.",
+      if (isModelSelectionUnavailable(serverConfig, settings.modelSelection, creation.projectId)) {
+        const { title, detail } = describeUnavailableModelSelection(
+          serverConfig,
+          settings.modelSelection,
+          creation.projectId,
         );
+        return restoreQueuedMessage(queuedMessage, `${title}. ${detail}`);
       }
       let prepared: PreparedTurnAttachments;
       let persistedMessage: QueuedThreadMessage;
@@ -1035,11 +1049,13 @@ export function useThreadOutboxDrain(): void {
         serverEnvironment.configValueAtom(queuedMessage.environmentId),
       );
       if (!currentConfig) return false;
-      if (isModelSelectionUnavailable(currentConfig, settings.modelSelection)) {
-        return restoreQueuedMessage(
-          persistedMessage,
-          "Antigravity model unavailable. Set it up on web or desktop, or choose another model.",
+      if (isModelSelectionUnavailable(currentConfig, settings.modelSelection, creation.projectId)) {
+        const { title, detail } = describeUnavailableModelSelection(
+          currentConfig,
+          settings.modelSelection,
+          creation.projectId,
         );
+        return restoreQueuedMessage(persistedMessage, `${title}. ${detail}`);
       }
       const sendSettings = resolveQueuedThreadSettings(
         queuedMessage,
@@ -1047,6 +1063,35 @@ export function useThreadOutboxDrain(): void {
         currentConfig.providers,
       );
       if (!hasAccess()) return true;
+      const { reportFailure } = makeDeliveryHelpers(queuedMessage);
+      let workspace = creation;
+      if (creation.pullRequestReference) {
+        // Keep opening the composer and queuing offline immediate. Only Send
+        // resolves the provider's actual PR head, including forks, in a worktree.
+        const checkout = await preparePullRequest({
+          environmentId: queuedMessage.environmentId,
+          input: { cwd: projectCwd, reference: creation.pullRequestReference, mode: "worktree" },
+        });
+        if (!isQueuedMessagePayloadCurrent(persistedMessage, deliveryRevision) || !hasAccess())
+          return true;
+        const failure = reportFailure(checkout, "start-turn");
+        if (failure?.action === "retry") return false;
+        if (failure?.action === "restore")
+          return restoreQueuedMessage(persistedMessage, failure.message);
+        if (!AsyncResult.isSuccess(checkout)) return false;
+        if (!checkout.value.worktreePath || !checkout.value.isOnPullRequestHead)
+          return restoreQueuedMessage(
+            persistedMessage,
+            "The PR worktree has local changes and could not update to the PR head. Resolve them before trying again.",
+          );
+        workspace = {
+          ...creation,
+          workspaceMode: "local",
+          branch: checkout.value.branch,
+          worktreePath: checkout.value.worktreePath,
+          startFromOrigin: false,
+        };
+      }
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: buildProjectThreadStartTurnInput({
@@ -1069,14 +1114,13 @@ export function useThreadOutboxDrain(): void {
           modelSelection: sendSettings.modelSelection,
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
-          workspaceMode: creation.workspaceMode,
-          branch: creation.branch,
-          worktreePath: creation.worktreePath,
-          startFromOrigin: creation.startFromOrigin ?? false,
+          workspaceMode: workspace.workspaceMode,
+          branch: workspace.branch,
+          worktreePath: workspace.worktreePath,
+          startFromOrigin: workspace.startFromOrigin ?? false,
           worktreeBranchName: buildTemporaryWorktreeBranchName(randomHex),
         }),
       });
-      const { reportFailure } = makeDeliveryHelpers(queuedMessage);
       if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
       const failure = reportFailure(deliveryResult, "start-turn");
       if (failure?.action === "retry") {
@@ -1102,7 +1146,7 @@ export function useThreadOutboxDrain(): void {
       }
       return outcome === "removed";
     },
-    [makeDeliveryHelpers, restoreQueuedMessage, startTurn],
+    [makeDeliveryHelpers, preparePullRequest, restoreQueuedMessage, startTurn],
   );
 
   // A creation outcome bridges setup until the server's shell has a turn.

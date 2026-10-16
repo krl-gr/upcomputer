@@ -455,6 +455,12 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     PullRequestMergeMethod,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  /**
+   * Whether clicking a pull request link opens T3 Code's pull request view.
+   * When false, pull request links open like any other link, so they reach
+   * GitHub or the repository's other host.
+   */
+  pullRequestLinksOpenInApp: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
@@ -568,13 +574,17 @@ export interface ProviderSettingsFormAnnotation {
   readonly placeholder?: string | undefined;
   readonly hidden?: boolean | undefined;
   readonly clearWhenEmpty?: "omit" | "persist" | undefined;
-  /**
-   * The value is a credential: the server keeps it in its secret store and clients only learn
-   * whether one is saved. Source control host settings honor it; provider settings do not yet.
-   */
-  readonly secret?: boolean | undefined;
   /** Choices for a `select` control. The first entry is the default. */
   readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
+}
+
+/** Secret fields declared by a settings schema, shared by persistence and client redaction. */
+export function secretSettingsFields(schema: {
+  readonly fields: Readonly<Record<string, Schema.Top>>;
+}): ReadonlyArray<string> {
+  return Object.entries(schema.fields).flatMap(([field, fieldSchema]) => {
+    return isSecretSetting(fieldSchema) ? [field] : [];
+  });
 }
 
 export interface ProviderSettingsFormSchemaAnnotation {
@@ -584,10 +594,22 @@ export interface ProviderSettingsFormSchemaAnnotation {
 declare module "effect/Schema" {
   namespace Annotations {
     interface Annotations {
+      /** Store this credential separately and expose only whether it is configured to clients. */
+      readonly settingsSecret?: boolean | undefined;
       readonly providerSettingsForm?: ProviderSettingsFormAnnotation | undefined;
       readonly providerSettingsFormSchema?: ProviderSettingsFormSchemaAnnotation | undefined;
     }
   }
+}
+
+/** Mark a string or a record of strings as a credential in its settings schema. */
+export function secretSetting<S extends Schema.Top>(schema: S): S["Rebuild"] {
+  return schema.annotateKey({ settingsSecret: true });
+}
+
+export function isSecretSetting(schema: Schema.Top): boolean {
+  const annotations = Schema.resolveAnnotationsKey(schema) ?? Schema.resolveAnnotations(schema);
+  return annotations?.settingsSecret === true;
 }
 
 export type ProviderSettingsOrder<Fields extends Schema.Struct.Fields> = readonly Extract<
@@ -766,10 +788,11 @@ export const AntigravitySettings = makeProviderSettingsSchema(
       }),
     ),
     apiKey: TrimmedString.pipe(
+      secretSetting,
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "API key",
-        description: "Gemini or Vertex AI express key. Stored in plain text.",
+        description: "Gemini or Vertex AI express key. Stored separately on the host.",
         providerSettingsForm: {
           control: "password",
           placeholder: "Optional",
@@ -821,7 +844,7 @@ export const UsageLimitSourceConfig = Schema.Struct({
   kind: Schema.Literal("cliproxy"),
   label: Schema.optional(TrimmedNonEmptyString),
   url: TrimmedNonEmptyString,
-  managementKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  managementKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
@@ -934,6 +957,9 @@ export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 const StorageRetentionDays = Schema.NullOr(
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
 );
+const SettledWorktreeRetentionDays = Schema.NullOr(
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3650 })),
+);
 
 export const WorktreeKeepWhen = Schema.Literals([
   "any-local-files",
@@ -947,6 +973,9 @@ export const WorktreeCleanupRules = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("uncommitted-changes")),
   ),
   worktreeAfterDays: StorageRetentionDays,
+  worktreeSettledAfterDays: SettledWorktreeRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   worktreeOnMerge: Schema.Boolean,
   worktreeOnDelete: Schema.Boolean,
   worktreeUnchanged: Schema.Boolean,
@@ -984,15 +1013,30 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "pullRequestMergeMethod",
   "sidebarAutoSettleOnMerge",
   "sidebarAutoSettleAfterDays",
+  "sidebarAutoSettleKeepPullRequests",
   "continueThreadsAfterServerUpdate",
   "responseStreamingMode",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
+export const ProjectProviderInstanceOverride = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+});
+export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
+
 /**
  * One project's overrides. An absent key inherits the environment value;
  * `null` is a real value where the environment type is nullable (no default
  * model, no dedicated writer model, never auto-settle).
+ *
+ * `providerInstances` sits outside `PROJECT_SCOPED_SERVER_SETTING_KEYS`:
+ * every other key replaces its `ServerSettings` field whole, while this one
+ * keeps the settings.json shape but overrides field by field, per
+ * `ProviderInstanceId`. Only `enabled` is overridable today. An instance id
+ * or field absent here inherits the machine value, and a present `enabled`
+ * wins in either direction, so a project can turn on an instance the machine
+ * disabled, or turn off one the machine enabled. See
+ * `resolveProjectProviderInstanceEnabled` for the combined resolution.
  */
 export const ProjectSettingsOverrides = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
@@ -1017,9 +1061,13 @@ export const ProjectSettingsOverrides = Schema.Struct({
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
-} satisfies Record<ProjectScopedServerSettingKey, unknown>);
+  providerInstances: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
+  ),
+} satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 /**
@@ -1042,6 +1090,29 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
   "pullRequestMergeMethod",
   "sidebarAutoSettleAfterDays",
 ]);
+
+/** Reclaimable bytes from which the offline `t3 doctor` repair is worth suggesting. */
+export const DATABASE_COMPACTION_RECOMMENDED_BYTES = 1024 ** 3;
+
+/** Live SQLite file accounting for the environment's state database. */
+export const DatabaseStorageStatus = Schema.Struct({
+  databaseBytes: Schema.Number,
+  /** Free pages inside the file that an offline VACUUM (or incremental auto_vacuum) returns to disk. */
+  reclaimableBytes: Schema.Number,
+  /** False on databases created before incremental auto_vacuum; `t3 doctor` converts them. */
+  incrementalVacuumEnabled: Schema.Boolean,
+  /** Command to run on the host to reclaim the space offline. */
+  compactCommand: Schema.String,
+});
+export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
+
+/** Only suggest the offline conversion when it can reclaim enough to matter. */
+export function shouldRecommendDatabaseCompaction(status: DatabaseStorageStatus): boolean {
+  return (
+    !status.incrementalVacuumEnabled &&
+    status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES
+  );
+}
 
 export const StorageCleanupReportEntry = Schema.Struct({
   kind: Schema.Literals(["worktree", "browser-artifacts", "logs"]),
@@ -1070,6 +1141,9 @@ export const StorageCleanupSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("uncommitted-changes")),
   ),
   worktreeAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  worktreeSettledAfterDays: SettledWorktreeRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeUnchanged: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1119,9 +1193,10 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Retain the update-era key; recovery now needs an environment-owned opt-in.
+  // Retain the update-era key. On by default so restarts resume the work they
+  // interrupted; recovery stops after three automatic continuations in a row.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
@@ -1155,10 +1230,11 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE)),
   ),
   /**
-   * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`.
-   * The source of truth for project settings; `projectAgentBrowserAccessOverrides`,
-   * `projectAutoPullOverrides` and `projectScriptOverrides` are derived views
-   * kept for one release so older clients keep reading them.
+   * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`,
+   * plus `providerInstances`. The source of truth for project
+   * settings; `projectAgentBrowserAccessOverrides`, `projectAutoPullOverrides`
+   * and `projectScriptOverrides` are derived views kept for one release so
+   * older clients keep reading them.
    */
   projectSettingsOverrides: Schema.Record(ProjectId, ProjectSettingsOverrides).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1191,6 +1267,9 @@ export const ServerSettings = Schema.Struct({
   ),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * Whether a chat's model takes a turn when the runs of tasks it created all
@@ -1407,6 +1486,30 @@ export const resolveProviderInstanceEnabled = (
   return instance.enabled ?? configEnabled ?? defaultEnabledForDriver(instance.driver);
 };
 
+/**
+ * Effective enablement for a provider instance within a project: the
+ * project's `providerInstances[id].enabled` override when set, otherwise the
+ * machine-wide `resolveProviderInstanceEnabled` value. `projectId` of `null`
+ * (no project in scope) always resolves to the machine-wide value.
+ */
+export const resolveProjectProviderInstanceEnabled = (
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  projectId: ProjectId | null,
+  instanceId: ProviderInstanceId,
+): boolean => {
+  const override =
+    projectId === null
+      ? undefined
+      : settings.projectSettingsOverrides[projectId]?.providerInstances?.[instanceId]?.enabled;
+  if (override !== undefined) return override;
+  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  return instanceConfig !== undefined
+    ? resolveProviderInstanceEnabled(instanceConfig)
+    : isUnconfiguredDefaultInstanceEnabled(instanceId);
+};
+
 export const ServerSettingsOperation = Schema.Literals([
   "normalize",
   "check-exists",
@@ -1493,6 +1596,7 @@ export const ServerSettingsPatch = Schema.Struct({
           rules: Schema.Struct({
             worktreeKeepWhen: Schema.optionalKey(WorktreeKeepWhen),
             worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+            worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
             worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
             worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
             worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
@@ -1505,6 +1609,7 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       worktreeKeepWhen: Schema.optionalKey(WorktreeKeepWhen),
       worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+      worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
       worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
       worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
       worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
@@ -1537,6 +1642,11 @@ export const ServerSettingsPatch = Schema.Struct({
    * the entry without that key. Per-key null cannot express "clear" for the
    * keys whose value type is itself nullable, and clients always hold the
    * current entry from the last settings snapshot.
+   *
+   * `providerInstances` is the one exception: an entry that omits the key
+   * keeps the stored value instead of clearing it, so a client built before
+   * that field existed cannot wipe it by editing another key. Clearing every
+   * provider override for a project means sending `providerInstances: {}`.
    */
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
@@ -1546,6 +1656,7 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
@@ -1701,6 +1812,7 @@ export const ClientSettingsPatch = Schema.Struct({
   pullRequestMergeMethodOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),
+  pullRequestLinksOpenInApp: Schema.optionalKey(Schema.Boolean),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),

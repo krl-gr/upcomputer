@@ -157,6 +157,7 @@ describe("GhosttyTerminalSurface visibility", () => {
       "window",
       Object.assign(new EventTarget(), {
         devicePixelRatio: 1,
+        innerHeight: 104,
         requestAnimationFrame: requestFrame,
         cancelAnimationFrame: (id: number) => frames.delete(id),
         setTimeout,
@@ -214,15 +215,30 @@ describe("GhosttyTerminalSurface visibility", () => {
         buttons: number,
         modifiers: boolean | Partial<Pick<MouseEvent, "ctrlKey" | "metaKey" | "shiftKey">> = {},
         button = 0,
+        clientY = 5,
       ) {
         canvas.dispatchEvent(
           Object.assign(new Event(type, { cancelable: true }), {
             clientX,
-            clientY: 5,
+            clientY,
             pointerId: 1,
             button,
             buttons,
             ...(typeof modifiers === "boolean" ? { shiftKey: modifiers } : modifiers),
+          }),
+        );
+      },
+      touch(type: string, clientY: number, pointerId = 2) {
+        canvas.dispatchEvent(
+          Object.assign(new Event(type, { cancelable: true }), {
+            clientX: 40,
+            clientY,
+            pointerId,
+            pointerType: "touch",
+            isPrimary: pointerId === 2,
+            button: 0,
+            buttons: type === "pointerup" ? 0 : 1,
+            shiftKey: false,
           }),
         );
       },
@@ -524,6 +540,30 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(resizePty).toHaveBeenCalledOnce();
   });
 
+  it("sends the settled grid when a resize drag is released", async () => {
+    const harness = createHarness();
+    const onResize = vi.fn<(cols: number, rows: number) => void>();
+    const surface = await harness.create({ onResize });
+    vi.advanceTimersByTime(150);
+    onResize.mockClear();
+
+    // Mid-drag, the grid reflows locally while the PTY waits for the debounce.
+    harness.mount.clientWidth = 120;
+    harness.resize();
+    expect(surface.cols).toBe(14);
+    expect(onResize).not.toHaveBeenCalled();
+
+    // The release writes the final width before the observer reports it.
+    harness.mount.clientWidth = 96;
+    window.dispatchEvent(new Event("pointerup"));
+    expect(onResize).toHaveBeenCalledExactlyOnceWith(11, 6);
+
+    harness.resize();
+    vi.advanceTimersByTime(150);
+    window.dispatchEvent(new Event("pointerup"));
+    expect(onResize).toHaveBeenCalledOnce();
+  });
+
   it("replays the current grid on reveal when a hidden host becomes ready", async () => {
     const harness = createHarness();
     const onResize = vi.fn<(cols: number, rows: number) => void>();
@@ -578,6 +618,91 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(harness.frames.size).toBe(0);
   });
 
+  it("scrolls touch drags in both directions without selecting or sending input", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.write(Array.from({ length: 50 }, (_, i) => `row ${i}\r\n`).join(""));
+    harness.flushFrame();
+    const bottom = harness.renderedSnapshot.rowData[0]?.text;
+    harness.touch("pointerdown", 20);
+    for (let y = 22; y <= 68; y += 2) harness.touch("pointermove", y);
+    harness.flushFrame();
+    expect(harness.renderedSnapshot.rowData[0]?.text).not.toBe(bottom);
+    expect(surface.getSelection()).toBe("");
+    harness.touch("pointermove", 20);
+    harness.touch("pointerup", 20);
+    harness.flushFrame();
+    expect(harness.renderedSnapshot.rowData[0]?.text).toBe(bottom);
+    expect(harness.onData).not.toHaveBeenCalled();
+  });
+
+  it("sends touch scrolling to alternate-screen applications", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.write("\x1b[?1049h\x1b[?1h");
+    harness.touch("pointerdown", 20);
+    harness.touch("pointermove", 52);
+    harness.touch("pointerup", 52);
+    expect(harness.onData.mock.calls).toEqual([["\x1bOA\x1bOA"]]);
+  });
+
+  it("reports touch scrolling and taps to mouse-tracking applications", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.write("\x1b[?1000h\x1b[?1006h");
+    harness.touch("pointerdown", 20);
+    harness.touch("pointermove", 52);
+    harness.touch("pointerup", 52);
+    expect(harness.onData.mock.calls.map(([data]) => data)).toEqual([
+      "\x1b[<64;5;4M",
+      "\x1b[<64;5;4M",
+    ]);
+    harness.onData.mockClear();
+    harness.touch("pointerdown", 20);
+    harness.touch("pointerup", 20);
+    expect(harness.onData.mock.calls.map(([data]) => data)).toEqual([
+      "\x1b[<0;5;2M",
+      "\x1b[<0;5;2m",
+    ]);
+  });
+
+  it("opens a link on touch tap but not on drag or cancellation", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://example.com");
+    harness.flushFrame();
+    harness.touch("pointerdown", 5);
+    harness.touch("pointerup", 5);
+    expect(onLinkActivate).toHaveBeenCalledTimes(1);
+    harness.touch("pointerdown", 5);
+    harness.touch("pointermove", 37);
+    harness.touch("pointerup", 37);
+    harness.touch("pointerdown", 5);
+    harness.touch("pointercancel", 5);
+    expect(onLinkActivate).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a canceled touch drag and ignores a second finger", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.write(Array.from({ length: 50 }, (_, i) => `row ${i}\r\n`).join(""));
+    harness.flushFrame();
+    const bottom = harness.renderedSnapshot.rowData[0]?.text;
+    harness.touch("pointerdown", 20);
+    harness.touch("pointerdown", 20, 3);
+    harness.touch("pointermove", 68, 3);
+    harness.touch("pointercancel", 20);
+    harness.touch("pointermove", 68);
+    harness.flushFrame();
+    expect(harness.renderedSnapshot.rowData[0]?.text).toBe(bottom);
+    harness.touch("pointerdown", 20);
+    harness.touch("pointermove", 68);
+    harness.touch("pointerup", 68);
+    harness.flushFrame();
+    expect(harness.renderedSnapshot.rowData[0]?.text).not.toBe(bottom);
+  });
+
   it("keeps the selection on reveal and applies a hidden selection clear", async () => {
     const harness = createHarness();
     const surface = await harness.create();
@@ -609,6 +734,29 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(surface.getSelection()).toBe("");
     expect(surface.getSelectionPosition()).toBeNull();
     expect(harness.renderedSnapshot.rowData[0]?.cells.some((cell) => cell.selected)).toBe(false);
+  });
+
+  it("scrolls a selection drag held at the terminal edge, even when the window ends there", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.write(Array.from({ length: 40 }, (_, index) => `line ${index}`).join("\r\n"));
+    harness.flushFrame();
+    const latest = harness.renderedSnapshot.rowData[0]?.text;
+
+    harness.pointer("pointerdown", 5, 1, {}, 0, 50);
+    harness.pointer("pointermove", 5, 1, {}, 0, 1);
+    vi.advanceTimersByTime(400);
+    harness.flushFrame();
+    expect(surface.isAtBottom()).toBe(false);
+
+    harness.pointer("pointermove", 5, 1, {}, 0, 103);
+    vi.advanceTimersByTime(2_000);
+    harness.pointer("pointerup", 5, 0, {}, 0, 103);
+    harness.flushFrame();
+    expect(surface.isAtBottom()).toBe(true);
+    expect(harness.renderedSnapshot.rowData[0]?.text).toBe(latest);
+    expect(surface.getSelection()).not.toBe("");
+    expect(surface.getSelectionPosition()?.end.y).toBe(39);
   });
 
   it("pastes the terminal selection, and only that, on a Linux middle click", async () => {

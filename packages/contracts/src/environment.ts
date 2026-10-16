@@ -126,15 +126,25 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadAutoSettlement: Schema.optionalKey(Schema.Boolean),
   storageCleanup: Schema.optionalKey(Schema.Boolean),
   storageCleanupRun: Schema.optionalKey(Schema.Boolean),
+  /** Server streams database size and reclaimable space for the Storage settings notice. */
+  databaseStorage: Schema.optionalKey(Schema.Boolean),
   /** Server checks OTLP endpoints for the telemetry export settings. */
   otlpEndpointCheck: Schema.optionalKey(Schema.Boolean),
   projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
+  settledWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
   /** Server honors the `worktreesDirectory` setting. */
   worktreesDirectory: Schema.optionalKey(Schema.Boolean),
+  /** Server can exclude PR-linked threads from inactivity settlement. */
+  threadAutoSettlementScope: Schema.optionalKey(Schema.Boolean),
   /** Server persists the opt-in for continuing interrupted threads after restarts. */
   threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
   /** Server resolves `projectSettingsOverrides`; older servers ignore the key. */
   projectSettingsOverrides: Schema.optionalKey(Schema.Boolean),
+  /** Server resolves a project's `providerInstances` override entry. Older
+      servers decode the key away (unknown fields are stripped, not
+      rejected), so the per-project provider switch would silently do
+      nothing; clients hide it instead of sending a patch that goes nowhere. */
+  projectProviderInstanceOverrides: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.snooze / thread.unsnooze commands. Same
       version-skew contract as threadSettlement. */
   threadSnooze: Schema.optionalKey(Schema.Boolean),
@@ -211,6 +221,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       desktop servers whose app predates the remote trigger, where clients
       must keep telling the user to update the app on that machine. */
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server answers orchestration.subscribeCommandOutput. Absent on older servers,
+      which never send command output, so clients must not subscribe. */
+  commandOutputStreaming: Schema.optionalKey(Schema.Boolean),
   /** Server hosts preview tabs in its own headless Chromium (`runtime:
       "server"`) and streams them over `/api/preview-stream`. Clients
       without a local browser runtime open server tabs here. */

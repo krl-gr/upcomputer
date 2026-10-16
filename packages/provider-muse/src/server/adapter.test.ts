@@ -381,6 +381,32 @@ describe("MuseAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
+  it.effect("selects the runtime mode's permission profile on native start and resume", () =>
+    Effect.gen(function* () {
+      for (const [runtimeMode, profile, approvalMode] of [
+        ["approval-required", ":ask-me", "promptUnmatched"],
+        ["full-access", ":unrestricted", "allowAll"],
+      ] as const) {
+        const policy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          ...runtimePolicy,
+          runtimeMode,
+        });
+        const fresh = yield* makeFakeMuse();
+        yield* makeHarness(fresh, INSTANCE_ID, undefined, undefined, undefined, policy);
+        const started = yield* fresh.takeCall("session/start");
+        assert.strictEqual(started.params.permissionProfile, profile);
+        assert.strictEqual(started.params.approvalMode, approvalMode);
+
+        const saved = yield* makeFakeMuse();
+        yield* makeHarness(saved, INSTANCE_ID, "saved-session", undefined, undefined, policy);
+        const resumed = yield* saved.takeCall("session/resume");
+        assert.strictEqual(resumed.params.permissionProfile, profile);
+        const mode = yield* saved.takeCall("session/setApprovalMode");
+        assert.strictEqual(mode.params.mode, approvalMode);
+      }
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
   it.effect("rejects a host without session MCP support before opening a native session", () =>
     Effect.gen(function* () {
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
@@ -1128,6 +1154,122 @@ describe("MuseAdapterV2", () => {
       );
       assert.isTrue((yield* harness.adapter.getCapabilities()).planning.emitsPlanUpdated);
       assert.isTrue((yield* harness.adapter.getCapabilities()).planning.emitsTodoList);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("opens a prompt-and-result child thread for a native subagent", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const { nativeId } = yield* startConversation(harness, fake);
+      yield* fake.emit("item/started", {
+        turnId: nativeId,
+        item: {
+          itemId: "sub-1",
+          kind: "subagent",
+          revision: 1,
+          status: "inProgress",
+          turnId: nativeId,
+          subagentId: "subagent-1",
+          controlStatus: "running",
+          childSessionId: "child-session-1",
+          objective: "Check the thing",
+          role: "general-purpose",
+        },
+      });
+      const created = yield* harness.takeEvent("app_thread.created");
+      const childThreadId = created.appThread.id;
+      yield* fake.emit("item/updated", {
+        turnId: nativeId,
+        item: {
+          itemId: "sub-1",
+          kind: "subagent",
+          revision: 2,
+          status: "inProgress",
+          turnId: nativeId,
+          subagentId: "subagent-1",
+          controlStatus: "resultReady",
+          childSessionId: "child-session-1",
+          objective: "Check the thing",
+          result: { summary: "All done" },
+        },
+      });
+      // The revision without a role keeps the title the child thread opened with.
+      const completed = yield* harness.takeEvent(
+        "subagent.updated",
+        (event) => event.subagent.status === "completed",
+      );
+      assert.strictEqual(completed.subagent.title, created.appThread.title);
+      const result = yield* harness.takeEvent(
+        "message.updated",
+        (event) => event.message.threadId === childThreadId && event.message.role === "assistant",
+      );
+      assert.strictEqual(result.message.text, "All done");
+      yield* fake.emit("turn/completed", { turnId: nativeId, terminal: "completed" });
+      const terminal = yield* harness.takeEvent("turn.terminal");
+      assert.strictEqual(terminal.status, "completed");
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("keeps a workflow child's first label after later revisions drop it", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const { nativeId } = yield* startConversation(harness, fake);
+      const workflowItem = (revision: number, children: unknown) => ({
+        itemId: "wf-1",
+        kind: "workflow",
+        revision,
+        status: "inProgress",
+        turnId: nativeId,
+        entryId: "Probe workflow",
+        children,
+      });
+      yield* fake.emit("item/started", {
+        turnId: nativeId,
+        item: workflowItem(1, [{ childId: "c1", attempt: 1, status: "scheduled", label: "ping" }]),
+      });
+      const scheduled = yield* harness.takeEvent("subagent.updated");
+      assert.strictEqual(scheduled.subagent.title, "ping");
+      yield* fake.emit("item/updated", {
+        turnId: nativeId,
+        item: workflowItem(2, [{ childId: "c1", attempt: 1, status: "started" }]),
+      });
+      const started = yield* harness.takeEvent(
+        "subagent.updated",
+        (event) => event.subagent.status === "running",
+      );
+      assert.strictEqual(started.subagent.title, "ping");
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("shows a workflow child that completed with a failure kind as failed", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const { nativeId } = yield* startConversation(harness, fake);
+      yield* fake.emit("item/started", {
+        turnId: nativeId,
+        item: {
+          itemId: "wf-1",
+          kind: "workflow",
+          revision: 1,
+          status: "inProgress",
+          turnId: nativeId,
+          children: [
+            {
+              childId: "c1",
+              attempt: 1,
+              status: "finished",
+              terminal: "completed",
+              failureKind: "budget_exhausted",
+            },
+          ],
+        },
+      });
+      const child = yield* harness.takeEvent("subagent.updated");
+      assert.strictEqual(child.subagent.status, "failed");
+      assert.strictEqual(child.subagent.result, "budget_exhausted");
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 });

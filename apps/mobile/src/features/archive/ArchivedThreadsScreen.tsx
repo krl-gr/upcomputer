@@ -10,22 +10,16 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { AppBar } from "../../components/ui/AppBar";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  RefreshControl,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Platform, Pressable, RefreshControl, useWindowDimensions, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
-import { AppText as Text } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
+import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { relativeTime } from "../../lib/time";
@@ -55,7 +49,7 @@ function ArchivedThreadsHeader(props: {
   const { width } = useWindowDimensions();
   const hasCustomFilter = props.selectedEnvironmentId !== null || props.sortOrder !== "newest";
   return (
-    <ScreenHeader
+    <AppBar
       title="Archived threads"
       sidebar={false}
       onBack={() => navigation.goBack()}
@@ -399,7 +393,7 @@ export function ArchivedThreadsScreen(props: {
     if (isInitialLoad) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator colorClassName="accent-icon" />
+          <AppActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Loading archive...</Text>
         </View>
       );

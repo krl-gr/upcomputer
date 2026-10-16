@@ -102,6 +102,7 @@ import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 
 const { logWarning: logBackendPoolWarning } =
   DesktopObservability.makeComponentLogger("desktop-backend-pool");
@@ -215,6 +216,7 @@ export const layer = Layer.effect(
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     const electronDialog = yield* ElectronDialog.ElectronDialog;
+    const electronApp = yield* ElectronApp.ElectronApp;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     // Anchor the pool's lifetime to its layer scope so registered
     // instance scopes can be forked off it. Without this, instance
@@ -303,6 +305,13 @@ export const layer = Layer.effect(
         ),
       onShutdown: () => desktopWindow.handleBackendNotReady,
       onPreflightFailed: handlePrimaryPreflightFailure,
+      onStateDirOwned: () =>
+        electronDialog
+          .showErrorBox(
+            "This Up.computer home is unavailable",
+            "Another Up.computer server, such as the background service, is using this data directory. Stop that server and reopen Up.computer, or set a separate T3CODE_HOME and pair with the running server.",
+          )
+          .pipe(Effect.andThen(electronApp.quit)),
     });
 
     const instancesRef = yield* SynchronizedRef.make<

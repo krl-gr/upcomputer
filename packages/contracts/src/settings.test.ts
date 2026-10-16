@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import type { CommandId, ProjectId } from "./baseSchemas.ts";
+import { type CommandId, ProjectId } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
@@ -9,6 +9,7 @@ import {
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
   requiredScopesForProjectMutation,
+  resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
@@ -55,6 +56,7 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
@@ -71,6 +73,9 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettingsPatch({ storageCleanup: { worktreeAfterDays: null } })).toEqual({
       storageCleanup: { worktreeAfterDays: null },
     });
+    expect(decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: 0 } })).toEqual({
+      storageCleanup: { worktreeSettledAfterDays: 0 },
+    });
   });
 
   it("accepts partial custom patches but requires complete stored project rules", () => {
@@ -86,6 +91,26 @@ describe("storage cleanup settings", () => {
         },
       }),
     ).toThrow();
+    expect(
+      decodeServerSettings({
+        projectSettingsOverrides: {
+          project: {
+            worktreeCleanup: {
+              mode: "custom",
+              rules: {
+                worktreeAfterDays: null,
+                worktreeOnMerge: false,
+                worktreeOnDelete: false,
+                worktreeUnchanged: false,
+              },
+            },
+          },
+        },
+      }).projectSettingsOverrides[ProjectId.make("project")]?.worktreeCleanup,
+    ).toMatchObject({
+      mode: "custom",
+      rules: { worktreeSettledAfterDays: null, worktreeKeepWhen: "uncommitted-changes" },
+    });
   });
 
   it("decodes older custom rules with the default local-file policy", () => {
@@ -114,6 +139,12 @@ describe("storage cleanup settings", () => {
   it.each([0, -1, 1.5, 3651])("rejects invalid retention %s", (days) => {
     expect(() =>
       decodeServerSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: days } }),
+    ).toThrow();
+  });
+
+  it.each([-1, 1.5, 3651])("rejects invalid settled retention %s", (days) => {
+    expect(() =>
+      decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: days } }),
     ).toThrow();
   });
 });
@@ -1084,6 +1115,78 @@ describe("ServerSettings.removeAgentCreditsOnMerge", () => {
         projectSettingsOverrides: { project: { removeAgentCreditsOnMerge: true } },
       }).projectSettingsOverrides["project" as ProjectId]?.removeAgentCreditsOnMerge,
     ).toBe(true);
+  });
+});
+
+describe("resolveProjectProviderInstanceEnabled", () => {
+  const projectId = "project-a" as ProjectId;
+  const instanceId = ProviderInstanceId.make("codex_work");
+
+  it("inherits the machine value when the project has no override", () => {
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: false },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(false);
+  });
+
+  it("lets a project enable an instance the machine disabled", () => {
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: false },
+      },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [instanceId]: { enabled: true } } },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(true);
+  });
+
+  it("lets a project disable an instance the machine enabled", () => {
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: true },
+      },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(false);
+  });
+
+  it("always resolves to the machine value when no project is in scope", () => {
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: true },
+      },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(settings, null, instanceId)).toBe(true);
+  });
+
+  it("falls back to the unconfigured default when the instance has no settings entry", () => {
+    const settings: ServerSettings = { ...DEFAULT_SERVER_SETTINGS, providerInstances: {} };
+    // `codex_work` has no entry in `providerInstances`, so with no project
+    // override either, this is the same unconfigured-default fallback a
+    // machine-wide (no project) lookup would use.
+    expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(
+      resolveProjectProviderInstanceEnabled(settings, null, instanceId),
+    );
+
+    const overridden = {
+      ...settings,
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [instanceId]: { enabled: true } } },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(overridden, projectId, instanceId)).toBe(true);
   });
 });
 

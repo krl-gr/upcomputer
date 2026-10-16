@@ -337,9 +337,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
                     ? nodeRuntimeUnavailableMessage("Local device support")
                     : error._tag === "DeviceHostTimeoutError"
                       ? `Agent tools did not start within ${error.timeoutMs} ms.`
-                      : error.step === "probe"
-                        ? "Could not connect to this host over SSH."
-                        : `Device support failed during ${error.step}.`,
+                      : error._tag === "AgentDeviceStartError"
+                        ? error.message
+                        : error.step === "probe"
+                          ? "Could not connect to this host over SSH."
+                          : `Device support failed during ${error.step}.`,
                 cause: error,
               }),
           ),
@@ -1087,7 +1089,7 @@ export const make = Effect.gen(function* () {
             configured.delete(id);
             removed.push({ id, scope: previous.scope });
           }
-          yield* service.refreshHosts;
+          if (removed.length > 0) yield* service.refreshHosts;
           return removed;
         }),
       );
@@ -1103,8 +1105,10 @@ export const make = Effect.gen(function* () {
       );
       yield* service.withLifecycleLock(
         Effect.gen(function* () {
+          let added = false;
           for (const host of next) {
             if (configured.has(host.id)) continue;
+            added = true;
             const hostScope = yield* Scope.fork(scope);
             const instance = yield* SshDeviceHost.make(
               host,
@@ -1128,7 +1132,8 @@ export const make = Effect.gen(function* () {
             hosts.set(host.id, instance);
             configured.set(host.id, { config: host, scope: hostScope });
           }
-          yield* service.refreshHosts;
+          // Refresh again after removed scopes closed so a late status write from an old host cannot linger.
+          if (added || removed.length > 0) yield* service.refreshHosts;
         }),
       );
     });

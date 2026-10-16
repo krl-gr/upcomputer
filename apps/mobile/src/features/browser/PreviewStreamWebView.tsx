@@ -1,3 +1,5 @@
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import * as Dialog from "../../components/ui/Dialog";
 import previewStreamScript from "@t3tools/mobile-preview-stream";
 import {
   previewStreamControlLabel,
@@ -18,14 +20,15 @@ import {
   useState,
   type Ref,
 } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, TextInput, View } from "react-native";
+import { Platform, Pressable, TextInput, View } from "react-native";
 import { WebView } from "react-native-webview";
 import * as Clipboard from "expo-clipboard";
 
-import { AppText } from "../../components/AppText";
+import { AppText } from "../../components/ui/AppText";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { beginForegroundHandoff } from "../../lib/foreground-handoff";
 import { usePreviewStreamAccess } from "../../state/preview";
+import { previewPromptText } from "./previewPromptText";
 
 import {
   previewStreamDocument,
@@ -90,7 +93,7 @@ async function sendFilesToPage(chooser: PreviewStreamFileChooser, pick: boolean)
 
 /** The file is on the environment; saving it here goes through the share sheet. */
 function offerDownload(download: PreviewStreamDownload) {
-  Alert.alert(`Downloaded ${download.fileName}`, undefined, [
+  Dialog.alert(`Downloaded ${download.fileName}`, undefined, [
     { text: "Not now", style: "cancel" },
     {
       text: "Save or share",
@@ -100,7 +103,7 @@ function offerDownload(download: PreviewStreamDownload) {
           attachment: { name: download.fileName, mimeType: "application/octet-stream" },
           signal: new AbortController().signal,
         }).catch((cause: unknown) =>
-          Alert.alert(
+          Dialog.alert(
             "Could not save the download",
             cause instanceof Error ? cause.message : undefined,
           ),
@@ -132,7 +135,7 @@ export function PreviewStreamWebView(
           : "flex-1 items-center justify-center gap-4 px-6"
       }
     >
-      {props.compact || !error ? <ActivityIndicator colorClassName="accent-icon" /> : null}
+      {props.compact || !error ? <AppActivityIndicator colorClassName="accent-icon" /> : null}
       {!props.compact && (
         <>
           <AppText
@@ -256,6 +259,7 @@ function PreviewStreamDocumentView({
   const [hostSetup, setHostSetup] = useState<PreviewStreamHostSetup | null>(null);
   const [started, setStarted] = useState(false);
   const [control, setControl] = useState<PreviewStreamControl | null>(null);
+  const dialogRef = useRef<PreviewStreamControl["dialog"]>(null);
   const [promptText, setPromptText] = useState("");
   const [fileChooser, setFileChooser] = useState<PreviewStreamFileChooser | null>(null);
   const answerFileChooser = (pick: boolean) => {
@@ -263,7 +267,7 @@ function PreviewStreamDocumentView({
     if (!chooser) return;
     setFileChooser(null);
     void sendFilesToPage(chooser, pick).catch((cause: unknown) =>
-      Alert.alert(
+      Dialog.alert(
         "Could not send the files to the page",
         cause instanceof Error ? cause.message : undefined,
       ),
@@ -371,11 +375,14 @@ function PreviewStreamDocumentView({
           const message = previewStreamMessage(event.nativeEvent.data);
           if (message === null) return;
           switch (message.type) {
-            case "control":
+            case "control": {
               setControl(message);
-              setPromptText(message.dialog?.defaultValue ?? "");
+              const previousDialog = dialogRef.current;
+              dialogRef.current = message.dialog;
+              setPromptText((draft) => previewPromptText(previousDialog, message.dialog, draft));
               onControl?.(message);
               return;
+            }
             case "unauthorized":
               if (!onUnauthorized()) {
                 fail("This session can't open the browser stream. Reconnect to try again.");
@@ -413,6 +420,8 @@ function PreviewStreamDocumentView({
               }
               setStatus(message.status);
               if (message.status === "connecting") {
+                // Dialogs may have closed and reopened while this viewer was disconnected.
+                dialogRef.current = null;
                 setControl(null);
                 onControl?.(null);
               }
@@ -454,7 +463,9 @@ function PreviewStreamDocumentView({
               {control.dialog.type === "prompt" ? (
                 <TextInput
                   accessibilityLabel="Dialog response"
-                  className="rounded-lg border border-secondary-border bg-background px-3 py-2 text-foreground"
+                  className="rounded-lg border border-input-border bg-input px-3 py-2 text-foreground"
+                  placeholderTextColorClassName="accent-placeholder"
+                  selectionColorClassName="accent-focus/32"
                   value={promptText}
                   onChangeText={setPromptText}
                 />
@@ -492,7 +503,7 @@ function PreviewStreamDocumentView({
           className="absolute inset-0 items-center justify-center gap-4 px-6"
           style={{ backgroundColor: background }}
         >
-          {status === "connecting" ? <ActivityIndicator colorClassName="accent-icon" /> : null}
+          {status === "connecting" ? <AppActivityIndicator colorClassName="accent-icon" /> : null}
           {compact ? null : (
             <AppText
               accessibilityLiveRegion="polite"

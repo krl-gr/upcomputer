@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
@@ -6,9 +7,11 @@ import type { WorktreeSetupCardProps } from "./worktree-setup-card";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type {
-  CodexFeedbackSubmission,
-  EnvironmentThreadStatus,
+import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
+import {
+  childThreadInputsTitle,
+  type CodexFeedbackSubmission,
+  type EnvironmentThreadStatus,
 } from "@t3tools/client-runtime/state/threads";
 import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
@@ -24,6 +27,7 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
   RuntimeRequestId,
+  ScopedThreadRef,
   ServerConfig as T3ServerConfig,
   ThreadId,
   UsageLimitsReport,
@@ -59,7 +63,6 @@ import {
   useState,
 } from "react";
 import {
-  Alert,
   AppState,
   Keyboard,
   Platform,
@@ -155,6 +158,11 @@ export interface ThreadDetailScreenProps {
   readonly setupWorkingStartedAt?: string | null;
   readonly canOperateThread: boolean;
   readonly selectedThread: EnvironmentThreadShell;
+  /**
+   * Read thread details through this, not `selectedThread.id`: it stays null until
+   * a queued creation reaches the server; see `useThreadSelection`.
+   */
+  readonly selectedThreadDetailRef: ScopedThreadRef | null;
   readonly contentPresentation: ThreadContentPresentation;
   readonly screenTone: StatusTone;
   readonly connectionError: string | null;
@@ -162,6 +170,7 @@ export interface ThreadDetailScreenProps {
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
+  readonly pendingHandoff?: HandoffEndpoints | null;
   readonly activityRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
   /** The live work is a provider-native subagent's runless root turn. */
@@ -330,10 +339,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const navigation = useNavigation();
   const { session: voiceInputSession } = useGlobalVoiceInput();
-  const reportedModelSelection = useThreadReportedModelSelection({
-    environmentId: props.environmentId,
-    threadId: props.selectedThread.id,
-  });
+  const reportedModelSelection = useThreadReportedModelSelection(props.selectedThreadDetailRef);
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
   );
@@ -411,14 +417,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     threadId: props.selectedThread.id,
   });
   const composerError = useAtomValue(threadComposerErrorsAtom)[selectedThreadKey]?.message ?? null;
-  const queuedCount = useThreadQueuedCount({
-    environmentId: props.environmentId,
-    threadId: props.selectedThread.id,
-  });
-  const turnSubagents = useThreadTurnSubagents({
-    environmentId: props.environmentId,
-    threadId: props.selectedThread.id,
-  });
+  const queuedCount = useThreadQueuedCount(props.selectedThreadDetailRef);
+  const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
   const agentsSegment = resolveSubagentPillSegment(turnSubagents);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
   // A provider-native subagent shows status instead of a composer.
@@ -521,11 +521,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     if (childInput && contentPresentationKind === "ready") {
       return {
         kind: "child-input",
-        label:
-          childThreadInputs.length === 1
-            ? "Subagent needs input"
-            : `${childThreadInputs.length} subagents need input`,
-        accessibilityLabel: `Open question from ${childInput.title}`,
+        label: childThreadInputsTitle(childThreadInputs),
+        accessibilityLabel: `Open ${childInput.hasPendingApprovals ? "approval" : "question"} from ${childInput.title}`,
         onPress: () => {
           Keyboard.dismiss();
           navigation.navigate("Thread", {
@@ -1056,7 +1053,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         composerEditorRef.current?.focus();
       }
     } catch (error) {
-      Alert.alert(
+      Dialog.alert(
         "Could not edit message",
         error instanceof Error ? error.message : "Please try again.",
       );
@@ -1159,6 +1156,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               threadId={props.selectedThread.id}
               workspaceRoot={props.threadCwd}
               feed={props.selectedThreadFeed}
+              pendingHandoff={props.pendingHandoff}
               worktreeSetup={props.worktreeSetup}
               setupWorkingStartedAt={props.setupWorkingStartedAt}
               queuedMessages={props.queuedMessages}

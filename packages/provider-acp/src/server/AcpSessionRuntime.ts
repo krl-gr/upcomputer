@@ -155,6 +155,12 @@ export interface AcpSessionRuntimeOptions {
   readonly onTermination?: (error: EffectAcpErrors.AcpError) => Effect.Effect<void>;
   readonly onOutgoingResponseFailure?: EffectAcpClient.AcpClientOptions["onOutgoingResponseFailure"];
   readonly onOutgoingResponse?: EffectAcpClient.AcpClientOptions["onOutgoingResponse"];
+  /**
+   * Model ids the user configured for this instance. The model config option
+   * accepts them even when the agent does not advertise them, and the agent
+   * validates them instead.
+   */
+  readonly customModels?: ReadonlyArray<string>;
 }
 
 export interface AcpSessionRequestLogEvent {
@@ -285,6 +291,13 @@ export function wrapCommandForLinuxCgroup(
         '[ "$actual" = "$expected" ] || exit 126',
         "unset ELECTRON_RUN_AS_NODE T3_ACP_CGROUP_WRAPPER",
         "trap 'exit 125' 0",
+        // The trap alone does not cover a failed `exec`: bash — which is
+        // /bin/sh on Arch derivatives — exits 127 without running the EXIT
+        // trap, so a missing agent binary reported "killed by the wrapper"
+        // instead of "never launched". The caller always hands us an absolute
+        // target, so test it as an executable file rather than asking the
+        // shell to resolve it.
+        '[ -f "$1" ] && [ -x "$1" ] || exit 125',
         'exec "$@"',
       ].join("\n"),
       "t3-acp-cgroup-wrapper",
@@ -1387,7 +1400,7 @@ export const make = (
     // Recently shown tool calls. A late update to a finished call is not a new
     // boundary in the answer, although its progress state is gone.
     const shownToolCallIds = new Set<string>();
-    const assistantItemRuntimeId = yield* crypto.randomUUIDv4.pipe(
+    const assistantItemRuntimeId = yield* crypto.randomUUIDv4().pipe(
       Effect.mapError(
         (cause) =>
           new EffectAcpErrors.AcpTransportError({
@@ -1968,6 +1981,9 @@ export const make = (
         }
         const allowedValues = collectSessionConfigOptionValues(configOption);
         if (allowedValues.includes(value)) {
+          return;
+        }
+        if (configOption.category === "model" && options.customModels?.includes(value)) {
           return;
         }
         return yield* new EffectAcpErrors.AcpRequestError({

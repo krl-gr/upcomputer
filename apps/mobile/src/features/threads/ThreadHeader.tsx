@@ -1,11 +1,11 @@
-import { StackActions, useNavigation } from "@react-navigation/native";
 import { useMemo } from "react";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
-import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenHeaderButton } from "../../components/ui/ScreenHeaderButton";
+import type { AppBarAction } from "../../components/ui/AppBar.types";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-content-stack";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
+import { useWorkspaceListNavigation } from "../workspace/useAndroidWorkspaceNavigation";
 
 export function ThreadHeader(
   props: Parameters<typeof useThreadHeaderOptions>[0] & {
@@ -18,12 +18,12 @@ export function ThreadHeader(
     readonly onOpenFilesInspector: () => void;
   },
 ) {
-  const navigation = useNavigation();
+  const returnToList = useWorkspaceListNavigation("threads");
   const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const { onOpenTerminal, onMergeBack } = props.gitControls;
   const native = useThreadHeaderOptions(props);
-  const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
-    const actions: ScreenHeaderAction[] = [];
+  const androidHeaderActions = useMemo<ReadonlyArray<AppBarAction>>(() => {
+    const actions: AppBarAction[] = [];
     if (props.onReturnToThread) {
       actions.push({
         accessibilityLabel: "Return to chat",
@@ -76,7 +76,7 @@ export function ThreadHeader(
 
   return (
     <>
-      <ScreenHeader
+      <AppBar
         title={props.title}
         subtitle={props.subtitle}
         sidebar={native.sidebar}
@@ -96,16 +96,7 @@ export function ThreadHeader(
             />
           ) : null
         }
-        onBack={
-          layout.usesSplitView
-            ? undefined
-            : () => {
-                // A deep link or cold start has no previous route; Home is the way out.
-                // Read the history at press time: it changes without re-rendering this screen.
-                if (navigation.canGoBack()) navigation.goBack();
-                else navigation.dispatch(StackActions.replace("Home"));
-              }
-        }
+        onBack={layout.usesSplitView ? undefined : returnToList}
         actions={androidHeaderActions}
         hideBottomBorder
       />

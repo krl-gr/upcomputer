@@ -147,6 +147,44 @@ describe("resolveProjectSettings", () => {
     expect(resolved.settings.defaultModelSelection).toBeNull();
     expect(resolved.sources.defaultModelSelection).toBe("environment");
   });
+
+  it("moves text generation off an instance the project turned off", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [codex]: { enabled: false } } },
+      },
+    };
+    expect(
+      resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection.instanceId,
+    ).toBe(ProviderInstanceId.make("claudeAgent"));
+    expect(
+      resolveProjectSettings(settings, otherProjectId).settings.textGenerationModelSelection,
+    ).toEqual(settings.textGenerationModelSelection);
+  });
+
+  it("falls back to a configured instance when every built-in one is off for the project", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const codexWork = ProviderInstanceId.make("codex_work");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
+      providerInstances: { [codexWork]: { driver: ProviderDriverKind.make("codex"), config: {} } },
+      projectSettingsOverrides: {
+        [projectId]: {
+          providerInstances: {
+            [codex]: { enabled: false },
+            [ProviderInstanceId.make("claudeAgent")]: { enabled: false },
+          },
+        },
+      },
+    };
+    expect(
+      resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection.instanceId,
+    ).toBe(codexWork);
+  });
 });
 
 describe("resolveProjectSettings with a t3.json", () => {
@@ -384,9 +422,19 @@ describe("projectSettingsOverrides patches", () => {
 describe("resolveWorktreeCleanup", () => {
   it("inherits machine rules, disables one project and keeps custom rules isolated", () => {
     const machine = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      storageCleanup: { worktreeAfterDays: 8, worktreeOnDelete: true, logsAfterDays: 3 },
+      storageCleanup: {
+        worktreeAfterDays: 8,
+        worktreeSettledAfterDays: 2,
+        worktreeKeepWhen: "any-local-files",
+        worktreeOnDelete: true,
+        logsAfterDays: 3,
+      },
     });
     const inherited = resolveWorktreeCleanup(machine, projectId);
+    expect(inherited).toMatchObject({
+      worktreeSettledAfterDays: 2,
+      worktreeKeepWhen: "any-local-files",
+    });
     const off = applyServerSettingsPatch(machine, {
       projectSettingsOverrides: {
         [projectId]: { worktreeCleanup: { mode: "off" } },
@@ -394,20 +442,26 @@ describe("resolveWorktreeCleanup", () => {
     });
     expect(resolveWorktreeCleanup(off, projectId)).toEqual({
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnDelete: false,
       worktreeOnMerge: false,
       worktreeUnchanged: false,
-      worktreeKeepWhen: "uncommitted-changes",
+      worktreeKeepWhen: "any-local-files",
     });
     expect(resolveWorktreeCleanup(off, otherProjectId)).toEqual(inherited);
     const custom = applyServerSettingsPatch(off, {
       projectSettingsOverrides: {
         [projectId]: {
-          worktreeCleanup: { mode: "custom", rules: { ...inherited, worktreeAfterDays: 15 } },
+          worktreeCleanup: {
+            mode: "custom",
+            rules: { ...inherited, worktreeAfterDays: 15, worktreeSettledAfterDays: 0 },
+          },
         },
       },
     });
     expect(resolveWorktreeCleanup(custom, projectId).worktreeAfterDays).toBe(15);
+    expect(resolveWorktreeCleanup(custom, projectId).worktreeSettledAfterDays).toBe(0);
+    expect(resolveWorktreeCleanup(custom, otherProjectId)).toEqual(inherited);
     expect(custom.storageCleanup.logsAfterDays).toBe(3);
     const reset = applyServerSettingsPatch(custom, {
       projectSettingsOverrides: {
@@ -418,7 +472,7 @@ describe("resolveWorktreeCleanup", () => {
   });
   it("completes partial machine custom rules and preserves them across edits", () => {
     const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      storageCleanup: { worktreeAfterDays: 8, worktreeOnDelete: true },
+      storageCleanup: { worktreeAfterDays: 8, worktreeSettledAfterDays: 0, worktreeOnDelete: true },
     });
     const custom = applyServerSettingsPatch(initial, {
       worktreeCleanup: { mode: "custom", rules: { worktreeOnMerge: true } },
@@ -428,6 +482,7 @@ describe("resolveWorktreeCleanup", () => {
     });
     expect(resolveWorktreeCleanup(edited, null)).toEqual({
       worktreeAfterDays: 15,
+      worktreeSettledAfterDays: 0,
       worktreeOnDelete: true,
       worktreeOnMerge: true,
       worktreeUnchanged: false,
