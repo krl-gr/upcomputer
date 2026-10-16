@@ -797,7 +797,9 @@ const cutoverHoldingLock = Effect.fn("V1Cutover.cutoverHoldingLock")(function* (
       ? EnvironmentId.make(NodeFS.readFileSync(environmentIdPath, "utf8").trim())
       : null;
 
-    const database = SqlitePersistence.layerFromPath(stagingPath);
+    // Publishing switches the copy out of WAL, which the reader and checkpoint
+    // workers' connections would block.
+    const database = SqlitePersistence.layerFromPathSingleConnection(stagingPath);
     const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
       Layer.provideMerge(database),
     );

@@ -62,6 +62,14 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
   );
 }, Layer.unwrap);
 
+/**
+ * Up.computer: one connection and no worker threads, for a database the caller
+ * closes into one file (`journal_mode = DELETE` needs every other connection
+ * closed), such as the V1 cutover's staging copy.
+ */
+export const layerFromPathSingleConnection = (dbPath: string) =>
+  Layer.provideMerge(layerSetup, NodeSqliteClient.layer({ filename: dbPath }));
+
 export const layerMemory = Layer.provideMerge(
   layerSetup,
   NodeSqliteClient.layer({ filename: ":memory:" }),
