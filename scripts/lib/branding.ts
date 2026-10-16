@@ -167,7 +167,8 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   {
     path: "apps/desktop/src/app/DesktopEnvironment.ts",
     requires: ["APP_BASE_NAME = UPCOMPUTER_PRODUCT_NAME", "UPCOMPUTER_APP_ID"],
-    forbids: ['"com.t3tools.t3code', '"T3 Code"'],
+    // Up.computer stays Alpha (upstream moved to Beta in 81493efb71).
+    forbids: ['"com.t3tools.t3code', '"T3 Code"', '"Nightly" : "Beta"'],
   },
   {
     path: "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
@@ -281,7 +282,11 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: "apps/server/src/binCli.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
   // Web shell.
-  { path: "apps/web/src/branding.ts", requires: ["UPCOMPUTER_PRODUCT_NAME"] },
+  {
+    path: "apps/web/src/branding.ts",
+    requires: ["UPCOMPUTER_PRODUCT_NAME"],
+    forbids: ['"Dev" : "Beta"'],
+  },
   { path: "apps/web/index.html", requires: ["<title>Up.computer (Alpha)</title>"] },
   { path: "apps/web/public/manifest.webmanifest", requires: ['"name": "Up.computer"'] },
   {
