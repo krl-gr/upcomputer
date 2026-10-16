@@ -4279,8 +4279,8 @@ export default function ChatView(props: ChatViewProps) {
   // top-level parent thread.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
-  // Our row under the composer holds the right-panel and thread details toggles.
-  const panelControlsInComposerRow = showsUpComputerComposerContextRow() && composerMounted;
+  // Our row under the composer holds the checkout and branch controls.
+  const composerContextRowMounted = showsUpComputerComposerContextRow() && composerMounted;
   const threadDetailsEnabled = settings.threadDetailsEnabled;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report a dated id or alias (claude-haiku-4-5-20251001).
@@ -11284,14 +11284,12 @@ export default function ChatView(props: ChatViewProps) {
   } satisfies PanelLayoutControlsProps;
   const threadDetailsTogglePlacement = resolveThreadDetailsTogglePlacement({
     enabled: threadDetailsEnabled,
-    inComposerRow: panelControlsInComposerRow,
     rightPanelOwnsTitleBar: inlineRightPanelOwnsTitleBar,
   });
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
       showThreadPanelControl={threadDetailsTogglePlacement === "header"}
-      showRightPanelControl={!panelControlsInComposerRow}
     />
   );
   const threadPanelHeaderControl = (
@@ -11948,7 +11946,7 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
-                    {panelControlsInComposerRow ? (
+                    {composerContextRowMounted ? (
                       <div className="pointer-events-auto">
                         <UpComputerComposerContextRow
                           ref={branchToolbarRef}
@@ -11983,28 +11981,13 @@ export default function ChatView(props: ChatViewProps) {
                               ? onAutoEnvironment
                               : undefined
                           }
-                          rightPanelOpen={rightPanelOpen}
-                          rightPanelAvailable={panelToggleControlProps.rightPanelAvailable}
-                          rightPanelShortcutLabel={panelToggleControlProps.rightPanelShortcutLabel}
-                          onToggleRightPanel={toggleRightPanel}
-                          threadPanel={
-                            threadDetailsTogglePlacement === "composer-row"
-                              ? {
-                                  open: threadPanelOpen,
-                                  presentation: threadPanelPresentation,
-                                  popoverHandle: threadPanelPopoverHandle,
-                                  shortcutLabel: panelToggleControlProps.threadPanelShortcutLabel,
-                                  onToggle: toggleThreadPanel,
-                                }
-                              : null
-                          }
                         />
                       </div>
                     ) : null}
                     <div
                       aria-hidden
                       className={
-                        composerBottomSpaceClass(panelControlsInComposerRow) ??
+                        composerBottomSpaceClass(composerContextRowMounted) ??
                         "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
                       }
                     />

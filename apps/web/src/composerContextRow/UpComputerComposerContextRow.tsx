@@ -2,7 +2,6 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { type Ref, memo, useCallback, useImperativeHandle, useMemo, useRef } from "react";
 
 import type { BranchToolbarHandle } from "../components/BranchToolbar";
@@ -19,10 +18,7 @@ import {
 } from "../components/BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "../components/BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "../components/BranchToolbarEnvModeSelector";
-import { PopoverTrigger, type PopoverCreateHandle } from "../components/ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
-import type { ThreadPanelPresentation } from "../rightPanelLayout";
 import { useScratchProject } from "../hooks/useScratchProject";
 import {
   useProject,
@@ -42,7 +38,6 @@ import {
   CONTEXT_ROW_QUIET_CONTROLS_CLASS,
   CONTEXT_ROW_SEPARATOR_CLASS,
   CONTEXT_ROW_SLASH_CLASS,
-  CONTEXT_ROW_TOGGLE_CLASS,
 } from "./contextRowStyles";
 import { useRetargetDraftToProject } from "./useRetargetDraftToProject";
 
@@ -70,23 +65,6 @@ export interface UpComputerComposerContextRowProps {
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
   autoEnvironmentLabel?: string | undefined;
   onAutoEnvironment?: (() => void) | undefined;
-  rightPanelOpen: boolean;
-  rightPanelAvailable: boolean;
-  rightPanelShortcutLabel: string | null;
-  onToggleRightPanel: () => void;
-  /**
-   * Upstream's thread details toggle, as ChatView hands it to its header controls.
-   * `null` when the user turned thread details off.
-   */
-  threadPanel: ThreadPanelToggleProps | null;
-}
-
-export interface ThreadPanelToggleProps {
-  open: boolean;
-  presentation: ThreadPanelPresentation;
-  popoverHandle: ReturnType<typeof PopoverCreateHandle>;
-  shortcutLabel: string | null;
-  onToggle: () => void;
 }
 
 function ContextRowSlash() {
@@ -101,73 +79,10 @@ function ContextRowSeparator() {
   return <span aria-hidden="true" className={CONTEXT_ROW_SEPARATOR_CLASS} />;
 }
 
-/** V1's right-panel toggle at the row's right edge; the header no longer shows one. */
-function RightPanelToggle(props: {
-  open: boolean;
-  available: boolean;
-  shortcutLabel: string | null;
-  onToggle: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="flex shrink-0" />}>
-        <button
-          type="button"
-          aria-label="Toggle right panel"
-          aria-pressed={props.open}
-          disabled={!props.available}
-          className={CONTEXT_ROW_TOGGLE_CLASS}
-          onClick={props.onToggle}
-          data-context-row-panel-toggle=""
-        >
-          <PanelRightIcon className="size-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {props.available
-          ? `Toggle right panel${props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}`
-          : "Right panel is unavailable"}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-/**
- * Upstream's "Toggle thread details panel" (`PanelLayoutControls`), moved from
- * the header into the row and drawn like its other icons. As upstream's: a
- * popover trigger while the card is a popover, a toggle while it is inline.
- */
-function ThreadPanelToggle(props: ThreadPanelToggleProps) {
-  const popover = props.presentation === "popover";
-  const button = (
-    <button
-      type="button"
-      aria-label="Toggle thread details panel"
-      aria-pressed={props.open}
-      className={CONTEXT_ROW_TOGGLE_CLASS}
-      onClick={popover ? undefined : props.onToggle}
-      data-context-row-thread-panel-toggle=""
-    >
-      <SquareMenuIcon className="size-4" />
-    </button>
-  );
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={popover ? <PopoverTrigger handle={props.popoverHandle} render={button} /> : button}
-      />
-      <TooltipPopup side="top">
-        Toggle thread details
-        {props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 /**
  * The row under the composer, as V1 had it: the chat's projects and `+`, then
- * `/` upstream's checkout mode, `|` upstream's branch, and the right-panel
- * toggle at the right. The workspace state and actions are upstream's
+ * `/` upstream's checkout mode and `|` upstream's branch. The panel toggles are
+ * upstream's, in the header. The workspace state and actions are upstream's
  * (`BranchToolbar` decides them the same way); only the form is V1's.
  */
 export const UpComputerComposerContextRow = memo(function UpComputerComposerContextRow({
@@ -190,11 +105,6 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
   onEnvironmentChange,
   autoEnvironmentLabel,
   onAutoEnvironment,
-  rightPanelOpen,
-  rightPanelAvailable,
-  rightPanelShortcutLabel,
-  onToggleRightPanel,
-  threadPanel,
 }: UpComputerComposerContextRowProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = useMemo(
@@ -410,15 +320,6 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
             </>
           ) : null}
         </div>
-      </div>
-      <div className="flex shrink-0 items-center">
-        {threadPanel ? <ThreadPanelToggle {...threadPanel} /> : null}
-        <RightPanelToggle
-          open={rightPanelOpen}
-          available={rightPanelAvailable}
-          shortcutLabel={rightPanelShortcutLabel}
-          onToggle={onToggleRightPanel}
-        />
       </div>
     </div>
   );

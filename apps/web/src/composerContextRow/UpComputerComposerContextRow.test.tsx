@@ -127,15 +127,10 @@ vi.mock("../components/BranchToolbarBranchSelector", () => ({
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import type { BranchToolbarHandle } from "../components/BranchToolbar";
-import type {
-  ThreadPanelToggleProps,
-  UpComputerComposerContextRowProps,
-} from "./UpComputerComposerContextRow";
+import type { UpComputerComposerContextRowProps } from "./UpComputerComposerContextRow";
 
 const { UpComputerComposerContextRow } = await import("./UpComputerComposerContextRow");
 const { BranchToolbar } = await import("../components/BranchToolbar");
-const { PanelLayoutControls } = await import("../components/chat/PanelLayoutControls");
-const { Popover, PopoverCreateHandle, PopoverPopup } = await import("../components/ui/popover");
 const { composerShortcutScope, showsUpComputerComposerContextRow } =
   await import("./composerContextRowSurface");
 
@@ -153,16 +148,6 @@ const KV = project("p-kv", "Kv store");
 const RELAY = project("p-relay", "Relay");
 const SCRATCH = project("p-scratch", "No project", "/scratch");
 
-function threadPanelProps(): ThreadPanelToggleProps {
-  return {
-    open: false,
-    presentation: "inline",
-    popoverHandle: PopoverCreateHandle(),
-    shortcutLabel: "⌘I",
-    onToggle: vi.fn(),
-  };
-}
-
 function rowProps(
   overrides: Partial<UpComputerComposerContextRowProps> = {},
 ): UpComputerComposerContextRowProps {
@@ -176,11 +161,6 @@ function rowProps(
     envLocked: false,
     startFromOrigin: false,
     onStartFromOriginChange: vi.fn(),
-    rightPanelOpen: false,
-    rightPanelAvailable: true,
-    rightPanelShortcutLabel: "⌘B",
-    onToggleRightPanel: vi.fn(),
-    threadPanel: threadPanelProps(),
     ...overrides,
   };
 }
@@ -404,160 +384,17 @@ describe("the row under the composer", () => {
     );
   });
 
-  it("keeps exactly one right-panel toggle, in the row", async () => {
+  it("leaves the panel toggles to the header", async () => {
     state.serverThread = {
       environmentId: ENV,
       id: THREAD,
       projectId: UPCOMPUTER.id,
       worktreePath: null,
     };
-    const onToggleRightPanel = vi.fn();
-    const header = () => (
-      <PanelLayoutControls
-        terminalAvailable
-        terminalOpen={false}
-        terminalShortcutLabel={null}
-        threadPanelOpen={false}
-        threadPanelPresentation="inline"
-        threadPanelShortcutLabel={null}
-        rightPanelAvailable
-        rightPanelOpen={false}
-        rightPanelShortcutLabel={null}
-        onToggleTerminal={vi.fn()}
-        onToggleThreadPanel={vi.fn()}
-        onToggleRightPanel={vi.fn()}
-        // As ChatView passes it.
-        showRightPanelControl={!showsUpComputerComposerContextRow()}
-      />
-    );
-    await render(
-      <>
-        {header()}
-        <UpComputerComposerContextRow {...rowProps({ onToggleRightPanel })} />
-      </>,
-    );
-    const toggles = container.querySelectorAll('[aria-label="Toggle right panel"]');
-    expect(toggles).toHaveLength(1);
-    expect(toggles[0]?.closest("[data-composer-context-row]")).not.toBeNull();
-    await click(toggles[0]!);
-    expect(onToggleRightPanel).toHaveBeenCalledOnce();
-
-    state.surface = "upstream";
-    await render(header());
-    expect(container.querySelectorAll('[aria-label="Toggle right panel"]')).toHaveLength(1);
-  });
-
-  it("moves upstream's thread details toggle into the row, just left of the panel toggle", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-    };
-    const onToggle = vi.fn();
-    const header = () => (
-      <PanelLayoutControls
-        terminalAvailable
-        terminalOpen={false}
-        terminalShortcutLabel={null}
-        threadPanelOpen={false}
-        threadPanelPresentation="inline"
-        threadPanelShortcutLabel={null}
-        rightPanelAvailable
-        rightPanelOpen={false}
-        rightPanelShortcutLabel={null}
-        onToggleTerminal={vi.fn()}
-        onToggleThreadPanel={vi.fn()}
-        onToggleRightPanel={vi.fn()}
-        // As ChatView passes them while the row is shown.
-        showThreadPanelControl={!showsUpComputerComposerContextRow()}
-        showRightPanelControl={!showsUpComputerComposerContextRow()}
-      />
-    );
-    const threadPanel = { ...threadPanelProps(), open: true, onToggle };
-    await render(
-      <>
-        {header()}
-        <UpComputerComposerContextRow {...rowProps({ threadPanel })} />
-      </>,
-    );
-    const toggles = container.querySelectorAll<HTMLElement>(
-      '[aria-label="Toggle thread details panel"]',
-    );
-    expect(toggles).toHaveLength(1);
-    const details = toggles[0]!;
-    expect(details.closest("[data-composer-context-row]")).not.toBeNull();
-    // Immediately left of the right-panel toggle, at the row's right edge.
-    const row = container.querySelector("[data-composer-context-row]")!;
-    const rightCluster = row.lastElementChild!;
-    expect(
-      Array.from(rightCluster.querySelectorAll("button")).map((button) =>
-        button.getAttribute("aria-label"),
-      ),
-    ).toEqual(["Toggle thread details panel", "Toggle right panel"]);
-    // Drawn like the row's other icons, dim until hovered, bright while open.
-    expect(details.className).toContain("text-(--composer-muted)");
-    expect(details.className).toContain("hover:text-(--composer-bright)");
-    expect(details.getAttribute("aria-pressed")).toBe("true");
-    expect(details.nextElementSibling?.textContent).toBe("Toggle thread details (⌘I)");
-    await click(details);
-    expect(onToggle).toHaveBeenCalledOnce();
-
-    state.surface = "upstream";
-    await render(header());
-    expect(container.querySelectorAll('[aria-label="Toggle thread details panel"]')).toHaveLength(
-      1,
-    );
-  });
-
-  it("opens upstream's thread details popover from the row while the card is a popover", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-    };
-    const popoverHandle = PopoverCreateHandle();
-    const onToggle = vi.fn();
-    await render(
-      <>
-        <Popover handle={popoverHandle}>
-          <PopoverPopup>
-            <span data-testid="thread-details">Thread details</span>
-          </PopoverPopup>
-        </Popover>
-        <UpComputerComposerContextRow
-          {...rowProps({
-            threadPanel: {
-              ...threadPanelProps(),
-              presentation: "popover",
-              popoverHandle,
-              onToggle,
-            },
-          })}
-        />
-      </>,
-    );
-    await click(byLabel("Toggle thread details panel")!);
-    expect(document.querySelector('[data-testid="thread-details"]')).not.toBeNull();
-    expect(onToggle).not.toHaveBeenCalled();
-  });
-
-  it("drops the thread details toggle when thread details are off, keeping the panel toggle", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-    };
-    await render(<UpComputerComposerContextRow {...rowProps({ threadPanel: null })} />);
+    await render(<UpComputerComposerContextRow {...rowProps()} />);
+    expect(container.querySelector("[data-composer-context-row]")).not.toBeNull();
+    expect(byLabel("Toggle right panel")).toBeNull();
     expect(byLabel("Toggle thread details panel")).toBeNull();
-    const rightCluster = container.querySelector("[data-composer-context-row]")!.lastElementChild!;
-    expect(
-      Array.from(rightCluster.querySelectorAll("button")).map((button) =>
-        button.getAttribute("aria-label"),
-      ),
-    ).toEqual(["Toggle right panel"]);
   });
 });
 
