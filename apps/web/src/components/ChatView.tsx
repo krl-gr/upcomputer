@@ -472,6 +472,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel, type ThreadDetailsPanelProps } from "./chat/ThreadDetailsPanel";
+import { resolveThreadDetailsTogglePlacement } from "./chat/threadDetailsTogglePlacement";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   type EnvironmentOption,
@@ -4280,6 +4281,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerMounted = !showProviderSubagentBar;
   // Our row under the composer holds the right-panel and thread details toggles.
   const panelControlsInComposerRow = showsUpComputerComposerContextRow() && composerMounted;
+  const threadDetailsEnabled = settings.threadDetailsEnabled;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report a dated id or alias (claude-haiku-4-5-20251001).
   const providerSubagentModelSlug = selectedProviderEntry
@@ -8154,7 +8156,7 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      if (command === "threadPanel.toggle") {
+      if (command === "threadPanel.toggle" && threadDetailsEnabled) {
         event.preventDefault();
         event.stopPropagation();
         toggleThreadPanel();
@@ -8398,6 +8400,7 @@ export default function ChatView(props: ChatViewProps) {
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleThreadPanel,
+    threadDetailsEnabled,
     toggleTerminalVisibility,
     composerRef,
     draftId,
@@ -11279,10 +11282,15 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanel,
     onToggleRightPanel: toggleRightPanel,
   } satisfies PanelLayoutControlsProps;
+  const threadDetailsTogglePlacement = resolveThreadDetailsTogglePlacement({
+    enabled: threadDetailsEnabled,
+    inComposerRow: panelControlsInComposerRow,
+    rightPanelOwnsTitleBar: inlineRightPanelOwnsTitleBar,
+  });
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow}
+      showThreadPanelControl={threadDetailsTogglePlacement === "header"}
       showRightPanelControl={!panelControlsInComposerRow}
     />
   );
@@ -11400,9 +11408,7 @@ export default function ChatView(props: ChatViewProps) {
             />
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-          {inlineRightPanelOwnsTitleBar && !panelControlsInComposerRow
-            ? threadPanelHeaderControl
-            : null}
+          {threadDetailsTogglePlacement === "header-overlay" ? threadPanelHeaderControl : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -11981,13 +11987,17 @@ export default function ChatView(props: ChatViewProps) {
                           rightPanelAvailable={panelToggleControlProps.rightPanelAvailable}
                           rightPanelShortcutLabel={panelToggleControlProps.rightPanelShortcutLabel}
                           onToggleRightPanel={toggleRightPanel}
-                          threadPanel={{
-                            open: threadPanelOpen,
-                            presentation: threadPanelPresentation,
-                            popoverHandle: threadPanelPopoverHandle,
-                            shortcutLabel: panelToggleControlProps.threadPanelShortcutLabel,
-                            onToggle: toggleThreadPanel,
-                          }}
+                          threadPanel={
+                            threadDetailsTogglePlacement === "composer-row"
+                              ? {
+                                  open: threadPanelOpen,
+                                  presentation: threadPanelPresentation,
+                                  popoverHandle: threadPanelPopoverHandle,
+                                  shortcutLabel: panelToggleControlProps.threadPanelShortcutLabel,
+                                  onToggle: toggleThreadPanel,
+                                }
+                              : null
+                          }
                         />
                       </div>
                     ) : null}
@@ -12048,7 +12058,7 @@ export default function ChatView(props: ChatViewProps) {
               </AlertDialogPopup>
             </AlertDialog>
 
-            <ThreadDetailsPanel {...threadDetailsPanelProps} />
+            {threadDetailsEnabled ? <ThreadDetailsPanel {...threadDetailsPanelProps} /> : null}
 
             {pullRequestDialogState ? (
               <PullRequestThreadDialog

@@ -127,7 +127,10 @@ vi.mock("../components/BranchToolbarBranchSelector", () => ({
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import type { BranchToolbarHandle } from "../components/BranchToolbar";
-import type { UpComputerComposerContextRowProps } from "./UpComputerComposerContextRow";
+import type {
+  ThreadPanelToggleProps,
+  UpComputerComposerContextRowProps,
+} from "./UpComputerComposerContextRow";
 
 const { UpComputerComposerContextRow } = await import("./UpComputerComposerContextRow");
 const { BranchToolbar } = await import("../components/BranchToolbar");
@@ -150,6 +153,16 @@ const KV = project("p-kv", "Kv store");
 const RELAY = project("p-relay", "Relay");
 const SCRATCH = project("p-scratch", "No project", "/scratch");
 
+function threadPanelProps(): ThreadPanelToggleProps {
+  return {
+    open: false,
+    presentation: "inline",
+    popoverHandle: PopoverCreateHandle(),
+    shortcutLabel: "⌘I",
+    onToggle: vi.fn(),
+  };
+}
+
 function rowProps(
   overrides: Partial<UpComputerComposerContextRowProps> = {},
 ): UpComputerComposerContextRowProps {
@@ -167,13 +180,7 @@ function rowProps(
     rightPanelAvailable: true,
     rightPanelShortcutLabel: "⌘B",
     onToggleRightPanel: vi.fn(),
-    threadPanel: {
-      open: false,
-      presentation: "inline",
-      popoverHandle: PopoverCreateHandle(),
-      shortcutLabel: "⌘I",
-      onToggle: vi.fn(),
-    },
+    threadPanel: threadPanelProps(),
     ...overrides,
   };
 }
@@ -467,7 +474,7 @@ describe("the row under the composer", () => {
         showRightPanelControl={!showsUpComputerComposerContextRow()}
       />
     );
-    const threadPanel = { ...rowProps().threadPanel, open: true, onToggle };
+    const threadPanel = { ...threadPanelProps(), open: true, onToggle };
     await render(
       <>
         {header()}
@@ -522,7 +529,7 @@ describe("the row under the composer", () => {
         <UpComputerComposerContextRow
           {...rowProps({
             threadPanel: {
-              ...rowProps().threadPanel,
+              ...threadPanelProps(),
               presentation: "popover",
               popoverHandle,
               onToggle,
@@ -534,6 +541,23 @@ describe("the row under the composer", () => {
     await click(byLabel("Toggle thread details panel")!);
     expect(document.querySelector('[data-testid="thread-details"]')).not.toBeNull();
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("drops the thread details toggle when thread details are off, keeping the panel toggle", async () => {
+    state.serverThread = {
+      environmentId: ENV,
+      id: THREAD,
+      projectId: UPCOMPUTER.id,
+      worktreePath: null,
+    };
+    await render(<UpComputerComposerContextRow {...rowProps({ threadPanel: null })} />);
+    expect(byLabel("Toggle thread details panel")).toBeNull();
+    const rightCluster = container.querySelector("[data-composer-context-row]")!.lastElementChild!;
+    expect(
+      Array.from(rightCluster.querySelectorAll("button")).map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Toggle right panel"]);
   });
 });
 

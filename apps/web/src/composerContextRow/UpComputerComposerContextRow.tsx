@@ -74,8 +74,11 @@ export interface UpComputerComposerContextRowProps {
   rightPanelAvailable: boolean;
   rightPanelShortcutLabel: string | null;
   onToggleRightPanel: () => void;
-  /** Upstream's thread details toggle, as ChatView hands it to its header controls. */
-  threadPanel: ThreadPanelToggleProps;
+  /**
+   * Upstream's thread details toggle, as ChatView hands it to its header controls.
+   * `null` when the user turned thread details off.
+   */
+  threadPanel: ThreadPanelToggleProps | null;
 }
 
 export interface ThreadPanelToggleProps {
@@ -409,7 +412,7 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
         </div>
       </div>
       <div className="flex shrink-0 items-center">
-        <ThreadPanelToggle {...threadPanel} />
+        {threadPanel ? <ThreadPanelToggle {...threadPanel} /> : null}
         <RightPanelToggle
           open={rightPanelOpen}
           available={rightPanelAvailable}
