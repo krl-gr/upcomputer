@@ -56,6 +56,7 @@ import { CodexProviderCapabilitiesV2 } from "../../../../apps/server/src/orchest
 import type * as ProviderAdapter from "../../../provider-core/src/server/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../../../../apps/server/src/orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/ProjectStore.ts";
+import * as CommandReceiptStore from "../../../../apps/server/src/orchestration-v2/CommandReceiptStore.ts";
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import * as ProviderReplayHarness from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { limitRecoveryCommand } from "../../../../apps/server/src/orchestration-v2/UsageLimitRecoveryWorker.ts";
@@ -408,13 +409,19 @@ function makeLayer(
     },
   );
   const core = Layer.mergeAll(ThreadManagementService.layer, ProjectStore.layer).pipe(
+    Layer.provideMerge(CommandReceiptStore.layer),
     Layer.provideMerge(runtime),
     Layer.provideMerge(db),
     Layer.provideMerge(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
     // The tasks Inbox reads these when it is built; these tests never create it.
     Layer.provideMerge(Layer.mock(ProjectService)({})),
     Layer.provideMerge(Layer.succeed(ServerConfig, { baseDir: cwd } as never)),
-    Layer.provideMerge(ServerSettings.layerTest().pipe(Layer.orDie)),
+    // A custom instance id runs only when it is configured.
+    Layer.provideMerge(
+      ServerSettings.layerTest({ providerInstances: { [instanceId]: { driver } } }).pipe(
+        Layer.orDie,
+      ),
+    ),
     Layer.provideMerge(NodeServices.layer),
   );
   const composed = productMcpToolsLayer.pipe(
@@ -426,7 +433,8 @@ function makeLayer(
   // Feature services are erased at the product boundary; the tests read them.
   return composed as Layer.Layer<
     Layer.Success<typeof composed> | TaskRepository | TaskAgentService | TaskSourceWake,
-    Layer.Error<typeof composed>
+    Layer.Error<typeof composed>,
+    Layer.Services<typeof composed>
   >;
 }
 
