@@ -193,23 +193,10 @@ function visibleText(element: Element | null) {
   return copy?.textContent;
 }
 
-function buttonByText(text: string) {
-  return Array.from(document.querySelectorAll<HTMLElement>("button")).find(
-    (button) => button.textContent?.trim() === text,
-  );
-}
-
 function optionByText(text: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[role=option]")).find((option) =>
     option.textContent?.includes(text),
   );
-}
-
-function projectIcons() {
-  const projects = container.querySelector("[data-context-row-projects]")!;
-  return Array.from(
-    projects.querySelectorAll<HTMLElement>("button, span[data-context-row-own-project]"),
-  ).map((element) => element.getAttribute("aria-label") ?? element.textContent);
 }
 
 beforeEach(() => {
@@ -234,108 +221,6 @@ afterEach(async () => {
 });
 
 describe("the row under the composer", () => {
-  it("shows the chat's project and its linked projects, and + links another one", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-      linkedProjectIds: [KV.id, "deleted-project"],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-
-    expect(projectIcons()).toEqual(["UP", "Unlink Kv store", "Link a project"]);
-
-    await click(byLabel("Link a project")!);
-    // Only projects the chat has not got yet, and never the scratch folder.
-    expect(
-      Array.from(document.querySelectorAll("[role=option]")).map((o) => o.textContent),
-    ).toEqual(["RERelay"]);
-    await click(optionByText("Relay")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, linkProjectIds: [RELAY.id] },
-    });
-  });
-
-  it("unlinks a linked project from its icon", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: UPCOMPUTER.id,
-      worktreePath: null,
-      linkedProjectIds: [KV.id],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    await click(byLabel("Unlink Kv store")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, unlinkProjectIds: [KV.id] },
-    });
-  });
-
-  it('shows V1\'s "Add project" for a chat without a project, and choosing moves the draft there', async () => {
-    state.draftThread = {
-      environmentId: ENV,
-      projectId: SCRATCH.id,
-      worktreePath: null,
-    };
-    const draftId = "draft-1" as UpComputerComposerContextRowProps["draftId"] & string;
-    await render(<UpComputerComposerContextRow {...rowProps({ draftId })} />);
-
-    // Text, not the bare `+`.
-    expect(projectIcons()).toEqual(["Add project"]);
-    const addProject = container.querySelector<HTMLElement>("[data-context-row-project-picker]")!;
-    expect(visibleText(addProject)).toBe("Add project");
-    expect(addProject.querySelector("svg")).toBeNull();
-    // No checkout or branch: the scratch folder is not a project checkout.
-    expect(container.querySelector("[data-context-row-workspace]")?.childElementCount).toBe(0);
-    expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
-
-    // The same menu `+` opens, with "New project…" for a project not added yet.
-    await click(addProject);
-    expect(
-      Array.from(document.querySelectorAll("[role=option]"))
-        .map((o) => o.textContent)
-        .toSorted(),
-    ).toEqual(["KVKv store", "RERelay", "UPUpComputer"]);
-    expect(buttonByText("New project…")).toBeDefined();
-    await click(optionByText("Kv store")!);
-    expect(state.retargetDraft).toHaveBeenCalledWith(draftId, KV);
-    expect(state.updateMetadata).not.toHaveBeenCalled();
-  });
-
-  it("goes back to the project icons and + once a chat without a project links one", async () => {
-    state.serverThread = {
-      environmentId: ENV,
-      id: THREAD,
-      projectId: SCRATCH.id,
-      worktreePath: null,
-      linkedProjectIds: [],
-    };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    expect(visibleText(container.querySelector("[data-context-row-projects]"))).toBe("Add project");
-    await click(container.querySelector("[data-context-row-project-picker]")!);
-    await click(optionByText("Kv store")!);
-    expect(state.updateMetadata).toHaveBeenCalledWith({
-      environmentId: ENV,
-      input: { threadId: THREAD, linkProjectIds: [KV.id] },
-    });
-
-    state.serverThread = { ...state.serverThread, linkedProjectIds: [KV.id] };
-    await render(<UpComputerComposerContextRow {...rowProps()} />);
-    expect(projectIcons()).toEqual(["Unlink Kv store", "Add project"]);
-    expect(
-      container.querySelector("[data-context-row-project-picker]")?.querySelector("svg"),
-    ).not.toBeNull();
-  });
-
-  it("hides + in an unsent chat that already has a project", async () => {
-    state.draftThread = { environmentId: ENV, projectId: UPCOMPUTER.id, worktreePath: null };
-    await render(<UpComputerComposerContextRow {...rowProps({ draftId: "draft-2" as never })} />);
-    expect(projectIcons()).toEqual(["UP"]);
-  });
-
   it("puts upstream's checkout mode and branch after the project, with upstream's actions", async () => {
     state.draftThread = { environmentId: ENV, projectId: UPCOMPUTER.id, worktreePath: null };
     const onEnvModeChange = vi.fn();
@@ -384,15 +269,17 @@ describe("the row under the composer", () => {
     );
   });
 
-  it("leaves the panel toggles to the header", async () => {
+  it("leaves the projects and the panel toggles to the header", async () => {
     state.serverThread = {
       environmentId: ENV,
       id: THREAD,
       projectId: UPCOMPUTER.id,
       worktreePath: null,
+      linkedProjectIds: [KV.id],
     };
     await render(<UpComputerComposerContextRow {...rowProps()} />);
     expect(container.querySelector("[data-composer-context-row]")).not.toBeNull();
+    expect(container.querySelector('[data-testid="favicon"]')).toBeNull();
     expect(byLabel("Toggle right panel")).toBeNull();
     expect(byLabel("Toggle thread details panel")).toBeNull();
   });
