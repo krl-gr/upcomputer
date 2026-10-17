@@ -600,11 +600,36 @@ const OPENCODE_RESTRICTED_PERMISSIONS = [
   "doom_loop",
 ] as const;
 
+const T3_MCP_SERVER_NAME = "t3-code";
+
+/**
+ * OpenCode sends every MCP tool to the model next to its own, and
+ * OpenAI-compatible APIs reject a request with more than 128 tools. The T3 MCP
+ * server alone has about 120, so OpenCode sessions leave out its browser and
+ * computer-use tools, which their instructions never advertise. OpenCode drops
+ * a tool whose last matching rule denies it before calling the model, and task
+ * sessions inherit the denies.
+ */
+export const OPENCODE_HIDDEN_T3_TOOLS = ["preview_*", "t3_preview_*", "computer_*"] as const;
+
 /**
  * OpenCode does not provide an OS sandbox, so permission rules are also the
  * enforcement boundary for non-interactive policies.
  */
 export function openCodePermissionRules(
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): PermissionRuleset {
+  return [
+    ...openCodeRuntimePermissionRules(runtimePolicy),
+    ...OPENCODE_HIDDEN_T3_TOOLS.map((tool) => ({
+      permission: `${T3_MCP_SERVER_NAME}_${tool}`,
+      pattern: "*",
+      action: "deny" as const,
+    })),
+  ];
+}
+
+function openCodeRuntimePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
@@ -966,7 +991,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
-              name: "t3-code",
+              name: T3_MCP_SERVER_NAME,
               config: {
                 type: "remote",
                 url: mcpSession.endpoint,
