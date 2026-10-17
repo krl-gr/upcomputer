@@ -37,7 +37,6 @@ import {
   GitForkIcon,
   MessageSquareIcon,
   MinusIcon,
-  XIcon,
 } from "lucide-react";
 
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -47,6 +46,7 @@ import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
+import { RunInterruptResultDivider } from "./RunInterruptResultDivider";
 import { Button, InlineButton } from "../ui/button";
 import { T3Wordmark } from "../T3Wordmark";
 
@@ -97,14 +97,7 @@ export function V2LifecycleRow(props: {
     );
   }
   if (item.type === "run_interrupt_result") {
-    return (
-      <TimelineSystemDivider
-        label="Run interrupted"
-        detail={item.message}
-        tone="danger"
-        icon={XIcon}
-      />
-    );
+    return <RunInterruptResultDivider item={item} environmentId={props.environmentId} />;
   }
   if (item.type === "compaction") {
     const tokenDetail =

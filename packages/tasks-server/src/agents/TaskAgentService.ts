@@ -7,6 +7,7 @@ import {
   type TaskPromptSettings,
 } from "@t3tools/tasks-contracts/v1";
 import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
+import { taskAgentRunEndInterruptReason } from "@t3tools/shared/taskAgentRunInterrupt";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -521,7 +522,10 @@ const make = Effect.gen(function* () {
         });
         if (!(yield* ownsThread)) return false;
         if (input.interrupt) {
-          yield* interruptThread(input.run.threadId, `Task-agent run ${input.status}.`).pipe(
+          yield* interruptThread(
+            input.run.threadId,
+            taskAgentRunEndInterruptReason(input.status),
+          ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to interrupt a finishing task-agent run", {
                 agentRunId: input.run.id,
