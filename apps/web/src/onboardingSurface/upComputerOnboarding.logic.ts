@@ -1,4 +1,9 @@
-import type { EnvironmentId, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ExecutionEnvironmentPlatformOs,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
@@ -11,12 +16,75 @@ import type { ProviderInstanceEntry } from "../providerInstances";
  * (`UpComputerOnboarding.tsx`) on top of upstream's provider logic.
  */
 
-export type UpComputerOnboardingDriver = "codex" | "claudeAgent";
+export type UpComputerOnboardingDriver =
+  | "codex"
+  | "claudeAgent"
+  | "cursor"
+  | "grok"
+  | "opencode"
+  | "antigravity";
 
-/** The agents first run offers; more live in Settings. */
-export const UPCOMPUTER_ONBOARDING_DRIVERS: ReadonlyArray<UpComputerOnboardingDriver> = [
-  "codex",
-  "claudeAgent",
+export interface UpComputerOnboardingAgent {
+  readonly driver: UpComputerOnboardingDriver;
+  readonly name: string;
+  readonly description: string;
+  /**
+   * `managed`: Up.computer downloads it (Codex with ChatGPT, Antigravity).
+   * `terminal`: the official installer runs in a terminal. `none`: it ships
+   * with Up.computer (Cursor's SDK).
+   */
+  readonly install: "managed" | "terminal" | "none";
+  /** `in-app`: the provider's own sign-in flow; `terminal`: its CLI login. */
+  readonly signIn: "in-app" | "terminal";
+}
+
+// V1's rows (core-v0.0.32 `providerDriverMeta.ts`), in its order.
+export const UPCOMPUTER_ONBOARDING_AGENTS: ReadonlyArray<UpComputerOnboardingAgent> = [
+  {
+    driver: "codex",
+    name: "Codex",
+    description:
+      "Great for computer-use tasks, with ChatGPT subscription access and strong review workflows.",
+    install: "managed",
+    signIn: "in-app",
+  },
+  {
+    driver: "claudeAgent",
+    name: "Claude",
+    description:
+      "Use your Claude subscription with powerful skills, hooks, MCP, and multi-agent workflows.",
+    install: "terminal",
+    signIn: "terminal",
+  },
+  {
+    driver: "cursor",
+    name: "Cursor",
+    description: "Use your Cursor subscription and its broad selection of frontier coding models.",
+    install: "none",
+    signIn: "in-app",
+  },
+  {
+    driver: "grok",
+    name: "Grok",
+    description: "Use your SuperGrok or X Premium+ subscription with Grok Build.",
+    install: "terminal",
+    signIn: "terminal",
+  },
+  {
+    driver: "opencode",
+    name: "OpenCode",
+    description: "Model-agnostic access to 75+ providers, local models, and free options.",
+    install: "terminal",
+    signIn: "terminal",
+  },
+  {
+    driver: "antigravity",
+    name: "Antigravity",
+    description:
+      "Use your Google AI subscription with Gemini models through Google's official Antigravity agent.",
+    install: "managed",
+    signIn: "in-app",
+  },
 ];
 
 /**
@@ -48,82 +116,58 @@ export function isCodexExistingCliChosen(config: unknown): boolean {
   );
 }
 
-export type AgentInstallCell = "checking" | "installed" | "included" | "install";
+/** How an agent installs right now: Codex follows its setup mode. */
+function resolveAgentInstallKind(
+  agent: UpComputerOnboardingAgent,
+  codexExistingCli: boolean,
+): UpComputerOnboardingAgent["install"] {
+  return agent.driver === "codex" && codexExistingCli ? "terminal" : agent.install;
+}
 
-/** Managed Codex needs no install step: "Continue with ChatGPT" downloads it. */
+/** How an agent signs in right now: the Codex CLI logs in from a terminal. */
+export function resolveAgentSignInKind(
+  agent: UpComputerOnboardingAgent,
+  codexExistingCli: boolean,
+): UpComputerOnboardingAgent["signIn"] {
+  return agent.driver === "codex" && codexExistingCli ? "terminal" : agent.signIn;
+}
+
+export type AgentInstallCell = "checking" | "installed" | "included" | "built-in" | "install";
+
 export function resolveAgentInstallCell(input: {
-  readonly driver: UpComputerOnboardingDriver;
+  readonly agent: UpComputerOnboardingAgent;
   readonly provider: ServerProvider | undefined;
   readonly codexExistingCli: boolean;
 }): AgentInstallCell {
+  if (input.provider === undefined) return "checking";
+  const kind = resolveAgentInstallKind(input.agent, input.codexExistingCli);
+  if (kind === "none") return "built-in";
   const state = getOnboardingProviderState(input.provider);
   if (state === "checking") return "checking";
-  if (input.provider?.installed) return "installed";
-  if (input.driver === "codex" && !input.codexExistingCli) return "included";
-  return "install";
+  if (input.provider.installed) return "installed";
+  // Managed Codex downloads as part of "Connect", so it needs no step of its own.
+  return input.agent.driver === "codex" && kind === "managed" ? "included" : "install";
 }
 
-export type AgentReadyCell =
-  | "ready"
-  | "checking"
-  | "enable"
-  | "connect"
-  | "sign-in"
-  | "install-first"
-  | "fix";
-
-export function resolveAgentReadyCell(input: {
-  readonly driver: UpComputerOnboardingDriver;
-  readonly provider: ServerProvider | undefined;
-}): AgentReadyCell {
-  const state = getOnboardingProviderState(input.provider);
-  switch (state) {
-    case "ready":
-      return "ready";
-    case "checking":
-      return "checking";
-    case "disabled":
-      return "enable";
-  }
-  // Codex signs in from its own screen, managed or CLI, so it always opens it.
-  if (input.driver === "codex") return "connect";
-  if (state === "install") return "install-first";
-  return state === "signIn" ? "sign-in" : "fix";
-}
+export type AgentReadyCell = "ready" | "checking" | "connect" | "sign-in" | "install-first";
 
 /**
- * One short line under the agent's name. Provider messages stay out: they
- * are written for Settings ("Check Settings → Providers → Codex → Binary
- * path on the server") and read as an error on a first run.
+ * A disabled agent (all but Codex and Claude start disabled) still offers
+ * Connect: choosing to set it up turns it on.
  */
-export function describeOnboardingAgent(input: {
-  readonly driver: UpComputerOnboardingDriver;
+export function resolveAgentReadyCell(input: {
+  readonly agent: UpComputerOnboardingAgent;
   readonly provider: ServerProvider | undefined;
   readonly codexExistingCli: boolean;
-}): string {
+}): AgentReadyCell {
+  if (input.provider === undefined) return "checking";
   const state = getOnboardingProviderState(input.provider);
-  const codex = input.driver === "codex";
-  switch (state) {
-    case "ready":
-      return "Ready to code.";
-    case "checking":
-      return "Checking this computer...";
-    case "disabled":
-      return "Turned off. Turn it on to use it.";
-    case "signIn":
-      return codex && !input.codexExistingCli
-        ? "Sign in with your ChatGPT account."
-        : "Installed. Sign in to start.";
-    case "attention":
-      return "Needs attention. Open its screen to fix it.";
-    case "install":
-      if (codex) {
-        return input.codexExistingCli
-          ? "Codex CLI is not installed yet."
-          : "Uses your ChatGPT plan. Up.computer downloads Codex for you.";
-      }
-      return "Uses your Claude plan. Installs in one step.";
-  }
+  if (state === "ready") return "ready";
+  if (state === "checking") return "checking";
+  if (state === "disabled") return "connect";
+  if (resolveAgentSignInKind(input.agent, input.codexExistingCli) === "in-app") return "connect";
+  if (state === "install") return "install-first";
+  return "sign-in";
 }
 
 export function countReadyOnboardingProviders(
@@ -136,30 +180,57 @@ export function countReadyOnboardingProviders(
   );
 }
 
-/**
- * After an agent works: import when a scan found something (or is still
- * looking), otherwise finish without an empty "no projects found" step.
+/*
+ * Official installers for the CLIs upstream's wizard does not install. OpenCode's
+ * script writes to ~/.local/bin, where the server finds CLIs without a restart;
+ * Grok ships only on npm.
  */
-export function resolveProjectImportOffer(
-  scans: ReadonlyArray<{
-    readonly data: { readonly candidates: ReadonlyArray<unknown> } | null;
-    readonly isPending: boolean;
-  }>,
-): "offer" | "skip" {
-  return scans.some(
-    (scan) => (scan.data?.candidates.length ?? 0) > 0 || (scan.isPending && scan.data === null),
-  )
-    ? "offer"
-    : "skip";
+const CLI_INSTALL_COMMANDS = {
+  grok: {
+    posix: "npm install -g @xai-official/grok",
+    windows: "npm install -g @xai-official/grok",
+  },
+  opencode: {
+    posix: 'curl -fsSL https://opencode.ai/install | OPENCODE_INSTALL_DIR="$HOME/.local/bin" bash',
+    windows: "npm install -g opencode-ai",
+  },
+} as const;
+
+const CLI_LOGIN_COMMANDS = { grok: "login", opencode: "auth login" } as const;
+const SAFE_BINARY_PATH = /^[A-Za-z0-9_./~-]+$/;
+
+export function resolveCliInstallCommand(
+  driver: keyof typeof CLI_INSTALL_COMMANDS,
+  platform: ExecutionEnvironmentPlatformOs,
+): string {
+  return platform === "windows"
+    ? CLI_INSTALL_COMMANDS[driver].windows
+    : CLI_INSTALL_COMMANDS[driver].posix;
 }
 
-const SETUP_TARGET_DRIVERS: ReadonlyArray<string> = UPCOMPUTER_ONBOARDING_DRIVERS;
+/** The CLI's own login, through a configured binary path when it needs no quoting. */
+export function resolveCliLoginCommand(
+  driver: keyof typeof CLI_LOGIN_COMMANDS,
+  instanceConfig: unknown,
+): string {
+  const configured =
+    instanceConfig !== null &&
+    typeof instanceConfig === "object" &&
+    "binaryPath" in instanceConfig &&
+    typeof instanceConfig.binaryPath === "string"
+      ? instanceConfig.binaryPath.trim()
+      : "";
+  const binary = configured !== "" && SAFE_BINARY_PATH.test(configured) ? configured : driver;
+  return `${binary} ${CLI_LOGIN_COMMANDS[driver]}`;
+}
+
+const SETUP_TARGET_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent"]);
 
 /**
  * Where the composer's "Open provider settings" goes when no agent works.
  * Upstream picks the first provider with in-app setup, which on a clean Mac
  * is Cursor: nobody installed it. An agent the user already installed comes
- * first, then the agents first run offers, then any with in-app setup.
+ * first, then Codex and Claude, then any with in-app setup.
  */
 export function composerProviderSetupInstanceId(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -177,7 +248,7 @@ function resolveProviderSetupInstanceId(
   const candidates = enabled.length > 0 ? enabled : entries;
   const rank = (entry: ProviderInstanceEntry) =>
     (entry.installed ? 0 : 4) +
-    (SETUP_TARGET_DRIVERS.includes(entry.driverKind) ? 0 : 2) +
+    (SETUP_TARGET_DRIVERS.has(entry.driverKind) ? 0 : 2) +
     (hasProviderSetup(entry.snapshot) ? 0 : 1);
   let best: ProviderInstanceEntry | undefined;
   for (const entry of candidates) {

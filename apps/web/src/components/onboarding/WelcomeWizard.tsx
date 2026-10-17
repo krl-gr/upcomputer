@@ -1264,7 +1264,7 @@ export function AgentInstallTerminal({
 
 const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thread history.";
 
-export function ImportStep({
+function ImportStep({
   scans,
   isImporting,
   setIsImporting,

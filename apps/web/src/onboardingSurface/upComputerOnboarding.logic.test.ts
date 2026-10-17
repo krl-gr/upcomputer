@@ -16,12 +16,13 @@ import type { ProviderInstanceEntry } from "../providerInstances";
 import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
-  describeOnboardingAgent,
   isCodexExistingCliChosen,
   resolveAgentInstallCell,
   resolveAgentReadyCell,
-  resolveProjectImportOffer,
+  resolveCliInstallCommand,
+  resolveCliLoginCommand,
   showsUpComputerOnboarding,
+  UPCOMPUTER_ONBOARDING_AGENTS,
 } from "./upComputerOnboarding.logic";
 
 afterEach(() => {
@@ -66,64 +67,75 @@ describe("showsUpComputerOnboarding", () => {
 });
 
 describe("agent rows", () => {
+  const agent = (driver: string) =>
+    UPCOMPUTER_ONBOARDING_AGENTS.find((candidate) => candidate.driver === driver)!;
+  const cells = (
+    driver: string,
+    snapshot: ServerProvider | undefined,
+    codexExistingCli = false,
+  ) => [
+    resolveAgentInstallCell({ agent: agent(driver), provider: snapshot, codexExistingCli }),
+    resolveAgentReadyCell({ agent: agent(driver), provider: snapshot, codexExistingCli }),
+  ];
+
+  it("offers V1's six agents in V1's order", () => {
+    expect(UPCOMPUTER_ONBOARDING_AGENTS.map((entry) => entry.name)).toEqual([
+      "Codex",
+      "Claude",
+      "Cursor",
+      "Grok",
+      "OpenCode",
+      "Antigravity",
+    ]);
+    for (const entry of UPCOMPUTER_ONBOARDING_AGENTS) expect(entry.description).not.toContain("—");
+  });
+
   it("needs no install step for Codex until the user picks the CLI", () => {
     const codex = provider("codex", missing);
-    expect(
-      resolveAgentInstallCell({ driver: "codex", provider: codex, codexExistingCli: false }),
-    ).toBe("included");
-    expect(
-      resolveAgentInstallCell({ driver: "codex", provider: codex, codexExistingCli: true }),
-    ).toBe("install");
-    expect(resolveAgentReadyCell({ driver: "codex", provider: codex })).toBe("connect");
+    expect(cells("codex", codex)).toEqual(["included", "connect"]);
+    expect(cells("codex", codex, true)).toEqual(["install", "install-first"]);
+    expect(cells("codex", provider("codex", signedOut), true)).toEqual(["installed", "sign-in"]);
   });
 
-  it("walks Claude Code through install, then sign-in, then ready", () => {
-    const claude = provider("claudeAgent", missing);
-    expect(
-      resolveAgentInstallCell({ driver: "claudeAgent", provider: claude, codexExistingCli: false }),
-    ).toBe("install");
-    expect(resolveAgentReadyCell({ driver: "claudeAgent", provider: claude })).toBe(
-      "install-first",
+  it("walks CLI agents through install, then sign-in, then ready", () => {
+    for (const driver of ["claudeAgent", "grok", "opencode"]) {
+      expect(cells(driver, provider(driver, missing))).toEqual(["install", "install-first"]);
+      expect(cells(driver, provider(driver, signedOut))).toEqual(["installed", "sign-in"]);
+      expect(cells(driver, provider(driver))).toEqual(["installed", "ready"]);
+    }
+  });
+
+  it("connects agents with in-app setup in one step", () => {
+    expect(cells("cursor", provider("cursor", signedOut))).toEqual(["built-in", "connect"]);
+    expect(cells("antigravity", provider("antigravity", missing))).toEqual(["install", "connect"]);
+  });
+
+  it("offers Connect for an agent that starts disabled", () => {
+    expect(cells("grok", provider("grok", { ...missing, enabled: false }))[1]).toBe("connect");
+    expect(cells("cursor", provider("cursor", { enabled: false, status: "disabled" }))[1]).toBe(
+      "connect",
     );
-
-    const installed = provider("claudeAgent", signedOut);
-    expect(
-      resolveAgentInstallCell({
-        driver: "claudeAgent",
-        provider: installed,
-        codexExistingCli: false,
-      }),
-    ).toBe("installed");
-    expect(resolveAgentReadyCell({ driver: "claudeAgent", provider: installed })).toBe("sign-in");
-    expect(
-      resolveAgentReadyCell({ driver: "claudeAgent", provider: provider("claudeAgent") }),
-    ).toBe("ready");
-  });
-
-  it("offers turning a disabled agent on instead of hiding it", () => {
-    expect(
-      resolveAgentReadyCell({ driver: "codex", provider: provider("codex", { enabled: false }) }),
-    ).toBe("enable");
   });
 
   it("waits while the server has not reported the agent", () => {
-    expect(
-      resolveAgentInstallCell({ driver: "codex", provider: undefined, codexExistingCli: false }),
-    ).toBe("checking");
-    expect(resolveAgentReadyCell({ driver: "claudeAgent", provider: undefined })).toBe("checking");
+    expect(cells("codex", undefined)).toEqual(["checking", "checking"]);
+  });
+});
+
+describe("CLI commands", () => {
+  it("installs OpenCode where the server finds new CLIs without a restart", () => {
+    expect(resolveCliInstallCommand("opencode", "darwin")).toContain(
+      'OPENCODE_INSTALL_DIR="$HOME/.local/bin"',
+    );
+    expect(resolveCliInstallCommand("grok", "linux")).toBe("npm install -g @xai-official/grok");
   });
 
-  it("never shows the provider's Settings-oriented message on a first run", () => {
-    const codex = provider("codex", {
-      ...missing,
-      message:
-        "Could not start Codex CLI (`codex`). Check Settings → Providers → Codex → Binary path on the server.",
-    });
-    for (const codexExistingCli of [false, true]) {
-      const line = describeOnboardingAgent({ driver: "codex", provider: codex, codexExistingCli });
-      expect(line).not.toContain("Binary path");
-      expect(line).not.toContain("—");
-    }
+  it("logs in through a configured binary only when it needs no quoting", () => {
+    expect(resolveCliLoginCommand("grok", {})).toBe("grok login");
+    expect(resolveCliLoginCommand("opencode", { binaryPath: "~/bin/opencode" })).toBe(
+      "~/bin/opencode auth login",
+    );
+    expect(resolveCliLoginCommand("grok", { binaryPath: "/Apps/My Grok/grok" })).toBe("grok login");
   });
 });
 
@@ -147,23 +159,6 @@ describe("countReadyOnboardingProviders", () => {
       ]),
     ).toBe(2);
     expect(countReadyOnboardingProviders(null)).toBe(0);
-  });
-});
-
-describe("resolveProjectImportOffer", () => {
-  const scan = (candidates: number | null, isPending = false) => ({
-    data: candidates === null ? null : { candidates: Array.from({ length: candidates }) },
-    isPending,
-  });
-
-  it("offers import when there is something to import or the scan is still running", () => {
-    expect(resolveProjectImportOffer([scan(2)])).toBe("offer");
-    expect(resolveProjectImportOffer([scan(null, true)])).toBe("offer");
-  });
-
-  it("skips the step when nothing was found or the scan failed", () => {
-    expect(resolveProjectImportOffer([scan(0)])).toBe("skip");
-    expect(resolveProjectImportOffer([scan(null)])).toBe("skip");
   });
 });
 

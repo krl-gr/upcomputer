@@ -24,17 +24,20 @@ import { CommandBlock } from "../components/CommandBlock";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import {
   AgentInstallTerminal,
-  ImportStep,
   type AgentTerminalSession,
 } from "../components/onboarding/WelcomeWizard";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { CodexSetupSection } from "../components/settings/CodexSetupSection";
 import { readCodexSetupMode } from "../components/settings/CodexSetupSection.logic";
+import { ProviderAuthenticationSection } from "../components/settings/ProviderAuthenticationSection";
+import {
+  ProviderSetupSection,
+  readAntigravityAuthMethod,
+} from "../components/settings/ProviderSetupSection";
 import { buildProviderInstanceUpdatePatch } from "../components/settings/SettingsPanels.logic";
 import { Skeleton } from "../components/ui/skeleton";
 import { toastManager } from "../components/ui/toast";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
-import { PRIVACY_POLICY_URL } from "../legalLinks";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
 import {
   getOnboardingProviderState,
@@ -42,19 +45,20 @@ import {
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
 } from "../onboarding/providerReadiness.logic";
-import { useProjectScans } from "../onboarding/useProjectScans";
-import { isProductFeatureShown } from "../product/productFlags";
+import { useEnvironments } from "../state/environments";
 import { serverEnvironment } from "../state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
-  describeOnboardingAgent,
   isCodexExistingCliChosen,
   resolveAgentInstallCell,
   resolveAgentReadyCell,
-  resolveProjectImportOffer,
-  UPCOMPUTER_ONBOARDING_DRIVERS,
+  resolveAgentSignInKind,
+  resolveCliInstallCommand,
+  resolveCliLoginCommand,
+  UPCOMPUTER_ONBOARDING_AGENTS,
+  type UpComputerOnboardingAgent,
   type UpComputerOnboardingDriver,
 } from "./upComputerOnboarding.logic";
 
@@ -67,20 +71,67 @@ const ROW_ACTION_CLASS = `${PILL_CLASS} h-8 w-[5.5rem] px-3 sm:w-24`;
 const ICON_BUTTON_CLASS = `${PILL_CLASS} size-8`;
 const PRIMARY_CLASS = `${PILL_CLASS} h-9 px-5`;
 
-const AGENT_NAMES: Record<UpComputerOnboardingDriver, string> = {
-  codex: "Codex",
-  claudeAgent: "Claude Code",
+/** Each agent's own screen: its header, and for CLI agents the two steps. */
+const DETAIL_COPY: Record<
+  UpComputerOnboardingDriver,
+  {
+    readonly title: string;
+    readonly description: string;
+    readonly install?: string;
+    readonly installNote?: string;
+    readonly signIn?: string;
+    readonly signInNote?: string;
+  }
+> = {
+  codex: {
+    title: "Use your Codex CLI",
+    description: "Install the Codex command line tool, then sign in with your ChatGPT account.",
+    install: "Install the Codex CLI",
+    signIn: "Sign in with ChatGPT",
+  },
+  claudeAgent: {
+    title: "Set up Claude",
+    description: "Install Claude Code, then sign in with your Claude account.",
+    install: "Install Claude Code",
+    signIn: "Sign in with Claude",
+  },
+  cursor: {
+    title: "Connect Cursor",
+    description: "Sign in with your Cursor account in the browser.",
+  },
+  grok: {
+    title: "Set up Grok",
+    description:
+      "Install the Grok CLI, then sign in with the X account that holds your SuperGrok or Premium+ subscription.",
+    install: "Install the Grok CLI",
+    installNote: "Installs with npm in a terminal here. Needs Node.js.",
+    signIn: "Sign in with your X account",
+  },
+  opencode: {
+    title: "Set up OpenCode",
+    description: "Install OpenCode, then connect the model provider you want to use.",
+    install: "Install OpenCode",
+    signIn: "Connect a model provider",
+    signInNote: "Pick a provider in the terminal and sign in or paste its key.",
+  },
+  antigravity: {
+    title: "Set up Antigravity",
+    description:
+      "Up.computer downloads Google's Antigravity agent, then you sign in with your Google account.",
+  },
 };
 
 type Screen =
   | { readonly kind: "agents" }
-  | { readonly kind: "agent"; readonly driver: UpComputerOnboardingDriver }
-  | { readonly kind: "import" };
+  | { readonly kind: "agent"; readonly driver: UpComputerOnboardingDriver };
+
+const agentFor = (driver: UpComputerOnboardingDriver) =>
+  UPCOMPUTER_ONBOARDING_AGENTS.find((agent) => agent.driver === driver)!;
 
 /**
- * V1's first run over upstream's provider logic: a table of the two agents a
- * new user can make work in a minute, each opening its own screen, then
- * project import only when there is something to import.
+ * V1's first run over upstream's provider logic: a table of agents, each
+ * opening its own screen. As soon as one agent works, setup ends and the app
+ * opens.
  */
 export function UpComputerOnboarding({
   environmentId,
@@ -97,6 +148,7 @@ export function UpComputerOnboarding({
   );
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const { environments } = useEnvironments();
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -104,29 +156,26 @@ export function UpComputerOnboarding({
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const recordClientEvent = useRecordClientEvent();
   const completeOnboarding = useCompleteOnboarding();
-  const setupIds = useMemo(() => [environmentId], [environmentId]);
-  // Scanned from the start, so the step after a working agent is known at once.
-  const scans = useProjectScans(setupIds);
-  const [isImporting, setIsImporting] = useState(false);
   const [codexAutoStart, setCodexAutoStart] = useState(false);
   const [terminalSession, setTerminalSession] = useState<AgentTerminalSession | null>(null);
-  const [notOnPath, setNotOnPath] = useState<ReadonlySet<UpComputerOnboardingDriver>>(new Set());
+  const [installFailed, setInstallFailed] = useState<ReadonlySet<UpComputerOnboardingDriver>>(
+    new Set(),
+  );
 
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
 
-  const stepName = screen.kind === "import" ? "import" : "agents";
-  const viewedSteps = useRef(new Set<string>());
+  const viewed = useRef(false);
   useEffect(() => {
-    if (viewedSteps.current.has(stepName)) return;
-    viewedSteps.current.add(stepName);
+    if (viewed.current) return;
+    viewed.current = true;
     recordClientEvent(environmentId, {
       event: "onboarding.step.viewed",
-      step: stepName,
+      step: "agents",
       flow: FLOW,
     });
-  }, [environmentId, recordClientEvent, stepName]);
+  }, [environmentId, recordClientEvent]);
 
   const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
   const codexProvider = byDriver.get("codex");
@@ -197,7 +246,8 @@ export function UpComputerOnboarding({
     });
     setTerminalSession({
       environmentId,
-      driver,
+      // Upstream's session type names only its two agents; the terminal itself takes any.
+      driver: driver as AgentTerminalSession["driver"],
       action,
       providerInstanceId: provider.instanceId,
       cwd: serverConfig.cwd,
@@ -208,6 +258,7 @@ export function UpComputerOnboarding({
 
   const closeTerminal = (session: AgentTerminalSession) => {
     setTerminalSession(null);
+    const driver = session.driver as UpComputerOnboardingDriver;
     void refreshProviders({ environmentId, input: {} }).then((refreshed) => {
       const provider =
         refreshed._tag === "Success"
@@ -216,11 +267,10 @@ export function UpComputerOnboarding({
             )
           : undefined;
       if (provider === undefined) return;
-      // The installers put the CLI in ~/.local/bin, which a running server may not search yet.
-      setNotOnPath((current) => {
+      setInstallFailed((current) => {
         const next = new Set(current);
-        if (session.action === "install" && !provider.installed) next.add(session.driver);
-        else next.delete(session.driver);
+        if (session.action === "install" && !provider.installed) next.add(driver);
+        else next.delete(driver);
         return next;
       });
       recordClientEvent(environmentId, {
@@ -233,63 +283,31 @@ export function UpComputerOnboarding({
     });
   };
 
-  const finishingRef = useRef<Promise<boolean> | null>(null);
-  const finish = useCallback(
-    (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
-      if (finishingRef.current !== null) return finishingRef.current;
-      const completion = completeOnboarding()
-        .then(async () => {
-          recordClientEvent(environmentId, {
-            event: "onboarding.completed",
-            flow: FLOW,
-            importedProject: projectRef !== undefined,
-            importedThreads: importedThreadCount,
-          });
-          await onDone(projectRef);
-          if (importWarning) {
-            toastManager.add({
-              type: "warning",
-              title: "Some history was not imported",
-              description: importWarning,
-              timeout: 0,
-            });
-          } else if (importedThreadCount > 0) {
-            toastManager.add({
-              type: "success",
-              title: `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "conversation" : "conversations"}`,
-            });
-          }
-          return true;
-        })
-        .catch(() => {
-          toastManager.add({
-            type: "error",
-            title: "Could not finish setup",
-            description: "Your settings could not be saved. Try again.",
-          });
-          return false;
-        })
-        .finally(() => {
-          if (finishingRef.current === completion) finishingRef.current = null;
+  const finishingRef = useRef<Promise<void> | null>(null);
+  const finish = useCallback(() => {
+    if (finishingRef.current !== null) return;
+    const completion = completeOnboarding()
+      .then(async () => {
+        recordClientEvent(environmentId, {
+          event: "onboarding.completed",
+          flow: FLOW,
+          importedProject: false,
+          importedThreads: 0,
         });
-      finishingRef.current = completion;
-      return completion;
-    },
-    [completeOnboarding, environmentId, onDone, recordClientEvent],
-  );
-
-  const finishImport = useCallback(
-    (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
-      recordClientEvent(environmentId, {
-        event: "onboarding.step.completed",
-        step: "import",
-        flow: FLOW,
-        outcome: projectRef !== undefined || importedThreadCount > 0 ? "continued" : "skipped",
+        await onDone();
+      })
+      .catch(() => {
+        toastManager.add({
+          type: "error",
+          title: "Could not finish setup",
+          description: "Your settings could not be saved. Try again.",
+        });
+      })
+      .finally(() => {
+        if (finishingRef.current === completion) finishingRef.current = null;
       });
-      return finish(projectRef, importWarning, importedThreadCount);
-    },
-    [environmentId, finish, recordClientEvent],
-  );
+    finishingRef.current = completion;
+  }, [completeOnboarding, environmentId, onDone, recordClientEvent]);
 
   const completeAgents = (outcome: "continued" | "skipped") => {
     recordClientEvent(environmentId, {
@@ -300,14 +318,10 @@ export function UpComputerOnboarding({
       readyProviders,
     });
     setTerminalSession(null);
-    if (outcome === "continued" && resolveProjectImportOffer(scans) === "offer") {
-      setScreen({ kind: "import" });
-      return;
-    }
-    void finish();
+    finish();
   };
 
-  // An agent's own screen is done once that agent works: move on, as V1 did.
+  // An agent's own screen is done once that agent works: open the app, as V1 did.
   const detailDriver = screen.kind === "agent" ? screen.driver : null;
   const detailState = detailDriver
     ? getOnboardingProviderState(byDriver.get(detailDriver))
@@ -316,7 +330,7 @@ export function UpComputerOnboarding({
   const advance = useEffectEvent((driver: UpComputerOnboardingDriver) => {
     toastManager.add({
       type: "success",
-      title: `${AGENT_NAMES[driver]} is ready`,
+      title: `${agentFor(driver).name} is ready`,
       description: "You can start a conversation.",
     });
     completeAgents("continued");
@@ -331,21 +345,25 @@ export function UpComputerOnboarding({
     advance(detailDriver);
   }, [detailDriver, detailState]);
 
-  const back = useCallback(() => {
-    if (isImporting) return;
+  const back = () => {
     setTerminalSession(null);
     setScreen({ kind: "agents" });
-  }, [isImporting]);
+  };
 
-  const openAgent = (driver: UpComputerOnboardingDriver) => {
+  const openAgent = (agent: UpComputerOnboardingAgent) => {
+    const { driver } = agent;
     const provider = byDriver.get(driver);
+    const state = getOnboardingProviderState(provider);
+    // Choosing to set an agent up turns it on; most start disabled.
+    if (provider !== undefined && state === "disabled") enableAgent(provider);
     if (driver === "codex" && !codexExistingCli) {
       // "Connect" is the ChatGPT choice: start it instead of asking again.
       changeCodexMode("managed");
       setCodexAutoStart(true);
     } else if (
       provider !== undefined &&
-      getOnboardingProviderState(provider) !== "attention" &&
+      resolveAgentSignInKind(agent, codexExistingCli) === "terminal" &&
+      (state === "install" || state === "signIn") &&
       canOperateTerminal
     ) {
       openTerminal(driver, provider);
@@ -353,35 +371,25 @@ export function UpComputerOnboarding({
     setScreen({ kind: "agent", driver });
   };
 
-  let title: string;
-  let description: ReactNode;
-  let body: ReactNode;
-  if (screen.kind === "import") {
-    title = "Import your projects";
-    description =
-      "Bring the projects you use with Claude Code and Codex into Up.computer, with their recent conversations. Their files are only read, never changed.";
-    body = (
-      // ImportStep brings its own heading; this screen's header replaces it.
-      <div className="[&>div>h1]:hidden [&>h1+p]:hidden [&>h1]:hidden">
-        <ImportStep
-          scans={scans}
-          isImporting={isImporting}
-          setIsImporting={setIsImporting}
-          onDone={finishImport}
-        />
-      </div>
-    );
-  } else if (screen.kind === "agent") {
-    const driver = screen.driver;
+  let title = "Set up agents";
+  let description =
+    "Install the agents you use and choose the setup that works best for you. Add or change providers anytime in Settings.";
+  let body: ReactNode = (
+    <AgentTable
+      byDriver={byDriver}
+      codexExistingCli={codexExistingCli}
+      readyProviders={readyProviders}
+      onOpen={openAgent}
+      onContinue={() => completeAgents("continued")}
+    />
+  );
+  if (screen.kind === "agent") {
+    const agent = agentFor(screen.driver);
+    const { driver } = agent;
     const provider = byDriver.get(driver);
-    const terminal =
-      terminalSession?.driver === driver ? (
-        <AgentInstallTerminal
-          key={`${terminalSession.providerInstanceId}:${terminalSession.action}`}
-          session={terminalSession}
-          onClose={() => closeTerminal(terminalSession)}
-        />
-      ) : null;
+    const copy = DETAIL_COPY[driver];
+    title = copy.title;
+    description = copy.description;
     if (driver === "codex" && !codexExistingCli) {
       title = "Connect Codex";
       description =
@@ -409,12 +417,50 @@ export function UpComputerOnboarding({
             }
           />
         );
+    } else if (driver === "cursor" || driver === "antigravity") {
+      const environmentLabel =
+        environments.find((environment) => environment.environmentId === environmentId)?.label ??
+        "This computer";
+      const instanceConfig =
+        provider === undefined
+          ? undefined
+          : serverConfig?.settings.providerInstances[provider.instanceId]?.config;
+      body =
+        provider === undefined ? (
+          <CheckingCard />
+        ) : driver === "antigravity" ? (
+          <ProviderSetupSection
+            environmentId={environmentId}
+            environmentLabel={environmentLabel}
+            instanceId={provider.instanceId}
+            provider={provider}
+            binaryPath={configuredBinaryPath(instanceConfig)}
+            authMethod={readAntigravityAuthMethod(instanceConfig)}
+            enabled={provider.enabled}
+            readOnly={false}
+            onEnable={() => enableAgent(provider)}
+          />
+        ) : provider.setup?.canAuthenticate ? (
+          <ProviderAuthenticationSection
+            key={provider.instanceId}
+            environmentId={environmentId}
+            environmentLabel={environmentLabel}
+            instanceId={provider.instanceId}
+            provider={provider}
+            readOnly={false}
+          />
+        ) : (
+          <CheckingCard />
+        );
     } else {
-      title = driver === "codex" ? "Use your Codex CLI" : "Set up Claude Code";
-      description =
-        driver === "codex"
-          ? "Install the Codex command line tool, then sign in with your ChatGPT account."
-          : "Install Claude Code, then sign in with your Claude account.";
+      const terminal =
+        terminalSession?.driver === driver ? (
+          <AgentInstallTerminal
+            key={`${terminalSession.providerInstanceId}:${terminalSession.action}`}
+            session={terminalSession}
+            onClose={() => closeTerminal(terminalSession)}
+          />
+        ) : null;
       body = (
         <CliAgentSteps
           driver={driver}
@@ -422,7 +468,7 @@ export function UpComputerOnboarding({
           serverConfig={serverConfig}
           canOperateTerminal={canOperateTerminal}
           terminalOpen={terminal !== null}
-          notOnPath={notOnPath.has(driver)}
+          installFailed={installFailed.has(driver)}
           onRun={() => provider && openTerminal(driver, provider)}
           onUseChatGpt={
             driver === "codex"
@@ -438,20 +484,6 @@ export function UpComputerOnboarding({
         </CliAgentSteps>
       );
     }
-  } else {
-    title = "Set up an agent";
-    description =
-      "Up.computer works with the coding agents you already pay for. Connect one to start. You can add more or change this anytime in Settings.";
-    body = (
-      <AgentTable
-        byDriver={byDriver}
-        codexExistingCli={codexExistingCli}
-        readyProviders={readyProviders}
-        onOpen={openAgent}
-        onEnable={enableAgent}
-        onContinue={() => completeAgents("continued")}
-      />
-    );
   }
 
   // A modal dialog like upstream's wizard, so the dialogs it opens (account
@@ -466,15 +498,12 @@ export function UpComputerOnboarding({
           className="fixed inset-0 z-50 bg-background/96 backdrop-blur-md"
         />
         <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden px-3 py-6 sm:px-6 sm:py-12">
-          <DialogPrimitive.Popup
-            className={`relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-4xl border border-border/70 bg-card shadow-2xl shadow-black/20 outline-none ${screen.kind === "agents" ? "min-h-[min(36rem,100%)]" : ""}`}
-          >
+          <DialogPrimitive.Popup className="relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-4xl border border-border/70 bg-card shadow-2xl shadow-black/20 outline-none">
             {screen.kind !== "agents" ? (
               <button
                 type="button"
                 aria-label="Back"
                 className={`${ICON_BUTTON_CLASS} absolute top-5 left-5 z-10 sm:top-6 sm:left-6`}
-                disabled={isImporting}
                 onClick={back}
               >
                 <ArrowLeftIcon className="size-4" strokeWidth={2.75} />
@@ -484,21 +513,12 @@ export function UpComputerOnboarding({
               type="button"
               aria-label="Skip setup"
               className={`${ICON_BUTTON_CLASS} absolute top-5 right-5 z-10 sm:top-6 sm:right-6`}
-              disabled={isImporting}
-              onClick={() =>
-                screen.kind === "import" ? void finishImport() : completeAgents("skipped")
-              }
+              onClick={() => completeAgents("skipped")}
             >
               <XIcon className="size-4" strokeWidth={2.75} />
             </button>
             <div className="flex min-h-0 flex-1 flex-col py-6">
-              <header
-                className={
-                  screen.kind === "agents"
-                    ? "flex shrink-0 grow basis-auto flex-col justify-center px-14 pb-5 sm:px-16"
-                    : "shrink-0 px-14 pt-8 pb-5 sm:px-16"
-                }
-              >
+              <header className="shrink-0 px-14 pt-2 pb-5 sm:px-16">
                 <DialogPrimitive.Title className="text-center text-2xl font-semibold tracking-tight text-balance text-foreground">
                   {title}
                 </DialogPrimitive.Title>
@@ -516,15 +536,29 @@ export function UpComputerOnboarding({
   );
 }
 
+function configuredBinaryPath(config: unknown): string | undefined {
+  if (config === null || typeof config !== "object" || !("binaryPath" in config)) return undefined;
+  return typeof config.binaryPath === "string" ? config.binaryPath.trim() : undefined;
+}
+
 function agentTerminalCommand(
   driver: UpComputerOnboardingDriver,
   provider: ServerProvider,
   serverConfig: ServerConfig,
 ): string {
   const os = serverConfig.environment.platform.os;
+  if (driver === "grok" || driver === "opencode") {
+    return provider.installed
+      ? resolveCliLoginCommand(
+          driver,
+          serverConfig.settings.providerInstances[provider.instanceId]?.config,
+        )
+      : resolveCliInstallCommand(driver, os);
+  }
+  const upstreamDriver = driver === "claudeAgent" ? "claudeAgent" : "codex";
   return provider.installed
     ? resolveOnboardingProviderLoginCommand(provider, serverConfig.settings, os)
-    : resolveOnboardingProviderInstallCommand(driver, os);
+    : resolveOnboardingProviderInstallCommand(upstreamDriver, os);
 }
 
 function AgentTable({
@@ -532,14 +566,12 @@ function AgentTable({
   codexExistingCli,
   readyProviders,
   onOpen,
-  onEnable,
   onContinue,
 }: {
   readonly byDriver: ReadonlyMap<string, ServerProvider>;
   readonly codexExistingCli: boolean;
   readonly readyProviders: number;
-  readonly onOpen: (driver: UpComputerOnboardingDriver) => void;
-  readonly onEnable: (provider: ServerProvider) => void;
+  readonly onOpen: (agent: UpComputerOnboardingAgent) => void;
   readonly onContinue: () => void;
 }) {
   return (
@@ -553,26 +585,27 @@ function AgentTable({
           <span className="text-center">Ready</span>
         </div>
         <div className="divide-y divide-border/60 border-t border-border/60">
-          {UPCOMPUTER_ONBOARDING_DRIVERS.map((driver) => {
-            const provider = byDriver.get(driver);
-            const install = resolveAgentInstallCell({ driver, provider, codexExistingCli });
-            const ready = resolveAgentReadyCell({ driver, provider });
+          {UPCOMPUTER_ONBOARDING_AGENTS.map((agent) => {
+            const provider = byDriver.get(agent.driver);
+            const install = resolveAgentInstallCell({ agent, provider, codexExistingCli });
+            const ready = resolveAgentReadyCell({ agent, provider, codexExistingCli });
             return (
-              <div key={driver} className={`grid items-center gap-2 py-3 sm:gap-3 ${ROW_GRID}`}>
+              <div
+                key={agent.driver}
+                className={`grid items-center gap-2 py-3 sm:gap-3 ${ROW_GRID}`}
+              >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/70">
                     <ProviderInstanceIcon
-                      driverKind={ProviderDriverKind.make(driver)}
-                      displayName={AGENT_NAMES[driver]}
+                      driverKind={ProviderDriverKind.make(agent.driver)}
+                      displayName={agent.name}
                       iconClassName="size-5"
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {AGENT_NAMES[driver]}
-                    </p>
-                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                      {describeOnboardingAgent({ driver, provider, codexExistingCli })}
+                    <p className="truncate text-sm font-medium text-foreground">{agent.name}</p>
+                    <p className="mt-0.5 hidden text-xs leading-relaxed text-muted-foreground sm:block">
+                      {agent.description}
                     </p>
                   </div>
                 </div>
@@ -583,50 +616,32 @@ function AgentTable({
                     <button
                       type="button"
                       className={ROW_ACTION_CLASS}
-                      onClick={() => onOpen(driver)}
+                      onClick={() => onOpen(agent)}
                     >
                       Install
                     </button>
                   ) : (
                     <span className="text-sm text-muted-foreground">
-                      {install === "included" ? "Included" : "Installed"}
+                      {install === "included"
+                        ? "Included"
+                        : install === "built-in"
+                          ? "Built in"
+                          : "Installed"}
                     </span>
                   )}
                 </div>
                 <div className="justify-self-center">
-                  <ReadyCell
-                    cell={ready}
-                    onOpen={() => onOpen(driver)}
-                    onEnable={() => provider && onEnable(provider)}
-                  />
+                  <ReadyCell cell={ready} onOpen={() => onOpen(agent)} />
                 </div>
               </div>
             );
           })}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Cursor, Grok, OpenCode and other agents can be added later in Settings.
-        </p>
       </div>
-      <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        {isProductFeatureShown("usageDataNotice") ? (
-          <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-            Up.computer sends us basic usage stats, like the app version and which agent and model
-            you use, so we can improve it. It never sends your chats, files or passwords. See our{" "}
-            <a
-              className="underline underline-offset-2 hover:text-foreground"
-              href={PRIVACY_POLICY_URL}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              privacy policy
-            </a>{" "}
-            for details and how to turn this off.
-          </p>
-        ) : null}
+      <div className="flex justify-end">
         <button
           type="button"
-          className={`${PRIMARY_CLASS} self-end sm:ml-auto`}
+          className={PRIMARY_CLASS}
           disabled={readyProviders === 0}
           onClick={onContinue}
         >
@@ -640,11 +655,9 @@ function AgentTable({
 function ReadyCell({
   cell,
   onOpen,
-  onEnable,
 }: {
   readonly cell: ReturnType<typeof resolveAgentReadyCell>;
   readonly onOpen: () => void;
-  readonly onEnable: () => void;
 }) {
   switch (cell) {
     case "ready":
@@ -653,16 +666,10 @@ function ReadyCell({
       return <Checking />;
     case "install-first":
       return <span className="text-sm text-muted-foreground">Not yet</span>;
-    case "enable":
-      return (
-        <button type="button" className={ROW_ACTION_CLASS} onClick={onEnable}>
-          Turn on
-        </button>
-      );
     default:
       return (
         <button type="button" className={ROW_ACTION_CLASS} onClick={onOpen}>
-          {cell === "sign-in" ? "Sign in" : cell === "fix" ? "Fix" : "Connect"}
+          {cell === "sign-in" ? "Sign in" : "Connect"}
         </button>
       );
   }
@@ -679,7 +686,7 @@ function CliAgentSteps({
   serverConfig,
   canOperateTerminal,
   terminalOpen,
-  notOnPath,
+  installFailed,
   onRun,
   onUseChatGpt,
   children,
@@ -689,14 +696,14 @@ function CliAgentSteps({
   readonly serverConfig: ServerConfig | null;
   readonly canOperateTerminal: boolean;
   readonly terminalOpen: boolean;
-  readonly notOnPath: boolean;
+  readonly installFailed: boolean;
   readonly onRun: () => void;
   readonly onUseChatGpt: (() => void) | undefined;
   readonly children: ReactNode;
 }) {
   const state = getOnboardingProviderState(provider);
   const installed = provider?.installed === true;
-  const name = AGENT_NAMES[driver];
+  const copy = DETAIL_COPY[driver];
   const pendingCommand =
     provider !== undefined && serverConfig !== null && state !== "ready"
       ? agentTerminalCommand(driver, provider, serverConfig)
@@ -706,16 +713,16 @@ function CliAgentSteps({
       <ol className="divide-y divide-border/60 border-y border-border/60">
         <StepRow
           number={1}
-          title={`Install ${driver === "codex" ? "the Codex CLI" : name}`}
+          title={copy.install ?? "Install"}
           detail={
-            notOnPath && !installed
-              ? `If the install finished, quit and reopen Up.computer so it can find ${name}.`
+            installFailed && !installed
+              ? "The install did not finish. Run it again."
               : installed
                 ? "Installed on this computer."
-                : "Runs the official installer in a terminal here."
+                : (copy.installNote ?? "Runs the official installer in a terminal here.")
           }
           status={
-            state === "checking" ? (
+            state === "checking" || provider === undefined ? (
               <Checking />
             ) : installed ? (
               <ReadyMark label="Done" />
@@ -723,7 +730,7 @@ function CliAgentSteps({
               <button
                 type="button"
                 className={ROW_ACTION_CLASS}
-                disabled={terminalOpen || !canOperateTerminal || provider === undefined}
+                disabled={terminalOpen || !canOperateTerminal || state === "disabled"}
                 onClick={onRun}
               >
                 {terminalOpen ? <LoaderIcon className="size-4 animate-spin" /> : "Install"}
@@ -733,15 +740,13 @@ function CliAgentSteps({
         />
         <StepRow
           number={2}
-          title={driver === "codex" ? "Sign in with ChatGPT" : "Sign in with Claude"}
+          title={copy.signIn ?? "Sign in"}
           detail={
             state === "ready"
               ? "Signed in."
               : state === "attention"
                 ? "Up.computer could not check it. Settings, Providers has the details."
-                : state === "disabled"
-                  ? "Turned off in Settings."
-                  : "Your browser opens to finish signing in."
+                : (copy.signInNote ?? "Your browser opens to finish signing in.")
           }
           status={
             state === "ready" ? (

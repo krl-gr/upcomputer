@@ -13,7 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 const mocks = vi.hoisted(() => ({
   providers: [] as ServerProvider[],
   settings: { providerInstances: {} as Record<string, unknown> },
-  candidates: [] as unknown[],
+  authSection: vi.fn(),
   events: [] as Array<Record<string, unknown>>,
   updateSettings: vi.fn(),
   refresh: vi.fn(),
@@ -55,16 +55,8 @@ vi.mock("../hooks/useRecordClientEvent", () => ({
     mocks.events.push(input),
 }));
 vi.mock("../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks.complete }));
-vi.mock("../onboarding/useProjectScans", () => ({
-  useProjectScans: () => [
-    {
-      environmentId: "env",
-      isPending: false,
-      error: null,
-      refresh: vi.fn(),
-      data: { truncated: false, candidates: mocks.candidates },
-    },
-  ],
+vi.mock("../state/environments", () => ({
+  useEnvironments: () => ({ environments: [{ environmentId: "env", label: "Computer" }] }),
 }));
 vi.mock("../components/onboarding/WelcomeWizard", () => ({
   AgentInstallTerminal: ({
@@ -81,14 +73,6 @@ vi.mock("../components/onboarding/WelcomeWizard", () => ({
       </button>
     </div>
   ),
-  ImportStep: ({ onDone }: { onDone: () => void }) => (
-    <div data-testid="import">
-      <h1>Import your projects</h1>
-      <button type="button" onClick={() => onDone()}>
-        Do not import projects
-      </button>
-    </div>
-  ),
 }));
 vi.mock("../components/settings/CodexSetupSection", () => ({
   CodexSetupSection: (props: { autoStart: boolean; onModeChange: (mode: string) => void }) => {
@@ -99,6 +83,16 @@ vi.mock("../components/settings/CodexSetupSection", () => ({
       </button>
     );
   },
+}));
+vi.mock("../components/settings/ProviderAuthenticationSection", () => ({
+  ProviderAuthenticationSection: (props: { instanceId: string }) => {
+    mocks.authSection(props);
+    return <div data-testid="auth">Sign in to {props.instanceId}</div>;
+  },
+}));
+vi.mock("../components/settings/ProviderSetupSection", () => ({
+  ProviderSetupSection: () => <div data-testid="antigravity-setup" />,
+  readAntigravityAuthMethod: () => "oauth-personal",
 }));
 vi.mock("../components/settings/ChatGptWelcomeCoordinator", () => ({
   ChatGptWelcomeCoordinator: () => null,
@@ -130,6 +124,9 @@ function provider(driver: string, overrides: Partial<ServerProvider> = {}): Serv
 }
 const missing = { installed: false, status: "error", auth: { status: "unknown" } } as const;
 
+const disabled = { enabled: false, status: "disabled", installed: false } as const;
+const signedOut = { status: "error", auth: { status: "unauthenticated" } } as const;
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -145,9 +142,13 @@ beforeEach(() => {
     value: () => [],
   });
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  mocks.providers = [provider("codex", missing), provider("claudeAgent", missing)];
+  // A clean Mac: Codex and Claude on but missing, the other four off.
+  mocks.providers = [
+    provider("codex", missing),
+    provider("claudeAgent", missing),
+    ...["cursor", "grok", "opencode", "antigravity"].map((driver) => provider(driver, disabled)),
+  ];
   mocks.settings = { providerInstances: {} };
-  mocks.candidates = [];
   mocks.events = [];
   mocks.complete.mockResolvedValue(undefined);
   mocks.refresh.mockImplementation(async () => ({
@@ -178,12 +179,23 @@ function render() {
   });
 }
 
-function button(label: string, index = 0): HTMLButtonElement {
-  const matches = [...document.querySelectorAll("button")].filter(
+function setProvider(driver: string, overrides: Partial<ServerProvider> = {}) {
+  mocks.providers = mocks.providers.map((entry) =>
+    entry.driver === driver ? provider(driver, overrides) : entry,
+  );
+  render();
+}
+
+function button(label: string, rowName?: string): HTMLButtonElement {
+  const scope =
+    rowName === undefined
+      ? document.body
+      : [...document.querySelectorAll("p")].find((element) => element.textContent === rowName)
+          ?.parentElement?.parentElement?.parentElement;
+  const match = [...(scope?.querySelectorAll("button") ?? [])].find(
     (element) => element.textContent?.trim() === label || element.ariaLabel === label,
   );
-  const match = matches[index];
-  if (!match) throw new Error(`No button "${label}"`);
+  if (!match) throw new Error(`No button "${label}"${rowName ? ` in ${rowName}` : ""}`);
   return match;
 }
 
@@ -193,74 +205,89 @@ async function click(element: HTMLElement) {
   });
 }
 
+function lastPatch() {
+  return JSON.stringify(mocks.updateSettings.mock.calls.at(-1)?.[0].input.patch);
+}
+
 function eventNames() {
   return mocks.events.map((event) =>
     [event.event, event.step, event.action, event.outcome].filter(Boolean).join(":"),
   );
 }
 
-it("connects Codex with ChatGPT in one click, then offers import and finishes", async () => {
-  mocks.candidates = [{ path: "/project" }];
+it("shows V1's six agents without the usage notice or an import step", () => {
   render();
-  expect(document.body.textContent).toContain("Set up an agent");
+  const text = document.body.textContent ?? "";
+  expect(text).toContain("Set up agents");
+  for (const name of ["Codex", "Claude", "Cursor", "Grok", "OpenCode", "Antigravity"]) {
+    expect(text).toContain(name);
+  }
+  expect(text).not.toContain("usage stats");
+  expect(text).not.toContain("can be added later");
   expect(button("Continue").disabled).toBe(true);
+});
 
-  await click(button("Connect"));
-  const patch = mocks.updateSettings.mock.calls[0]?.[0].input.patch;
-  expect(JSON.stringify(patch)).toContain('"setupMode":"managed"');
+it("opens the app as soon as Codex is connected with ChatGPT", async () => {
+  render();
+  await click(button("Connect", "Codex"));
+  expect(lastPatch()).toContain('"setupMode":"managed"');
   expect(document.body.textContent).toContain("Connect Codex");
   expect(mocks.codexSetup).toHaveBeenLastCalledWith(expect.objectContaining({ autoStart: true }));
 
-  mocks.providers = [provider("codex"), provider("claudeAgent", missing)];
-  render();
+  setProvider("codex");
+  await act(async () => {});
   expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Codex is ready" }));
-  expect(document.querySelector('[data-testid="import"]')).not.toBeNull();
-
-  await click(button("Do not import projects"));
   expect(mocks.complete).toHaveBeenCalledOnce();
-  expect(onDone).toHaveBeenCalledWith(undefined);
+  expect(onDone).toHaveBeenCalledOnce();
   expect(eventNames()).toEqual([
     "onboarding.step.viewed:agents",
     "onboarding.agent.action:continue_with_chatgpt",
     "onboarding.step.completed:agents:continued",
-    "onboarding.step.viewed:import",
-    "onboarding.step.completed:import:skipped",
     "onboarding.completed",
   ]);
-  expect(mocks.events.every((event) => event.flow === "upcomputer" || !("step" in event))).toBe(
-    true,
+  const flowEvents = mocks.events.filter(
+    (event) => "step" in event || event.event === "onboarding.completed",
   );
+  expect(flowEvents.every((event) => event.flow === "upcomputer")).toBe(true);
   expect(mocks.events.find((event) => event.outcome === "continued")?.readyProviders).toBe(1);
 });
 
-it("finishes right after the first working agent when there is nothing to import", async () => {
+it("installs Claude in the terminal and asks to retry an install that did not finish", async () => {
   render();
-  await click(button("Install"));
+  await click(button("Install", "Claude"));
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
     "curl -fsSL https://claude.ai/install.sh | bash",
   );
-
-  mocks.providers = [provider("codex", missing), provider("claudeAgent")];
-  render();
-  await act(async () => {});
-  expect(document.querySelector('[data-testid="import"]')).toBeNull();
-  expect(mocks.complete).toHaveBeenCalledOnce();
-  expect(eventNames()).toEqual([
-    "onboarding.step.viewed:agents",
-    "onboarding.agent.action:install",
-    "onboarding.step.completed:agents:continued",
-    "onboarding.completed",
-  ]);
+  await click(button("Close terminal"));
+  expect(document.body.textContent).toContain("The install did not finish. Run it again.");
+  expect(document.body.textContent).not.toContain("reopen");
+  expect(eventNames()).toContain("onboarding.agent.terminal_closed:install");
 });
 
-it("explains a CLI that installed but is not found yet", async () => {
+it("turns Grok on and installs it from its own screen", async () => {
   render();
+  await click(button("Connect", "Grok"));
+  expect(lastPatch()).toContain('"enabled":true');
+  expect(document.body.textContent).toContain("Set up Grok");
+  expect(document.querySelector('[data-testid="terminal"]')).toBeNull();
+
+  setProvider("grok", missing);
   await click(button("Install"));
-  await click(button("Close terminal"));
-  expect(document.body.textContent).toContain(
-    "If the install finished, quit and reopen Up.computer so it can find Claude Code.",
+  expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
+    "npm install -g @xai-official/grok",
   );
-  expect(eventNames()).toContain("onboarding.agent.terminal_closed:install");
+  setProvider("grok", signedOut);
+  await click(button("Close terminal"));
+  await click(button("Sign in"));
+  expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain("grok login");
+});
+
+it("signs in to Cursor in the app after turning it on", async () => {
+  render();
+  await click(button("Connect", "Cursor"));
+  expect(lastPatch()).toContain('"enabled":true');
+  setProvider("cursor", { ...signedOut, setup: { canAuthenticate: true, canInstall: false } });
+  expect(document.querySelector('[data-testid="auth"]')?.textContent).toBe("Sign in to cursor");
 });
 
 it("keeps the way back to ChatGPT after choosing the Codex CLI", async () => {
@@ -268,23 +295,20 @@ it("keeps the way back to ChatGPT after choosing the Codex CLI", async () => {
     providerInstances: { codex: { driver: "codex", config: { setupMode: "existing" } } },
   };
   render();
-  expect(document.body.textContent).toContain("Codex CLI is not installed yet.");
-  await click(button("Install"));
+  await click(button("Install", "Codex"));
   expect(document.body.textContent).toContain("Use your Codex CLI");
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
     "https://chatgpt.com/codex/install.sh",
   );
-
   await click(button("Sign in with ChatGPT instead, without the CLI"));
-  const patch = mocks.updateSettings.mock.calls.at(-1)?.[0].input.patch;
-  expect(JSON.stringify(patch)).toContain('"setupMode":"managed"');
+  expect(lastPatch()).toContain('"setupMode":"managed"');
 });
 
 it("skips the whole setup from the close button", async () => {
   render();
   await click(button("Skip setup"));
   expect(mocks.complete).toHaveBeenCalledOnce();
-  expect(onDone).toHaveBeenCalledWith(undefined);
+  expect(onDone).toHaveBeenCalledOnce();
   expect(eventNames()).toEqual([
     "onboarding.step.viewed:agents",
     "onboarding.step.completed:agents:skipped",

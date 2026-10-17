@@ -59,14 +59,14 @@ login landing shows up as a change. First-run setup sends `onboarding.*` events 
 step and per agent action, and `flow` says which screens sent them. Without it they
 come from upstream's wizard (builds before the agent table, hosted web, and the `upstream`
 `onboarding` surface): `step` is `connection`, `agents`, then `import`, always in that
-order. `flow: "upcomputer"` is our agent table: `step` is `agents` (the table and each
-agent's own screen) and `import` only when the scan found projects, so a flow without
-`import` events is a user who had nothing to import, not one who dropped off. Its
-`agents` step completes with `skipped` from the close button, and with `continued`
-only once an agent works. `onboarding.step.completed` with `step: "agents"` and
+order. `flow: "upcomputer"` is our agent table, which has one step, `agents` (the table and
+each agent's own screen): it completes with `continued` as soon as an agent works and
+with `skipped` from the close button, then `onboarding.completed` follows. It never
+sends `connection` or `import`, so funnels comparing the flows should stop at
+`agents`. `onboarding.step.completed` with `step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and
-`onboarding.agent.terminal_closed` with `installed: false` after an install is a CLI
-that installed but is not on PATH. `composer.provider_setup.*` records where "Open
+`onboarding.agent.terminal_closed` with `installed: false` after an install is an
+install that did not finish, or a CLI outside the PATH the server searches. `composer.provider_setup.*` records where "Open
 provider settings" sends them. `provider.readiness.failed.errorCategory` explains a
 session that would not open, and `app.first_thread_created` and
 `app.first_message_sent` mark first use. Milestones are claimed with marker files in
