@@ -460,7 +460,11 @@ export function UpComputerOnboarding({
   return (
     <DialogPrimitive.Root open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-background/96 backdrop-blur-md" />
+        {/* The route renders inside the command palette's dialog, so this one counts as nested. */}
+        <DialogPrimitive.Backdrop
+          forceRender
+          className="fixed inset-0 z-50 bg-background/96 backdrop-blur-md"
+        />
         <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden px-3 py-6 sm:px-6 sm:py-12">
           <DialogPrimitive.Popup
             className={`relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-4xl border border-border/70 bg-card shadow-2xl shadow-black/20 outline-none ${screen.kind === "agents" ? "min-h-[min(36rem,100%)]" : ""}`}
