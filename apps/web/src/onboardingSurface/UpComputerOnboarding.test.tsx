@@ -258,10 +258,31 @@ it("installs Claude in the terminal and asks to retry an install that did not fi
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
     "curl -fsSL https://claude.ai/install.sh | bash",
   );
+  expect(document.body.textContent).toContain("about 270 MB");
   await click(button("Close terminal"));
   expect(document.body.textContent).toContain("The install did not finish. Run it again.");
   expect(document.body.textContent).not.toContain("reopen");
   expect(eventNames()).toContain("onboarding.agent.terminal_closed:install");
+});
+
+it("checks the install again after Close instead of showing Install meanwhile", async () => {
+  render();
+  await click(button("Install", "Claude"));
+  let answer: (value: unknown) => void = () => undefined;
+  mocks.refresh.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  );
+  await click(button("Close terminal"));
+  expect(() => button("Install")).toThrow();
+  expect(document.body.textContent).toContain("Checking");
+
+  setProvider("claudeAgent", signedOut);
+  await act(async () => answer({ _tag: "Success", value: { providers: mocks.providers } }));
+  expect(document.body.textContent).toContain("Installed on this computer.");
+  expect(button("Sign in").disabled).toBe(false);
 });
 
 it("turns Grok on and installs it from its own screen", async () => {
@@ -272,9 +293,10 @@ it("turns Grok on and installs it from its own screen", async () => {
   expect(document.querySelector('[data-testid="terminal"]')).toBeNull();
 
   setProvider("grok", missing);
+  expect(document.body.textContent).not.toContain("Node.js");
   await click(button("Install"));
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
-    "npm install -g @xai-official/grok",
+    "curl -fsSL https://x.ai/cli/install.sh | bash",
   );
   setProvider("grok", signedOut);
   await click(button("Close terminal"));

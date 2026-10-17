@@ -9,7 +9,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { isMacDeveloperToolStub, resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   collectUint8StreamText,
   decodeUtf8,
@@ -266,6 +266,16 @@ function finalizeRunProcess<R>(
 
 export const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
 
+/** Reads as the tool not being installed, which is how callers already degrade. */
+export const missingMacDeveloperTools = (command: string) =>
+  PlatformError.systemError({
+    _tag: "NotFound",
+    module: "ChildProcess",
+    method: "spawn",
+    pathOrDescriptor: command,
+    description: `${commandName(command)} needs the Xcode Command Line Tools, which are not installed.`,
+  });
+
 const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   input: ProcessRunInput,
@@ -280,6 +290,16 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     input.args,
     input.env === undefined ? {} : { env: input.env, extendEnv },
   );
+  if (yield* isMacDeveloperToolStub(spawnCommand.command)) {
+    return yield* new ProcessSpawnError({
+      command: input.command,
+      argumentCount: input.args.length,
+      cwd: input.cwd,
+      spawnCwd: input.spawnCwd,
+      resolvedCommand: spawnCommand.command,
+      cause: missingMacDeveloperTools(spawnCommand.command),
+    });
+  }
 
   const child = yield* spawner
     .spawn(

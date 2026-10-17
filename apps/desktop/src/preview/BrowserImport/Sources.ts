@@ -1,6 +1,7 @@
 import type { BrowserImportSourceId, BrowserImportSourceProfile } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { isMacDeveloperToolStub } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -678,6 +679,8 @@ export const posixLockIsHeld = Effect.fnUntraced(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const environment = yield* HostProcess.Environment;
   for (const interpreter of interpreters) {
+    // Running Apple's shim would also open its install dialog.
+    if (yield* isMacDeveloperToolStub(interpreter, { env: environment })) continue;
     const verdict = yield* Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* spawner.spawn(

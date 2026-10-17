@@ -56,6 +56,7 @@ import {
   resolveAgentReadyCell,
   resolveAgentSignInKind,
   resolveCliInstallCommand,
+  resolveCliInstallNote,
   resolveCliLoginCommand,
   UPCOMPUTER_ONBOARDING_AGENTS,
   type UpComputerOnboardingAgent,
@@ -93,6 +94,9 @@ const DETAIL_COPY: Record<
     title: "Set up Claude",
     description: "Install Claude Code, then sign in with your Claude account.",
     install: "Install Claude Code",
+    // The installer prints nothing while it downloads, for minutes on a slow network.
+    installNote:
+      "Runs the official installer in a terminal here. It downloads about 270 MB, which can take a few minutes.",
     signIn: "Sign in with Claude",
   },
   cursor: {
@@ -104,7 +108,6 @@ const DETAIL_COPY: Record<
     description:
       "Install the Grok CLI, then sign in with the X account that holds your SuperGrok or Premium+ subscription.",
     install: "Install the Grok CLI",
-    installNote: "Installs with npm in a terminal here. Needs Node.js.",
     signIn: "Sign in with your X account",
   },
   opencode: {
@@ -161,6 +164,8 @@ export function UpComputerOnboarding({
   const [installFailed, setInstallFailed] = useState<ReadonlySet<UpComputerOnboardingDriver>>(
     new Set(),
   );
+  // Between Close and the recheck's answer the provider still reads as before.
+  const [rechecking, setRechecking] = useState<UpComputerOnboardingDriver | null>(null);
 
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
@@ -259,7 +264,9 @@ export function UpComputerOnboarding({
   const closeTerminal = (session: AgentTerminalSession) => {
     setTerminalSession(null);
     const driver = session.driver as UpComputerOnboardingDriver;
+    setRechecking(driver);
     void refreshProviders({ environmentId, input: {} }).then((refreshed) => {
+      setRechecking((current) => (current === driver ? null : current));
       const provider =
         refreshed._tag === "Success"
           ? refreshed.value.providers.find(
@@ -448,6 +455,7 @@ export function UpComputerOnboarding({
             instanceId={provider.instanceId}
             provider={provider}
             readOnly={false}
+            openBrowserOnStart
           />
         ) : (
           <CheckingCard />
@@ -468,6 +476,7 @@ export function UpComputerOnboarding({
           serverConfig={serverConfig}
           canOperateTerminal={canOperateTerminal}
           terminalOpen={terminal !== null}
+          rechecking={rechecking === driver}
           installFailed={installFailed.has(driver)}
           onRun={() => provider && openTerminal(driver, provider)}
           onUseChatGpt={
@@ -686,6 +695,7 @@ function CliAgentSteps({
   serverConfig,
   canOperateTerminal,
   terminalOpen,
+  rechecking,
   installFailed,
   onRun,
   onUseChatGpt,
@@ -696,6 +706,7 @@ function CliAgentSteps({
   readonly serverConfig: ServerConfig | null;
   readonly canOperateTerminal: boolean;
   readonly terminalOpen: boolean;
+  readonly rechecking: boolean;
   readonly installFailed: boolean;
   readonly onRun: () => void;
   readonly onUseChatGpt: (() => void) | undefined;
@@ -719,10 +730,13 @@ function CliAgentSteps({
               ? "The install did not finish. Run it again."
               : installed
                 ? "Installed on this computer."
-                : (copy.installNote ?? "Runs the official installer in a terminal here.")
+                : (copy.installNote ??
+                  ((driver === "grok" || driver === "opencode") && serverConfig !== null
+                    ? resolveCliInstallNote(serverConfig.environment.platform.os)
+                    : "Runs the official installer in a terminal here."))
           }
           status={
-            state === "checking" || provider === undefined ? (
+            state === "checking" || provider === undefined || rechecking ? (
               <Checking />
             ) : installed ? (
               <ReadyMark label="Done" />
@@ -751,6 +765,8 @@ function CliAgentSteps({
           status={
             state === "ready" ? (
               <ReadyMark />
+            ) : rechecking ? (
+              <Checking />
             ) : (
               <button
                 type="button"
