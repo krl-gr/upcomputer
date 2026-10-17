@@ -23,6 +23,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { restartContinuationRun } from "./RestartContinuation.ts";
+import { restartContinuationAdmitted } from "./RestartContinuationGate.ts";
 import { isBufferedProviderNotification } from "./NotificationMailbox.ts";
 import {
   endOrphanedNativeSubagent,
@@ -580,9 +581,17 @@ export const make = Effect.gen(function* () {
           },
         });
       }
-      const continuationRun =
+      const candidateRun =
         continueAfterRestart && trigger === "startup"
           ? restartContinuationRun(projection, now)
+          : undefined;
+      const continuationRun =
+        candidateRun !== undefined &&
+        (yield* restartContinuationAdmitted({
+          threadId: projection.thread.id,
+          sourceRunId: candidateRun.id,
+        }))
+          ? candidateRun
           : undefined;
       const effects: Array<EffectOutbox.PendingOrchestrationEffectV2> = continuationRun
         ? [
@@ -716,7 +725,8 @@ export const make = Effect.gen(function* () {
         )
           return;
         const run = restartContinuationRun(projection, yield* DateTime.now);
-        if (!run) return;
+        if (!run || !(yield* restartContinuationAdmitted({ threadId, sourceRunId: run.id })))
+          return;
         const commandId = CommandId.make(`command:restart-prepare:${run.id}`);
         yield* eventSink.writeWithEffects({
           commandId,

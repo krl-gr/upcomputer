@@ -59,6 +59,15 @@ import * as ProjectStore from "../../../../apps/server/src/orchestration-v2/Proj
 import * as CommandReceiptStore from "../../../../apps/server/src/orchestration-v2/CommandReceiptStore.ts";
 import * as ThreadManagementService from "../../../../apps/server/src/orchestration-v2/ThreadManagementService.ts";
 import * as ProviderReplayHarness from "../../../../apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts";
+import * as EffectOutbox from "../../../../apps/server/src/orchestration-v2/EffectOutbox.ts";
+import * as EventSink from "../../../../apps/server/src/orchestration-v2/EventSink.ts";
+import * as ProjectionStore from "../../../../apps/server/src/orchestration-v2/ProjectionStore.ts";
+import * as ProviderRuntimeRecovery from "../../../../apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts";
+import {
+  continueRestartedRun,
+  restartContinuationRun,
+} from "../../../../apps/server/src/orchestration-v2/RestartContinuation.ts";
+import * as IdAllocator from "../../../provider-core/src/server/IdAllocator.ts";
 import { limitRecoveryCommand } from "../../../../apps/server/src/orchestration-v2/UsageLimitRecoveryWorker.ts";
 import { checkpointWorkspace } from "../../../provider-testing/src/replayWorkspace.ts";
 import {
@@ -87,6 +96,8 @@ const HOLD = "[hold-turn]";
 const FAIL = "[fail-turn]";
 /** A message containing this marker fails its turn on a provider usage limit that resets 2 s later. */
 const LIMIT = "[limit-turn]";
+/** A message containing this marker leaves a native subagent running past its turn. */
+const NATIVE_SUBAGENT = "[native-subagent]";
 
 /** Provider sessions the scripted provider opened, closed and resumed threads in. */
 interface SessionLog {
@@ -263,6 +274,23 @@ function makeTaskAgentAdapter(
                   threadDisposition: "reusable",
                 });
                 return;
+              }
+              if (input.message.text.includes(NATIVE_SUBAGENT)) {
+                yield* Queue.offer(events, {
+                  type: "provider_thread.updated",
+                  driver,
+                  providerThread: {
+                    ...input.providerThread,
+                    pendingBackgroundTasks: [
+                      {
+                        taskId: "native-subagent",
+                        kind: "subagent",
+                        description: "Native research",
+                      },
+                    ],
+                    updatedAt: at,
+                  },
+                });
               }
               const summary = `Handled ${input.runOrdinal}`;
               yield* Queue.offer(events, {
@@ -537,6 +565,7 @@ const runSlice = <A, E>(
     | ProjectStore.ProjectStoreV2
     | ThreadManagementService.ThreadManagementService
     | ServerSettings.ServerSettingsService
+    | EventSink.EventSinkV2
   >,
   options: SliceOptions = {},
 ) =>
@@ -1291,6 +1320,125 @@ it.live("a run that fails with native background work keeps its session until it
     "task-agent-v2-release-background-failed",
     `Start a background job, then fail. ${FAIL}`,
     "failed",
+  ),
+);
+
+/**
+ * Startup recovery as it runs after a restart, here against the live harness:
+ * it ends the provider work the restart cut and prepares any continuation.
+ */
+const recoverAfterRestart = Effect.gen(function* () {
+  const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+  return yield* recovery.reconcile("startup");
+}).pipe(
+  Effect.provide(
+    ProviderRuntimeRecovery.layer.pipe(
+      Layer.provide(Layer.mergeAll(ProjectionStore.layer, EffectOutbox.layer, IdAllocator.layer)),
+    ),
+  ),
+);
+
+const restartContinuationEffects = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return yield* sql<{ readonly status: string }>`
+      SELECT status FROM orchestration_v2_effect_outbox
+      WHERE thread_id = ${threadId} AND effect_type = 'provider-runtime.continue'
+    `;
+  });
+
+it.live(
+  "after a restart an ended run's thread is not continued for its native subagent while its agent is off",
+  () =>
+    runSlice(
+      "task-agent-v2-restart-ended",
+      ({ createTaskWith, runWithStatus, runsOf, repository, taskAgents, threads, started }) =>
+        Effect.gen(function* () {
+          const first = yield* createTaskWith(`Delegate research. ${NATIVE_SUBAGENT}`);
+          yield* eventually("the run to complete", runWithStatus(first.id, "completed"));
+          const disabled = yield* repository.upsertAgent({ ...agent, enabled: false });
+          yield* taskAgents.scheduleAgentChanged({ agent: disabled, reason: "upserted" });
+
+          // Recovery would pick the completed v2 run for its open native subagent.
+          const before = yield* ProjectionStore.ProjectionStoreV2.use((projections) =>
+            projections.getRuntimeRecoveryProjection(first.threadId),
+          ).pipe(Effect.provide(ProjectionStore.layer));
+          const source = restartContinuationRun(before, yield* DateTime.now);
+          assert.strictEqual(source?.status, "completed");
+          const turnsBefore = (yield* Ref.get(started)).length;
+
+          yield* recoverAfterRestart;
+          assert.lengthOf(yield* restartContinuationEffects(first.threadId), 0);
+          // A continuation prepared before the restart still meets the gate when sent.
+          yield* continueRestartedRun({ threadId: first.threadId, sourceRunId: source!.id });
+
+          const records = yield* threads.getThreadRecords(first.threadId, ["runs", "messages"]);
+          assert.deepStrictEqual(
+            records.runs.map((run) => run.status),
+            ["completed"],
+          );
+          assert.lengthOf(
+            records.runs[0]?.restartCancelledBackgroundWork ?? [],
+            1,
+            "recovery recorded the cut subagent, which makes the run a continuation source",
+          );
+          assert.isFalse(
+            records.messages.some((message) =>
+              message.id.startsWith("message:restart-continuation:"),
+            ),
+          );
+          assert.lengthOf(yield* Ref.get(started), turnsBefore);
+          assert.deepStrictEqual(
+            (yield* runsOf).map((run) => run.status),
+            ["completed"],
+          );
+        }),
+      { perThreadSessions: true },
+    ),
+);
+
+it.live("after a restart an active run's cut turn continues once, inside that run", () =>
+  runSlice(
+    "task-agent-v2-restart-active",
+    ({ createTaskWith, runsOf, runWithStatus, threads, started, v2Runs }) =>
+      Effect.gen(function* () {
+        const first = yield* createTaskWith(`Work until stopped. ${HOLD}`);
+        yield* eventually(
+          "the provider turn to run",
+          threads
+            .getThreadRecords(first.threadId, ["providerTurns"])
+            .pipe(
+              Effect.map(({ providerTurns }) =>
+                Option.fromNullishOr(providerTurns.find((turn) => turn.status === "running")),
+              ),
+            ),
+        );
+
+        yield* recoverAfterRestart;
+        yield* eventually("the run to complete", runWithStatus(first.id, "completed"));
+
+        const runs = yield* v2Runs(first.threadId);
+        assert.deepStrictEqual(
+          runs.map((run) => [run.status, run.restartContinuationOfRunId ?? null]),
+          [
+            ["cancelled", null],
+            ["completed", runs[0]!.id],
+          ],
+        );
+        const { messages } = yield* threads.getThreadRecords(first.threadId, ["messages"]);
+        assert.lengthOf(
+          messages.filter((message) => message.id.startsWith("message:restart-continuation:")),
+          1,
+        );
+        assert.strictEqual((yield* Ref.get(started)).at(-1)?.text, "Continue where you left off.");
+        // The continuation stayed in the run: no second run, and nothing for
+        // agents that start on interrupted runs.
+        assert.deepStrictEqual(
+          (yield* runsOf).map((run) => [run.id, run.status]),
+          [[first.id, "completed"]],
+        );
+        assert.lengthOf(yield* restartContinuationEffects(first.threadId), 1);
+      }),
   ),
 );
 
