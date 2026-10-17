@@ -55,8 +55,15 @@ Measure a new install with ordered steps for one identity, not period-wide count
 
 Read the latest `provider.status.observed` per provider to tell "no CLI", "CLI but
 signed out" and "ready" apart; it is sent when the state changes, so an install or
-login landing shows up as a change. The welcome wizard sends `onboarding.*` events
-per step and per Agents action. `onboarding.step.completed` with `step: "agents"` and
+login landing shows up as a change. First-run setup sends `onboarding.*` events per
+step and per agent action, and `flow` says which screens sent them. Without it they
+come from upstream's wizard (builds before the agent table, hosted web, and the `upstream`
+`onboarding` surface): `step` is `connection`, `agents`, then `import`, always in that
+order. `flow: "upcomputer"` is our agent table: `step` is `agents` (the table and each
+agent's own screen) and `import` only when the scan found projects, so a flow without
+`import` events is a user who had nothing to import, not one who dropped off. Its
+`agents` step completes with `skipped` from the close button, and with `continued`
+only once an agent works. `onboarding.step.completed` with `step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and
 `onboarding.agent.terminal_closed` with `installed: false` after an install is a CLI
 that installed but is not on PATH. `composer.provider_setup.*` records where "Open

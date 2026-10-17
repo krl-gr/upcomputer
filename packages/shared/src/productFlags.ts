@@ -117,6 +117,13 @@ export interface ProductSurfaces {
    * theme it is translucent over the window's native vibrancy, as in V1.
    */
   readonly sidebarVibrancy: ProductSurfaceVariant;
+  /**
+   * First-run setup on a local or paired server. With `upcomputer` it is V1's
+   * agent table: one screen to make an agent work, then project import only
+   * when there is something to import. Hosted web keeps upstream's wizard,
+   * which has the Connect step it needs.
+   */
+  readonly onboarding: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -128,6 +135,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upstream",
   composerContextRow: "upstream",
   sidebarVibrancy: "upstream",
+  onboarding: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -137,6 +145,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upcomputer",
   composerContextRow: "upcomputer",
   sidebarVibrancy: "upcomputer",
+  onboarding: "upcomputer",
 });
 
 type CapabilityKey = {

@@ -895,16 +895,23 @@ export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateEr
 }
 
 const OnboardingStep = Schema.Literals(["connection", "agents", "import"]);
+/** Which first-run screens sent the event; absent means upstream's wizard. */
+const OnboardingFlow = Schema.optionalKey(Schema.Literals(["upstream", "upcomputer"]));
 
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
  */
 export const ClientTelemetryEvent = Schema.Union([
-  Schema.Struct({ event: Schema.Literal("onboarding.step.viewed"), step: OnboardingStep }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.step.viewed"),
+    step: OnboardingStep,
+    flow: OnboardingFlow,
+  }),
   Schema.Struct({
     event: Schema.Literal("onboarding.step.completed"),
     step: OnboardingStep,
+    flow: OnboardingFlow,
     outcome: Schema.Literals(["continued", "skipped"]),
     /** Agents step: providers ready on the environments being set up. */
     readyProviders: Schema.optionalKey(NonNegativeInt),
@@ -923,6 +930,7 @@ export const ClientTelemetryEvent = Schema.Union([
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),
+    flow: OnboardingFlow,
     importedProject: Schema.Boolean,
     importedThreads: NonNegativeInt,
   }),

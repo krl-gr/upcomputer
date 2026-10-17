@@ -677,9 +677,9 @@ function PairingForm({
 }
 
 const PRIMARY_AGENT_DRIVERS = ["codex", "claudeAgent"] as const;
-type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
+export type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
 
-interface AgentTerminalSession {
+export interface AgentTerminalSession {
   readonly environmentId: EnvironmentId;
   readonly driver: OnboardingAgentDriver;
   readonly action: "install" | "sign_in";
@@ -1096,7 +1096,7 @@ function AgentCard({
   );
 }
 
-function AgentInstallTerminal({
+export function AgentInstallTerminal({
   session,
   onClose,
 }: {
@@ -1264,7 +1264,7 @@ function AgentInstallTerminal({
 
 const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thread history.";
 
-function ImportStep({
+export function ImportStep({
   scans,
   isImporting,
   setIsImporting,

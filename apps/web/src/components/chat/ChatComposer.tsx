@@ -1068,7 +1068,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
-import { hasProviderSetup } from "./ProviderStatusBanner";
+import { composerProviderSetupInstanceId } from "../../onboardingSurface/upComputerOnboarding.logic";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -2117,7 +2117,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null
-        ? providerInstanceEntries.find((entry) => hasProviderSetup(entry.snapshot))?.instanceId
+        ? composerProviderSetupInstanceId(providerInstanceEntries)
         : undefined))
     : undefined;
   const providerSetupTarget = providerInstanceEntries.find(
