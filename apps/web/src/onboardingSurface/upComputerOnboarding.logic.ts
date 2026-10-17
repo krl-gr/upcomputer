@@ -170,7 +170,7 @@ export function composerProviderSetupInstanceId(
   return resolveProviderSetupInstanceId(entries);
 }
 
-export function resolveProviderSetupInstanceId(
+function resolveProviderSetupInstanceId(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ProviderInstanceId | undefined {
   const enabled = entries.filter((entry) => entry.enabled);
