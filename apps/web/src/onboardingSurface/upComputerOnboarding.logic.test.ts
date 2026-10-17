@@ -123,9 +123,9 @@ describe("agent rows", () => {
 });
 
 describe("CLI commands", () => {
-  it("installs OpenCode where the server finds new CLIs without a restart", () => {
-    expect(resolveCliInstallCommand("opencode", "darwin")).toContain(
-      'OPENCODE_INSTALL_DIR="$HOME/.local/bin"',
+  it("runs OpenCode's official installer unchanged", () => {
+    expect(resolveCliInstallCommand("opencode", "darwin")).toBe(
+      "curl -fsSL https://opencode.ai/install | bash",
     );
     expect(resolveCliInstallCommand("grok", "linux")).toBe("npm install -g @xai-official/grok");
   });

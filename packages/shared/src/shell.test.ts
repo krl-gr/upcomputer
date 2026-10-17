@@ -336,8 +336,11 @@ describe("mergePathValues", () => {
 });
 
 describe("resolveKnownPosixCliDirs", () => {
-  it("returns the native installers' ~/.local/bin", () => {
-    expect(resolveKnownPosixCliDirs({ HOME: "/Users/test" })).toEqual(["/Users/test/.local/bin"]);
+  it("returns the native installers' ~/.local/bin and OpenCode's ~/.opencode/bin", () => {
+    expect(resolveKnownPosixCliDirs({ HOME: "/Users/test" })).toEqual([
+      "/Users/test/.local/bin",
+      "/Users/test/.opencode/bin",
+    ]);
   });
 
   it("returns nothing without a HOME", () => {

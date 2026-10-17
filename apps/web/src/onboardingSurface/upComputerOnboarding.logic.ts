@@ -182,8 +182,8 @@ export function countReadyOnboardingProviders(
 
 /*
  * Official installers for the CLIs upstream's wizard does not install. OpenCode's
- * script writes to ~/.local/bin, where the server finds CLIs without a restart;
- * Grok ships only on npm.
+ * script always writes to ~/.opencode/bin, where the server finds CLIs without a
+ * restart; Grok ships only on npm.
  */
 const CLI_INSTALL_COMMANDS = {
   grok: {
@@ -191,7 +191,7 @@ const CLI_INSTALL_COMMANDS = {
     windows: "npm install -g @xai-official/grok",
   },
   opencode: {
-    posix: 'curl -fsSL https://opencode.ai/install | OPENCODE_INSTALL_DIR="$HOME/.local/bin" bash',
+    posix: "curl -fsSL https://opencode.ai/install | bash",
     windows: "npm install -g opencode-ai",
   },
 } as const;

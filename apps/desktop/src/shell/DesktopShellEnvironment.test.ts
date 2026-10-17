@@ -191,7 +191,7 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
-  it.effect("appends the native installers' ~/.local/bin after the login shell PATH", () =>
+  it.effect("appends the native installers' directories after the login shell PATH", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { SHELL: "/bin/zsh", HOME: "/Users/test", PATH: "/usr/bin" };
 
@@ -201,7 +201,10 @@ describe("DesktopShellEnvironment", () => {
         handler: () => envOutput({ PATH: "/opt/homebrew/bin:/usr/bin:/bin" }),
       });
 
-      assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin:/bin:/Users/test/.local/bin");
+      assert.equal(
+        env.PATH,
+        "/opt/homebrew/bin:/usr/bin:/bin:/Users/test/.local/bin:/Users/test/.opencode/bin",
+      );
     }),
   );
 
