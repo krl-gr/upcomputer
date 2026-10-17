@@ -35,6 +35,9 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useRef: reactHookHarness.useRef,
     useState: reactHookHarness.useState,
+    // The harness renders by calling components directly, so effects never run.
+    useEffect: () => undefined,
+    useEffectEvent: <T,>(callback: T) => callback,
   };
 });
 
