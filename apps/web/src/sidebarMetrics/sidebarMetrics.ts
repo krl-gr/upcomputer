@@ -76,9 +76,10 @@ export const SIDEBAR_FIXED_HEADER_END_GAP =
   "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";
 
 /**
- * In `SidebarProvider`'s style: moves upstream's sidebar toggle
- * (`SidebarControl` in `AppSidebarLayout.tsx`) so its icon starts where the
- * row icons do. The toggle sits at `--workspace-controls-left` plus its own
+ * In `SidebarProvider`'s and the sidebar's style: moves upstream's sidebar
+ * toggle (`SidebarControl` in `AppSidebarLayout.tsx`, and the phone sheet's
+ * own toggle in `SidebarChromeHeader`) so its icon starts where the row icons
+ * do. The toggle sits at `--workspace-controls-left` plus its own
  * `ml-px`, and centres a `size-4` icon in a `--workspace-titlebar-control-size`
  * button; a row icon starts at `--sidebar-content-inset` plus
  * `SIDEBAR_ROW_INSET`. The macOS desktop app sets the variable after this, to

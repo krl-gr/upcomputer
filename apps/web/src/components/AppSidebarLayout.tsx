@@ -258,11 +258,16 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
       : {}
   ) as CSSProperties;
+  // The phone sheet is portaled outside the provider, so it gets the toggle's
+  // position too: its own toggle then stands where the fixed one did.
+  const sidebarToggleStyle = {
+    ...(productSurface("sidebarHeader") === "upcomputer" ? SIDEBAR_TOGGLE_ALIGNMENT : {}),
+    ...windowControlsInsetStyle,
+  } as CSSProperties;
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
-    ...(productSurface("sidebarHeader") === "upcomputer" ? SIDEBAR_TOGGLE_ALIGNMENT : {}),
-    ...windowControlsInsetStyle,
+    ...sidebarToggleStyle,
   } as CSSProperties;
 
   useEffect(() => {
@@ -327,7 +332,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
             onResize: setSidebarWidth,
           }}
-          style={windowControlsInsetStyle}
+          style={sidebarToggleStyle}
         >
           {isOnSettings ? (
             <>
