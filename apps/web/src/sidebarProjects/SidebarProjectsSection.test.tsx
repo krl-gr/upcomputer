@@ -128,11 +128,11 @@ function visibleThreadIds() {
 let root: Root;
 let container: HTMLDivElement;
 
-function render() {
+function render(projectGroups = PROJECTS) {
   return act(async () => {
     root.render(
       <SidebarProvider>
-        <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={spies.addProject} />
+        <SidebarProjectsSection projectGroups={projectGroups} onAddProject={spies.addProject} />
       </SidebarProvider>,
     );
   });
@@ -373,6 +373,15 @@ describe("SidebarSectionHeader", () => {
     expect(header.toggle.getAttribute("aria-expanded")).toBe("false");
     expect(header.chevronOpen()).toBe(false);
     expect(header.action("Add project")).not.toBeNull();
+  });
+
+  it("keeps the header and its Add project action with no projects", async () => {
+    await render([]);
+    const header = sectionHeader("sidebar-projects-toggle");
+    expect(header.title()).toBe("Projects");
+    expect(rowLabels()).toEqual([]);
+    await click(header.action("Add project")!);
+    expect(spies.addProject).toHaveBeenCalledOnce();
   });
 
   it("runs upstream's add project action without toggling the section", async () => {

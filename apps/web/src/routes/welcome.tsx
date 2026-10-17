@@ -5,7 +5,12 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 
 import { NoProjectsHero } from "../components/NoProjectsHero";
+import { SidebarInset } from "../components/ui/sidebar";
+import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { isElectron } from "../env";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import { FirstRunSetup } from "../onboardingSurface/FirstRunSetup";
 
 const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
@@ -33,9 +38,18 @@ function WelcomeRouteView() {
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
   const localAvailable = authGateState.status === "authenticated";
+  // Home opens a chat without a project here (see the index route), so the
+  // hero behind setup would only flash before it.
+  const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
   return (
     <>
-      <NoProjectsHero />
+      {startsWithoutProject ? (
+        <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+          {isElectron ? <WorkspacePageHeader electron /> : null}
+        </SidebarInset>
+      ) : (
+        <NoProjectsHero />
+      )}
       {isWelcomeRoute && !dismissed ? (
         <FirstRunSetup
           localAvailable={localAvailable}
