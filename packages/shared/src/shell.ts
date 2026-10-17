@@ -749,14 +749,14 @@ export const isCommandAvailable = Effect.fn("shell.isCommandAvailable")(function
 
 /**
  * User-level CLI directories the native installers write to: Claude's and
- * Codex's ~/.local/bin, and OpenCode's ~/.opencode/bin, which its script
- * hard-codes. A fresh login shell often lacks them, so PATH builders append
- * them after the shell PATH and a CLI installed while the app runs is found
- * without a restart.
+ * Codex's ~/.local/bin, OpenCode's ~/.opencode/bin, which its script
+ * hard-codes, and Grok's ~/.grok/bin. A fresh login shell often lacks them, so
+ * PATH builders append them after the shell PATH and a CLI installed while the
+ * app runs is found without a restart.
  */
 export function resolveKnownPosixCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {
   const home = env.HOME?.trim();
-  return home ? [`${home}/.local/bin`, `${home}/.opencode/bin`] : [];
+  return home ? [`${home}/.local/bin`, `${home}/.opencode/bin`, `${home}/.grok/bin`] : [];
 }
 
 export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {

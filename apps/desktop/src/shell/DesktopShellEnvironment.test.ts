@@ -203,7 +203,7 @@ describe("DesktopShellEnvironment", () => {
 
       assert.equal(
         env.PATH,
-        "/opt/homebrew/bin:/usr/bin:/bin:/Users/test/.local/bin:/Users/test/.opencode/bin",
+        "/opt/homebrew/bin:/usr/bin:/bin:/Users/test/.local/bin:/Users/test/.opencode/bin:/Users/test/.grok/bin",
       );
     }),
   );

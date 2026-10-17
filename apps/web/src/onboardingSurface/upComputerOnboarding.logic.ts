@@ -181,13 +181,13 @@ export function countReadyOnboardingProviders(
 }
 
 /*
- * Official installers for the CLIs upstream's wizard does not install. OpenCode's
- * script always writes to ~/.opencode/bin, where the server finds CLIs without a
- * restart; Grok ships only on npm.
+ * Official installers for the CLIs upstream's wizard does not install. They
+ * write to ~/.opencode/bin and ~/.grok/bin, where the server finds CLIs without
+ * a restart, and need no Node.js. On Windows both come from npm.
  */
 const CLI_INSTALL_COMMANDS = {
   grok: {
-    posix: "npm install -g @xai-official/grok",
+    posix: "curl -fsSL https://x.ai/cli/install.sh | bash",
     windows: "npm install -g @xai-official/grok",
   },
   opencode: {
@@ -206,6 +206,13 @@ export function resolveCliInstallCommand(
   return platform === "windows"
     ? CLI_INSTALL_COMMANDS[driver].windows
     : CLI_INSTALL_COMMANDS[driver].posix;
+}
+
+/** What the install step says before it runs: npm needs Node.js, which a new computer lacks. */
+export function resolveCliInstallNote(platform: ExecutionEnvironmentPlatformOs): string {
+  return platform === "windows"
+    ? "Installs with npm in a terminal here. Needs Node.js from nodejs.org."
+    : "Runs the official installer in a terminal here.";
 }
 
 /** The CLI's own login, through a configured binary path when it needs no quoting. */

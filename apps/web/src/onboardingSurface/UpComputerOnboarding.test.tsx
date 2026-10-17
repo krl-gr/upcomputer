@@ -272,9 +272,10 @@ it("turns Grok on and installs it from its own screen", async () => {
   expect(document.querySelector('[data-testid="terminal"]')).toBeNull();
 
   setProvider("grok", missing);
+  expect(document.body.textContent).not.toContain("Node.js");
   await click(button("Install"));
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
-    "npm install -g @xai-official/grok",
+    "curl -fsSL https://x.ai/cli/install.sh | bash",
   );
   setProvider("grok", signedOut);
   await click(button("Close terminal"));

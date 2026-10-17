@@ -56,6 +56,7 @@ import {
   resolveAgentReadyCell,
   resolveAgentSignInKind,
   resolveCliInstallCommand,
+  resolveCliInstallNote,
   resolveCliLoginCommand,
   UPCOMPUTER_ONBOARDING_AGENTS,
   type UpComputerOnboardingAgent,
@@ -104,7 +105,6 @@ const DETAIL_COPY: Record<
     description:
       "Install the Grok CLI, then sign in with the X account that holds your SuperGrok or Premium+ subscription.",
     install: "Install the Grok CLI",
-    installNote: "Installs with npm in a terminal here. Needs Node.js.",
     signIn: "Sign in with your X account",
   },
   opencode: {
@@ -719,7 +719,10 @@ function CliAgentSteps({
               ? "The install did not finish. Run it again."
               : installed
                 ? "Installed on this computer."
-                : (copy.installNote ?? "Runs the official installer in a terminal here.")
+                : (copy.installNote ??
+                  ((driver === "grok" || driver === "opencode") && serverConfig !== null
+                    ? resolveCliInstallNote(serverConfig.environment.platform.os)
+                    : "Runs the official installer in a terminal here."))
           }
           status={
             state === "checking" || provider === undefined ? (

@@ -20,6 +20,7 @@ import {
   resolveAgentInstallCell,
   resolveAgentReadyCell,
   resolveCliInstallCommand,
+  resolveCliInstallNote,
   resolveCliLoginCommand,
   showsUpComputerOnboarding,
   UPCOMPUTER_ONBOARDING_AGENTS,
@@ -127,7 +128,15 @@ describe("CLI commands", () => {
     expect(resolveCliInstallCommand("opencode", "darwin")).toBe(
       "curl -fsSL https://opencode.ai/install | bash",
     );
-    expect(resolveCliInstallCommand("grok", "linux")).toBe("npm install -g @xai-official/grok");
+  });
+
+  it("installs Grok without Node.js except on Windows, where npm needs it", () => {
+    expect(resolveCliInstallCommand("grok", "darwin")).toBe(
+      "curl -fsSL https://x.ai/cli/install.sh | bash",
+    );
+    expect(resolveCliInstallNote("darwin")).not.toContain("Node.js");
+    expect(resolveCliInstallCommand("grok", "windows")).toBe("npm install -g @xai-official/grok");
+    expect(resolveCliInstallNote("windows")).toContain("nodejs.org");
   });
 
   it("logs in through a configured binary only when it needs no quoting", () => {

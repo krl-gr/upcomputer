@@ -118,7 +118,10 @@ effectIt.effect("hydrates PATH when the desktop handoff is absent", () =>
 
         assert.equal(probe.mock.calls.length, 1);
         const home = NodeOS.userInfo().homedir;
-        assert.equal(env.PATH, `/opt/tools/bin:/usr/bin:${home}/.local/bin:${home}/.opencode/bin`);
+        assert.equal(
+          env.PATH,
+          `/opt/tools/bin:/usr/bin:${home}/.local/bin:${home}/.opencode/bin:${home}/.grok/bin`,
+        );
       }),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),
@@ -146,7 +149,10 @@ effectIt.effect("finds a CLI installed into ~/.local/bin or ~/.opencode/bin afte
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, env),
         );
-        assert.equal(env.PATH, `/usr/bin:/bin:${home}/.local/bin:${home}/.opencode/bin`);
+        assert.equal(
+          env.PATH,
+          `/usr/bin:/bin:${home}/.local/bin:${home}/.opencode/bin:${home}/.grok/bin`,
+        );
 
         const settings = decodeClaudeSettings({ binaryPath: "t3-test-claude" });
         const noCapabilities = () => Effect.succeed(undefined);
