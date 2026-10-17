@@ -234,6 +234,10 @@ function ManagedCodexSetup({
   const hasSavedAccount = auth?.methods?.some((method) => method.id.startsWith("chatgpt-profile:"));
   const url = auth?.interaction?.type === "browser" ? auth.interaction.url : auth?.authorizationUrl;
   const installation = installQuery.data;
+  // The server stops answering these queries for a CLI instance before the new
+  // mode reaches this screen, which then unmounts it.
+  const [leavingForCli, setLeavingForCli] = useState(false);
+  const statusUnreadable = !leavingForCli && (authQuery.error || installQuery.error);
   const httpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const local = httpBaseUrl !== null && isLoopbackHost(new URL(httpBaseUrl).hostname);
   const options = { reportFailure: false, reportDefect: false };
@@ -766,7 +770,7 @@ function ManagedCodexSetup({
     const setupError =
       logoutWarning ??
       error ??
-      (authQuery.error || installQuery.error
+      (statusUnreadable
         ? "Could not read setup status. Reconnect and try again."
         : installation?.phase === "failed"
           ? installation.message
@@ -880,7 +884,10 @@ function ManagedCodexSetup({
                 size="sm"
                 variant="ghost-muted"
                 disabled={readOnly || busy}
-                onClick={() => onModeChange("existing")}
+                onClick={() => {
+                  setLeavingForCli(true);
+                  onModeChange("existing");
+                }}
               >
                 Use existing CLI
               </Button>
