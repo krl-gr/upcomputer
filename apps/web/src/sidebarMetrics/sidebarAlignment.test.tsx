@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
+// The width media queries see. With no width no query matches, which renders
+// the desktop layout; a phone width renders the sidebar as a sheet.
+const viewport = vi.hoisted(() => ({ width: null as number | null }));
+
 // The jsdom test environment cannot load this repo's test setup (it imports
 // `node:sea`), so the DOM is installed by hand before React and Base UI load.
 await vi.hoisted(async () => {
@@ -19,8 +23,14 @@ await vi.hoisted(async () => {
   }
   Object.defineProperty(globalThis, "window", { configurable: true, value: window });
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const matchesWidth = (query: string, width: number) =>
+    query.split(" and ").every((part) => {
+      const bound = /^\((min|max)-width: (\d+)px\)$/.exec(part);
+      if (bound === null) return false;
+      return bound[1] === "min" ? width >= Number(bound[2]) : width <= Number(bound[2]);
+    });
   window.matchMedia = ((query: string) => ({
-    matches: false,
+    matches: viewport.width !== null && matchesWidth(query, viewport.width),
     media: query,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
@@ -565,6 +575,102 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
       expect(await colorOf(button), `${button} hovered`).toBe(bright);
     }
   });
+});
+
+/**
+ * The layout's markup at a phone width before and after its toggle opens the
+ * sidebar sheet. The sheet is portaled into the body, so the body is read.
+ */
+async function renderPhoneSidebarMarkup(width: number) {
+  viewport.width = width;
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<SidebarUnderTest />);
+    });
+    const closed = document.body.innerHTML;
+    await act(async () => {
+      document
+        .querySelector<HTMLElement>('[data-sidebar-control] [data-sidebar="trigger"]')!
+        .click();
+    });
+    // Base UI clears the sheet's starting style a frame after it mounts.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    const open = document.body.innerHTML;
+    if (!open.includes('data-mobile="true"')) throw new Error("The sidebar sheet did not open");
+    return { closed, open };
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    viewport.width = null;
+  }
+}
+
+interface MeasuredPhoneToggles {
+  /** The left edge of each sidebar toggle icon a person can see. */
+  readonly iconLefts: ReadonlyArray<number>;
+  /** The Search row's icon in the sheet, when the sheet is open. */
+  readonly searchIconLeft: number | null;
+}
+
+/** Runs in the page: the visible sidebar toggles and the sheet's Search row icon. */
+function measurePhoneToggles(): MeasuredPhoneToggles {
+  const iconLefts = [...document.querySelectorAll('[data-sidebar="trigger"]')]
+    .filter((trigger) =>
+      trigger.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
+    )
+    .map((trigger) => trigger.querySelector("svg")!.getBoundingClientRect().left);
+  const search = document.querySelector('[data-mobile="true"] input[aria-label="Search threads"]');
+  let row = search?.parentElement ?? null;
+  while (row !== null && row.querySelector("svg") === null) row = row.parentElement;
+  return {
+    iconLefts,
+    searchIconLeft: row?.querySelector("svg")!.getBoundingClientRect().left ?? null,
+  };
+}
+
+describe.skipIf(browser === null)("sidebar toggle on phones (real layout in Chromium)", () => {
+  // The fixed toggle floats above the sheet's layer, so a second visible toggle
+  // overlaps the sheet's own one; a toggle that moves on opening reads as two.
+  it.each([
+    [390, 844],
+    [412, 915],
+  ])(
+    "shows one sidebar toggle, open or closed, on the row icon edge at %ix%i",
+    async (width, height) => {
+      const [markup, css] = await Promise.all([renderPhoneSidebarMarkup(width), compiledAppCss()]);
+      const page = await browser!.newPage({ viewport: { width, height }, deviceScaleFactor: 3 });
+      const screenshotDir = process.env.SIDEBAR_TOGGLE_SCREENSHOT_DIR;
+      try {
+        const measure = async (state: "closed" | "open") => {
+          await page.setContent(
+            `<!doctype html><html ${upcomputerThemeRoot("dark")}><head><style>${css}</style></head><body>${markup[state]}</body></html>`,
+          );
+          if (screenshotDir) {
+            const name = `${screenshotDir}/${width}x${height}-${state}`;
+            await page.screenshot({ path: `${name}.png` });
+            await page.screenshot({
+              path: `${name}-toggle.png`,
+              clip: { x: 0, y: 0, width: 64, height: 64 },
+              scale: "device",
+            });
+          }
+          return page.evaluate(measurePhoneToggles);
+        };
+        const closed = await measure("closed");
+        const open = await measure("open");
+        expect(closed.iconLefts, "toggles with the sidebar closed").toHaveLength(1);
+        expect(open.iconLefts, "toggles with the sidebar open").toHaveLength(1);
+        expectWithinPixel("open toggle icon", open.iconLefts[0]!, closed.iconLefts[0]!);
+        expectWithinPixel("open toggle icon", open.iconLefts[0]!, open.searchIconLeft!);
+      } finally {
+        await page.close();
+      }
+    },
+    60_000,
+  );
 });
 
 /** The `<html>` attributes `applyThemePalette` sets for the Up.computer theme in `mode`. */
