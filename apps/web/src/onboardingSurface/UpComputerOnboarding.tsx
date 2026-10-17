@@ -455,6 +455,7 @@ export function UpComputerOnboarding({
             instanceId={provider.instanceId}
             provider={provider}
             readOnly={false}
+            openBrowserOnStart
           />
         ) : (
           <CheckingCard />
