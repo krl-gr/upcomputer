@@ -44,6 +44,10 @@ export const isWindowsCommandNotFound = Effect.fn("isWindowsCommandNotFound")(fu
 });
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
+// The first run of a freshly installed CLI waits for macOS's first-launch scan of the binary:
+// several seconds for OpenCode's 144 MB executable on a slow Mac, a fraction of a second after.
+// A healthy CLI answers `--version` well inside this, so only a hung one waits it out.
+export const VERSION_PROBE_TIMEOUT_MS = 20_000;
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
 
 export const COMPACT_SLASH_COMMAND = {
