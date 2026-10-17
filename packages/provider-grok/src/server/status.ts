@@ -32,6 +32,7 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
+  VERSION_PROBE_TIMEOUT_MS,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
@@ -58,7 +59,6 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 
-const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_INITIALIZE_TIMEOUT_MS = 8_000;
 const GROK_API_KEY_ENV = "XAI_API_KEY";
 

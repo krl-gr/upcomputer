@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
+  ClientTelemetryEvent,
   OtlpEndpointCheckInput,
   resolveEnvironmentMachineKind,
   ServerConfig,
@@ -10,6 +11,7 @@ import {
   ServerProvider,
   ServerProviders,
   ServerUpsertKeybindingResult,
+  toTelemetryProvider,
 } from "./server.ts";
 import { ServerSettings } from "./settings.ts";
 
@@ -272,5 +274,24 @@ describe("OtlpEndpointCheckInput", () => {
     for (const url of ["data:text/plain,ok", "file:///etc/hosts", "collector:4318/v1/traces"]) {
       expect(() => decode({ signal: "traces", url })).toThrow();
     }
+  });
+});
+
+describe("ClientTelemetryEvent", () => {
+  const decode = Schema.decodeUnknownExit(ClientTelemetryEvent);
+
+  it("accepts only shipped drivers or other as the provider", () => {
+    const action = { event: "onboarding.agent.action", action: "sign_in" };
+    expect(decode({ ...action, provider: "opencode" })._tag).toBe("Success");
+    expect(decode({ ...action, provider: "other" })._tag).toBe("Success");
+    expect(decode({ ...action, provider: "private-customer-alice-123" })._tag).toBe("Failure");
+    expect(decode({ event: "composer.provider_setup.clicked", target: "acme-project" })._tag).toBe(
+      "Failure",
+    );
+  });
+
+  it("maps a driver this app does not ship to other", () => {
+    expect(toTelemetryProvider("claudeAgent")).toBe("claudeAgent");
+    expect(toTelemetryProvider("private-customer-alice-123")).toBe("other");
   });
 });

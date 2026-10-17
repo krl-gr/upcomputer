@@ -898,6 +898,25 @@ const OnboardingStep = Schema.Literals(["connection", "agents", "import"]);
 /** Which first-run screens sent the event; absent means upstream's wizard. */
 const OnboardingFlow = Schema.optionalKey(Schema.Literals(["upstream", "upcomputer"]));
 
+// Driver kinds are free-form slugs, so a client could put any text there. Telemetry names
+// only the drivers we ship; anything else is "other".
+const TELEMETRY_PROVIDERS = [
+  "codex",
+  "claudeAgent",
+  "cursor",
+  "grok",
+  "opencode",
+  "antigravity",
+  "muse",
+  "pi",
+  "acpRegistry",
+] as const;
+const TelemetryProvider = Schema.Literals([...TELEMETRY_PROVIDERS, "other"]);
+const isShippedTelemetryProvider = Schema.is(Schema.Literals(TELEMETRY_PROVIDERS));
+
+export const toTelemetryProvider = (driver: string): typeof TelemetryProvider.Type =>
+  isShippedTelemetryProvider(driver) ? driver : "other";
+
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
@@ -918,12 +937,12 @@ export const ClientTelemetryEvent = Schema.Union([
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.agent.action"),
-    provider: ProviderDriverKind,
+    provider: TelemetryProvider,
     action: Schema.Literals(["install", "sign_in", "continue_with_chatgpt", "use_existing_cli"]),
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.agent.terminal_closed"),
-    provider: ProviderDriverKind,
+    provider: TelemetryProvider,
     action: Schema.Literals(["install", "sign_in"]),
     installed: Schema.Boolean,
     authStatus: ServerProviderAuthStatus,
@@ -937,7 +956,7 @@ export const ClientTelemetryEvent = Schema.Union([
   Schema.Struct({
     event: Schema.Literals(["composer.provider_setup.shown", "composer.provider_setup.clicked"]),
     /** The provider "Open provider settings" leads to, if any. */
-    target: Schema.optionalKey(ProviderDriverKind),
+    target: Schema.optionalKey(TelemetryProvider),
   }),
 ]);
 export type ClientTelemetryEvent = typeof ClientTelemetryEvent.Type;

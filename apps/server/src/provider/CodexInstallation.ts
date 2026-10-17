@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest.
 import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
 import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
+import { VERSION_PROBE_TIMEOUT_MS } from "@t3tools/provider-core/server/snapshotProbe";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
@@ -365,7 +366,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
                 managedVersionDirectory: null,
               } satisfies CodexExecutable;
             }).pipe(
-              Effect.timeout("5 seconds"),
+              Effect.timeout(VERSION_PROBE_TIMEOUT_MS),
               Effect.orElseSucceed(() => null),
             );
       localCache.set(executablePath, { fingerprint, executable });

@@ -13,11 +13,11 @@ import { discoverMuseModels, museModelCapabilities } from "./modelCatalog.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
-  DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
   type ProviderProbeResult,
+  VERSION_PROBE_TIMEOUT_MS,
 } from "@t3tools/provider-core/server/snapshotProbe";
 
 const MUSE_PRESENTATION = {
@@ -82,7 +82,7 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
         ...(cwd ? { cwd } : {}),
       }),
     );
-  }).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
+  }).pipe(Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS), Effect.result);
 
   if (Result.isFailure(versionResult)) {
     const missing = isCommandMissingCause(versionResult.failure);

@@ -21,6 +21,7 @@ import {
   AuthOrchestrationOperateScope,
   ProviderDriverKind,
   ThreadId,
+  toTelemetryProvider,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -826,7 +827,7 @@ function ConnectedAgentsStep({
                 const action = provider.installed ? "sign_in" : "install";
                 recordClientEvent(environmentId, {
                   event: "onboarding.agent.action",
-                  provider: provider.driver,
+                  provider: toTelemetryProvider(provider.driver),
                   action,
                 });
                 setTerminalSession({
@@ -866,7 +867,7 @@ function ConnectedAgentsStep({
                 const action = provider.installed ? "sign_in" : "install";
                 recordClientEvent(environmentId, {
                   event: "onboarding.agent.action",
-                  provider: provider.driver,
+                  provider: toTelemetryProvider(provider.driver),
                   action,
                 });
                 setTerminalSession({
@@ -928,7 +929,7 @@ function ConnectedAgentsStep({
               if (provider === undefined) return;
               recordClientEvent(environmentId, {
                 event: "onboarding.agent.terminal_closed",
-                provider: provider.driver,
+                provider: toTelemetryProvider(provider.driver),
                 action: terminalSession.action,
                 installed: provider.installed,
                 authStatus: provider.auth.status,
@@ -984,7 +985,7 @@ function OnboardingCodexSetup({
   const recordCodexAction = (action: "continue_with_chatgpt" | "use_existing_cli") =>
     recordClientEvent(environmentId, {
       event: "onboarding.agent.action",
-      provider: ProviderDriverKind.make("codex"),
+      provider: "codex",
       action,
     });
   const changeMode = (setupMode: "managed" | "existing") => {

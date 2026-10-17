@@ -4,6 +4,7 @@ import {
   AuthTerminalOperateScope,
   defaultInstanceIdForDriver,
   ProviderDriverKind,
+  toTelemetryProvider,
   type EnvironmentId,
   type ScopedProjectRef,
   type ServerConfig,
@@ -197,7 +198,7 @@ export function UpComputerOnboarding({
     if (serverConfig === null) return;
     recordClientEvent(environmentId, {
       event: "onboarding.agent.action",
-      provider: ProviderDriverKind.make("codex"),
+      provider: "codex",
       action: setupMode === "managed" ? "continue_with_chatgpt" : "use_existing_cli",
     });
     void updateSettings({
@@ -246,7 +247,7 @@ export function UpComputerOnboarding({
     const action = provider.installed ? "sign_in" : "install";
     recordClientEvent(environmentId, {
       event: "onboarding.agent.action",
-      provider: provider.driver,
+      provider: toTelemetryProvider(provider.driver),
       action,
     });
     setTerminalSession({
@@ -261,12 +262,18 @@ export function UpComputerOnboarding({
     });
   };
 
+  const recheck = (driver: UpComputerOnboardingDriver) => {
+    setRechecking(driver);
+    return refreshProviders({ environmentId, input: {} }).then((refreshed) => {
+      setRechecking((current) => (current === driver ? null : current));
+      return refreshed;
+    });
+  };
+
   const closeTerminal = (session: AgentTerminalSession) => {
     setTerminalSession(null);
     const driver = session.driver as UpComputerOnboardingDriver;
-    setRechecking(driver);
-    void refreshProviders({ environmentId, input: {} }).then((refreshed) => {
-      setRechecking((current) => (current === driver ? null : current));
+    void recheck(driver).then((refreshed) => {
       const provider =
         refreshed._tag === "Success"
           ? refreshed.value.providers.find(
@@ -282,7 +289,7 @@ export function UpComputerOnboarding({
       });
       recordClientEvent(environmentId, {
         event: "onboarding.agent.terminal_closed",
-        provider: provider.driver,
+        provider: toTelemetryProvider(provider.driver),
         action: session.action,
         installed: provider.installed,
         authStatus: provider.auth.status,
@@ -418,7 +425,7 @@ export function UpComputerOnboarding({
             onContinueWithChatGpt={() =>
               recordClientEvent(environmentId, {
                 event: "onboarding.agent.action",
-                provider: ProviderDriverKind.make("codex"),
+                provider: "codex",
                 action: "continue_with_chatgpt",
               })
             }
@@ -479,6 +486,7 @@ export function UpComputerOnboarding({
           rechecking={rechecking === driver}
           installFailed={installFailed.has(driver)}
           onRun={() => provider && openTerminal(driver, provider)}
+          onRecheck={() => void recheck(driver)}
           onUseChatGpt={
             driver === "codex"
               ? () => {
@@ -698,6 +706,7 @@ function CliAgentSteps({
   rechecking,
   installFailed,
   onRun,
+  onRecheck,
   onUseChatGpt,
   children,
 }: {
@@ -709,6 +718,7 @@ function CliAgentSteps({
   readonly rechecking: boolean;
   readonly installFailed: boolean;
   readonly onRun: () => void;
+  readonly onRecheck: () => void;
   readonly onUseChatGpt: (() => void) | undefined;
   readonly children: ReactNode;
 }) {
@@ -756,11 +766,23 @@ function CliAgentSteps({
           number={2}
           title={copy.signIn ?? "Sign in"}
           detail={
-            state === "ready"
-              ? "Signed in."
-              : state === "attention"
-                ? "Up.computer could not check it. Settings, Providers has the details."
-                : (copy.signInNote ?? "Your browser opens to finish signing in.")
+            state === "ready" ? (
+              "Signed in."
+            ) : state === "attention" ? (
+              <>
+                Up.computer could not check it. Settings, Providers has the details.{" "}
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-2"
+                  disabled={rechecking}
+                  onClick={onRecheck}
+                >
+                  Check again
+                </button>
+              </>
+            ) : (
+              (copy.signInNote ?? "Your browser opens to finish signing in.")
+            )
           }
           status={
             state === "ready" ? (
@@ -812,7 +834,7 @@ function StepRow({
 }: {
   readonly number: number;
   readonly title: string;
-  readonly detail: string;
+  readonly detail: ReactNode;
   readonly status: ReactNode;
 }) {
   return (
