@@ -595,6 +595,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   productFeatureLayer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   ProviderTelemetry.layerProviderStatusTelemetry,
+  ProviderTelemetry.layerProviderInstallTelemetry,
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),

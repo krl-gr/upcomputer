@@ -3,13 +3,16 @@
  * they are signed in, and whether a provider session opens. Only bounded values
  * leave the server: no paths, messages, account details or instance names.
  */
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ProviderInstallState, ServerProvider } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 
+import * as AntigravityInstallation from "../provider/AntigravityInstallation.ts";
+import * as CodexInstallation from "../provider/CodexInstallation.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
@@ -115,6 +118,56 @@ export const layerProviderStatusTelemetry = Layer.effectDiscard(
       Effect.flatMap(observe),
       Effect.andThen(Stream.runForEach(registry.streamChanges, observe)),
       Effect.forkScoped,
+    );
+  }),
+);
+
+const isInstalling = (state: ProviderInstallState | undefined) =>
+  state?.phase === "downloading" || state?.phase === "extracting" || state?.phase === "verifying";
+
+/**
+ * Records the app-managed downloads (Codex for "Continue with ChatGPT", and
+ * Antigravity): `provider.install.started`, then `provider.install.finished`
+ * with outcome succeeded, failed or cancelled and durationMs.
+ */
+export const recordInstallTransitions = (
+  changes: Stream.Stream<ProviderInstallState>,
+  record: (event: string, properties: Readonly<Record<string, unknown>>) => Effect.Effect<void>,
+) => {
+  let previous: ProviderInstallState | undefined;
+  let startedAtMs = 0;
+  return Stream.runForEach(changes, (next) =>
+    Effect.gen(function* () {
+      const before = previous;
+      previous = next;
+      // The first value is the state at startup, not a transition.
+      if (before === undefined) return;
+      if (!isInstalling(before) && isInstalling(next)) {
+        startedAtMs = yield* Clock.currentTimeMillis;
+        yield* record("provider.install.started", { provider: next.driver });
+      } else if (
+        isInstalling(before) &&
+        (next.phase === "succeeded" || next.phase === "failed" || next.phase === "cancelled")
+      ) {
+        yield* record("provider.install.finished", {
+          provider: next.driver,
+          outcome: next.phase,
+          durationMs: (yield* Clock.currentTimeMillis) - startedAtMs,
+        });
+      }
+    }),
+  );
+};
+
+export const layerProviderInstallTelemetry = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const analytics = yield* AnalyticsService.AnalyticsService;
+    const codex = yield* CodexInstallation.CodexInstallation;
+    const antigravity = yield* AntigravityInstallation.AntigravityInstallation;
+    yield* Effect.forEach(
+      [codex.changes, antigravity.changes],
+      (changes) => recordInstallTransitions(changes, analytics.record).pipe(Effect.forkScoped),
+      { discard: true },
     );
   }),
 );

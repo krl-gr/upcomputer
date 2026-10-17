@@ -1,4 +1,9 @@
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ProviderInstallState,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -127,5 +132,46 @@ it.effect("records each provider's state once, then again only when it changes",
         ),
       ),
     );
+  }),
+);
+
+it.effect("reports a managed download as started, then finished with its outcome", () =>
+  Effect.gen(function* () {
+    const recorded: Array<[string, Readonly<Record<string, unknown>>]> = [];
+    const state = (phase: ProviderInstallState["phase"]): ProviderInstallState => ({
+      driver: ProviderDriverKind.make("codex"),
+      operationId: null,
+      phase,
+      downloadedBytes: 0,
+      totalBytes: null,
+      version: null,
+      installedVersion: null,
+      canRemove: false,
+      message: phase === "failed" ? "Download failed for /Users/someone/.upcomputer" : null,
+    });
+
+    yield* ProviderTelemetry.recordInstallTransitions(
+      Stream.make(
+        state("idle"),
+        state("downloading"),
+        state("downloading"),
+        state("verifying"),
+        state("succeeded"),
+        state("downloading"),
+        state("failed"),
+      ),
+      (event, properties) => Effect.sync(() => void recorded.push([event, properties])),
+    );
+
+    assert.deepEqual(
+      recorded.map(([event, properties]) => [event, properties.outcome ?? null]),
+      [
+        ["provider.install.started", null],
+        ["provider.install.finished", "succeeded"],
+        ["provider.install.started", null],
+        ["provider.install.finished", "failed"],
+      ],
+    );
+    assert.isTrue(recorded.every(([, properties]) => !("message" in properties)));
   }),
 );
