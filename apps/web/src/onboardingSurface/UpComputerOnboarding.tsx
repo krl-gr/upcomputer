@@ -261,12 +261,18 @@ export function UpComputerOnboarding({
     });
   };
 
+  const recheck = (driver: UpComputerOnboardingDriver) => {
+    setRechecking(driver);
+    return refreshProviders({ environmentId, input: {} }).then((refreshed) => {
+      setRechecking((current) => (current === driver ? null : current));
+      return refreshed;
+    });
+  };
+
   const closeTerminal = (session: AgentTerminalSession) => {
     setTerminalSession(null);
     const driver = session.driver as UpComputerOnboardingDriver;
-    setRechecking(driver);
-    void refreshProviders({ environmentId, input: {} }).then((refreshed) => {
-      setRechecking((current) => (current === driver ? null : current));
+    void recheck(driver).then((refreshed) => {
       const provider =
         refreshed._tag === "Success"
           ? refreshed.value.providers.find(
@@ -479,6 +485,7 @@ export function UpComputerOnboarding({
           rechecking={rechecking === driver}
           installFailed={installFailed.has(driver)}
           onRun={() => provider && openTerminal(driver, provider)}
+          onRecheck={() => void recheck(driver)}
           onUseChatGpt={
             driver === "codex"
               ? () => {
@@ -698,6 +705,7 @@ function CliAgentSteps({
   rechecking,
   installFailed,
   onRun,
+  onRecheck,
   onUseChatGpt,
   children,
 }: {
@@ -709,6 +717,7 @@ function CliAgentSteps({
   readonly rechecking: boolean;
   readonly installFailed: boolean;
   readonly onRun: () => void;
+  readonly onRecheck: () => void;
   readonly onUseChatGpt: (() => void) | undefined;
   readonly children: ReactNode;
 }) {
@@ -756,11 +765,23 @@ function CliAgentSteps({
           number={2}
           title={copy.signIn ?? "Sign in"}
           detail={
-            state === "ready"
-              ? "Signed in."
-              : state === "attention"
-                ? "Up.computer could not check it. Settings, Providers has the details."
-                : (copy.signInNote ?? "Your browser opens to finish signing in.")
+            state === "ready" ? (
+              "Signed in."
+            ) : state === "attention" ? (
+              <>
+                Up.computer could not check it. Settings, Providers has the details.{" "}
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-2"
+                  disabled={rechecking}
+                  onClick={onRecheck}
+                >
+                  Check again
+                </button>
+              </>
+            ) : (
+              (copy.signInNote ?? "Your browser opens to finish signing in.")
+            )
           }
           status={
             state === "ready" ? (
@@ -812,7 +833,7 @@ function StepRow({
 }: {
   readonly number: number;
   readonly title: string;
-  readonly detail: string;
+  readonly detail: ReactNode;
   readonly status: ReactNode;
 }) {
   return (
