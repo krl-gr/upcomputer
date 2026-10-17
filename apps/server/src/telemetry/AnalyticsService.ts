@@ -70,6 +70,12 @@ const TelemetryEnvConfig = Config.all({
     Config.withDefault(1_000),
   ),
   wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
+  // Set by the desktop app for its primary backend.
+  desktopVersion: Config.String("T3CODE_DESKTOP_VERSION").pipe(Config.option),
+  releaseChannel: Config.String("T3CODE_DESKTOP_RELEASE_CHANNEL").pipe(Config.option),
+  desktopStartup: Config.Literals(["launch", "restart"], "T3CODE_DESKTOP_STARTUP").pipe(
+    Config.option,
+  ),
 });
 
 export type TelemetryMilestone = "app.first_thread_created" | "app.first_message_sent";
@@ -199,6 +205,8 @@ export const make = Effect.gen(function* () {
           serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
           serverAppVersion: packageJson.version,
           serverMode: serverConfig.mode,
+          desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
+          releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
         },
         timestamp: event.capturedAt,
       })),
@@ -299,7 +307,8 @@ export const make = Effect.gen(function* () {
       : Effect.void;
 
   const startedAtMs = yield* Clock.currentTimeMillis;
-  yield* record("server.started");
+  const startupContext = Option.getOrUndefined(telemetryConfig.desktopStartup);
+  yield* record("server.started", startupContext === undefined ? undefined : { startupContext });
   // Opted-out launches never write the marker: enabling telemetry later makes the
   // next desktop launch the first measured one.
   if (enabled && serverConfig.mode === "desktop") {
@@ -307,11 +316,13 @@ export const make = Effect.gen(function* () {
       path.join(serverConfig.stateDir, FIRST_LAUNCH_MARKER_FILE),
     );
     if (firstLaunch) {
-      yield* fileSystem
-        .makeDirectory(milestonesDir, { recursive: true })
-        .pipe(Effect.catchCause(() => Effect.void));
+      yield* fileSystem.makeDirectory(milestonesDir, { recursive: true }).pipe(Effect.ignoreCause);
       yield* record("app.first_launch");
     }
+  }
+  // A backend restart inside a running app is not a launch the user made.
+  if (startupContext === "launch") {
+    yield* record("app.launched");
   }
 
   // Desktop quit stops the server, so this is the app session length there.

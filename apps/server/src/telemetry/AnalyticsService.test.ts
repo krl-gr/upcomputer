@@ -114,6 +114,7 @@ const runDesktopServer = (
   baseDir: string,
   events: Array<SentEvent>,
   use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<void>,
+  desktopEnv: Readonly<Record<string, string>> = {},
 ) =>
   Effect.flatMap(AnalyticsService.AnalyticsService, use).pipe(
     Effect.provide(
@@ -132,6 +133,7 @@ const runDesktopServer = (
               T3CODE_TELEMETRY_ENABLED: true,
               T3CODE_POSTHOG_KEY: "phc_test_key",
               T3CODE_POSTHOG_HOST: "http://localhost",
+              ...desktopEnv,
             }),
           ),
         ),
@@ -334,6 +336,50 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         ["server.started", "server.stopped"],
       );
       assert.equal(events[0]?.distinct_id, firstRun[0]?.distinct_id);
+    }),
+  );
+
+  it.effect("tells an app launch from a backend restart and tags the desktop build", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-telemetry-launch-",
+      });
+      const events: Array<SentEvent> = [];
+      const desktop = {
+        T3CODE_DESKTOP_VERSION: "0.0.35",
+        T3CODE_DESKTOP_RELEASE_CHANNEL: "latest",
+      };
+
+      yield* runDesktopServer(baseDir, events, () => Effect.void, {
+        ...desktop,
+        T3CODE_DESKTOP_STARTUP: "launch",
+      });
+      const launch = events.splice(0);
+      yield* runDesktopServer(baseDir, events, () => Effect.void, {
+        ...desktop,
+        T3CODE_DESKTOP_STARTUP: "restart",
+      });
+
+      assert.deepEqual(
+        launch.map((event) => event.event),
+        ["server.started", "app.first_launch", "app.launched", "server.stopped"],
+      );
+      assert.equal(launch[0]?.properties.startupContext, "launch");
+      assert.isTrue(
+        launch.every(
+          (event) =>
+            event.properties.desktopVersion === "0.0.35" &&
+            event.properties.releaseChannel === "latest",
+        ),
+      );
+      assert.deepEqual(
+        events.map((event) => [event.event, event.properties.startupContext]),
+        [
+          ["server.started", "restart"],
+          ["server.stopped", undefined],
+        ],
+      );
     }),
   );
 
