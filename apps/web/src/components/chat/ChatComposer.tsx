@@ -51,6 +51,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS,
+  toTelemetryProvider,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -2131,7 +2132,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     providerSetupShownRef.current = true;
     recordClientEvent(environmentId, {
       event: "composer.provider_setup.shown",
-      ...(providerSetupTarget === undefined ? {} : { target: providerSetupTarget }),
+      ...(providerSetupTarget === undefined
+        ? {}
+        : { target: toTelemetryProvider(providerSetupTarget) }),
     });
   }, [environmentId, providerSetupTarget, recordClientEvent, showProviderUnavailable]);
   const resolvedCompactDisabledReason =
@@ -5233,7 +5236,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (providerSetupInstanceId) {
           recordClientEvent(environmentId, {
             event: "composer.provider_setup.clicked",
-            ...(providerSetupTarget === undefined ? {} : { target: providerSetupTarget }),
+            ...(providerSetupTarget === undefined
+              ? {}
+              : { target: toTelemetryProvider(providerSetupTarget) }),
           });
           onOpenProviderSetup(providerSetupInstanceId);
         }

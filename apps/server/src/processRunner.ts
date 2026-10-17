@@ -9,6 +9,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isMacDeveloperToolStub, resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   collectUint8StreamText,
@@ -290,7 +291,15 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     input.args,
     input.env === undefined ? {} : { env: input.env, extendEnv },
   );
-  if (yield* isMacDeveloperToolStub(spawnCommand.command)) {
+  // The child's own PATH and DEVELOPER_DIR decide whether it gets Apple's stub.
+  const childEnv =
+    input.env === undefined ? undefined : { ...(yield* HostProcess.Environment), ...input.env };
+  if (
+    yield* isMacDeveloperToolStub(
+      spawnCommand.command,
+      childEnv === undefined ? {} : { env: childEnv },
+    )
+  ) {
     return yield* new ProcessSpawnError({
       command: input.command,
       argumentCount: input.args.length,

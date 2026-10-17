@@ -241,6 +241,68 @@ describe("runProcess", () => {
       }),
   );
 
+  it.effect.each([
+    {
+      name: "a PATH override that finds Homebrew git",
+      host: { PATH: "/usr/bin:/bin" },
+      env: { PATH: "/opt/homebrew/bin:/usr/bin:/bin" },
+      spawned: true,
+    },
+    {
+      name: "a PATH override that finds Apple's stub",
+      host: { PATH: "/opt/homebrew/bin:/usr/bin:/bin" },
+      env: { PATH: "/usr/bin:/bin" },
+      spawned: false,
+    },
+    {
+      name: "a DEVELOPER_DIR override",
+      host: { PATH: "/usr/bin:/bin" },
+      env: { DEVELOPER_DIR: "/Applications/Xcode-beta.app/Contents/Developer" },
+      spawned: true,
+    },
+    {
+      name: "a DEVELOPER_DIR override that clears it",
+      host: { PATH: "/usr/bin:/bin", DEVELOPER_DIR: "/Applications/Xcode.app/Contents/Developer" },
+      env: { DEVELOPER_DIR: "" },
+      spawned: false,
+    },
+  ])(
+    "checks Apple's git stub against the command's own environment: $name",
+    ({ host, env, spawned }) =>
+      Effect.gen(function* () {
+        const spawns: Array<string> = [];
+        const spawner = makeSpawner((command) =>
+          Effect.sync(() => {
+            spawns.push(command.command);
+            return makeHandle({ stdout: "true" });
+          }),
+        );
+
+        const result = yield* runWith(spawner)({
+          command: "git",
+          args: ["rev-parse", "--is-inside-work-tree"],
+          cwd: "/Users/dev/project",
+          env,
+        }).pipe(
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(HostProcess.Environment, host),
+          Effect.provideService(SpawnExecutableResolution, (_command, _platform, childEnv) =>
+            childEnv.PATH?.startsWith("/opt/homebrew/bin")
+              ? "/opt/homebrew/bin/git"
+              : "/usr/bin/git",
+          ),
+          Effect.provideService(
+            MacDeveloperDirectoryProbe,
+            (childEnv) => (childEnv.DEVELOPER_DIR ?? "").trim() !== "",
+          ),
+          Effect.result,
+        );
+
+        expect(spawns).toEqual(spawned ? ["git"] : []);
+        expect(result._tag).toBe(spawned ? "Success" : "Failure");
+      }),
+  );
+
   it.effect("fails when output exceeds max buffer in default mode", () =>
     Effect.gen(function* () {
       const spawner = makeSpawner(() => Effect.succeed(makeHandle({ stdout: "x".repeat(2048) })));

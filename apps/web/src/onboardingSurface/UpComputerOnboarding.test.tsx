@@ -285,6 +285,22 @@ it("checks the install again after Close instead of showing Install meanwhile", 
   expect(button("Sign in").disabled).toBe(false);
 });
 
+it("checks OpenCode again from a failed check without asking to sign in", async () => {
+  render();
+  await click(button("Connect", "OpenCode"));
+  setProvider("opencode", { status: "error", auth: { status: "unknown" } });
+  expect(document.body.textContent).toContain("Up.computer could not check it.");
+  mocks.refresh.mockClear();
+
+  await click(button("Check again"));
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  expect(document.querySelector('[data-testid="terminal"]')).toBeNull();
+
+  setProvider("opencode");
+  await act(async () => {});
+  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "OpenCode is ready" }));
+});
+
 it("turns Grok on and installs it from its own screen", async () => {
   render();
   await click(button("Connect", "Grok"));
