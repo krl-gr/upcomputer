@@ -302,7 +302,32 @@ export const getTelemetryIdentifierForHome = Effect.fn("getTelemetryIdentifierFo
   Effect.orElseSucceed(() => null),
 );
 
-export const getTelemetryIdentifier = Effect.flatMap(
-  HostProcess.HomeDirectory,
-  getTelemetryIdentifierForHome,
-);
+const TELEMETRY_ID_FILE = "telemetry-id";
+const PINNED_IDENTIFIER_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * A provider login creates the Codex or Claude account file mid-onboarding,
+ * which used to switch a running install to a new distinct id. The first id an
+ * install resolves is pinned in its state directory and reused after that, so
+ * restarts, updates and later logins keep one identity.
+ */
+export const getTelemetryIdentifier = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const { stateDir } = yield* ServerConfig.ServerConfig;
+  const pinnedPath = path.join(stateDir, TELEMETRY_ID_FILE);
+
+  const pinned = yield* fileSystem.readFileString(pinnedPath).pipe(Effect.option);
+  if (Option.isSome(pinned) && PINNED_IDENTIFIER_PATTERN.test(pinned.value.trim())) {
+    return pinned.value.trim();
+  }
+
+  const identifier = yield* getTelemetryIdentifierForHome(yield* HostProcess.HomeDirectory);
+  if (identifier === null) return null;
+  yield* writeFileStringAtomically({ filePath: pinnedPath, contents: identifier }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to pin the telemetry identity", { cause }),
+    ),
+  );
+  return identifier;
+});
