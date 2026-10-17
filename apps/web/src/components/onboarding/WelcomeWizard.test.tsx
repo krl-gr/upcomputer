@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createProject: vi.fn(),
   complete: vi.fn(),
   refresh: vi.fn(),
+  recordClientEvent: vi.fn(),
   toast: vi.fn(),
   projects: [] as Array<{ id: string; environmentId: string; workspaceRoot: string }>,
 }));
@@ -26,7 +27,9 @@ vi.mock("../../state/use-atom-command", () => ({
       ? mocks.importThreads
       : command === "create"
         ? mocks.createProject
-        : mocks.refresh,
+        : command === "recordClientEvent"
+          ? mocks.recordClientEvent
+          : mocks.refresh,
 }));
 vi.mock("../../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks.complete }));
 vi.mock("../../state/entities", () => ({
@@ -50,6 +53,7 @@ vi.mock("../../state/server", () => ({
     providersValueAtom: () => [],
     configValueAtom: () => null,
     refreshProviders: "refresh",
+    recordClientEvent: "recordClientEvent",
   },
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));

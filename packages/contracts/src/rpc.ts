@@ -292,6 +292,7 @@ import {
   DesktopUpdateCommitInput,
   OtlpEndpointCheckInput,
   OtlpEndpointCheckResult,
+  ClientTelemetryEvent,
   ServerConfig,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
@@ -471,6 +472,7 @@ export const WS_METHODS = {
   serverCommitDesktopUpdate: "server.commitDesktopUpdate",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
+  serverRecordClientEvent: "server.recordClientEvent",
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
@@ -586,6 +588,12 @@ const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, 
 
 const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
+  success: Schema.Struct({}),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerRecordClientEventRpc = Rpc.make(WS_METHODS.serverRecordClientEvent, {
+  payload: ClientTelemetryEvent,
   success: Schema.Struct({}),
   error: EnvironmentAuthorizationError,
 });
@@ -1851,6 +1859,7 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
+  WsServerRecordClientEventRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

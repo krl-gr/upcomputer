@@ -55,6 +55,7 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ProviderTelemetry from "../telemetry/ProviderTelemetry.ts";
 
 const layerTestDatabase = SqlitePersistence.layerMemory;
 const layerTestStores = Layer.merge(EventStore.layer, ProjectionStore.layer).pipe(
@@ -330,7 +331,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly beforeOpen?: (input: {
       readonly providerSessionId: ProviderSessionId;
       readonly initialProviderItemIdentityVersion?: 2;
-    }) => Effect.Effect<void>;
+    }) => Effect.Effect<void, ProviderAdapter.ProviderAdapterOpenSessionError>;
     readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;
     readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
     readonly backgroundTasksEndWithProcess?: boolean;
@@ -471,7 +472,7 @@ function layerTest(input: {
   readonly beforeOpen?: (input: {
     readonly providerSessionId: ProviderSessionId;
     readonly initialProviderItemIdentityVersion?: 2;
-  }) => Effect.Effect<void>;
+  }) => Effect.Effect<void, ProviderAdapter.ProviderAdapterOpenSessionError>;
   readonly failReleaseEventWrites?: boolean;
   readonly flakyReleaseWrites?: FlakyReleaseWrites;
   readonly pauseAttachWrite?: Parameters<typeof layerPausingAttachEventSink>[0];
@@ -900,6 +901,82 @@ it.effect("ProviderSessionManagerV2 opens independent sessions concurrently", ()
       ),
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 reports provider readiness and a coarse open failure kind",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const recorded: Array<{ event: string; properties: Readonly<Record<string, unknown>> }> = [];
+      const failNextOpen = yield* Ref.make(true);
+      const beforeOpen = (input: { readonly providerSessionId: ProviderSessionId }) =>
+        Ref.getAndSet(failNextOpen, false).pipe(
+          Effect.flatMap((fail) =>
+            fail
+              ? Effect.fail(
+                  new ProviderAdapter.ProviderAdapterOpenSessionError({
+                    driver: CODEX_DRIVER,
+                    providerSessionId: input.providerSessionId,
+                    cause: new Error("Not logged in. Run `codex login` in /Users/someone/project."),
+                  }),
+                )
+              : Effect.void,
+          ),
+        );
+
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-readiness");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+
+        const failed = yield* Effect.exit(open);
+        yield* open;
+        // Adopting the live session is not a new readiness boundary.
+        yield* open;
+
+        assert.isTrue(Exit.isFailure(failed));
+        assert.deepEqual(recorded, [
+          {
+            event: "provider.readiness.failed",
+            properties: {
+              provider: "codex",
+              readinessBoundary: "session-start",
+              errorCategory: "auth",
+            },
+          },
+          {
+            event: "provider.readiness.succeeded",
+            properties: { provider: "codex", readinessBoundary: "session-start" },
+          },
+        ]);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({ state, idleTimeoutMs: 60_000, beforeOpen }).pipe(
+            Layer.provide(
+              Layer.succeed(ProviderTelemetry.ProviderReadinessAnalytics, {
+                record: (event, properties) =>
+                  Effect.sync(() => {
+                    recorded.push({ event, properties });
+                  }),
+              }),
+            ),
+          ),
+        ),
+      );
+    }),
 );
 
 it.effect("ProviderSessionManagerV2 closes every live session for a provider instance", () =>

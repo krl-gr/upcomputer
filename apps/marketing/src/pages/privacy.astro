@@ -27,7 +27,9 @@ import { GITHUB_REPOSITORY_URL } from "../lib/site";
     <h2>App telemetry</h2>
     <p>
       The app sends usage events to PostHog: app version, operating system, processor architecture,
-      provider, model, interaction and access mode, counts, durations, and error categories. Events
+      provider, model, interaction and access mode, counts, durations, and error categories. During
+      setup it also sends which setup steps you reached and whether each agent CLI is installed, its
+      version, and whether it is signed in. Events
       never include prompts, responses, file contents, file paths, or credentials. They are tied to a
       pseudonymous ID: a SHA-256 hash of your local Codex or Claude Code account ID if there is one,
       otherwise of a random ID the app creates. Set <code>UPCOMPUTER_TELEMETRY_ENABLED=false</code>

@@ -1112,6 +1112,7 @@ import {
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useDelayedStatus } from "../../hooks/useDelayedStatus";
+import { useRecordClientEvent } from "../../hooks/useRecordClientEvent";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { usePanelAnimationSettings } from "../../panelAnimations";
@@ -2119,6 +2120,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? providerInstanceEntries.find((entry) => hasProviderSetup(entry.snapshot))?.instanceId
         : undefined))
     : undefined;
+  const providerSetupTarget = providerInstanceEntries.find(
+    (entry) => entry.instanceId === providerSetupInstanceId,
+  )?.driverKind;
+  const recordClientEvent = useRecordClientEvent();
+  const providerSetupShownRef = useRef(false);
+  useEffect(() => {
+    // New users who skipped agent setup land here; once per composer is enough.
+    if (!showProviderUnavailable || providerSetupShownRef.current) return;
+    providerSetupShownRef.current = true;
+    recordClientEvent(environmentId, {
+      event: "composer.provider_setup.shown",
+      ...(providerSetupTarget === undefined ? {} : { target: providerSetupTarget }),
+    });
+  }, [environmentId, providerSetupTarget, recordClientEvent, showProviderUnavailable]);
   const resolvedCompactDisabledReason =
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);
   const selectedProvider: ProviderDriverKind =
@@ -5216,6 +5231,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       disabled={!providerSetupInstanceId}
       onClick={() => {
         if (providerSetupInstanceId) {
+          recordClientEvent(environmentId, {
+            event: "composer.provider_setup.clicked",
+            ...(providerSetupTarget === undefined ? {} : { target: providerSetupTarget }),
+          });
           onOpenProviderSetup(providerSetupInstanceId);
         }
       }}

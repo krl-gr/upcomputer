@@ -5,6 +5,7 @@ import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Base64 from "effect/encoding/Base64";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -1194,7 +1195,12 @@ const layerWsRpc = (
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         switch (command.type) {
           case "message.dispatch":
-            return analytics.record("client.turn.requested", originProps).pipe(Effect.ignore);
+            return analytics
+              .record("client.turn.requested", originProps)
+              .pipe(
+                Effect.andThen(analytics.recordMilestone("app.first_message_sent")),
+                Effect.ignore,
+              );
           default:
             return Effect.void;
         }
@@ -1971,10 +1977,17 @@ const layerWsRpc = (
                     analytics
                       .record("client.thread.started", originProps)
                       .pipe(
+                        Effect.andThen(analytics.recordMilestone("app.first_thread_created")),
                         Effect.andThen(
                           input.initialMessage === undefined
                             ? Effect.void
-                            : analytics.record("client.turn.requested", originProps),
+                            : analytics
+                                .record("client.turn.requested", originProps)
+                                .pipe(
+                                  Effect.andThen(
+                                    analytics.recordMilestone("app.first_message_sent"),
+                                  ),
+                                ),
                         ),
                         Effect.ignore,
                       ),
@@ -2066,6 +2079,8 @@ const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
+        [WS_METHODS.serverRecordClientEvent]: ({ event, ...properties }) =>
+          analytics.record(event, { ...originProps, ...properties }).pipe(Effect.as({})),
         [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig({ usageLimitsCommand: false }),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
@@ -3155,6 +3170,7 @@ export const layer = Layer.unwrap(
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
+        const connectedAtMs = yield* Clock.currentTimeMillis;
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(rpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
@@ -3228,7 +3244,17 @@ export const layer = Layer.unwrap(
                 }),
               ),
             ),
-          () => sessions.markDisconnected(session.sessionId),
+          () =>
+            sessions.markDisconnected(session.sessionId).pipe(
+              // A closed desktop window or browser tab ends its connection.
+              Effect.andThen(Clock.currentTimeMillis),
+              Effect.flatMap((now) =>
+                analytics.record("client.disconnected", {
+                  ...clientAnalyticsProps,
+                  connectedMs: now - connectedAtMs,
+                }),
+              ),
+            ),
         );
       }).pipe(
         Effect.catchTags({
