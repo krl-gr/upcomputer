@@ -116,6 +116,51 @@ export const SpawnExecutableResolution = Context.Reference<SpawnExecutableResolv
   },
 );
 
+/**
+ * On macOS these /usr/bin tools are stubs until the Command Line Tools or
+ * Xcode are installed, and running one opens Apple's "install command line
+ * developer tools" dialog. Only running one does; finding it on PATH does not.
+ */
+const MAC_DEVELOPER_TOOL_STUBS: ReadonlySet<string> = new Set(
+  ["git", "xcrun", "xcodebuild", "make", "clang", "cc", "gcc", "python3", "pip3", "swift"].map(
+    (tool) => `/usr/bin/${tool}`,
+  ),
+);
+
+/** Where `xcode-select -p` looks for the active developer directory, in order. */
+function hasMacDeveloperDirectory(env: NodeJS.ProcessEnv): boolean {
+  if (trimNonEmpty(env.DEVELOPER_DIR) !== undefined) return true;
+  return [
+    "/var/db/xcode_select_link",
+    "/Applications/Xcode.app/Contents/Developer",
+    "/Library/Developer/CommandLineTools",
+  ].some((path) => NodeFS.existsSync(path));
+}
+
+export const MacDeveloperDirectoryProbe = Context.Reference<(env: NodeJS.ProcessEnv) => boolean>(
+  "@t3tools/shared/shell/MacDeveloperDirectoryProbe",
+  { defaultValue: () => hasMacDeveloperDirectory },
+);
+
+/**
+ * Whether running `command` would open Apple's developer tools install dialog
+ * instead of the tool. Callers treat such a tool as not installed, so a new
+ * Mac never sees the dialog; Homebrew's git and other real binaries run.
+ */
+export const isMacDeveloperToolStub = Effect.fn("shell.isMacDeveloperToolStub")(function* (
+  command: string,
+  options: { readonly env?: NodeJS.ProcessEnv } = {},
+) {
+  const platform = yield* HostProcess.Platform;
+  if (platform !== "darwin") return false;
+  const env = options.env ?? (yield* HostProcess.Environment);
+  const resolved = command.includes("/")
+    ? command
+    : (yield* SpawnExecutableResolution)(command, platform, env);
+  if (resolved === undefined || !MAC_DEVELOPER_TOOL_STUBS.has(resolved)) return false;
+  return !(yield* MacDeveloperDirectoryProbe)(env);
+});
+
 export interface WindowsEnvironmentProbeOptions {
   readonly loadProfile?: boolean;
 }

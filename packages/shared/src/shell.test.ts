@@ -15,7 +15,9 @@ import {
   CommandResolutionCache,
   type CommandAvailabilityChecker,
   isCommandAvailable,
+  isMacDeveloperToolStub,
   listLoginShellCandidates,
+  MacDeveloperDirectoryProbe,
   mergePathEntries,
   mergePathValues,
   preferGitForWindowsBinary,
@@ -348,6 +350,36 @@ describe("resolveKnownPosixCliDirs", () => {
     expect(resolveKnownPosixCliDirs({ HOME: " " })).toEqual([]);
     expect(resolveKnownPosixCliDirs({})).toEqual([]);
   });
+});
+
+describe("isMacDeveloperToolStub", () => {
+  const stubCheck = (
+    command: string,
+    input: { platform?: NodeJS.Platform; resolved?: string; developerTools?: boolean } = {},
+  ) =>
+    isMacDeveloperToolStub(command, { env: { PATH: "/usr/bin" } }).pipe(
+      Effect.provideService(HostProcess.Platform, input.platform ?? "darwin"),
+      Effect.provideService(SpawnExecutableResolution, () => input.resolved),
+      Effect.provideService(MacDeveloperDirectoryProbe, () => input.developerTools ?? false),
+    );
+
+  effectIt.effect("flags Apple's /usr/bin stubs while no developer directory exists", () =>
+    Effect.gen(function* () {
+      expect(yield* stubCheck("git", { resolved: "/usr/bin/git" })).toBe(true);
+      expect(yield* stubCheck("/usr/bin/python3")).toBe(true);
+    }),
+  );
+
+  effectIt.effect("leaves real tools alone", () =>
+    Effect.gen(function* () {
+      expect(yield* stubCheck("git", { resolved: "/usr/bin/git", developerTools: true })).toBe(
+        false,
+      );
+      expect(yield* stubCheck("git", { resolved: "/opt/homebrew/bin/git" })).toBe(false);
+      expect(yield* stubCheck("git", { platform: "linux", resolved: "/usr/bin/git" })).toBe(false);
+      expect(yield* stubCheck("git")).toBe(false);
+    }),
+  );
 });
 
 describe("resolveKnownWindowsCliDirs", () => {

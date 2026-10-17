@@ -10,7 +10,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import { MacDeveloperDirectoryProbe, SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import * as ProcessRunner from "./processRunner.ts";
 
@@ -200,6 +200,45 @@ describe("runProcess", () => {
       expect(error).not.toHaveProperty("resolvedArgs");
       expect(error.message).not.toContain("secret-token-value");
     }),
+  );
+
+  it.effect.each([
+    { developerTools: false, spawned: false },
+    { developerTools: true, spawned: true },
+  ])(
+    "runs Apple's git stub only once the developer tools exist: %o",
+    ({ developerTools, spawned }) =>
+      Effect.gen(function* () {
+        const spawns: Array<string> = [];
+        const spawner = makeSpawner((command) =>
+          Effect.sync(() => {
+            spawns.push(command.command);
+            return makeHandle({ stdout: "true" });
+          }),
+        );
+
+        const result = yield* runWith(spawner)({
+          command: "git",
+          args: ["rev-parse", "--is-inside-work-tree"],
+          cwd: "/Users/new/.upcomputer",
+        }).pipe(
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(HostProcess.Environment, { PATH: "/usr/bin:/bin" }),
+          Effect.provideService(SpawnExecutableResolution, () => "/usr/bin/git"),
+          Effect.provideService(MacDeveloperDirectoryProbe, () => developerTools),
+          Effect.result,
+        );
+
+        expect(spawns).toEqual(spawned ? ["git"] : []);
+        if (spawned) return;
+        // Reads as git not being installed, so its callers turn the feature off quietly.
+        expect(result._tag).toBe("Failure");
+        if (result._tag !== "Failure" || result.failure._tag !== "ProcessSpawnError") {
+          return expect.fail("Expected ProcessSpawnError");
+        }
+        const cause = result.failure.cause;
+        expect(PlatformError.isPlatformError(cause) && cause.reason._tag).toBe("NotFound");
+      }),
   );
 
   it.effect("fails when output exceeds max buffer in default mode", () =>
