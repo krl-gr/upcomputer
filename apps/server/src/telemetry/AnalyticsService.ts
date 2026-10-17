@@ -11,8 +11,10 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
@@ -70,6 +72,14 @@ const TelemetryEnvConfig = Config.all({
   wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
 });
 
+export type TelemetryMilestone = "app.first_thread_created" | "app.first_message_sent";
+
+// 0.0.32 wrote this marker, so installs upgraded from it never report a second first launch.
+const FIRST_LAUNCH_MARKER_FILE = "telemetry-first-launch-v1";
+// Created together with the first-launch claim. Installs that were first launched by an
+// older build have threads already, so their next thread is not their first one.
+const MILESTONES_DIR = "telemetry-milestones";
+
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
@@ -78,6 +88,9 @@ export class AnalyticsService extends Context.Service<
       properties?: Readonly<Record<string, unknown>>,
     ) => Effect.Effect<void>;
 
+    /** Records an install milestone at most once, and only for installs first launched on this build. */
+    readonly recordMilestone: (event: TelemetryMilestone) => Effect.Effect<void>;
+
     readonly flush: Effect.Effect<void>;
   }
 >()("t3/telemetry/AnalyticsService") {
@@ -85,6 +98,7 @@ export class AnalyticsService extends Context.Service<
     AnalyticsService,
     AnalyticsService.of({
       record: () => Effect.void,
+      recordMilestone: () => Effect.void,
       flush: Effect.void,
     }),
   );
@@ -113,6 +127,8 @@ export const make = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   // Opted-out installs never read provider account files or write an identity.
   const identifier = telemetryConfig.enabled ? yield* getTelemetryIdentifier : null;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const deliveryRef = yield* Ref.make<DeliveryState>({
@@ -266,9 +282,47 @@ export const make = Effect.gen(function* () {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
-  yield* Effect.addFinalizer(() => flush);
+  const enabled = telemetryConfig.enabled && identifier !== null;
+  const milestonesDir = path.join(serverConfig.stateDir, MILESTONES_DIR);
+  // "wx" fails when the marker exists, so concurrent claims report one event.
+  const claimMarker = (markerPath: string) =>
+    fileSystem.writeFileString(markerPath, "1\n", { flag: "wx" }).pipe(
+      Effect.as(true),
+      Effect.catchCause(() => Effect.succeed(false)),
+    );
 
-  return AnalyticsService.of({ record, flush });
+  const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event) =>
+    enabled
+      ? claimMarker(path.join(milestonesDir, event)).pipe(
+          Effect.flatMap((claimed) => (claimed ? record(event) : Effect.void)),
+        )
+      : Effect.void;
+
+  const startedAtMs = yield* Clock.currentTimeMillis;
+  yield* record("server.started");
+  // Opted-out launches never write the marker: enabling telemetry later makes the
+  // next desktop launch the first measured one.
+  if (enabled && serverConfig.mode === "desktop") {
+    const firstLaunch = yield* claimMarker(
+      path.join(serverConfig.stateDir, FIRST_LAUNCH_MARKER_FILE),
+    );
+    if (firstLaunch) {
+      yield* fileSystem
+        .makeDirectory(milestonesDir, { recursive: true })
+        .pipe(Effect.catchCause(() => Effect.void));
+      yield* record("app.first_launch");
+    }
+  }
+
+  // Desktop quit stops the server, so this is the app session length there.
+  yield* Effect.addFinalizer(() =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) => record("server.stopped", { uptimeMs: now - startedAtMs })),
+      Effect.andThen(flush),
+    ),
+  );
+
+  return AnalyticsService.of({ record, recordMilestone, flush });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
