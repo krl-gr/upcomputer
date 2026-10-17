@@ -520,6 +520,7 @@ function ManagedCodexSetup({
   const flowId = auth?.flowId;
   const openPage = useCallback(
     async (authorizationUrl: string) => {
+      let waitingForCallback = false;
       try {
         const receive = window.desktopBridge?.receiveProviderAuthCallback;
         if (receive && clientCallback && flowId) {
@@ -528,6 +529,7 @@ function ManagedCodexSetup({
             return;
           }
           receivingCallback.current = authorizationUrl;
+          waitingForCallback = true;
           const callbackUrl = await receive(authorizationUrl);
           if (receivingCallback.current !== authorizationUrl) return;
           receivingCallback.current = null;
@@ -538,12 +540,15 @@ function ManagedCodexSetup({
           await ensureLocalApi().shell.openExternal(authorizationUrl);
         }
       } catch {
-        setError(
-          "Could not finish sign-in on this computer. Try again or paste the redirect URL below.",
-        );
+        // Cancelling sign-in ends the callback wait with a rejection; that is no failure.
+        if (waitingForCallback && receivingCallback.current !== authorizationUrl) return;
+        receivingCallback.current = null;
+        // The paste field sits behind "Having trouble signing in?", so open it with the error.
+        setCallbackHelpOpen(true);
+        setError("Could not finish sign-in on this computer. Try again.");
       }
     },
-    [clientCallback, flowId, run, completeAuth, environmentId, instanceId],
+    [clientCallback, flowId, run, completeAuth, environmentId, instanceId, setCallbackHelpOpen],
   );
 
   useEffect(() => {
