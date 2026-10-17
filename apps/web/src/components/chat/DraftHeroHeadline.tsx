@@ -5,7 +5,7 @@ import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/envir
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
@@ -45,6 +45,10 @@ import {
   showsDraftHeroNoProjectItem,
   showsDraftHeroNoProjectPicker,
 } from "~/composerContextRow/composerContextRowSurface";
+import {
+  cancelMoveDraftIntoAddedProject,
+  moveDraftIntoNextAddedProject,
+} from "~/composerContextRow/draftIntoAddedProject";
 import { projectIconColorClassName } from "~/projectIconColors";
 
 const ADD_PROJECT_VALUE = "add-project";
@@ -177,6 +181,18 @@ export function DraftHeroHeadline({
   const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
   const isScratchDraft =
     activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
+  // Our surface's line under the heading of a draft without a project, where
+  // upstream shows its "No project" picker.
+  const offersProjectLine = isScratchDraft && !showsDraftHeroNoProjectPicker();
+  // Adding a project from that line takes this draft along (`draftIntoAddedProject`).
+  const addProject = () => {
+    if (offersProjectLine && draftId) moveDraftIntoNextAddedProject(draftId, projects);
+    openAddProject();
+  };
+  useEffect(() => {
+    if (!offersProjectLine || !draftId) return;
+    return () => cancelMoveDraftIntoAddedProject(draftId);
+  }, [draftId, offersProjectLine]);
 
   const pickerItems = useMemo<readonly PickerItem[]>(
     () => [
@@ -265,7 +281,7 @@ export function DraftHeroHeadline({
     return true;
   };
 
-  const projectSelector = shouldShowProjectMenu ? (
+  const projectPicker = (trigger: ReactNode) => (
     <Combobox
       items={pickerItems}
       filteredItems={filteredPickerItems}
@@ -282,7 +298,7 @@ export function DraftHeroHeadline({
         if (!item) return;
         setPickerOpen(false);
         if (item.value === ADD_PROJECT_VALUE) {
-          openAddProject();
+          addProject();
           return;
         }
         if (item.value === NO_PROJECT_VALUE) {
@@ -296,24 +312,7 @@ export function DraftHeroHeadline({
         selectProject(entry.targetProject, entry.group.projectKey);
       }}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComboboxTrigger
-              render={<InlineButton tone="picker" />}
-              data-draft-project-trigger=""
-              className="pointer-events-auto max-w-64 align-baseline"
-            />
-          }
-        >
-          <span className="min-w-0 truncate">
-            {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
-          </span>
-        </TooltipTrigger>
-        {activeProjectDisplayName && !isScratchDraft ? (
-          <TooltipPopup side="top">{activeProjectDisplayName}</TooltipPopup>
-        ) : null}
-      </Tooltip>
+      {trigger}
       <ComboboxPopup align="center" className="w-72 overflow-hidden">
         <ComboboxSearchInput
           aria-label="Search projects"
@@ -359,6 +358,28 @@ export function DraftHeroHeadline({
         </ComboboxList>
       </ComboboxPopup>
     </Combobox>
+  );
+  const projectSelector = shouldShowProjectMenu ? (
+    projectPicker(
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ComboboxTrigger
+              render={<InlineButton tone="picker" />}
+              data-draft-project-trigger=""
+              className="pointer-events-auto max-w-64 align-baseline"
+            />
+          }
+        >
+          <span className="min-w-0 truncate">
+            {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
+          </span>
+        </TooltipTrigger>
+        {activeProjectDisplayName && !isScratchDraft ? (
+          <TooltipPopup side="top">{activeProjectDisplayName}</TooltipPopup>
+        ) : null}
+      </Tooltip>,
+    )
   ) : (
     <button
       type="button"
@@ -402,6 +423,18 @@ export function DraftHeroHeadline({
       </Tooltip>
     ) : null;
 
+  const projectLine = !offersProjectLine ? null : menuEntries.length > 0 ? (
+    projectPicker(
+      <ComboboxTrigger render={<InlineButton tone="muted" className="pointer-events-auto" />}>
+        or pick a project
+      </ComboboxTrigger>,
+    )
+  ) : (
+    <InlineButton tone="muted" className="pointer-events-auto" onClick={addProject}>
+      or add a project
+    </InlineButton>
+  );
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       <h1
@@ -424,7 +457,7 @@ export function DraftHeroHeadline({
           {isScratchDraft
             ? showsDraftHeroNoProjectPicker()
               ? projectSelector
-              : null
+              : projectLine
             : orStartWithoutProject}
         </p>
       )}
