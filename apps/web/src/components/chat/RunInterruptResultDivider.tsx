@@ -40,7 +40,7 @@ export function RunInterruptResultDivider(props: {
   );
 }
 
-export function RunInterruptResultDividerView(props: {
+function RunInterruptResultDividerView(props: {
   readonly resultMessage: string;
   readonly requestMessage: string | null;
 }) {
