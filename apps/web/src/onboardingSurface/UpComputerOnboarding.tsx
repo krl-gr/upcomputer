@@ -4,6 +4,7 @@ import {
   AuthTerminalOperateScope,
   defaultInstanceIdForDriver,
   ProviderDriverKind,
+  toTelemetryProvider,
   type EnvironmentId,
   type ScopedProjectRef,
   type ServerConfig,
@@ -197,7 +198,7 @@ export function UpComputerOnboarding({
     if (serverConfig === null) return;
     recordClientEvent(environmentId, {
       event: "onboarding.agent.action",
-      provider: ProviderDriverKind.make("codex"),
+      provider: "codex",
       action: setupMode === "managed" ? "continue_with_chatgpt" : "use_existing_cli",
     });
     void updateSettings({
@@ -246,7 +247,7 @@ export function UpComputerOnboarding({
     const action = provider.installed ? "sign_in" : "install";
     recordClientEvent(environmentId, {
       event: "onboarding.agent.action",
-      provider: provider.driver,
+      provider: toTelemetryProvider(provider.driver),
       action,
     });
     setTerminalSession({
@@ -288,7 +289,7 @@ export function UpComputerOnboarding({
       });
       recordClientEvent(environmentId, {
         event: "onboarding.agent.terminal_closed",
-        provider: provider.driver,
+        provider: toTelemetryProvider(provider.driver),
         action: session.action,
         installed: provider.installed,
         authStatus: provider.auth.status,
@@ -424,7 +425,7 @@ export function UpComputerOnboarding({
             onContinueWithChatGpt={() =>
               recordClientEvent(environmentId, {
                 event: "onboarding.agent.action",
-                provider: ProviderDriverKind.make("codex"),
+                provider: "codex",
                 action: "continue_with_chatgpt",
               })
             }
