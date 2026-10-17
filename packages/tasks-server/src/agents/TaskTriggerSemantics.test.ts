@@ -413,7 +413,7 @@ interface FakeThread {
 type Call =
   | { readonly type: "thread.create"; readonly threadId: string }
   | { readonly type: "turn"; readonly threadId: string; readonly text: string }
-  | { readonly type: "interrupt"; readonly threadId: string }
+  | { readonly type: "interrupt"; readonly threadId: string; readonly reason?: string }
   | { readonly type: "release"; readonly threadId: string };
 
 interface Harness {
@@ -515,9 +515,13 @@ function fakeThreads() {
         calls.push({ type: "turn", threadId: input.threadId, text: input.text });
         return {};
       }),
-    interruptThread: (input: { readonly threadId: ThreadId }) =>
+    interruptThread: (input: { readonly threadId: ThreadId; readonly reason?: string }) =>
       Effect.sync(() => {
-        calls.push({ type: "interrupt", threadId: input.threadId });
+        calls.push({
+          type: "interrupt",
+          threadId: input.threadId,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        });
         for (const run of threadOf(input.threadId).runs) {
           if (run.completedAt !== null) continue;
           run.status = "interrupted";
@@ -937,6 +941,46 @@ test("a blocked run refused for its modes leaves an older failure to the same ag
         runs.some((run) => run.triggerRunId === review.id),
         false,
         "the refused blocked run stays unhandled",
+      );
+    }),
+  );
+});
+
+test("a released run interrupts its turn with a reason the thread shows as the run's end", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      yield* repository.upsertAgent(agentInput("dev"));
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const devRun = yield* waitFor(
+        "developer run",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+
+      const releasedTask = yield* repository.update({
+        actor,
+        id: task.id,
+        status: "Needs Review",
+        assigneeAgentRunId: null,
+      });
+      yield* change(harness, releasedTask, devRun.id);
+      const ended = yield* waitFor(
+        "the developer run to end",
+        repository
+          .getAgentRunById({ id: devRun.id })
+          .pipe(
+            Effect.map((run) =>
+              Option.getOrThrow(run).completedAt ? Option.getOrThrow(run) : undefined,
+            ),
+          ),
+      );
+      NodeAssert.equal(ended.status, "completed");
+      NodeAssert.deepEqual(
+        harness.calls.flatMap((call) =>
+          call.type === "interrupt" && call.threadId === devRun.threadId ? [call.reason] : [],
+        ),
+        ["Task-agent run completed."],
       );
     }),
   );

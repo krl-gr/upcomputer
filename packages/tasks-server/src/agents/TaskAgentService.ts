@@ -7,6 +7,7 @@ import {
   type TaskPromptSettings,
 } from "@t3tools/tasks-contracts/v1";
 import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
+import { taskAgentRunEndInterruptReason } from "@t3tools/shared/taskAgentRunInterrupt";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -22,7 +23,9 @@ import {
   forkParked,
   isActiveRun,
   ProjectStoreV2,
+  registerRestartContinuationGate,
   ThreadManagementService,
+  type RestartContinuationGate,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
 import { agentRunModes, broaderRunMode, type RunModes } from "./runModes.ts";
@@ -521,7 +524,10 @@ const make = Effect.gen(function* () {
         });
         if (!(yield* ownsThread)) return false;
         if (input.interrupt) {
-          yield* interruptThread(input.run.threadId, `Task-agent run ${input.status}.`).pipe(
+          yield* interruptThread(
+            input.run.threadId,
+            taskAgentRunEndInterruptReason(input.status),
+          ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to interrupt a finishing task-agent run", {
                 agentRunId: input.run.id,
@@ -1345,6 +1351,60 @@ ${message.text}`,
           reason: result.error,
         });
     });
+
+  /**
+   * After a server restart only a thread's active task-agent run may continue,
+   * and only its own v2 work, so the turn stays accounted, assigned and
+   * stoppable. An ended run (whose provider may still hold native background
+   * work) or one its agent or task now ends gets no turn outside a run.
+   */
+  const admitsRestartContinuation = (input: Parameters<RestartContinuationGate>[0]) =>
+    Effect.gen(function* () {
+      const active = yield* repository.findActiveAgentRunByThreadId({ threadId: input.threadId });
+      if (Option.isNone(active) || active.value.status.startsWith("finalizing:")) return false;
+      const run = active.value;
+      const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
+      const task = Option.getOrNull(yield* repository.getById({ id: run.taskId }));
+      if (endingStopReason(agent, task) !== null) return false;
+      const records = yield* readThreadRuns(input.threadId);
+      const source = Option.isSome(records)
+        ? records.value.runs.find((candidate) => candidate.id === input.sourceRunId)
+        : undefined;
+      return (
+        source !== undefined &&
+        DateTime.toEpochMillis(source.requestedAt) >= Date.parse(run.startedAt)
+      );
+    }).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Task-agent restart continuation refused: run state unreadable", {
+          threadId: input.threadId,
+          cause,
+        }).pipe(Effect.as(false)),
+      ),
+    );
+
+  // Decided and sent under the thread's lock, so a finalizer cannot end the
+  // run between the decision and the turn. Threads no run used are not ours.
+  yield* registerRestartContinuationGate((input, send) =>
+    Effect.gen(function* () {
+      const owned = yield* repository
+        .findLatestAgentRunByThreadId({ threadId: input.threadId })
+        .pipe(
+          Effect.map(Option.isSome),
+          // Unreadable: the admission below refuses what it cannot confirm.
+          Effect.orElseSucceed(() => true),
+        );
+      if (!owned) return yield* Effect.as(send, true);
+      return yield* withThreadLock(
+        input.threadId,
+        Effect.gen(function* () {
+          if (!(yield* admitsRestartContinuation(input))) return false;
+          yield* send;
+          return true;
+        }),
+      );
+    }),
+  );
 
   const stopRun: TaskAgentServiceShape["stopRun"] = ({ id }) =>
     Effect.gen(function* () {
