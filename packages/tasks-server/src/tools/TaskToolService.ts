@@ -500,7 +500,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4.pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
    * instructions" must not rewrite every agent's rules. A thread that any run

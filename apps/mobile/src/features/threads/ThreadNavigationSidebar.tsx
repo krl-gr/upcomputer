@@ -1,4 +1,5 @@
-import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
+import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
+import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { computeThreadMoveAvailability } from "./threadOrder";
 import type {
@@ -20,10 +21,10 @@ import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSw
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SearchBarCommands } from "react-native-screens";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
-import { ControlPillMenu } from "../../components/ControlPill";
-import { SymbolView } from "../../components/AppSymbol";
+import { Menu } from "../../components/ui/Menu";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
@@ -49,9 +50,9 @@ import {
   WorkspaceConnectionTitle,
 } from "../home/WorkspaceConnectionTitle";
 import { SidebarHeaderActions } from "./sidebar-header-actions";
-import { MaterialThreadListToolbar } from "../home/MaterialThreadListToolbar";
-import { useMaterialToolbarLayout } from "../../components/useMaterialToolbarLayout";
-import { useMaterialFabScroll } from "../home/MaterialFabScrollContext";
+import { ThreadListToolbar } from "../home/ThreadListToolbar";
+import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
+import { useFabScroll } from "../home/FabScrollContext";
 import { SidebarFilterButton } from "./sidebar-filter-button";
 import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
@@ -76,8 +77,6 @@ import {
   type ThreadListV2ListItem,
 } from "./threadListV2";
 
-/** The sidebar list: flat v2 rows with queued tasks spliced in, plus a
-    settled "Show more" pager row. */
 type SidebarListItem =
   | ThreadListV2ListItem
   | { readonly type: "v2-show-more"; readonly key: string; readonly hiddenCount: number };
@@ -98,15 +97,6 @@ interface ThreadNavigationSidebarProps {
   readonly searchQuery: string;
 }
 
-/**
- * iPad/large-width sidebar column.
- *
- * On iOS the pane is hosted inside its own navigation-inert single-screen
- * native stack (SidebarNavigationShell) so the header is a real
- * UINavigationBar: large title, native bar-button items, and a
- * UISearchController search field — the same chrome a UISplitViewController
- * column gets. Other platforms keep the custom header chrome.
- */
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
   if (Platform.OS !== "ios") {
     return <ThreadNavigationSidebarPane {...props} nativeChrome={false} />;
@@ -175,7 +165,8 @@ function ThreadNavigationSidebarPane(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
   );
-  const { options, setSelectedEnvironmentId } = useHomeListOptions(availableEnvironmentIds);
+  const { options, setSelectedEnvironmentId, setSelectedProjectKey } =
+    useHomeListOptions(availableEnvironmentIds);
   const searchEnvironmentIds = useMemo(
     () =>
       options.selectedEnvironmentId === null
@@ -205,7 +196,16 @@ function ThreadNavigationSidebarPane(
     () => new Set(threadSearch.matches.map(threadSearchMatchKey)),
     [threadSearch.matches],
   );
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const projectScopeKey = options.selectedProjectKey;
+  const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
+    sidebarProjectGroupingMode: options.projectGroupingMode,
+    sidebarProjectGroupingOverrides: {},
+  });
+  useEffect(() => {
+    if (resolvedProjectKey !== projectScopeKey) {
+      setSelectedProjectKey(resolvedProjectKey);
+    }
+  }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -239,20 +239,10 @@ function ThreadNavigationSidebarPane(
     [projectScopes],
   );
   const selectedProjectScope = useMemo(
-    () =>
-      selectedProjectKey === null
-        ? null
-        : (projectScopes.find((scope) => scope.key === selectedProjectKey) ?? null),
-    [projectScopes, selectedProjectKey],
+    () => projectScopes.find((scope) => scope.key === resolvedProjectKey) ?? null,
+    [projectScopes, resolvedProjectKey],
   );
-  useEffect(() => {
-    if (
-      selectedProjectKey !== null &&
-      !projectFilterOptions.some((project) => project.key === selectedProjectKey)
-    ) {
-      setSelectedProjectKey(null);
-    }
-  }, [projectFilterOptions, selectedProjectKey]);
+  const selectedProjectKey = selectedProjectScope?.key ?? null;
   const selectedProjectRefs = useMemo(
     () =>
       selectedProjectScope === null
@@ -272,10 +262,6 @@ function ThreadNavigationSidebarPane(
     return map;
   }, [projects]);
 
-  // Thread List v2 (beta) support — same model as the compact Home list
-  // (HomeScreen.tsx): flat creation-order card block + settled recency tail.
-  // The settled tail renders in pages; expansion resets when the filter
-  // context changes so environment/search flips never inherit a deep page.
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   );
@@ -299,20 +285,13 @@ function ThreadNavigationSidebarPane(
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
-  // The queued-start and snooze helpers need a clock while the pane stays open.
   const [nowMinute, setNowMinute] = useState(() => new Date().toISOString().slice(0, 16));
-  // Snooze wake times are second-precise; a counter bumped exactly at the
-  // next wake boundary re-runs the partition with a fresh clock so a woken
-  // thread reappears immediately instead of on the next minute tick.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
   useEffect(() => {
-    // Refresh immediately because the mount-time value can be hours old.
     setNowMinute(new Date().toISOString().slice(0, 16));
     const id = setInterval(() => setNowMinute(new Date().toISOString().slice(0, 16)), 60_000);
     return () => clearInterval(id);
   }, []);
-  // Threads on servers without the settlement capability never classify as
-  // settled (the user could neither un-settle nor pin them).
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
     providersByEnvironmentId,
@@ -348,7 +327,6 @@ function ThreadNavigationSidebarPane(
           queuedThreadKeys,
         }),
       });
-    // The Working beta orders the inbox by time, so only pins can move.
     return new Map([
       ...sectionAvailability("pinned"),
       ...(workingShelfEnabled ? [] : sectionAvailability("active")),
@@ -405,8 +383,6 @@ function ThreadNavigationSidebarPane(
     threads,
     selectedProjectScope,
   ]);
-  // Re-partition the moment the earliest snooze expires (clamped to the
-  // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
     if (nextSnoozeWakeAt === null) return;
@@ -420,11 +396,6 @@ function ThreadNavigationSidebarPane(
     // range) the boundary string is identical and the chain would die.
   }, [nextSnoozeWakeAt, snoozeWakeTick]);
   const listItems = useMemo<readonly SidebarListItem[]>(() => {
-    // Queued offline tasks are not thread shells, so the v2 item builder
-    // never sees them; the shared splice puts them below the active block
-    // (mirrors the compact Home v2 list) where they stay visible and
-    // deletable while their environment is offline. Same environment scope
-    // and search filter as the list.
     const v2SearchQuery = props.searchQuery.trim().toLocaleLowerCase();
     const v2PendingTasks = pendingTasks.filter(
       (pendingTask) =>
@@ -550,11 +521,11 @@ function ThreadNavigationSidebarPane(
         return;
       }
     },
-    [environments, projectFilterOptions, setSelectedEnvironmentId],
+    [environments, projectFilterOptions, setSelectedEnvironmentId, setSelectedProjectKey],
   );
 
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
-  const { height, paddingTop, paddingBottom } = useMaterialToolbarLayout();
+  const { height, paddingTop, paddingBottom } = useToolbarLayout();
   // The sticky header (title row, search field, optional connection status)
   // is measured so the list inset always matches its real height — no
   // hardcoded per-variant constants.
@@ -589,9 +560,9 @@ function ThreadNavigationSidebarPane(
   const handleScrollBeginDrag = useCallback(() => {
     openSwipeableRef.current?.close();
   }, []);
-  const onMaterialFabScroll = useMaterialFabScroll();
+  const onFabScroll = useFabScroll();
   const { swipeEnabled, scrollGateHandlers } = useSwipeableScrollGate({
-    onScroll: onMaterialFabScroll,
+    onScroll: onFabScroll,
     onScrollBeginDrag: handleScrollBeginDrag,
   });
   // The sticky header's project shells and search maps feed row props, so
@@ -607,7 +578,6 @@ function ThreadNavigationSidebarPane(
       savedConnectionsById,
       listEnvironments,
       threadSearchMatchByKey,
-      // Rows read it for their reorder menu items.
       workingShelfEnabled,
     }),
     [
@@ -680,14 +650,6 @@ function ThreadNavigationSidebarPane(
         case "v2-thread": {
           const thread = item.item.thread;
           const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
-          // Intentional difference from Home: the sidebar never passes
-          // `showTrailingDivider` because its rows render no Home-style row
-          // hairline at all — card rows carry tonal containers in this pane
-          // (the hairline branch is !sidebarPane-only) and slim rows have no
-          // hairline branch. The stamp still rides the shared list items
-          // because Home's boundary suppression consumes it; the sidebar's
-          // only cost is the occasional divider-only equality invalidation,
-          // which re-renders identically.
           return (
             <ThreadListV2Row
               onNewThreadOnBranch={props.onNewThreadOnBranch}
@@ -837,8 +799,6 @@ function ThreadNavigationSidebarPane(
       workingShelfEnabled,
     ],
   );
-  // The list ignores sort/group options, so only the environment and project
-  // filters can light the "customized" state.
   const filterCustomized = options.selectedEnvironmentId !== null || selectedProjectKey !== null;
   const filterIcon = filterCustomized
     ? "line.3.horizontal.decrease.circle.fill"
@@ -853,7 +813,14 @@ function ThreadNavigationSidebarPane(
         onEnvironmentChange: setSelectedEnvironmentId,
         onProjectChange: setSelectedProjectKey,
       }),
-    [environments, options, projectFilterOptions, selectedProjectKey, setSelectedEnvironmentId],
+    [
+      environments,
+      options,
+      projectFilterOptions,
+      selectedProjectKey,
+      setSelectedEnvironmentId,
+      setSelectedProjectKey,
+    ],
   );
   const nativeHeaderItems = useMemo(
     () =>
@@ -864,8 +831,6 @@ function ThreadNavigationSidebarPane(
       }),
     [filterIcon, filterMenu, props.onOpenSettings],
   );
-  // Snoozed threads need no special case: the shelf header is a list row
-  // even while collapsed.
   const listEmpty = (
     <Text
       className={
@@ -894,9 +859,6 @@ function ThreadNavigationSidebarPane(
         <NativeStackScreenOptions
           optionsVersion={[nativeHeaderItems, props.width]}
           options={{
-            // Re-applies the shell's static brand slot with the
-            // connection-status swap so reconnects surface in the header
-            // instead of shifting the list.
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth: props.width,
               trailingItemCount: nativeHeaderItems.length,
@@ -907,8 +869,6 @@ function ThreadNavigationSidebarPane(
               ref: searchBarRef,
               autoCapitalize: "none",
               hideNavigationBar: false,
-              // Keep the search bar pinned under the title — UIKit's default
-              // hidesSearchBarWhenScrolling collapses it on scroll.
               hideWhenScrolling: false,
               obscureBackground: false,
               placeholder: "Search",
@@ -1027,7 +987,7 @@ function ThreadNavigationSidebarPane(
       </View>
 
       {Platform.OS === "android" ? (
-        <MaterialThreadListToolbar
+        <ThreadListToolbar
           sidebar
           onLayout={handleStickyHeaderLayout}
           searchQuery={props.searchQuery}
@@ -1048,9 +1008,6 @@ function ThreadNavigationSidebarPane(
           style={{ paddingTop: insets.top }}
         >
           <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
-            {/* Title slot doubles as the connection status surface: while an
-              environment reconnects, the brand fades to a status label in
-              place (no layout shift in the list below). */}
             <WorkspaceConnectionTitle
               grow
               onPress={props.onOpenEnvironmentSettings}
@@ -1062,9 +1019,9 @@ function ThreadNavigationSidebarPane(
               }
             />
             <View className="flex-row items-center gap-2.5">
-              <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
+              <Menu actions={listMenuActions} onPressAction={handleListMenuAction}>
                 <SidebarFilterButton accessibilityLabel="Filter threads" icon={filterIcon} />
-              </ControlPillMenu>
+              </Menu>
               <SidebarHeaderActions onOpenSettings={props.onOpenSettings} />
             </View>
           </View>

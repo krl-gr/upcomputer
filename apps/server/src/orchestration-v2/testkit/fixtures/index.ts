@@ -58,8 +58,13 @@ import { messageSteeringInput } from "./message_steering/input.ts";
 import { assertPiMessageSteeringOutput } from "./message_steering/pi_output.ts";
 import { MUSE_PERMISSION_DECLINED_FILE, musePermissionInput } from "./muse_permission/input.ts";
 import { assertMusePermissionOutput } from "./muse_permission/output.ts";
+import { museSubagentApprovalInput } from "./muse_subagent_approval/input.ts";
+import { assertMuseSubagentApprovalOutput } from "./muse_subagent_approval/output.ts";
+import { museSubagentInterruptInput } from "./muse_subagent_interrupt/input.ts";
+import { assertMuseSubagentInterruptOutput } from "./muse_subagent_interrupt/output.ts";
 import { museWorkflowInput } from "./muse_workflow/input.ts";
 import { assertMuseWorkflowOutput } from "./muse_workflow/output.ts";
+import { assertMuseSubagentV2Output } from "./subagent_v2/muse_output.ts";
 import { assertMuseMultiTurnOutput } from "./multi_turn/muse_output.ts";
 import { assertMuseTurnInterruptOutput } from "./turn_interrupt/muse_output.ts";
 import { piCompactionInput } from "./pi_compaction/input.ts";
@@ -123,6 +128,8 @@ import { skillInvocationInput } from "./skill_invocation/input.ts";
 import { assertSimpleOutput } from "./simple/codex_output.ts";
 import { assertPiSimpleOutput } from "./simple/pi_output.ts";
 import { simpleInput } from "./simple/input.ts";
+import { malformedSessionUpdateInput } from "./malformed_session_update/input.ts";
+import { assertMalformedSessionUpdateOutput } from "./malformed_session_update/output.ts";
 import { assertSubagentOutput } from "./subagent/codex_output.ts";
 import { assertClaudeSubagentOutput } from "./subagent/claude_output.ts";
 import { subagentInput } from "./subagent/input.ts";
@@ -179,6 +186,8 @@ import { assertToolCallWorkspaceNeverClaudeOutput } from "./tool_call_workspace_
 import { assertToolCallWorkspaceNeverOutput } from "./tool_call_workspace_never/codex_output.ts";
 import { toolCallWorkspaceNeverInput } from "./tool_call_workspace_never/input.ts";
 import { assertTurnInterruptClaudeOutput } from "./turn_interrupt/claude_output.ts";
+import { assertCommandOutputStreamingOutput } from "./command_output_streaming/output.ts";
+import { commandOutputStreamingInput } from "./command_output_streaming/input.ts";
 import { assertTurnInterruptOutput } from "./turn_interrupt/codex_output.ts";
 import { turnInterruptInput } from "./turn_interrupt/input.ts";
 import { assertTurnInterruptMidToolClaudeOutput } from "./turn_interrupt_mid_tool/claude_output.ts";
@@ -590,6 +599,21 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     ],
   },
   {
+    name: "malformed_session_update",
+    buildInput: malformedSessionUpdateInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        transcriptFile: new URL(
+          "./malformed_session_update/registry_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: ACP_REGISTRY_MODEL_SELECTION,
+        assertOutput: assertMalformedSessionUpdateOutput,
+      },
+    ],
+  },
+  {
     name: "simple",
     buildInput: simpleInput,
     providers: [
@@ -860,6 +884,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
         modelSelection: CODEX_MODEL_SELECTION,
         assertOutput: assertSubagentV2Output,
       },
+      {
+        driver: ProviderDriverKind.make("muse"),
+        transcriptFile: new URL("./subagent_v2/muse_transcript.ndjson", import.meta.url),
+        modelSelection: MUSE_MODEL_SELECTION,
+        assertOutput: assertMuseSubagentV2Output,
+      },
     ],
   },
   {
@@ -915,7 +945,6 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
       },
     ],
   },
-  // OpenCode 2 runtime of the same driver, recorded against 2.0.18 over HTTP and SSE.
   {
     name: "opencode2_simple",
     buildInput: openCode2SimpleInput,
@@ -1115,7 +1144,6 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
       },
     ],
   },
-  // Recorded live against 2.0.18 on OpenRouter with the workspace's own command and skill.
   ...(
     [
       ["opencode2_command", openCode2CommandInput, assertOpenCode2CommandOutput],
@@ -1224,6 +1252,33 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
         modelSelection: MUSE_MODEL_SELECTION,
         expectedAbsentWorkspacePaths: [MUSE_PERMISSION_DECLINED_FILE],
         assertOutput: assertMusePermissionOutput,
+      },
+    ],
+  },
+  {
+    name: "muse_subagent_approval",
+    buildInput: museSubagentApprovalInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("muse"),
+        transcriptFile: new URL("./muse_subagent_approval/muse_transcript.ndjson", import.meta.url),
+        modelSelection: MUSE_MODEL_SELECTION,
+        assertOutput: assertMuseSubagentApprovalOutput,
+      },
+    ],
+  },
+  {
+    name: "muse_subagent_interrupt",
+    buildInput: museSubagentInterruptInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("muse"),
+        transcriptFile: new URL(
+          "./muse_subagent_interrupt/muse_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: MUSE_MODEL_SELECTION,
+        assertOutput: assertMuseSubagentInterruptOutput,
       },
     ],
   },
@@ -1513,6 +1568,31 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     ],
   },
   {
+    name: "command_output_streaming",
+    buildInput: commandOutputStreamingInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("codex"),
+        transcriptFile: new URL(
+          "./command_output_streaming/codex_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: CODEX_MODEL_SELECTION,
+        runtimePolicyOverride: WORKSPACE_NEVER_POLICY,
+        assertOutput: assertCommandOutputStreamingOutput,
+      },
+      {
+        driver: ProviderDriverKind.make("claudeAgent"),
+        transcriptFile: new URL(
+          "./command_output_streaming/claude_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: CLAUDE_MODEL_SELECTION,
+        assertOutput: assertCommandOutputStreamingOutput,
+      },
+    ],
+  },
+  {
     name: "turn_interrupt_mid_tool",
     buildInput: turnInterruptMidToolInput,
     providers: [
@@ -1672,13 +1752,3 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     ],
   },
 ];
-
-// TODO(claude-v2/context-transfer): add provider-switch handoff and return fixtures when portable
-// context handoff is implemented. Cross-reference docs/orchestration-v2/provider-switching-and-context.md
-// and docs/orchestration-v2/thread-lineage-and-context-transfer.md. The return fixture should
-// prefer a delta handoff into an existing Claude provider thread.
-
-// TODO(claude-v2/context-transfer-fixtures): register provider-switch, merge-back, and cross-provider
-// fork fixtures after each path has a real provider transcript. Cross-reference
-// docs/orchestration-v2/provider-switching-and-context.md and
-// docs/orchestration-v2/thread-lineage-and-context-transfer.md.

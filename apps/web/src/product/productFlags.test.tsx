@@ -159,9 +159,10 @@ describe("hidden upstream features in the web app", () => {
         "review-guides",
         "review-guide-model",
         "review-guide-instructions",
+        "pull-request-links-open-in-app",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(14);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(15);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });

@@ -13,6 +13,7 @@ import {
   act,
   createRef,
   useLayoutEffect,
+  useState,
   type ReactNode,
   type Ref,
   type ReactElement,
@@ -31,7 +32,6 @@ const activityTestState = vi.hoisted(() => ({
   subagentTooltips: false,
 }));
 
-// Expose tooltip contents in the renderer without requiring a browser portal.
 vi.mock("../ui/tooltip", async (importOriginal) => {
   const original = await importOriginal<typeof import("../ui/tooltip")>();
   return {
@@ -87,6 +87,11 @@ beforeEach(() => {
   activityTestState.expandedRuns = false;
 });
 
+const legendListTestState = vi.hoisted(() => ({
+  data: undefined as unknown,
+  onScroll: undefined as (() => void) | undefined,
+}));
+
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
 
@@ -122,8 +127,11 @@ vi.mock("@legendapp/list/react", async () => {
         };
     className?: string;
     contentInsetEndAdjustment?: number;
+    onScroll?: () => void;
     ref?: Ref<LegendListRef>;
   }) => {
+    legendListTestState.data = props.data;
+    legendListTestState.onScroll = props.onScroll;
     if (props.anchoredEndSpace) {
       props.anchoredEndSpace.onSizeChanged?.(240);
       props.anchoredEndSpace.onReady?.({ anchorIndex: props.anchoredEndSpace.anchorIndex });
@@ -567,10 +575,8 @@ describe("MessagesTimeline", () => {
           node.props["aria-label"] === "Which repository?" && node.props["aria-expanded"] === false,
       );
       const markup = JSON.stringify(renderer!.toJSON());
-      // Heading + accessible label.
       expect(markup.match(/Which repository\?/g)).toHaveLength(2);
       await act(() => questionToggle.props.onClick());
-      // Expanded history adds a third occurrence alongside heading and label.
       expect(JSON.stringify(renderer!.toJSON()).match(/Which repository\?/g)).toHaveLength(3);
     } finally {
       await act(() => renderer?.unmount());
@@ -651,7 +657,6 @@ describe("MessagesTimeline", () => {
         await act(() => {
           renderer = create(<ThreadProbe />);
         });
-        // The user scrolled up to read, so the composer is resting.
         await act(() => composerState!.setIsComposerScrollCollapsed(true));
         const toggle = renderer!.root.findByProps({ "aria-expanded": false });
         await act(() => toggle.props.onClick());
@@ -724,11 +729,9 @@ describe("MessagesTimeline", () => {
         );
         for (const scrollHeight of [1300, 900]) {
           await act(() => toggle.props.onClick());
-          // The rows grow or shrink once the list measures them.
           viewport.scrollHeight = scrollHeight;
           await flushFrame();
           expect(viewport.scrollTop).toBe(isAtEnd ? scrollHeight : 400);
-          // Tool output that renders late is pinned before the next frame.
           viewport.scrollHeight = scrollHeight + 200;
           await act(() => list.props.onItemSizeChanged());
           expect(viewport.scrollTop).toBe(isAtEnd ? scrollHeight + 200 : 400);
@@ -741,6 +744,148 @@ describe("MessagesTimeline", () => {
       }
     },
   );
+
+  function stubFollowTimeline(routeThreadKey: string) {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const props = { ...buildProps(), routeThreadKey };
+    const timeline = {
+      props,
+      scrollTop: 1400,
+      flushFrame: () =>
+        act(() => {
+          const callbacks = [...frames.values()];
+          frames.clear();
+          callbacks.forEach((callback) => callback(0));
+        }),
+    };
+    const viewport = {
+      get scrollTop() {
+        return timeline.scrollTop;
+      },
+      getBoundingClientRect: () => ({ top: 0 }),
+    };
+    props.listRef.current = {
+      getScrollableNode: () => viewport,
+      getState: () => ({
+        data: legendListTestState.data,
+        scroll: timeline.scrollTop,
+        scrollLength: 600,
+        contentLength: 2000,
+        indexByKey: () => 0,
+        positionAtIndex: () => 0,
+        sizeAtIndex: () => 2000,
+        elementAtIndex: () => ({ getBoundingClientRect: () => ({ top: -timeline.scrollTop }) }),
+      }),
+    } as unknown as LegendListRef;
+    return timeline;
+  }
+
+  it("remembers a manual reading position when the chat closes before the next frame", async () => {
+    const { readTimelinePosition } = await import("./timelineScrollAnchoring");
+    const timeline = stubFollowTimeline("environment-local:manual-departure");
+    const { props } = timeline;
+    let navigateManually = () => {};
+    function ChatProbe() {
+      const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
+      navigateManually = () => setLiveFollowEnabled(false);
+      return (
+        <MessagesTimeline
+          {...props}
+          timelineEntries={[buildUserTimelineEntry("First prompt")]}
+          liveFollowEnabled={liveFollowEnabled}
+          onManualNavigation={navigateManually}
+        />
+      );
+    }
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(<ChatProbe />);
+      });
+      await timeline.flushFrame();
+      expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true);
+
+      timeline.scrollTop = 1300;
+      await act(() => {
+        navigateManually();
+        legendListTestState.onScroll?.();
+      });
+      await act(() => renderer?.unmount());
+      renderer = undefined;
+
+      expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
+        atEnd: false,
+        scrollOffset: 1300,
+      });
+    } finally {
+      await act(() => renderer?.unmount());
+    }
+  });
+
+  it("keeps a following thread's intent while its timeline is held for the next thread", async () => {
+    const { readTimelinePosition } = await import("./timelineScrollAnchoring");
+    const timeline = stubFollowTimeline("environment-local:held-departure");
+    const { props } = timeline;
+    timeline.scrollTop = 1300;
+    const render = (held: boolean) => (
+      <MessagesTimeline
+        {...props}
+        timelineEntries={[buildUserTimelineEntry("First prompt")]}
+        liveFollowEnabled={!held}
+        paintOnly={held}
+      />
+    );
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(render(false));
+      });
+      await timeline.flushFrame();
+      expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true);
+
+      await act(() => renderer?.update(render(true)));
+      await timeline.flushFrame();
+
+      expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true);
+    } finally {
+      await act(() => renderer?.unmount());
+    }
+  });
+
+  it("remembers a first send held near the top as a reading position", async () => {
+    const { readTimelinePosition } = await import("./timelineScrollAnchoring");
+    const timeline = stubFollowTimeline("environment-local:anchored-first-send");
+    const { props } = timeline;
+    timeline.scrollTop = 1300;
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <MessagesTimeline
+            {...props}
+            timelineEntries={[buildUserTimelineEntry("First prompt")]}
+            anchorMessageId={MessageId.make("message-1")}
+            liveFollowEnabled
+          />,
+        );
+      });
+      await timeline.flushFrame();
+
+      expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
+        atEnd: false,
+        scrollOffset: 1300,
+      });
+    } finally {
+      await act(() => renderer?.unmount());
+    }
+  });
 
   it("preserves arbitrary XML-like tags and comparisons in rendered user messages", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
@@ -995,7 +1140,6 @@ describe("MessagesTimeline", () => {
 
     expect(resolveTimelineIsAtEnd({ isAtEnd: true })).toBe(true);
     expect(resolveTimelineIsAtEnd(undefined)).toBeUndefined();
-    // Within the pixel band above the content bottom counts as the end...
     expect(
       resolveTimelineIsAtEnd({
         isAtEnd: false,
@@ -1004,7 +1148,6 @@ describe("MessagesTimeline", () => {
         scrollLength: 800,
       }),
     ).toBe(true);
-    // ...but half a viewport up (LegendList's isNearEnd territory) does not.
     expect(
       resolveTimelineIsAtEnd({
         isAtEnd: false,
@@ -1013,7 +1156,6 @@ describe("MessagesTimeline", () => {
         scrollLength: 800,
       }),
     ).toBe(false);
-    // LegendList can report at-end while the composer still covers the last row.
     expect(
       resolveTimelineIsAtEnd({
         isAtEnd: true,
@@ -1022,7 +1164,6 @@ describe("MessagesTimeline", () => {
         scrollLength: 800,
       }),
     ).toBe(false);
-    // Geometry missing (older state shape): fall back to the nearEnd/strict flags.
     expect(resolveTimelineIsAtEnd({ isNearEnd: true, isAtEnd: false })).toBe(false);
     expect(resolveTimelineIsAtEnd({ isAtEnd: false })).toBe(false);
 
@@ -1044,42 +1185,28 @@ describe("MessagesTimeline", () => {
         pointerY: 999,
       }),
     ).toBe(100);
-    // Comfortable width: the column is capped at 768px.
     expect(resolveTimelineMinimapHasPersistentGutter(832, 768)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(863, 768)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(864, 768)).toBe(true);
-    // Wider Chat width settings consume the gutter the minimap relies on.
     expect(resolveTimelineMinimapHasPersistentGutter(1400, 1152)).toBe(true);
     expect(resolveTimelineMinimapHasPersistentGutter(1200, 1152)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(2560, 2560)).toBe(false);
 
-    // No usable gutter (zoomed in / narrow pane): the strip must go inert
-    // instead of overlaying the centered content column.
     expect(resolveTimelineMinimapHitStripWidth(768, 768)).toBe(0);
     expect(resolveTimelineMinimapHitStripWidth(792, 768)).toBe(0);
-    // Partial gutter: strip shrinks to what fits between the viewport edge
-    // and the content column.
     expect(resolveTimelineMinimapHitStripWidth(820, 768)).toBe(14);
-    // Full gutter: unchanged 40px-wide strip.
     expect(resolveTimelineMinimapHitStripWidth(872, 768)).toBe(40);
     expect(resolveTimelineMinimapHitStripWidth(1400, 768)).toBe(40);
-    // Full Chat width: the column spans the viewport, so the strip is inert
-    // however wide the window gets.
     expect(resolveTimelineMinimapHitStripWidth(2560, 2560)).toBe(0);
-    // Wide Chat width on a window just wider than the column: partial strip.
     expect(resolveTimelineMinimapHitStripWidth(1204, 1152)).toBe(14);
     expect(resolveTimelineMinimapHitStripWidth(0, 0)).toBe(0);
     expect(resolveTimelineMinimapHitStripWidth(Number.NaN, 768)).toBe(0);
 
-    // Prev/next buttons reach 14px past the strip's left edge; a narrower
-    // strip means they would sit on the content column.
     expect(resolveTimelineMinimapNavigationInteractive(40)).toBe(true);
     expect(resolveTimelineMinimapNavigationInteractive(14)).toBe(true);
     expect(resolveTimelineMinimapNavigationInteractive(8)).toBe(false);
     expect(resolveTimelineMinimapNavigationInteractive(0)).toBe(false);
 
-    // The collapsed target stays narrow, but an open preview keeps its full
-    // 20rem width plus the 2rem offset from the minimap rail interactive.
     expect(resolveTimelineMinimapInteractiveWidth(0, false)).toBe(0);
     expect(resolveTimelineMinimapInteractiveWidth(14, false)).toBe(14);
     expect(resolveTimelineMinimapInteractiveWidth(40, false)).toBe(40);
@@ -1091,8 +1218,6 @@ describe("MessagesTimeline", () => {
   it("anchors a sent attachment message using its measured height", () => {
     const onAnchorReady = vi.fn();
     const onAnchorSizeChanged = vi.fn();
-    // Since #7897 only the first user row after the live edge may anchor, so
-    // the preceding row is an assistant reply rather than an older prompt.
     const firstEntry = buildAssistantTimelineEntry("Earlier reply.");
     const secondEntry = {
       ...buildUserTimelineEntry("Newest prompt."),
@@ -1282,8 +1407,6 @@ describe("MessagesTimeline", () => {
         ...buildUserTimelineEntry("Play the recording.").message,
         attachments: [
           {
-            // A newer server can introduce attachment types this build does
-            // not know. They ride the open contract member.
             type: "recording",
             id: "attachment-voice-memo",
             name: "voice-memo.ogg",
@@ -1357,8 +1480,6 @@ describe("MessagesTimeline", () => {
     };
     const timelineEntries = [firstEntry, secondEntry];
 
-    // While the send anchor holds the end space open, ChatView owns streaming
-    // scrolls and LegendList must not re-pin behind it.
     expect(
       renderToStaticMarkup(
         <MessagesTimeline
@@ -1369,9 +1490,6 @@ describe("MessagesTimeline", () => {
       ),
     ).not.toContain('data-maintain-scroll-at-end="enabled"');
 
-    // Dropping the anchor is what actually gives end-following back, so
-    // returning to the live edge has to release it — re-enabling live follow
-    // alone leaves nothing pinned to the stream.
     expect(
       renderToStaticMarkup(
         <MessagesTimeline
@@ -1382,7 +1500,6 @@ describe("MessagesTimeline", () => {
       ),
     ).toContain('data-maintain-scroll-at-end="enabled"');
 
-    // Reading history still wins over both.
     expect(
       renderToStaticMarkup(
         <MessagesTimeline
@@ -1404,8 +1521,6 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Show full message");
-    // LegendList owns ordinary end-follow (#5449): with live follow on and no
-    // anchored end space, its maintainScrollAtEnd is enabled.
     expect(markup).toContain('data-maintain-scroll-at-end="enabled"');
     expect(markup).toContain('data-maintain-scroll-at-end-animated="false"');
     expect(markup).toContain('data-maintain-scroll-at-end-data-change="true"');
@@ -1882,9 +1997,6 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Full conversation context");
     expect(markup).not.toContain("·");
 
-    // Items persisted before models were stamped recover them from the
-    // projection runs: the handoff's run is the target, the newest earlier
-    // run per source instance is the origin.
     const legacyRuns = [
       {
         id: "run-1",
@@ -1917,8 +2029,6 @@ describe("MessagesTimeline", () => {
     expect(legacyMarkup).toContain("Claude Fable 5");
     expect(legacyMarkup).not.toContain("Full conversation context");
 
-    // Without run data either (e.g. cross-thread items) it falls back to
-    // provider names.
     const bareMarkup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -2024,7 +2134,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("lucide-terminal");
     expect(markup).not.toContain("lucide-x");
     expect(markup).not.toContain("text-destructive");
-    // The failure stays discoverable for screen readers.
     expect(markup).toContain("tool call failed");
   });
 
@@ -2287,7 +2396,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('data-v2-item-type="error"');
     expect(markup).toContain("Retrying provider (2/5)");
-    // The failure message stays behind the row's expander.
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain('data-v2-event-disclosure="true"');
   });
@@ -2595,7 +2703,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Ran 2 commands");
     expect(markup).toContain('aria-expanded="false"');
-    // Entries stay hidden until the toggle expands the group.
     expect(markup).not.toContain("vp lint");
   });
 
@@ -2635,7 +2742,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("lucide-zap");
     expect(markup).toContain('aria-label="Tool call failed"');
-    // Ordinary tool failures render muted, not red.
     expect(markup).not.toContain("text-destructive");
   });
 

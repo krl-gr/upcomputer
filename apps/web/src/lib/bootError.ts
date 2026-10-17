@@ -1,4 +1,3 @@
-/** Shows startup failures before React can replace the boot splash. */
 export function showBootError(error: unknown) {
   console.error("Up.computer failed to start.", error);
   const bootShell = document.getElementById("boot-shell");

@@ -1,6 +1,4 @@
 /**
- * Backend paths the web dev server proxies in single-origin browser dev.
- *
  * Two consumers must agree on this list: the Vite proxy map
  * (apps/web/vite.config.ts) that forwards these to the backend, and the
  * server's dev catch-all (apps/server/src/http.ts) that 404s them instead of
@@ -11,14 +9,16 @@
 export const DEV_PROXIED_PATH_PREFIXES = ["/api", "/oauth", "/.well-known", "/ws", "/mcp"] as const;
 
 /**
- * Prefixes the proxy must forward with the browser's own Host. MCP OAuth
- * derives its issuer and resource URLs from the request, and a client
- * rejects metadata naming a different origin than the one it fetched.
+ * MCP OAuth derives its issuer and resource URLs from the request, and a client
+ * rejects metadata naming a different origin than the one it fetched. The
+ * server accepts a cookie session on `/ws` only when the page's Origin matches
+ * the Host it sees, so whatever origin the page was opened on keeps working.
  */
 export const DEV_PROXIED_ORIGIN_PRESERVING_PREFIXES: ReadonlySet<string> = new Set([
   "/oauth",
   "/.well-known",
   "/mcp",
+  "/ws",
 ]);
 
 export function isDevProxiedPath(pathname: string): boolean {

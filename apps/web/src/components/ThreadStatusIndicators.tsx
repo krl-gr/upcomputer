@@ -9,6 +9,7 @@ import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull
 import {
   resolveEnvironmentMachineKind,
   type EnvironmentId,
+  type ScopedThreadRef,
   type ThreadLinkedPullRequest,
   type ThreadPullRequestLink,
   type VcsStatusResult,
@@ -35,6 +36,7 @@ import {
   type ComponentProps,
 } from "react";
 import { cn } from "../lib/utils";
+import { revealThreadTerminal } from "../lib/revealThreadTerminal";
 
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { useEnvironmentQuery } from "../state/query";
@@ -87,7 +89,6 @@ export interface LinkedThreadPullRequestStatus {
   readonly sourceControlProvider: NonNullable<VcsStatusResult["sourceControlProvider"]>;
 }
 
-/** Linked badges use persisted snapshots; only branch and legacy fallbacks lease summary reads. */
 export function useLinkedThreadPullRequest(
   environmentId: EnvironmentId | null,
   linkedPullRequest: ThreadLinkedPullRequest | null | undefined,
@@ -138,7 +139,6 @@ export function linkedPullRequestSnapshotStatus(
 ): LinkedThreadPullRequestStatus | null {
   const snapshot = link.snapshot;
   if (snapshot === null) return null;
-  // A link records no host kind, so read it from the URL's change request path.
   const kind = (
     sourceControlClients.findByChangeRequestUrl(link.url) ?? sourceControlClients.get(undefined)
   ).kind;
@@ -169,7 +169,6 @@ export interface ThreadPullRequestBadgePresentation {
   readonly text: string | number;
 }
 
-/** Resolve the complete badge appearance before rendering it in the sidebar or composer. */
 export function resolveThreadPullRequestBadgePresentation({
   badge,
   number,
@@ -181,8 +180,6 @@ export function resolveThreadPullRequestBadgePresentation({
   readonly url?: string | undefined;
   readonly status: PrStatusIndicator | null;
 }): ThreadPullRequestBadgePresentation | null {
-  // The badge already folds every visible link into one state, draft included, so both the
-  // stack and the linked count index the shared table directly rather than the single-PR resolver.
   if (badge?.kind === "stack") {
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
@@ -196,7 +193,6 @@ export function resolveThreadPullRequestBadgePresentation({
 
   const tooltip = status?.tooltip ?? `PR #${number}, status pending`;
   if (badge?.kind === "pull-request" && badge.others > 0) {
-    // Unrelated links fold into one state, so a count of merged PRs reads as merged.
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
       Icon: aggregate.Icon,
@@ -213,13 +209,6 @@ export function resolveThreadPullRequestBadgePresentation({
   };
 }
 
-/**
- * The linked-PR badge shared by the sidebar and composer footer. The badge owns what it shows:
- * the state glyph and number at the meta size, in the state's color. The caller owns the control
- * it sits in through `render` (an inline link in a sidebar row, a toolbar control in the
- * composer), and the badge fills in the behavior: a single PR is a link to it, while a stack or
- * several linked PRs is a button that opens the thread's pull requests tab.
- */
 export function ThreadPullRequestBadgeControl({
   render,
   badge,
@@ -289,8 +278,6 @@ function PullRequestBadge({
   ) : (
     <a href={url} target="_blank" rel="noopener noreferrer" />
   );
-  // The caller's control (InlineButton, ComposerControl) renders as the link or stack button
-  // through its own render prop; useRender merges the badge's behavior into it.
   const control = useRender({
     render,
     props: {
@@ -301,14 +288,12 @@ function PullRequestBadge({
     },
   });
   return (
-    <Tooltip>
+    <Tooltip key={opensList ? "list" : "link"}>
       <TooltipTrigger render={control}>
         <span
           className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}
         >
           <presentation.Icon aria-hidden className="size-3 shrink-0" />
-          {/* An element, not bare text: bare text takes its line box from the control, which
-              inherits the row's size, so beside a text-sm title it sat below the other meta. */}
           <span>{presentation.text}</span>
         </span>
       </TooltipTrigger>
@@ -318,31 +303,29 @@ function PullRequestBadge({
         variant="glass"
         className="pointer-events-auto w-80 max-w-[calc(100vw-2rem)] text-left whitespace-normal"
       >
-        {visibleThreadPullRequests(pullRequests).length > 0 ? (
-          <ThreadPullRequestsMiniList
-            pullRequests={pullRequests}
-            onOpenPullRequest={onOpenPullRequest}
-          />
-        ) : number !== undefined && url !== undefined ? (
-          <ul className="flex flex-col gap-1">
-            <ThreadPullRequestMiniListItem
-              number={number}
-              url={url}
-              title={status?.tooltipTitle ?? presentation.label}
-              presentation={presentation}
+        <div className="-mx-1">
+          {visibleThreadPullRequests(pullRequests).length > 0 ? (
+            <ThreadPullRequestsMiniList
+              pullRequests={pullRequests}
               onOpenPullRequest={onOpenPullRequest}
             />
-          </ul>
-        ) : null}
+          ) : number !== undefined && url !== undefined ? (
+            <ul className="flex flex-col gap-1">
+              <ThreadPullRequestMiniListItem
+                number={number}
+                url={url}
+                title={status?.tooltipTitle ?? presentation.label}
+                presentation={presentation}
+                onOpenPullRequest={onOpenPullRequest}
+              />
+            </ul>
+          ) : null}
+        </div>
       </TooltipPopup>
     </Tooltip>
   );
 }
 
-/**
- * A miniature of the pull-requests panel for the thread tooltip: same order, same indentation,
- * so the hover answers "what is in here" without opening the surface.
- */
 export function ThreadPullRequestsMiniList({
   pullRequests,
   onOpenPullRequest,
@@ -576,12 +559,6 @@ export function setThreadChangeRequestSnapshot(
   });
 }
 
-/**
- * Authoritative snapshot update from live VCS status.
- * - `undefined`: missing status, or a local checkout retaining a terminal PR — leave the map alone
- * - `null`: no PR (without a retained terminal snapshot), a cleared branch, or a mismatch without a terminal PR — clear
- * - snapshot: matching branch reports a PR — store/replace
- */
 export function nextThreadChangeRequestSnapshot(input: {
   threadBranch: string | null;
   gitStatus: VcsStatusResult | null;
@@ -643,13 +620,6 @@ export function nextThreadChangeRequestSnapshot(input: {
   };
 }
 
-/**
- * Live PR when the checkout matches the thread branch; otherwise, for local
- * checkouts only, a cached merged/closed PR for the thread. Local thread
- * metadata follows the shared checkout, so the cached branch intentionally
- * survives that metadata changing to the newly checked-out branch. Open PRs
- * are retained only while live status is absent and the branch still matches.
- */
 export function resolveDisplayedThreadPr(input: {
   threadBranch: string | null;
   gitStatus: VcsStatusResult | null;
@@ -773,7 +743,6 @@ export function terminalStatusFromRunningIds(
   };
 }
 
-/** Align newly started pulses with the document clock without a timer or frame loop. */
 export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
   if (event.animationName !== "status-pulse") return;
 
@@ -782,6 +751,55 @@ export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
       animation.startTime = 0;
     }
   }
+}
+
+export function ThreadTerminalStatusButton({
+  threadRef,
+  terminalIds,
+  onThreadActivate,
+}: {
+  threadRef: ScopedThreadRef;
+  terminalIds: readonly string[];
+  onThreadActivate: (threadRef: ScopedThreadRef) => void;
+}) {
+  const terminalId = terminalIds[0];
+  if (terminalId === undefined) return null;
+  const status = terminalStatusFromRunningIds(terminalIds);
+  const label =
+    terminalIds.length === 1
+      ? "1 terminal process running. Open terminal"
+      : `${terminalIds.length} terminal processes running. Open terminal`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-testid={`sidebar-terminal-status-${threadRef.threadId}`}
+            className={cn(
+              "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              status?.colorClass,
+            )}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              revealThreadTerminal(threadRef, terminalId);
+              onThreadActivate(threadRef);
+            }}
+          />
+        }
+      >
+        <TerminalIcon
+          className="size-3.5 motion-safe:animate-status-pulse"
+          onAnimationStart={synchronizeTerminalPulse}
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
 }
 
 export function ThreadWorktreeIndicator({
@@ -871,11 +889,6 @@ export function ThreadStatusLabel({
   );
 }
 
-/**
- * Non-interactive leading status icons for a thread row in compact contexts
- * like the command palette. Shows the change request state icon (if present) and the
- * thread status dot, matching the sidebar's leading indicators.
- */
 export function ThreadRowLeadingStatus({
   thread,
   snapshot,
@@ -884,7 +897,6 @@ export function ThreadRowLeadingStatus({
   snapshot?: ThreadChangeRequestSnapshot | undefined;
 }) {
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(false);
-  // Observe the containing title even when this thread has no badge yet.
   const statusRef = useCallback(
     (node: HTMLSpanElement | null) => rowRef(node?.parentElement ?? null),
     [rowRef],
@@ -980,11 +992,6 @@ export function ThreadRowLeadingStatus({
   );
 }
 
-/**
- * Non-interactive trailing status icons for a thread row in compact contexts
- * like the command palette. Shows a terminal-running indicator and a remote
- * environment indicator, matching the sidebar's trailing indicators.
- */
 export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSummary }) {
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -992,8 +999,6 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   });
   const environment = useEnvironment(thread.environmentId);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  // No primary (the hosted app) means every thread is remote, and the machine
-  // glyph is what tells the environments apart.
   const isRemoteThread = thread.environmentId !== primaryEnvironmentId;
   const remoteEnvLabel = environment?.label ?? null;
   const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? "Remote") : null;
@@ -1047,7 +1052,6 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   );
 }
 
-/** Number presentation for compact thread search results. */
 function ThreadPullRequestNumber({
   number,
   className,

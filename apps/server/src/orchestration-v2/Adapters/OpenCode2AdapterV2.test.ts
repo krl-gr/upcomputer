@@ -1,8 +1,3 @@
-/**
- * Failures and settings a live OpenCode 2 server cannot produce on demand,
- * driven through the real adapter and `@opencode/client` against a replayed
- * HTTP server. Frames reuse the shapes recorded against 2.0.18.
- */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
@@ -64,7 +59,6 @@ const out = (type: string, input?: unknown): ProviderReplayEntry => ({
   type: "expect_outbound",
   frame: input === undefined ? { type } : { type, input },
 });
-/** A recorded response body; `{ data }` is the server's envelope, `null` an empty 204. */
 const reply = (operation: string, data: unknown): ProviderReplayEntry => ({
   type: "emit_inbound",
   frame: { type: "sdk.response", operation, data },
@@ -73,7 +67,6 @@ const replyData = (operation: string, data: unknown) => reply(operation, { data 
 const event = (
   type: string,
   data: Record<string, unknown>,
-  /** Holds the event until a test's replay gate releases this label. */
   label?: string,
 ): ProviderReplayEntry => ({
   type: "emit_inbound",
@@ -85,13 +78,11 @@ const event = (
 });
 const durable = { durable: { aggregateID: SESSION, seq: 1, version: 1 } };
 
-/** The rules T3 gives every session it runs, with only this thread's own T3 MCP server allowed. */
 const mcpRules = [
   { action: "t3-code-*", resource: "*", effect: "deny" },
   { action: "t3-code-thread_opencode2-adapter_*", resource: "*", effect: "allow" },
 ];
 const t3Rules = [{ action: "*", resource: "*", effect: "allow" }, ...mcpRules];
-/** The thread's title, which the recorded session already carries. */
 const TITLE = "Prime check";
 const sessionInfo = (overrides: Record<string, unknown> = {}) => ({
   id: SESSION,
@@ -105,7 +96,6 @@ const sessionInfo = (overrides: Record<string, unknown> = {}) => ({
   location: { directory: WORK },
   ...overrides,
 });
-// `/api/model` as 2.0.18 lists big-pickle: its 160k input limit is the usable window.
 const modelCatalog = {
   location: { directory: WORK },
   data: [
@@ -129,7 +119,6 @@ const modelCatalog = {
   ],
 };
 
-/** The prompt id the recorded answer carries; a replay maps it to the one T3 chose. */
 const PROMPT_ID = "msg_0eb735d41001NJee1EvVePJAK5";
 const promptAccepted = replyData("session.prompt", {
   id: PROMPT_ID,
@@ -140,7 +129,6 @@ const promptAccepted = replyData("session.prompt", {
   delivery: "steer",
 });
 
-/** A resumed session that waits on nothing. */
 const noOpenRequests: ReadonlyArray<ProviderReplayEntry> = [
   out("permission.list", { sessionID: SESSION }),
   replyData("permission.list", []),
@@ -148,10 +136,6 @@ const noOpenRequests: ReadonlyArray<ProviderReplayEntry> = [
   replyData("session.form.list", []),
 ];
 
-/**
- * A thread's first turn writes T3's instructions entry before it starts; the
- * adapter only rewrites it when it changes, so later turns do not.
- */
 const withInstructions = (
   entries: ReadonlyArray<ProviderReplayEntry>,
 ): ReadonlyArray<ProviderReplayEntry> => {
@@ -169,7 +153,6 @@ const withInstructions = (
         "skill.list",
       ].includes(String(entry.frame.type)),
   );
-  // T3's MCP server is added before the entry that describes it.
   const after = entries.findIndex(
     (entry, index) =>
       index < first &&
@@ -199,13 +182,11 @@ const openCode2ReplayRuntimeWithInstructions = (
   options?: { readonly external?: boolean },
 ) => openCode2ReplayRuntime(withInstructions(entries), options);
 
-/** What every session sends when it opens: the event stream, then the model list. */
 const opening: ReadonlyArray<ProviderReplayEntry> = [
   out("event.subscribe"),
   out("model.list", "<any>"),
   reply("model.list", modelCatalog),
 ];
-/** The model list read the first time a thread runs in `directory`. */
 const directoryModels = (directory: string): ReadonlyArray<ProviderReplayEntry> => [
   out("model.list", { "location[directory]": directory }),
   reply("model.list", { ...modelCatalog, location: { directory } }),
@@ -262,7 +243,6 @@ const turnInput = (
   runtimePolicy: policy(runtimeMode),
 });
 
-/** The agents' own path rules, as `/api/agent` lists them for build. */
 const buildPaths = [
   {
     action: "external_directory",
@@ -284,7 +264,6 @@ const agentList = {
     },
   ],
 };
-/** Supervised: shell, edits and other directories ask. */
 const supervisedRules = [
   { action: "shell", resource: "*", effect: "ask" },
   { action: "edit", resource: "*", effect: "ask" },
@@ -293,7 +272,6 @@ const supervisedRules = [
   ...mcpRules,
 ];
 
-// The first ask and question form the spike recorded (recordings/permission, question).
 const shellAsk = {
   data: {
     id: "per_0eb7c4d7e001Pyt8o50Vi4KrOO",
@@ -322,10 +300,6 @@ const colorForm = {
   ],
 };
 
-/**
- * Resumes the recorded session and returns the runtime and the thread. A
- * supervised resume gives the session Supervised rules first.
- */
 const resumed = (
   entries: ReadonlyArray<ProviderReplayEntry>,
   options?: {
@@ -392,7 +366,6 @@ const terminalOf = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
     Effect.map(Option.getOrUndefined),
   );
 
-// The history the spike read back after its `simple` turn (recordings/simple.ndjson).
 const history = {
   data: [
     {
@@ -493,7 +466,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // Renamed once: the next turn under the same title sends no update.
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
         event("session.execution.succeeded", { sessionID: SESSION }),
@@ -522,8 +494,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         promptAccepted,
         event("session.execution.succeeded", { sessionID: SESSION }),
       ]);
-      // A forked run starts on its own row for the same native session, while
-      // the adapter tracks the session under the id it minted for the fork.
       const forkedRow = {
         ...thread,
         id: ProviderThreadId.make("provider-thread:opencode2-adapter:forked-run-row"),
@@ -539,7 +509,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
-        // A reason added after 2.0.18: the full schema rejects the frame.
         event("session.execution.interrupted", { sessionID: SESSION, reason: "budget" }),
       ]);
       const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
@@ -591,7 +560,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         terminals.map((event) => event.type === "turn.terminal" && event.status),
         ["completed"],
       );
-      // The reply after the malformed start still reached the turn.
       assert.isTrue(
         seen.some(
           (event) =>
@@ -622,9 +590,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("sends nothing for a turn stopped while it reads the workspace's commands", () =>
     Effect.gen(function* () {
-      // The command list never answers; the Stop lands while the turn waits
-      // on it, before anything was sent, so OpenCode has nothing running. The
-      // replay fails on any prompt or command sent after the Stop.
       const { runtime, thread } = yield* resumed([
         out("command.list", "<any>"),
         reply("command.list", "<hang>"),
@@ -644,7 +609,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnId: yield* providerTurnId,
         requestRuntimeRestart: true,
       });
-      // The command list times out; the stopped turn must not go on to prompt.
       yield* TestClock.adjust("6 seconds");
       yield* Fiber.join(started);
       assert.equal((yield* Fiber.join(terminal))?.status, "interrupted");
@@ -673,7 +637,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
-  /** A subagent's session as 2.0.18 announced it in the spike's `background` run. */
   const childCreated = (child: string) => ({
     sessionID: child,
     slug: "proud-canyon",
@@ -686,7 +649,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     agent: "general",
     model: { id: "big-pickle", providerID: "opencode", variant: "default" },
   });
-  /** A turn whose model launched a background subagent that still runs. */
   const backgroundLaunch = (child: string): ReadonlyArray<ProviderReplayEntry> => {
     const call = "call-background";
     const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: call };
@@ -708,7 +670,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }),
     ];
   };
-  // The subagent's child thread hangs off the app thread's lineage.
   const withLineage = (thread: OrchestrationV2ProviderThread) => ({
     ...turnInput(thread),
     appThread: {
@@ -717,10 +678,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     } as OrchestrationV2AppThread,
   });
-  /**
-   * The continuation turn the orchestrator starts for an offered wake: its
-   * message is the one the offer named, as `ProviderContinuationService` dispatches it.
-   */
   const continuationTurn = (
     thread: OrchestrationV2ProviderThread,
     offer: ProviderContinuationRequests.ProviderContinuationRequest,
@@ -740,10 +697,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     },
   });
   const CHILD = "ses_f1485c529ffea4URrYruwEg0Ja";
-  /**
-   * The single reader of the runtime's events: resolves `attached` once the
-   * running background child has its thread, then returns the turn's terminal.
-   */
   const watchBackgroundTurn = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
     Effect.gen(function* () {
       const attached = yield* Deferred.make<void>();
@@ -769,7 +722,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...backgroundLaunch(CHILD),
-        // Only the parent's execution is stopped.
         out("session.interrupt", { sessionID: SESSION }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: SESSION }),
@@ -777,7 +729,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const watch = yield* watchBackgroundTurn(runtime);
       yield* runtime.startTurn(withLineage(thread));
       yield* watch.attached;
-      // The orchestrator's restart interrupt: no `requestRuntimeRestart`.
       yield* runtime.interruptTurn({
         providerThread: thread,
         providerTurnId: yield* providerTurnId,
@@ -832,7 +783,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         requestRuntimeRestart: true,
       });
       assert.equal((yield* watch.terminal)?.status, "interrupted");
-      // The subagent still runs, so the session is not idle and the next Stop reaches it.
       assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
       assert.isTrue(yield* runtime.hasPendingBackgroundWorkForThread!(thread));
     }).pipe(Effect.scoped),
@@ -853,9 +803,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           input: { description: "Sleep", prompt: "sleep", background: true },
           executed: false,
         }),
-        // OpenCode announces the child before the call's progress names it.
         event("session.created", childCreated(CHILD)),
-        // Emitted after the announcement, so the Stop comes after it too.
         event("session.text.ended", {
           sessionID: SESSION,
           assistantMessageID: "msg_assistant",
@@ -902,12 +850,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         ...backgroundLaunch(CHILD),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // The next turn runs Supervised while the subagent from Full access still runs.
         out("agent.list", "<any>"),
         reply("agent.list", agentList),
         out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
         reply("session.update", null),
-        // A subagent's session may use its thread's T3 MCP server.
         out("session.update", {
           sessionID: CHILD,
           permissions: [...supervisedRules.slice(0, 3), ...mcpRules],
@@ -952,8 +898,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         ...backgroundLaunch(CHILD),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // The child ends; OpenCode queues its report for the parent, and only
-        // then starts the parent's follow-up execution.
         event("session.execution.succeeded", { sessionID: CHILD }),
         event("session.inbox.enqueued", {
           inboxID: "msg_report",
@@ -973,7 +917,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             delivery: "steer",
           },
         }),
-        // Emitted once the report is in, so the check below runs in the gap.
         event("session.usage.updated", { sessionID: SESSION }),
       ]);
       const reported = yield* Deferred.make<void>();
@@ -988,13 +931,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       yield* runtime.startTurn(withLineage(thread));
       yield* Deferred.await(reported);
-      // The follow-up execution OpenCode will start for the report is still to come.
       assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
       assert.isTrue(yield* runtime.hasPendingBackgroundWorkForThread!(thread));
     }).pipe(Effect.scoped),
   );
 
-  /** A `subagent` call's result while its subagent runs on (`session.tool.success` is at version 2). */
   const returnedRunning = (id: string): ProviderReplayEntry => ({
     type: "emit_inbound",
     frame: {
@@ -1015,7 +956,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       },
     },
   });
-  /** The model calls the subagent again by its session; the tool returns while it runs on. */
   const callAgain = (input: Record<string, unknown>): ReadonlyArray<ProviderReplayEntry> => {
     const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: "call-again" };
     return [
@@ -1030,7 +970,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ...tool,
         metadata: { sessionID: CHILD, status: "running" },
       }),
-      // A session called again gets the thread's rules.
       out("session.update", { sessionID: CHILD, permissions: "<any>" }),
       reply("session.update", null),
       returnedRunning(tool.id),
@@ -1050,7 +989,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         delivery: "steer",
       },
     });
-  /** The subagent rows by title, the thread's background roster and the child's turns, as emitted. */
   const watchCalls = (
     runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
     thread: OrchestrationV2ProviderThread,
@@ -1117,7 +1055,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...launchedAndRunning,
-        // OpenCode steers the running subagent and joins its run: one report answers both calls.
         ...callAgain({ background: true }),
         event("session.execution.succeeded", { sessionID: SESSION }),
         event("session.execution.succeeded", { sessionID: CHILD }),
@@ -1142,7 +1079,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...launchedAndRunning,
-        // Without `background`, the call joins the run in the background all the same.
         ...callAgain({}),
         event("session.execution.succeeded", { sessionID: SESSION }),
         event("session.execution.succeeded", { sessionID: CHILD }),
@@ -1156,7 +1092,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           watch.calls.get("Sleep")?.status === "completed" &&
           watch.state.roster?.length === 0,
       );
-      // Not settled empty when the turn that made it ended.
       assert.deepEqual(watch.calls.get("Again"), { status: "completed", result: "CHILD_OK" });
     }).pipe(Effect.scoped),
   );
@@ -1166,7 +1101,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         ...launchedAndRunning,
         event("session.execution.succeeded", { sessionID: CHILD }),
-        // Called again after it ended but before its report: the call starts a new run.
         ...callAgain({ background: true }),
         childReport("msg_report_1", "FIRST_OK"),
         event("session.execution.started", { sessionID: CHILD }),
@@ -1176,7 +1110,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       ]);
       const watch = yield* watchCalls(runtime, thread);
       yield* runtime.startTurn(withLineage(thread));
-      // The new run's turn starts after the first report was handled.
       yield* watch.until(() => watch.childTurns.has(`${CHILD}:turn:2`));
       assert.deepEqual(watch.callsAtChildTurnStart.get(`${CHILD}:turn:2`), {
         Sleep: { status: "completed", result: "FIRST_OK" },
@@ -1189,8 +1122,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("leaves no background work pending once a reconnect finds its subagent gone", () =>
     Effect.gen(function* () {
-      // The subagent ends while the stream is down: its end, its report and
-      // the follow-up it starts are never seen. `session.active` lists nothing.
       const { runtime, thread } = yield* resumed([
         ...backgroundLaunch(CHILD),
         event("session.execution.started", { sessionID: CHILD }),
@@ -1249,7 +1180,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
         event("session.execution.started", { sessionID: SESSION }),
-        // The thread's model starts a background subagent...
         event("session.tool.input.started", { ...tool(SESSION, "call-middle"), name: "subagent" }),
         event("session.tool.called", {
           ...tool(SESSION, "call-middle"),
@@ -1263,7 +1193,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           metadata: { sessionID: MIDDLE, status: "running" },
         }),
         event("session.execution.started", { sessionID: MIDDLE }),
-        // ...which starts one of its own in the background.
         event("session.tool.input.started", { ...tool(MIDDLE, "call-deep"), name: "subagent" }),
         event("session.tool.called", {
           ...tool(MIDDLE, "call-deep"),
@@ -1286,7 +1215,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           ordinal: 0,
           text: "Launched.",
         }),
-        // A Stop on the thread interrupts both background subagents.
         out("session.interrupt", { sessionID: MIDDLE }),
         reply("session.interrupt", { interrupted: true }),
         out("session.interrupt", { sessionID: GRANDCHILD }),
@@ -1295,15 +1223,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: SESSION }),
         event("session.execution.interrupted", { sessionID: MIDDLE }),
-        // OpenCode still reports the stopped grandchild to the middle session
-        // and wakes it; that execution is stopped, not run as a subagent turn.
         event("session.inbox.enqueued", report),
         event("session.execution.started", { sessionID: MIDDLE }),
         out("session.interrupt", { sessionID: MIDDLE }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: MIDDLE }),
-        // Later OpenCode runs the thread's own session by itself: a follow-up
-        // T3 offers a turn for, which marks that everything above was handled.
         event("session.execution.started", { sessionID: SESSION }),
       ]).pipe(
         Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
@@ -1337,18 +1261,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnId: yield* providerTurnId,
         requestRuntimeRestart: true,
       });
-      // The report wakes the middle session; the adapter stops that execution
-      // (the replay fails on any other request) and opens no turn for it.
       yield* Deferred.await(offered);
       assert.deepEqual([...new Set(middleTurns)], [`${MIDDLE}:turn:1`]);
     }).pipe(Effect.scoped),
   );
 
-  /**
-   * A foreground subagent starts one in the background and returns, so the
-   * thread's turn ends while that one runs. Frames as 2.0.18 sent them in a
-   * live run with `subagent_depth` 2, ids shortened.
-   */
   const MIDDLE = "ses_middle0000000000000000000";
   const DEEP = "ses_grandchild00000000000000";
   const toolOf = (session: string, id: string) => ({
@@ -1415,7 +1332,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
     event("session.execution.succeeded", { sessionID: SESSION }),
   ];
-  /** The runtime's events, with the background subagent's statuses and the middle session's turns. */
   const watchNested = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
     Effect.gen(function* () {
       const deep: Array<string> = [];
@@ -1441,7 +1357,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         Stream.runDrain,
         Effect.forkScoped,
       );
-      /** Waits until `check` holds for what the runtime emitted. */
       const until = (check: () => boolean): Effect.Effect<void> =>
         Effect.suspend(() => {
           if (check()) return Effect.void;
@@ -1460,8 +1375,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const offered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         ...nestedLaunch,
-        // The Stop reaches the background subagent. OpenCode reports it to the
-        // middle session and wakes that session, which is stopped as well.
         out("session.interrupt", { sessionID: DEEP }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: DEEP }),
@@ -1470,8 +1383,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         out("session.interrupt", { sessionID: MIDDLE }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: MIDDLE }),
-        // Later OpenCode runs the thread's own session by itself: a follow-up
-        // T3 offers a turn for, which marks that everything above was handled.
         event("session.execution.started", { sessionID: SESSION }),
       ]).pipe(
         Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
@@ -1483,7 +1394,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(withLineage(thread));
       yield* watch.until(() => watch.terminals.length > 0);
       assert.deepEqual(watch.terminals, ["completed"]);
-      // The middle call ended; the subagent it started runs on, and keeps the thread busy.
       assert.equal(watch.deep.at(-1), "running");
       assert.isTrue(yield* runtime.hasPendingBackgroundWorkForThread!(thread));
       yield* runtime.interruptTurn({
@@ -1493,8 +1403,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       });
       yield* Deferred.await(offered);
       assert.equal(watch.deep.at(-1), "interrupted");
-      // The replay fails on any request but the stops above, and no turn
-      // opened for the middle session's stopped wake.
       assert.deepEqual([...watch.middleTurns.keys()], [`${MIDDLE}:turn:1`]);
     }).pipe(Effect.scoped),
   );
@@ -1504,8 +1412,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const again = "call-middle-again";
       const { runtime, thread } = yield* resumed([
         ...nestedLaunch,
-        // The next turn gives the running subagent the thread's rules, and its
-        // model calls the middle subagent again, by its session.
         out("session.update", { sessionID: DEEP, permissions: "<any>" }),
         reply("session.update", null),
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -1533,7 +1439,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           executed: false,
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // A Stop still reaches the subagent the first call started.
         out("session.interrupt", { sessionID: DEEP }),
         reply("session.interrupt", { interrupted: true }),
       ]);
@@ -1543,7 +1448,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn({ ...secondTurn(thread), appThread: withLineage(thread).appThread });
       yield* watch.until(() => watch.terminals.length === 2);
       assert.deepEqual(watch.terminals, ["completed", "completed"]);
-      // The first call's background subagent still runs after the second call.
       assert.equal(watch.deep.at(-1), "running");
       assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
       yield* runtime.interruptTurn({
@@ -1551,7 +1455,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnId: yield* providerTurnId,
         requestRuntimeRestart: true,
       });
-      // The replay fails on a Stop that does not interrupt it.
       yield* watch.until(() => watch.deep.at(-1) === "interrupted");
     }).pipe(Effect.scoped),
   );
@@ -1560,7 +1463,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...nestedLaunch,
-        // The background subagent ends; OpenCode wakes the middle session to answer it.
         event("session.execution.succeeded", { sessionID: DEEP }),
         deepReport("completed"),
         event("session.execution.started", { sessionID: MIDDLE }),
@@ -1578,7 +1480,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(withLineage(thread));
       yield* watch.until(() => watch.middleTurns.get(`${MIDDLE}:turn:2`) === "running");
       assert.equal(watch.deep.at(-1), "completed");
-      // Its answer still runs after the thread's turn ended.
       assert.isTrue(yield* runtime.hasPendingBackgroundWorkForThread!(thread));
       yield* runtime.interruptTurn({
         providerThread: thread,
@@ -1594,8 +1495,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...nestedLaunch,
-        // The background subagent ends and its report is queued for the middle
-        // session; the stream drops before OpenCode wakes that session.
         event("session.execution.succeeded", { sessionID: DEEP }),
         deepReport("completed"),
         { type: "runtime_exit", status: "success" } as const,
@@ -1607,8 +1506,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(withLineage(thread));
       yield* watch.until(() => watch.deep.at(-1) === "completed");
       assert.isTrue(yield* runtime.hasPendingBackgroundWorkForThread!(thread));
-      // The reconnect does not read back what the stream carried outside a
-      // turn, so the report's follow-up is not waited on.
       yield* Effect.repeat(runtime.hasPendingBackgroundWorkForThread!(thread), {
         while: (pending) => pending,
       });
@@ -1616,7 +1513,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  /** A prompt accepted, then a Stop the server never answers, advanced past its timeout. */
   const stopTimedOut: ReadonlyArray<ProviderReplayEntry> = [
     out("session.prompt", { sessionID: SESSION, text: "<any>" }),
     promptAccepted,
@@ -1659,12 +1555,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         ...stopTimedOut,
-        // The server no longer runs the stopped execution, so the next turn goes ahead.
         out("session.active"),
         reply("session.active", { data: {} }),
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
-        // The stopped execution's end arrives late, then the new turn's own.
         event("session.execution.succeeded", { sessionID: SESSION }),
         event("session.execution.started", { sessionID: SESSION }),
         event("session.execution.failed", {
@@ -1677,7 +1571,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);
       assert.equal(first?.status, "interrupted");
-      // Only the second turn's own end finishes it.
       assert.equal(second?.status, "failed");
       assert.equal(second?.failure?.message, "second turn failed");
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
@@ -1712,7 +1605,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         reply("session.active", { data: {} }),
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
-        // A newer server's start: the full schema rejects it, but it still opens the turn.
         {
           type: "emit_inbound",
           frame: {
@@ -1746,7 +1638,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-        // The request failed, but the server may have taken the prompt.
         reply("session.prompt", {
           status: 502,
           body: { _tag: "UnknownError", message: "bad gateway" },
@@ -1770,14 +1661,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const offered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-        // The request failed, but the server took the prompt: its execution
-        // starts only after the turn already failed.
         reply("session.prompt", {
           status: 502,
           body: { _tag: "UnknownError", message: "bad gateway" },
         }),
         event("session.execution.started", { sessionID: SESSION }),
-        // That run is still going, so the next turn stops it and fails.
         out("session.active"),
         reply("session.active", { data: { [SESSION]: { type: "running" } } }),
         out("session.interrupt", { sessionID: SESSION }),
@@ -1790,7 +1678,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       const ended = yield* terminals(runtime, 2);
       yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
-      // The late start has been read.
       yield* Deferred.await(offered);
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);
@@ -1810,8 +1697,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             status: 502,
             body: { _tag: "UnknownError", message: "bad gateway" },
           }),
-          // The stream drops before the prompt's execution starts, and the
-          // reconnect finds the session active: the prompt's run is still to come.
           event("session.usage.updated", { sessionID: SESSION }, "drop"),
           { type: "runtime_exit", status: "success" } as const,
           out("event.subscribe"),
@@ -1821,7 +1706,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           replyData("permission.list", []),
           out("session.form.list", { sessionID: SESSION }),
           replyData("session.form.list", []),
-          // Its own start: that run is still going, so the next turn stops it and fails.
           event("session.execution.started", { sessionID: SESSION }),
           out("session.active"),
           reply("session.active", { data: { [SESSION]: { type: "running" } } }),
@@ -1838,7 +1722,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const ended = yield* terminals(runtime, 2);
       yield* runtime.startTurn(turnInput(thread)).pipe(Effect.ignore);
       gate.release("drop");
-      // The late start has been read.
       yield* Deferred.await(offered);
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);
@@ -1855,7 +1738,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           status: 400,
           body: { _tag: "InvalidRequestError", message: "bad prompt" },
         }),
-        // A clear refusal: nothing runs, so the next turn prompts directly.
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
         event("session.execution.succeeded", { sessionID: SESSION }),
@@ -1874,7 +1756,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ...stopTimedOut,
         out("session.active"),
         reply("session.active", { data: { [SESSION]: { type: "running" } } }),
-        // Stopped again, and the turn fails without a prompt.
         out("session.interrupt", { sessionID: SESSION }),
         reply("session.interrupt", { interrupted: true }),
       ]);
@@ -1895,15 +1776,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed(
         [
           ...backgroundLaunch(CHILD),
-          // Restarting the turn stops only the parent, and the server never answers.
           out("session.interrupt", { sessionID: SESSION }),
           reply("session.interrupt", "<hang>"),
-          // The restarted turn finds the parent still stopping and fails.
           out("session.active"),
           replyData("session.active", { [SESSION]: { type: "running" } }),
           out("session.interrupt", { sessionID: SESSION }),
           reply("session.interrupt", { interrupted: true }),
-          // The stream drops before the parent's end; the reconnect finds it idle.
           event("session.usage.updated", { sessionID: SESSION }, "drop"),
           { type: "runtime_exit", status: "success" } as const,
           out("event.subscribe"),
@@ -1913,7 +1791,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           replyData("permission.list", []),
           out("session.form.list", { sessionID: CHILD }),
           replyData("session.form.list", []),
-          // The subagent ends and OpenCode answers its report on its own.
           event("session.execution.succeeded", { sessionID: CHILD }),
           event("session.inbox.enqueued", {
             inboxID: "msg_report",
@@ -1945,7 +1822,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             "reply",
           ),
           event("session.execution.succeeded", { sessionID: SESSION }),
-          // The subagent's session runs again: its turn marks that the reply's end was handled.
           event("session.execution.started", { sessionID: CHILD }),
         ],
         { replayGate: gate },
@@ -1955,7 +1831,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           take: Effect.never,
         }),
       );
-      // The single reader of the runtime's events.
       const attached = yield* Deferred.make<void>();
       const collected = yield* runtime.events.pipe(
         Stream.tap((event) =>
@@ -1986,13 +1861,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnOrdinal: 3,
       });
       gate.release("reply");
-      // The reply's own end finishes its continuation: the lost Stop's end does not take it.
       const events = [...(yield* Fiber.join(collected))];
       assert.deepEqual(
         events.flatMap((event) => (event.type === "turn.terminal" ? [event.status] : [])),
         ["interrupted", "failed", "completed"],
       );
-      // The continuation replayed the reply.
       assert.include(
         events.flatMap((event) =>
           event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
@@ -2011,15 +1884,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed(
         [
           ...backgroundLaunch(CHILD),
-          // Restarting the turn stops only the parent, and the server never answers.
           out("session.interrupt", { sessionID: SESSION }),
           reply("session.interrupt", "<hang>"),
-          // The restarted turn finds the parent still stopping and fails.
           out("session.active"),
           replyData("session.active", { [SESSION]: { type: "running" } }),
           out("session.interrupt", { sessionID: SESSION }),
           reply("session.interrupt", { interrupted: true }),
-          // The stream drops before the parent's end; the reconnect finds it idle.
           event("session.usage.updated", { sessionID: SESSION }, "drop"),
           { type: "runtime_exit", status: "success" } as const,
           out("event.subscribe"),
@@ -2029,7 +1899,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           replyData("permission.list", []),
           out("session.form.list", { sessionID: CHILD }),
           replyData("session.form.list", []),
-          // The subagent ends and OpenCode answers its report on its own.
           event("session.execution.succeeded", { sessionID: CHILD }),
           event("session.inbox.enqueued", {
             inboxID: "msg_report",
@@ -2050,7 +1919,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             },
           }),
           event("session.execution.started", { sessionID: SESSION }),
-          // A prompt sent while that reply runs joins it, with no check first.
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           event("session.text.ended", {
@@ -2068,7 +1936,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           take: Effect.never,
         }),
       );
-      // The single reader of the runtime's events.
       const attached = yield* Deferred.make<void>();
       const ended = yield* runtime.events.pipe(
         Stream.tap((event) =>
@@ -2095,7 +1962,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* Fiber.join(interrupt);
       yield* runtime.startTurn({ ...secondTurn(thread), appThread: withLineage(thread).appThread });
       gate.release("drop");
-      // The reply has started.
       yield* Deferred.await(offered);
       yield* runtime.startTurn({
         ...withLineage(thread),
@@ -2104,7 +1970,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnOrdinal: 3,
         attemptId: RunAttemptId.make("attempt:opencode2-adapter:3"),
       });
-      // The reply's start cleared the Stop's mark, so its end finishes the joined turn.
       assert.deepEqual(
         [...(yield* Fiber.join(ended))].map((terminal) => terminal.status),
         ["interrupted", "failed", "completed"],
@@ -2112,11 +1977,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
-  /**
-   * A prompt fails without a clear rejection, OpenCode never took it, and a
-   * background subagent's report then wakes the parent into a reply. With
-   * `endedFirst` that reply ends before its continuation takes it.
-   */
   const replyAfterUnclearFailure = (endedFirst: boolean) =>
     Effect.gen(function* () {
       const offered =
@@ -2133,7 +1993,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             status: 502,
             body: { _tag: "UnknownError", message: "bad gateway" },
           }),
-          // The subagent ends and OpenCode answers its report on its own.
           event("session.execution.succeeded", { sessionID: CHILD }, "wake"),
           event("session.inbox.enqueued", {
             inboxID: "msg_report",
@@ -2165,7 +2024,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             endedFirst ? undefined : "reply",
           ),
           event("session.execution.succeeded", { sessionID: SESSION }),
-          // The subagent's session runs again: a turn of its own, after the reply's end.
           event("session.execution.started", { sessionID: CHILD }),
         ],
         { replayGate: gate },
@@ -2175,7 +2033,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           take: Effect.never,
         }),
       );
-      // The single reader of the runtime's events.
       const launched = yield* Deferred.make<void>();
       const childRan = yield* Deferred.make<void>();
       const ended: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
@@ -2206,7 +2063,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         .startTurn({ ...secondTurn(thread), appThread: withLineage(thread).appThread })
         .pipe(Effect.ignore);
       gate.release("wake");
-      // Everything up to the subagent's next run has been read: the reply ended.
       if (endedFirst) yield* Deferred.await(childRan);
       yield* runtime.startTurn({
         ...continuationTurn(thread, yield* Deferred.await(offered)),
@@ -2214,7 +2070,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         providerTurnOrdinal: 3,
       });
       if (!endedFirst) gate.release("reply");
-      // The reply's own end finishes its continuation: the failed prompt's mark does not take it.
       yield* Deferred.await(allEnded);
       assert.deepEqual(
         ended.flatMap((event) => (event.type === "turn.terminal" ? [event.status] : [])),
@@ -2296,7 +2151,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const runtime = yield* openCode2ReplayRuntimeWithInstructions([
         ...opening,
         out("session.get", { sessionID: SESSION }),
-        // Made by an earlier build that denied subagents; resuming drops the deny.
         replyData(
           "session.get",
           sessionInfo({
@@ -2379,7 +2233,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const ended = yield* Fiber.join(terminal);
       assert.equal(ended?.status, "failed");
       assert.equal(ended?.threadDisposition, "broken");
-      // The next turn must resume (and fail into a handoff), not reuse the dead session.
       const again = yield* runtime.startTurn(turnInput(thread)).pipe(Effect.flip);
       assert.equal(again._tag, "ProviderAdapterProtocolError");
       assert.include(again.message, "not registered");
@@ -2388,7 +2241,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("refuses a model slug that is not provider/model before creating a session", () =>
     Effect.gen(function* () {
-      // Nothing but the session's opening is expected: no create, no prompt.
       const runtime = yield* openCode2ReplayRuntime([...opening]);
       const created = yield* runtime
         .ensureThread({
@@ -2415,7 +2267,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("stops the requests a session still waits on when a restarted T3 loads it", () =>
     Effect.gen(function* () {
-      // T3 restarted while the server kept waiting on an ask T3 no longer shows.
       const runtime = yield* openCode2ReplayRuntimeWithInstructions(
         [
           ...opening,
@@ -2433,8 +2284,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           reply("permission.reply", null),
           out("session.form.cancel", { sessionID: SESSION, formID: colorForm.id }),
           reply("session.form.cancel", null),
-          // The next turn checks that the stopped run is gone. Its end arrives
-          // late and is its own; the turn ends on its own execution's end.
           out("session.active"),
           reply("session.active", { data: {} }),
           event("session.execution.interrupted", { sessionID: SESSION, reason: "user" }),
@@ -2473,7 +2322,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           shellAskEvent,
-          // One try and one retry, then the turn ends and the session is stopped.
           replyOut,
           failedReply,
           replyOut,
@@ -2504,7 +2352,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           shellAskEvent,
-          // The execution ended first, so OpenCode no longer knows the request.
           out("permission.reply", {
             sessionID: SESSION,
             requestID: shellAsk.data.id,
@@ -2527,7 +2374,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(turnInput(thread, bigPickle, "approval-required"));
       const request = yield* Fiber.join(requested);
       yield* runtime.respondToRuntimeRequest({ requestId: request!.id, decision: "accept" });
-      // Not "waiting on a request T3 Code couldn't answer": nothing waits on it.
       assert.equal((yield* Fiber.join(terminal))?.status, "completed");
     }).pipe(Effect.scoped),
   );
@@ -2577,7 +2423,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         [
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
-          // As 2.0.18 announced the child the live probe's parent started.
           event("session.created", {
             sessionID: child,
             slug: "stellar-garden",
@@ -2617,10 +2462,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  /**
-   * A supervised foreground subagent that asks to run `echo FIRST`: the
-   * child is announced and named by the parent's call, then asks.
-   */
   const subagentAsks = (child: string): ReadonlyArray<ProviderReplayEntry> => {
     const call = "call-subagent";
     const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: call };
@@ -2650,15 +2491,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed(
         [
           ...subagentAsks(CHILD),
-          // The subagent's session asked, so the grant is its rule, not the parent's.
-          // Supervised rules for the subagent's own agent (`general`, which lists
-          // no path rules here) with the grant.
           out("session.update", {
             sessionID: CHILD,
             permissions: [
               ...supervisedRules.slice(0, 3),
               { action: "shell", resource: "echo *", effect: "allow" },
-              // A subagent's session may use its thread's T3 MCP server.
               ...mcpRules,
             ],
           }),
@@ -2707,7 +2544,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           failedReply,
           replyOut,
           failedReply,
-          // The subagent's session is the one waiting on the answer.
           out("session.interrupt", { sessionID: CHILD }),
           reply("session.interrupt", { interrupted: true }),
         ],
@@ -2744,8 +2580,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         failedCancel,
         cancelOut,
         failedCancel,
-        // The subagent's session is the one blocked on the form; the parent
-        // goes on once its subagent is stopped.
         out("session.interrupt", { sessionID: CHILD }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: CHILD }),
@@ -2771,7 +2605,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         event("form.created", { form: linkForm }),
         out("session.form.cancel", { sessionID: CHILD, formID: linkForm.id }),
         reply("session.form.cancel", null),
-        // The cancel stops the subagent; its parent reads the failed call and goes on.
         event("session.execution.interrupted", { sessionID: CHILD }),
         event("session.tool.failed", {
           sessionID: SESSION,
@@ -2799,7 +2632,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const call = "call-resume";
       const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant_2", id: call };
       const { runtime, thread } = yield* resumed([
-        // A first turn on Full access runs the subagent once.
         ...subagentAsks(CHILD).slice(0, -1),
         event("session.execution.succeeded", { sessionID: CHILD }),
         event("session.tool.success", {
@@ -2810,7 +2642,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           metadata: { sessionID: CHILD, status: "completed" },
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // The thread is now Supervised: the parent gets the narrower rules...
         out("agent.list", "<any>"),
         reply("agent.list", agentList),
         out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
@@ -2818,8 +2649,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
         event("session.execution.started", { sessionID: SESSION }),
-        // ...and its model resumes the same subagent, whose session OpenCode
-        // made with the Full access rules it inherited back then.
         event("session.tool.input.started", { ...tool, name: "subagent" }),
         event("session.tool.called", {
           ...tool,
@@ -2831,7 +2660,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           ...tool,
           metadata: { sessionID: CHILD, status: "running" },
         }),
-        // The subagent gets them too before its execution runs anything.
         out("session.update", {
           sessionID: CHILD,
           permissions: [...supervisedRules.slice(0, 3), ...mcpRules],
@@ -2878,7 +2706,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         [...(yield* Fiber.join(ended))].map((terminal) => terminal.status),
         ["completed", "completed"],
       );
-      // The resumed subagent's execution is its next turn, not its first again.
       assert.deepEqual([...childTurns], [`${CHILD}:turn:1`, `${CHILD}:turn:2`]);
     }).pipe(Effect.scoped),
   );
@@ -2890,7 +2717,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           shellAskEvent,
-          // The grant goes into this session's rules; the reply is only `once`.
           out("session.update", {
             sessionID: SESSION,
             permissions: [
@@ -2953,9 +2779,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("refuses a turn once reconnecting to a lost event stream has given up", () =>
     Effect.gen(function* () {
-      // The server goes away with no turn running, and never comes back.
       const { runtime, thread } = yield* resumed([{ type: "runtime_exit", status: "success" }]);
-      // Reconnecting retries a few times, seconds apart, then ends the runtime's events.
       const drained = yield* runtime.events.pipe(Stream.runDrain, Effect.forkScoped);
       yield* TestClock.adjust("1 minute");
       yield* Fiber.join(drained);
@@ -2982,7 +2806,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         JSON.stringify(entry.message).includes("Could not reconnect to the OpenCode event stream"),
       );
       assert.isDefined(gaveUp);
-      // The failure travels with the log entry as its cause, annotated by its tag only.
       assert.isTrue(gaveUp !== undefined && gaveUp.cause.reasons.length > 0);
       assert.isString(gaveUp?.annotations.errorTag);
     }).pipe(
@@ -3000,7 +2823,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         promptAccepted,
         { type: "runtime_exit", status: "success" },
       ]);
-      // The runtime's event stream has one consumer.
       const events = yield* runtime.events.pipe(Stream.runCollect, Effect.forkScoped);
       yield* runtime.startTurn(turnInput(thread));
       yield* TestClock.adjust("1 minute");
@@ -3014,9 +2836,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
-  // A stream that drops and comes back: what the gap lost is read from the
-  // session's history, and the turn ends from the server's own state. Real
-  // servers only do this on a network blip, so these are driven here.
   const reconnected = (active: Record<string, unknown>, ended?: "succeeded") => [
     { type: "runtime_exit", status: "success" } as const,
     out("event.subscribe"),
@@ -3063,7 +2882,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       cursor: {},
     }),
   ];
-  /** What a reconnect reads back of the requests a still-running session waits on. */
   const openRequests = (
     permissions: ReadonlyArray<unknown>,
     forms: ReadonlyArray<unknown> = [],
@@ -3081,8 +2899,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("does not end a turn from an earlier turn's history when its prompt is not there", () =>
     Effect.gen(function* () {
-      // The stream drops before the turn's prompt reached the history: what the
-      // history holds is the previous turn's, and its `idle` is not this turn's end.
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
@@ -3141,7 +2957,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       yield* runtime.startTurn(turnInput(thread));
       const collected = yield* Fiber.join(events);
-      // The reply and the tool call it ran are shown before the turn ends.
       assert.includeMembers(turnItems(collected), [
         "assistant_message:completed",
         "command_execution:completed",
@@ -3157,7 +2972,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         out("command.list", "<any>"),
         reply("command.list", { location: { directory: WORK }, data: [{ name: "hello" }] }),
-        // Where the history stood before the command.
         out("message.list", { sessionID: SESSION, order: "desc", limit: "1" }),
         reply("message.list", {
           data: [
@@ -3184,14 +2998,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
               content: [{ type: "text", text: "HELLO WORLD" }],
               finish: "stop",
             },
-            // The command's expanded template, the turn's own user item.
             {
               id: "msg_user_cmd",
               time: { created: 2 },
               text: "Reply with exactly: HELLO WORLD",
               type: "user",
             },
-            // The previous turn, which already ended before this one started.
             { id: "msg_idle_before", time: { created: 1 }, type: "idle", outcome: "succeeded" },
           ],
           cursor: {},
@@ -3222,8 +3034,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     () =>
       Effect.gen(function* () {
         const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: "call-sub" };
-        // The subagent's own prompt, as OpenCode queues it: its id is the
-        // subagent's first history item, where its turn's history begins.
         const SUB_PROMPT = "msg_0f73f91e0002lgRNb7FtMzcoQu";
         const { runtime, thread } = yield* resumed([
           out("session.prompt", { sessionID: SESSION, id: PROMPT_ID, text: "<any>" }),
@@ -3247,8 +3057,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             item: { type: "user", payload: { text: "sleep" }, delivery: "steer" },
           }),
           event("session.execution.started", { sessionID: CHILD }),
-          // The stream drops while both run; the subagent ends meanwhile. The
-          // subagent's history is read first: its turn ends before its caller's.
           { type: "runtime_exit", status: "success" } as const,
           out("event.subscribe"),
           out("session.active"),
@@ -3275,9 +3083,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             data: [{ id: PROMPT_ID, time: { created: 1 }, text: "hi", type: "user" }],
             cursor: {},
           }),
-          // The parent still runs, so what it waits on is read back too.
           ...openRequests([]),
-          // The parent goes on after the reconnect and ends its turn.
           event("session.execution.succeeded", { sessionID: SESSION }),
         ]);
         const events = yield* runtime.events.pipe(
@@ -3292,7 +3098,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             event.type === "provider_turn.updated" &&
             event.providerTurn.nativeTurnRef?.nativeId === `${CHILD}:turn:1`,
         );
-        // The subagent's missed answer is shown, and its turn ended with its execution.
         assert.isTrue(
           collected.some(
             (event) =>
@@ -3349,7 +3154,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         [
           out("session.prompt", { sessionID: SESSION, id: PROMPT_ID, text: "<any>" }),
           promptAccepted,
-          // `permission.asked` went by while the stream was down; the run waits on it.
           ...reconnected({ [SESSION]: { type: "running" } }),
           ...openRequests([shellAsk.data]),
           out("permission.reply", {
@@ -3379,7 +3183,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           out("session.prompt", { sessionID: SESSION, id: PROMPT_ID, text: "<any>" }),
           promptAccepted,
           shellAskEvent,
-          // Answered in another OpenCode client while the stream was down.
           ...reconnected({ [SESSION]: { type: "running" } }),
           ...openRequests([]),
           event("session.execution.succeeded", { sessionID: SESSION }),
@@ -3418,8 +3221,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
         const server = "t3-code-thread_opencode2-adapter";
         const { runtime, thread } = yield* resumed([
-          // Registered for the session's directory under the thread's own name;
-          // the session's rules allow only this name's tools (see `t3Rules`).
           out("mcp.add", {
             server,
             "location[directory]": WORK,
@@ -3446,7 +3247,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("registers a long thread id's MCP server under a name OpenCode accepts", () =>
     Effect.gen(function* () {
-      // Spelled out, this delegated thread's server name would be 120 characters.
       const child = ThreadId.make(
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Asubproject-b-round1",
       );
@@ -3465,7 +3265,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const runtime = yield* openCode2ReplayRuntimeWithInstructions([
         ...opening,
         out("session.get", { sessionID: SESSION }),
-        // The session already has this thread's rules, so they are not rewritten.
         replyData(
           "session.get",
           sessionInfo({
@@ -3520,9 +3319,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       for (const name of names) assert.match(name, /^t3-code-[A-Za-z0-9_-]{1,56}$/);
       assert.equal(new Set(names).size, ids.length);
       assert.deepEqual(yield* Effect.forEach(ids, t3McpServerName), names);
-      // A digested name is the one the synchronous node:crypto version produced.
       assert.equal(names[0], "t3-code-63abb5df2b188bdd");
-      // A name that already fits stays readable.
       assert.equal(yield* t3McpServerName(threadId), "t3-code-thread_opencode2-adapter");
     }).pipe(Effect.provide(NodeCrypto.layer)),
   );
@@ -3607,7 +3404,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("ends a turn before re-reading a model list that never answers", () =>
     Effect.gen(function* () {
-      // The session opened before the catalog loaded, so the turn's model has no window.
       const runtime = yield* openCode2ReplayRuntimeWithInstructions([
         out("event.subscribe"),
         out("model.list", "<any>"),
@@ -3630,7 +3426,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
       yield* runtime.startTurn(turnInput(thread));
       assert.equal((yield* Fiber.join(terminal))?.status, "completed");
-      // The terminal did not wait on the re-read, which is still in flight.
       for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
     }).pipe(Effect.scoped),
   );
@@ -3640,7 +3435,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
-        // A step from a provider that reports prompt-cache writes.
         event("session.step.ended", {
           sessionID: SESSION,
           assistantMessageID: "msg_0eb735d5b001oAFVeY5jz3WD4Z",
@@ -3681,8 +3475,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("reports each directory's own limit for a model its project config changed", () =>
     Effect.gen(function* () {
-      // 2.0.18 lists big-pickle at 48k input for a project whose opencode.json
-      // sets that limit, and at its catalog 160k everywhere else.
       const custom = "/work/opencode2-custom";
       const runtime = yield* openCode2ReplayRuntimeWithInstructions([
         ...opening,
@@ -3721,7 +3513,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ...bigPickle,
         options: [{ id: "variant", value: "default" }],
       });
-      // Each directory keeps its own limit, whichever was read last.
       assert.equal(runtime.getModelContextWindow?.(bigPickle, WORK), 160000);
       assert.equal(runtime.getModelContextWindow?.(bigPickle, custom), 48000);
       const settled = yield* runtime.events.pipe(
@@ -3761,13 +3552,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           status: 500,
           body: { _tag: "UnknownError", message: "disk I/O error" },
         }),
-        // Uncleared, OpenCode would commit the stage on the next prompt.
         out("session.revert.clear", { sessionID: SESSION }),
         reply("session.revert.clear", {
           status: 500,
           body: { _tag: "UnknownError", message: "busy" },
         }),
-        // The next turn clears it first, then waits out the empty execution `clear` runs.
         out("session.revert.clear", { sessionID: SESSION }),
         reply("session.revert.clear", null),
         event("session.execution.started", { sessionID: SESSION }),
@@ -3930,7 +3719,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         replyData("session.form.list", []),
         ...promptInto(SESSION, "msg_recorded_turn_a"),
         ...steerInto(SESSION, "msg_recorded_steer_a"),
-        // The other session gets its own instructions entry before its first prompt.
         out("session.instructions.entry.put", { sessionID: OTHER, key: "t3-code", value: "<any>" }),
         reply("session.instructions.entry.put", null),
         ...promptInto(OTHER, "msg_recorded_turn_b"),
@@ -3986,10 +3774,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const prompt = `msg_t3_turn_${SESSION}:attempt:opencode2-adapter`;
       const { runtime, thread } = yield* resumed([
         ...stopTimedOut,
-        // The server says whether the stopped run still goes.
         out("session.active"),
         reply("session.active", { data: running ? { [SESSION]: { type: "running" } } : {} }),
-        // Gone: the cut is made. Running: nothing is read or cut meanwhile.
         ...(running
           ? []
           : [
@@ -4073,11 +3859,9 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           payload: { text: "Also say STEERED." },
           delivery: "steer",
         }),
-        // Stopped before the steer was read: it stays in OpenCode's inbox.
         out("session.interrupt", { sessionID: SESSION }),
         reply("session.interrupt", { interrupted: true }),
         event("session.execution.interrupted", { sessionID: SESSION }),
-        // The next turn's cancel fails, so the turn after it tries again.
         cancelOut,
         reply("session.inbox.cancel", {
           status: 500,
@@ -4214,8 +3998,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   it.effect("starts a turn sent during a rollback only once the cut is made", () =>
     Effect.gen(function* () {
       const prompted = `msg_t3_turn_${SESSION}:attempt:earlier`;
-      // The replay is strictly ordered: a prompt sent while the rollback still
-      // reads or cuts the history fails it.
       const { runtime, thread } = yield* resumed([
         out("message.list", "<any>"),
         reply("message.list", {
@@ -4274,8 +4056,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const first = `msg_t3_turn_${SESSION}:attempt:first`;
       const second = `msg_t3_turn_${SESSION}:attempt:second`;
-      // A runtime that never loaded the session, as after a T3 restart
-      // against a server that kept running.
       const runtime = yield* openCode2ReplayRuntime([
         ...opening,
         out("session.active"),
@@ -4353,8 +4133,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("refuses to fork a session while OpenCode runs a follow-up on it", () =>
     Effect.gen(function* () {
-      // OpenCode starts the thread's session on its own (a background
-      // subagent's report). The replay fails on a fork request.
       const offered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         event("session.execution.started", { sessionID: SESSION }),
@@ -4403,7 +4181,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         }),
         out("session.revert.stage", { sessionID: SESSION, messageID: prompted, files: false }),
         reply("session.revert.stage", "<hang>"),
-        // The stalled stage is cleared, which runs its empty execution.
         out("session.revert.clear", { sessionID: SESSION }),
         reply("session.revert.clear", null),
         event("session.execution.started", { sessionID: SESSION }),
@@ -4446,7 +4223,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
 
   it.effect("refuses to fork a session while its turn runs", () =>
     Effect.gen(function* () {
-      // The replay fails on a fork request: only the running turn's prompt is expected.
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
@@ -4469,7 +4245,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed([
         out("session.fork", { sessionID: SESSION }),
         replyData("session.fork", sessionInfo({ id: FORK })),
-        // The fork's T3 MCP server is the target thread's.
         out("session.update", {
           sessionID: FORK,
           permissions: [
@@ -4492,11 +4267,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  /**
-   * A turn launches a background subagent; its report wakes the session into
-   * a continuation turn. Then `after` runs (a fork or a rollback to the first
-   * turn), which must cut before the report the continuation answers.
-   */
   const continued = (after: ReadonlyArray<ProviderReplayEntry>) =>
     Effect.gen(function* () {
       const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
@@ -4577,7 +4347,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread, first, second } = yield* continued([
         out("message.list", "<any>"),
         reply("message.list", continuedHistory),
-        // The replay fails on a fork without this cut.
         out("session.fork", { sessionID: SESSION, before: "msg_report" }),
         replyData("session.fork", sessionInfo({ id: FORK })),
         out("session.update", { sessionID: FORK, permissions: "<any>" }),
@@ -4598,7 +4367,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread, first, second } = yield* continued([
         out("message.list", "<any>"),
         reply("message.list", continuedHistory),
-        // The replay fails on a rollback that makes no cut here.
         out("session.revert.stage", { sessionID: SESSION, messageID: "msg_report", files: false }),
         replyData("session.revert.stage", { messageID: "msg_report", files: [] }),
         out("session.revert.commit", { sessionID: SESSION }),
@@ -4635,7 +4403,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const { runtime, thread } = yield* resumed(
         [
           ...backgroundLaunch(CHILD),
-          // The same turn starts a second background subagent, which runs on.
           event("session.tool.input.started", { ...toolB, name: "subagent" }),
           event("session.tool.called", {
             ...toolB,
@@ -4650,8 +4417,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           }),
           event("session.execution.succeeded", { sessionID: SESSION }),
           event("session.execution.started", { sessionID: CHILD_B }),
-          // The first subagent's report wakes the parent into a reply T3 holds
-          // for its continuation.
           event("session.execution.succeeded", { sessionID: CHILD }),
           event("session.inbox.enqueued", {
             inboxID: "msg_report",
@@ -4672,8 +4437,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             },
           }),
           event("session.execution.started", { sessionID: SESSION }),
-          // The reply starts a background subagent of its own, named only by
-          // the reply's held events.
           event("session.tool.input.started", { ...spawn, name: "subagent" }),
           event("session.tool.called", {
             ...spawn,
@@ -4687,26 +4450,20 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             metadata: { sessionID: SPAWNED, status: "running" },
           }),
           event("session.execution.succeeded", { sessionID: SESSION }),
-          // The second subagent's text, shown live, marks that the reply has ended.
           event("session.text.ended", {
             sessionID: CHILD_B,
             assistantMessageID: "msg_child_b",
             ordinal: 0,
             text: "B_WORKING",
           }),
-          // The user's Stop stops the second subagent and drops the held reply.
           out("session.interrupt", { sessionID: CHILD_B }),
           reply("session.interrupt", { interrupted: true }),
           event("session.execution.interrupted", { sessionID: CHILD_B }),
-          // The subagent only the dropped reply named is stopped too; that Stop
-          // fails, so it runs on.
           out("session.interrupt", { sessionID: SPAWNED }),
           reply("session.interrupt", {
             status: 500,
             body: { _tag: "UnknownError", message: "interrupt failed" },
           }),
-          // An unrelated prompt runs while that subagent, and a subagent it
-          // starts, ask for permissions, which no turn shows: they are refused.
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           event("session.execution.started", { sessionID: SESSION }),
@@ -4736,14 +4493,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             text: "UNRELATED",
           }),
           event("session.execution.succeeded", { sessionID: SESSION }),
-          // The next Stop tries the subagent again, and the one it started, and reaches both.
           out("session.interrupt", { sessionID: SPAWNED }),
           reply("session.interrupt", { interrupted: true }),
           out("session.interrupt", { sessionID: NESTED }),
           reply("session.interrupt", { interrupted: true }),
-          // OpenCode reports the stopped subagent to the thread's session and
-          // wakes it; that execution answers no turn, so it is stopped and no
-          // continuation is offered for it.
           event("session.execution.interrupted", { sessionID: SPAWNED }),
           event("session.inbox.enqueued", {
             inboxID: "msg_report_spawned",
@@ -4797,7 +4550,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(withLineage(thread));
       yield* Deferred.await(replyEnded);
       assert.lengthOf(offers, 1);
-      // The user stops the thread before the reply's continuation runs.
       yield* runtime.interruptTurn({
         providerThread: thread,
         providerTurnId: yield* providerTurnId,
@@ -4805,8 +4557,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       });
       yield* runtime.startTurn({ ...secondTurn(thread), appThread: withLineage(thread).appThread });
       yield* Deferred.await(bothEnded);
-      // A later Stop reaches both subagents; once stopped they are not tried
-      // again (the replay fails on any further request).
       for (let stops = 0; stops < 2; stops++) {
         yield* runtime.interruptTurn({
           providerThread: thread,
@@ -4814,11 +4564,9 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           requestRuntimeRestart: true,
         });
       }
-      // The stopped subagent's report wakes nothing T3 runs.
       yield* Effect.promise(() => gate.waitForReached("settled"));
       gate.release("settled");
       assert.lengthOf(offers, 1);
-      // The unrelated turn shows no request it never made.
       assert.deepEqual(
         collected.flatMap((event) =>
           event.type === "runtime_request.updated"
@@ -4842,7 +4590,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         const spawn = { sessionID: SESSION, assistantMessageID: "msg_reply", id: "call-spawn" };
         const { runtime, thread } = yield* resumed([
           ...backgroundLaunch(CHILD),
-          // The same turn starts a second background subagent, which runs on.
           event("session.tool.input.started", { ...toolB, name: "subagent" }),
           event("session.tool.called", {
             ...toolB,
@@ -4857,7 +4604,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           }),
           event("session.execution.succeeded", { sessionID: SESSION }),
           event("session.execution.started", { sessionID: CHILD_B }),
-          // The first subagent's report wakes the parent into a reply T3 holds.
           event("session.execution.succeeded", { sessionID: CHILD }),
           event("session.inbox.enqueued", {
             inboxID: "msg_report",
@@ -4878,7 +4624,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             },
           }),
           event("session.execution.started", { sessionID: SESSION }),
-          // The held reply starts a subagent, which starts one, which starts another.
           event("session.tool.input.started", { ...spawn, name: "subagent" }),
           event("session.tool.called", {
             ...spawn,
@@ -4898,15 +4643,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           }),
           event("session.created", { ...childCreated(DEEP), sessionID: DEEP, parentID: NESTED }),
           event("session.execution.succeeded", { sessionID: SESSION }),
-          // The second subagent's text, shown live, marks that the reply has ended.
           event("session.text.ended", {
             sessionID: CHILD_B,
             assistantMessageID: "msg_child_b",
             ordinal: 0,
             text: "B_WORKING",
           }),
-          // The user's Stop stops the second subagent and drops the held reply,
-          // then each subagent under the reply, the deepest of which runs on.
           out("session.interrupt", { sessionID: CHILD_B }),
           reply("session.interrupt", { interrupted: true }),
           event("session.execution.interrupted", { sessionID: CHILD_B }),
@@ -4919,8 +4661,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             status: 500,
             body: { _tag: "UnknownError", message: "interrupt failed" },
           }),
-          // An unrelated prompt runs while the deepest asks for a permission,
-          // which no turn shows: it is refused.
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           event("session.execution.started", { sessionID: SESSION }),
@@ -4963,7 +4703,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           appThread: withLineage(thread).appThread,
         });
         yield* Deferred.await(bothEnded);
-        // The unrelated turn shows no request it never made.
         assert.deepEqual(
           collected.flatMap((event) =>
             event.type === "runtime_request.updated"
@@ -5019,7 +4758,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           metadata: { sessionID: CHILD_B, status: "running" },
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // Reply A starts a subagent of its own, named only by its held events.
         event("session.execution.succeeded", { sessionID: CHILD }),
         report("msg_report_a", CHILD),
         event("session.execution.started", { sessionID: SESSION }),
@@ -5042,7 +4780,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           text: "REPLY_B",
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // B's continuation skips reply A and stops its subagent, which never answers.
         out("session.interrupt", { sessionID: SPAWNED }),
         reply("session.interrupt", "<hang>"),
       ]).pipe(
@@ -5060,7 +4797,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(withLineage(thread));
       yield* Deferred.await(bothOffered);
       yield* runtime.startTurn(continuationTurn(thread, offers[1]!, "wake-b"));
-      // B's reply replays and ends its turn while that Stop still waits.
       assert.deepEqual(
         [...(yield* Fiber.join(ended))].map((terminal) => terminal.status),
         ["completed", "completed"],
@@ -5097,7 +4833,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const bothOffered = yield* Deferred.make<void>();
       const { runtime, thread } = yield* resumed([
         ...backgroundLaunch(CHILD),
-        // The same turn starts a second background subagent.
         event("session.tool.input.started", { ...toolB, name: "subagent" }),
         event("session.tool.called", {
           ...toolB,
@@ -5111,7 +4846,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           metadata: { sessionID: CHILD_B, status: "running" },
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-        // Each subagent's report wakes the parent into a reply OpenCode runs on its own.
         event("session.execution.succeeded", { sessionID: CHILD }),
         report("msg_report_a", CHILD, "A_OK"),
         event("session.execution.started", { sessionID: SESSION }),
@@ -5151,7 +4885,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       yield* runtime.startTurn(withLineage(thread));
       yield* Deferred.await(bothOffered);
-      // A's continuation was cancelled before it started; B's runs.
       yield* runtime.startTurn(continuationTurn(thread, offers[1]!, "wake-b"));
       yield* Deferred.await(ended);
       const continuationId = (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
@@ -5168,7 +4901,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ),
         ["REPLY_B"],
       );
-      // Nothing is left held for a continuation that will never run.
       assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
     }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
   );
@@ -5200,10 +4932,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             delivery: "steer",
           },
         }),
-        // OpenCode starts the follow-up on its own; T3 holds it for its turn.
         event("session.execution.started", { sessionID: SESSION }),
         event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_report" }),
-        // The user steers into the follow-up turn; its execution reads the steer.
         out("session.prompt", {
           sessionID: SESSION,
           id: steerId,
@@ -5246,7 +4976,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         Effect.forkScoped,
       );
       yield* runtime.startTurn(withLineage(thread));
-      // The launching turn ends; then the held follow-up is offered and taken.
       yield* Effect.gen(function* () {
         while (offers.length === 0) yield* Effect.yieldNow;
       }).pipe(Effect.timeout("2 seconds"), Effect.orDie);
@@ -5268,9 +4997,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         },
       });
       yield* Deferred.await(followUpEnded);
-      // The launching turn and the steered follow-up end once each. The
-      // replay has no frame after the follow-up's end, so a second end of the
-      // follow-up (or another continuation) would show here or fail the replay.
       yield* Effect.yieldNow;
       assert.deepEqual(terminals, ["completed", "completed"]);
       assert.lengthOf(offers, 1);
@@ -5294,7 +5020,6 @@ describe("OpenCode2 adapter server connection", () => {
           ],
           { borrowers },
         );
-        // Reconnected: the dropped connection is returned and the new one is held.
         yield* Effect.sleep("200 millis");
         assert.equal(borrowers.current, 1);
       }).pipe(Effect.scoped);
@@ -5303,7 +5028,6 @@ describe("OpenCode2 adapter server connection", () => {
   );
 });
 
-/** The provider turn the adapter derives for `turnInput`'s attempt. */
 const providerTurnId = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   return ids.derive.providerTurn({

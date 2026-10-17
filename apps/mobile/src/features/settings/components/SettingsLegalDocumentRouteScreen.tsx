@@ -1,11 +1,12 @@
 import { type NavigationProp, type ParamListBase, useNavigation } from "@react-navigation/native";
 import { useCallback, useLayoutEffect, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
 import { WebView } from "react-native-webview";
 
-import { AppText as Text } from "../../../components/AppText";
-import { LoadingStrip } from "../../../components/LoadingStrip";
-import { SymbolView } from "../../../components/AppSymbol";
+import { AppActivityIndicator } from "../../../components/ui/AppActivityIndicator";
+import { AppText as Text } from "../../../components/ui/AppText";
+import { LoadingStrip } from "../../../components/ui/LoadingStrip";
+import { SymbolView } from "../../../components/ui/AppSymbol";
 import { isLegalDocumentUrl, LEGAL_URL } from "../lib/legal-document-url";
 
 export function SettingsLegalDocumentCloseHeaderButton() {
@@ -172,7 +173,7 @@ export function SettingsLegalDocumentRouteScreen({
         }}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center bg-sheet">
-            <ActivityIndicator />
+            <AppActivityIndicator />
           </View>
         )}
         style={{ flex: 1, backgroundColor: "transparent" }}

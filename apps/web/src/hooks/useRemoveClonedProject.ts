@@ -6,16 +6,11 @@ import { useCallback } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
+import { waitForProjectRemoval } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 
-/**
- * Removes a project whose clone never landed. The server clears the empty
- * folder along with the clone, so there is nothing to confirm: no threads
- * exist yet and the draft is the only thing lost, which the user is looking
- * at when they click.
- */
 export function useRemoveClonedProject() {
   const router = useRouter();
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
@@ -41,6 +36,7 @@ export function useRemoveClonedProject() {
         );
         return false;
       }
+      await waitForProjectRemoval(projectRef);
       // Read the route after the await: the user may have moved on while the
       // delete was in flight, and only a draft of this project needs to go.
       const routeParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};

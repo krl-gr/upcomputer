@@ -113,8 +113,6 @@ export class AutomationStore {
     this.afterDueMs = options.afterDueMs ?? 35_000;
   }
 
-  // ---- subscription -------------------------------------------------------
-
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -235,8 +233,6 @@ export class AutomationStore {
     );
   }
 
-  // ---- view ---------------------------------------------------------------
-
   private derive(): AutomationSnapshot {
     let automations = orderAutomations(this.rows);
     const pending = this.pendingOrder;
@@ -256,8 +252,6 @@ export class AutomationStore {
       error: this.error,
     };
   }
-
-  // ---- writes -------------------------------------------------------------
 
   /**
    * A write's answer. The task count is not part of it: it stays as it was,

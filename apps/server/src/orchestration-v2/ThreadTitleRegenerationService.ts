@@ -33,7 +33,10 @@ export class ThreadTitleRegenerationService extends Context.Service<
         | { readonly type: "regenerate" };
     }) => Effect.Effect<
       void,
-      OrchestratorV2Error | ProjectStore.ProjectStoreV2Error | ServerSettingsError
+      | OrchestratorV2Error
+      | ProjectStore.ProjectStoreV2Error
+      | ServerSettingsError
+      | ThreadManagementService.ThreadManagementProviderInstanceDisabledError
     >;
   }
 >()("t3/orchestration-v2/ThreadTitleRegenerationService") {}

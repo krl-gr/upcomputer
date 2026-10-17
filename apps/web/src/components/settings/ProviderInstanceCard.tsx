@@ -4,10 +4,12 @@ import { Spinner } from "~/components/ui/spinner";
 
 import {
   AlertTriangleIcon,
+  CheckIcon,
   ArrowUpCircleIcon,
   CopyIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  LayersIcon,
   PlusIcon,
   Trash2Icon,
   XIcon,
@@ -42,6 +44,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { DraftInput } from "../ui/draft-input";
+import { SecretInput } from "./SecretInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -55,7 +58,7 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
@@ -128,11 +131,6 @@ function providerEnvironmentsEqual(
   );
 }
 
-/**
- * Read `customModels` from the opaque config blob. The concrete driver
- * schemas type it as `CustomModelSetting[]`, but it arrives here as
- * `Schema.Unknown`, so the shared reader does the shape checking.
- */
 function readConfigCustomModels(config: unknown): ReadonlyArray<CustomModelDefinition> {
   if (config === null || typeof config !== "object") return [];
   return readCustomModelEntries((config as Record<string, unknown>).customModels);
@@ -145,12 +143,10 @@ function readConfigString(config: unknown, key: string): string | null {
 }
 
 /**
- * Set `key` to an arbitrary value on the opaque config blob. Unlike
- * provider settings field updates, does not drop empty-looking values — the
- * caller is responsible for deciding whether an empty array / empty
- * object should be stored explicitly (e.g. `customModels: []` is a
- * meaningful "user cleared their custom list" state distinct from
- * "driver default").
+ * Unlike provider settings field updates, does not drop empty-looking values —
+ * the caller is responsible for deciding whether an empty array / empty object
+ * should be stored explicitly (e.g. `customModels: []` is a meaningful "user
+ * cleared their custom list" state distinct from "driver default").
  */
 function nextConfigBlobWithValue(
   config: unknown,
@@ -163,11 +159,6 @@ function nextConfigBlobWithValue(
   return base;
 }
 
-/**
- * Custom rows come from current settings so name/descriptor edits show
- * instantly; a bare entry falls back to the live row's driver-default
- * capabilities (the server fills those in on its next probe).
- */
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
@@ -178,13 +169,20 @@ export function deriveProviderModelsForDisplay(input: {
     ),
   );
   const serverModels = input.liveModels?.filter((model) => !model.isCustom) ?? [];
-  const customModels = input.customModels.map((entry) => ({
-    slug: entry.slug,
-    name: entry.name,
-    isCustom: true,
-    capabilities:
-      entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
-  }));
+  const serverSlugs = new Set(serverModels.map((model) => model.slug));
+  const customModels = input.customModels.flatMap((entry) =>
+    serverSlugs.has(entry.slug)
+      ? []
+      : [
+          {
+            slug: entry.slug,
+            name: entry.name,
+            isCustom: true,
+            capabilities:
+              entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
+          },
+        ],
+  );
   return [...serverModels, ...customModels];
 }
 
@@ -261,9 +259,6 @@ function ProviderEnvironmentFieldRow(props: {
 }) {
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
   const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
-  const placeholder = props.variable?.valueRedacted
-    ? "Stored secret - enter a new value to replace"
-    : props.field.placeholder;
 
   return (
     <SettingsRow
@@ -271,17 +266,29 @@ function ProviderEnvironmentFieldRow(props: {
       description={props.field.description}
       control={
         <div className="flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-56">
-          <DraftInput
-            id={inputId}
-            size="sm"
-            className="min-w-0 flex-1"
-            type={props.field.sensitive === false ? undefined : "password"}
-            autoComplete="off"
-            value={value}
-            onCommit={(next) => props.onCommit(props.field, next)}
-            placeholder={placeholder}
-            spellCheck={false}
-          />
+          {props.field.sensitive === false ? (
+            <DraftInput
+              id={inputId}
+              size="sm"
+              className="min-w-0 flex-1"
+              autoComplete="off"
+              value={value}
+              onCommit={(next) => props.onCommit(props.field, next)}
+              placeholder={props.field.placeholder}
+              spellCheck={false}
+            />
+          ) : (
+            <SecretInput
+              id={inputId}
+              size="sm"
+              className="min-w-0 flex-1"
+              value={value}
+              onCommit={(next) => props.onCommit(props.field, next)}
+              placeholder={props.field.placeholder}
+              configured={props.variable?.valueRedacted === true}
+              spellCheck={false}
+            />
+          )}
           {props.variable ? (
             <Button
               type="button"
@@ -408,20 +415,31 @@ export function ProviderEnvironmentSection(props: {
               <span className="hidden text-xs text-muted-foreground sm:inline" aria-hidden>
                 =
               </span>
-              <DraftInput
-                size="sm"
-                font="mono"
-                className="min-w-0 flex-1"
-                value={variable.valueRedacted ? "" : variable.value}
-                onCommit={(value) => updateVariable(variable.id, { value })}
-                type={variable.sensitive ? "password" : undefined}
-                autoComplete="off"
-                placeholder={
-                  variable.valueRedacted ? "Stored secret, enter a new value to replace" : "value"
-                }
-                spellCheck={false}
-                aria-label={`Environment variable value ${index + 1}`}
-              />
+              {variable.sensitive ? (
+                <SecretInput
+                  size="sm"
+                  font="mono"
+                  className="min-w-0 flex-1"
+                  value={variable.valueRedacted ? "" : variable.value}
+                  onCommit={(value) => updateVariable(variable.id, { value })}
+                  placeholder="value"
+                  configured={variable.valueRedacted === true}
+                  spellCheck={false}
+                  aria-label={`Environment variable value ${index + 1}`}
+                />
+              ) : (
+                <DraftInput
+                  size="sm"
+                  font="mono"
+                  className="min-w-0 flex-1"
+                  value={variable.valueRedacted ? "" : variable.value}
+                  onCommit={(value) => updateVariable(variable.id, { value })}
+                  autoComplete="off"
+                  placeholder="value"
+                  spellCheck={false}
+                  aria-label={`Environment variable value ${index + 1}`}
+                />
+              )}
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -472,6 +490,83 @@ export function ProviderEnvironmentSection(props: {
   );
 }
 
+function ProjectOverrideInheritance({
+  projectEnabled,
+  deviceEnabled,
+}: {
+  readonly projectEnabled: boolean;
+  readonly deviceEnabled: boolean;
+}) {
+  const layers = [
+    { key: "project", label: "Project", enabled: projectEnabled, effective: true },
+    { key: "device", label: "Device", enabled: deviceEnabled, effective: false },
+  ];
+  return (
+    <Popover>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  size="icon-micro"
+                  variant="ghost-muted"
+                  aria-label="Overridden for this project. Show where this value comes from"
+                />
+              }
+            />
+          }
+        >
+          <LayersIcon className="size-3 text-primary" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Overridden for this project</TooltipPopup>
+      </Tooltip>
+      <PopoverPopup align="end" width="md" padding="none">
+        <ol role="list" className="px-3 py-2.5 text-sm">
+          {layers.map((layer) => (
+            <li
+              key={layer.key}
+              className={cn(
+                "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-md px-2 py-1",
+                layer.effective && "bg-foreground/[0.06]",
+              )}
+            >
+              <span
+                className={cn(
+                  "min-w-0 truncate",
+                  layer.effective ? "font-medium text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {layer.label}
+              </span>
+              <span
+                className={cn(
+                  "flex items-center gap-1.5",
+                  layer.effective ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {layer.enabled ? "On" : "Off"}
+                {layer.effective ? (
+                  <CheckIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+                ) : (
+                  <span aria-hidden className="size-3.5 shrink-0" />
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
+interface ProjectOverrideControl {
+  readonly value: boolean | undefined;
+  readonly effectiveEnabled: boolean;
+  readonly onChange: (next: boolean) => void;
+  readonly onReset: () => void;
+}
+
 interface ProviderInstanceCardProps {
   readonly instanceId: ProviderInstanceId;
   readonly instance: ProviderInstanceConfig;
@@ -483,20 +578,7 @@ interface ProviderInstanceCardProps {
   readonly readOnly?: boolean | undefined;
   readonly canWriteSettings?: boolean;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
-  /**
-   * Pass `undefined` to hide the delete footer entirely. Built-in default
-   * instance slots use `undefined` — they can't be deleted without losing
-   * the slot, and their "reset to defaults" affordance lives on an outer
-   * reset button instead. Explicit `| undefined` in the type accommodates
-   * `exactOptionalPropertyTypes: true`, where an absent key and
-   * `{ onDelete: undefined }` are treated as distinct shapes.
-   */
   readonly onDelete?: (() => void) | undefined;
-  /**
-   * Optional outer reset button rendered next to the driver icon. Built-in
-   * default slots supply a reset-to-factory control here; custom instances
-   * omit it.
-   */
   readonly headerAction?: ReactNode | undefined;
   readonly setup?: ReactNode;
   readonly runtime?: ReactNode;
@@ -515,6 +597,7 @@ interface ProviderInstanceCardProps {
   readonly isUpdating?: boolean | undefined;
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
+  readonly projectOverride?: ProjectOverrideControl | undefined;
   readonly acpProjects?:
     | ReadonlyArray<{
         readonly id: ProjectId;
@@ -527,23 +610,12 @@ interface ProviderInstanceCardProps {
 const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> = [];
 
 /**
- * Renders one provider instance as either a compact selectable list row or
- * the full editor shown beside that list. Both modes use the same enabled
- * state and provider metadata.
- *
- * Behavior notes:
- *   - `liveProvider` is matched by the caller via `instanceId`; when no
- *     match is available (e.g. the server hasn't checked it yet, or the
- *     driver is not shipped by the current build) the card still renders
- *     with a neutral "checking" summary.
- *   - Unknown drivers (`driverOption === undefined`) get a read-only
+ * Unknown drivers (`driverOption === undefined`) get a read-only
  *     notice instead of editable fields, so fork instances round-trip
  *     without accidentally destroying their config.
- *   - The enabled Switch writes to the envelope's `instance.enabled`
- *     field, which is the single enabled flag: the server folds any legacy
- *     driver-specific `config.enabled` into the envelope on load and both
- *     sides resolve through `resolveProviderInstanceEnabled` (an explicit
- *     false wins, then envelope, then config, then the driver default).
+ * With `projectOverride` set, the Switch instead reads and writes
+ *     that project's override, leaving the environment's `instance.enabled`
+ *     untouched.
  */
 export function ProviderInstanceCard({
   instanceId,
@@ -573,17 +645,16 @@ export function ProviderInstanceCard({
   onAcceptUrlAuth,
   environmentId,
   acpProjects = EMPTY_ACP_PROJECTS,
+  projectOverride,
 }: ProviderInstanceCardProps) {
-  const enabled = resolveProviderInstanceEnabled(instance);
+  const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
-  // A locally disabled provider reads "Disabled" with a muted dot even if its
-  // last server status is stale. Enabled providers use the server status.
   const statusKey: ProviderStatusKey = enabled
     ? ((liveProvider?.status as ProviderStatusKey | undefined) ?? "warning")
     : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const summary = enabled
-    ? getProviderSummary(liveProvider)
+    ? getProviderSummary(liveProvider && { ...liveProvider, enabled: true })
     : { headline: "Disabled", detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
@@ -599,8 +670,6 @@ export function ProviderInstanceCard({
   );
   const updateCommand = versionAdvisory?.updateCommand ?? null;
   const updateState = liveProvider?.updateState;
-  // The server reports each update step. `isUpdating` also covers the moment
-  // between the click and the server's first report.
   const updateProgress = isUpdating
     ? ((updateState?.status === "queued" || updateState?.status === "running"
         ? updateState.message
@@ -643,18 +712,11 @@ export function ProviderInstanceCard({
     },
   });
 
-  // Narrow `instance.driver` for callers that key on the closed
-  // `ProviderDriverKind` union (e.g. `normalizeModelSlug`'s alias table). Custom
-  // fork drivers pass through as `null` and those callers fall back to
-  // verbatim behaviour.
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
   const customModels =
     instance.driver === "antigravity" ? [] : readConfigCustomModels(instance.config);
-  // Server-returned models may lag behind settings writes. Treat server
-  // models as the source for built-ins only; custom rows come directly
-  // from the current instance config so add/remove reflects immediately.
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
@@ -670,6 +732,10 @@ export function ProviderInstanceCard({
   };
 
   const updateEnabled = (value: boolean) => {
+    if (projectOverride) {
+      projectOverride.onChange(value);
+      return;
+    }
     onUpdate({ ...instance, enabled: value });
   };
 
@@ -711,8 +777,6 @@ export function ProviderInstanceCard({
         : (rest as ProviderInstanceConfig),
     );
   };
-  // Drivers that need a named secret (Cursor's API key) get a dedicated field;
-  // the generic editor only shows the remaining variables.
   const environmentFields = driverOption?.environmentFields ?? [];
   const environmentFieldNames = new Set(environmentFields.map((field) => field.name));
   const genericEnvironment = providerEnvironmentWithoutNames(
@@ -764,14 +828,12 @@ export function ProviderInstanceCard({
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
 
-  // Healthy and disabled rows read fine from their text; only trouble gets a dot.
   const statusDotNode =
     statusKey === "warning" || statusKey === "error" ? (
       <span className={cn("size-1.5 shrink-0 rounded-full", statusStyle.dot)} aria-hidden />
     ) : null;
   const needsAttention = statusKey === "warning" || statusKey === "error";
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
-  // Keep compatibility copy compact; the version popover carries the explanation.
   const inlineStatusDetail = hasCompatibilityWarning
     ? compatibility?.status === "broken"
       ? "Incompatible"
@@ -945,7 +1007,6 @@ export function ProviderInstanceCard({
               {versionAdvisoryNode}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
-              {/* The dot describes provider health, not the update in progress. */}
               {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}
@@ -968,10 +1029,24 @@ export function ProviderInstanceCard({
             </span>
           </span>
         </div>
-        <span className="flex h-5 shrink-0 items-center">
+        <span className="flex h-5 shrink-0 items-center gap-1">
+          {projectOverride?.value !== undefined ? (
+            <span className="flex items-center">
+              <ProjectOverrideInheritance
+                projectEnabled={projectOverride.value}
+                deviceEnabled={resolveProviderInstanceEnabled(instance)}
+              />
+              <SettingResetButton
+                label={`${displayName} enablement`}
+                tooltip="Reset to the device setting"
+                disabled={readOnly || !canWriteSettings}
+                onClick={projectOverride.onReset}
+              />
+            </span>
+          ) : null}
           <Switch
             checked={enabled}
-            disabled={readOnly}
+            disabled={readOnly || (projectOverride !== undefined && !canWriteSettings)}
             onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
             aria-label={`Enable ${displayName}`}
           />

@@ -280,8 +280,6 @@ describe("ServerUpdateAction", () => {
       targetVersion: "0.0.31",
     }) as ActionElement;
 
-    // No confirm-dialog host is mounted in this test, which the component
-    // treats as consent: the click itself was the request.
     action.props.onClick?.();
     await flushPromises();
 
@@ -497,14 +495,11 @@ describe("ServerUpdateProgress", () => {
     );
 
     expect(markup).toContain("Restarting…");
-    // The wait state is monochrome and calm: no versions, no step rail, no
-    // success/warning colors, one duty-cycled pulse on the dot.
     expect(markup).not.toContain("0.0.30");
     expect(markup).not.toContain("Resum");
     expect(markup).not.toContain("text-success");
     expect(markup).not.toContain("text-primary");
-    expect(markup).toContain("animate-status-pulse");
-    expect(markup).not.toContain("animate-spin");
+    expect(markup).not.toContain("animate-");
   });
 
   it("folds the sub-second installing handoff into the download phase", () => {

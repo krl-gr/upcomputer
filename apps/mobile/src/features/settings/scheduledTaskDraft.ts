@@ -28,13 +28,18 @@ export function scheduledTaskDefaultModel(
   const configured = resolveProjectSettings(settings, project?.id ?? null, project).settings
     .defaultModelSelection;
   const projectDefaultSelection =
-    resolveDefaultableModelSelection(config, configured) ??
-    resolveDefaultableModelSelection(config, settings.defaultModelSelection);
+    resolveDefaultableModelSelection(config, configured, project?.id ?? null) ??
+    resolveDefaultableModelSelection(config, settings.defaultModelSelection, project?.id ?? null);
   return resolveNewTaskModelSelection({
     draftSelection: null,
     projectDefaultSelection,
     stickySelection: null,
-    modelOptions: buildModelOptions(config, projectDefaultSelection),
+    modelOptions: buildModelOptions(
+      config,
+      projectDefaultSelection,
+      undefined,
+      project?.id ?? null,
+    ),
   });
 }
 
@@ -43,9 +48,7 @@ export type ScheduleDraft = {
   readonly timeOfDay: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly intervalMinutes: string;
-  /** A webhook signature check configured elsewhere; mobile keeps it but does not edit it. */
   readonly signature: ScheduledTaskWebhookSignature | null;
-  /** Minutes as typed; empty runs every held request regardless of age. */
   readonly maxDeliveryAgeMinutes: string;
 };
 
@@ -107,7 +110,6 @@ export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSche
   }
   if (draft.mode === "interval") {
     const minutes = Number(draft.intervalMinutes);
-    // Undo floating-point noise from displaying existing millisecond intervals as minutes.
     const everyMs = Math.round(minutes * 60_000);
     return minutes >= 1 && Number.isSafeInteger(everyMs) ? { type: "interval", everyMs } : null;
   }

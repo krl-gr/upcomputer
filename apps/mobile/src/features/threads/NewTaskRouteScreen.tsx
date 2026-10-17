@@ -1,12 +1,14 @@
-import { MaterialListRow } from "../../components/MaterialListRow";
-import { ScreenHeader } from "../../components/ScreenHeader";
+import * as Dialog from "../../components/ui/Dialog";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { NavigationRow } from "../../components/ui/NavigationRow";
+import { AppBar } from "../../components/ui/AppBar";
 import {
   StackActions,
   useIsFocused,
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
@@ -15,13 +17,13 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
-import { MaterialScreenContent } from "../../components/MaterialScreenContent";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { AppText as Text } from "../../components/AppText";
+import { ScreenContent } from "../../components/ui/ScreenContent";
+import { Button } from "../../components/ui/Button";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
@@ -30,12 +32,18 @@ import { useRemoteConnectionStatus } from "../../state/use-remote-environment-re
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { usePromptLinkResolver } from "../prompt-links/usePromptLinkResolver";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
+  readonly prompt?: string | string[];
+  readonly repo?: string | string[];
+  readonly pr?: string | string[];
+  readonly provider?: string | string[];
+  readonly model?: string | string[];
 };
 
 function deriveProjectEmptyState(catalogState: WorkspaceState): {
@@ -103,7 +111,7 @@ function NewTaskHeader(props: {
   const navigation = useNavigation();
   const { layout } = useAdaptiveWorkspaceLayout();
   return (
-    <ScreenHeader
+    <AppBar
       title={props.title}
       subtitle={props.subtitle ?? undefined}
       sidebar={false}
@@ -143,6 +151,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();
+  usePromptLinkResolver(route.params);
   const routeShareId = Array.isArray(route.params?.incomingShareId)
     ? route.params.incomingShareId[0]
     : route.params?.incomingShareId;
@@ -157,8 +166,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
-  // Scratch projects are reached through the No project row, never as rows
-  // of their own.
   const listScopes = projectScopes.filter(
     (scope) =>
       !scope.projects.every((project) =>
@@ -178,9 +185,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
-  // Threads without a project need a connected environment that offers them.
-  // The row starts on the selected environment when it has one, otherwise the
-  // first that does; the draft page's machine picker moves it from there.
   const scratchEnvironments = connectedEnvironments.filter(
     (environment) =>
       availableScratchWorkspaceRoot(
@@ -202,7 +206,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       try {
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
-        Alert.alert(
+        Dialog.alert(
           "Could not change project",
           error instanceof Error
             ? error.message
@@ -238,7 +242,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          Alert.alert(
+          Dialog.alert(
             "Could not start without a project",
             error instanceof Error
               ? error.message
@@ -293,7 +297,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         onSearchTextChange={setSearchText}
       />
 
-      <MaterialScreenContent>
+      <ScreenContent>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -313,7 +317,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           {canStartScratch && listScopes.length > 0 ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
-                <MaterialListRow
+                <NavigationRow
                   className="bg-grouped-card"
                   title="No project"
                   subtitle="Start a task without a project"
@@ -369,7 +373,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               )}
             >
               {projectEmptyState.loading ? (
-                <ActivityIndicator colorClassName="accent-icon-muted" />
+                <AppActivityIndicator colorClassName="accent-icon-muted" />
               ) : null}
               <Text className="text-center text-lg font-t3-bold text-foreground">
                 {projectEmptyState.title}
@@ -379,7 +383,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               </Text>
               {Platform.OS === "android" ? (
                 <>
-                  <MaterialButton
+                  <Button
                     label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
                     tone="primary"
                     onPress={() =>
@@ -389,7 +393,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     }
                   />
                   {canStartScratch ? (
-                    <MaterialButton
+                    <Button
                       label="Start without a project"
                       tone="secondary"
                       onPress={() => void startScratch()}
@@ -454,7 +458,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 );
                 if (Platform.OS === "android") {
                   return (
-                    <MaterialListRow
+                    <NavigationRow
                       className="bg-grouped-card"
                       key={scope.key}
                       title={scope.title}
@@ -529,7 +533,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             </View>
           )}
         </ScrollView>
-      </MaterialScreenContent>
+      </ScreenContent>
     </View>
   );
 }

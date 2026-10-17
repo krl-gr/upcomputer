@@ -3,7 +3,6 @@ import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/cont
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { UPCOMPUTER_PRODUCT_NAME } from "@t3tools/shared/upcomputerIdentity";
 
-/** Adds current runtime context to legacy prompt expectations, keeping outbound matching exact. */
 export function materializeReplayTranscriptRuntimeInstructions(
   transcript: ProviderReplayTranscript,
   runtime: { readonly driver: ProviderDriverKind; readonly model: string },

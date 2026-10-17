@@ -3,7 +3,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-// Like the real atom, a refresh yields a new access object and re-renders subscribers.
 const accessStore = {
   value: { httpBase: "http://test", wsBase: "ws://test", query: {}, credentials: true },
   listeners: new Set<() => void>(),
@@ -20,7 +19,6 @@ vi.mock("~/state/device", () => ({
   useDeviceHubAccess: () => useSyncExternalStore(accessStore.subscribe, () => accessStore.value),
   refreshDeviceHubAccess: () => accessStore.refresh(),
 }));
-// Replace GPU allocation while keeping the real React and stream lifecycles.
 let viewerMounts = 0;
 let viewerUnmounts = 0;
 vi.mock("./DevicePhoneViewport", () => ({
@@ -157,6 +155,7 @@ async function setup(h264 = false) {
       const packet = new Uint8Array(1 + json.length);
       packet[0] = 0x82;
       packet.set(json, 1);
+      sockets[0]?.onmessage?.({ data: Uint8Array.of(0x83).buffer });
       sockets[0]?.onmessage?.({ data: packet.buffer });
       videoBody?.enqueue(new Uint8Array([0, 0, 0, 5, 1, 1, 0x64, 0, 0x1f]));
     },

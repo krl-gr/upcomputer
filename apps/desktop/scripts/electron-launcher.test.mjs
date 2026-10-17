@@ -145,7 +145,6 @@ describe("electron development launcher", () => {
     const development = resolveMacLauncherIconPaths("/runtime", true);
     const production = resolveMacLauncherIconPaths("/runtime", false);
 
-    // The source icons are real repo paths, joined for the host.
     assert.match(
       development.sourceIconPath,
       /assets[\\/]dev[\\/]upcomputer-blueprint-macos-1024\.png$/,

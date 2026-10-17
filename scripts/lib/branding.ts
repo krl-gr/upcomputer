@@ -167,7 +167,8 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   {
     path: "apps/desktop/src/app/DesktopEnvironment.ts",
     requires: ["APP_BASE_NAME = UPCOMPUTER_PRODUCT_NAME", "UPCOMPUTER_APP_ID"],
-    forbids: ['"com.t3tools.t3code', '"T3 Code"'],
+    // Up.computer stays Alpha (upstream moved to Beta in 81493efb71).
+    forbids: ['"com.t3tools.t3code', '"T3 Code"', '"Nightly" : "Beta"'],
   },
   {
     path: "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
@@ -233,9 +234,9 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: "scripts/dev-runner.ts", requires: ["UPCOMPUTER_HOME_DIRECTORY_NAME"] },
   // Schemes, home, hosted URL and branch names shared by server and clients.
   {
-    path: "apps/server/src/http.ts",
-    requires: ["UPCOMPUTER_PROTOCOL_SCHEME"],
-    forbids: ['"t3code://app"'],
+    path: "apps/server/src/httpCors.ts",
+    requires: ["UPCOMPUTER_PROTOCOL_SCHEME", "UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME"],
+    forbids: ['"t3code://app"', '"t3code-dev://app"'],
   },
   {
     path: "apps/server/src/os-jank.ts",
@@ -281,7 +282,11 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: "apps/server/src/binCli.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
   // Web shell.
-  { path: "apps/web/src/branding.ts", requires: ["UPCOMPUTER_PRODUCT_NAME"] },
+  {
+    path: "apps/web/src/branding.ts",
+    requires: ["UPCOMPUTER_PRODUCT_NAME"],
+    forbids: ['"Dev" : "Beta"'],
+  },
   { path: "apps/web/index.html", requires: ["<title>Up.computer (Alpha)</title>"] },
   { path: "apps/web/public/manifest.webmanifest", requires: ['"name": "Up.computer"'] },
   {
@@ -301,6 +306,16 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   { path: ".gitignore", requires: [".upcomputer"] },
   { path: ".env.example", forbids: ["relay.t3.codes", "T3CODE_CLERK_PUBLISHABLE_KEY=pk_"] },
   { path: "apps/web/vercel.ts", requires: ['"app.up.computer"'], forbids: ["t3.codes"] },
+  // Prompt links open the Up.computer desktop app and the hosted app at app.up.computer.
+  {
+    path: "packages/shared/src/promptLinks.ts",
+    requires: ["UPCOMPUTER_PROTOCOL_SCHEME", "UPCOMPUTER_HOSTED_APP_URL"],
+    forbids: ["/^t3code", 'scheme = "t3code"', "DEFAULT_HOSTED_APP_URL"],
+  },
+  {
+    path: "apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx",
+    forbids: ["t3.codes"],
+  },
   // Release and Connect workflows.
   {
     path: ".github/workflows/release.yml",

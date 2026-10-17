@@ -35,14 +35,13 @@ const THREAD_OUTBOX_MAX_RETRY_DELAY_MS = 16_000;
 
 const QueuedThreadCreationSchema = Schema.Struct({
   projectId: ProjectId,
-  // Snapshot of the project's display metadata so a pending task stays
-  // presentable in the thread list even when the project shell is not loaded.
   projectTitle: Schema.optional(Schema.String),
   projectCwd: Schema.optional(Schema.String),
   workspaceMode: Schema.Literals(["local", "worktree"]),
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   startFromOrigin: Schema.optional(Schema.Boolean),
+  pullRequestReference: Schema.optional(Schema.String),
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
@@ -58,8 +57,6 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   dispatchMode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
-  // Present when the queued item creates a brand-new thread (pending task)
-  // instead of appending a turn to an existing one.
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
 });
@@ -75,6 +72,7 @@ export interface QueuedThreadCreation {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly startFromOrigin?: boolean;
+  readonly pullRequestReference?: string;
 }
 
 export interface QueuedThreadMessage {
@@ -89,10 +87,7 @@ export interface QueuedThreadMessage {
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
   /**
-   * How this message should be delivered if a turn is still running when the
-   * outbox drains. Captured at enqueue time because the drain can fire long
-   * after the tap. Absent on rows written before follow-up behavior existed,
-   * which keep the previous always-queue delivery.
+   * Captured at enqueue time because the drain can fire long after the tap.
    */
   readonly dispatchMode?: ComposerDispatchMode;
   readonly creation?: QueuedThreadCreation;
@@ -183,8 +178,6 @@ export function resolveThreadOutboxDeliveryAction(input: {
   readonly threadBusy: boolean;
 }): ThreadOutboxDeliveryAction {
   if (input.isCreation) {
-    // A pending task creates its thread on delivery. If the thread already
-    // exists the creation command went through and only cleanup remains.
     if (input.threadExists) {
       return "remove";
     }
@@ -206,15 +199,9 @@ export type ThreadOutboxDispatchStep =
   | { readonly step: "restore"; readonly reason: string }
   | { readonly step: "send" };
 
-/**
- * Wait for provider and file capabilities before sending. Cleanup does not
- * need config: a creation whose thread exists, or a message whose thread is
- * gone, can still be removed while config loads.
- */
 export function resolveThreadOutboxDispatchStep(input: {
   readonly deliveryAction: ThreadOutboxDeliveryAction;
   readonly fileAttachments: ReadonlyArray<{ readonly name: string; readonly sizeBytes: number }>;
-  /** Null while the environment's server config has not synced yet. */
   readonly serverConfig: { readonly maxFileUploadBytes: number | undefined } | null;
 }): ThreadOutboxDispatchStep {
   if (input.deliveryAction !== "send") {
@@ -239,10 +226,6 @@ export function resolveThreadOutboxDispatchStep(input: {
     : { step: "send" };
 }
 
-/**
- * A queued creation can only be dispatched once its payload would pass server
- * validation; incomplete payloads stay pending until the user edits them.
- */
 export function isQueuedThreadCreationSendable(message: QueuedThreadMessage): boolean {
   if (!message.creation) {
     return false;
@@ -266,13 +249,10 @@ function errorMessage(error: unknown): string | null {
 
 /**
  * Only a failure the server actually decided (`OrchestrationDispatchCommandError`,
- * or an authorization rejection) means the payload itself is bad. The other
- * typed failures a queued send can hit are transport-shaped: a socket that
- * dropped mid-request (`RpcClientError` wrapping a Socket read/write/close
- * reason), or an environment that is not connected or not registered. Those
- * are matched by tag, not by message text, because a `SocketReadError` message
- * is just "An error occurred during Read". A wrong answer here restores the
- * pending task into a draft and it disappears from the list.
+ * or an authorization rejection) means the payload itself is bad. The other typed
+ * failures a queued send can hit are transport-shaped: a socket that dropped
+ * mid-request (`RpcClientError` wrapping a Socket read/write/close reason), or an
+ * environment that is not connected or not registered.
  */
 export function shouldRetryThreadOutboxDelivery(error: unknown): boolean {
   if (typeof error === "object" && error !== null && "_tag" in error) {

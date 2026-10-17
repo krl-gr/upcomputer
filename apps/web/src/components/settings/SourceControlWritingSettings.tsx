@@ -27,9 +27,11 @@ import {
 import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
+  selectsPlanAgent,
 } from "../../modelSelection";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { TraitsPicker } from "../chat/TraitsPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
@@ -67,13 +69,10 @@ export function SourceControlWritingSettingsSection() {
   const updateSettings = useUpdateScopedSettings();
   const mixedReviewGuidesEnabled = useScopedSettingsMixed(["reviewGuidesEnabled"]);
   const navigate = useNavigate();
-  const { environment, connectedEnvironments, targets } = useSettingsScope();
-  // The representative supplies the provider list; a model choice is checked
-  // against every target before it fans out.
+  const { environment, connectedEnvironments, targets, target } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const serverProviders = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
-  // The writing style is one object; each control only cares about its own field.
   const styleFieldMixed = (field: keyof ServerSettings["sourceControlWritingStyle"]) => {
     const first = targets[0];
     return (
@@ -107,20 +106,36 @@ export function SourceControlWritingSettingsSection() {
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
   );
-  const defaultModelSelection = resolveAppModelSelectionState(settings, textGenerationProviders);
+  const instanceEntries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(textGenerationProviders),
+      settings,
+      target?.projectId ?? null,
+    ),
+  );
+  const projectEnabledInstanceIds = new Set(
+    instanceEntries
+      .filter((entry) => entry.enabled && entry.isAvailable)
+      .map((entry) => entry.instanceId),
+  );
+  const projectEffectiveTextGenerationProviders = textGenerationProviders.filter((provider) =>
+    projectEnabledInstanceIds.has(provider.instanceId),
+  );
+  const defaultModelSelection = resolveAppModelSelectionState(
+    settings,
+    projectEffectiveTextGenerationProviders,
+  );
   const usesDedicatedModel = settings.sourceControlWriterModelSelection !== null;
   const activeSelection = resolveAppModelSelectionState(
     {
       ...settings,
       textGenerationModelSelection: resolveSourceControlWriterModelSelection(
         settings,
-        textGenerationProviders,
+        projectEffectiveTextGenerationProviders,
+        target?.projectId ?? null,
       ),
     },
-    textGenerationProviders,
-  );
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(textGenerationProviders), settings),
+    projectEffectiveTextGenerationProviders,
   );
   const canEnableDedicatedModel = instanceEntries.some(
     (entry) =>
@@ -128,11 +143,14 @@ export function SourceControlWritingSettingsSection() {
   );
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
-    textGenerationProviders,
+    projectEffectiveTextGenerationProviders,
     activeSelection.instanceId,
     activeSelection.model,
   );
   const writerModelDisabledReason = useScopedModelDisabledReason(settings, instanceEntries);
+  const writerInstanceEntry = instanceEntries.find(
+    (entry) => entry.instanceId === activeSelection.instanceId,
+  );
   const usesReviewGuideModel = settings.reviewGuideModelSelection !== null;
   const reviewGuideSelection = resolveAppModelSelectionState(
     {
@@ -140,16 +158,19 @@ export function SourceControlWritingSettingsSection() {
       textGenerationModelSelection: resolveReviewGuideModelSelection(
         settings,
         textGenerationProviders,
+        target?.projectId ?? null,
       ),
     },
     textGenerationProviders,
   );
-  // Its own list: a custom model chosen for guides is not among the writer model's options.
   const reviewGuideModelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     textGenerationProviders,
     reviewGuideSelection.instanceId,
     reviewGuideSelection.model,
+  );
+  const reviewGuideInstanceEntry = instanceEntries.find(
+    (entry) => entry.instanceId === reviewGuideSelection.instanceId,
   );
 
   return (
@@ -364,6 +385,33 @@ export function SourceControlWritingSettingsSection() {
                   }}
                 />
               ) : null}
+              {usesDedicatedModel &&
+              canEnableDedicatedModel &&
+              !mixedWriterModel &&
+              writerInstanceEntry ? (
+                <TraitsPicker
+                  provider={writerInstanceEntry.driverKind}
+                  models={writerInstanceEntry.models}
+                  model={activeSelection.model}
+                  prompt=""
+                  onPromptChange={() => {}}
+                  modelOptions={activeSelection.options ?? []}
+                  allowPromptInjectedEffort={false}
+                  planModeEnabled={
+                    settings.planModeEnabled || selectsPlanAgent(activeSelection.options)
+                  }
+                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                  onModelOptionsChange={(options) =>
+                    updateSettings({
+                      sourceControlWriterModelSelection: createModelSelection(
+                        activeSelection.instanceId,
+                        activeSelection.model,
+                        options,
+                      ),
+                    })
+                  }
+                />
+              ) : null}
               <Switch
                 checked={usesDedicatedModel}
                 disabled={!usesDedicatedModel && !canEnableDedicatedModel}
@@ -385,7 +433,6 @@ export function SourceControlWritingSettingsSection() {
         }
       />
 
-      {/* A beta the server owns: off hides the Guide tab in every client and refuses agents. */}
       <SettingsRow
         serverScoped
         settingKeys={["reviewGuidesEnabled"]}
@@ -446,6 +493,33 @@ export function SourceControlWritingSettingsSection() {
                       }}
                     />
                   ) : null}
+                  {usesReviewGuideModel &&
+                  canEnableDedicatedModel &&
+                  !mixedReviewGuideModel &&
+                  reviewGuideInstanceEntry ? (
+                    <TraitsPicker
+                      provider={reviewGuideInstanceEntry.driverKind}
+                      models={reviewGuideInstanceEntry.models}
+                      model={reviewGuideSelection.model}
+                      prompt=""
+                      onPromptChange={() => {}}
+                      modelOptions={reviewGuideSelection.options ?? []}
+                      allowPromptInjectedEffort={false}
+                      planModeEnabled={
+                        settings.planModeEnabled || selectsPlanAgent(reviewGuideSelection.options)
+                      }
+                      triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                      onModelOptionsChange={(options) =>
+                        updateSettings({
+                          reviewGuideModelSelection: createModelSelection(
+                            reviewGuideSelection.instanceId,
+                            reviewGuideSelection.model,
+                            options,
+                          ),
+                        })
+                      }
+                    />
+                  ) : null}
                   <Switch
                     mixed={mixedReviewGuideModel}
                     checked={mixedReviewGuideModel ? false : usesReviewGuideModel}
@@ -455,7 +529,6 @@ export function SourceControlWritingSettingsSection() {
                         updateSettings({ reviewGuideModelSelection: null });
                         return;
                       }
-                      // Every selected target gets this model, so it must run on all of them.
                       const reason = writerModelDisabledReason(
                         activeSelection.instanceId,
                         activeSelection.model,

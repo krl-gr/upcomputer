@@ -177,6 +177,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "review-guides",
       "review-guide-model",
       "review-guide-instructions",
+      "pull-request-links-open-in-app",
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
   },
@@ -195,7 +196,13 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     rightPanelSurfaces: [],
   },
   threadSettlement: {
-    capabilities: ["threadSettlement", "threadAutoSettlement", "threadAutoSettleOptOut"],
+    capabilities: [
+      "threadSettlement",
+      "threadAutoSettlement",
+      "threadAutoSettleOptOut",
+      "threadAutoSettlementScope",
+      "settledWorktreeCleanup",
+    ],
     keybindingCommands: ["thread.settle"],
     settingsSearchIds: [
       "auto-settle-inactive-threads",

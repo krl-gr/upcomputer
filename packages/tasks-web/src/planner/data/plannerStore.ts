@@ -283,8 +283,6 @@ export class PlannerStore {
     };
   }
 
-  // ---- subscription -------------------------------------------------------
-
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -352,8 +350,6 @@ export class PlannerStore {
     for (const lane of this.lanes) lane.loader.dispose();
     this.lanes = [];
   }
-
-  // ---- queries --------------------------------------------------------------
 
   setQuery(query: PlannerQuery) {
     const same =
@@ -452,8 +448,6 @@ export class PlannerStore {
     this.stale.tasks.add(taskId);
     this.schedule(0);
   }
-
-  // ---- change events ----------------------------------------------------
 
   private change(change: TaskChange) {
     const scheduleOnly = (change.scheduleDates?.length ?? 0) > 0 && !change.listChanged;
@@ -602,8 +596,6 @@ export class PlannerStore {
     }
   }
 
-  // ---- merging ----------------------------------------------------------
-
   private mergeFetchedTasks(rows: readonly PlannerTask[], start: number) {
     for (const row of rows) {
       if (this.deletedTasks.has(row.id)) continue;
@@ -675,8 +667,6 @@ export class PlannerStore {
         );
   }
 
-  // ---- view -------------------------------------------------------------
-
   private derive(): PlannerSnapshot {
     const tasks = new Map(this.tasks);
     const lists = new Map<string, readonly string[]>();
@@ -738,8 +728,6 @@ export class PlannerStore {
       missingTaskIds: new Set(this.missingTasks),
     };
   }
-
-  // ---- writes -----------------------------------------------------------
 
   /**
    * Runs one write: shows `apply` until the response is merged, then drops

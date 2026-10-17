@@ -140,6 +140,7 @@ vi.mock("../../state/session", () => ({
 
 vi.mock("../../state/entities", () => ({
   useProjects: () => [],
+  useServerConfigs: () => new Map(),
 }));
 
 import { EnvironmentProviderSettings } from "./ProviderSettingsPanel";
@@ -522,7 +523,6 @@ describe("EnvironmentProviderSettings routing", () => {
 
     const [resetMutation, resetPatch] = settingsState.mutateProviderInstance.mock.lastCall ?? [];
     expect(resetMutation).toEqual({ operation: "remove", instanceId: codexId });
-    // Removing the instance is the whole reset; shared preferences stay untouched.
     expect(resetPatch ?? {}).toEqual({});
   });
 

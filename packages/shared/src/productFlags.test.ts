@@ -31,6 +31,8 @@ describe("product flags", () => {
       threadSettlement: false,
       threadAutoSettlement: false,
       threadAutoSettleOptOut: false,
+      threadAutoSettlementScope: false,
+      settledWorktreeCleanup: false,
     });
     expect(
       hiddenProductCapabilities({ ...UPSTREAM_PRODUCT_FLAGS, threadSettlement: false }),
@@ -38,6 +40,8 @@ describe("product flags", () => {
       threadSettlement: false,
       threadAutoSettlement: false,
       threadAutoSettleOptOut: false,
+      threadAutoSettlementScope: false,
+      settledWorktreeCleanup: false,
     });
   });
 

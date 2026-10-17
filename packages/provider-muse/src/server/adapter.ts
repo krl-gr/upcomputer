@@ -3,6 +3,7 @@ import {
   MUSE_DEFAULT_MODEL,
   ProviderDriverKind,
   type ModelSelection,
+  type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderCapabilities,
@@ -20,6 +21,7 @@ import {
   type ProviderApprovalDecision,
   type RuntimeRequestId,
   type ServerProviderModel,
+  type ThreadId,
 } from "@t3tools/contracts";
 import type { MuseSettings } from "../settings.ts";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -62,6 +64,7 @@ import {
 import {
   createMuseSdkHostEffect,
   museApprovalMode,
+  musePermissionProfile,
   museWorkspaceRoot,
   type createMuseSdkHost,
   type MuseSdkHost,
@@ -79,6 +82,11 @@ import {
 } from "@t3tools/provider-core/server/notification";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import {
+  makeSubagentChildThread,
+  makeSubagentConversationArtifacts,
+  subagentThreadTitle,
+} from "@t3tools/provider-core/server/subagentProjection";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { museItemStatus, museToolPresentation } from "./itemPresentation.ts";
 
@@ -98,8 +106,6 @@ const MuseProviderCapabilitiesV2 = {
   threads: {
     canCreateEmptyThread: true,
     canReadThreadSnapshot: true,
-    // Muse 1.2.1/1.3.0 reject tested completed-turn fork boundaries with InvalidCut.
-    // Public forks use portable context handoff until native boundaries are validated.
     canRollbackThread: false,
     canForkThread: false,
     canForkFromTurn: false,
@@ -148,9 +154,9 @@ const MuseProviderCapabilitiesV2 = {
     planDeltasHaveItemIds: false,
   },
   subagents: {
-    supportsSubagents: false,
+    supportsSubagents: true,
     exposesSubagentThreadIds: false,
-    emitsSubagentLifecycle: false,
+    emitsSubagentLifecycle: true,
     canWaitForSubagents: false,
     canCloseSubagents: false,
     canForkSubagentThread: false,
@@ -188,7 +194,6 @@ export interface MuseAdapterV2Options {
   readonly createHost?: typeof createMuseSdkHost;
   readonly requestTimeoutMs?: number;
   readonly nativeEventLogger?: ProviderEventLoggers.EventNdjsonLogger;
-  /** Where a turn Muse starts on its own (a finished workflow's report) asks for its run. */
   readonly continuationRequests?: {
     readonly offer: (
       request: ProviderContinuationRequests.ProviderContinuationRequest,
@@ -200,7 +205,6 @@ interface ActiveTurn {
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
   providerTurn: OrchestrationV2ProviderTurn;
   readonly nativeId: string;
-  /** Turns Muse started on its own while this run was active, which this run shows. */
   readonly joined: Set<string>;
   readonly items: Map<string, MuseItem>;
   readonly ordinals: Map<string, number>;
@@ -222,8 +226,22 @@ interface PendingRequest {
   request: OrchestrationV2RuntimeRequest;
   node: OrchestrationV2ExecutionNode;
   item: OrchestrationV2TurnItem;
-  /** What T3 answered, recorded on the request once Muse confirms it. */
   response?: Pick<OrchestrationV2RuntimeRequest, "decision" | "answers">;
+}
+
+/**
+ * Muse 1.4.4 cannot address an inline child session (`session/read` and
+ * `view/subscribe` answer sessionNotFound), so the thread carries the prompt,
+ * live status (on its root node) and result.
+ */
+interface ChildContext {
+  readonly childSessionId: string;
+  readonly childThreadId: ThreadId;
+  readonly appThread: OrchestrationV2AppThread;
+  readonly rootNodeId: NodeId;
+  readonly parentThreadId: ThreadId;
+  status: OrchestrationV2TurnItemStatus;
+  result?: string;
 }
 
 const nativeRef = (nativeId: string) => ({
@@ -232,19 +250,15 @@ const nativeRef = (nativeId: string) => ({
   strength: "strong" as const,
 });
 const recordSchema = Schema.Record(Schema.String, Schema.Unknown);
-// Notifications that only add detail. A malformed one is skipped instead of ending the session.
 const INFORMATIONAL_NOTIFICATIONS = new Set([
   "session/contextUsage",
   "session/tokenUsage",
   "session/todoListChanged",
   "turn/retryScheduled",
 ]);
-// Tools whose results already show as their own rows: T3's todo list and question
-// rows, and the workflow item a `workflow` call launches.
 const TOOLS_WITH_NATIVE_ROWS = new Set(["write_todos", "request_user_input", "workflow"]);
 const responseAnswerSchema = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
 
-/** One scoped Muse host owns one native session; the orchestrator owns app runs and queuing. */
 export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
   options: MuseAdapterV2Options,
 ) {
@@ -310,11 +324,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       let nativeSessionId: string | undefined;
       let thread: OrchestrationV2ProviderThread | undefined;
       let active: ActiveTurn | undefined;
-      // The last finished turn, so context usage reported after it still lands on it.
       let lastProviderTurn: OrchestrationV2ProviderTurn | undefined;
       const agentEndedAt = new Map<string, DateTime.Utc>();
-      // "default" is the catalog's default model, from the provider snapshot. Without
-      // one, Muse keeps whatever model the session already runs.
       const resolveModel = Effect.fnUntraced(function* (selection: ModelSelection) {
         if (selection.model !== MUSE_DEFAULT_MODEL) return selection.model;
         const catalog = options.modelCatalog ? yield* options.modelCatalog : [];
@@ -322,11 +333,10 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       });
       const pending = new Map<RuntimeRequestId, PendingRequest>();
       const seenTerminals = new Set<string>();
-      // Workflows and subagents that outlive their turn, by item id, with the turn that owns them.
       const observedChildren = new Map<string, ActiveTurn>();
-      // Background work that finished since the last turn, reported to the turn Muse starts for it.
+      const childrenByItemId = new Map<string, ChildContext>();
+      const agentTitles = new Map<string, string>();
       const finishedBackground: Array<BackgroundWorkReport> = [];
-      // A turn Muse started on its own, held until the continuation run T3 opens for it takes it.
       let wake:
         | { readonly nativeId: string; readonly events: Array<[string, unknown]> }
         | undefined;
@@ -422,7 +432,240 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           updatedAt: time,
         };
       };
-      /** Lists running workflows and subagents on the thread, so it shows it still waits on them. */
+      const childItemIdentity = (context: ChildContext, nativeId: string) =>
+        `${options.instanceId}:child:${context.childSessionId}:${nativeId}`;
+      const itemStatus = (item: MuseItem): OrchestrationV2TurnItemStatus => {
+        const status = museItemStatus(item);
+        return status === "running" &&
+          item.kind === "subagent" &&
+          item.controlStatus === "resultReady"
+          ? "completed"
+          : status;
+      };
+      const publishChildRoot = Effect.fnUntraced(function* (
+        context: ChildContext,
+        status: OrchestrationV2TurnItemStatus,
+        time: DateTime.Utc,
+      ) {
+        context.status = status;
+        yield* emit({
+          type: "node.updated",
+          driver: MUSE_PROVIDER,
+          node: {
+            id: context.rootNodeId,
+            threadId: context.childThreadId,
+            runId: null,
+            parentNodeId: null,
+            rootNodeId: context.rootNodeId,
+            kind: "root_turn",
+            status,
+            countsForRun: false,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: nativeRef(context.childSessionId),
+            runtimeRequestId: null,
+            checkpointScopeId: null,
+            startedAt: context.appThread.createdAt,
+            completedAt: status === "running" || status === "pending" ? null : time,
+          },
+        });
+      });
+      const publishChildMessage = Effect.fnUntraced(function* (
+        context: ChildContext,
+        role: "user" | "assistant",
+        text: string,
+        suffix: "prompt" | "result",
+        time: DateTime.Utc,
+      ) {
+        const identity = childItemIdentity(context, suffix);
+        const artifacts = makeSubagentConversationArtifacts({
+          messageId: idAllocator.derive.messageFromProviderItem({
+            driver: MUSE_PROVIDER,
+            nativeItemId: identity,
+          }),
+          ...(role === "user" ? { senderThreadId: context.parentThreadId } : {}),
+          turnItemId: idAllocator.derive.turnItemFromProviderItem({
+            driver: MUSE_PROVIDER,
+            nativeItemId: identity,
+          }),
+          threadId: context.childThreadId,
+          rootNodeId: context.rootNodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: nativeRef(context.childSessionId),
+          role,
+          text,
+          ordinal: suffix === "prompt" ? 1 : 2,
+          now: time,
+        });
+        yield* emit({ type: "message.updated", driver: MUSE_PROVIDER, message: artifacts.message });
+        yield* emit({
+          type: "turn_item.updated",
+          driver: MUSE_PROVIDER,
+          turnItem: artifacts.turnItem,
+        });
+      });
+      const ensureChildContext = Effect.fnUntraced(function* (
+        turn: ActiveTurn,
+        item: MuseItem,
+        parentNodeId: NodeId,
+        title: string,
+        prompt: string,
+        status: OrchestrationV2TurnItemStatus,
+        time: DateTime.Utc,
+      ) {
+        const existing = childrenByItemId.get(item.itemId);
+        const childSessionId = item.childSessionId;
+        if (existing || !childSessionId) return existing;
+        const childThreadId = idAllocator.derive.threadFromProviderThread({
+          driver: MUSE_PROVIDER,
+          providerInstanceId: options.instanceId,
+          nativeThreadId: childSessionId,
+        });
+        const appThread = makeSubagentChildThread({
+          parentThread: turn.input.appThread,
+          childThreadId,
+          parentNodeId,
+          activeProviderThreadId: null,
+          providerInstanceId: options.instanceId,
+          modelSelection: turn.input.modelSelection,
+          title,
+          now: time,
+          createdBy: "agent",
+          creationSource: "provider",
+        });
+        const context: ChildContext = {
+          childSessionId,
+          childThreadId,
+          appThread,
+          rootNodeId: idAllocator.derive.nodeFromProviderItem({
+            driver: MUSE_PROVIDER,
+            nativeItemId: `${options.instanceId}:child:${childSessionId}:thread-root`,
+          }),
+          parentThreadId: turn.input.threadId,
+          status,
+        };
+        childrenByItemId.set(item.itemId, context);
+        yield* emit({ type: "app_thread.created", driver: MUSE_PROVIDER, appThread });
+        yield* publishChildRoot(context, status, time);
+        if (prompt) yield* publishChildMessage(context, "user", prompt, "prompt", time);
+        return context;
+      });
+      const publishNativeSubagent = Effect.fnUntraced(function* (
+        turn: ActiveTurn,
+        item: MuseItem,
+        base: ReturnType<typeof baseItem> & {
+          readonly status: OrchestrationV2TurnItemStatus;
+          readonly completedAt: DateTime.Utc | null;
+          readonly title: string | null;
+        },
+        status: OrchestrationV2TurnItemStatus,
+        time: DateTime.Utc,
+      ) {
+        const prompt = item.objective ?? item.fallbackText ?? "";
+        const settled = status !== "running" && status !== "pending";
+        const endKey = `subagent:${item.itemId}`;
+        if (settled && !agentEndedAt.has(endKey)) agentEndedAt.set(endKey, time);
+        if (!settled) agentEndedAt.delete(endKey);
+        const completedAt = settled ? (agentEndedAt.get(endKey) ?? time) : null;
+        if (!agentTitles.has(endKey))
+          agentTitles.set(
+            endKey,
+            subagentThreadTitle({
+              parentTitle: turn.input.appThread.title,
+              prompt,
+              title: item.role ?? null,
+              ordinal: childrenByItemId.size + 1,
+            }),
+          );
+        const title = agentTitles.get(endKey)!;
+        const context = yield* ensureChildContext(
+          turn,
+          item,
+          base.nodeId,
+          title,
+          prompt,
+          status,
+          time,
+        );
+        const resultText =
+          item.result?.text ??
+          item.result?.summary ??
+          (status === "failed" ? item.failureReason : undefined);
+        const result = resultText ?? null;
+        const nativeTaskRef = item.childSessionId
+          ? nativeRef(item.childSessionId)
+          : nativeRef(item.subagentId ?? item.itemId);
+        const subagent: OrchestrationV2Subagent = {
+          id: base.nodeId,
+          threadId: base.threadId,
+          runId: base.runId,
+          parentNodeId: turn.input.rootNodeId,
+          origin: "provider_native",
+          createdBy: "agent",
+          driver: MUSE_PROVIDER,
+          providerInstanceId: options.instanceId,
+          providerThreadId: base.providerThreadId,
+          childThreadId: context?.childThreadId ?? null,
+          nativeTaskRef,
+          prompt,
+          title,
+          model: null,
+          status,
+          result,
+          startedAt: base.startedAt,
+          completedAt,
+          updatedAt: time,
+        };
+        yield* emit({ type: "subagent.updated", driver: MUSE_PROVIDER, subagent });
+        yield* emit({
+          type: "node.updated",
+          driver: MUSE_PROVIDER,
+          node: {
+            id: base.nodeId,
+            threadId: base.threadId,
+            runId: base.runId,
+            parentNodeId: turn.input.rootNodeId,
+            rootNodeId: turn.input.rootNodeId,
+            kind: "subagent",
+            status,
+            countsForRun: false,
+            providerThreadId: base.providerThreadId,
+            providerTurnId: base.providerTurnId,
+            nativeItemRef: nativeTaskRef,
+            runtimeRequestId: null,
+            checkpointScopeId: null,
+            startedAt: base.startedAt,
+            completedAt,
+          },
+        });
+        yield* emit({
+          type: "turn_item.updated",
+          driver: MUSE_PROVIDER,
+          turnItem: {
+            ...base,
+            nativeItemRef: nativeTaskRef,
+            type: "subagent",
+            status,
+            title,
+            completedAt,
+            subagentId: subagent.id,
+            origin: "provider_native",
+            driver: MUSE_PROVIDER,
+            providerInstanceId: options.instanceId,
+            childThreadId: subagent.childThreadId,
+            prompt,
+            result,
+          },
+        });
+        if (context) {
+          if (context.status !== status) yield* publishChildRoot(context, status, time);
+          if (settled && result?.trim() && context.result !== result) {
+            context.result = result;
+            yield* publishChildMessage(context, "assistant", result, "result", time);
+          }
+        }
+      });
       const syncBackground = Effect.fnUntraced(function* () {
         yield* updateThread({
           pendingBackgroundTasks: [...observedChildren].flatMap(([itemId, owner]) => {
@@ -446,7 +689,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       ) {
         // Muse's skill-reminder child runs on every model step; it is housekeeping, not work.
         if (item.kind === "userMessage" || item.kind === "reminderChild") return;
-        // A failed call keeps its row: it may have no native row to show its error.
         if (
           item.kind === "toolCall" &&
           item.tool &&
@@ -455,7 +697,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         )
           return;
         const time = yield* DateTime.now;
-        const status = terminal ?? museItemStatus(item);
+        const status = terminal ?? itemStatus(item);
         if (item.kind === "subagent" || item.kind === "workflow") {
           const wasRunning = observedChildren.has(item.itemId);
           if (status === "running") observedChildren.set(item.itemId, turn);
@@ -479,6 +721,10 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           completedAt: streaming ? null : time,
           title: item.tool ?? null,
         };
+        if (item.kind === "subagent") {
+          yield* publishNativeSubagent(turn, item, base, status, time);
+          return;
+        }
         const text = item.text ?? item.summary?.join("\n") ?? item.fallbackText ?? "";
         let turnItem: OrchestrationV2TurnItem;
         if (item.kind === "agentMessage") {
@@ -543,11 +789,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         yield* emit({ type: "turn_item.updated", driver: MUSE_PROVIDER, turnItem });
         if (item.kind === "workflow") yield* publishWorkflowAgents(turn, item, base, status);
       });
-      /**
-       * Shows each workflow child as a native subagent under the workflow row. Muse
-       * reports only their status, label and outcome, not their conversations, so
-       * they get no child thread.
-       */
       const publishWorkflowAgents = Effect.fnUntraced(function* (
         turn: ActiveTurn,
         item: MuseItem,
@@ -558,8 +799,9 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         for (const [index, child] of [...latest.values()].entries()) {
           const time = yield* DateTime.now;
           const base = baseItem(turn, `${item.itemId}:agent:${child.childId}`, time);
+          // Muse marks a failed attempt with `failureKind`, even when its terminal is `completed`.
           const status: OrchestrationV2TurnItemStatus =
-            child.terminal === "completed"
+            child.terminal === "completed" && child.failureKind === undefined
               ? "completed"
               : child.terminal === "cancelled"
                 ? "cancelled"
@@ -574,8 +816,10 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           // Children are re-sent on every workflow change; keep each one's first end time.
           const endKey = `${item.itemId}:${child.childId}:${child.attempt}`;
           if (settled && !agentEndedAt.has(endKey)) agentEndedAt.set(endKey, time);
-          const title = child.label?.trim() || `Agent ${index + 1}`;
-          const result = child.failureReason ?? null;
+          // Later revisions drop the label; keep the last one seen.
+          if (child.label?.trim()) agentTitles.set(endKey, child.label.trim());
+          const title = agentTitles.get(endKey) || `Agent ${index + 1}`;
+          const result = child.failureReason ?? child.failureKind ?? null;
           const subagent: OrchestrationV2Subagent = {
             id: base.nodeId,
             threadId: base.threadId,
@@ -650,7 +894,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         }
         observedChildren.clear();
         if (thread?.pendingBackgroundTasks?.length) yield* syncBackground();
-        // Only workflow children's requests outlive a turn; they end with the workflow.
         for (const entry of pending.values()) yield* resolvePending(entry, "cancelled");
       });
       const resolvePending = Effect.fnUntraced(function* (
@@ -699,6 +942,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           if (
             (item.kind === "subagent" || item.kind === "workflow") &&
             item.status === "inProgress" &&
+            status === "completed" &&
             disposition === "reusable"
           )
             continue;
@@ -706,7 +950,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             yield* publishItem(turn, item, item.status === "inProgress" ? status : undefined);
         }
         turn.dirty.clear();
-        // A workflow child's request is runless and keeps waiting after the turn ends.
         for (const entry of pending.values())
           if (entry.request.providerTurnId !== null) yield* resolvePending(entry, "cancelled");
         turn.providerTurn = { ...turn.providerTurn, status, completedAt };
@@ -785,13 +1028,11 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         }
         yield* settleObservedChildren("failed");
         yield* Queue.fail(events, protocolError(detail, cause));
-        // Report the failure first; a hung host can take a while to close.
         const failed = host;
         yield* Effect.tryPromise(() => failed.close()).pipe(Effect.ignore, Effect.forkIn(scope));
       });
       const owns = (turn: ActiveTurn, turnId: string) =>
         turnId === turn.nativeId || turn.joined.has(turnId);
-      /** Sends T3's decision for a pending approval to Muse. */
       const decideApproval = Effect.fnUntraced(function* (
         entry: PendingRequest,
         decision: ProviderApprovalDecision | undefined,
@@ -809,9 +1050,9 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         }).pipe(Effect.tapError(() => Effect.sync(() => delete entry.response)));
       });
       /**
-       * Shows a Muse approval or question as a T3 request. A workflow child's approval
-       * is runless: the turn that started the workflow may end long before the child
-       * asks, and T3 keeps a runless request on the thread until Muse settles it.
+       * A workflow child's approval is runless: the turn that started the workflow
+       * may end long before the child asks, and T3 keeps a runless request on the
+       * thread until Muse settles it.
        */
       const publishRequest = Effect.fnUntraced(function* (native: PendingRequest["native"]) {
         const child = native.type === "approval" && native.value.subagentOrigin !== undefined;
@@ -895,7 +1136,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                 providerTurnId: null,
                 nativeItemRef: nativeRef(nativeId),
                 parentItemId: null,
-                // Sorts after the latest turn's items.
                 ordinal: previous?.item.ordinal ?? ((latestTurn?.ordinal ?? 0) + 1) * 100,
                 startedAt: runtimeRequest.createdAt,
                 updatedAt: time,
@@ -955,7 +1195,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         if (child && input.runtimePolicy.runtimeMode === "full-access")
           yield* decideApproval(entry, "accept").pipe(Effect.ignore, Effect.forkIn(scope));
       });
-      /** Approval and question events; `turn` is undefined for a workflow child's approval. */
       const handleRequestEvent = Effect.fnUntraced(function* (
         method: string,
         params: Record<string, unknown>,
@@ -993,7 +1232,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               (candidate) => candidate.request.nativeRequestRef?.nativeId === id,
             );
             if (entry) {
-              // An approval settled outside T3 still shows Muse's own decision.
               const native =
                 method === "approval/resolved" && typeof params.decision === "string"
                   ? museApprovalDecision({ decision: params.decision, scope: "once" })
@@ -1051,9 +1289,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         // or after it, so it skips turn routing.
         if (params.subagentOrigin !== undefined && method.startsWith("approval/"))
           return yield* handleRequestEvent(method, params, undefined);
-        // Muse starts a turn on its own when a workflow finishes, to report its result.
-        // During a run, that run shows it. Otherwise hold it and ask the orchestrator for
-        // a run; that run takes the held events, unless a user turn takes them first.
         if (
           method === "turn/started" &&
           typeof params.turnId === "string" &&
@@ -1424,8 +1659,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         created.connection.onProtocolError((cause) => {
           Queue.offerUnsafe(inbox, { type: "failure", cause, epoch });
         });
-        // These are presentation receipts only. The matching notifications drive the UI,
-        // and decisions travel as `approval/decide` and `userInput/answer` commands.
         created.connection.onServerRequest(async (request) => {
           if (request.method === "approval/request" || request.method === "userInput/request")
             return {};
@@ -1513,17 +1746,18 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               }
             : undefined;
           const startModel = yield* resolveModel(args.modelSelection);
+          const permissionProfile = musePermissionProfile(args.runtimePolicy.runtimeMode);
           const result = yield* request(
             requestedId ? "session/resume" : "session/start",
             requestedId
-              ? // T3 already has the transcript; skip Muse's history payload.
-                { excludeItems: true, ...(config ? { config } : {}) }
+              ? { excludeItems: true, ...(config ? { config } : {}), permissionProfile }
               : {
                   workspaceRoot: cwd,
                   ...(config ? { config } : {}),
                   ...(startModel ? { modelId: startModel } : {}),
                   providerId: "meta",
                   approvalMode: museApprovalMode(args.runtimePolicy.runtimeMode),
+                  permissionProfile,
                 },
           ).pipe(
             Effect.catch((error) => {
@@ -1541,8 +1775,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             yield* request("session/setApprovalMode", {
               mode: museApprovalMode(args.runtimePolicy.runtimeMode),
             });
-          // A resumed session keeps the model it last ran with; the next turn
-          // switches it when the selection differs.
           const createdAt = yield* DateTime.now;
           thread = existing
             ? {
@@ -1627,7 +1859,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         const catalog = options.modelCatalog ? yield* options.modelCatalog : [];
         const model = yield* resolveModel(selection);
         const selected = getModelSelectionStringOptionValue(selection, "reasoningEffort");
-        // With no saved choice, the model's own default applies.
         return resolveMuseReasoningEffort(
           catalog.find((entry) => entry.slug === model)?.capabilities ?? museModelCapabilities(),
           selected,
@@ -1647,7 +1878,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           return yield* protocolError("Muse does not support dedicated Plan mode");
         if (turnInput.runtimePolicy.runtimeMode !== input.runtimePolicy.runtimeMode)
           return yield* protocolError("Runtime policy changes require a fresh Muse host");
-        // A continuation run takes the turn Muse already started; it sends no prompt.
         const continuation =
           turnInput.message.createdBy === "agent" &&
           turnInput.message.creationSource === "provider";
@@ -1712,8 +1942,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             lastRunOrdinal: turnInput.runOrdinal,
           });
           yield* updateSession("running");
-          // A user turn takes a held Muse turn: Muse runs it first, so this run shows it
-          // (and its approvals), and the continuation asked for it is no longer needed.
           const held = wake;
           wake = undefined;
           if (continuation && !held) return yield* finish(turn, "completed");
@@ -1779,7 +2007,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           }),
         );
       });
-      // Only messages are read back; T3 owns turn and item history.
       const snapshot = Effect.fnUntraced(function* (
         current: OrchestrationV2ProviderThread,
       ): Effect.fn.Return<
@@ -1829,6 +2056,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         providerSessionId: input.providerSessionId,
         providerSession: session,
         events: Stream.fromQueue(events),
+        backgroundTasksEndWithProcess: true,
         // A running workflow or a held Muse turn keeps the host: idle release must wait.
         hasPendingBackgroundWork: Effect.sync(
           () => observedChildren.size > 0 || wake !== undefined,

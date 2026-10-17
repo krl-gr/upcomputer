@@ -31,6 +31,7 @@ import * as CliState from "../cloud/CliState.ts";
 import * as CliTokenManager from "../cloud/CliTokenManager.ts";
 import { filterRelayResponse } from "../cloud/relayResponse.ts";
 import {
+  CLOUD_LINK_REVOKED,
   CLOUD_LINKED_USER_ID,
   isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
@@ -89,7 +90,6 @@ function formatDeviceAuthorizationPrompt(
   ].join("\n");
 }
 
-/** Returns the connected account identity, if the flow could determine one. */
 const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
   readonly headless: boolean;
 }) {
@@ -102,8 +102,6 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
     }
     yield* Console.log("\nHeadless mode enabled. A new authorization link is ready below.");
   }
-  // A stored credential whose refresh fails (revoked, expired grant) must
-  // fall through to a fresh device authorization, not dead-end the command.
   const existing = yield* tokens.getExisting.pipe(
     Effect.catchTags({
       CloudCliCredentialRefreshError: () =>
@@ -140,6 +138,7 @@ interface CloudCliStatus {
   readonly desired: boolean;
   readonly authenticated: boolean;
   readonly linked: boolean;
+  readonly revoked: boolean;
   readonly cloudUserId: string | null;
   readonly relayUrl: string | null;
   readonly publishAgentActivity: boolean;
@@ -176,18 +175,22 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
     return JSON.stringify(status, null, 2);
   }
 
-  const provisioned = status.linked
-    ? "provisioned"
-    : status.desired && status.authenticated
-      ? "pending server startup"
-      : "not provisioned";
+  const provisioned = status.revoked
+    ? "removed from UpComputer Connect"
+    : status.linked
+      ? "provisioned"
+      : status.desired && status.authenticated
+        ? "pending server startup"
+        : "not provisioned";
   const nextStep = !status.authenticated
     ? "Run `t3 connect link` to authorize and enable UpComputer Connect."
-    : !status.desired
-      ? "Run `t3 connect link` to enable UpComputer Connect."
-      : !status.linked
-        ? "Start T3 to provision the environment link and launch its managed tunnel."
-        : undefined;
+    : status.revoked
+      ? "Run `t3 connect link` to link this environment again."
+      : !status.desired
+        ? "Run `t3 connect link` to enable UpComputer Connect."
+        : !status.linked
+          ? "Start T3 to provision the environment link and launch its managed tunnel."
+          : undefined;
 
   return [
     "UpComputer Connect",
@@ -477,6 +480,11 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
 
   const identity = yield* authorizeCli(options);
   yield* CliState.setCliDesiredCloudLink(true, publishOnly ? "publish_only" : "managed");
+  if (yield* CliState.dropRevokedCloudLink) {
+    yield* Console.log(
+      "Removed the link UpComputer Connect no longer accepts. The next start links this environment again.",
+    );
+  }
   if (publishOnly) {
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, stringToBytes("true"));
@@ -543,22 +551,31 @@ const connectStatusCommand = Command.make("status", {
         const secrets = yield* ServerSecretStore.ServerSecretStore;
         const relayClient = yield* RelayClient.RelayClient;
         const tokens = yield* CliTokenManager.CloudCliTokenManager;
-        const [desired, authenticated, cloudUserId, relayUrl, publishAgentActivity, executable] =
-          yield* Effect.all(
-            [
-              CliState.readCliDesiredCloudLink,
-              tokens.hasCredential,
-              secrets.get(CLOUD_LINKED_USER_ID),
-              secrets.get(RELAY_URL_SECRET),
-              secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
-              relayClient.resolve,
-            ],
-            { concurrency: "unbounded" },
-          );
+        const [
+          desired,
+          authenticated,
+          cloudUserId,
+          relayUrl,
+          publishAgentActivity,
+          revoked,
+          executable,
+        ] = yield* Effect.all(
+          [
+            CliState.readCliDesiredCloudLink,
+            tokens.hasCredential,
+            secrets.get(CLOUD_LINKED_USER_ID),
+            secrets.get(RELAY_URL_SECRET),
+            secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
+            secrets.get(CLOUD_LINK_REVOKED),
+            relayClient.resolve,
+          ],
+          { concurrency: "unbounded" },
+        );
         const status: CloudCliStatus = {
           desired,
           authenticated,
           linked: Option.isSome(cloudUserId),
+          revoked: Option.isSome(cloudUserId) && Option.isSome(revoked),
           cloudUserId: Option.isSome(cloudUserId) ? bytesToString(cloudUserId.value) : null,
           relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
           publishAgentActivity: isAgentActivityPublishingEnabledValue(
@@ -616,10 +633,6 @@ const connectPublishCommand = Command.make("publish", {
           return;
         }
 
-        // Publishing needs the relay to know this environment belongs to you.
-        // Establish a tunnel-free publish-only link automatically so signing in
-        // is all it takes — the mobile client can still reach the environment
-        // out of band without T3 Connect.
         if (!(yield* tokens.hasCredential)) {
           yield* Console.log(
             "Run `t3 connect login` first so this environment can be authorized to publish.",
@@ -677,13 +690,8 @@ export const connectCommand = Command.make("connect", {
         if (!linked) {
           return;
         }
-        // Show which account was linked so an unexpected identity (an
-        // authorization code for a different account) is visible before the
-        // machine is brought online.
         yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
 
-        // Authorization is stored. If service setup fails, preserve it and
-        // show how to run the server manually.
         const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
         if (background) {
           const platform = yield* HostProcess.Platform;

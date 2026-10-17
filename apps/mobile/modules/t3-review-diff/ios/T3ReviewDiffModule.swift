@@ -5,6 +5,14 @@ public class T3ReviewDiffModule: Module {
     Name("T3ReviewDiffSurface")
 
     View(T3ReviewDiffView.self) {
+      Prop("contentInsetTop") { (view: T3ReviewDiffView, value: Double) in
+        view.setContentInsetTop(CGFloat(value))
+      }
+
+      Prop("contentInsetBottom") { (view: T3ReviewDiffView, value: Double) in
+        view.setContentInsetBottom(CGFloat(value))
+      }
+
       Prop("tokensResetKey") { (view: T3ReviewDiffView, tokensResetKey: String) in
         view.setTokensResetKey(tokensResetKey)
       }
@@ -49,16 +57,20 @@ public class T3ReviewDiffModule: Module {
         view.setContentWidth(CGFloat(contentWidth))
       }
 
-      Prop("contentInsetTop") { (view: T3ReviewDiffView, inset: Double) in
-        view.setContentInsetTop(CGFloat(inset))
-      }
-
-      Prop("contentInsetBottom") { (view: T3ReviewDiffView, inset: Double) in
-        view.setContentInsetBottom(CGFloat(inset))
-      }
-
       Prop("initialRowIndex") { (view: T3ReviewDiffView, initialRowIndex: Double) in
         view.setInitialRowIndex(initialRowIndex)
+      }
+
+      Prop("scrollEnabled") { (view: T3ReviewDiffView, enabled: Bool) in
+        view.setScrollEnabled(enabled)
+      }
+
+      Prop("bounces") { (view: T3ReviewDiffView, bounces: Bool) in
+        view.setBounces(bounces)
+      }
+
+      Prop("refreshEnabled") { (view: T3ReviewDiffView, enabled: Bool) in
+        view.setRefreshEnabled(enabled)
       }
 
       Prop("refreshing") { (view: T3ReviewDiffView, refreshing: Bool) in

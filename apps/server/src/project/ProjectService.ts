@@ -30,6 +30,7 @@ import {
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
@@ -130,14 +131,9 @@ export class ProjectService extends Context.Service<
       options?: { readonly includeDeleted?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
-    /**
-     * An active project's shell with its immediately available repository
-     * identity; missing identity resolves in the background.
-     */
     readonly getShell: (
       projectId: ProjectId,
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
-    /** Active project shells, enriched like `getShell`, in creation order. */
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
@@ -153,8 +149,7 @@ export const make = Effect.gen(function* () {
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-  // Commands for one project run in order. Commands that claim a workspace root
-  // also hold that root, so two projects cannot both claim it.
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
 
@@ -218,10 +213,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /**
-   * Plan one command against rows read under its locks, then commit its event or
-   * its rejection. A reused command id resolves to the receipt it already has.
-   */
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
@@ -412,7 +403,6 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  /** Delete one child thread durably; a stable command id makes a retry resume the cascade. */
   const deleteChildThread = Effect.fn("ProjectService.deleteChildThread")(function* (
     input: ProjectDeleteInput,
     threadId: ThreadId,
@@ -463,12 +453,10 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  /** Refuse a non-empty project without force, else delete its live threads first. */
   const deleteChildThreads = Effect.fn("ProjectService.deleteChildThreads")(function* (
     input: ProjectDeleteInput,
   ) {
     const { projectId } = input;
-    // The V2 shell is the only record of which threads are live.
     const snapshot = yield* threadProjections
       .getShellSnapshot()
       .pipe(
@@ -498,6 +486,22 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // A machine-disabled provider instance that a deleted project's override
+  // once turned on must not stay probed and alive forever. Nothing else
+  // removes the entry, so deletion is where it goes; best-effort because a
+  // settings write failure should not block the deletion it is cleaning up
+  // after, and a server crash before a replay never revisits this project.
+  const clearProjectSettingsOverrides = (projectId: ProjectId) =>
+    serverSettings.updateSettings({ projectSettingsOverrides: { [projectId]: null } }).pipe(
+      Effect.asVoid,
+      Effect.catchCause((cause) =>
+        Effect.logWarning(
+          `Failed to clear settings overrides for deleted project ${projectId}.`,
+          cause,
+        ),
+      ),
+    );
+
   const deleteProject: ProjectService["Service"]["delete"] = Effect.fn("ProjectService.delete")(
     function* (input) {
       const { projectId } = input;
@@ -508,10 +512,14 @@ export const make = Effect.gen(function* () {
         return yield* new ProjectNotFoundError({ projectId });
       }
 
-      if (existing.value.deletedAt === null) {
+      const isFirstDelete = existing.value.deletedAt === null;
+      if (isFirstDelete) {
         yield* deleteChildThreads(input);
       }
       yield* commit({ type: "project.delete", commandId: input.commandId, projectId });
+      if (isFirstDelete) {
+        yield* clearProjectSettingsOverrides(projectId);
+      }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);
     },

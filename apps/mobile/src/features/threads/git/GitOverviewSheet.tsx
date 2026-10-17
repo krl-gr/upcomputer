@@ -1,3 +1,5 @@
+import * as Dialog from "../../../components/ui/Dialog";
+import { useOpenPullRequest } from "../../../native/useOpenPullRequest";
 import {
   type GitActionRequestInput,
   buildMenuItems,
@@ -15,9 +17,9 @@ import {
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { SymbolView } from "../../../components/AppSymbol";
+import { SymbolView } from "../../../components/ui/AppSymbol";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,16 +28,15 @@ import { useUniwindTheme } from "../../../lib/useUniwindTheme";
 import {
   AndroidHeaderIconButton,
   AndroidSheetHeader,
-} from "../../../components/AndroidScreenHeader";
-import { AndroidAnchoredMenu } from "../../../components/AndroidAnchoredMenu";
-import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+} from "../../../components/ui/AndroidScreenHeader";
+import { AndroidAnchoredMenu } from "../../../components/ui/AndroidAnchoredMenu";
+import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { useAdaptiveWorkspaceLayout } from "../../layout/AdaptiveWorkspaceLayout";
-import { AppText as Text } from "../../../components/AppText";
+import { AppText as Text } from "../../../components/ui/AppText";
 import {
   NativeStackScreenOptions,
   nativeHeaderScrollEdgeEffects,
 } from "../../../native/StackHeader";
-import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
@@ -58,7 +59,6 @@ type GitOverviewSheetProps = StaticScreenProps<{
 export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const { environmentId, threadId } = props.route.params;
-  // A hand-typed deep link can carry a blank ID, which the branded IDs reject.
   const isBlankLink = environmentId.trim().length === 0 || threadId.trim().length === 0;
   useEffect(() => {
     if (isBlankLink) navigation.goBack();
@@ -72,6 +72,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const presentation = props.presentation ?? "sheet";
+  const openPullRequest = useOpenPullRequest({ replace: presentation === "sheet" });
   const isInspector = presentation === "inspector";
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const threadId = ThreadId.make(props.route.params.threadId);
@@ -139,13 +140,13 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const openExistingPr = useCallback(async () => {
     const prUrl = gitStatus.data?.pr?.state === "open" ? gitStatus.data.pr.url : null;
     if (!prUrl) {
-      Alert.alert("No open PR", "This branch does not have an open pull request.");
+      Dialog.alert("No open PR", "This branch does not have an open pull request.");
       return;
     }
-    if (!(await tryOpenExternalUrl(prUrl, "pull-request"))) {
-      Alert.alert("Unable to open PR", "The pull request could not be opened.");
+    if (!(await openPullRequest(prUrl))) {
+      Dialog.alert("Unable to open PR", "The pull request could not be opened.");
     }
-  }, [gitStatus.data]);
+  }, [gitStatus.data, openPullRequest]);
 
   const runActionWithPrompt = useCallback(
     async (input: GitActionRequestInput) => {
@@ -226,8 +227,6 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     ],
   );
 
-  // Status facts live on the relevant rows instead of crowding the header
-  // subtitle: files changed → Commit, ahead → Push, PR → View PR, behind → Pull.
   const rowStatusDetail = useCallback(
     (item: (typeof menuItems)[number]): string | undefined => {
       const status = gitStatus.data;
@@ -252,21 +251,21 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
 
   const behindCount = gitStatus.data?.behindCount ?? 0;
 
-  // Deterministic pull-to-refresh state. Tying RefreshControl to the query's
-  // isPending flag left the spinner stuck (the status query reports pending
-  // during quiet background refreshes too).
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const handlePullRefresh = useCallback(async () => {
-    setIsPullRefreshing(true);
+  // Tying RefreshControl to the query's isPending flag left the spinner stuck
+  // (the status query reports pending during quiet background refreshes too).
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
       await gitActions.refreshSelectedThreadGitStatus();
     } finally {
-      setIsPullRefreshing(false);
+      setIsRefreshing(false);
     }
   }, [gitActions]);
 
   const content = (
     <ScrollView
+      nestedScrollEnabled
       alwaysBounceVertical
       className="flex-1 android:bg-sheet-solid ios:bg-screen"
       contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
@@ -278,7 +277,9 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         gap: Platform.OS === "android" ? 8 : 14,
       }}
       refreshControl={
-        <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullRefresh()} />
+        Platform.OS === "ios" || isInspector ? (
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
+        ) : undefined
       }
     >
       <View
@@ -374,7 +375,11 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                 </View>
               ) : null}
               {chain.layers.map((link, index) => (
-                <View key={threadPullRequestKeyOf(link)}>
+                <View
+                  key={threadPullRequestKeyOf(link)}
+                  // Steps in per layer like the web list, capped so deep stacks keep their width.
+                  style={{ paddingLeft: Math.min(chain.depths[index]!, 3) * 16 }}
+                >
                   {index > 0 && Platform.OS !== "android" ? (
                     <View className="ml-12 h-px bg-border" />
                   ) : null}
@@ -383,9 +388,12 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                     title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
                     subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}${link.watch === undefined ? "" : " · Watching"}`}
                     onPress={() => {
-                      void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
+                      void openPullRequest(link.url).then((opened) => {
                         if (!opened)
-                          Alert.alert("Unable to open PR", "The pull request could not be opened.");
+                          Dialog.alert(
+                            "Unable to open PR",
+                            "The pull request could not be opened.",
+                          );
                       });
                     }}
                   />
@@ -434,9 +442,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   if (Platform.OS === "ios") {
     // Compact form sheet: a plain screen presented as formSheet never renders a
     // stack header, so — like the Settings sheet — the header must come from a
-    // nested native stack INSIDE the sheet. This reuses the exact structure of the
-    // inspector branch below: branch as the title, status summary as the native
-    // subtitle, and content that owns pull-to-refresh.
+    // nested native stack INSIDE the sheet.
     return (
       <View collapsable={false} className="flex-1 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
@@ -474,11 +480,11 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         {
           id: "refresh",
           title: "Refresh repository status",
-          attributes: { disabled: busy || isPullRefreshing },
+          attributes: { disabled: busy || isRefreshing },
         },
       ]}
       onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "refresh") void handlePullRefresh();
+        if (nativeEvent.event === "refresh") void handleRefresh();
       }}
     >
       {(open) => (
@@ -569,9 +575,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         />
       )}
 
-      <MaterialScreenContent insetHorizontal={layout.usesSplitView}>
-        {content}
-      </MaterialScreenContent>
+      <ScreenContent insetHorizontal={layout.usesSplitView}>{content}</ScreenContent>
     </View>
   );
 }

@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
@@ -47,6 +48,7 @@ it.effect("attributes a launched thread's first message to the calling thread", 
     } as OrchestrationV2ThreadShell;
     let launchedSender: ThreadId | undefined;
     const layerDependencies = Layer.mergeAll(
+      ServerSettings.layerTest(),
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -118,6 +120,7 @@ it.effect("launches a scratch thread into the Scratch project", () =>
     } as OrchestrationV2ThreadShell;
     const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
     const layerDependencies = Layer.mergeAll(
+      ServerSettings.layerTest(),
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -215,6 +218,7 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
       deletedAt: null,
     };
     const layerDependencies = Layer.mergeAll(
+      ServerSettings.layerTest(),
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -281,11 +285,9 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
     });
     expect(named).toEqual(["Pinball Stats"]);
 
-    // A path still registers that folder, and never makes a named project.
     yield* handle({ title: "Existing", workspaceRoot: "/work/existing" });
     expect(registered).toEqual(["/work/existing"]);
 
-    // Fields this mode cannot apply are rejected, not dropped.
     for (const extra of [
       { scripts: [] },
       { defaultModelSelection: { instanceId: providerInstanceId, model: "gpt-5" } },
@@ -304,8 +306,12 @@ const clientLaunchHarness = (input: {
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
 }) => {
   const projectId = ProjectId.make("project:client-target");
-  const modelSelection = { instanceId: ProviderInstanceId.make("claude"), model: "claude-opus" };
+  const modelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-opus",
+  };
   const layerDependencies = Layer.mergeAll(
+    ServerSettings.layerTest(),
     NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
@@ -447,8 +453,6 @@ it.effect("a launch binds only an existing checkout that is one of the project's
       { type: "existing_worktree", worktreePath: repo },
     ]);
 
-    // A removed worktree stays listed as prunable until `git worktree prune`;
-    // whatever directory is later made at its path is not one of the project's.
     yield* fileSystem.remove(worktree, { recursive: true });
     yield* fileSystem.makeDirectory(worktree);
     expect((yield* launchInto(worktree)).at(-1)?.result).toMatchObject({

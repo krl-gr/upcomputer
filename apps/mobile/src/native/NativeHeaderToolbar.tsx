@@ -10,11 +10,13 @@ import {
   isValidElement,
   useLayoutEffect,
   useMemo,
+  use,
   type ReactElement,
   type ReactNode,
 } from "react";
 import type { ColorValue } from "react-native";
 import type { HeaderBarButtonSearchBarPlacementItem } from "react-native-screens";
+import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
 
 function useNativeStackNavigation(): NativeStackNavigationProp<ParamListBase> | null {
   return useNavigation<NativeStackNavigationProp<ParamListBase>>();
@@ -45,10 +47,17 @@ type NativeStackOptionsWithToolbar = NativeStackNavigationOptions & {
 };
 
 function iconFromProp(icon: unknown): NativeStackHeaderIcon | undefined {
-  if (typeof icon !== "string") {
-    return undefined;
+  if (typeof icon === "string") return { type: "sfSymbol", name: icon as never };
+  if (
+    typeof icon === "object" &&
+    icon !== null &&
+    "type" in icon &&
+    icon.type === "image" &&
+    "source" in icon
+  ) {
+    return icon as NativeStackHeaderIcon;
   }
-  return { type: "sfSymbol", name: icon as never };
+  return undefined;
 }
 
 type ToolbarElementProps = Record<string, unknown> & { readonly children?: ReactNode };
@@ -151,7 +160,11 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
           : () => undefined,
       sharesBackground: !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
-      variant: "plain",
+      variant:
+        child.props.variant === "done" || child.props.variant === "prominent"
+          ? child.props.variant
+          : "plain",
+      identifier: typeof child.props.identifier === "string" ? child.props.identifier : undefined,
     };
   }
 
@@ -164,6 +177,7 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
           ? child.props.accessibilityLabel
           : undefined,
       disabled: Boolean(child.props.disabled),
+      axisBehavior: child.props.axisBehavior as NativeStackHeaderAxisBehavior,
       icon: iconFromProp(child.props.icon),
       menu: {
         title: typeof child.props.title === "string" ? child.props.title : undefined,
@@ -171,7 +185,11 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
       },
       sharesBackground: !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
-      variant: "plain",
+      variant:
+        child.props.variant === "done" || child.props.variant === "prominent"
+          ? child.props.variant
+          : "plain",
+      identifier: typeof child.props.identifier === "string" ? child.props.identifier : undefined,
     };
   }
 
@@ -207,22 +225,22 @@ function NativeHeaderToolbarRoot(props: {
   readonly children?: ReactNode;
 }) {
   const navigation = useNativeStackNavigation();
+  const tabActivity = use(NativeWorkspaceTabActivityContext);
+  const tabActive = tabActivity?.active ?? true;
+  const isTabActive = tabActivity?.isActive;
   const items = useMemo(() => collectToolbarItems(props.children), [props.children]);
 
-  // Swap toolbar owners before paint so split and compact headers cannot clear each other.
+  // Update items in place. Clearing them on every render causes UIKit to run a
+  // second transition and detach custom views while the stack is animating.
   useLayoutEffect(() => {
-    if (!navigation) {
+    if (!navigation || !tabActive) {
       return;
     }
     if (props.placement === "bottom") {
       navigation.setOptions({
         unstable_headerToolbarItems: () => items,
       } as NativeStackOptionsWithToolbar);
-      return () => {
-        navigation.setOptions({
-          unstable_headerToolbarItems: () => [],
-        } as NativeStackOptionsWithToolbar);
-      };
+      return;
     }
     // UIKit's search placement item belongs to the toolbar, never a header group.
     const headerItems = items.filter(
@@ -230,15 +248,26 @@ function NativeHeaderToolbarRoot(props: {
     );
     if (props.placement === "left") {
       navigation.setOptions({ unstable_headerLeftItems: () => headerItems });
-      return () => {
-        navigation.setOptions({ unstable_headerLeftItems: () => [] });
-      };
+      return;
     }
     navigation.setOptions({ unstable_headerRightItems: () => headerItems });
+  }, [items, navigation, props.placement, tabActive]);
+
+  useLayoutEffect(() => {
+    if (!navigation) return;
     return () => {
-      navigation.setOptions({ unstable_headerRightItems: () => [] });
+      if (isTabActive && !isTabActive()) return;
+      if (props.placement === "bottom") {
+        navigation.setOptions({
+          unstable_headerToolbarItems: () => [],
+        } as NativeStackOptionsWithToolbar);
+      } else if (props.placement === "left") {
+        navigation.setOptions({ unstable_headerLeftItems: () => [] });
+      } else {
+        navigation.setOptions({ unstable_headerRightItems: () => [] });
+      }
     };
-  }, [items, navigation, props.placement]);
+  }, [navigation, props.placement, isTabActive]);
 
   return null;
 }
@@ -247,11 +276,13 @@ function NativeHeaderToolbarButton(_props: {
   readonly accessibilityLabel?: string;
   readonly axisBehavior?: NativeStackHeaderAxisBehavior;
   readonly disabled?: boolean;
-  readonly icon?: string;
+  readonly icon?: string | Extract<NativeStackHeaderIcon, { type: "image" }>;
   readonly label?: string;
   readonly onPress?: () => void;
   readonly separateBackground?: boolean;
   readonly tintColor?: ColorValue;
+  readonly variant?: "plain" | "done" | "prominent";
+  readonly identifier?: string;
 }) {
   return null;
 }
@@ -259,13 +290,16 @@ NativeHeaderToolbarButton.displayName = "NativeHeaderToolbarButton";
 
 function NativeHeaderToolbarMenu(_props: {
   readonly accessibilityLabel?: string;
+  readonly axisBehavior?: NativeStackHeaderAxisBehavior;
   readonly children?: ReactNode;
   readonly disabled?: boolean;
   readonly icon?: string;
+  readonly identifier?: string;
   readonly inline?: boolean;
   readonly separateBackground?: boolean;
   readonly tintColor?: ColorValue;
   readonly title?: string;
+  readonly variant?: "plain" | "done" | "prominent";
 }) {
   return null;
 }
@@ -285,7 +319,6 @@ function NativeHeaderToolbarMenuAction(_props: {
 }
 NativeHeaderToolbarMenuAction.displayName = "NativeHeaderToolbarMenuAction";
 
-/** Renders an arbitrary element as a bar item, e.g. a spinner standing in for a button. */
 function NativeHeaderToolbarCustom(_props: { readonly children: ReactElement }) {
   return null;
 }

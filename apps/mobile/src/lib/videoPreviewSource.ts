@@ -17,12 +17,11 @@ export type MediaVideoPreviewSource = {
       readonly environmentId: EnvironmentId;
       readonly resource: Extract<
         AssetResource,
-        { readonly _tag: "attachment" | "media-file" | "draft-workspace-file" }
+        { readonly _tag: "attachment" | "media-file" | "draft-workspace-file" | "github-media" }
       >;
     }
 );
 
-/** Resolves the current capability without making it the identity of the video. */
 export function mediaVideoPreviewUri(
   source: MediaVideoPreviewSource,
   assetUrl: string | null,
@@ -31,7 +30,6 @@ export function mediaVideoPreviewUri(
   return assetUrl === null ? null : assetUrl + (source.srcFragment ?? "");
 }
 
-/** Keeps thumbnails independent of refreshed asset signatures and scoped to their environment. */
 export function mediaVideoThumbnailKey(source: MediaVideoPreviewSource): string {
   return JSON.stringify(
     "uri" in source
@@ -47,14 +45,22 @@ export function mediaVideoThumbnailKey(source: MediaVideoPreviewSource): string 
               source.resource.path,
               source.srcFragment ?? "",
             ]
-          : [
-              "media-video",
-              "draft-workspace-file",
-              source.environmentId,
-              source.resource.cwd,
-              source.resource.path,
-              source.srcFragment ?? "",
-            ],
+          : source.resource._tag === "github-media"
+            ? [
+                "media-video",
+                "github-media",
+                source.environmentId,
+                source.resource.cwd,
+                source.resource.url,
+              ]
+            : [
+                "media-video",
+                "draft-workspace-file",
+                source.environmentId,
+                source.resource.cwd,
+                source.resource.path,
+                source.srcFragment ?? "",
+              ],
   );
 }
 
