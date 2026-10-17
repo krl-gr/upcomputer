@@ -383,6 +383,27 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  it.effect("hydrates the documented telemetry opt-out from the login shell on macOS", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        SHELL: "/bin/zsh",
+        PATH: "/usr/bin",
+      };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () =>
+          envOutput({
+            PATH: "/opt/homebrew/bin:/usr/bin",
+            UPCOMPUTER_TELEMETRY_ENABLED: "false",
+          }),
+      });
+
+      assert.equal(env.UPCOMPUTER_TELEMETRY_ENABLED, "false");
+    }),
+  );
+
   it.effect("hydrates missing CA trust variables from the login shell", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

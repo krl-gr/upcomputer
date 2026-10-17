@@ -11,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
@@ -22,6 +23,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import { resolveDefaultDesktopUpdateChannel } from "../updates/updateChannels.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
 
@@ -501,6 +503,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       readonly resourceMonitorPath: Option.Option<string>;
       readonly cliPath: Option.Option<string>;
       readonly shellEnvironmentPrepared: boolean;
+      readonly desktopStartup: "launch" | "restart";
     },
   ): Effect.fn.Return<
     DesktopBackendManager.DesktopBackendStartConfig,
@@ -552,6 +555,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
+        // Product telemetry tells app launches from backend restarts and builds apart.
+        T3CODE_DESKTOP_VERSION: environment.appVersion,
+        T3CODE_DESKTOP_RELEASE_CHANNEL: resolveDefaultDesktopUpdateChannel(environment.appVersion),
+        T3CODE_DESKTOP_STARTUP: input.desktopStartup,
       },
       extendEnv: true,
       bootstrap,
@@ -763,6 +770,7 @@ export const make = Effect.gen(function* () {
   // backends deriving mismatched tokens and breaking the shared-token invariant
   // the renderer relies on.
   const secretRef = yield* SynchronizedRef.make(Option.none<string>());
+  const primaryStarts = yield* Ref.make(0);
   const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
     Option.match(current, {
       onSome: (secret) => Effect.succeed([secret, current] as const),
@@ -821,11 +829,13 @@ export const make = Effect.gen(function* () {
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
     const shellEnvironmentPrepared = yield* shellEnvironment.installIntoProcess;
+    const previousStarts = yield* Ref.getAndUpdate(primaryStarts, (count) => count + 1);
     return yield* resolvePrimaryStartConfig({
       ...shared,
       resourceMonitorPath,
       cliPath,
       shellEnvironmentPrepared,
+      desktopStartup: previousStarts === 0 ? "launch" : "restart",
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),

@@ -51,6 +51,7 @@ import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
+import * as ProviderTelemetry from "../telemetry/ProviderTelemetry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -305,6 +306,9 @@ function providerThreadLoadKey(input: {
   });
 }
 
+const readinessBoundary = (input: { readonly resumeFromSession?: unknown }) =>
+  input.resumeFromSession === undefined ? "session-start" : "session-recovery";
+
 export const layerWithOptions = (
   options: ProviderSessionManagerV2LayerOptions = {},
 ): Layer.Layer<
@@ -324,6 +328,7 @@ export const layerWithOptions = (
     ProviderSessionManagerV2,
     Effect.gen(function* () {
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+      const readinessAnalytics = yield* ProviderTelemetry.ProviderReadinessAnalytics;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -2201,6 +2206,20 @@ export const layerWithOptions = (
                         providerSessionId: input.providerSessionId,
                         cause,
                       }),
+                  ),
+                  // An adopted live session above is not a new readiness boundary.
+                  Effect.tap(() =>
+                    readinessAnalytics.record("provider.readiness.succeeded", {
+                      provider: adapter.driver,
+                      readinessBoundary: readinessBoundary(input),
+                    }),
+                  ),
+                  Effect.tapError((error) =>
+                    readinessAnalytics.record("provider.readiness.failed", {
+                      provider: adapter.driver,
+                      readinessBoundary: readinessBoundary(input),
+                      errorCategory: ProviderTelemetry.readinessErrorCategory(error.cause),
+                    }),
                   ),
                   withMetrics({
                     counter: providerSessionsTotal,

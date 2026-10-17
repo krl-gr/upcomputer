@@ -9,6 +9,7 @@ import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as References from "effect/References";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 import * as Identify from "./Identify.ts";
@@ -250,4 +251,40 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
       ),
     );
   });
+
+  it.effect("keeps the first resolved id after a provider login appears", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDirectory = path.join(config.baseDir, "home");
+      const anonymousId = "first-launch-anonymous-id";
+      yield* fileSystem.makeDirectory(homeDirectory, { recursive: true });
+      yield* fileSystem.writeFileString(config.anonymousIdPath, anonymousId);
+      const resolve = Identify.getTelemetryIdentifier.pipe(
+        Effect.provideService(HostProcess.HomeDirectory, homeDirectory),
+      );
+
+      const beforeLogin = yield* resolve;
+      yield* fileSystem.writeFileString(
+        path.join(homeDirectory, ".claude.json"),
+        JSON.stringify({ userID: "claude-user-after-onboarding" }),
+      );
+      const afterLogin = yield* resolve;
+
+      assert.equal(beforeLogin, yield* sha256(anonymousId));
+      assert.equal(afterLogin, beforeLogin);
+      assert.notEqual(
+        yield* Identify.getTelemetryIdentifierForHome(homeDirectory),
+        beforeLogin,
+        "without the pin, the new login would change the id",
+      );
+    }).pipe(
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3-telemetry-identify-pinned-",
+        }),
+      ),
+    ),
+  );
 });

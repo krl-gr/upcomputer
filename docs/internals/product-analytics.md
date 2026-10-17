@@ -2,10 +2,14 @@
 
 The server owns PostHog delivery, opt-out, and identity for every connected client.
 [Identity selection](../../apps/server/src/telemetry/Identify.ts) hashes an available
-provider account ID, falling back to an installation-scoped ID. This identity can
-span several clients; it does not identify a browser session. Clients do not load
-the PostHog browser SDK. Client-use events require an authenticated connection, so
-visiting the hosted app without connecting does not count as product use.
+provider account ID, falling back to an installation-scoped ID. The first identity an
+install resolves is pinned in its state directory: a provider login creates the
+account file mid-onboarding, and without the pin the next launch reported as a new
+user. This identity can span several clients; it does not identify a browser
+session. Clients do not load the PostHog browser SDK. UI events go through the
+`server.recordClientEvent` RPC, so they carry the same identity and opt-out as server
+events. Client-use events require an authenticated connection, so visiting the hosted
+app without connecting does not count as product use.
 
 ## Attribution boundaries
 
@@ -41,6 +45,27 @@ Unknown counts stay absent. Partial usage contains valid observed counts but
 cannot establish a whole-turn total. Keep these distinctions when changing token
 normalization or building reports.
 
+## Onboarding funnel
+
+Measure a new install with ordered steps for one identity, not period-wide counts.
+`app.first_launch` starts it. `app.launched` is a desktop launch and
+`server.started` with `startupContext: "restart"` is a backend restart inside one.
+`server.stopped.uptimeMs` is the desktop session length, and
+`client.disconnected.connectedMs` covers a closed window or tab.
+
+Read the latest `provider.status.observed` per provider to tell "no CLI", "CLI but
+signed out" and "ready" apart; it is sent when the state changes, so an install or
+login landing shows up as a change. The welcome wizard sends `onboarding.*` events
+per step and per Agents action. `onboarding.step.completed` with `step: "agents"` and
+`readyProviders: 0` is a user who left setup without a working agent, and
+`onboarding.agent.terminal_closed` with `installed: false` after an install is a CLI
+that installed but is not on PATH. `composer.provider_setup.*` records where "Open
+provider settings" sends them. `provider.readiness.failed.errorCategory` explains a
+session that would not open, and `app.first_thread_created` and
+`app.first_message_sent` mark first use. Milestones are claimed with marker files in
+the state directory, and only for installs first launched by a build that has them,
+so an upgraded install does not report a second first thread.
+
 ## Delivery
 
 A send can fail after PostHog has stored the batch, so every retry is a copy.
@@ -52,5 +77,6 @@ few tries. Without these limits, one stuck batch was sent every second for days.
 
 Keep analytics payloads to product metadata and normalized measurements. Do not
 send prompts, authentication material, raw provider payloads, user-assigned device
-names, or conversation identifiers. Client metadata is best effort; invalid values
+names, provider instance IDs (users name them), paths, error text, or conversation
+identifiers. Classify errors into a bounded category on the server. Client metadata is best effort; invalid values
 must not reject a connection. PostHog person profiles remain disabled.

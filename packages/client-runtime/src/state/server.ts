@@ -1150,6 +1150,10 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
       },
     }),
+    recordClientEvent: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:record-client-event",
+      tag: WS_METHODS.serverRecordClientEvent,
+    }),
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,

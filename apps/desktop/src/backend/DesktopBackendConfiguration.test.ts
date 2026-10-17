@@ -287,6 +287,22 @@ describe("DesktopBackendConfiguration", () => {
     ),
   );
 
+  it.effect("resolvePrimary marks only the first backend start as the app launch", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const launch = yield* configuration.resolvePrimary;
+        const restart = yield* configuration.resolvePrimary;
+
+        assert.equal(launch.env.T3CODE_DESKTOP_STARTUP, "launch");
+        assert.equal(restart.env.T3CODE_DESKTOP_STARTUP, "restart");
+        assert.equal(launch.env.T3CODE_DESKTOP_VERSION, "1.2.3");
+        assert.equal(launch.env.T3CODE_DESKTOP_RELEASE_CHANNEL, "latest");
+      }),
+    ),
+  );
+
   it.effect("resolvePrimary starts from server.asar without materializing the WSL tree", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -42,6 +42,7 @@ const state = vi.hoisted(() => ({
   write: vi.fn<(request: Request<TerminalWriteInput>) => Promise<CommandResult>>(),
   close: vi.fn<(request: Request<TerminalCloseInput>) => Promise<CommandResult>>(),
   refresh: vi.fn(),
+  recordClientEvent: vi.fn(),
   pair: vi.fn(),
   createProject: vi.fn(),
   importThreads: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock("../../state/server", () => ({
     providersValueAtom: (id: EnvironmentId) => state.providers.get(id)!,
     configValueAtom: (id: EnvironmentId) => state.configs.get(id)!,
     refreshProviders: "refresh",
+    recordClientEvent: "recordClientEvent",
   },
 }));
 vi.mock("../../state/terminal", () => ({
@@ -76,7 +78,15 @@ vi.mock("../../state/terminal", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (
-    command: "open" | "write" | "close" | "refresh" | "pair" | "createProject" | "importThreads",
+    command:
+      | "open"
+      | "write"
+      | "close"
+      | "refresh"
+      | "recordClientEvent"
+      | "pair"
+      | "createProject"
+      | "importThreads",
   ) => state[command],
 }));
 vi.mock("../../connection/onboarding", () => ({ connectPairing: "pair" }));
@@ -282,7 +292,8 @@ beforeEach(() => {
   state.open.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.write.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.close.mockReset().mockResolvedValue(AsyncResult.success(undefined));
-  state.refresh.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  state.refresh.mockReset().mockResolvedValue(AsyncResult.success({ providers: [] }));
+  state.recordClientEvent.mockReset().mockResolvedValue(AsyncResult.success({}));
   state.pair.mockReset().mockResolvedValue(AsyncResult.success(remoteId));
   state.complete.mockReset().mockResolvedValue(undefined);
   state.done.mockReset();
@@ -316,6 +327,58 @@ describe("welcome agent terminal setup", () => {
     await click("Do not import projects");
     expect(state.complete).toHaveBeenCalledOnce();
     expect(state.done).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it("reports a user who installs Claude but leaves setup with no agent ready", async () => {
+    state.refresh.mockResolvedValue(
+      AsyncResult.success({ providers: [missingClaude, signedOutCodex] }),
+    );
+    await enterRemoteAgents();
+    await click("Install");
+    await click("Close");
+    await click("Continue");
+    await click("Do not import projects");
+
+    expect(state.recordClientEvent.mock.calls.map(([call]) => call)).toEqual([
+      { environmentId: primaryId, input: { event: "onboarding.step.viewed", step: "connection" } },
+      {
+        environmentId: primaryId,
+        input: { event: "onboarding.step.completed", step: "connection", outcome: "continued" },
+      },
+      { environmentId: primaryId, input: { event: "onboarding.step.viewed", step: "agents" } },
+      {
+        environmentId: remoteId,
+        input: { event: "onboarding.agent.action", provider: "claudeAgent", action: "install" },
+      },
+      {
+        environmentId: remoteId,
+        input: {
+          event: "onboarding.agent.terminal_closed",
+          provider: "claudeAgent",
+          action: "install",
+          installed: false,
+          authStatus: missingClaude.auth.status,
+        },
+      },
+      {
+        environmentId: primaryId,
+        input: {
+          event: "onboarding.step.completed",
+          step: "agents",
+          outcome: "continued",
+          readyProviders: 0,
+        },
+      },
+      { environmentId: primaryId, input: { event: "onboarding.step.viewed", step: "import" } },
+      {
+        environmentId: primaryId,
+        input: { event: "onboarding.step.completed", step: "import", outcome: "skipped" },
+      },
+      {
+        environmentId: primaryId,
+        input: { event: "onboarding.completed", importedProject: false, importedThreads: 0 },
+      },
+    ]);
   });
 
   it("rejects a retained install action after revocation and allows a terminal-only regrant", async () => {
@@ -382,6 +445,10 @@ describe("welcome agent terminal setup", () => {
       },
     });
     expect(text(renderer!.root)).toContain("Review the command, then press Enter to run it.");
+    expect(state.recordClientEvent).toHaveBeenCalledWith({
+      environmentId: remoteId,
+      input: { event: "onboarding.agent.action", provider: "codex", action: "sign_in" },
+    });
   });
 
   it("checks access when a queued retry starts and recovers after regrant", async () => {

@@ -54,6 +54,8 @@ interface CodexSetupSectionProps {
   readonly displayName?: string | undefined;
   readonly onAutoStartConsumed?: () => void;
   readonly onSignInCancelled?: (() => void) | undefined;
+  /** Onboarding telemetry for the managed "Continue with ChatGPT" button. */
+  readonly onContinueWithChatGpt?: () => void;
 }
 
 export function CodexSetupSection(props: CodexSetupSectionProps) {
@@ -206,6 +208,7 @@ function ManagedCodexSetup({
   presentation,
   displayName,
   onSignInCancelled,
+  onContinueWithChatGpt,
 }: CodexSetupSectionProps & {
   readonly autoStart: boolean;
   readonly onAutoStartConsumed: () => void;
@@ -823,7 +826,10 @@ function ManagedCodexSetup({
                 }
                 onClick={() => {
                   if (hasSavedAccount) setAccountPickerOpen(true);
-                  else void setup();
+                  else {
+                    onContinueWithChatGpt?.();
+                    void setup();
+                  }
                 }}
               >
                 {installActive || pending

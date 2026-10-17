@@ -75,6 +75,7 @@ import {
 } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useRecordClientEvent } from "../../hooks/useRecordClientEvent";
 import { connectPairing } from "../../connection/onboarding";
 import { getProviderSummary } from "../settings/providerStatus";
 import { providerClients } from "../settings/providerDriverMeta";
@@ -130,6 +131,14 @@ export function WelcomeWizard({
   const finishingPromiseRef = useRef<Promise<boolean> | null>(null);
   const completionErrorToastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
   const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = primaryEnvironment?.environmentId;
+  const recordClientEvent = useRecordClientEvent();
+  const viewedSteps = useRef(new Set<WizardStep>());
+  useEffect(() => {
+    if (primaryEnvironmentId === undefined || viewedSteps.current.has(step)) return;
+    viewedSteps.current.add(step);
+    recordClientEvent(primaryEnvironmentId, { event: "onboarding.step.viewed", step });
+  }, [primaryEnvironmentId, recordClientEvent, step]);
   useEffect(() => {
     const newComputers = environments.filter(
       (environment) => !autoSelectedComputers.current.has(environment.environmentId),
@@ -169,8 +178,19 @@ export function WelcomeWizard({
         completionErrorToastIdRef.current = null;
       }
 
+      const imported = projectRef !== undefined || importedThreadCount > 0;
       const completion = completeOnboarding()
         .then(async () => {
+          recordClientEvent(primaryEnvironmentId, {
+            event: "onboarding.step.completed",
+            step: "import",
+            outcome: imported ? "continued" : "skipped",
+          });
+          recordClientEvent(primaryEnvironmentId, {
+            event: "onboarding.completed",
+            importedProject: projectRef !== undefined,
+            importedThreads: importedThreadCount,
+          });
           if (completionErrorToastIdRef.current !== null) {
             toastManager.close(completionErrorToastIdRef.current);
             completionErrorToastIdRef.current = null;
@@ -212,7 +232,7 @@ export function WelcomeWizard({
       finishingPromiseRef.current = completion;
       return completion;
     },
-    [completeOnboarding, onDone],
+    [completeOnboarding, onDone, primaryEnvironmentId, recordClientEvent],
   );
 
   return (
@@ -260,15 +280,32 @@ export function WelcomeWizard({
                   return next;
                 })
               }
-              onContinue={() =>
-                startSetup(resolveOnboardingSetup(environments, selectedIds).environmentIds)
-              }
+              onContinue={() => {
+                recordClientEvent(primaryEnvironmentId, {
+                  event: "onboarding.step.completed",
+                  step: "connection",
+                  outcome: "continued",
+                });
+                startSetup(resolveOnboardingSetup(environments, selectedIds).environmentIds);
+              }}
               onPaired={(environmentId) => {
                 setSelection(new Set([...selectedIds, environmentId]));
               }}
             />
           ) : step === "agents" ? (
-            <AgentsStep environmentIds={setupIds} onContinue={() => setStep("import")} />
+            <AgentsStep
+              environmentIds={setupIds}
+              onContinue={(readyProviders) => {
+                // Continue is always enabled, so this shows who leaves with no agent ready.
+                recordClientEvent(primaryEnvironmentId, {
+                  event: "onboarding.step.completed",
+                  step: "agents",
+                  outcome: "continued",
+                  readyProviders,
+                });
+                setStep("import");
+              }}
+            />
           ) : (
             <ImportStep
               scans={scans}
@@ -645,6 +682,7 @@ type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
 interface AgentTerminalSession {
   readonly environmentId: EnvironmentId;
   readonly driver: OnboardingAgentDriver;
+  readonly action: "install" | "sign_in";
   readonly providerInstanceId: ServerProvider["instanceId"];
   readonly cwd: string;
   readonly command: string;
@@ -656,9 +694,15 @@ function AgentsStep({
   onContinue,
 }: {
   readonly environmentIds: readonly EnvironmentId[];
-  readonly onContinue: () => void;
+  readonly onContinue: (readyProviders: number) => void;
 }) {
   const { environments } = useEnvironments();
+  const [readyCounts, setReadyCounts] = useState<ReadonlyMap<EnvironmentId, number>>(new Map());
+  const reportReadyCount = useCallback((environmentId: EnvironmentId, count: number) => {
+    setReadyCounts((current) =>
+      current.get(environmentId) === count ? current : new Map(current).set(environmentId, count),
+    );
+  }, []);
   return (
     <StepShell
       title="Connect your agents"
@@ -674,12 +718,18 @@ function AgentsStep({
                 environments.find((environment) => environment.environmentId === environmentId)
                   ?.label ?? "Computer"
               }
+              onReadyCountChange={reportReadyCount}
             />
           ))}
         </div>
       </ScrollArea>
       <div className="mt-6 flex justify-end">
-        <Button autoFocus onClick={onContinue}>
+        <Button
+          autoFocus
+          onClick={() =>
+            onContinue(environmentIds.reduce((sum, id) => sum + (readyCounts.get(id) ?? 0), 0))
+          }
+        >
           Continue
           <ArrowRightIcon className="size-3.5" />
         </Button>
@@ -691,9 +741,11 @@ function AgentsStep({
 function ConnectedAgentsStep({
   environmentId,
   machineLabel,
+  onReadyCountChange,
 }: {
   readonly environmentId: EnvironmentId;
   readonly machineLabel: string;
+  readonly onReadyCountChange: (environmentId: EnvironmentId, count: number) => void;
 }) {
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -708,10 +760,19 @@ function ConnectedAgentsStep({
     autoStart: boolean;
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const recordClientEvent = useRecordClientEvent();
 
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
+
+  const readyCount =
+    providers?.filter(
+      (provider) => provider.enabled && getOnboardingProviderState(provider) === "ready",
+    ).length ?? 0;
+  useEffect(() => {
+    onReadyCountChange(environmentId, readyCount);
+  }, [environmentId, onReadyCountChange, readyCount]);
 
   const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
 
@@ -762,9 +823,16 @@ function ConnectedAgentsStep({
                   !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
                 )
                   return;
+                const action = provider.installed ? "sign_in" : "install";
+                recordClientEvent(environmentId, {
+                  event: "onboarding.agent.action",
+                  provider: provider.driver,
+                  action,
+                });
                 setTerminalSession({
                   environmentId,
                   driver,
+                  action,
                   providerInstanceId: provider.instanceId,
                   cwd: serverConfig.cwd,
                   command: provider.installed
@@ -795,9 +863,16 @@ function ConnectedAgentsStep({
                   !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
                 )
                   return;
+                const action = provider.installed ? "sign_in" : "install";
+                recordClientEvent(environmentId, {
+                  event: "onboarding.agent.action",
+                  provider: provider.driver,
+                  action,
+                });
                 setTerminalSession({
                   environmentId,
                   driver,
+                  action,
                   providerInstanceId: provider.instanceId,
                   cwd: serverConfig.cwd,
                   command: provider.installed
@@ -842,7 +917,23 @@ function ConnectedAgentsStep({
           session={terminalSession}
           onClose={() => {
             setTerminalSession(null);
-            void refreshProviders({ environmentId, input: {} });
+            void refreshProviders({ environmentId, input: {} }).then((refreshed) => {
+              const provider =
+                refreshed._tag === "Success"
+                  ? refreshed.value.providers.find(
+                      (entry) => entry.instanceId === terminalSession.providerInstanceId,
+                    )
+                  : undefined;
+              // An install that finished but left the CLI off PATH reports installed: false.
+              if (provider === undefined) return;
+              recordClientEvent(environmentId, {
+                event: "onboarding.agent.terminal_closed",
+                provider: provider.driver,
+                action: terminalSession.action,
+                installed: provider.installed,
+                authStatus: provider.auth.status,
+              });
+            });
           }}
         />
       ) : null}
@@ -889,7 +980,15 @@ function OnboardingCodexSetup({
     typeof instance.config === "object" &&
     "setupMode" in instance.config &&
     instance.config.setupMode === "existing";
+  const recordClientEvent = useRecordClientEvent();
+  const recordCodexAction = (action: "continue_with_chatgpt" | "use_existing_cli") =>
+    recordClientEvent(environmentId, {
+      event: "onboarding.agent.action",
+      provider: ProviderDriverKind.make("codex"),
+      action,
+    });
   const changeMode = (setupMode: "managed" | "existing") => {
+    recordCodexAction(setupMode === "managed" ? "continue_with_chatgpt" : "use_existing_cli");
     void update({
       environmentId,
       input: {
@@ -931,6 +1030,7 @@ function OnboardingCodexSetup({
       mode={mode}
       enabled={provider?.enabled ?? true}
       onModeChange={changeMode}
+      onContinueWithChatGpt={() => recordCodexAction("continue_with_chatgpt")}
     />
   );
 }
