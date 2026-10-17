@@ -14,6 +14,7 @@ import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./CommandPolicy.ts";
+import { sendRestartContinuationIfAdmitted } from "./RestartContinuationGate.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
   cancelledRosterTaskWork,
@@ -265,7 +266,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         : note.settled
           ? noteText
           : `${noteText}\n\n${CONTINUE_PROMPT}`;
-    yield* threads
+    const sent = yield* threads
       .dispatch({
         type: "message.dispatch",
         commandId: CommandId.make(`command:restart-continuation:${input.sourceRunId}`),
@@ -302,7 +303,14 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
               instanceId: error.instanceId,
             }),
         }),
+        // A product feature that owns the thread (task-agent runs) may refuse it.
+        (dispatch) => sendRestartContinuationIfAdmitted(input, dispatch),
       );
+    if (!sent)
+      yield* Effect.logInfo("orchestration-v2.restart-continuation.not-admitted", {
+        threadId: input.threadId,
+        sourceRunId: input.sourceRunId,
+      });
   },
   // A delegated child this declined to continue still owes its parent a
   // result. Once a continuation run exists this is a no-op; that run settles it.

@@ -31,6 +31,10 @@ export {
   registerOrchestrationInstructionsResolver,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 export { registerToolCallHintsResolver, type ToolCallHint } from "./provider/ToolCallHints.ts";
+export {
+  registerRestartContinuationGate,
+  type RestartContinuationGate,
+} from "./orchestration-v2/RestartContinuationGate.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
 export { forkParked } from "./serverActivation.ts";
 export {
