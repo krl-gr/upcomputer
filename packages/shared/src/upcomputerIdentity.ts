@@ -35,6 +35,8 @@ export const UPCOMPUTER_HOME_DIRECTORY_NAME = ".upcomputer";
 /** GitHub repository whose releases carry the desktop update feed. */
 export const UPCOMPUTER_UPDATE_REPOSITORY = "krl-gr/upcomputer";
 export const UPCOMPUTER_SITE_URL = "https://up.computer";
+/** The hosted web app; prompt links point here so any browser can open them. */
+export const UPCOMPUTER_HOSTED_APP_URL = "https://app.up.computer";
 export const UPCOMPUTER_SUPPORT_EMAIL = "support@up.computer";
 
 /**

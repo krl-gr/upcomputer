@@ -17,11 +17,6 @@ import {
   type AtomCommand,
 } from "./runtime.ts";
 
-/**
- * RPC commands for pending chat attachment uploads. Mirrors
- * `createAssetEnvironmentAtoms`: each client instantiates it with its own
- * connection runtime (`attachmentEnvironment` in web and mobile).
- */
 export function createAttachmentEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -38,13 +33,9 @@ export function createAttachmentEnvironmentAtoms<R, E>(
 }
 
 /**
- * Whether a failed asset lookup means the attachment no longer exists on the
- * server, as opposed to a transient transport failure. Pending uploads expire,
- * so this is the signal to upload the bytes again rather than retry the lookup.
- *
- * A structural `_tag` check rather than a schema check: the squashed cause of
- * a failed RPC is not guaranteed to be a decoded error class instance, only a
- * tagged value.
+ * Pending uploads expire, so this is the signal to upload the bytes again rather than retry the
+ * lookup. A structural `_tag` check rather than a schema check: the squashed cause of a failed
+ * RPC is not guaranteed to be a decoded error class instance, only a tagged value.
  *
  * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
@@ -62,12 +53,6 @@ export type PersistedAttachmentVerification =
   | { readonly status: "missing" }
   | { readonly status: "failed"; readonly error: unknown };
 
-/**
- * Checks that a previously uploaded pending attachment still exists on the
- * server by minting an asset URL for it. `verified` means the send can reuse
- * the stored bytes, `missing` means the upload expired and the bytes must be
- * uploaded again, `failed` means the server could not be asked.
- */
 export async function verifyPersistedAttachmentUpload<A, E>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly createAssetUrl: (query: {
@@ -111,7 +96,6 @@ type AttachmentRemoveCommand<E> = AtomCommand<
   E
 >;
 
-/** Fire-and-forget delete of a pending upload the client no longer references. */
 export function deletePendingAttachmentUpload<E>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly remove: AttachmentRemoveCommand<E>;
@@ -126,7 +110,6 @@ export function deletePendingAttachmentUpload<E>(input: {
   );
 }
 
-/** A running byte transfer: resolves when the server accepted the bytes. */
 export interface AttachmentByteUpload {
   readonly done: Promise<void>;
   readonly abort: () => void;
@@ -143,14 +126,10 @@ export type AttachmentUploadCycleResult =
     };
 
 /**
- * The platform-neutral upload cycle: mint a signed upload URL, resolve it
- * against the environment's HTTP base, and hand the bytes to a
- * platform-specific transport (XHR on web, `expo-file-system` on mobile).
- *
- * The cycle never deletes the minted pending upload on failure: callers keep
- * the returned `attachmentId` and decide between retry and release. The one
- * exception is `onMinted` returning `"cancel"`, where the caller already
- * abandoned the upload and the fresh mint is deleted before returning.
+ * The cycle never deletes the minted pending upload on failure: callers keep the returned
+ * `attachmentId` and decide between retry and release. The one exception is `onMinted`
+ * returning `"cancel"`, where the caller already abandoned the upload and the fresh mint is
+ * deleted before returning.
  */
 export async function runAttachmentUploadCycle<E, RE>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
@@ -160,7 +139,6 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
   readonly upload: AttachmentCreateUploadUrlInput;
   readonly resolveUploadUrl: (relativeUrl: string) => string | null;
   readonly transport: (url: string) => AttachmentByteUpload;
-  /** Observe the minted id (for cancellation bookkeeping) before bytes move. */
   readonly onMinted?: (attachmentId: string) => "continue" | "cancel";
   readonly onTransferStart?: (abort: () => void) => void;
 }): Promise<AttachmentUploadCycleResult> {
@@ -210,23 +188,19 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
 }
 
 /**
- * The effective per-file byte limit for a server that advertises
- * `capabilities.fileAttachments.maxUploadBytes`. The contract caps what a
- * turn may reference, so a larger advertised value must not admit files the
- * send would then refuse.
+ * The contract caps what a turn may reference, so a larger advertised value must not admit
+ * files the send would then refuse.
  */
 export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
   return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
 }
 
-/** "3.2 MB" / "48 KB" label for attachment rows. Never shows "0 KB". */
 export function formatAttachmentSize(sizeBytes: number): string {
   return sizeBytes >= 1024 * 1024
     ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.max(1, Math.ceil(sizeBytes / 1024))} KB`;
 }
 
-/** User-facing rejection for a file over the effective upload limit. */
 export function fileAttachmentTooLargeMessage(name: string, maxUploadBytes: number): string {
   const maxUploadSize =
     maxUploadBytes >= 1024 * 1024 && maxUploadBytes % (1024 * 1024) === 0

@@ -2,6 +2,10 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { createContext, use, useEffect, useRef, type ComponentProps, type RefObject } from "react";
 
 import { cn } from "~/lib/utils";
+import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
+
+// Base UI's default, restated because a padding object zeroes the sides it omits.
+const COLLISION_PADDING = 5;
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -12,7 +16,6 @@ const TooltipScrollContext = createContext<RefObject<{
   actionsRef: TooltipActionsRef;
 } | null> | null>(null);
 
-/** Dismisses hovered descendants on real scroll events without rerendering the timeline. */
 function TooltipScrollDismissArea({ onScrollCapture, ...props }: ComponentProps<"div">) {
   const hovered = useRef<{ trigger: HTMLElement; actionsRef: TooltipActionsRef } | null>(null);
   return (
@@ -80,6 +83,23 @@ function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
   );
 }
 
+function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
+  const titlebarHeight = useNativeTitlebarHeight();
+  return (
+    <TooltipPrimitive.Positioner
+      className="pointer-events-none z-[140] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+      collisionPadding={{
+        top: COLLISION_PADDING + titlebarHeight,
+        right: COLLISION_PADDING,
+        bottom: COLLISION_PADDING,
+        left: COLLISION_PADDING,
+      }}
+      data-slot="tooltip-positioner"
+      {...props}
+    />
+  );
+}
+
 function TooltipPopup({
   className,
   align = "center",
@@ -93,27 +113,18 @@ function TooltipPopup({
   align?: TooltipPrimitive.Positioner.Props["align"];
   side?: TooltipPrimitive.Positioner.Props["side"];
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
-  /** `code` renders monospace content that breaks anywhere, for paths and commands. */
   variant?: "default" | "glass" | "code";
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
 }) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Positioner
-        align={align}
-        anchor={anchor}
-        className="pointer-events-none z-[140] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
-        data-slot="tooltip-positioner"
-        side={side}
-        sideOffset={sideOffset}
-      >
+      <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
             "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) text-balance rounded-md text-popover-foreground text-xs transition-[width,height,scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
             variant === "glass"
               ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
-            // One wrap width for prose; code dumps get more room and break anywhere.
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
@@ -129,7 +140,7 @@ function TooltipPopup({
             {children}
           </TooltipPrimitive.Viewport>
         </TooltipPrimitive.Popup>
-      </TooltipPrimitive.Positioner>
+      </TooltipPositioner>
     </TooltipPrimitive.Portal>
   );
 }

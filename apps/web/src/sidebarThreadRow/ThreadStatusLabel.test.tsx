@@ -255,10 +255,10 @@ describe("detailed rows", () => {
       "Approval",
       "Limited",
     ]);
-    // Upstream's icons: working, approval and limited have one; waiting has none.
+    // Upstream's icons: every status has one, waiting a dot-dashed one (e536bfd33b).
     expect(rows.map((row) => statusSlot(row)?.querySelector("svg") !== null)).toEqual([
       true,
-      false,
+      true,
       true,
       true,
     ]);

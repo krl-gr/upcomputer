@@ -130,7 +130,7 @@ const make = Effect.gen(function* () {
   const repository = yield* TaskRepository;
   const crypto = yield* Crypto.Crypto;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
-  const newEntryId = crypto.randomUUIDv4.pipe(
+  const newEntryId = crypto.randomUUIDv4().pipe(
     Effect.map((uuid) => TaskScheduleEntryId.make(`task-schedule-entry-${uuid}`)),
     Effect.orDie,
   );

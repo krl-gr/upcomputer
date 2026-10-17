@@ -1,10 +1,8 @@
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
-import { SymbolView } from "../../components/AppSymbol";
-import {
-  connectionStatusText,
-  type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -13,11 +11,11 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, type TextLayoutEvent, View } from "react-native";
+import { Pressable, type TextLayoutEvent, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
-import { ThemedSwitch } from "../../components/ThemedSwitch";
+import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
@@ -25,33 +23,19 @@ import { serverEnvironment } from "../../state/server";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
 interface CloudEnvironmentRowsProps {
   readonly connectedCloudEnvironments: ReadonlyArray<ConnectedEnvironmentSummary>;
   readonly onOpenEnvironment?: (environmentId: EnvironmentId) => void;
   readonly onSetEnvironmentEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
-  /** Long-press on a saved row. The callback owns the confirm. */
   readonly onRemoveEnvironment: (environmentId: EnvironmentId) => void;
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
   readonly showcaseSignedIn?: boolean;
-  /**
-   * Hide the "T3 Connect" section title when the host provides its own header.
-   */
   readonly showHeader?: boolean;
 }
 
-/**
- * "T3 Connect" section: every environment published to the signed-in account,
- * with connect switches, availability status, and loading/error
- * states. Shared between the Settings environments screen and the T3 Connect
- * onboarding sheet.
- *
- * Already-connected relay environments render even without cloud config or a
- * signed-in account — they are registered on this device and must stay
- * reachable and removable. Only discovery (the available list, refresh, and
- * its errors) requires a signed-in session.
- */
 export function CloudEnvironmentRows(props: CloudEnvironmentRowsProps) {
   // Showcase captures run without a Clerk publishable key, so `ClerkProvider`
   // is never mounted and any `useAuth` call throws — the fixture states whether
@@ -94,8 +78,6 @@ function CloudEnvironmentRowsContent(
     [controller],
   );
 
-  // The relay's health probe carries each server's descriptor, so a machine
-  // can wear its detected glyph before this device ever connects to it.
   const discoveredDescriptors = new Map(
     controller.relayEnvironments.flatMap((entry) =>
       entry.status?.descriptor === undefined
@@ -151,7 +133,7 @@ function CloudEnvironmentRowsContent(
         </View>
       ) : controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
-          <ActivityIndicator colorClassName={"accent-icon"} />
+          <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>
@@ -164,8 +146,6 @@ function CloudEnvironmentRowsContent(
         </View>
       )}
 
-      {/* Rendered alongside any connected rows — a failed discovery must not
-          hide behind an otherwise-healthy list. */}
       {discoveryAvailable &&
       controller.relayDiscovery.error &&
       !controller.relayDiscovery.isRefreshing ? (
@@ -192,14 +172,8 @@ function CloudEnvironmentRowsContent(
   );
 }
 
-/**
- * A saved T3 Connect environment. The switch turns it on or off; off keeps the
- * registration and cache but drops the connection and hides its errors.
- * Long-press removes it from this device.
- */
 function ConnectedCloudEnvironmentRow(props: {
   readonly environment: ConnectedEnvironmentSummary;
-  /** Discovery's view of the server, for the glyph before the first connection. */
   readonly descriptor: ExecutionEnvironmentDescriptor | undefined;
   readonly errorExpanded: boolean;
   readonly onSetEnabled: (enabled: boolean) => void;
@@ -212,8 +186,6 @@ function ConnectedCloudEnvironmentRow(props: {
   );
   const unsupported = props.environment.connectionState === "unsupported";
   const enabled = props.environment.isEnabled && !unsupported;
-  // Discovery empties its map on every refresh; hold the last descriptor seen
-  // so the glyph does not blink back to the generic one each time.
   const [lastDescriptor, setLastDescriptor] = useState(props.descriptor);
   if (props.descriptor !== undefined && props.descriptor !== lastDescriptor) {
     setLastDescriptor(props.descriptor);
@@ -306,12 +278,11 @@ function CloudEnvironmentRowShell(props: {
   const shouldPulse = isRetrying;
   const statusText =
     props.statusText ??
-    connectionStatusText({
+    environmentStatusText({
       phase: props.connectionState,
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,
     });
-  // Unsupported is a compatibility note, not a failure, so it stays muted.
   const statusClassName =
     props.connectionError && props.connectionState !== "unsupported"
       ? "text-danger-foreground"

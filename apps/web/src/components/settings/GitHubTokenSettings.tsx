@@ -8,20 +8,15 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
+import { SecretInput } from "./SecretInput";
 import { Label } from "../ui/label";
 
 const DEFAULT_HOST = "github.com";
 
-/** Where to create a token for a host: GitHub's own page, or the same path on an Enterprise host. */
 function newTokenUrl(host: string): string {
   return `https://${host}/settings/personal-access-tokens/new`;
 }
 
-/**
- * A GitHub token for one host, kept in the server's secret store. It is used before
- * `GH_TOKEN` and the `gh` login, so it also works on a server without `gh` installed.
- * Write-only: the saved token is never shown, only whether one is set.
- */
 export function GitHubTokenSettings({
   environmentId,
   onSaved,
@@ -103,12 +98,10 @@ export function GitHubTokenSettings({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`github-token-${environmentId}`}>Token</Label>
-            <Input
+            <SecretInput
               id={`github-token-${environmentId}`}
-              type="password"
-              autoComplete="off"
               size="sm"
-              placeholder={isSaved ? "Stored secret, enter a new value to replace" : "Not set"}
+              configured={isSaved}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
             />

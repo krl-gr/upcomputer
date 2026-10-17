@@ -1,6 +1,7 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 
@@ -19,9 +20,8 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
- * The thread on screen when its browser panel is showing, so a link opens as
- * another tab there, the way a browser window takes new links. HTML files are
- * served by this machine's environment, so only its threads can take them.
+ * HTML files are served by this machine's environment, so only its threads can
+ * take them.
  */
 function threadShowingBrowser(
   routeParams: Record<string, string | undefined>,
@@ -44,11 +44,6 @@ function threadShowingBrowser(
   return surface?.kind === "preview" ? threadRef : null;
 }
 
-/**
- * Opens each web link or HTML file the OS hands T3 Code as the default browser
- * (macOS). With a browser panel on screen the page opens as a new tab there;
- * otherwise it starts a thread without a project, its browser panel maximized.
- */
 export function DesktopWebLinkCoordinator() {
   const router = useRouter();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -72,14 +67,12 @@ export function DesktopWebLinkCoordinator() {
       stackedThreadToast({ type: "error", title: "Could not open the link", description }),
     );
 
-  // The OS hands each link over once, so a thread that could not start says so.
   const startThread = async (url: string): Promise<ScopedThreadRef | null> => {
     const environmentId = scratchEnvironmentId(primaryEnvironment?.environmentId ?? null);
     if (environmentId === null) {
       reportFailure(url);
       return null;
     }
-    // Reports its own failure.
     const project = await openScratchProject(environmentId, "Could not open the link");
     if (!project) return null;
     const opened = await openThread(scopeProjectRef(project.environmentId, project.id));
@@ -93,6 +86,11 @@ export function DesktopWebLinkCoordinator() {
   };
 
   const openLink = useEffectEvent(async (url: string) => {
+    const appPath = promptLinkAppPath(url);
+    if (appPath !== null) {
+      await router.navigate({ href: appPath });
+      return;
+    }
     const isFile = url.startsWith("file:");
     const routeParams = router.state.matches.at(-1)?.params ?? {};
     const threadRef =
@@ -101,7 +99,6 @@ export function DesktopWebLinkCoordinator() {
         isFile ? (primaryEnvironment?.environmentId ?? null) : null,
       ) ?? (await startThread(url));
     if (threadRef === null) return;
-    // An HTML file is served from the environment, which runs on this machine.
     const result = isFile
       ? httpBaseUrl === null
         ? null
@@ -127,11 +124,9 @@ export function DesktopWebLinkCoordinator() {
   useEffect(() => {
     if (!ready || webLinks === undefined) return;
     let subscribed = true;
-    // Links open one at a time, in the order they came.
     const unsubscribe = webLinks.onOpen((url) => {
       queueRef.current = queueRef.current.then(() => openLink(url)).catch(() => undefined);
     });
-    // Skip readiness if React runs cleanup before this subscription can receive links.
     queueMicrotask(() => {
       if (subscribed) void webLinks.setReady(true).catch(() => undefined);
     });

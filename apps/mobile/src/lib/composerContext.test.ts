@@ -4,6 +4,8 @@ import {
   ProjectId,
   ProviderInstanceId,
   ComposerContextId,
+  EnvironmentId,
+  ThreadId,
   type OrchestrationMessageContext,
 } from "@t3tools/contracts";
 import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
@@ -24,6 +26,7 @@ import {
   uploadedComposerContext,
   serializeComposerMessageForServer,
   pullRequestComposerContext,
+  threadComposerContext,
 } from "./composerContext";
 
 const terminal = {
@@ -222,6 +225,38 @@ describe("host context compatibility", () => {
     });
   });
 
+  it("carries the current PR diff file within the composer wire limits", () => {
+    const metadata = {
+      number: 42,
+      title: "Fix checkout",
+      url: "https://github.com/example/repo/pull/42",
+      headBranch: "fix-checkout",
+      baseBranch: "main",
+      state: "open" as const,
+      isDraft: false,
+    };
+    const record = pullRequestComposerContext(metadata, "pr-42", "src/checkout.ts");
+    expect(record.filePath).toBe("src/checkout.ts");
+    const prompt = projectComposerContextForProvider({
+      text: formatComposerContextReference(record),
+      records: [record],
+    });
+    expect(prompt).toContain(metadata.url);
+    expect(prompt).toContain("src/checkout.ts");
+    expect(composerContextSendBlockReason({ version: 1, records: [record] })).toBeNull();
+    const large = pullRequestComposerContext(
+      {
+        ...metadata,
+        title: "x".repeat(3000),
+        headBranch: "y".repeat(3000),
+        baseBranch: "z".repeat(3000),
+      },
+      "pr-42",
+      `src/${"[long file]".repeat(500)}.ts`,
+    );
+    expect(composerContextSendBlockReason({ version: 1, records: [large] })).toBeNull();
+  });
+
   it.each(["existing-thread", "new-task"])("serializes %s sends for an older host", (path) => {
     const pr = pullRequestComposerContext(
       {
@@ -245,7 +280,6 @@ describe("host context compatibility", () => {
     };
     const context: OrchestrationMessageContext = { version: 1, records: [terminal, review, pr] };
     const text = context.records.map(formatComposerContextReference).join(" ");
-    // Missing capability on an old host is treated like false by both dispatch paths.
     const wire = serializeComposerMessageForServer(text, context, false);
     const message =
       path === "existing-thread"
@@ -284,5 +318,22 @@ describe("host context compatibility", () => {
     expect(message.text).toContain(pr.pullRequest!.url);
     expect(serializeComposerMessageForServer(text, context, true)).toEqual({ text, context });
     expect(context.records).toEqual([terminal, review, pr]);
+  });
+});
+
+describe("threadComposerContext", () => {
+  it("mints a schema-valid, stable id for agent-spawned thread ids", () => {
+    const environmentId = EnvironmentId.make("env-1");
+    const ref = {
+      environmentId,
+      threadId: ThreadId.make(`thread:mcp:${encodeURIComponent("3f2b:delegate")}:review:0`),
+    };
+    const contextId = threadComposerContext(ref, "Review").contextId;
+
+    expect(() => ComposerContextId.make(contextId)).not.toThrow();
+    expect(threadComposerContext(ref, "Renamed").contextId).toBe(contextId);
+    expect(
+      threadComposerContext({ environmentId, threadId: ThreadId.make("abc-123") }, "t").contextId,
+    ).toBe("thread_abc-123");
   });
 });

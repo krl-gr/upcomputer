@@ -30,8 +30,8 @@ export const makeFeatureProjects = Effect.gen(function* () {
       Effect.gen(function* () {
         yield* fileSystem.makeDirectory(input.workspaceRoot, { recursive: true });
         const { project } = yield* projects.bootstrap({
-          commandId: CommandId.make(yield* crypto.randomUUIDv4),
-          projectId: ProjectId.make(yield* crypto.randomUUIDv4),
+          commandId: CommandId.make(yield* crypto.randomUUIDv4()),
+          projectId: ProjectId.make(yield* crypto.randomUUIDv4()),
           title: input.title,
           workspaceRoot: input.workspaceRoot,
         });

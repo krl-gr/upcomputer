@@ -384,8 +384,6 @@ test("notBefore wakes only unarchived tasks inside the swept window", async () =
   );
 });
 
-// --- Scheduler scenarios against the real repository -----------------------
-
 /** A v2 run on a fake thread: the fields the service reads. */
 interface FakeRun {
   id: RunId;
@@ -1547,8 +1545,6 @@ test("a person interrupting the turn stops the run after its grace period withou
     }),
   );
 });
-
-// --- agent_run_message --------------------------------------------------------
 
 test("an abandoned result finalization is replayed or rolled back by recovery, and stop resolves it", async () => {
   await withScheduler((harness) =>

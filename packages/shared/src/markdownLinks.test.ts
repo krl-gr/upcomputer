@@ -105,8 +105,6 @@ describe("splitFilePathPosition", () => {
 });
 
 describe("parseMarkdownFileLink", () => {
-  // Both clients consume this table, so a path the web app recognizes is one
-  // the mobile app recognizes too.
   it.each([
     ["/Users/julius/project/AGENTS.md", "/Users/julius/project/AGENTS.md"],
     ["/home/me/notes.md", "/home/me/notes.md"],
@@ -222,6 +220,25 @@ describe("isWindowsDrivePathHref", () => {
 });
 
 describe("extractMarkdownLinkHrefs", () => {
+  it.each([
+    ["[".repeat(32_000), []],
+    ["[](a".repeat(16_000), []],
+    ["[](<a".repeat(16_000), []],
+    ["[x](https://e.com/".repeat(8_000), []],
+    ["[a](<foo)bar> invalid [b](ok)", ["<foo", "ok"]],
+    ["[a](foo \"mixed title') [b](< >)", ["foo"]],
+    ["[a](<one [b](two)> invalid [c](ok)", ["two", "ok"]],
+    ["```text\n" + "[unfinished item\n".repeat(8_000) + "```", []],
+    ["[[[nested](src/main.ts) [unfinished", ["src/main.ts"]],
+    ["[outer [inner] invalid [valid](src/main.ts)", ["src/main.ts"]],
+    ["[bad](missing title [valid](src/main.ts)", ["src/main.ts"]],
+    ["```text\n[link](src/main.ts)\n```", ["src/main.ts"]],
+    ["[empty]() [valid](src/main.ts 'title')", ["src/main.ts"]],
+    ['[angle](<src/My File.ts> "title")', ["src/My File.ts"]],
+  ])("extracts links from incomplete and nested text", (markdown, hrefs) => {
+    expect(extractMarkdownLinkHrefs(markdown)).toEqual(hrefs);
+  });
+
   it("extracts angle-bracketed paths containing spaces", () => {
     expect(
       extractMarkdownLinkHrefs(

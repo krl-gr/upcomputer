@@ -1,8 +1,3 @@
-/**
- * Bitbucket's client definition. Browser- and React Native-safe.
- *
- * @module source-control-bitbucket/client/definition
- */
 import {
   makeProviderSettingsSchema,
   SourceControlProviderKind,
@@ -28,18 +23,14 @@ const text = (annotations: Schema.Annotations.Key<string>) =>
     Schema.annotateKey(annotations),
   );
 
-/**
- * Bitbucket API credentials, used before the `T3CODE_BITBUCKET_*` environment variables: an
- * access token, or an Atlassian account email with an API token. The access token wins when both
- * are saved.
- */
 export const settings = makeProviderSettingsSchema(
   {
     accessToken: text({
       title: "Access token",
       description:
         "Scoped to one repository, project, or workspace. Create it in that item's Bitbucket settings.",
-      providerSettingsForm: { control: "password", secret: true },
+      settingsSecret: true,
+      providerSettingsForm: { control: "password" },
     }),
     email: text({
       title: "Atlassian account email",
@@ -50,7 +41,8 @@ export const settings = makeProviderSettingsSchema(
       title: "API token",
       description:
         "Reaches every repository your Atlassian account can. Give it read and write access to repositories and pull requests, and read:user:bitbucket.",
-      providerSettingsForm: { control: "password", secret: true },
+      settingsSecret: true,
+      providerSettingsForm: { control: "password" },
     }),
   },
   { order: ["accessToken", "email", "apiToken"] },
@@ -85,7 +77,6 @@ export const definition = defineSourceControlClient({
   authorProfileUrl: () => null,
   referenceAutolinkRepositoryUrl: () => null,
   reviewSummaryRequired: () => false,
-  // No checkout CLI, and the reference field never accepted Bitbucket URLs.
   checkoutCommandArgument: () => null,
   isChangeRequestReference: () => false,
   changeRequestUrlHost: (url) => url.hostname,

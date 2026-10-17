@@ -13,6 +13,7 @@ const MAX_SCROLLBACK_ROWS = 10_000;
 // wasm32 C ABI layout for GhosttyTerminalSelectionFormatOptions at the
 // libghostty-vt revision pinned alongside this module.
 const SELECTION_FORMAT_OPTIONS_SIZE = 16;
+const PALETTE_BYTES = 256 * 3;
 
 const RENDER_DATA = {
   cols: 1,
@@ -81,7 +82,7 @@ export interface GhosttyTheme {
   readonly foreground: GhosttyColor;
   readonly background: GhosttyColor;
   readonly cursor: GhosttyColor;
-  /** CSS color the renderer overlays on selected cells; not sent to Ghostty. */
+  readonly palette?: readonly GhosttyColor[];
   readonly selectionBackground?: string;
 }
 
@@ -103,7 +104,6 @@ export interface GhosttyRow {
   readonly cells: readonly GhosttyCell[];
   readonly text: string;
   readonly isWrapContinuation: boolean;
-  /** Whether this row soft-wraps onto the next row. */
   readonly wrapsToNext: boolean;
 }
 
@@ -139,7 +139,6 @@ export interface GhosttyScrollbar {
   readonly len: number;
 }
 
-/** Grid position tagged with its Ghostty coordinate space: 1 viewport, 2 screen. */
 export interface GhosttyPointInput {
   readonly x: number;
   readonly y: number;
@@ -390,11 +389,9 @@ export class GhosttyTerminalCore {
   }
 
   /**
-   * Ghostty's built-in default cursor is steady, while the xterm.js renderer
-   * this replaced ran with `cursorBlink: true`. Option 23 is the embedder's
-   * default blink, which is the state a session starts in and returns to on
-   * DECSCUSR reset (CSI 0 q), so programs that ask for a specific cursor
-   * through DECSCUSR or DEC mode 12 still win.
+   * Option 23 is the embedder's default blink, which is the state a session
+   * starts in and returns to on DECSCUSR reset (CSI 0 q), so programs that ask
+   * for a specific cursor through DECSCUSR or DEC mode 12 still win.
    */
   private applyDefaultCursorBlink(): void {
     const blink = this.runtime.alloc(1);
@@ -415,6 +412,18 @@ export class GhosttyTerminalCore {
       this.runtime.call("ghostty_terminal_set", this.terminal, option, color);
     }
     this.runtime.free(color, 3);
+    if (theme.palette) this.setPalette(theme.palette);
+  }
+
+  private setPalette(colors: readonly GhosttyColor[]): void {
+    const palette = this.runtime.alloc(PALETTE_BYTES);
+    this.runtime.call("ghostty_terminal_get", this.terminal, 25, palette);
+    const bytes = this.runtime.bytes(palette, PALETTE_BYTES);
+    colors.slice(0, 16).forEach((color, index) => {
+      bytes.set([color.r, color.g, color.b], index * 3);
+    });
+    this.runtime.call("ghostty_terminal_set", this.terminal, 14, palette);
+    this.runtime.free(palette, PALETTE_BYTES);
   }
 
   scroll(deltaRows: number): void {

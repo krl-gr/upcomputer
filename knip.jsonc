@@ -26,6 +26,8 @@
         "setup-worktree.ts",
         "apply-branding.ts",
       ],
+      // The `t3` npm package's files: copied into the package, never imported.
+      "ignore": ["npm-launcher/**"],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -110,7 +112,7 @@
         "@t3tools/mobile-terminal-native",
       ],
     },
-    "apps/mobile/modules/t3-markdown-text": {
+    "apps/mobile/modules/t3-source-text": {
       // React Native codegen discovers component specifications by filename.
       // Up.computer keeps apps/mobile outside the pnpm workspace, so the
       // mobile package scripts that would reach these files are not analyzed:
@@ -144,6 +146,11 @@
       "includeEntryExports": true,
       "entry": ["test/fixtures/*.ts"],
       "ignoreIssues": { "src/_generated/**": ["exports", "types"] },
+    },
+    "packages/source-control-github": {
+      // graphqlgen reads its config; the generated operations export every selection's class.
+      "entry": ["graphql.config.ts"],
+      "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
     },
   },
 }

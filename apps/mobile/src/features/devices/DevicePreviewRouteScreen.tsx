@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/ui/Dialog";
 import {
   deviceToolVersionLabels,
   deviceToolUpdateOwnership,
@@ -9,27 +10,21 @@ import * as Cause from "effect/Cause";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
 import { Accelerometer } from "expo-sensors";
-import {
-  ActivityIndicator,
-  Alert,
-  AppState,
-  BackHandler,
-  Pressable,
-  StatusBar,
-  View,
-} from "react-native";
+import { AppState, BackHandler, Pressable, StatusBar, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText } from "../../components/AppText";
-import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
-import { GlassSurface } from "../../components/GlassSurface";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { AppText } from "../../components/ui/AppText";
+import { ControlPill } from "../../components/ui/ControlPill";
+import { Menu } from "../../components/ui/Menu";
+import { GlassSurface } from "../../components/ui/GlassSurface";
 import {
   androidHeaderMenuActions,
   findHeaderMenuAction,
-} from "../../components/headerMenu.android";
-import type { ScreenHeaderMenuItem } from "../../components/ScreenHeader.types";
+} from "../../components/ui/headerMenu.android";
+import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { deviceEnvironment, refreshDeviceHubAccess, useDeviceHubAccess } from "../../state/device";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -50,12 +45,10 @@ type DevicePreviewRouteScreenProps = StaticScreenProps<{
   readonly threadId: string;
 }>;
 
-/** Full-screen viewer; controls live in an overlay toggled by the handle or a shake. */
 export function DevicePreviewRouteScreen({ route }: DevicePreviewRouteScreenProps) {
   const navigation = useNavigation();
   const onClose = useCallback(() => navigation.goBack(), [navigation]);
   const { environmentId, threadId } = route.params;
-  // A hand-typed deep link can carry a blank ID, which the branded IDs reject.
   const isBlankLink = environmentId.trim().length === 0 || threadId.trim().length === 0;
   useEffect(() => {
     if (isBlankLink) onClose();
@@ -99,7 +92,6 @@ function DevicePreviewScreen({
   const preview = selectedThreadDevicePreview(previews, selectedKey);
   const onInputConnected = useCallback(async (connected: boolean) => {
     setInputConnected(connected);
-    // Controls greet the user while connecting, then get out of the stream's way.
     if (connected) setControlsVisible(false);
   }, []);
   useEffect(() => {
@@ -122,7 +114,6 @@ function DevicePreviewScreen({
     });
     return () => subscription.remove();
   }, [focused, foreground]);
-  // Android back reveals the controls first, so leaving takes a deliberate second press.
   useEffect(() => {
     if (controlsVisible) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -145,14 +136,14 @@ function DevicePreviewScreen({
         },
       });
       if (result._tag === "Failure") {
-        Alert.alert("Could not shut down device", String(Cause.squash(result.cause)));
+        Dialog.alert("Could not shut down device", String(Cause.squash(result.cause)));
       }
     } finally {
       setShuttingDown(false);
     }
   };
 
-  const controls: ScreenHeaderMenuItem[] = [
+  const controls: AppBarMenuItem[] = [
     ...(state.data?.hosts
       .filter(
         (host) =>
@@ -183,7 +174,7 @@ function DevicePreviewScreen({
       title: "Device tool versions",
       icon: "info.circle",
       onPress: () =>
-        Alert.alert(
+        Dialog.alert(
           "Device tool versions",
           deviceToolUpdateOwnership +
             "\n\n" +
@@ -249,7 +240,7 @@ function DevicePreviewScreen({
     },
   ];
   const pressHome = () => streamRef.current?.home();
-  const menuItems: ScreenHeaderMenuItem[] = [
+  const menuItems: AppBarMenuItem[] = [
     ...(previews.length > 1
       ? [
           {
@@ -295,7 +286,7 @@ function DevicePreviewScreen({
               </Pressable>
             </>
           ) : focused && foreground ? (
-            <ActivityIndicator color={themeVariables["--color-icon"]} />
+            <AppActivityIndicator color={themeVariables["--color-icon"]} />
           ) : null}
         </View>
       )}
@@ -350,9 +341,9 @@ function DevicePreviewScreen({
   );
 }
 
-function DeviceOptionsMenu({ items }: { readonly items: ReadonlyArray<ScreenHeaderMenuItem> }) {
+function DeviceOptionsMenu({ items }: { readonly items: ReadonlyArray<AppBarMenuItem> }) {
   return (
-    <ControlPillMenu
+    <Menu
       actions={androidHeaderMenuActions(items)}
       isAnchoredToRight
       title="Device options"
@@ -368,7 +359,7 @@ function DeviceOptionsMenu({ items }: { readonly items: ReadonlyArray<ScreenHead
       >
         <SymbolView name="ellipsis" size={18} tintColorClassName="accent-icon" />
       </Pressable>
-    </ControlPillMenu>
+    </Menu>
   );
 }
 
@@ -428,7 +419,7 @@ function OpenDevicePreview({
         </>
       ) : (
         <>
-          <ActivityIndicator color={themeVariables["--color-icon"]} />
+          <AppActivityIndicator color={themeVariables["--color-icon"]} />
           <AppText className="text-sm text-foreground-muted">Connecting to device...</AppText>
         </>
       )}

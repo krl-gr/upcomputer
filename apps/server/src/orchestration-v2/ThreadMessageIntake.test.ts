@@ -7,6 +7,9 @@ import {
   ChatAttachmentId,
   CommandId,
   EventId,
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
@@ -20,16 +23,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   OrchestratorCommandPreviouslyRejectedError,
   OrchestratorDispatchError,
 } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
-import { dispatchCommand } from "./ThreadMessageIntake.ts";
+import { dispatchCommand, sendToThread } from "./ThreadMessageIntake.ts";
 
 const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-question-intake-",
-}).pipe(Layer.provideMerge(NodeServices.layer));
+}).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(ServerSettings.layerTest()));
 
 const layerFailingDispatch = (captured: OrchestrationV2ServerCommand[]) =>
   Layer.mock(ThreadManagementService.ThreadManagementService)({
@@ -88,8 +92,6 @@ const answeredRespondEvents = (input: {
   },
 ];
 
-// The first attempt answered with text only: clients omit attachmentsByQuestionId
-// entirely, so the recorded turn item resolves the request without a questionAnswer.
 const textOnlyRespondEvents = (input: {
   readonly threadId: ThreadId;
   readonly requestId: string;
@@ -217,11 +219,9 @@ it.effect("rolls back earlier question claims when a later pending upload is mis
       expect(result.failure._tag).toBe("AttachmentClaimError");
     }
     expect(captured).toHaveLength(0);
-    // The pending sources stay behind so the user can retry the response.
     expect(NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${pendingId}.png`))).toEqual(
       Buffer.from([1, 2, 3]),
     );
-    // The pre-existing thread attachment is retained; only the new copy is rolled back.
     expect(
       NodeFS.readdirSync(config.attachmentsDir).filter((entry) =>
         entry.startsWith("thread-q-fail-"),
@@ -311,8 +311,6 @@ it.effect("retains claimed copies when dispatch failure may have been accepted",
     }).pipe(Effect.provide(layerFailingDispatch(captured)), Effect.result);
     expect(result._tag).toBe("Failure");
     expect(captured).toHaveLength(1);
-    // The response may have been accepted before the error, so the copy that
-    // backs the answer's path stays for the provider to read.
     const threadFiles = NodeFS.readdirSync(config.attachmentsDir).filter((entry) =>
       entry.startsWith("thread-ambiguous-"),
     );
@@ -329,8 +327,6 @@ it.effect("releases claimed copies when the command was already rejected", () =>
       NodePath.join(config.attachmentsDir, `${pendingId}.png`),
       new Uint8Array([1, 2, 3]),
     );
-    // A retry of a previously rejected command claims fresh copies, then the
-    // orchestrator replays the rejection without touching them.
     const result = yield* dispatchCommand({
       type: "runtime-request.respond",
       commandId: CommandId.make("answer-rejected"),
@@ -382,9 +378,6 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
       NodePath.join(config.attachmentsDir, `${pendingId}.png`),
       new Uint8Array([1, 2, 3]),
     );
-    // The first attempt was accepted but its response was lost. The retry's
-    // dispatch replays the stored events, which reference the first claim's
-    // attachment id — not this attempt's fresh copy.
     const earlierAttachment = {
       type: "image" as const,
       id: ChatAttachmentId.make("thread-replay-00000000-0000-4000-8000-0000000000aa"),
@@ -427,8 +420,6 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
       Effect.result,
     );
     expect(result._tag).toBe("Success");
-    // The accepted copy from the first attempt is untouched; only the
-    // retry's unreferenced copy is removed.
     expect(
       NodeFS.readdirSync(config.attachmentsDir).filter((entry) =>
         entry.startsWith("thread-replay-"),
@@ -450,8 +441,6 @@ it.effect("releases claimed copies when the recorded answer has no attachments",
       NodePath.join(config.attachmentsDir, `${pendingId}.png`),
       new Uint8Array([1, 2, 3]),
     );
-    // The same command id was first answered without attachments; this
-    // retry's copies are unreferenced by the recorded answer.
     const storedEvents = answeredRespondEvents({
       threadId,
       requestId: "request-empty-answer",
@@ -501,9 +490,6 @@ it.effect("releases claimed copies when the recorded answer was text-only", () =
       NodePath.join(config.attachmentsDir, `${pendingId}.png`),
       new Uint8Array([1, 2, 3]),
     );
-    // The first attempt accepted a text-only response, so its recorded turn
-    // item has no questionAnswer at all. The retried command id uploads an
-    // attachment whose fresh copy is unreferenced by that answer.
     const storedEvents = textOnlyRespondEvents({
       threadId,
       requestId: "request-text-only",
@@ -586,7 +572,6 @@ it.effect("retains claimed copies referenced by a fresh recorded answer", () =>
     }).pipe(
       Effect.provide(
         Layer.mock(ThreadManagementService.ThreadManagementService)({
-          // A fresh commit records exactly the attachments this attempt claimed.
           dispatch: (command) =>
             Effect.succeed({
               sequence: 1,
@@ -762,5 +747,55 @@ it.effect("applies the image budget across all questions before dispatch", () =>
     expect(result._tag).toBe("Failure");
     if (result._tag === "Failure") expect(String(result.cause)).toContain("80 MiB");
     expect(captured).toEqual([]);
+  }).pipe(Effect.provide(layerIntakeTest)),
+);
+
+it.effect("releases claimed copies when a project disables the message's provider instance", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const pendingId = ChatAttachmentId.make(createPendingAttachmentId()!);
+    NodeFS.writeFileSync(
+      NodePath.join(config.attachmentsDir, `${pendingId}.png`),
+      new Uint8Array([1, 2, 3]),
+    );
+    const result = yield* sendToThread({
+      projectId: ProjectId.make("project-disabled-send"),
+      commandId: CommandId.make("command-disabled-send"),
+      threadId: ThreadId.make("thread-disabled-send"),
+      messageId: MessageId.make("message-disabled-send"),
+      text: "Hello",
+      attachments: [
+        {
+          type: "image",
+          id: pendingId,
+          name: "screen.png",
+          mimeType: "image/png",
+          sizeBytes: 3,
+        },
+      ],
+      mode: "auto",
+      createdBy: "user",
+      creationSource: "web",
+    }).pipe(
+      Effect.provide(
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          sendToThread: (input) =>
+            Effect.fail(
+              new ThreadManagementService.ThreadManagementProviderInstanceDisabledError({
+                projectId: input.projectId,
+                instanceId: ProviderInstanceId.make("codex"),
+              }),
+            ),
+        }),
+      ),
+      Effect.result,
+    );
+    expect(result._tag).toBe("Failure");
+    expect(
+      NodeFS.readdirSync(config.attachmentsDir).filter((entry) =>
+        entry.startsWith("thread-disabled-send-"),
+      ),
+    ).toEqual([]);
+    expect(NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${pendingId}.png`))).toBe(true);
   }).pipe(Effect.provide(layerIntakeTest)),
 );

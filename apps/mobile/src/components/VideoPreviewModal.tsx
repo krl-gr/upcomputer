@@ -1,9 +1,10 @@
 import { useIsFocused } from "@react-navigation/native";
 import { videoMimeType } from "@t3tools/shared/video";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Keyboard, Modal, Pressable, View } from "react-native";
+import { Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppActivityIndicator } from "./ui/AppActivityIndicator";
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { useMediaActions } from "../state/mediaActions";
 import { type MediaActionsSource } from "../lib/mediaActionsSource";
@@ -16,8 +17,8 @@ import {
 } from "../lib/videoPreviewSource";
 import { useAssetUrlState, useRefreshAssetUrl } from "../state/assets";
 import { usePreparedConnection } from "../state/session";
-import { AppText } from "./AppText";
-import { SymbolView } from "./AppSymbol";
+import { AppText } from "./ui/AppText";
+import { SymbolView } from "./ui/AppSymbol";
 import { MediaActionsMenu } from "./MediaActionsMenu";
 import { MediaSourceCaption } from "./MediaSourceCaption";
 import { MediaVideoPlayer } from "./MediaVideoPlayer";
@@ -165,7 +166,7 @@ function OpenVideoPreviewModal(props: {
         <MediaSourceCaption source={mediaActions.title} />
         {playback.uri === null && !playback.unavailable ? (
           <View className="flex-1 items-center justify-center gap-3 px-6">
-            <ActivityIndicator color="#ffffff" />
+            <AppActivityIndicator color="#ffffff" />
             <AppText className="text-sm text-white/80">Loading video...</AppText>
           </View>
         ) : (

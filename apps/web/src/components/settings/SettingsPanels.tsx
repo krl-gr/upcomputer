@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -55,7 +56,6 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-import { IS_NIGHTLY_BUILD, NightlyMobileBetaRow } from "../NightlyMobileBeta";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import {
   canCheckForUpdate,
@@ -290,9 +290,6 @@ function AboutVersionSection() {
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
   const selectedUpdateChannel = updateState?.channel ?? "latest";
   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
-  // Show the beta app links as soon as someone picks Nightly, before the update installs.
-  const showNightlyMobileBeta =
-    IS_NIGHTLY_BUILD || (hasDesktopBridge && selectedUpdateChannel === "nightly");
 
   const handleUpdateChannelChange = useCallback(
     (channel: DesktopUpdateChannel) => {
@@ -514,7 +511,6 @@ function AboutVersionSection() {
           }
         />
       ) : null}
-      {showNightlyMobileBeta ? <NightlyMobileBetaRow /> : null}
       {hasDesktopBridge && isProductFeatureShown("cliCommand") ? <CliCommandSettingsRow /> : null}
     </>
   );
@@ -588,6 +584,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
+        : []),
+      ...(settings.sidebarAutoSettleKeepPullRequests !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests
+        ? ["Keep threads with a PR"]
         : []),
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
@@ -685,6 +685,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserRecordingShowMousePresses,
       settings.browserLinkTarget,
       settings.browserAutoShowFloatingPreview,
+      settings.pullRequestLinksOpenInApp,
       settings.appearanceContrast,
       settings.diffColorScheme,
       settings.chatWidth,
@@ -724,6 +725,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
+      settings.sidebarAutoSettleKeepPullRequests,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
@@ -761,16 +763,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     let previousTheme = theme;
     try {
       previousTheme = readThemePreference();
-    } catch {
-      // Storage is unreadable; the render-time value is the best rollback.
-    }
-    // The mix may have changed while the confirmation dialog was open; both
-    // the dirty check and the rollback must see the live value.
+    } catch {}
     const liveHalves = readThemeHalves();
     const needsThemeReset = previousTheme !== "system";
     const needsMixReset = liveHalves !== null;
-    // Same for the appearance mode: trusting the render-time value would skip
-    // the reset and report success while a non-system mode stayed in storage.
     const needsFollowSystemReset = readAppearanceModePreference(previousTheme) !== "system";
     const notifyThemeRestoreFailure = () => {
       toastManager.add(
@@ -833,6 +829,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+      sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
@@ -868,9 +865,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
       browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
-      // Re-granted like any other default. The confirmation dialog lists it by
-      // name, so a user restoring defaults is told the agent regains access
-      // rather than discovering it later.
+      pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
     });
     onRestored?.();
@@ -1017,7 +1012,8 @@ function BackgroundActivityAdvancedDialog({
               <div className="min-w-0 space-y-1">
                 <div className="text-sm font-medium">Provider health interval</div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Refresh provider availability, versions, auth state, and model metadata.
+                  Refresh provider availability, versions, and auth state. Model catalog updates
+                  follow Provider update checks.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -1566,9 +1562,6 @@ export function AppearanceSettingsPanel() {
 
 function useFontDefaultFamilies() {
   const settings = useScopedSettings();
-  // An unset preference shows the font it resolves to on this machine; the
-  // default stacks are the platform's own faces, so the name is probed, not
-  // hardcoded.
   const defaults = useMemo(
     () => ({
       sans: resolveDefaultFamilyLabel(DEFAULT_SANS_FONT_STACK) ?? "System default",
@@ -1579,7 +1572,6 @@ function useFontDefaultFamilies() {
   return {
     sans: defaults.sans,
     code: defaults.code,
-    // The composer inherits whatever the interface preference resolves to.
     interfaceFamily: settings.fontFamilySans.trim() || defaults.sans,
   };
 }
@@ -1795,11 +1787,6 @@ function FontSettingsGroup() {
   );
 }
 
-/**
- * The two-font view: one sans, one monospace. The prompt follows the
- * interface font and the terminal follows the monospace font, so the demos
- * under each row show every surface the choice reaches.
- */
 function SimpleFontRows() {
   const settings = useScopedSettings();
   return (
@@ -1846,13 +1833,6 @@ const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
     : []),
 ]);
 
-/**
- * The two-font view by default - one sans, one monospace, each cascading to
- * every surface it reaches - with an Advanced switch in the section header
- * that reveals the per-surface override rows. The choice persists locally,
- * and a settings-search jump to an override row flips Advanced on so the
- * target exists to scroll to.
- */
 function TypographySection() {
   const [advanced, setAdvanced] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
@@ -1860,9 +1840,6 @@ function TypographySection() {
     Schema.Boolean,
   );
   const searchTargetId = useSettingsSearchTargetId();
-  // Flip Advanced on once per search jump so the hidden target can mount and
-  // scroll; tracking the handled id lets the user turn it back off without
-  // the still-set target immediately re-expanding the section.
   const lastExpandedTargetRef = useRef<string | null>(null);
   useEffect(() => {
     if (searchTargetId === null || !ADVANCED_TYPOGRAPHY_TARGET_IDS.has(searchTargetId)) return;
@@ -1907,9 +1884,7 @@ function FontFamilySettingsRow({
   id?: string;
   title: string;
   description: string;
-  /** What an unset preference renders as, e.g. "Menlo". */
   defaultFamily: string;
-  /** The persisted family value supplied by the unified settings defaults. */
   defaultValue: string;
   preview?: ReactNode;
   value: string;
@@ -1926,9 +1901,6 @@ function FontFamilySettingsRow({
   };
 }) {
   const trimmed = value.trim();
-  // The fallback input edits a draft; the preference only commits once typing
-  // pauses and the text probes as an available font (or is an explicit
-  // clear), so the current font holds and nothing reflows mid-word.
   const [draft, setDraft] = useState(value);
   const [draftSettled, setDraftSettled] = useState(true);
   const commitTimerRef = useRef<number | null>(null);
@@ -1954,8 +1926,6 @@ function FontFamilySettingsRow({
     isFontFamilyAvailable(candidate) && (!requireMonospace || isMonospaceFamily(candidate));
   const commitDraft = (next: string) => {
     setDraftSettled(true);
-    // A rejected name stays in the field, flagged: the terminal would silently
-    // fall back to its default, so the row must not claim it took the value.
     if (next.trim().length === 0 || acceptsFamily(next)) {
       onValueChange(next);
     }
@@ -1967,8 +1937,6 @@ function FontFamilySettingsRow({
     commitDraft(draft);
   };
   const draftTrimmed = draft.trim();
-  // Flag an unknown name only once typing pauses, and never for an empty
-  // field - that is the starting state, not a rejected entry.
   const draftPending = draftSettled && draftTrimmed.length > 0 && draftTrimmed !== trimmed;
   const resetToDefault = () => {
     if (commitTimerRef.current !== null) {
@@ -1984,10 +1952,6 @@ function FontFamilySettingsRow({
       <SettingResetButton label={title.toLowerCase()} onClick={resetToDefault} />
     ) : null;
   const fontEnumeration = useFontEnumeration();
-  // Everyone starts on the plain input; focusing it is the user gesture that
-  // runs font discovery. Where the engine can enumerate, the control then
-  // upgrades to the picker - popped open when the swap happens under focus,
-  // so the interaction continues without a second click.
   const inputFocusedRef = useRef(false);
   const familyControl =
     fontEnumeration.status === "granted" ? (
@@ -2098,8 +2062,6 @@ function AutoSettleDaysInput({
   value: number;
   onCommit: (days: number) => void;
 }) {
-  // Local draft so the field can be emptied mid-edit; the setting only moves
-  // on valid input and snaps back to the persisted value on blur.
   const [draft, setDraft] = useState(String(value));
   useEffect(() => {
     setDraft(String(value));
@@ -2115,9 +2077,6 @@ function AutoSettleDaysInput({
       value={draft}
       onChange={(event) => {
         setDraft(event.target.value);
-        // Number(), not parseInt: "3.5" must be rejected (not truncated to a
-        // committed 3 while the field shows 3.5) — commit only when the
-        // persisted value matches the displayed one.
         const parsed = Number(event.target.value);
         if (
           Number.isInteger(parsed) &&
@@ -2133,32 +2092,21 @@ function AutoSettleDaysInput({
   );
 }
 
-// The legacy rows sit behind the fold, so a settings-search jump has to
-// expand the section before its target can mount and scroll.
 const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
   "legacy-plan-mode",
   "legacy-context-window-indicator",
   "legacy-sidebar",
 ]);
 
-/**
- * Retired features kept only for users who still depend on them. Collapsed by
- * default so they stay out of the everyday settings path; a settings-search
- * jump to one of the rows unfolds the section.
- */
 function LegacyFeaturesSection() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const [open, setOpen] = useState(false);
   const searchTargetId = useSettingsSearchTargetId();
   const targetRef = useSettingsSearchTarget<HTMLElement>("legacy-features");
-  // Unfold once per search jump; tracking the handled id lets the user fold
-  // the section back up without the still-set target immediately reopening it.
   const lastExpandedTargetRef = useRef<string | null>(null);
   useEffect(() => {
     if (searchTargetId === null) {
-      // A handled jump clears the target; forgetting it here lets a later
-      // jump to the same row expand the section again.
       lastExpandedTargetRef.current = null;
       return;
     }
@@ -2235,11 +2183,7 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
-  // The representative environment supplies the provider list for pickers;
-  // a fanned-out model choice is validated against every target before it
-  // is written. Per-machine tuning (background activity overrides) still
-  // needs exactly one environment.
+  const { scope, environment, connectedEnvironments, target } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
@@ -2254,6 +2198,9 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     );
+  const supportsAutoSettlementScope = connectedEnvironments.every(
+    (target) => target.serverConfig?.environment.capabilities.threadAutoSettlementScope === true,
+  );
   const supportsRestartContinuation =
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
@@ -2271,7 +2218,11 @@ export function GeneralSettingsPanel() {
   const textGenModel = textGenerationModelSelection.model;
   const textGenModelOptions = textGenerationModelSelection.options;
   const textGenerationModelInstanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(textGenerationProviders), settings),
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(textGenerationProviders),
+      settings,
+      target?.projectId ?? null,
+    ),
   );
   const hasTextGenerationProvider = textGenerationModelInstanceEntries.some(
     (entry) => entry.enabled && entry.isAvailable,
@@ -2526,6 +2477,24 @@ export function GeneralSettingsPanel() {
                   <AutoSettleDaysInput
                     value={settings.sidebarAutoSettleAfterDays}
                     onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
+                  />
+                }
+              />
+            ) : null}
+            {settings.sidebarAutoSettleAfterDays !== null && supportsAutoSettlementScope ? (
+              <SettingsRow
+                serverScoped
+                settingKeys={["sidebarAutoSettleKeepPullRequests"]}
+                title="Keep threads with a PR"
+                description="Inactivity does not settle threads with a pull request. Merge and close still do."
+                control={
+                  <ScopedSwitch
+                    settingKeys={["sidebarAutoSettleKeepPullRequests"]}
+                    checked={settings.sidebarAutoSettleKeepPullRequests}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ sidebarAutoSettleKeepPullRequests: checked })
+                    }
+                    aria-label="Keep threads with a PR"
                   />
                 }
               />
@@ -2940,7 +2909,7 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["enableProviderUpdateChecks"]}
           {...searchableSetting("provider-update-checks")}
-          description="Check installed provider CLIs for newer available versions."
+          description="Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear."
           resetAction={
             settings.enableProviderUpdateChecks !==
             DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
@@ -3389,13 +3358,7 @@ export function GeneralSettingsPanel() {
                 {textGenInstanceEntry ? (
                   <TraitsPicker
                     provider={textGenProvider}
-                    models={
-                      // Use the exact instance's models (rather than the
-                      // first-kind-match) so a custom text-gen instance like
-                      // `codex_personal` gets its own model list, not the
-                      // default Codex one.
-                      textGenInstanceEntry?.models ?? []
-                    }
+                    models={textGenInstanceEntry?.models ?? []}
                     model={textGenModel}
                     prompt=""
                     onPromptChange={() => {}}
@@ -3438,7 +3401,6 @@ export function GeneralSettingsPanel() {
               title={<AboutVersionTitle />}
               description="Current version of the application."
             />
-            {IS_NIGHTLY_BUILD ? <NightlyMobileBetaRow /> : null}
           </>
         )}
         {isProductFeatureShown("usageDataNotice") ? (
@@ -3498,7 +3460,7 @@ export function GeneralSettingsPanel() {
 }
 
 export function ArchivedThreadsPanel() {
-  const { scope } = useSettingsScope();
+  const { scope, groups: projectGroups, environments } = useSettingsScope();
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const {
     snapshots: archivedSnapshots,
@@ -3507,7 +3469,7 @@ export function ArchivedThreadsPanel() {
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(scope.environmentIds);
 
-  const archivedGroups = useMemo(() => {
+  const { groups: archivedGroups, hasMultipleEnvironments } = useMemo(() => {
     const selectedProjectKeys =
       scope.kind === "project" || scope.kind === "checkout"
         ? new Set(scope.members.map((member) => `${member.environmentId}:${member.id}`))
@@ -3525,15 +3487,43 @@ export function ArchivedThreadsPanel() {
           ),
       ),
     );
+    const environmentLabels = new Map(
+      environments.map((environment) => {
+        const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
+        return [environment.environmentId, secondary ? `${primary} (${secondary})` : primary];
+      }),
+    );
     const threads = archivedSnapshots.flatMap(({ environmentId, snapshot }) =>
-      snapshot.threads.map((thread) => presentThreadShell(environmentId, thread)),
+      snapshot.threads.map((thread) => ({
+        ...presentThreadShell(environmentId, thread),
+        environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
+      })),
+    );
+    const hasMultipleEnvironments =
+      new Set(
+        threads
+          .filter((thread) =>
+            projectsByEnvironmentAndId.has(`${thread.environmentId}:${thread.projectId}`),
+          )
+          .map((thread) => thread.environmentId),
+      ).size > 1;
+    const logicalGroupsByProjectKey = new Map(
+      projectGroups.flatMap((group) =>
+        group.memberProjectRefs.map(
+          (member) => [`${member.environmentId}:${member.projectId}`, group] as const,
+        ),
+      ),
     );
 
     const archivedProjects = Array.from(projectsByEnvironmentAndId.values());
-    const groups: Array<{
-      readonly project: (typeof archivedProjects)[number];
-      readonly threads: Array<(typeof threads)[number]>;
-    }> = [];
+    const groups = new Map<
+      string,
+      {
+        readonly project: (typeof archivedProjects)[number];
+        readonly title: string;
+        readonly threads: Array<(typeof threads)[number]>;
+      }
+    >();
     for (const project of archivedProjects) {
       const projectThreads: Array<(typeof threads)[number]> = [];
       for (const thread of threads) {
@@ -3542,18 +3532,34 @@ export function ArchivedThreadsPanel() {
         }
       }
       if (projectThreads.length > 0) {
-        groups.push({
-          project,
-          threads: projectThreads.toSorted((left, right) => {
-            const leftKey = left.archivedAt ?? left.createdAt;
-            const rightKey = right.archivedAt ?? right.createdAt;
-            return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
-          }),
-        });
+        const physicalProjectKey = `${project.environmentId}:${project.id}` as const;
+        const logicalGroup = hasMultipleEnvironments
+          ? logicalGroupsByProjectKey.get(physicalProjectKey)
+          : undefined;
+        const groupKey = logicalGroup?.projectKey ?? physicalProjectKey;
+        const group = groups.get(groupKey);
+        if (group) {
+          group.threads.push(...projectThreads);
+        } else {
+          groups.set(groupKey, {
+            project,
+            title: logicalGroup?.displayName ?? project.title,
+            threads: projectThreads,
+          });
+        }
       }
     }
-    return groups;
-  }, [archivedSnapshots, scope]);
+    const sortedGroups = Array.from(groups, ([key, group]) => ({
+      ...group,
+      key,
+      threads: group.threads.toSorted((left, right) => {
+        const leftKey = left.archivedAt ?? left.createdAt;
+        const rightKey = right.archivedAt ?? right.createdAt;
+        return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
+      }),
+    }));
+    return { groups: sortedGroups, hasMultipleEnvironments };
+  }, [archivedSnapshots, environments, projectGroups, scope]);
 
   const handleArchivedThreadContextMenu = useCallback(
     async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
@@ -3633,16 +3639,16 @@ export function ArchivedThreadsPanel() {
           />
         </SettingsSection>
       ) : (
-        archivedGroups.map(({ project, threads: projectThreads }, index) => (
+        archivedGroups.map(({ key, project, title, threads: projectThreads }, index) => (
           <SettingsSection
-            key={`${project.environmentId}:${project.id}`}
+            key={key}
             id={index === 0 ? searchableSetting("archive").id : undefined}
-            title={project.title}
+            title={title}
             icon={<ProjectFavicon project={project} />}
           >
             {projectThreads.map((thread) => (
               <SettingsRow
-                key={thread.id}
+                key={`${thread.environmentId}:${thread.id}`}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   void (async () => {
@@ -3670,11 +3676,12 @@ export function ArchivedThreadsPanel() {
                 }}
                 title={thread.title}
                 description={
-                  <>
+                  <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
+                    {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}
                     Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
                     {" \u00b7 Created "}
                     {formatRelativeTimeLabel(thread.createdAt)}
-                  </>
+                  </span>
                 }
                 control={
                   <Button

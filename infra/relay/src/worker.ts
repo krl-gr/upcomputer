@@ -128,9 +128,6 @@ export const layer = Api.make(
     Effect.orDie,
   ),
   Effect.gen(function* () {
-    //
-    // 1. Provision Infrastructure for the Worker to use
-    //
     const { relayPublicOrigin, stage } = yield* RelayDeploymentConfig;
     const apnsDeliveryQueue = yield* RelayApnsDeliveryQueue;
     const apnsDeliveryDeadLetterQueue = yield* RelayApnsDeliveryDeadLetterQueue;
@@ -144,9 +141,6 @@ export const layer = Api.make(
     const randomApnsDeliveryJobSigningSecret = yield* ApnsDeliveryJobSigningSecret;
     yield* RelayObservability;
 
-    //
-    // 2. Create bindings
-    //
     const apnsEnabled = yield* RelayConfiguration.apnsEnabledConfig;
     const apnsCredentials = apnsEnabled
       ? {
@@ -214,9 +208,6 @@ export const layer = Api.make(
     });
     const hookInboxes = yield* HookInboxObject.HookInboxObject;
 
-    //
-    // 3. Runtime layers and app construction
-    //
     const alchemyRuntimeContext: Alchemy.BaseRuntimeContext = yield* Cloudflare.Worker;
 
     const loadSettings = Effect.gen(function* () {
@@ -239,7 +230,6 @@ export const layer = Api.make(
       });
     });
 
-    // Each managed endpoint's held webhook requests live in its own Durable Object.
     const inboxCall =
       <A>(operation: HookInbox.HookInboxError["operation"], endpointKey: string) =>
       (effect: Effect.Effect<A, never, Alchemy.RuntimeContext>) =>
@@ -359,7 +349,6 @@ export const layer = Api.make(
           Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
           Effect.catch((error) =>
             Effect.logWarning("Hook rate limiter unavailable", { error: error.message }).pipe(
-              // Visible on the forward span, so an outage that disables limits shows up.
               Effect.andThen(
                 Effect.annotateCurrentSpan({ "relay.hook.rate_limiter_failed_open": true }),
               ),
@@ -446,7 +435,6 @@ export const layer = Api.make(
         [
           DpopProofs.DpopProofReplay.pipe(
             Effect.flatMap((dpopProofs) => dpopProofs.pruneExpired),
-            // Keep completed thread rows long enough to show their final state.
             Effect.andThen(
               Effect.all([AgentActivityRows.AgentActivityRows, DateTime.now]).pipe(
                 Effect.flatMap(([activityRows, now]) =>
@@ -521,14 +509,10 @@ export const layer = Api.make(
         // The worker runtime opens its own HTTP span around ours. Ours carries
         // the route, header redaction and webhook URL redaction, and drops a
         // webhook sender's traceparent, so the runtime's span is off for every
-        // request rather than duplicating it. Registered as telemetry:
-        // request-time context is assembled per event, and only these layers
-        // are built into it.
+        // request rather than duplicating it.
         Layer.provideMerge(
           Alchemy.Telemetry.layer(Layer.succeed(HttpMiddleware.TracerDisabledWhen)(() => true)),
         ),
-        // The Worker's only trace exporter: every event (fetch, queue, cron,
-        // HookInboxObject calls and alarms) exports through it to Axiom.
         Layer.provideMerge(
           Layer.unwrap(
             Effect.map(RelayObservability, (observability) =>

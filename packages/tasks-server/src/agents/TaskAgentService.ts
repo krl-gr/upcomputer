@@ -412,7 +412,7 @@ const make = Effect.gen(function* () {
   const consumeResult = makeTaskAgentResultConsumer({ repository, scheduleTaskChanged });
 
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4.pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const appendEvent = (task: Task, kind: string, payload: unknown) =>
     Effect.gen(function* () {

@@ -16,11 +16,6 @@ import * as Path from "effect/Path";
 import { UPCOMPUTER_HOME_DIRECTORY_NAME } from "./upcomputerIdentity.ts";
 
 /**
- * A `.git` file points at the real git directory. A linked worktree's lives at
- * `<common-dir>/worktrees/<name>`; a submodule's at
- * `<super-git-dir>/modules/<name>`. Both are files, so the pointer — not the
- * file-vs-directory distinction alone — is what identifies a worktree.
- *
  * The common dir is not necessarily named `.git`: a worktree of a bare repo
  * points at `<repo>.git/worktrees/<name>`, and `$GIT_COMMON_DIR` can be
  * anything. So match on the `worktrees/<name>` tail, which git always uses,
@@ -36,25 +31,13 @@ const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boole
   if (gitdir === undefined || gitdir.length === 0) {
     return false;
   }
-  // Compare as path segments so a directory merely named `…worktrees…` cannot
-  // match as a substring. Trailing separators normalize away first.
   const segments = path
     .normalize(gitdir.replaceAll("\\", "/"))
     .split(/[/\\]/)
     .filter((segment) => segment.length > 0);
-  // `<common-dir>/worktrees/<name>`: `worktrees` is the penultimate segment,
-  // and something must precede it. This excludes `<git-dir>/modules/<name>`.
   return segments.length >= 3 && segments.at(-2) === "worktrees";
 };
 
-/**
- * The path of the linked git worktree containing `cwd`, or undefined when
- * `cwd` is not inside one. Git marks a linked worktree by making `.git` a file
- * whose `gitdir:` points into the repository's `.git/worktrees`.
- *
- * Walks up to the repository root, so running from a subdirectory resolves the
- * same worktree as running from the top.
- */
 export const resolveGitWorktreePath = (
   cwd: string,
 ): Effect.Effect<string | undefined, never, FileSystem.FileSystem | Path.Path> =>
@@ -67,13 +50,9 @@ export const resolveGitWorktreePath = (
       const gitPath = path.join(directory, ".git");
       const info = yield* fileSystem.stat(gitPath).pipe(Effect.option);
       if (Option.isSome(info)) {
-        // A directory means the main checkout. Stop either way: nesting one
-        // repository inside another does not make the outer one this root.
         if (info.value.type !== "File") {
           return undefined;
         }
-        // A submodule also has a `.git` file, but it is not a worktree of this
-        // repository and gets no worktree-local home.
         const contents = yield* fileSystem
           .readFileString(gitPath)
           .pipe(Effect.orElseSucceed(() => ""));
@@ -88,9 +67,8 @@ export const resolveGitWorktreePath = (
   });
 
 /**
- * The worktree-local data directory for `cwd`, or undefined outside a linked
- * worktree. Deliberately does not require the directory to exist yet: falling
- * back because it is missing would send callers at the shared home.
+ * Deliberately does not require the directory to exist yet: falling back
+ * because it is missing would send callers at the shared home.
  */
 export const resolveWorktreeT3Home = (
   cwd: string,

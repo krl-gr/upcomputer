@@ -17,7 +17,6 @@ export function createDeviceEnvironmentAtoms<R, E>(
     key: ({ environmentId }: { environmentId: string }) => environmentId,
   };
   return {
-    /** Server-pushed device hosts, devices, and open sessions for one environment. */
     state: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:device:state",
       tag: WS_METHODS.subscribeDeviceState,

@@ -25,9 +25,7 @@ function projectFailure(error: Project.ProjectServiceError) {
 }
 
 /**
- * An existing checkout a launch may bind: one of the project's own git
- * worktrees. Without this check a launch could point an agent at any directory
- * on the machine.
+ * Without this check a launch could point an agent at any directory on the machine.
  */
 const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
   workspaceRoot: string,
@@ -157,11 +155,21 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           createdBy: "agent",
           creationSource: "mcp",
         }).pipe(
-          Effect.mapError((error) =>
-            error._tag === "AttachmentClaimError"
-              ? new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message })
-              : unavailable(),
-          ),
+          Effect.mapError((error) => {
+            if (error._tag === "AttachmentClaimError") {
+              return new OrchestratorMcpFailure({
+                code: "orchestration_error",
+                message: error.message,
+              });
+            }
+            if (error._tag === "ThreadManagementProviderInstanceDisabledError") {
+              return new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: error.message,
+              });
+            }
+            return unavailable();
+          }),
         );
         const thread = result.projection.thread;
         const run = result.projection.runs.find((run) => run.userMessageId === messageId);

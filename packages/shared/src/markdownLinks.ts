@@ -26,13 +26,9 @@ const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`]/;
 const PATH_SEPARATOR_PATTERN = /[\\/]/;
 
 const FILE_EXTENSION_PATTERN = /\.[A-Za-z0-9_-]+$/;
-// A final dot between digits marks a version or model id (`glm-5.3`,
-// `Qwen2.5-Coder`), not an extension. `ls.1` and `libfoo.so.1` stay files.
 const VERSION_SUFFIX_PATTERN = /\d\.\d[^.]*$/;
 const NUMERIC_DOTTED_PATTERN = /^\d+(?:\.\d+)+$/;
 
-// Standard OS and dev-container roots; deliberately excludes app-route-ish
-// prefixes like /app/ or /chat/ so SPA routes never read as files.
 const POSIX_FILE_ROOT_PREFIXES = [
   "/Users/",
   "/home/",
@@ -60,7 +56,6 @@ const POSIX_FILE_ROOT_PREFIXES = [
   "/workspaces/",
 ] as const;
 
-// `Name:digits` also matches `error:1`, `port:3000`, and `TODO:12`.
 const EXTENSIONLESS_FILE_NAMES = new Set([
   "Makefile",
   "makefile",
@@ -93,8 +88,6 @@ const EXTENSIONLESS_FILE_NAMES = new Set([
 
 const SINGLE_LABEL_HOSTNAMES = new Set(["localhost"]);
 
-// These allowlists avoid classifying dotted directories such as `conf.d/`
-// or filenames such as `Makefile.in:12` as hosts.
 const GENERIC_HOSTNAME_TLDS = new Set([
   "com",
   "net",
@@ -123,8 +116,6 @@ const GENERIC_HOSTNAME_TLDS = new Set([
   "link",
 ]);
 
-// Country codes also name file extensions. A :line suffix makes `.pl`
-// and `.pt` files more likely than hostnames.
 const COUNTRY_HOSTNAME_TLDS = new Set([
   "uk",
   "de",
@@ -171,10 +162,6 @@ function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
   return !hasPosition && COUNTRY_HOSTNAME_TLDS.has(lastLabel);
 }
 
-/**
- * Picks path-shaped inline code for the client's markdown file-link resolver.
- * It does not resolve paths or turn plain prose and fenced code into links.
- */
 export function inlineCodeFilePathCandidate(codeText: string): string | null {
   const trimmed = codeText.trim();
   if (trimmed.length === 0 || INLINE_CODE_DISQUALIFIER_PATTERN.test(trimmed)) return null;
@@ -229,7 +216,6 @@ export function splitMarkdownLinkSearchAndHash(value: string): {
   };
 }
 
-/** Keeps filename and destination-path labels compact without discarding prose. */
 export function isMarkdownFileLinkLabel(label: string, href: string): boolean {
   const destination = parseMarkdownFileLink(href);
   if (!destination) return false;
@@ -267,11 +253,6 @@ function looksLikePosixFilesystemPath(path: string): boolean {
   return EXTENSIONLESS_FILE_NAMES.has(basename) || FILE_EXTENSION_PATTERN.test(basename);
 }
 
-/**
- * Decides whether a decoded link destination is a file path rather than a route
- * or prose. Only a `:line` suffix the author wrote counts as evidence; a `#L`
- * anchor never turns `/chat/settings` into a file.
- */
 function looksLikeFilePath(path: string, authoredPath: string): boolean {
   if (isWindowsAbsolutePath(path) || RELATIVE_PATH_PREFIX_PATTERN.test(path)) return true;
   if (path.startsWith("/")) return looksLikePosixFilesystemPath(authoredPath);
@@ -297,7 +278,6 @@ export function parseMarkdownFileLink(href: string): FilePathPosition | null {
   const source =
     (normalized.toLowerCase().startsWith("file:") ? parseFileUrlHref(normalized) : null) ??
     splitMarkdownLinkSearchAndHash(normalized);
-  // A percent-encoded drive colon (`/c%3A/`) only becomes strippable once decoded.
   const path = stripSlashPrefixedWindowsDrive(safeDecodeURIComponent(source.path.trim()));
   const hash = safeDecodeURIComponent(source.hash.trim());
   if (path.length === 0 || hasExternalScheme(path)) return null;
@@ -322,23 +302,80 @@ export function extractInlineCodeSpans(text: string): string[] {
   return spans;
 }
 
-const MARKDOWN_LINK_HREF_PATTERN =
-  /\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+function markdownRunEndFinder(markdown: string, delimiter: RegExp) {
+  let runStart = -1;
+  let runEnd = -1;
+  return (start: number) => {
+    if (start >= runStart && start <= runEnd) return runEnd;
+    delimiter.lastIndex = start;
+    runStart = start;
+    runEnd = delimiter.exec(markdown)?.index ?? markdown.length;
+    return runEnd;
+  };
+}
+
+function markdownLinkTailScanner(markdown: string) {
+  const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  const titleEnd = markdownRunEndFinder(markdown, /["']/g);
+  const titleWhitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  return (start: number) => {
+    const end = whitespaceEnd(start);
+    if (markdown[end] === ")") return end + 1;
+    if (end === start || (markdown[end] !== '"' && markdown[end] !== "'")) return null;
+    const quoteEnd = titleEnd(end + 1);
+    if (quoteEnd === markdown.length) return null;
+    const close = titleWhitespaceEnd(quoteEnd + 1);
+    return markdown[close] === ")" ? close + 1 : null;
+  };
+}
+
+function markdownLinkDestinationScanner(markdown: string) {
+  const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  const angleEnd = markdownRunEndFinder(markdown, /[>\n]/g);
+  const bareEnd = markdownRunEndFinder(markdown, /[\s)]/g);
+  // Separate caches keep each branch's searches moving forward even when an
+  // angle destination fails and falls back to an ordinary destination.
+  const angleTail = markdownLinkTailScanner(markdown);
+  const bareTail = markdownLinkTailScanner(markdown);
+  return (start: number) => {
+    if (markdown[start] !== "(") return null;
+    const hrefStart = whitespaceEnd(start + 1);
+    if (markdown[hrefStart] === "<") {
+      const hrefEnd = angleEnd(hrefStart + 1);
+      if (hrefEnd > hrefStart + 1 && markdown[hrefEnd] === ">") {
+        const end = angleTail(hrefEnd + 1);
+        if (end !== null) return { hrefStart: hrefStart + 1, hrefEnd, end };
+      }
+    }
+    const hrefEnd = bareEnd(hrefStart);
+    if (hrefEnd === hrefStart) return null;
+    const end = bareTail(hrefEnd);
+    return end === null ? null : { hrefStart, hrefEnd, end };
+  };
+}
 
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
-  for (const match of markdown.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
-    const href = (match[1] ?? match[2])?.trim();
+  const scanDestination = markdownLinkDestinationScanner(markdown);
+  let cursor = 0;
+  while (cursor < markdown.length) {
+    const labelStart = markdown.indexOf("[", cursor);
+    if (labelStart === -1) break;
+    const labelEnd = markdown.indexOf("]", labelStart + 1);
+    if (labelEnd === -1) break;
+
+    // Nested opening brackets share this closing bracket. On failure, skip the
+    // whole label instead of rescanning its suffix from each opening bracket.
+    cursor = labelEnd + 1;
+    const destination = scanDestination(cursor);
+    if (!destination) continue;
+    cursor = destination.end;
+    const href = markdown.slice(destination.hrefStart, destination.hrefEnd).trim();
     if (href) hrefs.push(href);
   }
   return hrefs;
 }
 
-/**
- * `baseDir` anchors relative links; it defaults to the workspace root and is the
- * file's own directory when rendering a markdown file. `cwd` stays the workspace
- * root so the result still knows whether the target is inside it.
- */
 export function resolveMarkdownFileLinkTarget(
   href: string | undefined,
   cwd?: string,

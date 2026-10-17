@@ -3,27 +3,21 @@ import Constants from "expo-constants";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Platform, View } from "react-native";
 
-import { AppText as Text } from "./AppText";
+import { AppText as Text } from "./ui/AppText";
 import { T3Wordmark } from "./T3Wordmark";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
-import { useAndroidControlSizing } from "./useAndroidControlSizing";
+import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
-/**
- * Horizontal correction applied to content rendered in the brand title slot,
- * shared with the connection-status swap so both align identically.
- */
 export function brandTitleOffset(): number {
   if (Platform.OS !== "ios") return 0;
   return Platform.isPad && !NATIVE_WORKSPACE_COLUMNS_SUPPORTED ? IPAD_HOME_TITLE_OFFSET : 0;
 }
 
-/**
- * Compact brand lockup sized for native navigation bars.
- */
 export function CompactBrandTitle(
   props: {
     readonly allowFontScaling?: boolean;
+    readonly accessibilityLabel?: string;
   } = {},
 ) {
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
@@ -33,7 +27,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code, Threads"
+      accessibilityLabel={props.accessibilityLabel ?? "T3 Code, Threads"}
       accessible
       role="heading"
       className="flex-row items-center gap-1.5"

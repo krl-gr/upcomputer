@@ -31,7 +31,6 @@ type InputHook = (
 
 async function loadHooks(commands: ReadonlyArray<SkillCommand> = []) {
   const handlers = new Map<string, unknown>();
-  // Execute the shipped extension with MCP disabled; this path needs no Typebox.
   const source = NodeModule.stripTypeScriptTypes(
     PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
       "export default async function",
@@ -42,7 +41,6 @@ async function loadHooks(commands: ReadonlyArray<SkillCommand> = []) {
     process: { env: {} },
     NodeFSP,
     NodePath,
-    // Frontmatter parsing belongs to Pi. These fixtures contain only skill bodies.
     stripFrontmatter: (content: string) => content,
     pi: {
       on: (name: string, handler: unknown) => handlers.set(name, handler),
@@ -115,18 +113,40 @@ describe("Pi MCP tool results", () => {
 });
 
 describe("Pi MCP tool exposure", () => {
+  const discoveryContext = {
+    model: { api: "anthropic-messages" },
+    ui: { notify: () => undefined },
+  };
+
+  it.each(["session_start", "session_tree", "model_select", "before_agent_start"])(
+    "declares optional T3 tools for OpenAI-compatible gateways at %s",
+    async (hookName) => {
+      const bridge = await loadMcpBridge({ modern: true, toolSearchAvailable: true });
+      const hook = bridge.handlers.get(hookName);
+      assert.isDefined(hook);
+      await hook!(
+        { systemPrompt: "Pi system prompt" },
+        { model: { api: "openai-completions" }, ui: { notify: assert.fail } },
+      );
+      assert.isTrue(
+        bridge.tools
+          .filter((tool) => tool.name.startsWith("mcp__t3-code__"))
+          .every((tool) => bridge.getActiveTools().includes(tool.name)),
+      );
+      const result = await bridge.tools
+        .find((tool) => tool.name === "mcp__t3-code__preview_snapshot")!
+        .execute("gateway-call", {});
+      assert.equal(result.content[0]?.text, "browser snapshot");
+      assert.equal(bridge.tools.filter((tool) => tool.exposure === "hidden").length, 4);
+    },
+  );
+
   it("keeps orchestration direct and optional bridge tools discoverable on modern Pi", async () => {
     const bridge = await loadMcpBridge({ modern: true, toolSearchAvailable: true });
-    await bridge.handlers.get("session_start")!(
-      { systemPrompt: "" },
-      { ui: { notify: () => undefined } },
-    );
+    await bridge.handlers.get("session_start")!({ systemPrompt: "" }, discoveryContext);
     const start = bridge.handlers.get("before_agent_start");
     assert.isDefined(start);
-    const prompt = await start!(
-      { systemPrompt: "Pi system prompt" },
-      { ui: { notify: () => undefined } },
-    );
+    const prompt = await start!({ systemPrompt: "Pi system prompt" }, discoveryContext);
     assert.include(prompt.systemPrompt, "orchestrator_capabilities");
     assert.equal(bridge.servers.length, 0);
     assert.equal(bridge.tools.length, 8);
@@ -158,6 +178,33 @@ describe("Pi MCP tool exposure", () => {
     assert.equal(bridge.requests.at(-1)?.method, "tools/call");
   });
 
+  it("restores gateway declarations after model switches and older tree loadouts without excluded tools", async () => {
+    const bridge = await loadMcpBridge({
+      modern: true,
+      toolSearchAvailable: true,
+      allowsTool: (name) => name !== "mcp__t3-code__delegate_task",
+    });
+    const event = { systemPrompt: "" };
+    await bridge.handlers.get("session_start")!(event, discoveryContext);
+    const gatewayContext = { model: { api: "openai-completions" }, ui: { notify: assert.fail } };
+    await bridge.handlers.get("model_select")!(event, gatewayContext);
+    bridge.restoreActiveTools(["read", "mcp__t3-code__task_status"]);
+    await bridge.handlers.get("session_tree")!(event, gatewayContext);
+    assert.deepEqual(bridge.getActiveTools(), [
+      "read",
+      "mcp__t3-code__task_status",
+      "tool_search",
+      "mcp__t3-code__orchestrator_capabilities",
+      "mcp__t3-code__preview_snapshot",
+    ]);
+    await bridge.handlers.get("model_select")!(event, discoveryContext);
+    assert.equal(
+      bridge.tools.find((tool) => tool.name === "mcp__t3-code__preview_snapshot")?.exposure,
+      "deferred",
+    );
+    assert.include(bridge.getActiveTools(), "mcp__t3-code__preview_snapshot");
+  });
+
   it.each(["legacy Pi", "disabled tool search"])(
     "keeps tool execution available with %s",
     async (mode) => {
@@ -168,7 +215,7 @@ describe("Pi MCP tool exposure", () => {
       });
       if (mode !== "legacy Pi") {
         const start = bridge.handlers.get("session_start");
-        await start!({ systemPrompt: "Pi system prompt" }, { ui: { notify: () => undefined } });
+        await start!({ systemPrompt: "Pi system prompt" }, discoveryContext);
       }
       assert.equal(bridge.tools.filter((tool) => tool.exposure !== "hidden").length, 4);
       assert.isTrue(
@@ -202,10 +249,7 @@ describe("Pi MCP tool exposure", () => {
       allowsTool: (name) =>
         name === "read" || name === "tool_search" || name.startsWith("mcp__t3-code__"),
     });
-    await bridge.handlers.get("session_start")!(
-      { systemPrompt: "" },
-      { ui: { notify: () => undefined } },
-    );
+    await bridge.handlers.get("session_start")!({ systemPrompt: "" }, discoveryContext);
     assert.equal(bridge.tools.length, 4);
     assert.equal(bridge.tools.filter((tool) => tool.exposure === "direct").length, 3);
     const tool = bridge.tools.find((tool) => tool.name === "mcp__t3-code__preview_snapshot");
@@ -222,10 +266,7 @@ describe("Pi MCP tool exposure", () => {
         allowsTool: (name) =>
           name !== "mcp__t3-code__delegate_task" && (!excludeSearch || name !== "tool_search"),
       });
-      await bridge.handlers.get("session_start")!(
-        { systemPrompt: "" },
-        { ui: { notify: () => undefined } },
-      );
+      await bridge.handlers.get("session_start")!({ systemPrompt: "" }, discoveryContext);
       bridge.restoreActiveTools([
         "read",
         "mcp__t3-code__task_status",
@@ -233,7 +274,7 @@ describe("Pi MCP tool exposure", () => {
       ]);
       const tree = bridge.handlers.get("session_tree");
       assert.isDefined(tree);
-      await tree!({ systemPrompt: "" }, { ui: { notify: () => undefined } });
+      await tree!({ systemPrompt: "" }, discoveryContext);
       assert.deepEqual(bridge.getActiveTools(), [
         "read",
         "mcp__t3-code__task_status",
@@ -275,7 +316,6 @@ describe("Pi tool discovery permissions", () => {
           (await hook({ toolName: prefix + "delegate_task", input: {} }, ctx))?.block,
           true,
         );
-        // task_status acknowledges result delivery, and is intentionally not read-only.
         assert.equal(
           (await hook({ toolName: prefix + "task_status", input: {} }, ctx))?.block,
           true,
@@ -348,7 +388,6 @@ describe("Pi tool discovery permissions", () => {
     assert.equal(result?.block, true);
     assert.deepEqual(confirmations, ["Allow mcp__t3-code__preview_snapshot?"]);
 
-    // An extension that replaces the search builtin is not known to be read-only.
     searchPath = "/extensions/custom-search.ts";
     const replaced = await toolCall!({ toolName: "tool_search", input: {} }, ctx);
     assert.equal(replaced?.block, true);
@@ -358,7 +397,6 @@ describe("Pi tool discovery permissions", () => {
 
 async function loadRequestHook(): Promise<RequestHook> {
   const handlers = new Map<string, RequestHook>();
-  // Execute the shipped extension with MCP disabled; this path needs no Typebox.
   const source = NodeModule.stripTypeScriptTypes(
     PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
       "export default async function",
@@ -443,7 +481,6 @@ describe("Pi skill references", () => {
     const hook = await loadInputHook([
       { name: "skill:alpha", source: "skill", sourceInfo: { path: "/unused" } },
     ]);
-    // Punctuation-adjacent references are plain text in the composer, not selected chips.
     for (const text of [
       "Explain $HOME",
       "/skill:alpha use $alpha",

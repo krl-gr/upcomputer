@@ -22,7 +22,6 @@ type ChildProcessCommand = {
   };
 };
 
-// Accesses private properties of ChildProcessCommand for testing purposes
 function asChildProcessCommand(command: unknown): ChildProcessCommand {
   return command as ChildProcessCommand;
 }
@@ -127,14 +126,17 @@ describe("runProcess", () => {
   it.effect("resolves and escapes Windows command shims before spawning", () => {
     const spawner = makeSpawner((command) =>
       Effect.sync(() => {
-        expect(command.command).toBe('^"C:\\Users\\tester\\AppData\\Roaming\\npm\\az.cmd^"');
-        expect(command.args).toEqual([
-          '^"repos^"',
-          '^"pr^"',
-          '^"list^"',
-          '^"--source-branch^"',
-          '^"feature^ ^&^ release^"',
-        ]);
+        expect(command.command).toBe(
+          [
+            '^"C:\\Users\\tester\\AppData\\Roaming\\npm\\az.cmd^"',
+            '^"repos^"',
+            '^"pr^"',
+            '^"list^"',
+            '^"--source-branch^"',
+            '^"feature^ ^&^ release^"',
+          ].join(" "),
+        );
+        expect(command.args).toEqual([]);
         expect(command.options.shell).toBe(true);
         return makeHandle({ stdout: "[]" });
       }),

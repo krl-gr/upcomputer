@@ -44,6 +44,7 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
+import { DESKTOP_RENDERER_ORIGINS } from "../httpCors.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
@@ -70,16 +71,9 @@ export interface IssuedBearerSession {
 }
 
 /**
- * Sessions an MCP client (an agent T3 Code did not launch) obtains through
- * OAuth. They are accepted only by `/mcp`, where every action is capped by the
- * access the user approved; the HTTP API and WebSocket reject them so an agent
- * token cannot reach the full RPC surface around that cap.
- *
- * A read-only grant holds `orchestration:read` alone. Any other grant also
- * holds `orchestration:operate` and carries its runtime-mode ceiling. A
- * full-access client may also change environment preferences and clone
- * repositories, so it holds the scopes those need over RPC. Approving a grant
- * requires every scope it holds.
+ * They are accepted only by `/mcp`, where every action is capped by the access
+ * the user approved; the HTTP API and WebSocket reject them so an agent token
+ * cannot reach the full RPC surface around that cap.
  */
 const MCP_CLIENT_SUBJECT = "mcp-client";
 const MCP_CLIENT_SESSION_TTL = Duration.days(30);
@@ -557,7 +551,6 @@ export class EnvironmentAuth extends Context.Service<
     readonly issueStartupPairingUrl: (
       baseUrl: string,
     ) => Effect.Effect<string, ServerAuthInternalError>;
-    /** Only bearer `mcp-client` sessions; never cookies or proof-bound tokens. */
     readonly authenticateMcpClient: (
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<McpClientSession, ServerAuthCredentialError | ServerAuthInternalError>;
@@ -579,7 +572,6 @@ export class EnvironmentAuth extends Context.Service<
       code: string,
       access: AuthMcpClientAccess,
     ) => Effect.Effect<void, ServerAuthMcpApprovalCodeError | ServerAuthInternalError>;
-    /** A browser cookie session only; a bearer header never counts as one. */
     readonly authenticateBrowserSession: (
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError>;
@@ -687,6 +679,45 @@ export function selectRequestCredential(
   return undefined;
 }
 
+type RequestCredentialSource = NonNullable<ReturnType<typeof selectRequestCredential>>["source"];
+
+export const isBrowserCookieCredential = (source: RequestCredentialSource | "dev-cookie") =>
+  source === "cookie" || source === "legacy-cookie" || source === "dev-cookie";
+
+function firstHeaderValue(value: string | undefined): string | undefined {
+  const first = value?.split(",")[0]?.trim().toLowerCase();
+  return first && first.length > 0 ? first : undefined;
+}
+
+/**
+ * Browsers send `Origin` on WebSocket upgrades, cross-origin requests, and
+ * non-GET requests, so an absent header means a same-origin read or a
+ * non-browser client. Otherwise the request must be same-origin by the
+ * browser's own `Sec-Fetch-Site` (which survives the dev proxy rewriting
+ * `Host`), come from this server's own host (directly or behind a proxy that
+ * reports `X-Forwarded-Host`), or come from one of the trusted app origins.
+ */
+function isBrowserOriginAllowed(
+  request: HttpServerRequest.HttpServerRequest,
+  trustedOrigins: ReadonlySet<string>,
+): boolean {
+  const origin = request.headers.origin;
+  if (origin === undefined) return true;
+  if (request.headers["sec-fetch-site"] === "same-origin") return true;
+  if (trustedOrigins.has(origin)) return true;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (originHost === "") return false;
+  return (
+    originHost === firstHeaderValue(request.headers.host) ||
+    originHost === firstHeaderValue(request.headers["x-forwarded-host"])
+  );
+}
+
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
@@ -726,24 +757,48 @@ export const make = Effect.gen(function* () {
       })),
     );
 
-  const authenticateRequest = (
-    request: HttpServerRequest.HttpServerRequest,
-  ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
+  const resolveRequestCredential = (request: HttpServerRequest.HttpServerRequest) => {
     const selectedCredential = selectRequestCredential(
       request,
       sessions.cookieName,
       sessions.legacyCookieName,
     );
-    const dpopToken = parseDpopToken(request);
     const hasAuthorization = request.headers.authorization !== undefined;
     const devCookieToken = devAuth ? request.cookies[devAuth.cookieName] : undefined;
-    const credential =
+    return (
       selectedCredential ??
       (!hasAuthorization && devCookieToken !== undefined
         ? { token: devCookieToken, source: "dev-cookie" as const }
-        : undefined);
+        : undefined)
+    );
+  };
+
+  // Pages the server or its dev setup serves itself. Other origins on the same
+  // site (another localhost port, a LAN IP's other ports) still get the cookie,
+  // so cookie sessions must not authenticate their requests or sockets.
+  const trustedBrowserOrigins = new Set<string>([
+    ...(config.devUrl ? [config.devUrl.origin] : []),
+    ...DESKTOP_RENDERER_ORIGINS,
+    ...config.devAllowedOrigins,
+  ]);
+
+  const authenticateRequest = (
+    request: HttpServerRequest.HttpServerRequest,
+  ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
+    const dpopToken = parseDpopToken(request);
+    const credential = resolveRequestCredential(request);
     if (!credential?.token) {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
+    }
+    if (
+      isBrowserCookieCredential(credential.source) &&
+      !isBrowserOriginAllowed(request, trustedBrowserOrigins)
+    ) {
+      return Effect.fail(
+        new ServerAuthInvalidCredentialError({
+          diagnostic: "Browser sessions are only accepted from the app's own origin.",
+        }),
+      );
     }
     return authenticateToken(credential.token).pipe(
       Effect.flatMap((session) => {
@@ -928,8 +983,6 @@ export const make = Effect.gen(function* () {
                       ttl: Duration.hours(1),
                     }
                   : {}),
-                // Desktop restarts forget the previous bearer token. Replace
-                // its session, including stale entries left by older versions.
                 replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,
@@ -1248,14 +1301,13 @@ export const make = Effect.gen(function* () {
   const authenticateBrowserSession: EnvironmentAuth["Service"]["authenticateBrowserSession"] = (
     request,
   ) => {
-    const token =
-      request.cookies[sessions.cookieName] ??
-      (sessions.legacyCookieName ? request.cookies[sessions.legacyCookieName] : undefined) ??
-      (devAuth ? request.cookies[devAuth.cookieName] : undefined);
-    if (!token) return Effect.fail(new ServerAuthMissingCredentialError({}));
-    return authenticateToken(token).pipe(
+    const credential = resolveRequestCredential(request);
+    if (!credential || !isBrowserCookieCredential(credential.source)) {
+      return Effect.fail(new ServerAuthMissingCredentialError({}));
+    }
+    return authenticateRequest(request).pipe(
       Effect.filterOrFail(
-        (session) => session.method === "browser-session-cookie" && !session.proofKeyThumbprint,
+        (session) => session.method === "browser-session-cookie",
         () => new ServerAuthInvalidCredentialError({ diagnostic: "Not a browser session." }),
       ),
       Effect.withSpan("EnvironmentAuth.authenticateBrowserSession"),
@@ -1266,7 +1318,6 @@ export const make = Effect.gen(function* () {
     code,
     access,
   ) =>
-    // No proof key: a code bound to a T3 Connect client's key fails without being spent.
     resolveBootstrapGrant(code.trim()).pipe(
       Effect.catchTags({
         ServerAuthInvalidCredentialError: () =>

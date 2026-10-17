@@ -23,6 +23,7 @@ import {
 import { useCallback, useRef, useState, type ComponentProps } from "react";
 import { StyleSheet, View } from "react-native";
 import { FormSheet, Stack } from "react-native-screens";
+import { NativeScrollEdgeEffectsContext } from "./NativeScrollViewMarker";
 import { V5StackHeader } from "./V5StackHeader.ios";
 import type { AppNativeStackNavigationOptions } from "./StackHeader";
 import { NativeColumnContent } from "./NativeColumnContent.ios";
@@ -36,7 +37,6 @@ import {
 
 export type V5StackViewProps = ComponentProps<typeof NativeStackView>;
 
-/** The presentation envelope must not mount a second search bar or header. */
 export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
   return {
     ...Object.fromEntries(
@@ -52,7 +52,9 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 }
 
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
-export function V5CardStackView(props: V5StackViewProps) {
+export function V5CardStackView(
+  props: V5StackViewProps & { readonly onRootVisibilityChange?: (visible: boolean) => void },
+) {
   const { preventedRoutes } = usePreventRemoveContext();
   const nativePopSource = useRef<string | null>(null);
   const [screens, setScreens] = useState({
@@ -163,17 +165,17 @@ export function V5CardStackView(props: V5StackViewProps) {
               onNativeDismissPrevented={() => {
                 if (preventedRoutes[route.key]?.preventRemove) descriptor.navigation.goBack();
               }}
-              onWillAppear={() =>
+              onWillAppear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(true);
                 props.navigation.emit({
                   type: "transitionStart",
                   target: route.key,
                   data: { closing: false },
-                })
-              }
+                });
+              }}
               onDidAppear={() => {
                 const source = nativePopSource.current;
                 if (source === route.key) {
-                  // A cancelled swipe restores its source without changing router history.
                   nativePopSource.current = null;
                 } else if (source) {
                   const state = props.navigation.getState();
@@ -203,6 +205,7 @@ export function V5CardStackView(props: V5StackViewProps) {
                 });
               }}
               onWillDisappear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(false);
                 const state = props.navigation.getState();
                 // JS pushes/pops already changed history. Only native Back leaves
                 // the disappearing card at the router's active index.
@@ -239,7 +242,9 @@ export function V5CardStackView(props: V5StackViewProps) {
                         .nativeContentInsetHorizontally
                     }
                   >
-                    {descriptor.render()}
+                    <NativeScrollEdgeEffectsContext value={descriptor.options.scrollEdgeEffects}>
+                      {descriptor.render()}
+                    </NativeScrollEdgeEffectsContext>
                   </NativeColumnContent>
                 </NavigationRouteContext>
               </NavigationContext>
@@ -251,7 +256,6 @@ export function V5CardStackView(props: V5StackViewProps) {
   );
 }
 
-/** v5 owns pushes and headers; the legacy renderer only presents modal groups. */
 export function V5StackView(props: V5StackViewProps) {
   const groups = partitionStackPresentations(props.state.routes, (route) => {
     const presentation = props.descriptors[route.key]?.options.presentation;
@@ -265,10 +269,13 @@ export function V5StackView(props: V5StackViewProps) {
     groups.map((group) => {
       const first = group[0]!;
       const descriptor = props.descriptors[first.key]!;
+      const visibleRoute = group.at(-1)!;
       return [
         first.key,
         {
           ...descriptor,
+          navigation: props.descriptors[visibleRoute.key]!.navigation,
+          route: visibleRoute,
           options: modalEnvelopeOptions(descriptor.options),
           render: () => (
             <V5CardStackView
@@ -295,7 +302,6 @@ export function V5StackView(props: V5StackViewProps) {
   );
 }
 
-/** Keep a direct card host mounted while v5 form sheets present above it. */
 export function V5SheetStackView(props: V5StackViewProps) {
   const { preventedRoutes } = usePreventRemoveContext();
   const groups = partitionStackPresentations(
@@ -470,7 +476,6 @@ export function createV5StackNavigator<
   return createNavigatorFactory(V5StackNavigator)(config);
 }
 
-/** For navigators whose presentations are cards and form sheets only. */
 export function createV5SheetStackNavigator<
   const ParamList extends ParamListBase,
   const NavigatorID extends string | undefined = string | undefined,

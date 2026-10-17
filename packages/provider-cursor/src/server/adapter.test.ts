@@ -55,6 +55,17 @@ describe("CursorAdapterV2", () => {
         });
         const instanceId = ProviderInstanceId.make("cursor");
         const threadId = ThreadId.make("cursor-lifecycle-thread");
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("cursor-lifecycle-environment"),
+          threadId,
+          providerSessionId: "cursor-lifecycle-session",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer synthetic-cursor-token",
+          browserToolsAvailable: true,
+        });
+        let sentWithMcpOverride = true;
         const modelSelection = { instanceId, model: "composer-2.5" };
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "full-access",
@@ -75,6 +86,7 @@ describe("CursorAdapterV2", () => {
                 close: Effect.void,
                 send: (input) =>
                   Effect.gen(function* () {
+                    sentWithMcpOverride = Object.hasOwn(input.options ?? {}, "mcpServers");
                     // Recorded Cursor task calls (see fixtures/subagent) stream a
                     // partial-tool-call before tool-call-started with the same args.
                     // The run then ends without tool-call-completed, which a live
@@ -184,6 +196,7 @@ describe("CursorAdapterV2", () => {
           Stream.takeUntil((event) => event.type === "turn.terminal"),
           Stream.runCollect,
         );
+        assert.isFalse(sentWithMcpOverride);
         const rows = events.filter((event) => event.type === "subagent.updated");
         assert.equal(rows[0]?.subagent.status, "running");
         assert.equal(rows[0]?.subagent.model, model ?? null);
@@ -949,6 +962,16 @@ describe("CursorAdapterV2", () => {
     assert.deepEqual(
       cursorRuntimeAgentPolicy({
         ...base,
+        runtimeMode: "auto",
+      }),
+      {
+        autoReview: true,
+        sandboxEnabled: true,
+      },
+    );
+    assert.deepEqual(
+      cursorRuntimeAgentPolicy({
+        ...base,
         runtimeMode: "approval-required",
       }),
       {
@@ -983,8 +1006,6 @@ describe("CursorAdapterV2", () => {
   });
 
   it("loads the user's Cursor settings layers in every runtime mode", () => {
-    // The SDK loads no rules, skills, hooks, or MCP config from disk unless
-    // settingSources names them, so an omitted list silently drops AGENTS.md.
     for (const runtimeMode of ["full-access", "auto-accept-edits", "approval-required"] as const) {
       const options = makeCursorAgentOptions({
         modelSelection: {

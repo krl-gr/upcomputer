@@ -40,7 +40,6 @@ export function latestProviderTurnTokenUsage(
   return latest;
 }
 
-/** Prefers the provider's live usage report (#8144); falls back to the last compaction item. */
 export function deriveLatestContextWindowSnapshot(
   entries: ReadonlyArray<{
     readonly item: OrchestrationV2TurnItem;
@@ -171,7 +170,7 @@ export function formatContextWindowTokens(value: number | null): string {
   if (value < 10_000) {
     return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
   }
-  if (value < 1_000_000) {
+  if (value < 999_500) {
     return `${Math.round(value / 1_000)}k`;
   }
   return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;

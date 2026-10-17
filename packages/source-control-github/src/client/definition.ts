@@ -1,11 +1,7 @@
-/**
- * GitHub's client definition. Browser- and React Native-safe.
- *
- * @module source-control-github/client/definition
- */
 import {
   GitHubHost,
   makeProviderSettingsSchema,
+  secretSetting,
   pullRequestHostOf,
   SourceControlProviderKind,
   TrimmedNonEmptyString,
@@ -32,12 +28,6 @@ export const GitHubHostChoice = Schema.Struct({
 });
 export type GitHubHostChoice = typeof GitHubHostChoice.Type;
 
-/**
- * Per-host choices, keyed by lowercased host such as `github.com`. `hosts` pins one of the logins
- * `gh` holds for a host instead of its active one, or turns the host off; `tokens` holds a token
- * per host, used before `GH_TOKEN` and friends, which win over `gh`. Source Control settings draws
- * both with GitHub's own panels, since the logins come from `gh` at runtime.
- */
 export const settings = makeProviderSettingsSchema({
   hosts: Schema.Record(GitHubHost, GitHubHostChoice).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -45,7 +35,8 @@ export const settings = makeProviderSettingsSchema({
   ),
   tokens: Schema.Record(GitHubHost, TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
-    Schema.annotateKey({ providerSettingsForm: { hidden: true, secret: true } }),
+    secretSetting,
+    Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
   ),
 });
 export type GitHubSettings = typeof settings.Type;
@@ -70,6 +61,7 @@ export const definition = defineSourceControlClient({
     "draft",
     "close",
     "reopen",
+    "delete-branch",
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",
@@ -86,7 +78,6 @@ export const definition = defineSourceControlClient({
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
   changeRequestUrlHost: (url) => url.hostname,
-  // A GitHub web host is the checkout's own host, Enterprise installs included.
   checkoutChangeRequestHost: (identity) => pullRequestHostOf(identity, KIND),
   isChangeRequestInRepository: (identity, link) =>
     isChangeRequestInProjectRepository(KIND, identity, link),

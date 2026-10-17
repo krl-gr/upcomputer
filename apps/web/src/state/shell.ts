@@ -40,8 +40,6 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
     if (connectionProjectionPhase(connection) !== "disconnected") {
       return false;
     }
-    // A retrying environment is only transiently disconnected; give it its
-    // first retries before letting the landing settle without its snapshot.
     if (connection.phase === "backoff" && connection.desired && connection.attempt <= 2) {
       return false;
     }
@@ -49,7 +47,23 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
-/** Cached or missing snapshots cannot establish that a saved project no longer exists. */
+/**
+ * The persisted catalog can emit before platform discovery registers the primary environment.
+ * Neither that gap nor an empty catalog proves a project is absent.
+ */
+function catalogIsComplete(
+  catalog: EnvironmentCatalogState,
+  requiresPrimaryEnvironment: boolean,
+): boolean {
+  if (!catalog.isReady || catalog.entries.size === 0) return false;
+  return (
+    !requiresPrimaryEnvironment ||
+    Array.from(catalog.entries.values()).some(
+      (entry) => entry.target._tag === "PrimaryConnectionTarget",
+    )
+  );
+}
+
 export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
   readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
@@ -57,17 +71,7 @@ export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
 }) {
   return Atom.make((get) => {
     const catalog = get(input.catalogValueAtom);
-    // The persisted catalog can emit before platform discovery registers the
-    // primary environment. Neither that gap nor an empty catalog proves absence.
-    if (!catalog.isReady || catalog.entries.size === 0) return false;
-    if (
-      input.requiresPrimaryEnvironment &&
-      !Array.from(catalog.entries.values()).some(
-        (entry) => entry.target._tag === "PrimaryConnectionTarget",
-      )
-    ) {
-      return false;
-    }
+    if (!catalogIsComplete(catalog, input.requiresPrimaryEnvironment)) return false;
     for (const environmentId of enabledEnvironmentIds(catalog)) {
       const shell = get(input.shellStateValueAtom(environmentId));
       if (shell.status !== "live" || Option.isNone(shell.snapshot)) return false;
@@ -82,3 +86,21 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
     shellStateValueAtom: environmentShell.stateValueAtom,
     requiresPrimaryEnvironment: !isHostedStaticApp(),
   });
+
+export const allReachableShellsLiveAtom = Atom.make((get) => {
+  const catalog = get(environmentCatalog.catalogValueAtom);
+  if (!catalogIsComplete(catalog, !isHostedStaticApp())) return false;
+  for (const environmentId of enabledEnvironmentIds(catalog)) {
+    const shell = get(environmentShell.stateValueAtom(environmentId));
+    if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;
+    const state = AsyncResult.value(get(environmentCatalog.stateAtom(environmentId)));
+    if (Option.isNone(state)) return false;
+    const connection = state.value;
+    const settledOffline =
+      connection.phase === "offline" ||
+      connection.phase === "blocked" ||
+      (connection.phase === "backoff" && connection.attempt > 2);
+    if (!settledOffline) return false;
+  }
+  return true;
+}).pipe(Atom.withLabel("web-all-reachable-shells-live"));
