@@ -403,6 +403,10 @@
       "types": "./src/orchestrationV2Timeline.ts",
       "import": "./src/orchestrationV2Timeline.ts"
     },
+    "./taskAgentRunInterrupt": {
+      "types": "./src/taskAgentRunInterrupt.ts",
+      "import": "./src/taskAgentRunInterrupt.ts"
+    },
     "./t3McpToolPresentation": {
       "types": "./src/t3McpToolPresentation.ts",
       "import": "./src/t3McpToolPresentation.ts"
