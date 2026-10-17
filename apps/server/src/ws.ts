@@ -2079,6 +2079,8 @@ const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
+        [WS_METHODS.serverRecordClientEvent]: ({ event, ...properties }) =>
+          analytics.record(event, { ...originProps, ...properties }).pipe(Effect.as({})),
         [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig({ usageLimitsCommand: false }),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog

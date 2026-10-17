@@ -29,6 +29,7 @@ const state = vi.hoisted(() => ({
   createProject: vi.fn(),
   importThreads: vi.fn(),
   refreshProviders: vi.fn(),
+  recordClientEvent: vi.fn(),
   connectPairing: vi.fn(),
   completeOnboarding: vi.fn(),
   onDone: vi.fn(),
@@ -77,6 +78,7 @@ vi.mock("../../state/server", () => ({
     providersValueAtom: () => state.providers,
     configValueAtom: () => state.config,
     refreshProviders: "refreshProviders",
+    recordClientEvent: "recordClientEvent",
   },
 }));
 vi.mock("../../state/entities", async () => {
@@ -121,7 +123,12 @@ vi.mock("../ui/tooltip", () => ({ Tooltip: "div", TooltipTrigger: "span", Toolti
 vi.mock("../../connection/onboarding", () => ({ connectPairing: "connectPairing" }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (
-    command: "createProject" | "importThreads" | "refreshProviders" | "connectPairing",
+    command:
+      | "createProject"
+      | "importThreads"
+      | "refreshProviders"
+      | "recordClientEvent"
+      | "connectPairing",
   ) => state[command],
 }));
 vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));

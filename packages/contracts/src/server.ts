@@ -893,3 +893,43 @@ export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateEr
     return `Server update failed: ${this.reason}`;
   }
 }
+
+const OnboardingStep = Schema.Literals(["connection", "agents", "import"]);
+
+/**
+ * UI events the server records as product telemetry, so they share the
+ * install's identity with its server events. Bounded values only.
+ */
+export const ClientTelemetryEvent = Schema.Union([
+  Schema.Struct({ event: Schema.Literal("onboarding.step.viewed"), step: OnboardingStep }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.step.completed"),
+    step: OnboardingStep,
+    outcome: Schema.Literals(["continued", "skipped"]),
+    /** Agents step: providers ready on the environments being set up. */
+    readyProviders: Schema.optionalKey(NonNegativeInt),
+  }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.agent.action"),
+    provider: ProviderDriverKind,
+    action: Schema.Literals(["install", "sign_in", "continue_with_chatgpt", "use_existing_cli"]),
+  }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.agent.terminal_closed"),
+    provider: ProviderDriverKind,
+    action: Schema.Literals(["install", "sign_in"]),
+    installed: Schema.Boolean,
+    authStatus: ServerProviderAuthStatus,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.completed"),
+    importedProject: Schema.Boolean,
+    importedThreads: NonNegativeInt,
+  }),
+  Schema.Struct({
+    event: Schema.Literals(["composer.provider_setup.shown", "composer.provider_setup.clicked"]),
+    /** The provider "Open provider settings" leads to, if any. */
+    target: Schema.optionalKey(ProviderDriverKind),
+  }),
+]);
+export type ClientTelemetryEvent = typeof ClientTelemetryEvent.Type;
