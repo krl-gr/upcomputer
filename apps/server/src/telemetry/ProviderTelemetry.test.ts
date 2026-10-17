@@ -86,8 +86,16 @@ it.effect("records each provider's state once, then again only when it changes",
 
     yield* Effect.gen(function* () {
       const first = yield* Queue.take(recorded);
-      // The unchanged snapshot from a refresh records nothing; the install does.
+      // The unchanged snapshot from a refresh and a not-yet-checked placeholder
+      // record nothing; the install does.
       yield* Queue.offer(changes, [missingClaude]);
+      yield* Queue.offer(changes, [
+        {
+          ...missingClaude,
+          status: "warning",
+          message: "Claude provider status has not been checked in this session yet.",
+        },
+      ]);
       yield* Queue.offer(changes, [installedClaude]);
       const second = yield* Queue.take(recorded);
 

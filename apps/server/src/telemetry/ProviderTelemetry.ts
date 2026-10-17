@@ -97,6 +97,10 @@ export function providerStatusProperties(provider: ServerProvider) {
  * sees it and whenever its bounded state changes, so a funnel can tell "no CLI",
  * "CLI but signed out" and "ready" apart, and see an install or login land.
  */
+// The placeholder drivers publish before their first probe says installed: false,
+// which would read as "no CLI" on every launch. Only its message marks it.
+const PENDING_STATUS_MESSAGE = /has not been checked in this session yet\.$/;
+
 export const layerProviderStatusTelemetry = Layer.effectDiscard(
   Effect.gen(function* () {
     const analytics = yield* AnalyticsService.AnalyticsService;
@@ -106,6 +110,9 @@ export const layerProviderStatusTelemetry = Layer.effectDiscard(
       Effect.forEach(
         providers,
         (provider) => {
+          if (provider.message !== undefined && PENDING_STATUS_MESSAGE.test(provider.message)) {
+            return Effect.void;
+          }
           const properties = providerStatusProperties(provider);
           const key = JSON.stringify(properties);
           if (lastSeen.get(provider.instanceId) === key) return Effect.void;
