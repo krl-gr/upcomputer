@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   auth: null as Record<string, unknown> | null,
+  queryError: null as Error | null,
   rejectCallback: null as ((error: Error) => void) | null,
 }));
 
@@ -22,7 +23,7 @@ vi.mock("../../state/query", () => ({
         : atom === "install"
           ? { phase: "idle", installedVersion: "1.0.0", version: "1.0.0", source: "managed" }
           : null,
-    error: null,
+    error: state.queryError,
   }),
 }));
 vi.mock("../../state/server", async (importOriginal) => ({
@@ -72,6 +73,7 @@ const provider: ServerProvider = {
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  state.queryError = null;
   state.auth = {
     phase: "waiting",
     flowId: "flow-1",
@@ -97,7 +99,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, "desktopBridge");
 });
 
-function render() {
+function render(onModeChange: (mode: "managed" | "existing") => void = () => undefined) {
   act(() => {
     root.render(
       <CodexSetupSection
@@ -107,7 +109,7 @@ function render() {
         provider={provider}
         mode="managed"
         enabled
-        onModeChange={() => undefined}
+        onModeChange={onModeChange}
       />,
     );
   });
@@ -138,4 +140,29 @@ it("shows the redirect URL field along with a real sign-in failure", async () =>
     "Could not finish sign-in on this computer. Try again.",
   );
   expect(container.querySelector('[aria-label="ChatGPT sign-in redirect URL"]')).not.toBeNull();
+});
+
+it("shows no status error while switching to the existing CLI", async () => {
+  state.auth = { phase: "idle" };
+  const onModeChange = vi.fn();
+  render(onModeChange);
+  const useCli = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Use existing CLI",
+  );
+  await act(async () => useCli?.click());
+  expect(onModeChange).toHaveBeenCalledWith("existing");
+
+  // The server already treats the instance as a CLI one and stops answering.
+  state.queryError = new Error("This provider does not support sign-in in Up.computer.");
+  render(onModeChange);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("still reports an unreadable setup status", () => {
+  state.auth = { phase: "idle" };
+  state.queryError = new Error("disconnected");
+  render();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Could not read setup status. Reconnect and try again.",
+  );
 });

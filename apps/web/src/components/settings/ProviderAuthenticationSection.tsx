@@ -10,7 +10,7 @@ import type {
   ProviderInstanceId,
   ServerProvider,
 } from "@t3tools/contracts";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
 import { CopyIcon } from "lucide-react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
@@ -33,12 +33,15 @@ export function ProviderAuthenticationSection({
   instanceId,
   provider,
   readOnly,
+  openBrowserOnStart = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
   readonly instanceId: ProviderInstanceId;
   readonly provider: ServerProvider;
   readonly readOnly: boolean;
+  /** Open the sign-in page as soon as a started sign-in has one. */
+  readonly openBrowserOnStart?: boolean;
 }) {
   const target = { environmentId, input: { instanceId } };
   const query = useEnvironmentQuery(serverEnvironment.providerAuthState(target));
@@ -55,6 +58,7 @@ export function ProviderAuthenticationSection({
   const pendingRef = useRef(false);
   const terminalQueue = useRef<ProviderAuthRespondInput[]>([]);
   const terminalSending = useRef(false);
+  const openWhenStarted = useRef(false);
   const auth = query.data;
   const interaction = auth?.interaction;
   const active =
@@ -152,6 +156,18 @@ export function ProviderAuthenticationSection({
       setError("Could not open the sign-in page. Copy the link and open it in your browser.");
     }
   }
+
+  // The page arrives with the flow's state, after start returns. Open browser
+  // stays as the fallback, so a failure here needs no message.
+  const openStartedSignIn = useEffectEvent((signInUrl: string | undefined) => {
+    if (!openWhenStarted.current || signInUrl === undefined) return;
+    openWhenStarted.current = false;
+    if (interaction?.type === "browser" && interaction.requiresConsent) return;
+    ensureLocalApi()
+      .shell.openExternal(signInUrl)
+      .catch(() => undefined);
+  });
+  useEffect(() => openStartedSignIn(active && url ? url : undefined), [active, url]);
 
   function updateDraft(name: string, value: string) {
     setDraft({ id: draftId, values: { ...values, [name]: value } });
@@ -275,7 +291,8 @@ export function ProviderAuthenticationSection({
                 size="sm"
                 variant="outline"
                 disabled={disabled || !provider.enabled || !provider.installed || !auth}
-                onClick={() =>
+                onClick={() => {
+                  openWhenStarted.current = openBrowserOnStart;
                   void run(() =>
                     start({
                       environmentId,
@@ -286,8 +303,10 @@ export function ProviderAuthenticationSection({
                           : {}),
                       },
                     }),
-                  )
-                }
+                  ).then((started) => {
+                    if (!started) openWhenStarted.current = false;
+                  });
+                }}
               >
                 {signedIn
                   ? "Change account"

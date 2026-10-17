@@ -2,7 +2,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import { ClaudeSettings } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { CommandAvailability, WindowsShellEnvironment } from "@t3tools/shared/shell";
+import {
+  CommandAvailability,
+  resolveCommandPath,
+  WindowsShellEnvironment,
+} from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -113,16 +117,21 @@ effectIt.effect("hydrates PATH when the desktop handoff is absent", () =>
         );
 
         assert.equal(probe.mock.calls.length, 1);
-        assert.equal(env.PATH, `/opt/tools/bin:/usr/bin:${NodeOS.userInfo().homedir}/.local/bin`);
+        const home = NodeOS.userInfo().homedir;
+        assert.equal(
+          env.PATH,
+          `/opt/tools/bin:/usr/bin:${home}/.local/bin:${home}/.opencode/bin:${home}/.grok/bin`,
+        );
       }),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),
 );
 
-// The native Claude and Codex installers write to ~/.local/bin, which a fresh
-// login shell often lacks. The provider recheck after an onboarding install
-// must find the CLI without restarting the server.
-effectIt.effect("finds a CLI installed into ~/.local/bin after startup", () =>
+// The native Claude and Codex installers write to ~/.local/bin and OpenCode's
+// to ~/.opencode/bin, which a fresh login shell often lacks. The provider
+// recheck after an onboarding install must find the CLI without restarting the
+// server.
+effectIt.effect("finds a CLI installed into ~/.local/bin or ~/.opencode/bin after startup", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       vi
@@ -140,7 +149,10 @@ effectIt.effect("finds a CLI installed into ~/.local/bin after startup", () =>
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, env),
         );
-        assert.equal(env.PATH, `/usr/bin:/bin:${home}/.local/bin`);
+        assert.equal(
+          env.PATH,
+          `/usr/bin:/bin:${home}/.local/bin:${home}/.opencode/bin:${home}/.grok/bin`,
+        );
 
         const settings = decodeClaudeSettings({ binaryPath: "t3-test-claude" });
         const noCapabilities = () => Effect.succeed(undefined);
@@ -159,6 +171,12 @@ effectIt.effect("finds a CLI installed into ~/.local/bin after startup", () =>
         const after = yield* checkClaudeProviderStatus(settings, noCapabilities, env);
         assert.isTrue(after.installed);
         assert.equal(after.version, "2.1.0");
+
+        const openCode = path.join(home, ".opencode", "bin", "t3-test-opencode");
+        yield* fileSystem.makeDirectory(path.dirname(openCode), { recursive: true });
+        yield* fileSystem.writeFileString(openCode, "#!/bin/sh\n");
+        yield* fileSystem.chmod(openCode, 0o755);
+        assert.equal(yield* resolveCommandPath("t3-test-opencode", { env }), openCode);
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),

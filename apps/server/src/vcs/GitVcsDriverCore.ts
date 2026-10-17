@@ -32,10 +32,11 @@ import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { isMacDeveloperToolStub, resolveSpawnCommand } from "@t3tools/shared/shell";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
+import { missingMacDeveloperTools } from "../processRunner.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
@@ -964,6 +965,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         };
         const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
         const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        if (yield* isMacDeveloperToolStub(resolved.command, { env: spawnEnv })) {
+          return yield* new GitCommandError({
+            ...gitCommandContext(commandInput),
+            detail: "Git needs the Xcode Command Line Tools, which are not installed.",
+            cause: missingMacDeveloperTools(resolved.command),
+          });
+        }
         // A git.cmd wrapper would need cmd.exe, which cuts multi-line commit
         // messages at the first newline; leave that case to Node's lookup.
         const executable = resolved.shell ? "git" : resolved.command;

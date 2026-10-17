@@ -75,7 +75,11 @@ import {
 } from "@t3tools/provider-core/server/subagentProjection";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
-import { OPENCODE_PROVIDER, openCodePermissionRequestKind } from "../adapter.ts";
+import {
+  OPENCODE_HIDDEN_T3_TOOLS,
+  OPENCODE_PROVIDER,
+  openCodePermissionRequestKind,
+} from "../adapter.ts";
 import { openCodeToolTurnItem } from "../toolItems.ts";
 
 const OpenCode2ProviderCapabilities = {
@@ -357,7 +361,8 @@ export const t3McpServerName = Effect.fn("t3McpServerName")(function* (threadId:
 /**
  * The rules that keep T3's MCP servers to their own thread, after the mode's:
  * the last matching rule wins, so every thread's T3 server is denied and then
- * this thread's own is allowed again, in every mode.
+ * this thread's own is allowed again, in every mode. Its tools that would take
+ * the session over the 128-tool API limit are denied again.
  */
 const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
   mcpServerName === null
@@ -365,6 +370,7 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
     : [
         { action: "t3-code-*", resource: "*", effect: "deny" },
         { action: `${mcpServerName}_*`, resource: "*", effect: "allow" },
+        ...OPENCODE_HIDDEN_T3_TOOLS.map((tool) => rule(`${mcpServerName}_${tool}`, "deny")),
       ];
 
 const sessionRules = (
