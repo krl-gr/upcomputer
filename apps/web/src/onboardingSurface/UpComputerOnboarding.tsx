@@ -94,6 +94,9 @@ const DETAIL_COPY: Record<
     title: "Set up Claude",
     description: "Install Claude Code, then sign in with your Claude account.",
     install: "Install Claude Code",
+    // The installer prints nothing while it downloads, for minutes on a slow network.
+    installNote:
+      "Runs the official installer in a terminal here. It downloads about 270 MB, which can take a few minutes.",
     signIn: "Sign in with Claude",
   },
   cursor: {

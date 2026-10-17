@@ -258,6 +258,7 @@ it("installs Claude in the terminal and asks to retry an install that did not fi
   expect(document.querySelector('[data-testid="terminal"]')?.textContent).toContain(
     "curl -fsSL https://claude.ai/install.sh | bash",
   );
+  expect(document.body.textContent).toContain("about 270 MB");
   await click(button("Close terminal"));
   expect(document.body.textContent).toContain("The install did not finish. Run it again.");
   expect(document.body.textContent).not.toContain("reopen");
