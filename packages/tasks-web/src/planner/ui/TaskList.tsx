@@ -6,6 +6,7 @@ import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/
 import type { PaginatedTasks } from "../data/hooks.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import { scrollMemory } from "../data/preferences.ts";
+import { StartThreadEmptyState } from "../../ui/StartThreadEmptyState.tsx";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";
@@ -88,6 +89,13 @@ export function TaskList(props: {
         <div className={props.centered ? "mx-auto w-full max-w-3xl py-2" : "w-full py-2"}>
           {status === "LoadingFirstPage" && results.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">Loading…</p>
+          ) : results.length === 0 && !props.showArchived && kind === "task" ? (
+            <div className="px-6 py-10">
+              <StartThreadEmptyState
+                title="No tasks yet"
+                body="Click + to add one, or ask any thread to plan the work for you."
+              />
+            </div>
           ) : results.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">
               {props.showArchived ? `No done or archived ${noun}s.` : `No active ${noun}s yet.`}
