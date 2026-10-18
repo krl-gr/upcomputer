@@ -4,7 +4,6 @@ import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   AuthProvidersManageScope,
-  PRIMARY_LOCAL_ENVIRONMENT_ID,
   type ServerProvider,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
@@ -27,15 +26,14 @@ import {
   getProviderUpdateProgressToastView,
   getProviderUpdateRejectedToastView,
   providerUpdateNotificationKey,
-  settleProviderUpdateEnvironments,
   shouldShowPrimaryProviderUpdateToast,
-  unresolvedProviderUpdateKeys,
   type ProviderUpdateSettlingEnvironment,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/toast";
 import { useAtomCommand } from "../state/use-atom-command";
-import { useProviderUpdateLateKeys } from "./providerUpdateStartupWait";
+import { useProviderUpdateLaunchSettling } from "./providerUpdateStartupWait";
+import { productSurface } from "../product/productFlags";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
 const NO_PROVIDERS: ReadonlyArray<ServerProvider> = [];
@@ -120,28 +118,25 @@ export function ProviderUpdatePrimaryNotification() {
     AuthProvidersManageScope,
   );
   const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
-  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? PRIMARY_LOCAL_ENVIRONMENT_ID;
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const settlingEnvironments = useMemo(
-    (): ProviderUpdateSettlingEnvironment[] => [
-      { environmentId: primaryEnvironmentId, connectionState: "ready", providers },
-    ],
+    (): ProviderUpdateSettlingEnvironment[] =>
+      primaryEnvironmentId === null
+        ? []
+        : [{ environmentId: primaryEnvironmentId, connectionState: "ready", providers }],
     [primaryEnvironmentId, providers],
   );
-  const lateKeys = useProviderUpdateLateKeys(
-    useMemo(() => unresolvedProviderUpdateKeys(settlingEnvironments), [settlingEnvironments]),
-  );
-  const settledEnvironments = useMemo(
-    () =>
-      settleProviderUpdateEnvironments({
-        environments: settlingEnvironments,
-        sessionKnown,
-        lateKeys,
-      }),
-    [lateKeys, sessionKnown, settlingEnvironments],
-  );
+  const launchSettling = productSurface("providerUpdateLaunchNotification") === "upcomputer";
+  const settledEnvironments = useProviderUpdateLaunchSettling({
+    environments: settlingEnvironments,
+    sessionKnown,
+    enabled: launchSettling,
+  });
   const promptSettled = settledEnvironments !== null;
-  // The providers the prompt offers: settled ones, without those that were late.
-  const promptProviders = settledEnvironments?.[0]?.providers ?? NO_PROVIDERS;
+  // UpComputer: the prompt offers the settled providers it admitted.
+  const promptProviders = launchSettling
+    ? (settledEnvironments?.[0]?.providers ?? NO_PROVIDERS)
+    : providers;
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });

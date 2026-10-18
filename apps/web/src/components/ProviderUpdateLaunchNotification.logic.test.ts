@@ -9,6 +9,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 
 import {
+  admittedProviderUpdateKeys,
   buildLocalEnvironmentUpdateGroups,
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -27,6 +28,7 @@ import {
   isProviderUpdateCandidate,
   isProviderSettingsUpdateCandidate,
   isTerminalProviderUpdatePhase,
+  launchPromptEnvironmentUpdateGroups,
   localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
@@ -1168,6 +1170,7 @@ describe("provider update launch prompt settling", () => {
       environments: [primary(providers)],
       sessionKnown: options.sessionKnown ?? true,
       lateKeys: options.lateKeys ?? null,
+      admittedKeys: null,
     });
     return settled === null
       ? "waiting"
@@ -1230,6 +1233,7 @@ describe("provider update launch prompt settling", () => {
         environments: inputs,
         sessionKnown: true,
         lateKeys,
+        admittedKeys: null,
       });
       return settled === null
         ? "waiting"
@@ -1257,6 +1261,184 @@ describe("provider update launch prompt settling", () => {
     expect(shownKey(environments("ready", [codex, openCode]))).toBe(
       "managed-vm=codex:2.0.0|primary-env=codex:2.0.0,opencode:2.0.0",
     );
+  });
+
+  describe("an environment that comes up after the prompt settled", () => {
+    // Astra review G2: a VM offline at launch was neither waited for nor
+    // left out, so when it connected with an update the prompt closed and
+    // reopened with two providers, before and after the startup wait.
+    const inputs = (
+      vm: EnvironmentUpdateConnectionStateForTest,
+      vmProviders: ServerProvider[],
+      primaryProviders: ServerProvider[] = [codex, openCode],
+    ): LocalEnvironmentProvidersInput[] => [
+      {
+        environmentId: PRIMARY,
+        label: "This Mac",
+        isPrimary: true,
+        connectionState: "ready",
+        providers: primaryProviders,
+      },
+      {
+        environmentId: VM,
+        label: "Managed VM",
+        isPrimary: false,
+        connectionState: vm,
+        providers: vmProviders,
+      },
+    ];
+    // The session state `useProviderUpdateLaunchSettling` keeps: the late keys
+    // at the startup wait's end, and the first settled result, admitted.
+    const launch = () => {
+      let lateKeys: ReadonlySet<string> | null = null;
+      let admittedKeys: ReadonlySet<string> | null = null;
+      return {
+        shownKey(environments: LocalEnvironmentProvidersInput[]) {
+          const settled = settleProviderUpdateEnvironments({
+            environments,
+            sessionKnown: true,
+            lateKeys,
+            admittedKeys,
+          });
+          if (settled === null) return "waiting";
+          if (settled.length > 0) admittedKeys ??= admittedProviderUpdateKeys(settled);
+          return localEnvironmentUpdateNotificationKey(
+            buildLocalEnvironmentUpdateGroups(settled).groups,
+          );
+        },
+        startupWaitEnds(environments: LocalEnvironmentProvidersInput[]) {
+          if (admittedKeys === null) lateKeys = unresolvedProviderUpdateKeys(environments);
+        },
+      };
+    };
+    const vmCodex = provider({ driver: driver("codex"), latestVersion: "3.0.0" });
+
+    it("waits for the next launch when it connects before the startup wait ends", () => {
+      const session = launch();
+      // The VM's cached providers do not join while it is offline.
+      expect(session.shownKey(inputs("disconnected", [vmCodex]))).toBe(
+        "primary-env=codex:2.0.0,opencode:2.0.0",
+      );
+      expect(session.shownKey(inputs("connecting", []))).toBe(
+        "primary-env=codex:2.0.0,opencode:2.0.0",
+      );
+      expect(session.shownKey(inputs("ready", [vmCodex]))).toBe(
+        "primary-env=codex:2.0.0,opencode:2.0.0",
+      );
+    });
+
+    it("waits for the next launch when it connects after the startup wait ended", () => {
+      const session = launch();
+      expect(session.shownKey(inputs("disconnected", [], [codex, pendingOpenCode]))).toBe(
+        "waiting",
+      );
+      session.startupWaitEnds(inputs("disconnected", [], [codex, pendingOpenCode]));
+      expect(session.shownKey(inputs("disconnected", [], [codex, pendingOpenCode]))).toBe(
+        "primary-env=codex:2.0.0",
+      );
+      expect(session.shownKey(inputs("ready", [vmCodex], [codex, openCode]))).toBe(
+        "primary-env=codex:2.0.0",
+      );
+    });
+
+    it("keeps an admitted environment's row through a reconnect", () => {
+      const session = launch();
+      const shown = "managed-vm=codex:3.0.0|primary-env=codex:2.0.0,opencode:2.0.0";
+      expect(session.shownKey(inputs("ready", [vmCodex]))).toBe(shown);
+      expect(session.shownKey(inputs("connecting", [vmCodex]))).toBe(shown);
+      expect(session.shownKey(inputs("ready", [vmCodex]))).toBe(shown);
+    });
+  });
+});
+
+describe("launch prompt surfaces", () => {
+  // Upstream's WSL path: groups every environment as it is and waits while
+  // one connects (its prompt caps that at 30 s), with no startup wait or
+  // session exclusions.
+  const PRIMARY = EnvironmentId.make("windows-host");
+  const WSL = EnvironmentId.make("wsl-ubuntu");
+  const codex = provider({ driver: driver("codex"), latestVersion: "2.0.0" });
+  const wslCodex = provider({ driver: driver("codex"), latestVersion: "3.0.0" });
+  const pendingCodex: ServerProvider = { ...codex, statusPending: true };
+  const inputs = (
+    wsl: EnvironmentUpdateConnectionStateForTest,
+    wslProviders: ServerProvider[],
+    primaryProviders: ServerProvider[] = [codex],
+  ): LocalEnvironmentProvidersInput[] => [
+    {
+      environmentId: PRIMARY,
+      label: "Windows",
+      isPrimary: true,
+      connectionState: "ready",
+      providers: primaryProviders,
+    },
+    {
+      environmentId: WSL,
+      label: "WSL · Ubuntu",
+      isPrimary: false,
+      connectionState: wsl,
+      providers: wslProviders,
+    },
+  ];
+  const upstream = (environments: LocalEnvironmentProvidersInput[]) => {
+    const { groups, isAnySettling } = launchPromptEnvironmentUpdateGroups({
+      surface: "upstream",
+      environments,
+      // What `useProviderUpdateLaunchSettling` returns without its surface.
+      settled: environments,
+    });
+    return { key: localEnvironmentUpdateNotificationKey(groups), isAnySettling };
+  };
+
+  it("keeps upstream's WSL behavior", () => {
+    for (const environments of [
+      inputs("connecting", []),
+      inputs("ready", [wslCodex]),
+      inputs("disconnected", [wslCodex], [pendingCodex]),
+    ]) {
+      expect(upstream(environments).key).toBe(
+        localEnvironmentUpdateNotificationKey(
+          buildLocalEnvironmentUpdateGroups(environments).groups,
+        ),
+      );
+    }
+    // Waits while WSL connects, however long; the prompt's 30 s grace ends it.
+    expect(upstream(inputs("connecting", []))).toEqual({
+      key: "windows-host=codex:2.0.0",
+      isAnySettling: true,
+    });
+    // WSL ready at 20 s still joins: there is no 15 s exclusion upstream.
+    expect(upstream(inputs("ready", [wslCodex]))).toEqual({
+      key: "windows-host=codex:2.0.0|wsl-ubuntu=codex:3.0.0",
+      isAnySettling: false,
+    });
+    // A disconnected WSL's cached update stays, and a pending check is not waited for.
+    expect(upstream(inputs("disconnected", [wslCodex], [pendingCodex]))).toEqual({
+      key: "windows-host=codex:2.0.0|wsl-ubuntu=codex:3.0.0",
+      isAnySettling: false,
+    });
+  });
+
+  it("gives UpComputer the bounded wait", () => {
+    const upcomputer = (
+      environments: LocalEnvironmentProvidersInput[],
+      lateKeys: ReadonlySet<string> | null,
+    ) =>
+      launchPromptEnvironmentUpdateGroups({
+        surface: "upcomputer",
+        environments,
+        settled: settleProviderUpdateEnvironments({
+          environments,
+          sessionKnown: true,
+          lateKeys,
+          admittedKeys: null,
+        }),
+      });
+    expect(upcomputer(inputs("connecting", []), null).isAnySettling).toBe(true);
+    const lateKeys = unresolvedProviderUpdateKeys(inputs("connecting", []));
+    const late = upcomputer(inputs("ready", [wslCodex]), lateKeys);
+    expect(late.isAnySettling).toBe(false);
+    expect(localEnvironmentUpdateNotificationKey(late.groups)).toBe("windows-host=codex:2.0.0");
   });
 });
 
