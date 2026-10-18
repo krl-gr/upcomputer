@@ -75,6 +75,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { useShallow } from "zustand/react/shallow";
 import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
+import { productSurface } from "./product/productFlags";
 import {
   replaceComposerContextReferences,
   toComposerContextId,
@@ -1081,23 +1082,52 @@ function legacyToModelSelectionByProvider(
 // UpComputer: a draft without a chosen model shows its provider's default,
 // and the default moves when the fresh provider check replaces the cached
 // catalog in a new order (OpenCode's Big Pickle, then Beam Free a second
-// later). For the session, the composer keeps the default it showed first
-// while the catalog still lists it.
-const shownDefaultModelByInstance = new Map<ProviderInstanceId, string>();
+// later). For the session, each draft keeps the default it showed first in
+// each environment while that environment's catalog still lists it. Instance
+// ids such as `opencode` repeat across environments with other catalogs, so
+// the memory is per draft, environment and instance.
+const shownDefaultModels = new Map<string, string>();
+
+/** Which draft and environment a composer's default model memory belongs to. */
+export interface ShownDefaultModelScope {
+  readonly draftKey: string;
+  readonly environmentId: EnvironmentId;
+}
+
+function shownDefaultModelKey(
+  scope: ShownDefaultModelScope,
+  instanceId: ProviderInstanceId,
+): string {
+  return JSON.stringify([scope.draftKey, scope.environmentId, instanceId]);
+}
 
 function keepShownDefaultModel(
-  instanceId: ProviderInstanceId,
+  key: string,
   model: string,
   catalog: { readonly settled: boolean; readonly lists: (model: string) => boolean },
 ): string {
-  const shown = shownDefaultModelByInstance.get(instanceId);
+  const shown = shownDefaultModels.get(key);
   // Only a finished check can tell that the shown model is gone: the
   // placeholder before it may list cached models, or none.
   if (shown !== undefined && shown !== model && (!catalog.settled || catalog.lists(shown))) {
     return shown;
   }
-  shownDefaultModelByInstance.set(instanceId, model);
+  shownDefaultModels.set(key, model);
   return model;
+}
+
+/**
+ * UpComputer: a draft moved to another environment keeps the defaults it
+ * showed, where that environment's catalog lists them. What it showed in the
+ * first environment stays there for a move back.
+ */
+function carryShownDefaultModels(draftKey: string, from: EnvironmentId, to: EnvironmentId): void {
+  for (const [key, model] of Array.from(shownDefaultModels)) {
+    const [entryDraftKey, environmentId, instanceId] = JSON.parse(key) as [string, string, string];
+    if (entryDraftKey !== draftKey || environmentId !== from) continue;
+    const carriedKey = JSON.stringify([draftKey, to, instanceId]);
+    if (!shownDefaultModels.has(carriedKey)) shownDefaultModels.set(carriedKey, model);
+  }
 }
 
 export function deriveEffectiveComposerModelState(input: {
@@ -1111,6 +1141,8 @@ export function deriveEffectiveComposerModelState(input: {
   threadModelSelection: ModelSelection | null | undefined;
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
+  /** UpComputer: where to remember the default it shows; upstream passes none. */
+  shownDefaultScope?: ShownDefaultModelScope | null | undefined;
 }): EffectiveComposerModelState {
   const baseModelCandidate =
     input.threadModelSelection?.model ?? input.projectModelSelection?.model ?? null;
@@ -1140,19 +1172,23 @@ export function deriveEffectiveComposerModelState(input: {
     getDefaultServerModel(input.providers, input.selectedProvider);
   const selectedInstanceId = input.selectedInstanceId;
   const baseModel =
-    !baseModelCandidate && selectedInstanceId && resolvedBaseModel
-      ? keepShownDefaultModel(selectedInstanceId, resolvedBaseModel, {
-          settled:
-            input.providers.find((provider) => provider.instanceId === selectedInstanceId)
-              ?.statusPending !== true,
-          lists: (shown) =>
-            resolveAppModelSelectionForInstance(
-              selectedInstanceId,
-              input.settings,
-              input.providers,
-              shown,
-            ) === shown,
-        })
+    !baseModelCandidate && selectedInstanceId && resolvedBaseModel && input.shownDefaultScope
+      ? keepShownDefaultModel(
+          shownDefaultModelKey(input.shownDefaultScope, selectedInstanceId),
+          resolvedBaseModel,
+          {
+            settled:
+              input.providers.find((provider) => provider.instanceId === selectedInstanceId)
+                ?.statusPending !== true,
+            lists: (shown) =>
+              resolveAppModelSelectionForInstance(
+                selectedInstanceId,
+                input.settings,
+                input.providers,
+                shown,
+              ) === shown,
+          },
+        )
       : resolvedBaseModel;
   const instanceSelection = input.selectedInstanceId
     ? input.draft?.modelSelectionByProvider?.[input.selectedInstanceId]
@@ -2664,6 +2700,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const projectChanged =
               nextProjectRef.environmentId !== existing.environmentId ||
               nextProjectRef.projectId !== existing.projectId;
+            if (nextProjectRef.environmentId !== existing.environmentId) {
+              carryShownDefaultModels(
+                threadKey,
+                existing.environmentId,
+                nextProjectRef.environmentId,
+              );
+            }
             const nextWorktreePath =
               options.worktreePath === undefined
                 ? projectChanged
@@ -4296,6 +4339,8 @@ function useComposerDraftModelState(threadRef: ComposerThreadTarget): ComposerDr
 export function useEffectiveComposerModelState(input: {
   threadRef?: ComposerThreadTarget;
   draftId?: DraftId;
+  /** The environment whose providers `providers` are. */
+  environmentId: EnvironmentId;
   providers: ReadonlyArray<ServerProvider>;
   selectedProvider: ProviderDriverKind;
   selectedInstanceId?: ProviderInstanceId | null | undefined;
@@ -4303,7 +4348,9 @@ export function useEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const draft = useComposerDraftModelState(input.threadRef ?? input.draftId ?? DraftId.make(""));
+  const target = input.threadRef ?? input.draftId ?? DraftId.make("");
+  const draft = useComposerDraftModelState(target);
+  const draftKey = composerTargetKey(target);
 
   return useMemo(
     () =>
@@ -4315,9 +4362,16 @@ export function useEffectiveComposerModelState(input: {
         threadModelSelection: input.threadModelSelection,
         projectModelSelection: input.projectModelSelection,
         settings: input.settings,
+        // Upstream follows the catalog's default as it changes.
+        shownDefaultScope:
+          productSurface("composerContextRow") === "upcomputer" && draftKey.length > 0
+            ? { draftKey, environmentId: input.environmentId }
+            : null,
       }),
     [
       draft,
+      draftKey,
+      input.environmentId,
       input.providers,
       input.settings,
       input.projectModelSelection,
