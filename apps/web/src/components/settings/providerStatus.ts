@@ -5,6 +5,10 @@ import type {
 } from "@t3tools/contracts";
 
 export const PROVIDER_STATUS_STYLES = {
+  // UpComputer: not reported yet, or its first check is still running.
+  checking: {
+    dot: "bg-muted-foreground/50",
+  },
   disabled: {
     dot: "bg-muted-foreground/50",
   },
@@ -21,6 +25,17 @@ export const PROVIDER_STATUS_STYLES = {
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
 
+/** Until a check reports, a provider is neither missing nor in need of attention. */
+export function getProviderStatusKey(
+  provider: ServerProvider | undefined,
+  enabled: boolean,
+): ProviderStatusKey {
+  if (!enabled) return "disabled";
+  // UpComputer: `statusPending` marks the placeholder published before the first check.
+  if (provider === undefined || provider.statusPending === true) return "checking";
+  return provider.status;
+}
+
 export function getProviderSummary(provider: ServerProvider | undefined) {
   if (!provider) {
     return {
@@ -35,6 +50,10 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
         provider.message ??
         "This provider is installed but disabled for new sessions in Up.computer.",
     };
+  }
+  // UpComputer: the placeholder before the first check says nothing about the provider yet.
+  if (provider.statusPending === true) {
+    return { headline: "Checking…", detail: null };
   }
   if (!provider.installed) {
     return {
