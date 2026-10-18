@@ -117,6 +117,13 @@ function renderHero(activeProject: typeof SCRATCH) {
 }
 
 const projectPicker = () => container.querySelector("[data-draft-project-trigger]");
+function buttonByText(text: string): HTMLElement {
+  const button = [...container.querySelectorAll<HTMLElement>("button")].find(
+    (candidate) => candidate.textContent === text,
+  );
+  if (!button) throw new Error(`No "${text}" button`);
+  return button;
+}
 
 beforeEach(() => {
   state.surface = "upcomputer";
@@ -133,11 +140,27 @@ afterEach(async () => {
 });
 
 describe("the empty draft's hero", () => {
-  it("leaves choosing a project to the header's project list in a draft without one", async () => {
+  it('offers "or pick a project" in a draft without one when projects exist', async () => {
     await renderHero(SCRATCH);
     expect(container.querySelector("h1")?.textContent).toBe("What should we work on?");
     expect(projectPicker()).toBeNull();
     expect(container.textContent).not.toContain("No project");
+    await act(async () => buttonByText("or pick a project").click());
+    const options = [...document.querySelectorAll('[role="option"]')].map(
+      (option) => option.textContent,
+    );
+    expect(options).toEqual(["UpComputer", "Add project"]);
+  });
+
+  it('offers "or add a project" in a draft without one when there are no projects', async () => {
+    state.projects = [SCRATCH];
+    const opened = vi.fn();
+    window.addEventListener("t3code:open-command-palette", opened);
+    await renderHero(SCRATCH);
+    expect(container.textContent).not.toContain("or pick a project");
+    await act(async () => buttonByText("or add a project").click());
+    expect(opened).toHaveBeenCalledOnce();
+    window.removeEventListener("t3code:open-command-palette", opened);
   });
 
   it("keeps upstream's heading picker in a draft with a project", async () => {

@@ -13,13 +13,16 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
+import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
@@ -40,12 +43,19 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const { scratchEnvironmentId, openScratchProject } = useScratchProject();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
-  const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
+  const [startState, setStartState] = useState({
+    failed: false,
+    scratchFailed: false,
+    retryRequest: 0,
+  });
 
   const mostRecentProject = useMemo(
     () =>
@@ -54,10 +64,41 @@ function IndexDraftLanding() {
         : null,
     [bootstrapped, projects, threads],
   );
+  // UpComputer: with no projects yet, home is a chat without a project, the
+  // draft New thread opens, instead of upstream's "add a project" hero.
+  const scratchTarget =
+    bootstrapped && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
+      ? scratchEnvironmentId(primaryEnvironmentId)
+      : null;
 
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
-    if (mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
+    if (startingRef.current || !isStillOnIndex()) {
+      return;
+    }
+    if (mostRecentProject === null) {
+      if (scratchTarget === null) return;
+      startingRef.current = true;
+      // The scratch project lands in the store before this resolves, so the
+      // effect reruns with it as the most recent project; startingRef holds it off.
+      void openScratchProject(scratchTarget)
+        .then((project) =>
+          project === null
+            ? null
+            : handleNewThread(scopeProjectRef(project.environmentId, project.id), {
+                replace: true,
+              }),
+        )
+        .then((opened) => {
+          if (opened === null) {
+            startingRef.current = false;
+            setStartState((state) => ({ ...state, scratchFailed: true }));
+          }
+        })
+        .catch(() => {
+          startingRef.current = false;
+          setStartState((state) => ({ ...state, scratchFailed: true }));
+        });
       return;
     }
     const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
@@ -76,7 +117,13 @@ function IndexDraftLanding() {
         startingRef.current = false;
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [
+    handleNewThread,
+    mostRecentProject,
+    openScratchProject,
+    scratchTarget,
+    startState.retryRequest,
+  ]);
 
   if (!bootstrapped) {
     return null;
@@ -86,6 +133,7 @@ function IndexDraftLanding() {
       <DraftStartError
         onRetry={() => {
           setStartState((state) => ({
+            ...state,
             failed: false,
             retryRequest: state.retryRequest + 1,
           }));
@@ -93,6 +141,10 @@ function IndexDraftLanding() {
       />
     ) : null;
   }
+  if (scratchTarget !== null) {
+    return null;
+  }
+  // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
   return <NoProjectsHero />;
 }
 
