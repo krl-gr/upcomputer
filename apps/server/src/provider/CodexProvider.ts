@@ -569,6 +569,7 @@ const makePendingCodexProvider = (
       checkedAt,
       models,
       skills: [],
+      statusPending: true,
       probe: {
         installed: false,
         version: null,

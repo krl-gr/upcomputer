@@ -121,7 +121,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     }),
   );
 
-  it("hydrates cached provider status while preserving current settings-derived models", () => {
+  it("hydrates cached provider status as checked while preserving settings-derived models", () => {
     const cachedCodex = makeProvider(CODEX_DRIVER, {
       checkedAt: "2026-04-10T12:00:00.000Z",
       models: [
@@ -151,8 +151,11 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
           capabilities: emptyCapabilities,
         },
       ],
+      status: "warning",
       message: "Pending refresh",
+      statusPending: true,
     });
+    const { statusPending: _statusPending, ...checkedFallbackCodex } = fallbackCodex;
 
     assert.deepStrictEqual(
       hydrateCachedProvider({
@@ -160,7 +163,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         fallbackProvider: fallbackCodex,
       }),
       {
-        ...fallbackCodex,
+        ...checkedFallbackCodex,
         models: [
           ...fallbackCodex.models,
           {

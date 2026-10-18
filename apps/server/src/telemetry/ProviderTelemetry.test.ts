@@ -94,6 +94,7 @@ it.effect("records each provider's state once, then again only when it changes",
           ...missingClaude,
           status: "warning",
           message: "Claude provider status has not been checked in this session yet.",
+          statusPending: true,
         },
       ]);
       yield* Queue.offer(changes, [installedClaude]);

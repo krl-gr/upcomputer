@@ -66,7 +66,8 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     ),
   );
   const check = Effect.gen(function* () {
-    const base = yield* pending;
+    // UpComputer: every result below is a finished check, not the placeholder.
+    const { statusPending: _statusPending, ...base } = yield* pending;
     if (!enabled) return base;
     const executable = yield* runtime.installation.resolve().pipe(Effect.option);
     if (Option.isNone(executable))

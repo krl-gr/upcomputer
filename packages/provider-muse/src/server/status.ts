@@ -40,6 +40,7 @@ export const makePendingMuseProvider = Effect.fn("makePendingMuseProvider")(func
     checkedAt: DateTime.formatIso(yield* DateTime.now),
     models: providerModelsFromSettings([], settings.customModels, FALLBACK_CAPABILITIES),
     slashCommands: settings.enabled ? [COMPACT_SLASH_COMMAND] : [],
+    statusPending: settings.enabled,
     probe: {
       installed: false,
       version: null,

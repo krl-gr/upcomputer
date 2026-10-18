@@ -363,6 +363,7 @@ export const makePendingOpenCodeProvider = (
       enabled: true,
       checkedAt,
       models,
+      statusPending: true,
       probe: {
         installed: false,
         version: null,

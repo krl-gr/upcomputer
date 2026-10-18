@@ -9,7 +9,7 @@ import { vi } from "vite-plus/test";
 import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
 import type { MuseSdkHost } from "./sdk.ts";
 import { COMPACT_SLASH_COMMAND } from "@t3tools/provider-core/server/snapshotProbe";
-import { checkMuseProviderStatus } from "./status.ts";
+import { checkMuseProviderStatus, makePendingMuseProvider } from "./status.ts";
 
 const settings = Schema.decodeSync(MuseSettings);
 const makeHost = (catalog: Record<string, unknown>) => {
@@ -60,7 +60,16 @@ it.layer(NodeServices.layer)("Muse status", (it) => {
       const createHost = vi.fn(async () => makeHost(metaCatalog));
       const snapshot = yield* checkMuseProviderStatus(settings({}), {}, undefined, createHost);
       expect(snapshot.status).toBe("disabled");
+      expect(snapshot.statusPending).toBeUndefined();
       expect(createHost).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("marks the enabled placeholder as pending", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* makePendingMuseProvider(settings({ enabled: true }));
+      expect(snapshot.status).toBe("warning");
+      expect(snapshot.statusPending).toBe(true);
     }),
   );
 
