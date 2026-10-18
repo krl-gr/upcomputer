@@ -34,24 +34,59 @@ import {
 
 /**
  * What the sidebar's lists may show while startup data loads. On UpComputer's
- * surface an empty list is a claim ("No threads yet"), so it waits for the
- * live workspace, and the Projects rows wait until the scratch project can be
- * told apart (cached shells and server configs are enough), so they never
- * change or move the Threads header. Both inputs are first-load gates that
- * never turn false again. Upstream shows its lists as they load.
+ * surface an empty list is a claim ("No threads yet"), so it needs every
+ * environment's live data; past the first-load deadline an environment that
+ * has not sent it gets a waiting notice instead. The Projects rows wait until
+ * the scratch project can be told apart (cached shells and server configs are
+ * enough), so they never change or move the Threads header. The gates never
+ * turn false again. Upstream shows its lists as they load.
  */
 export function resolveSidebarListVisibility(input: {
   readonly surface: "upstream" | "upcomputer";
   readonly workspaceKnown: boolean;
   readonly workspaceSettled: boolean;
+  readonly workspaceDelivered: boolean;
 }): {
   readonly projectRowsShown: boolean;
-  readonly emptyStateShown: boolean;
+  readonly emptyState: "hidden" | "empty" | "waiting";
 } {
-  const upstream = input.surface === "upstream";
+  if (input.surface === "upstream") return { projectRowsShown: true, emptyState: "empty" };
   return {
-    projectRowsShown: upstream || input.workspaceKnown,
-    emptyStateShown: upstream || input.workspaceSettled,
+    projectRowsShown: input.workspaceKnown,
+    emptyState: input.workspaceDelivered ? "empty" : input.workspaceSettled ? "waiting" : "hidden",
+  };
+}
+
+/** UpComputer: what to say instead of an empty claim while environments have not sent data. */
+export function describeWorkspaceWaiting(
+  waitingOn: ReadonlyArray<{
+    readonly label: string;
+    readonly isPrimary: boolean;
+    readonly unreachable: boolean;
+  }>,
+): { readonly text: string; readonly unreachable: boolean } {
+  const name = (environment: (typeof waitingOn)[number]) =>
+    environment.isPrimary ? "this device" : environment.label;
+  const unreachable = waitingOn.filter((environment) => environment.unreachable);
+  const [firstUnreachable] = unreachable;
+  if (firstUnreachable !== undefined) {
+    return {
+      text:
+        unreachable.length === 1
+          ? `Can’t reach ${name(firstUnreachable)} right now.`
+          : `Can’t reach ${unreachable.length} environments right now.`,
+      unreachable: true,
+    };
+  }
+  const [first] = waitingOn;
+  return {
+    text:
+      first === undefined
+        ? "Connecting…"
+        : waitingOn.length === 1
+          ? `Connecting to ${name(first)}…`
+          : `Connecting to ${waitingOn.length} environments…`,
+    unreachable: false,
   };
 }
 

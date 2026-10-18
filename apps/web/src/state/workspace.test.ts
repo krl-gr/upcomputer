@@ -11,7 +11,11 @@ import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { filterSidebarThreadsBySettledEnvironment } from "../components/Sidebar.logic";
+import {
+  filterSidebarThreadsBySettledEnvironment,
+  resolveSidebarListVisibility,
+} from "../components/Sidebar.logic";
+import { resolveHomeWithoutDraft } from "../scratchHomeDraft";
 import { createWorkspaceAtoms } from "./workspace";
 
 const LOCAL = EnvironmentId.make("local");
@@ -91,6 +95,21 @@ function makeHarness(expectsPrimary = true) {
   const known = () => registry.get(atoms.workspaceKnownAtom);
   const settled = () => registry.get(atoms.workspaceSettledAtom);
   const settledEnvironments = () => registry.get(atoms.settledEnvironmentIdsAtom);
+  const delivery = () => registry.get(atoms.workspaceDeliveryAtom);
+  // What the UpComputer sidebar and home show with no thread and no project.
+  const emptyStates = () => ({
+    sidebar: resolveSidebarListVisibility({
+      surface: "upcomputer",
+      workspaceKnown: known(),
+      workspaceSettled: settled(),
+      workspaceDelivered: delivery().delivered,
+    }).emptyState,
+    home: resolveHomeWithoutDraft({
+      startsWithoutProject: true,
+      workspaceSettled: settled(),
+      workspaceDelivered: delivery().delivered,
+    }),
+  });
   return {
     catalog,
     shells,
@@ -101,6 +120,8 @@ function makeHarness(expectsPrimary = true) {
     known,
     settled,
     settledEnvironments,
+    delivery,
+    emptyStates,
   };
 }
 
@@ -232,6 +253,59 @@ describe("workspace readiness", () => {
     registry.set(shells(REMOTE), shellState("live"));
     registry.set(configs(REMOTE), {});
     expect(settled()).toBe(true);
+    registry.dispose();
+  });
+
+  it("does not claim an empty workspace at the deadline while an environment is connecting", () => {
+    // Astra review G2: a slow cold start with no cache and no server config
+    // reached the deadline and said "No threads yet", and home could show the
+    // "Add a project" hero, while the live shell still had threads.
+    const { catalog, connections, deadlinePassed, registry, settled, delivery, emptyStates } =
+      makeHarness();
+    registry.set(catalog, catalogState([LOCAL]));
+    registry.set(connections(LOCAL), connection("connecting"));
+    expect(emptyStates()).toEqual({ sidebar: "hidden", home: "pending" });
+    registry.set(deadlinePassed, true);
+    expect(settled()).toBe(true);
+    expect(delivery()).toEqual({
+      delivered: false,
+      waitingOn: [{ environmentId: LOCAL, label: LOCAL, isPrimary: true, unreachable: false }],
+    });
+    expect(emptyStates()).toEqual({ sidebar: "waiting", home: "waiting" });
+    registry.set(connections(LOCAL), connection("offline"));
+    expect(delivery().waitingOn[0]?.unreachable).toBe(true);
+    registry.dispose();
+  });
+
+  it("claims an empty workspace once every environment sent its live data", () => {
+    const { catalog, shells, connections, configs, deadlinePassed, registry, emptyStates } =
+      makeHarness();
+    registry.set(catalog, catalogState([LOCAL, REMOTE]));
+    registry.set(connections(REMOTE), connection("backoff", { attempt: 3 }));
+    registry.set(deadlinePassed, true);
+    registry.set(shells(LOCAL), shellState("live"));
+    registry.set(configs(LOCAL), {});
+    // The remote's cache or failed connection proves nothing about its threads.
+    registry.set(shells(REMOTE), shellState("cached"));
+    expect(emptyStates()).toEqual({ sidebar: "waiting", home: "waiting" });
+    registry.set(shells(REMOTE), shellState("live"));
+    registry.set(configs(REMOTE), {});
+    registry.set(connections(REMOTE), connection("connected"));
+    expect(emptyStates()).toEqual({ sidebar: "empty", home: "hero" });
+    // Proof does not expire: a later reconnect keeps the empty state.
+    registry.set(shells(REMOTE), shellState("cached"));
+    registry.set(connections(REMOTE), connection("backoff", { attempt: 1 }));
+    expect(emptyStates()).toEqual({ sidebar: "empty", home: "hero" });
+    registry.dispose();
+  });
+
+  it("does not wait for a remote the user does not connect to", () => {
+    const { catalog, shells, connections, configs, registry, delivery } = makeHarness();
+    registry.set(catalog, catalogState([LOCAL, REMOTE]));
+    registry.set(connections(REMOTE), connection("available", { desired: false }));
+    registry.set(shells(LOCAL), shellState("live"));
+    registry.set(configs(LOCAL), {});
+    expect(delivery().delivered).toBe(true);
     registry.dispose();
   });
 });

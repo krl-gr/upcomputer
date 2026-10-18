@@ -103,7 +103,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams, useRouter } from "@tanstack/react-router";
 
 import { useRightPanelStore } from "../rightPanelStore";
 import {
@@ -163,6 +163,7 @@ import {
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useSettledEnvironmentIds,
+  useWorkspaceDelivery,
   useThreadShells,
   useWorkspaceKnown,
   useWorkspaceSettled,
@@ -215,6 +216,7 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   filterSidebarThreadsBySettledEnvironment,
+  describeWorkspaceWaiting,
   resolveSidebarListVisibility,
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
@@ -2738,12 +2740,16 @@ export default function Sidebar() {
   const threadListShown = useSidebarThreadListShown();
   const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
-  const { projectRowsShown: sidebarProjectRowsShown, emptyStateShown: sidebarEmptyStateShown } =
+  const workspaceDelivery = useWorkspaceDelivery();
+  const { projectRowsShown: sidebarProjectRowsShown, emptyState: sidebarEmptyState } =
     resolveSidebarListVisibility({
       surface: productSurface("sidebarProjects"),
       workspaceKnown,
       workspaceSettled,
+      workspaceDelivered: workspaceDelivery.delivered,
     });
+  const sidebarWaiting =
+    sidebarEmptyState === "waiting" ? describeWorkspaceWaiting(workspaceDelivery.waitingOn) : null;
   const ThreadRow: typeof SidebarThreadRow =
     useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
@@ -5246,7 +5252,7 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads &&
           threadListShown &&
-          sidebarEmptyStateShown &&
+          sidebarEmptyState !== "hidden" &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +
@@ -5256,7 +5262,19 @@ export default function Sidebar() {
             0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {/* The UpComputer Projects section keeps Add project, and a chat needs no project. */}
-              {projects.length === 0 && productSurface("sidebarProjects") === "upstream" ? (
+              {sidebarWaiting !== null ? (
+                <>
+                  <span>{sidebarWaiting.text}</span>
+                  {sidebarWaiting.unreachable ? (
+                    <Link
+                      to="/settings/connections"
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      Check Connections
+                    </Link>
+                  ) : null}
+                </>
+              ) : projects.length === 0 && productSurface("sidebarProjects") === "upstream" ? (
                 <>
                   <span>No projects yet</span>
                   <button

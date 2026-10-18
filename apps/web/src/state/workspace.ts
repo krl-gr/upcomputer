@@ -115,6 +115,80 @@ function createWorkspaceReadinessAtoms(input: WorkspaceReadinessInput, requireLi
   return { environmentIdsAtom, workspaceAtom };
 }
 
+export interface WaitingWorkspaceEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly isPrimary: boolean;
+  /** Its connection stopped trying for now, so it is not just slow. */
+  readonly unreachable: boolean;
+}
+
+export interface WorkspaceDelivery {
+  /** Every environment the user connects to sent its live data at least once. */
+  readonly delivered: boolean;
+  readonly waitingOn: ReadonlyArray<WaitingWorkspaceEnvironment>;
+}
+
+const WORKSPACE_NOT_DELIVERED: WorkspaceDelivery = { delivered: false, waitingOn: [] };
+const WORKSPACE_DELIVERED: WorkspaceDelivery = { delivered: true, waitingOn: [] };
+
+/**
+ * UpComputer: proof for an empty claim. The readiness gates may reveal what is
+ * known once the deadline passes; "No threads yet" and the "Add a project"
+ * hero need every environment to have sent its live data, as a cache or a
+ * missing connection proves nothing. An environment the user does not connect
+ * to is left out, since it will not send anything.
+ */
+function createWorkspaceDeliveryAtom(input: WorkspaceReadinessInput) {
+  const delivered = new Set<EnvironmentId>();
+  let previous = WORKSPACE_NOT_DELIVERED;
+  let previousKey = "";
+  return Atom.make((get): WorkspaceDelivery => {
+    const catalog = get(input.catalogValueAtom);
+    if (!catalog.isReady) return WORKSPACE_NOT_DELIVERED;
+    if (input.expectsPrimaryEnvironment() && !hasPrimaryEnvironment(catalog)) {
+      return WORKSPACE_NOT_DELIVERED;
+    }
+    const waitingOn: WaitingWorkspaceEnvironment[] = [];
+    for (const environmentId of enabledEnvironmentIds(catalog)) {
+      if (delivered.has(environmentId)) continue;
+      const shell = get(input.shellStateValueAtom(environmentId));
+      if (
+        shell.status === "live" &&
+        Option.isSome(shell.snapshot) &&
+        get(input.serverConfigValueAtom(environmentId)) !== null
+      ) {
+        delivered.add(environmentId);
+        continue;
+      }
+      const target = catalog.entries.get(environmentId)?.target;
+      const isPrimary = target?._tag === "PrimaryConnectionTarget";
+      const connection = get(input.connectionStateAtom(environmentId));
+      if (!isPrimary && connection?.phase === "available" && !connection.desired) continue;
+      waitingOn.push({
+        environmentId,
+        label: target?.label ?? environmentId,
+        isPrimary,
+        unreachable: connection !== null && connectionSettledWithoutData(connection, isPrimary),
+      });
+    }
+    if (waitingOn.length === 0) return WORKSPACE_DELIVERED;
+    // Shell updates recompute this; keep the value stable so readers only
+    // render when what they show changes.
+    const key = waitingOn
+      .map(
+        (environment) =>
+          `${environment.environmentId}:${environment.label}:${environment.unreachable}`,
+      )
+      .join("\0");
+    if (key !== previousKey) {
+      previousKey = key;
+      previous = { delivered: false, waitingOn };
+    }
+    return previous;
+  }).pipe(Atom.keepAlive, Atom.withLabel("web-workspace-delivery"));
+}
+
 export function createWorkspaceAtoms(input: WorkspaceReadinessInput) {
   const known = createWorkspaceReadinessAtoms(input, false);
   const settled = createWorkspaceReadinessAtoms(input, true);
@@ -122,6 +196,7 @@ export function createWorkspaceAtoms(input: WorkspaceReadinessInput) {
     workspaceKnownAtom: known.workspaceAtom,
     workspaceSettledAtom: settled.workspaceAtom,
     settledEnvironmentIdsAtom: settled.environmentIdsAtom,
+    workspaceDeliveryAtom: createWorkspaceDeliveryAtom(input),
   };
 }
 
@@ -140,10 +215,12 @@ const firstLoadDeadlinePassedAtom = Atom.make((get) => {
 export const {
   /** Known from cached shells; enough to pick home's draft without waiting for the server. */
   workspaceKnownAtom,
-  /** Known from live shells; what an empty state may claim. */
+  /** Known from live shells, or the first load gave up waiting; what may be revealed. */
   workspaceSettledAtom,
   /** Environments whose thread rows the sidebar may show. */
   settledEnvironmentIdsAtom,
+  /** Whether an empty state may claim the workspace is empty. */
+  workspaceDeliveryAtom,
 } = createWorkspaceAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,

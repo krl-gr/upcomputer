@@ -7,7 +7,10 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
+import {
+  describeWorkspaceWaiting,
+  sortScopedProjectsForSidebar,
+} from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -15,7 +18,7 @@ import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
-import { openScratchHomeDraft } from "../scratchHomeDraft";
+import { openScratchHomeDraft, resolveHomeWithoutDraft } from "../scratchHomeDraft";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import {
   readProject,
@@ -23,8 +26,10 @@ import {
   useProjects,
   useThreadShells,
   useWorkspaceKnown,
+  useWorkspaceDelivery,
   useWorkspaceSettled,
 } from "../state/entities";
+import type { WaitingWorkspaceEnvironment } from "../state/workspace";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -47,6 +52,7 @@ function IndexDraftLanding() {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
+  const workspaceDelivery = useWorkspaceDelivery();
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -163,13 +169,25 @@ function IndexDraftLanding() {
       pending
     );
   }
-  // UpComputer: the scratch environment offers a chat once it connects; before
-  // the live workspace settles, "no chat to open" is only a guess.
-  if (scratchTarget !== null || (startsWithoutProject && !workspaceSettled)) {
+  if (scratchTarget !== null) {
     return <HomePending />;
   }
-  // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
-  return <NoProjectsHero />;
+  // UpComputer: the scratch environment offers a chat once it connects.
+  switch (
+    resolveHomeWithoutDraft({
+      startsWithoutProject,
+      workspaceSettled,
+      workspaceDelivered: workspaceDelivery.delivered,
+    })
+  ) {
+    case "pending":
+      return <HomePending />;
+    case "waiting":
+      return <HomeWaiting waitingOn={workspaceDelivery.waitingOn} />;
+    case "hero":
+      // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
+      return <NoProjectsHero />;
+  }
 }
 
 /**
@@ -180,6 +198,31 @@ function HomePending() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       {isElectron ? <WorkspacePageHeader electron /> : null}
+    </SidebarInset>
+  );
+}
+
+function HomeWaiting({
+  waitingOn,
+}: {
+  readonly waitingOn: ReadonlyArray<WaitingWorkspaceEnvironment>;
+}) {
+  const { text, unreachable } = describeWorkspaceWaiting(waitingOn);
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+      <Empty className="flex-1">
+        <EmptyHeader className="max-w-md">
+          <EmptyDescription>{text}</EmptyDescription>
+          {unreachable ? (
+            <div className="mt-5 flex justify-center">
+              <Button render={<Link to="/settings/connections" />} size="sm" variant="outline">
+                Check Connections
+              </Button>
+            </div>
+          ) : null}
+        </EmptyHeader>
+      </Empty>
     </SidebarInset>
   );
 }
