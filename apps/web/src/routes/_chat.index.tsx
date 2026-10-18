@@ -22,6 +22,7 @@ import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
+  useWorkspaceSettled,
 } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
@@ -43,10 +44,15 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const workspaceSettled = useWorkspaceSettled();
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
+  // UpComputer: a cached shell can be stale and the scratch environment is not
+  // known before its server config, so choosing between the most recent project
+  // and a chat without a project waits until the workspace is settled.
+  const projectsKnown = startsWithoutProject ? workspaceSettled : bootstrapped;
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
@@ -67,15 +73,15 @@ function IndexDraftLanding() {
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
+      projectsKnown
         ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [projectsKnown, projects, threads],
   );
   // UpComputer: with no projects yet, home is a chat without a project, the
   // draft New thread opens, instead of upstream's "add a project" hero.
   const scratchTarget =
-    bootstrapped && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
+    projectsKnown && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
       ? scratchEnvironmentId(primaryEnvironmentId)
       : null;
 
@@ -134,8 +140,8 @@ function IndexDraftLanding() {
     startState.retryRequest,
   ]);
 
-  if (!bootstrapped) {
-    return null;
+  if (!projectsKnown) {
+    return <HomePending />;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (
@@ -148,13 +154,27 @@ function IndexDraftLanding() {
           }));
         }}
       />
-    ) : null;
+    ) : (
+      <HomePending />
+    );
   }
   if (scratchTarget !== null) {
-    return null;
+    return <HomePending />;
   }
   // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
   return <NoProjectsHero />;
+}
+
+/**
+ * Blank page while home picks its draft. Rendering nothing would leave the
+ * window's own background (the macOS vibrancy) where the page then appears.
+ */
+function HomePending() {
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+    </SidebarInset>
+  );
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
