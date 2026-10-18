@@ -44,6 +44,7 @@ import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import {
   buildMenuItems,
   formatGitActionElapsed,
+  gitActionsWaitForFirstStatus,
   GIT_ACTION_SUCCESS_VISIBLE_MS,
   type GitActionProgressPresentation,
   type GitActionIconName,
@@ -59,6 +60,7 @@ import {
   resolveQuickAction,
   resolveThreadBranchUpdate,
 } from "./GitActionsControl.logic";
+import { productSurface } from "../product/productFlags";
 import { WizardPopup, WizardHeader, WizardSteps, WizardPanel, WizardFooter } from "./ui/wizard";
 import { StartTruncatedPath } from "./StartTruncatedPath";
 import { Button } from "~/components/ui/button";
@@ -1688,10 +1690,15 @@ export default function GitActionsControl({
   );
 
   if (!gitCwd) return null;
-  // UpComputer: until the first status, neither the repository actions nor
-  // "Initialize Git" is known to apply, and `isRepo` assumes a repository, so
-  // a folder without git showed Commit before Initialize Git.
-  if (presentation !== "menu" && gitStatus === null && !gitStatusError) return null;
+  if (
+    gitActionsWaitForFirstStatus({
+      surface: productSurface("composerContextRow"),
+      presentation,
+      statusKnown: gitStatus !== null || Boolean(gitStatusError),
+    })
+  ) {
+    return null;
+  }
 
   return (
     <>

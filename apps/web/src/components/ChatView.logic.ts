@@ -50,6 +50,7 @@ import {
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
+import { showsUpComputerComposerContextRow } from "../composerContextRow/composerContextRowSurface";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
 import { waitForAtomValue } from "../state/waitForAtomValue";
@@ -934,7 +935,7 @@ export function isBranchMismatchDismissedForSession(key: string | null): boolean
 // strip mounts on the assumption that a project is a Git repo. Without a
 // memory, a non-Git project would mount the strip and drop it on every visit.
 // UpComputer: the memory outlives the session, so a relaunch paints the strip
-// as it was instead of mounting and dropping it.
+// as it was instead of mounting and dropping it. Upstream keeps it per session.
 const sessionCheckoutIsRepo = new Map<string, boolean>();
 const CHECKOUT_IS_REPO_STORAGE_KEY = "upcomputer:checkout-is-repo:v1";
 const CHECKOUT_IS_REPO_LIMIT = 200;
@@ -942,7 +943,7 @@ const PersistedCheckoutIsRepo = Schema.Record(Schema.String, Schema.Boolean);
 let persistedCheckoutIsRepoLoaded = false;
 
 function loadPersistedCheckoutIsRepo(): void {
-  if (persistedCheckoutIsRepoLoaded) return;
+  if (persistedCheckoutIsRepoLoaded || !showsUpComputerComposerContextRow()) return;
   persistedCheckoutIsRepoLoaded = true;
   try {
     const persisted = getLocalStorageItem(CHECKOUT_IS_REPO_STORAGE_KEY, PersistedCheckoutIsRepo);
@@ -963,8 +964,12 @@ export function rememberCheckoutIsRepo(
   cwd: string,
   isRepo: boolean,
 ): void {
-  loadPersistedCheckoutIsRepo();
   const key = checkoutIsRepoKey(environmentId, cwd);
+  if (!showsUpComputerComposerContextRow()) {
+    sessionCheckoutIsRepo.set(key, isRepo);
+    return;
+  }
+  loadPersistedCheckoutIsRepo();
   if (sessionCheckoutIsRepo.get(key) === isRepo) return;
   // Re-inserting keeps the map in recency order, so the oldest entries go first.
   sessionCheckoutIsRepo.delete(key);

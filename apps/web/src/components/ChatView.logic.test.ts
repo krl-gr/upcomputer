@@ -1878,15 +1878,15 @@ describe("checkout Git memory", () => {
     rememberCheckoutIsRepo(EnvironmentId.make("env"), "a:b", false);
     expect(recallCheckoutIsRepo(EnvironmentId.make("env:a"), "b")).toBeUndefined();
   });
-  it("keeps what it saw for the next launch", () => {
-    // Without it, a relaunch into a folder without Git mounted the branch strip
-    // ("Current checkout | Select ref") and dropped it a moment later.
-    rememberCheckoutIsRepo(environmentId, "/repo/persisted-folder", false);
-    const persisted = getLocalStorageItem(
-      "upcomputer:checkout-is-repo:v1",
-      Schema.Record(Schema.String, Schema.Boolean),
-    );
-    expect(persisted?.[JSON.stringify([environmentId, "/repo/persisted-folder"])]).toBe(false);
+  it("stays in the session on the upstream surface", () => {
+    rememberCheckoutIsRepo(environmentId, "/repo/session-folder", false);
+    expect(recallCheckoutIsRepo(environmentId, "/repo/session-folder")).toBe(false);
+    expect(
+      getLocalStorageItem(
+        "upcomputer:checkout-is-repo:v1",
+        Schema.Record(Schema.String, Schema.Boolean),
+      ),
+    ).toBeNull();
   });
 });
 
