@@ -13,8 +13,10 @@ import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contrac
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
+  clearComposerDraftsEnvironment,
   deriveEffectiveComposerModelState,
   DraftId,
+  shownDefaultModelDraftCount,
   useComposerDraftStore,
 } from "./composerDraftStore";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
@@ -1049,6 +1051,43 @@ describe("composer default model stability", () => {
       defaultModelFor(["beam-free", "big-pickle"], { draftKey: draftId, environmentId: ENV_B }),
     ).toBe("big-pickle");
     store.clearDraftThread(draftId);
+  });
+
+  it("releases a draft's memory with the draft", () => {
+    // Astra review G2: clearing, replacing or promoting a draft kept its
+    // remembered defaults for the session.
+    const ENV_C = EnvironmentId.make("env-c");
+    const before = shownDefaultModelDraftCount();
+    const store = useComposerDraftStore.getState();
+    const remember = (draftId: DraftId, environmentId: EnvironmentId = ENV_A) =>
+      defaultModelFor(["big-pickle", "beam-free"], { draftKey: draftId, environmentId });
+    for (let cycle = 0; cycle < 100; cycle += 1) {
+      const projectRef = scopeProjectRef(ENV_A, ProjectId.make(`cycle-project-${cycle}`));
+      const draft = (name: string) => {
+        const draftId = DraftId.make(`cycle-${cycle}-${name}`);
+        store.setProjectDraftThreadId(projectRef, draftId, {
+          threadId: ThreadId.make(`cycle-thread-${cycle}-${name}`),
+        });
+        remember(draftId);
+        return draftId;
+      };
+      store.clearDraftThread(draft("cleared"));
+      // A new draft for the project replaces the untouched one.
+      draft("replaced");
+      const promoted = draft("promoted");
+      store.markDraftThreadPromoting(promoted);
+      store.finalizePromotedDraftThread(promoted);
+      store.clearProjectDraftThreadById(projectRef, draft("removed"));
+      // An environment that is removed takes its drafts and what moved there.
+      const moved = draft("moved");
+      store.setDraftThreadContext(moved, {
+        projectRef: scopeProjectRef(ENV_C, ProjectId.make(`cycle-remote-${cycle}`)),
+      });
+      remember(moved, ENV_C);
+      clearComposerDraftsEnvironment(ENV_C);
+      store.clearDraftThread(moved);
+    }
+    expect(shownDefaultModelDraftCount()).toBe(before);
   });
 
   it("leaves upstream following the catalog's default", () => {

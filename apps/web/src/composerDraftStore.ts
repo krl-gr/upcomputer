@@ -1085,8 +1085,12 @@ function legacyToModelSelectionByProvider(
 // later). For the session, each draft keeps the default it showed first in
 // each environment while that environment's catalog still lists it. Instance
 // ids such as `opencode` repeat across environments with other catalogs, so
-// the memory is per draft, environment and instance.
-const shownDefaultModels = new Map<string, string>();
+// the memory is per draft, environment and instance. The draft lifecycle
+// releases it.
+const shownDefaultModelsByDraft = new Map<
+  string,
+  Map<EnvironmentId, Map<ProviderInstanceId, string>>
+>();
 
 /** Which draft and environment a composer's default model memory belongs to. */
 export interface ShownDefaultModelScope {
@@ -1094,25 +1098,29 @@ export interface ShownDefaultModelScope {
   readonly environmentId: EnvironmentId;
 }
 
-function shownDefaultModelKey(
+function keepShownDefaultModel(
   scope: ShownDefaultModelScope,
   instanceId: ProviderInstanceId,
-): string {
-  return JSON.stringify([scope.draftKey, scope.environmentId, instanceId]);
-}
-
-function keepShownDefaultModel(
-  key: string,
   model: string,
   catalog: { readonly settled: boolean; readonly lists: (model: string) => boolean },
 ): string {
-  const shown = shownDefaultModels.get(key);
+  let byEnvironment = shownDefaultModelsByDraft.get(scope.draftKey);
+  let byInstance = byEnvironment?.get(scope.environmentId);
+  const shown = byInstance?.get(instanceId);
   // Only a finished check can tell that the shown model is gone: the
   // placeholder before it may list cached models, or none.
   if (shown !== undefined && shown !== model && (!catalog.settled || catalog.lists(shown))) {
     return shown;
   }
-  shownDefaultModels.set(key, model);
+  if (byEnvironment === undefined) {
+    byEnvironment = new Map();
+    shownDefaultModelsByDraft.set(scope.draftKey, byEnvironment);
+  }
+  if (byInstance === undefined) {
+    byInstance = new Map();
+    byEnvironment.set(scope.environmentId, byInstance);
+  }
+  byInstance.set(instanceId, model);
   return model;
 }
 
@@ -1122,12 +1130,26 @@ function keepShownDefaultModel(
  * first environment stays there for a move back.
  */
 function carryShownDefaultModels(draftKey: string, from: EnvironmentId, to: EnvironmentId): void {
-  for (const [key, model] of Array.from(shownDefaultModels)) {
-    const [entryDraftKey, environmentId, instanceId] = JSON.parse(key) as [string, string, string];
-    if (entryDraftKey !== draftKey || environmentId !== from) continue;
-    const carriedKey = JSON.stringify([draftKey, to, instanceId]);
-    if (!shownDefaultModels.has(carriedKey)) shownDefaultModels.set(carriedKey, model);
+  const byEnvironment = shownDefaultModelsByDraft.get(draftKey);
+  const carried = byEnvironment?.get(from);
+  if (byEnvironment === undefined || carried === undefined) return;
+  byEnvironment.set(to, new Map([...carried, ...(byEnvironment.get(to) ?? [])]));
+}
+
+function releaseShownDefaultModels(draftKey: string): void {
+  shownDefaultModelsByDraft.delete(draftKey);
+}
+
+function releaseShownDefaultModelsInEnvironment(environmentId: EnvironmentId): void {
+  for (const [draftKey, byEnvironment] of shownDefaultModelsByDraft) {
+    byEnvironment.delete(environmentId);
+    if (byEnvironment.size === 0) shownDefaultModelsByDraft.delete(draftKey);
   }
+}
+
+/** For tests: how many drafts the default model memory holds. */
+export function shownDefaultModelDraftCount(): number {
+  return shownDefaultModelsByDraft.size;
 }
 
 export function deriveEffectiveComposerModelState(input: {
@@ -1173,22 +1195,18 @@ export function deriveEffectiveComposerModelState(input: {
   const selectedInstanceId = input.selectedInstanceId;
   const baseModel =
     !baseModelCandidate && selectedInstanceId && resolvedBaseModel && input.shownDefaultScope
-      ? keepShownDefaultModel(
-          shownDefaultModelKey(input.shownDefaultScope, selectedInstanceId),
-          resolvedBaseModel,
-          {
-            settled:
-              input.providers.find((provider) => provider.instanceId === selectedInstanceId)
-                ?.statusPending !== true,
-            lists: (shown) =>
-              resolveAppModelSelectionForInstance(
-                selectedInstanceId,
-                input.settings,
-                input.providers,
-                shown,
-              ) === shown,
-          },
-        )
+      ? keepShownDefaultModel(input.shownDefaultScope, selectedInstanceId, resolvedBaseModel, {
+          settled:
+            input.providers.find((provider) => provider.instanceId === selectedInstanceId)
+              ?.statusPending !== true,
+          lists: (shown) =>
+            resolveAppModelSelectionForInstance(
+              selectedInstanceId,
+              input.settings,
+              input.providers,
+              shown,
+            ) === shown,
+        })
       : resolvedBaseModel;
   const instanceSelection = input.selectedInstanceId
     ? input.draft?.modelSelectionByProvider?.[input.selectedInstanceId]
@@ -1589,6 +1607,7 @@ function removeDraftThreadReferences(
   const { [threadKey]: _removedDraftThread, ...restDraftThreadsByThreadKey } =
     state.draftThreadsByThreadKey;
   const { [threadKey]: removedComposerDraft, ...restDraftsByThreadKey } = state.draftsByThreadKey;
+  releaseShownDefaultModels(threadKey);
   if (composerDestination && removedComposerDraft) {
     restDraftsByThreadKey[composerTargetKey(composerDestination)] = removedComposerDraft;
   } else {
@@ -2656,6 +2675,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               !draftThreadHasOpenPreview(previousDraftThread)
             ) {
               delete nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
+              releaseShownDefaultModels(previousThreadKeyForLogicalProject);
               if (state.draftsByThreadKey[previousThreadKeyForLogicalProject] !== undefined) {
                 nextDraftsByThreadKey = { ...nextDraftsByThreadKey };
                 delete nextDraftsByThreadKey[previousThreadKeyForLogicalProject];
@@ -4267,6 +4287,9 @@ export function clearComposerDraftsEnvironment(environmentId: EnvironmentId): vo
       }
     }
 
+    for (const threadKey of removedThreadKeys) releaseShownDefaultModels(threadKey);
+    releaseShownDefaultModelsInEnvironment(environmentId);
+
     const nextLogicalMappings = Object.fromEntries(
       Object.entries(state.logicalProjectDraftThreadKeyByLogicalProjectKey).filter(
         ([logicalProjectKey, threadKey]) =>
@@ -4350,7 +4373,17 @@ export function useEffectiveComposerModelState(input: {
 }): EffectiveComposerModelState {
   const target = input.threadRef ?? input.draftId ?? DraftId.make("");
   const draft = useComposerDraftModelState(target);
-  const draftKey = composerTargetKey(target);
+  // The key the draft lifecycle releases. A composer that renders once more
+  // after its draft was removed gets none, as nothing would release it again.
+  const draftKey = useComposerDraftStore((state) => {
+    const key = resolveComposerDraftKey(state, target);
+    return key !== null &&
+      (typeof target !== "string" ||
+        state.draftThreadsByThreadKey[key] !== undefined ||
+        state.draftsByThreadKey[key] !== undefined)
+      ? key
+      : null;
+  });
 
   return useMemo(
     () =>
@@ -4364,7 +4397,7 @@ export function useEffectiveComposerModelState(input: {
         settings: input.settings,
         // Upstream follows the catalog's default as it changes.
         shownDefaultScope:
-          productSurface("composerContextRow") === "upcomputer" && draftKey.length > 0
+          productSurface("composerContextRow") === "upcomputer" && draftKey !== null
             ? { draftKey, environmentId: input.environmentId }
             : null,
       }),
