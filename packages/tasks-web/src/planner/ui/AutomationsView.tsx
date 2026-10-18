@@ -32,7 +32,7 @@ import { usePlannerWindows, windowStoreFor, type WindowStore } from "../windows/
 import { AutomationList } from "./AutomationList.tsx";
 import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
-import { Notice, pickEnvironment, plannerProjectsOf } from "./PlannerView.tsx";
+import { Notice, pickEnvironment, plannerProjectsOf, tasksAccessPending } from "./PlannerView.tsx";
 import type { PlannerProject } from "./ProjectChip.tsx";
 import { PlannerWindows } from "./TaskWindows.tsx";
 import { usePlannerDnd } from "./usePlannerDnd.ts";
@@ -218,9 +218,9 @@ export function AutomationsView(props: {
       onNavigateBack={props.onNavigateBack}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {environmentId === null || windows === null ? (
+        {environmentId === null && !tasksAccessPending(props.taskTargets) ? (
           <Notice>No connected environment serves Tasks.</Notice>
-        ) : availability === "loading" ? (
+        ) : environmentId === null || windows === null || availability === "loading" ? (
           <Notice>Loading the automations…</Notice>
         ) : availability === "unavailable" ? (
           <Notice>This environment runs an older server without automations here.</Notice>

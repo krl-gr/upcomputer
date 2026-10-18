@@ -377,6 +377,14 @@ function PlannerBody(props: {
   );
 }
 
+/**
+ * UpComputer: whether an environment's Tasks access is still being probed.
+ * Until it answers, "no environment serves Tasks" would be a guess.
+ */
+export function tasksAccessPending(targets: readonly TasksStateTarget[]): boolean {
+  return targets.some((target) => target.access.availability === "loading");
+}
+
 /** The stored environment if it serves Tasks, else the primary one, else the first. */
 export function pickEnvironment(
   candidates: readonly TasksStateTarget[],
@@ -526,9 +534,9 @@ export function PlannerView(props: {
       onNavigateBack={props.onNavigateBack}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {environmentId === null ? (
+        {environmentId === null && !tasksAccessPending(props.taskTargets) ? (
           <Notice>No connected environment serves Tasks.</Notice>
-        ) : availability === "loading" ? (
+        ) : environmentId === null || availability === "loading" ? (
           <Notice>Loading the planner…</Notice>
         ) : availability === "unavailable" ? (
           <Notice
