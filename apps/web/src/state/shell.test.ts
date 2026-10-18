@@ -144,7 +144,7 @@ function connection(
   return { ...AVAILABLE_CONNECTION_STATE, phase, desired: phase !== "available", ...overrides };
 }
 
-function makeSettledHarness(expectsPrimary = true) {
+function makeSettledHarness(expectsPrimary = true, requireLive = true) {
   const catalog = Atom.make<EnvironmentCatalogState>({ isReady: false, entries: new Map() });
   const shells = Atom.family((_environmentId: EnvironmentId) =>
     Atom.make<EnvironmentShellState>(shellState("empty")),
@@ -159,6 +159,7 @@ function makeSettledHarness(expectsPrimary = true) {
     connectionStateAtom: connections,
     serverConfigValueAtom: configs,
     expectsPrimaryEnvironment: () => expectsPrimary,
+    requireLive,
   });
   const registry = AtomRegistry.make();
   return { catalog, shells, connections, configs, settled, registry };
@@ -186,6 +187,16 @@ describe("workspace settled", () => {
     expect(registry.get(settled)).toBe(false);
     registry.set(shells(LOCAL), shellState("live"));
     registry.set(connections(LOCAL), connection("connected"));
+    expect(registry.get(settled)).toBe(false);
+    registry.set(configs(LOCAL), { scratchWorkspaceRoot: "/scratch" });
+    expect(registry.get(settled)).toBe(true);
+    registry.dispose();
+  });
+
+  it("lets home use the cached shell once the primary and its server config are known", () => {
+    const { catalog, shells, configs, settled, registry } = makeSettledHarness(true, false);
+    registry.set(catalog, catalogState([LOCAL]));
+    registry.set(shells(LOCAL), shellState("cached"));
     expect(registry.get(settled)).toBe(false);
     registry.set(configs(LOCAL), { scratchWorkspaceRoot: "/scratch" });
     expect(registry.get(settled)).toBe(true);

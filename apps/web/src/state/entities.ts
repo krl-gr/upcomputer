@@ -18,6 +18,7 @@ import { environmentServerConfigsAtom } from "./server";
 import {
   allEnvironmentProjectSnapshotsReadyAtom,
   allEnvironmentShellsBootstrappedAtom,
+  workspaceKnownAtom,
   workspaceSettledAtom,
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
@@ -94,6 +95,10 @@ export function useThreadShells(enabled = true): ReadonlyArray<EnvironmentThread
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
+}
+
+export function useWorkspaceKnown(): boolean {
+  return useAtomValue(workspaceKnownAtom);
 }
 
 export function useWorkspaceSettled(): boolean {

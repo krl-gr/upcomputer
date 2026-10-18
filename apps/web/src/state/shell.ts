@@ -87,11 +87,12 @@ function connectionSettledWithoutData(
 
 /**
  * UpComputer: whether the client knows what every reachable environment holds,
- * so home and the sidebar can tell "not loaded yet" from "nothing there". A
- * cached shell can be stale, the primary environment can register late, and
- * until an environment's server config arrives its scratch project ("No
- * project") reads as an ordinary project. An environment that settled offline
- * does not hold this back.
+ * so home and the sidebar can tell "not loaded yet" from "nothing there". The
+ * primary environment can register late, and until an environment's server
+ * config arrives its scratch project ("No project") reads as an ordinary
+ * project. With `requireLive`, a cached shell does not count either: it can
+ * be stale or partial. An environment that settled offline does not hold
+ * this back.
  */
 export function createWorkspaceSettledAtom(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
@@ -101,6 +102,7 @@ export function createWorkspaceSettledAtom(input: {
   ) => Atom.Atom<SupervisorConnectionState | null>;
   readonly serverConfigValueAtom: (environmentId: EnvironmentId) => Atom.Atom<unknown>;
   readonly expectsPrimaryEnvironment: () => boolean;
+  readonly requireLive: boolean;
 }) {
   return Atom.make((get) => {
     const catalog = get(input.catalogValueAtom);
@@ -109,7 +111,7 @@ export function createWorkspaceSettledAtom(input: {
     for (const environmentId of enabledEnvironmentIds(catalog)) {
       const shell = get(input.shellStateValueAtom(environmentId));
       if (
-        shell.status === "live" &&
+        (shell.status === "live" || !input.requireLive) &&
         Option.isSome(shell.snapshot) &&
         get(input.serverConfigValueAtom(environmentId)) !== null
       ) {
@@ -123,7 +125,7 @@ export function createWorkspaceSettledAtom(input: {
       }
     }
     return true;
-  }).pipe(Atom.withLabel("web-workspace-settled"));
+  }).pipe(Atom.withLabel(input.requireLive ? "web-workspace-settled" : "web-workspace-known"));
 }
 
 const connectionStateValueAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -132,12 +134,22 @@ const connectionStateValueAtom = Atom.family((environmentId: EnvironmentId) =>
   ).pipe(Atom.withLabel(`web-connection-state-value:${environmentId}`)),
 );
 
-export const workspaceSettledAtom = createWorkspaceSettledAtom({
+const workspaceAtomInput = {
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,
   connectionStateAtom: connectionStateValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,
   expectsPrimaryEnvironment,
+};
+/** Known from cached shells; enough to pick home's draft without waiting for the server. */
+export const workspaceKnownAtom = createWorkspaceSettledAtom({
+  ...workspaceAtomInput,
+  requireLive: false,
+});
+/** Known from live shells; what a list or an empty state may claim. */
+export const workspaceSettledAtom = createWorkspaceSettledAtom({
+  ...workspaceAtomInput,
+  requireLive: true,
 });
 
 /**

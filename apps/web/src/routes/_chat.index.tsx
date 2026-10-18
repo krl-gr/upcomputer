@@ -22,6 +22,7 @@ import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
+  useWorkspaceKnown,
   useWorkspaceSettled,
 } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
@@ -44,15 +45,16 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
-  // UpComputer: a cached shell can be stale and the scratch environment is not
-  // known before its server config, so choosing between the most recent project
-  // and a chat without a project waits until the workspace is settled.
-  const projectsKnown = startsWithoutProject ? workspaceSettled : bootstrapped;
+  // UpComputer: the scratch project is not known before its environment's
+  // server config, so choosing between the most recent project and a chat
+  // without a project waits for it. Cached shells are enough for that choice.
+  const projectsKnown = startsWithoutProject ? workspaceKnown : bootstrapped;
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
@@ -158,7 +160,9 @@ function IndexDraftLanding() {
       <HomePending />
     );
   }
-  if (scratchTarget !== null) {
+  // UpComputer: the scratch environment offers a chat once it connects; before
+  // the live workspace settles, "no chat to open" is only a guess.
+  if (scratchTarget !== null || (startsWithoutProject && !workspaceSettled)) {
     return <HomePending />;
   }
   // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
