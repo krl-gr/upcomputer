@@ -161,8 +161,8 @@ import {
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
-  useAllEnvironmentShellsBootstrapped,
   useProjects,
+  useSettledEnvironmentIds,
   useThreadShells,
   useWorkspaceKnown,
   useWorkspaceSettled,
@@ -214,6 +214,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  filterSidebarThreadsBySettledEnvironment,
   resolveSidebarListVisibility,
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
@@ -2277,6 +2278,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const threads = useThreadShells();
+  const settledEnvironmentIds = useSettledEnvironmentIds();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2620,7 +2622,15 @@ export default function Sidebar() {
   } = useMemo(() => {
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, projectLinks);
+    const visible = filterSidebarV2VisibleThreads(
+      filterSidebarThreadsBySettledEnvironment(
+        threads,
+        productSurface("sidebarProjects"),
+        settledEnvironmentIds,
+      ),
+      scopedProjectKeys,
+      projectLinks,
+    );
     inboxReturns.observe(workingShelfEnabled ? threads : null);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
@@ -2715,6 +2725,7 @@ export default function Sidebar() {
     projectLinks,
     scopedProjectKeys,
     serverConfigs,
+    settledEnvironmentIds,
     snoozeWakeTick,
     threads,
     workingShelfEnabled,
@@ -2725,19 +2736,14 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadListShown = useSidebarThreadListShown();
-  const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
-  const {
-    projectRowsShown: sidebarProjectRowsShown,
-    threadRowsShown: sidebarThreadRowsShown,
-    emptyStateShown: sidebarEmptyStateShown,
-  } = resolveSidebarListVisibility({
-    surface: productSurface("sidebarProjects"),
-    shellsBootstrapped: bootstrapped,
-    workspaceKnown,
-    workspaceSettled,
-  });
+  const { projectRowsShown: sidebarProjectRowsShown, emptyStateShown: sidebarEmptyStateShown } =
+    resolveSidebarListVisibility({
+      surface: productSurface("sidebarProjects"),
+      workspaceKnown,
+      workspaceSettled,
+    });
   const ThreadRow: typeof SidebarThreadRow =
     useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
@@ -4916,7 +4922,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads && threadListShown && sidebarThreadRowsShown ? (
+          {!isSearchingThreads && threadListShown ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}

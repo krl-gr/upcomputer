@@ -1,7 +1,6 @@
 import {
   AVAILABLE_CONNECTION_STATE,
   connectionProjectionPhase,
-  type SupervisorConnectionState,
 } from "@t3tools/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
@@ -21,7 +20,6 @@ import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
-import { serverEnvironment } from "./server";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
@@ -55,102 +53,15 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
-function expectsPrimaryEnvironment(): boolean {
+export function expectsPrimaryEnvironment(): boolean {
   return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
 }
 
-function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean {
+export function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean {
   return Array.from(catalog.entries.values()).some(
     (entry) => entry.target._tag === "PrimaryConnectionTarget",
   );
 }
-
-/** An environment that will not deliver data soon; waiting for it would hang. */
-function connectionSettledWithoutData(
-  connection: SupervisorConnectionState,
-  isPrimary: boolean,
-): boolean {
-  switch (connection.phase) {
-    case "offline":
-    case "blocked":
-      return true;
-    case "backoff":
-      return connection.attempt > 2;
-    // Also the value before the supervisor first reports, so the primary,
-    // which always connects, keeps waiting through it.
-    case "available":
-      return !isPrimary && !connection.desired;
-    default:
-      return false;
-  }
-}
-
-/**
- * UpComputer: whether the client knows what every reachable environment holds,
- * so home and the sidebar can tell "not loaded yet" from "nothing there". The
- * primary environment can register late, and until an environment's server
- * config arrives its scratch project ("No project") reads as an ordinary
- * project. With `requireLive`, a cached shell does not count either: it can
- * be stale or partial. An environment that settled offline does not hold
- * this back.
- */
-export function createWorkspaceSettledAtom(input: {
-  readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
-  readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
-  readonly connectionStateAtom: (
-    environmentId: EnvironmentId,
-  ) => Atom.Atom<SupervisorConnectionState | null>;
-  readonly serverConfigValueAtom: (environmentId: EnvironmentId) => Atom.Atom<unknown>;
-  readonly expectsPrimaryEnvironment: () => boolean;
-  readonly requireLive: boolean;
-}) {
-  return Atom.make((get) => {
-    const catalog = get(input.catalogValueAtom);
-    if (!catalog.isReady) return false;
-    if (input.expectsPrimaryEnvironment() && !hasPrimaryEnvironment(catalog)) return false;
-    for (const environmentId of enabledEnvironmentIds(catalog)) {
-      const shell = get(input.shellStateValueAtom(environmentId));
-      if (
-        (shell.status === "live" || !input.requireLive) &&
-        Option.isSome(shell.snapshot) &&
-        get(input.serverConfigValueAtom(environmentId)) !== null
-      ) {
-        continue;
-      }
-      const connection = get(input.connectionStateAtom(environmentId));
-      const isPrimary =
-        catalog.entries.get(environmentId)?.target._tag === "PrimaryConnectionTarget";
-      if (connection === null || !connectionSettledWithoutData(connection, isPrimary)) {
-        return false;
-      }
-    }
-    return true;
-  }).pipe(Atom.withLabel(input.requireLive ? "web-workspace-settled" : "web-workspace-known"));
-}
-
-const connectionStateValueAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) =>
-    Option.getOrNull(AsyncResult.value(get(environmentCatalog.stateAtom(environmentId)))),
-  ).pipe(Atom.withLabel(`web-connection-state-value:${environmentId}`)),
-);
-
-const workspaceAtomInput = {
-  catalogValueAtom: environmentCatalog.catalogValueAtom,
-  shellStateValueAtom: environmentShell.stateValueAtom,
-  connectionStateAtom: connectionStateValueAtom,
-  serverConfigValueAtom: serverEnvironment.configValueAtom,
-  expectsPrimaryEnvironment,
-};
-/** Known from cached shells; enough to pick home's draft without waiting for the server. */
-export const workspaceKnownAtom = createWorkspaceSettledAtom({
-  ...workspaceAtomInput,
-  requireLive: false,
-});
-/** Known from live shells; what a list or an empty state may claim. */
-export const workspaceSettledAtom = createWorkspaceSettledAtom({
-  ...workspaceAtomInput,
-  requireLive: true,
-});
 
 /**
  * The persisted catalog can emit before platform discovery registers the primary environment.

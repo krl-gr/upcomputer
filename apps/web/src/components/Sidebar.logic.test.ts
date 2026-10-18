@@ -2331,43 +2331,33 @@ describe("Working shelf (beta)", () => {
 describe("resolveSidebarListVisibility", () => {
   const visibility = (
     surface: "upstream" | "upcomputer",
-    shellsBootstrapped: boolean,
     workspaceKnown: boolean,
     workspaceSettled: boolean,
-  ) =>
-    resolveSidebarListVisibility({ surface, shellsBootstrapped, workspaceKnown, workspaceSettled });
+  ) => resolveSidebarListVisibility({ surface, workspaceKnown, workspaceSettled });
 
-  it("does not claim an empty list before the shells are known", () => {
-    expect(visibility("upstream", false, false, false).emptyStateShown).toBe(false);
-    expect(visibility("upcomputer", false, false, false).emptyStateShown).toBe(false);
-  });
-
-  it("keeps UpComputer's rows and empty state back until their data is known", () => {
+  it("keeps UpComputer's Projects rows and empty state back until their data is known", () => {
     // The relaunch frame that showed "No threads yet" without "All projects"
     // and "No project" while a thread existed.
-    expect(visibility("upcomputer", true, false, false)).toEqual({
+    expect(visibility("upcomputer", false, false)).toEqual({
       projectRowsShown: false,
-      threadRowsShown: false,
       emptyStateShown: false,
     });
-    // Cached shells and server configs place the Projects rows; the thread
-    // list and its empty state wait for live shells.
-    expect(visibility("upcomputer", true, true, false)).toEqual({
+    // Cached shells and server configs place the Projects rows; the empty
+    // state waits for live shells.
+    expect(visibility("upcomputer", true, false)).toEqual({
       projectRowsShown: true,
-      threadRowsShown: false,
       emptyStateShown: false,
     });
-    expect(visibility("upcomputer", true, true, true)).toEqual({
+    expect(visibility("upcomputer", true, true)).toEqual({
       projectRowsShown: true,
-      threadRowsShown: true,
       emptyStateShown: true,
     });
   });
 
-  it("keeps upstream's cached rows", () => {
-    expect(visibility("upstream", false, false, false)).toMatchObject({
+  it("keeps upstream's lists as they were", () => {
+    expect(visibility("upstream", false, false)).toEqual({
       projectRowsShown: true,
-      threadRowsShown: true,
+      emptyStateShown: true,
     });
   });
 });

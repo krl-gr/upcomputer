@@ -33,30 +33,44 @@ import {
 } from "../linkedProjects/projectScope";
 
 /**
- * What the sidebar's lists may show while startup data loads. An empty list
- * is a claim ("No threads yet"), so it waits for the shells. On UpComputer's
- * surface the Projects rows wait until the scratch project can be told apart
- * (cached shells and server configs are enough), so they never change or move
- * the Threads header; thread rows, which only append below, and the empty
- * state wait for live shells, as a cached list can be stale or partial.
+ * What the sidebar's lists may show while startup data loads. On UpComputer's
+ * surface an empty list is a claim ("No threads yet"), so it waits for the
+ * live workspace, and the Projects rows wait until the scratch project can be
+ * told apart (cached shells and server configs are enough), so they never
+ * change or move the Threads header. Both inputs are first-load gates that
+ * never turn false again. Upstream shows its lists as they load.
  */
 export function resolveSidebarListVisibility(input: {
   readonly surface: "upstream" | "upcomputer";
-  readonly shellsBootstrapped: boolean;
   readonly workspaceKnown: boolean;
   readonly workspaceSettled: boolean;
 }): {
   readonly projectRowsShown: boolean;
-  readonly threadRowsShown: boolean;
   readonly emptyStateShown: boolean;
 } {
   const upstream = input.surface === "upstream";
-  const threadRowsShown = upstream || input.workspaceSettled;
   return {
     projectRowsShown: upstream || input.workspaceKnown,
-    threadRowsShown,
-    emptyStateShown: threadRowsShown && input.shellsBootstrapped,
+    emptyStateShown: upstream || input.workspaceSettled,
   };
+}
+
+/**
+ * UpComputer: thread rows of an environment appear once its live shell
+ * settled, as a cached list can be stale or partial. Each environment counts
+ * on its own, so a slow or reconnecting one never hides another's rows.
+ */
+export function filterSidebarThreadsBySettledEnvironment<
+  T extends { readonly environmentId: EnvironmentId },
+>(
+  threads: readonly T[],
+  surface: "upstream" | "upcomputer",
+  settledEnvironmentIds: ReadonlySet<EnvironmentId>,
+): readonly T[] {
+  if (surface === "upstream") return threads;
+  return threads.every((thread) => settledEnvironmentIds.has(thread.environmentId))
+    ? threads
+    : threads.filter((thread) => settledEnvironmentIds.has(thread.environmentId));
 }
 
 export function shouldNavigateAfterThreadPark(input: {

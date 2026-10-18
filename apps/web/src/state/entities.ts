@@ -18,11 +18,10 @@ import { environmentServerConfigsAtom } from "./server";
 import {
   allEnvironmentProjectSnapshotsReadyAtom,
   allEnvironmentShellsBootstrappedAtom,
-  workspaceKnownAtom,
-  workspaceSettledAtom,
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 import { waitForAtomValue } from "./waitForAtomValue";
+import { settledEnvironmentIdsAtom, workspaceKnownAtom, workspaceSettledAtom } from "./workspace";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 const EMPTY_VISIBLE_TURN_ITEMS: ReadonlyArray<OrchestrationV2ProjectedTurnItem> = Object.freeze([]);
@@ -103,6 +102,10 @@ export function useWorkspaceKnown(): boolean {
 
 export function useWorkspaceSettled(): boolean {
   return useAtomValue(workspaceSettledAtom);
+}
+
+export function useSettledEnvironmentIds(): ReadonlySet<EnvironmentId> {
+  return useAtomValue(settledEnvironmentIdsAtom);
 }
 
 export function useAllEnvironmentProjectSnapshotsReady(): boolean {

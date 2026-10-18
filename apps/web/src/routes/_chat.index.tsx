@@ -53,7 +53,8 @@ function IndexDraftLanding() {
   const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
   // UpComputer: the scratch project is not known before its environment's
   // server config, so choosing between the most recent project and a chat
-  // without a project waits for it. Cached shells are enough for that choice.
+  // without a project waits for it. Cached shells are enough for that choice,
+  // and the wait ends at the first-load deadline.
   const projectsKnown = startsWithoutProject ? workspaceKnown : bootstrapped;
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
@@ -142,8 +143,10 @@ function IndexDraftLanding() {
     startState.retryRequest,
   ]);
 
+  // Upstream renders nothing while it waits.
+  const pending = startsWithoutProject ? <HomePending /> : null;
   if (!projectsKnown) {
-    return <HomePending />;
+    return pending;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (
@@ -157,7 +160,7 @@ function IndexDraftLanding() {
         }}
       />
     ) : (
-      <HomePending />
+      pending
     );
   }
   // UpComputer: the scratch environment offers a chat once it connects; before
