@@ -19,24 +19,32 @@ import { environmentShell, expectsPrimaryEnvironment, hasPrimaryEnvironment } fr
  */
 const WORKSPACE_FIRST_LOAD_DEADLINE_MS = 6_000;
 
-/** An environment that will not deliver data soon; waiting for it would hang. */
-function connectionSettledWithoutData(
-  connection: SupervisorConnectionState,
-  isPrimary: boolean,
-): boolean {
+/** A connection that gave up at least once; its environment will not deliver data soon. */
+function connectionGaveUp(connection: SupervisorConnectionState): boolean {
   switch (connection.phase) {
     case "offline":
     case "blocked":
       return true;
     case "backoff":
       return connection.attempt > 2;
-    // Also the value before the supervisor first reports, so the primary,
-    // which always connects, keeps waiting through it.
-    case "available":
-      return !isPrimary && !connection.desired;
     default:
       return false;
   }
+}
+
+/** An environment that will not deliver data soon; waiting for it would hang. */
+function connectionSettledWithoutData(
+  connection: SupervisorConnectionState,
+  isPrimary: boolean,
+): boolean {
+  // `available` is also the value before the supervisor first reports. The
+  // primary, which always connects, keeps waiting through it. A secondary is
+  // not waited for to reveal what is known; an empty claim still waits for it
+  // (`createWorkspaceDeliveryAtom`).
+  return (
+    connectionGaveUp(connection) ||
+    (connection.phase === "available" && !isPrimary && !connection.desired)
+  );
 }
 
 interface WorkspaceReadinessInput {
@@ -140,8 +148,10 @@ const WORKSPACE_DELIVERED: WorkspaceDelivery = { delivered: true, waitingOn: [] 
  * UpComputer: proof for an empty claim. The readiness gates may reveal what is
  * known once the deadline passes; "No threads yet" and the "Add a project"
  * hero need every environment to have sent its live data, as a cache or a
- * missing connection proves nothing. An environment the user does not connect
- * to is left out, since it will not send anything.
+ * missing connection proves nothing. Only the catalog says which environments
+ * the user connects to: switching one off, or the client stopping an
+ * incompatible one, disables its entry. Its connection state cannot tell,
+ * as an enabled environment reads `available` until its supervisor reports.
  */
 function createWorkspaceDeliveryAtom(input: WorkspaceReadinessInput) {
   const delivered = new Set<EnvironmentId>();
@@ -167,16 +177,12 @@ function createWorkspaceDeliveryAtom(input: WorkspaceReadinessInput) {
         continue;
       }
       const target = catalog.entries.get(environmentId)?.target;
-      const isPrimary = target?._tag === "PrimaryConnectionTarget";
       const connection = get(input.connectionStateAtom(environmentId));
-      if (!isPrimary && connection?.phase === "available" && !connection.desired) continue;
-      if (connection !== null && connectionSettledWithoutData(connection, isPrimary)) {
-        unreachable.add(environmentId);
-      }
+      if (connection !== null && connectionGaveUp(connection)) unreachable.add(environmentId);
       waitingOn.push({
         environmentId,
         label: target?.label ?? environmentId,
-        isPrimary,
+        isPrimary: target?._tag === "PrimaryConnectionTarget",
         unreachable: unreachable.has(environmentId),
       });
     }

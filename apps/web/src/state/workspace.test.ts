@@ -38,7 +38,10 @@ function shellState(status: EnvironmentShellState["status"]): EnvironmentShellSt
   };
 }
 
-function catalogState(environmentIds: readonly EnvironmentId[]): EnvironmentCatalogState {
+function catalogState(
+  environmentIds: readonly EnvironmentId[],
+  disabledEnvironmentIds: readonly EnvironmentId[] = [],
+): EnvironmentCatalogState {
   return {
     isReady: true,
     entries: new Map(
@@ -59,7 +62,7 @@ function catalogState(environmentIds: readonly EnvironmentId[]): EnvironmentCata
                   label: environmentId,
                 }),
           profile: Option.none(),
-          enabled: true,
+          enabled: !disabledEnvironmentIds.includes(environmentId),
         },
       ]),
     ),
@@ -302,13 +305,56 @@ describe("workspace readiness", () => {
     registry.dispose();
   });
 
-  it("does not wait for a remote the user does not connect to", () => {
-    const { catalog, shells, connections, configs, registry, delivery } = makeHarness();
-    registry.set(catalog, catalogState([LOCAL, REMOTE]));
+  it("does not wait for a remote the user switched off", () => {
+    const { catalog, shells, connections, configs, registry, delivery, emptyStates } =
+      makeHarness();
+    registry.set(catalog, catalogState([LOCAL, REMOTE], [REMOTE]));
     registry.set(connections(REMOTE), connection("available", { desired: false }));
     registry.set(shells(LOCAL), shellState("live"));
     registry.set(configs(LOCAL), {});
     expect(delivery().delivered).toBe(true);
+    expect(emptyStates()).toEqual({ sidebar: "empty", home: "hero" });
+    registry.dispose();
+  });
+
+  it("waits for an enabled remote whose supervisor has not reported yet", () => {
+    // Astra review G3: an enabled remote reads `available` (not desired) until
+    // its supervisor reports, and counted as one the user does not connect to.
+    const {
+      catalog,
+      shells,
+      connections,
+      configs,
+      deadlinePassed,
+      registry,
+      delivery,
+      emptyStates,
+    } = makeHarness();
+    registry.set(catalog, catalogState([LOCAL, REMOTE]));
+    registry.set(shells(LOCAL), shellState("live"));
+    registry.set(configs(LOCAL), {});
+    const seen = new Set<string>();
+    const record = () => {
+      const views = emptyStates();
+      seen.add(views.sidebar).add(views.home);
+    };
+    registry.set(connections(REMOTE), AVAILABLE_CONNECTION_STATE);
+    record();
+    expect(delivery()).toEqual({
+      delivered: false,
+      waitingOn: [{ environmentId: REMOTE, label: REMOTE, isPrimary: false, unreachable: false }],
+    });
+    registry.set(connections(REMOTE), connection("connecting"));
+    record();
+    registry.set(deadlinePassed, true);
+    record();
+    expect(delivery().waitingOn).toMatchObject([{ environmentId: REMOTE, unreachable: false }]);
+    expect(seen.has("empty")).toBe(false);
+    expect(seen.has("hero")).toBe(false);
+    registry.set(shells(REMOTE), shellState("live"));
+    registry.set(configs(REMOTE), {});
+    registry.set(connections(REMOTE), connection("connected"));
+    expect(emptyStates()).toEqual({ sidebar: "empty", home: "hero" });
     registry.dispose();
   });
 });
