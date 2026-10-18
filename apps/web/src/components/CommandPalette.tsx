@@ -107,6 +107,10 @@ import {
 } from "./promptLinks/copyPromptLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
+import {
+  claimDraftMoveForAddedProject,
+  disarmDraftMoveIntoAddedProject,
+} from "../composerContextRow/draftIntoAddedProject";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
 import { BUILT_IN_THEMES, UPCOMPUTER_THEME } from "@t3tools/shared/themePalettes";
@@ -386,6 +390,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
+  // UpComputer: a draft move armed for an add from this palette ends when it closes.
+  useEffect(() => {
+    if (!state.open) disarmDraftMoveIntoAddedProject();
+  }, [state.open]);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
@@ -2415,6 +2423,8 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      // UpComputer: a draft armed to move into the project added here takes this one.
+      claimDraftMoveForAddedProject(scopeProjectRef(input.environmentId, projectId));
       const navigationResult = await settlePromise(() =>
         handleNewThread(scopeProjectRef(input.environmentId, projectId)),
       );
@@ -2681,8 +2691,10 @@ function OpenCommandPaletteDialog(props: {
       }
       return;
     }
-    setOpen(false);
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
+    // UpComputer: claimed before the palette closes, which disarms an unclaimed draft move.
+    claimDraftMoveForAddedProject(projectRef);
+    setOpen(false);
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() => handleNewThread(projectRef));
     if (navigationResult._tag === "Failure") {

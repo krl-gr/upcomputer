@@ -15,6 +15,7 @@ import { waitForProject } from "~/state/entities";
 import { projectEnvironment } from "~/state/projects";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { claimDraftMoveForAddedProject } from "~/composerContextRow/draftIntoAddedProject";
 import { useNewThreadHandler } from "./useHandleNewThread";
 
 function errorMessage(error: unknown): string {
@@ -93,6 +94,8 @@ export function useNewProject() {
       }
 
       const { projectId, workspaceRoot, commitError } = result.value;
+      // UpComputer: a draft armed to move into the project added here takes this one.
+      claimDraftMoveForAddedProject(scopeProjectRef(input.environmentId, projectId));
       toastManager.add(
         stackedThreadToast(
           commitError === undefined

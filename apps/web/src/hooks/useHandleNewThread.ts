@@ -82,23 +82,17 @@ export function useNewThreadHandler() {
         replace?: boolean;
       },
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
-      // UpComputer: after "or add a project" in a draft without one, the added
-      // project takes that draft instead of opening a fresh one.
-      const movingDraftId = takeDraftMovingIntoProject(projectRef);
-      if (movingDraftId !== null) {
-        return openDraftMovedIntoProject(movingDraftId, projectRef, {
+      // UpComputer: after "or add a project" in a draft without one, the
+      // project that add created takes that draft instead of opening a fresh one.
+      const movingDraft = takeDraftMovingIntoProject(projectRef);
+      if (movingDraft !== null) {
+        return openDraftMovedIntoProject(movingDraft, projectRef, {
           serverSettings: environmentServerConfigs.get(projectRef.environmentId)?.settings,
           projectGroupingSettings,
-          isOpen: () => {
+          isDraftOpen: (draftId) => {
             const target = getCurrentRouteTarget();
-            return target?.kind === "draft" && target.draftId === movingDraftId;
+            return target?.kind === "draft" && target.draftId === draftId;
           },
-          open: () =>
-            router.navigate({
-              to: "/draft/$draftId",
-              params: { draftId: movingDraftId },
-              replace: options?.replace ?? false,
-            }),
         });
       }
       const projects = readProjects();

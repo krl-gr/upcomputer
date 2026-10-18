@@ -12,6 +12,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
@@ -166,6 +167,43 @@ it.effect.each(["0.156.0", "0.156.1", "0.156.2", "0.157.0"])(
       expect(yield* h.fs.exists(h.localBinaryPath)).toBe(true);
       expect((yield* h.installation.state).source).toBe("local");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+it.effect("does not wait on a hung local Codex while starting and probes it once", () =>
+  Effect.gen(function* () {
+    let spawns = 0;
+    const spawned = yield* Queue.unbounded<void>();
+    const h = yield* makeHarness({
+      local: { version: "0.156.1" },
+      spawner: ChildProcessSpawner.make(() =>
+        Effect.sync(() => {
+          spawns++;
+        }).pipe(Effect.andThen(Queue.offer(spawned, undefined)), Effect.andThen(Effect.never)),
+      ),
+    });
+    // Construction returned before the probe even spawned: startup does not wait on it.
+    expect(spawns).toBe(0);
+    expect(yield* h.installation.state).toMatchObject({ phase: "idle", installedVersion: null });
+    const resolving = yield* h.installation.resolve().pipe(Effect.exit, Effect.forkChild);
+    yield* Queue.take(spawned);
+    yield* TestClock.adjust("19 seconds");
+    expect(spawns).toBe(1);
+    yield* TestClock.adjust("1 second");
+    expect(Exit.isFailure(yield* Fiber.join(resolving))).toBe(true);
+    expect(spawns).toBe(1);
+    expect(yield* h.installation.state).toMatchObject({ phase: "idle", installedVersion: null });
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+it.effect("publishes a local Codex found after startup", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({ local: { version: "0.156.1" } });
+    expect(
+      yield* h.installation.changes.pipe(
+        Stream.filter((state) => state.source === "local"),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow),
+      ),
+    ).toMatchObject({ phase: "succeeded", installedVersion: "0.156.1" });
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 it.effect.each([
   { version: "0.128.9" },
