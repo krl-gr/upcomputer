@@ -10,7 +10,11 @@ import {
 
 import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
 import { usePrimaryEnvironment } from "../state/environments";
-import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import {
+  readEnvironmentScope,
+  useEnvironmentScope,
+  useEnvironmentSessionKnown,
+} from "../state/session";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
@@ -22,6 +26,7 @@ import {
   getProviderUpdateProgressToastView,
   getProviderUpdateRejectedToastView,
   providerUpdateNotificationKey,
+  providerUpdatePromptSettled,
   shouldShowPrimaryProviderUpdateToast,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
@@ -109,6 +114,8 @@ export function ProviderUpdatePrimaryNotification() {
     primaryEnvironment?.environmentId ?? null,
     AuthProvidersManageScope,
   );
+  const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
+  const promptSettled = providerUpdatePromptSettled({ providers, sessionKnown });
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
@@ -179,6 +186,7 @@ export function ProviderUpdatePrimaryNotification() {
   }, [providers, openProviderSettings]);
 
   useEffect(() => {
+    if (!promptSettled) return;
     const activeToast = activeToastRef.current;
     if (activeToast?.kind === "prompt" && activeToast.key !== notificationKey) {
       toastManager.close(activeToast.toastId);
@@ -342,6 +350,7 @@ export function ProviderUpdatePrimaryNotification() {
     oneClickProviders,
     openProviderSettings,
     primaryEnvironment,
+    promptSettled,
     updateProviders,
   ]);
 

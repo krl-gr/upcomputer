@@ -29,6 +29,7 @@ import {
   isTerminalProviderUpdatePhase,
   localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
+  providerUpdatePromptSettled,
   resolveEnvironmentUpdateRowStatus,
   shouldShowPrimaryProviderUpdateToast,
   type LocalEnvironmentProvidersInput,
@@ -1135,5 +1136,39 @@ describe("getProviderUpdateRunToastView", () => {
         run("Server", "codex", AsyncResult.failure(Cause.interrupt())),
       ]),
     ).toBeNull();
+  });
+});
+
+describe("providerUpdatePromptSettled", () => {
+  it("waits for providers still on their first check and for the session", () => {
+    // Relaunch: the cached list held Codex and OpenCode behind latest, then
+    // OpenCode's placeholder dropped it, so the prompt went "2 providers",
+    // "Codex", and back to "2 providers".
+    const codex = provider({ driver: driver("codex"), latestVersion: "2.0.0" });
+    const { versionAdvisory: _placeholderHasNone, ...openCode } = provider({
+      driver: driver("opencode"),
+    });
+    const openCodePending: ServerProvider = { ...openCode, statusPending: true };
+    expect(
+      providerUpdatePromptSettled({ providers: [codex, openCodePending], sessionKnown: true }),
+    ).toBe(false);
+    expect(
+      providerUpdatePromptSettled({
+        providers: [codex, { ...openCodePending, statusPending: false }],
+        sessionKnown: false,
+      }),
+    ).toBe(false);
+    expect(
+      providerUpdatePromptSettled({
+        providers: [codex, { ...openCodePending, statusPending: false }],
+        sessionKnown: true,
+      }),
+    ).toBe(true);
+    expect(
+      providerUpdatePromptSettled({
+        providers: [codex, { ...openCodePending, enabled: false }],
+        sessionKnown: true,
+      }),
+    ).toBe(true);
   });
 });

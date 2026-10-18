@@ -152,6 +152,22 @@ export function isProviderUpdateActive(provider: Pick<ServerProvider, "updateSta
   return provider.updateState?.status === "queued" || provider.updateState?.status === "running";
 }
 
+/**
+ * UpComputer: at launch the cached provider list arrives first, then each
+ * provider's placeholder until its check finishes. A prompt opened or changed
+ * on either would close and reopen with other providers, so it waits for the
+ * checks and for the session that decides whether it can update.
+ */
+export function providerUpdatePromptSettled(input: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly sessionKnown: boolean;
+}): boolean {
+  return (
+    input.sessionKnown &&
+    !input.providers.some((provider) => provider.enabled && provider.statusPending === true)
+  );
+}
+
 export function collectProviderUpdateCandidates(
   providers: ReadonlyArray<ServerProvider>,
 ): ProviderUpdateCandidate[] {
