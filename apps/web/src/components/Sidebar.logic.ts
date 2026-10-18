@@ -32,6 +32,22 @@ import {
   type LinkedProjectScopeThread,
 } from "../linkedProjects/projectScope";
 
+/**
+ * What the sidebar's lists may show while startup data loads. An empty list
+ * is a claim ("No threads yet"), so it waits for the shells. UpComputer's
+ * Projects and thread rows also wait for the settled workspace: a cached or
+ * partial list would change in front of the user, and before an environment's
+ * server config the scratch project reads as an ordinary project.
+ */
+export function resolveSidebarListVisibility(input: {
+  readonly surface: "upstream" | "upcomputer";
+  readonly shellsBootstrapped: boolean;
+  readonly workspaceSettled: boolean;
+}): { readonly rowsShown: boolean; readonly emptyStateShown: boolean } {
+  const rowsShown = input.surface === "upstream" || input.workspaceSettled;
+  return { rowsShown, emptyStateShown: rowsShown && input.shellsBootstrapped };
+}
+
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
   readonly currentThreadKey: string | null;

@@ -161,8 +161,10 @@ import {
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
+  useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
+  useWorkspaceSettled,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { isProductFeatureShown, productSurface } from "../product/productFlags";
@@ -211,6 +213,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  resolveSidebarListVisibility,
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
@@ -314,6 +317,7 @@ const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new M
 // Collapsed shelves share one empty list so a route change alone does not
 // give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
+const EMPTY_PROJECT_GROUPS: readonly SidebarProjectSnapshot[] = [];
 
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
@@ -2720,6 +2724,14 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadListShown = useSidebarThreadListShown();
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const workspaceSettled = useWorkspaceSettled();
+  const { rowsShown: sidebarRowsShown, emptyStateShown: sidebarEmptyStateShown } =
+    resolveSidebarListVisibility({
+      surface: productSurface("sidebarProjects"),
+      shellsBootstrapped: bootstrapped,
+      workspaceSettled,
+    });
   const ThreadRow: typeof SidebarThreadRow =
     useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
@@ -4808,7 +4820,7 @@ export default function Sidebar() {
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
                 <SidebarProjectsSection
-                  projectGroups={projectGroups}
+                  projectGroups={sidebarRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
                 <SidebarThreadsSectionHeader
@@ -4895,7 +4907,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads && threadListShown ? (
+          {!isSearchingThreads && threadListShown && sidebarRowsShown ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -5219,6 +5231,7 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads &&
           threadListShown &&
+          sidebarEmptyStateShown &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +

@@ -6,6 +6,7 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
+  resolveSidebarListVisibility,
   animateSidebarLayoutChanges,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
@@ -2324,5 +2325,48 @@ describe("Working shelf (beta)", () => {
         unsnooze: false,
       });
     });
+  });
+});
+
+describe("resolveSidebarListVisibility", () => {
+  it("does not claim an empty list before the shells are known", () => {
+    for (const surface of ["upstream", "upcomputer"] as const) {
+      expect(
+        resolveSidebarListVisibility({
+          surface,
+          shellsBootstrapped: false,
+          workspaceSettled: false,
+        }).emptyStateShown,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps UpComputer's rows and empty state back until the workspace settles", () => {
+    // The relaunch frame that showed "No threads yet" without "All projects"
+    // and "No project": the cached shell was loaded, the live one was not.
+    expect(
+      resolveSidebarListVisibility({
+        surface: "upcomputer",
+        shellsBootstrapped: true,
+        workspaceSettled: false,
+      }),
+    ).toEqual({ rowsShown: false, emptyStateShown: false });
+    expect(
+      resolveSidebarListVisibility({
+        surface: "upcomputer",
+        shellsBootstrapped: true,
+        workspaceSettled: true,
+      }),
+    ).toEqual({ rowsShown: true, emptyStateShown: true });
+  });
+
+  it("keeps upstream's cached rows", () => {
+    expect(
+      resolveSidebarListVisibility({
+        surface: "upstream",
+        shellsBootstrapped: false,
+        workspaceSettled: false,
+      }).rowsShown,
+    ).toBe(true);
   });
 });
