@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { DownloadIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AuthProvidersManageScope,
   type ServerProvider,
@@ -34,6 +34,7 @@ import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/t
 import { useAtomCommand } from "../state/use-atom-command";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
+const PROVIDER_UPDATE_LOOKUP_WAIT_MS = 15_000;
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
@@ -115,7 +116,19 @@ export function ProviderUpdatePrimaryNotification() {
     AuthProvidersManageScope,
   );
   const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
-  const promptSettled = providerUpdatePromptSettled({ providers, sessionKnown });
+  const [lookupWaitExpired, setLookupWaitExpired] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setLookupWaitExpired(true),
+      PROVIDER_UPDATE_LOOKUP_WAIT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+  const promptSettled = providerUpdatePromptSettled({
+    providers,
+    sessionKnown,
+    lookupWaitExpired,
+  });
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });

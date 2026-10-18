@@ -1140,35 +1140,31 @@ describe("getProviderUpdateRunToastView", () => {
 });
 
 describe("providerUpdatePromptSettled", () => {
-  it("waits for providers still on their first check and for the session", () => {
-    // Relaunch: the cached list held Codex and OpenCode behind latest, then
-    // OpenCode's placeholder dropped it, so the prompt went "2 providers",
-    // "Codex", and back to "2 providers".
-    const codex = provider({ driver: driver("codex"), latestVersion: "2.0.0" });
-    const { versionAdvisory: _placeholderHasNone, ...openCode } = provider({
-      driver: driver("opencode"),
-    });
-    const openCodePending: ServerProvider = { ...openCode, statusPending: true };
-    expect(
-      providerUpdatePromptSettled({ providers: [codex, openCodePending], sessionKnown: true }),
-    ).toBe(false);
-    expect(
-      providerUpdatePromptSettled({
-        providers: [codex, { ...openCodePending, statusPending: false }],
-        sessionKnown: false,
-      }),
-    ).toBe(false);
-    expect(
-      providerUpdatePromptSettled({
-        providers: [codex, { ...openCodePending, statusPending: false }],
-        sessionKnown: true,
-      }),
-    ).toBe(true);
-    expect(
-      providerUpdatePromptSettled({
-        providers: [codex, { ...openCodePending, enabled: false }],
-        sessionKnown: true,
-      }),
-    ).toBe(true);
+  // Relaunch: the cached list held Codex and OpenCode behind latest, then
+  // OpenCode's placeholder and its check before the latest-version lookup
+  // dropped it, so the prompt went "2 providers", "Codex", and back.
+  const codex = provider({ driver: driver("codex"), latestVersion: "2.0.0" });
+  const openCode = provider({ driver: driver("opencode"), latestVersion: "2.0.0" });
+  const settled = (providers: ServerProvider[], sessionKnown = true, lookupWaitExpired = false) =>
+    providerUpdatePromptSettled({ providers, sessionKnown, lookupWaitExpired });
+
+  it("waits for a provider still on its first check", () => {
+    expect(settled([codex, { ...openCode, statusPending: true }])).toBe(false);
+    expect(settled([codex, { ...openCode, statusPending: true }], true, true)).toBe(false);
+    expect(settled([codex, { ...openCode, statusPending: true, enabled: false }])).toBe(true);
+  });
+
+  it("waits for the latest-version lookup, but not forever", () => {
+    const lookingUp: ServerProvider = {
+      ...openCode,
+      versionAdvisory: { ...openCode.versionAdvisory!, status: "unknown", latestVersion: null },
+    };
+    expect(settled([codex, lookingUp])).toBe(false);
+    expect(settled([codex, lookingUp], true, true)).toBe(true);
+    expect(settled([codex, openCode])).toBe(true);
+  });
+
+  it("waits for the session that decides whether it can update", () => {
+    expect(settled([codex, openCode], false)).toBe(false);
   });
 });

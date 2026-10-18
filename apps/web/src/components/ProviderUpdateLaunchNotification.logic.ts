@@ -154,17 +154,25 @@ export function isProviderUpdateActive(provider: Pick<ServerProvider, "updateSta
 
 /**
  * UpComputer: at launch the cached provider list arrives first, then each
- * provider's placeholder until its check finishes. A prompt opened or changed
- * on either would close and reopen with other providers, so it waits for the
- * checks and for the session that decides whether it can update.
+ * provider's placeholder until its check finishes, then the check without its
+ * latest version until that lookup answers. A prompt opened or changed on any
+ * of these would close and reopen with other providers, so it waits for them
+ * (the lookup only until `lookupWaitExpired`, as a registry can stay
+ * unreachable) and for the session that decides whether it can update.
  */
 export function providerUpdatePromptSettled(input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly sessionKnown: boolean;
+  readonly lookupWaitExpired: boolean;
 }): boolean {
-  return (
-    input.sessionKnown &&
-    !input.providers.some((provider) => provider.enabled && provider.statusPending === true)
+  if (!input.sessionKnown) return false;
+  return !input.providers.some(
+    (provider) =>
+      provider.enabled &&
+      (provider.statusPending === true ||
+        (!input.lookupWaitExpired &&
+          provider.installed &&
+          provider.versionAdvisory?.status === "unknown")),
   );
 }
 
