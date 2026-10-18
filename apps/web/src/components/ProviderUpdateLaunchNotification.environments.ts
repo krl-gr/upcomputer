@@ -4,9 +4,13 @@ import { useMemo } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { useEnvironmentSessionKnown } from "~/state/session";
+import { useProviderUpdateLateKeys } from "./providerUpdateStartupWait";
 import {
   buildLocalEnvironmentUpdateGroups,
   deriveEnvironmentDisplayLabel,
+  settleProviderUpdateEnvironments,
+  unresolvedProviderUpdateKeys,
   type EnvironmentUpdateConnectionState,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
@@ -39,8 +43,9 @@ export function useLocalEnvironmentUpdateGroups(): {
 } {
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const sessionKnown = useEnvironmentSessionKnown(primaryEnvironmentId);
 
-  return useMemo(() => {
+  const inputs = useMemo(() => {
     const inputs: LocalEnvironmentProvidersInput[] = [];
 
     for (const environment of environments) {
@@ -70,7 +75,22 @@ export function useLocalEnvironmentUpdateGroups(): {
     }
 
     inputs.sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
-
-    return buildLocalEnvironmentUpdateGroups(inputs);
+    return inputs;
   }, [environments, primaryEnvironmentId]);
+  const lateKeys = useProviderUpdateLateKeys(
+    useMemo(() => unresolvedProviderUpdateKeys(inputs), [inputs]),
+  );
+
+  // UpComputer: the launch prompt waits as the primary-only prompt does.
+  return useMemo(() => {
+    const settled = settleProviderUpdateEnvironments({
+      environments: inputs,
+      sessionKnown,
+      lateKeys,
+    });
+    return {
+      groups: buildLocalEnvironmentUpdateGroups(settled ?? inputs).groups,
+      isAnySettling: settled === null,
+    };
+  }, [inputs, lateKeys, sessionKnown]);
 }

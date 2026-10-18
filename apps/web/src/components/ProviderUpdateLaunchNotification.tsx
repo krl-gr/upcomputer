@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { DownloadIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
@@ -38,11 +38,6 @@ export function ProviderUpdateLaunchNotification() {
 const seenProviderUpdateNotificationKeys = new Set<string>();
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
-// While a local backend (e.g. WSL) is still connecting, defer the popover so it
-// reflects every environment. Cap the wait so a stuck or failed backend can't
-// suppress the primary's updates indefinitely.
-const SETTLING_GRACE_MS = 30_000;
-
 function ProviderUpdateEnvironmentsNotification() {
   const navigate = useNavigate();
   const { groups, isAnySettling } = useLocalEnvironmentUpdateGroups();
@@ -79,16 +74,10 @@ function ProviderUpdateEnvironmentsNotification() {
     [updateGroups],
   );
 
-  const [settleGraceElapsed, setSettleGraceElapsed] = useState(false);
-  useEffect(() => {
-    if (!isAnySettling) {
-      setSettleGraceElapsed(false);
-      return;
-    }
-    const timer = setTimeout(() => setSettleGraceElapsed(true), SETTLING_GRACE_MS);
-    return () => clearTimeout(timer);
-  }, [isAnySettling]);
-  const isGated = isAnySettling && !settleGraceElapsed;
+  // UpComputer: while a local backend (e.g. WSL or the managed VM) connects
+  // or provider checks run, the prompt waits so it reflects every environment;
+  // `useLocalEnvironmentUpdateGroups` bounds the wait.
+  const isGated = isAnySettling;
 
   const openProviderSettings = useCallback(() => {
     const active = activeToastRef.current;

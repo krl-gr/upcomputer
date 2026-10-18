@@ -153,27 +153,95 @@ export function isProviderUpdateActive(provider: Pick<ServerProvider, "updateSta
 }
 
 /**
- * UpComputer: at launch the cached provider list arrives first, then each
- * provider's placeholder until its check finishes, then the check without its
- * latest version until that lookup answers. A prompt opened or changed on any
- * of these would close and reopen with other providers, so it waits for them
- * (the lookup only until `lookupWaitExpired`, as a registry can stay
- * unreachable) and for the session that decides whether it can update.
+ * UpComputer: how long a launch prompt waits for what it depends on. At
+ * launch the cached provider list arrives first, then each provider's
+ * placeholder until its check finishes, then the check without its latest
+ * version until that lookup answers, and secondary environments connect. A
+ * prompt opened or changed on any of these would close and reopen with other
+ * providers, so it waits, but one hung check or registry must not hold back
+ * every other provider's update.
  */
-export function providerUpdatePromptSettled(input: {
-  readonly providers: ReadonlyArray<ServerProvider>;
-  readonly sessionKnown: boolean;
-  readonly lookupWaitExpired: boolean;
-}): boolean {
-  if (!input.sessionKnown) return false;
-  return !input.providers.some(
-    (provider) =>
-      provider.enabled &&
-      (provider.statusPending === true ||
-        (!input.lookupWaitExpired &&
-          provider.installed &&
-          provider.versionAdvisory?.status === "unknown")),
+export const PROVIDER_UPDATE_STARTUP_WAIT_MS = 15_000;
+
+/** An enabled provider whose first check or latest-version lookup is still running. */
+function isProviderUpdateUnresolved(provider: ServerProvider): boolean {
+  return (
+    provider.enabled &&
+    (provider.statusPending === true ||
+      (provider.installed && provider.versionAdvisory?.status === "unknown"))
   );
+}
+
+export interface ProviderUpdateSettlingEnvironment {
+  readonly environmentId: string;
+  readonly connectionState: EnvironmentUpdateConnectionState;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}
+
+function providerUpdateKey(environmentId: string, provider: ServerProvider): string {
+  return `${environmentId}/${provider.instanceId}`;
+}
+
+/**
+ * What a launch prompt still waits for: environments that are connecting and
+ * unresolved providers of connected ones. A disconnected environment cannot
+ * resolve its providers, so it is not waited for.
+ */
+export function unresolvedProviderUpdateKeys(
+  environments: ReadonlyArray<ProviderUpdateSettlingEnvironment>,
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const environment of environments) {
+    if (environment.connectionState === "connecting") {
+      keys.add(environment.environmentId);
+    } else if (environment.connectionState === "ready") {
+      for (const provider of environment.providers) {
+        if (isProviderUpdateUnresolved(provider)) {
+          keys.add(providerUpdateKey(environment.environmentId, provider));
+        }
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * UpComputer: the one settling policy of both launch prompts (the primary
+ * environment's, and the one with local secondary environments such as the
+ * managed VM). Null while the prompt waits: for the session that decides
+ * whether it can update, and for `unresolvedProviderUpdateKeys`, until
+ * `lateKeys` is set when `PROVIDER_UPDATE_STARTUP_WAIT_MS` ends. Then the
+ * prompt shows what settled, and what was still unresolved at that moment is
+ * left out for the session, so a late result never changes a prompt the user
+ * saw; the next launch includes it. Unresolved providers never count as
+ * candidates.
+ */
+export function settleProviderUpdateEnvironments<
+  Environment extends ProviderUpdateSettlingEnvironment,
+>(input: {
+  readonly environments: ReadonlyArray<Environment>;
+  readonly sessionKnown: boolean;
+  readonly lateKeys: ReadonlySet<string> | null;
+}): Environment[] | null {
+  if (
+    input.lateKeys === null &&
+    (!input.sessionKnown || unresolvedProviderUpdateKeys(input.environments).size > 0)
+  ) {
+    return null;
+  }
+  const lateKeys = input.lateKeys ?? new Set<string>();
+  return input.environments
+    .filter((environment) => !lateKeys.has(environment.environmentId))
+    .map((environment) => {
+      const providers = environment.providers.filter(
+        (provider) =>
+          !isProviderUpdateUnresolved(provider) &&
+          !lateKeys.has(providerUpdateKey(environment.environmentId, provider)),
+      );
+      return providers.length === environment.providers.length
+        ? environment
+        : { ...environment, providers };
+    });
 }
 
 export function collectProviderUpdateCandidates(

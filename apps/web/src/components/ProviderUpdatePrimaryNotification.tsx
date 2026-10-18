@@ -1,9 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { DownloadIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   AuthProvidersManageScope,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
   type ServerProvider,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
@@ -26,15 +27,18 @@ import {
   getProviderUpdateProgressToastView,
   getProviderUpdateRejectedToastView,
   providerUpdateNotificationKey,
-  providerUpdatePromptSettled,
+  settleProviderUpdateEnvironments,
   shouldShowPrimaryProviderUpdateToast,
+  unresolvedProviderUpdateKeys,
+  type ProviderUpdateSettlingEnvironment,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/toast";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useProviderUpdateLateKeys } from "./providerUpdateStartupWait";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
-const PROVIDER_UPDATE_LOOKUP_WAIT_MS = 15_000;
+const NO_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
@@ -116,19 +120,28 @@ export function ProviderUpdatePrimaryNotification() {
     AuthProvidersManageScope,
   );
   const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
-  const [lookupWaitExpired, setLookupWaitExpired] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setLookupWaitExpired(true),
-      PROVIDER_UPDATE_LOOKUP_WAIT_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, []);
-  const promptSettled = providerUpdatePromptSettled({
-    providers,
-    sessionKnown,
-    lookupWaitExpired,
-  });
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? PRIMARY_LOCAL_ENVIRONMENT_ID;
+  const settlingEnvironments = useMemo(
+    (): ProviderUpdateSettlingEnvironment[] => [
+      { environmentId: primaryEnvironmentId, connectionState: "ready", providers },
+    ],
+    [primaryEnvironmentId, providers],
+  );
+  const lateKeys = useProviderUpdateLateKeys(
+    useMemo(() => unresolvedProviderUpdateKeys(settlingEnvironments), [settlingEnvironments]),
+  );
+  const settledEnvironments = useMemo(
+    () =>
+      settleProviderUpdateEnvironments({
+        environments: settlingEnvironments,
+        sessionKnown,
+        lateKeys,
+      }),
+    [lateKeys, sessionKnown, settlingEnvironments],
+  );
+  const promptSettled = settledEnvironments !== null;
+  // The providers the prompt offers: settled ones, without those that were late.
+  const promptProviders = settledEnvironments?.[0]?.providers ?? NO_PROVIDERS;
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
@@ -146,7 +159,10 @@ export function ProviderUpdatePrimaryNotification() {
     };
   }, []);
 
-  const updateProviders = useMemo(() => collectProviderUpdateCandidates(providers), [providers]);
+  const updateProviders = useMemo(
+    () => collectProviderUpdateCandidates(promptProviders),
+    [promptProviders],
+  );
   const notificationKey = useMemo(
     () => providerUpdateNotificationKey(updateProviders),
     [updateProviders],

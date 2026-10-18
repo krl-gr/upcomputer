@@ -29,9 +29,11 @@ import {
   isTerminalProviderUpdatePhase,
   localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
-  providerUpdatePromptSettled,
   resolveEnvironmentUpdateRowStatus,
+  settleProviderUpdateEnvironments,
   shouldShowPrimaryProviderUpdateToast,
+  unresolvedProviderUpdateKeys,
+  type ProviderUpdateSettlingEnvironment,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
   type LocalProviderUpdateOutcome,
@@ -1139,32 +1141,120 @@ describe("getProviderUpdateRunToastView", () => {
   });
 });
 
-describe("providerUpdatePromptSettled", () => {
+describe("provider update launch prompt settling", () => {
   // Relaunch: the cached list held Codex and OpenCode behind latest, then
   // OpenCode's placeholder and its check before the latest-version lookup
   // dropped it, so the prompt went "2 providers", "Codex", and back.
+  const PRIMARY = EnvironmentId.make("primary-env");
+  const VM = EnvironmentId.make("managed-vm");
   const codex = provider({ driver: driver("codex"), latestVersion: "2.0.0" });
   const openCode = provider({ driver: driver("opencode"), latestVersion: "2.0.0" });
-  const settled = (providers: ServerProvider[], sessionKnown = true, lookupWaitExpired = false) =>
-    providerUpdatePromptSettled({ providers, sessionKnown, lookupWaitExpired });
-
-  it("waits for a provider still on its first check", () => {
-    expect(settled([codex, { ...openCode, statusPending: true }])).toBe(false);
-    expect(settled([codex, { ...openCode, statusPending: true }], true, true)).toBe(false);
-    expect(settled([codex, { ...openCode, statusPending: true, enabled: false }])).toBe(true);
+  const pendingOpenCode: ServerProvider = { ...openCode, statusPending: true };
+  const lookingUpOpenCode: ServerProvider = {
+    ...openCode,
+    versionAdvisory: { ...openCode.versionAdvisory!, status: "unknown", latestVersion: null },
+  };
+  const primary = (providers: ServerProvider[]): ProviderUpdateSettlingEnvironment => ({
+    environmentId: PRIMARY,
+    connectionState: "ready",
+    providers,
   });
+  // The primary-only prompt: its key, or null while it waits.
+  const promptKey = (
+    providers: ServerProvider[],
+    options: { sessionKnown?: boolean; lateKeys?: ReadonlySet<string> | null } = {},
+  ) => {
+    const settled = settleProviderUpdateEnvironments({
+      environments: [primary(providers)],
+      sessionKnown: options.sessionKnown ?? true,
+      lateKeys: options.lateKeys ?? null,
+    });
+    return settled === null
+      ? "waiting"
+      : providerUpdateNotificationKey(collectProviderUpdateCandidates(settled[0]!.providers));
+  };
 
-  it("waits for the latest-version lookup, but not forever", () => {
-    const lookingUp: ServerProvider = {
-      ...openCode,
-      versionAdvisory: { ...openCode.versionAdvisory!, status: "unknown", latestVersion: null },
-    };
-    expect(settled([codex, lookingUp])).toBe(false);
-    expect(settled([codex, lookingUp], true, true)).toBe(true);
-    expect(settled([codex, openCode])).toBe(true);
+  it("waits for a provider still on its first check or its latest-version lookup", () => {
+    expect(promptKey([codex, pendingOpenCode])).toBe("waiting");
+    expect(promptKey([codex, lookingUpOpenCode])).toBe("waiting");
+    expect(promptKey([codex, { ...pendingOpenCode, enabled: false }])).toBe("codex:2.0.0");
+    expect(promptKey([codex, openCode])).toBe("codex:2.0.0|opencode:2.0.0");
   });
 
   it("waits for the session that decides whether it can update", () => {
-    expect(settled([codex, openCode], false)).toBe(false);
+    expect(promptKey([codex, openCode], { sessionKnown: false })).toBe("waiting");
+  });
+
+  it("shows the settled providers once a hung check outlasts the startup wait", () => {
+    // Astra review G: an OpenCode server that answers health but never its
+    // inventory kept the prompt for every other provider back for good.
+    const providers = [codex, pendingOpenCode];
+    const lateKeys = unresolvedProviderUpdateKeys([primary(providers)]);
+    expect(promptKey(providers, { lateKeys })).toBe("codex:2.0.0");
+    // The hung check finishing later does not change the prompt the user saw.
+    expect(promptKey([codex, openCode], { lateKeys })).toBe("codex:2.0.0");
+    // Nor does a placeholder that still carries a cached advisory.
+    expect(promptKey([codex, pendingOpenCode], { lateKeys: new Set() })).toBe("codex:2.0.0");
+  });
+
+  it("waits for a connecting secondary and staggered primary results, not a disconnected one", () => {
+    // Astra review G: with the managed VM disconnected, the primary's
+    // updates appeared one at a time and closed and reopened the prompt.
+    const environments = (
+      vm: EnvironmentUpdateConnectionStateForTest,
+      primaryProviders: ServerProvider[],
+    ): LocalEnvironmentProvidersInput[] => [
+      {
+        environmentId: PRIMARY,
+        label: "This Mac",
+        isPrimary: true,
+        connectionState: "ready",
+        providers: primaryProviders,
+      },
+      {
+        environmentId: VM,
+        label: "Managed VM",
+        isPrimary: false,
+        connectionState: vm,
+        providers: vm === "ready" ? [codex] : [pendingOpenCode],
+      },
+    ];
+    const shownKey = (
+      inputs: LocalEnvironmentProvidersInput[],
+      lateKeys: ReadonlySet<string> | null = null,
+    ) => {
+      const settled = settleProviderUpdateEnvironments({
+        environments: inputs,
+        sessionKnown: true,
+        lateKeys,
+      });
+      return settled === null
+        ? "waiting"
+        : localEnvironmentUpdateNotificationKey(buildLocalEnvironmentUpdateGroups(settled).groups);
+    };
+    // Staggered primary results with the VM disconnected: one prompt, at the end.
+    expect(shownKey(environments("disconnected", [pendingOpenCode, pendingOpenCode]))).toBe(
+      "waiting",
+    );
+    expect(shownKey(environments("disconnected", [codex, pendingOpenCode]))).toBe("waiting");
+    expect(shownKey(environments("disconnected", [codex, lookingUpOpenCode]))).toBe("waiting");
+    expect(shownKey(environments("disconnected", [codex, openCode]))).toBe(
+      "primary-env=codex:2.0.0,opencode:2.0.0",
+    );
+    // A connecting VM is waited for, until the startup wait ends.
+    expect(shownKey(environments("connecting", [codex, openCode]))).toBe("waiting");
+    const lateKeys = unresolvedProviderUpdateKeys(environments("connecting", [codex, openCode]));
+    expect(shownKey(environments("connecting", [codex, openCode]), lateKeys)).toBe(
+      "primary-env=codex:2.0.0,opencode:2.0.0",
+    );
+    // The VM connecting after that waits for the next launch.
+    expect(shownKey(environments("ready", [codex, openCode]), lateKeys)).toBe(
+      "primary-env=codex:2.0.0,opencode:2.0.0",
+    );
+    expect(shownKey(environments("ready", [codex, openCode]))).toBe(
+      "managed-vm=codex:2.0.0|primary-env=codex:2.0.0,opencode:2.0.0",
+    );
   });
 });
+
+type EnvironmentUpdateConnectionStateForTest = LocalEnvironmentProvidersInput["connectionState"];
