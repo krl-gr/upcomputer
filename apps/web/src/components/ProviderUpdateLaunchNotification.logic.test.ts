@@ -1177,6 +1177,9 @@ describe("provider update launch prompt settling", () => {
   it("waits for a provider still on its first check or its latest-version lookup", () => {
     expect(promptKey([codex, pendingOpenCode])).toBe("waiting");
     expect(promptKey([codex, lookingUpOpenCode])).toBe("waiting");
+    // A check published before its lookup added the advisory.
+    const { versionAdvisory: _advisory, ...codexWithoutAdvisory } = codex;
+    expect(promptKey([codexWithoutAdvisory, openCode])).toBe("waiting");
     expect(promptKey([codex, { ...pendingOpenCode, enabled: false }])).toBe("codex:2.0.0");
     expect(promptKey([codex, openCode])).toBe("codex:2.0.0|opencode:2.0.0");
   });

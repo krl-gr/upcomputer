@@ -163,12 +163,17 @@ export function isProviderUpdateActive(provider: Pick<ServerProvider, "updateSta
  */
 export const PROVIDER_UPDATE_STARTUP_WAIT_MS = 15_000;
 
-/** An enabled provider whose first check or latest-version lookup is still running. */
+/**
+ * An enabled provider whose first check or latest-version lookup is still
+ * running. A check can publish an installed provider without its advisory
+ * before the lookup adds it.
+ */
 function isProviderUpdateUnresolved(provider: ServerProvider): boolean {
   return (
     provider.enabled &&
     (provider.statusPending === true ||
-      (provider.installed && provider.versionAdvisory?.status === "unknown"))
+      (provider.installed &&
+        (provider.versionAdvisory === undefined || provider.versionAdvisory.status === "unknown")))
   );
 }
 
