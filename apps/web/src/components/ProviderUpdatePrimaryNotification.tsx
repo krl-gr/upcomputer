@@ -131,6 +131,7 @@ export function ProviderUpdatePrimaryNotification() {
     environments: settlingEnvironments,
     sessionKnown,
     enabled: launchSettling,
+    presentation: "primary",
   });
   const promptSettled = settledEnvironments !== null;
   // UpComputer: the prompt offers the settled providers it admitted.

@@ -81,6 +81,7 @@ export function useLocalEnvironmentUpdateGroups(): {
     environments: inputs,
     sessionKnown,
     enabled: surface === "upcomputer",
+    presentation: "environments",
   });
 
   return useMemo(

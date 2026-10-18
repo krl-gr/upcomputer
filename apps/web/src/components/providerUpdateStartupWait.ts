@@ -8,6 +8,9 @@ import {
   type ProviderUpdateSettlingEnvironment,
 } from "./ProviderUpdateLaunchNotification.logic";
 
+/** Which launch prompt shows: the primary environment's, or the one with local secondaries. */
+export type ProviderUpdateLaunchPresentation = "primary" | "environments";
+
 // UpComputer: one startup wait and one admitted set for the session, whichever
 // launch prompt is mounted, so switching between them neither restarts the
 // wait nor lets in what one of them left out.
@@ -15,8 +18,10 @@ let startupWaitEndsAt: number | null = null;
 interface LaunchSettlingState {
   readonly lateKeys: ReadonlySet<string> | null;
   readonly admittedKeys: ReadonlySet<string> | null;
+  /** The prompt that admitted the set; it keeps showing for the session. */
+  readonly admittedBy: ProviderUpdateLaunchPresentation | null;
 }
-let state: LaunchSettlingState = { lateKeys: null, admittedKeys: null };
+let state: LaunchSettlingState = { lateKeys: null, admittedKeys: null, admittedBy: null };
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -44,8 +49,9 @@ export function useProviderUpdateLaunchSettling<
   readonly environments: ReadonlyArray<Environment>;
   readonly sessionKnown: boolean;
   readonly enabled: boolean;
+  readonly presentation: ProviderUpdateLaunchPresentation;
 }): ReadonlyArray<Environment> | null {
-  const { environments, sessionKnown, enabled } = input;
+  const { environments, sessionKnown, enabled, presentation } = input;
   const unresolvedKeys = useMemo(() => unresolvedProviderUpdateKeys(environments), [environments]);
   const unresolvedKeysRef = useRef(unresolvedKeys);
   useEffect(() => {
@@ -75,7 +81,20 @@ export function useProviderUpdateLaunchSettling<
   useLayoutEffect(() => {
     if (!enabled || settled === null || state.admittedKeys !== null) return;
     const admittedKeys = admitProviderUpdatePrompt(settled);
-    if (admittedKeys !== null) publish({ admittedKeys });
-  }, [enabled, settled]);
+    if (admittedKeys !== null) publish({ admittedKeys, admittedBy: presentation });
+  }, [enabled, presentation, settled]);
   return settled;
+}
+
+/**
+ * UpComputer: the launch prompt to mount. It follows `topology` until a
+ * prompt admits its set, then stays for the session: a local secondary
+ * registering or going away later would otherwise unmount the shown prompt,
+ * closing its toast, and mount the other one with its own toast and seen keys.
+ */
+export function useProviderUpdateLaunchPresentation(
+  topology: ProviderUpdateLaunchPresentation,
+): ProviderUpdateLaunchPresentation {
+  const { admittedBy } = useSyncExternalStore(subscribe, readState, readState);
+  return admittedBy ?? topology;
 }
