@@ -4829,16 +4829,19 @@ export default function Sidebar() {
                   projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
-                <SidebarThreadsSectionHeader
-                  onNewThread={handleNewThreadClick}
-                  currentEnvironmentId={
-                    newThreadContext.activeThread?.environmentId ??
-                    newThreadContext.activeDraftThread?.environmentId ??
-                    null
-                  }
-                  newThreadDisabled={projects.length === 0}
-                  newThreadShortcutLabel={newThreadShortcutLabel}
-                />
+                {/* Below the Projects rows, so it appears with them rather than moving down. */}
+                {sidebarProjectRowsShown ? (
+                  <SidebarThreadsSectionHeader
+                    onNewThread={handleNewThreadClick}
+                    currentEnvironmentId={
+                      newThreadContext.activeThread?.environmentId ??
+                      newThreadContext.activeDraftThread?.environmentId ??
+                      null
+                    }
+                    newThreadDisabled={projects.length === 0}
+                    newThreadShortcutLabel={newThreadShortcutLabel}
+                  />
+                ) : null}
               </>
             ) : null}
           </SidebarGroup>
