@@ -21,6 +21,7 @@ import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
   makeOpenCode2ModelLoader,
+  makePendingOpenCodeProvider,
   type OpenCode2Model,
   type OpenCode2Workspace,
   openCode2CommandsToServerProviderSlashCommands,
@@ -921,3 +922,15 @@ it("lists an OpenCode 2 directory's skills by id and its commands after /compact
     ["compact", "init", "review", "hello"],
   );
 });
+
+it.effect("marks only the enabled OpenCode placeholder as pending", () =>
+  Effect.gen(function* () {
+    const pending = yield* makePendingOpenCodeProvider(decodeOpenCodeSettings({ enabled: true }));
+    NodeAssert.equal(pending.status, "warning");
+    NodeAssert.equal(pending.installed, false);
+    NodeAssert.equal(pending.statusPending, true);
+    const disabled = yield* makePendingOpenCodeProvider(decodeOpenCodeSettings({ enabled: false }));
+    NodeAssert.equal(disabled.status, "disabled");
+    NodeAssert.equal(disabled.statusPending, undefined);
+  }),
+);

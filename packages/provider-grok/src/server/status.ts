@@ -99,6 +99,7 @@ export function buildInitialGrokProviderSnapshot(
       enabled: true,
       checkedAt,
       models,
+      statusPending: true,
       probe: {
         installed: true,
         version: null,

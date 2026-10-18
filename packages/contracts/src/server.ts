@@ -260,6 +260,9 @@ export const ServerProvider = Schema.Struct({
   auth: ServerProviderAuth,
   checkedAt: IsoDateTime,
   message: Schema.optional(TrimmedNonEmptyString),
+  // UpComputer: set on the placeholder a driver publishes until its first
+  // status check finishes, so clients do not present it as a real result.
+  statusPending: Schema.optionalKey(Schema.Boolean),
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),

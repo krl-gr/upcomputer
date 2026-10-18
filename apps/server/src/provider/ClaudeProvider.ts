@@ -703,6 +703,7 @@ export const makePendingClaudeProvider = (
       enabled: true,
       checkedAt,
       models,
+      statusPending: true,
       probe: {
         installed: false,
         version: null,
