@@ -4222,7 +4222,13 @@ export default function ChatView(props: ChatViewProps) {
       rememberCheckoutIsRepo(environmentId, gitStatusCwd, liveIsGitRepo);
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
-  const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  // UpComputer: until the first status, a checkout this client has not seen
+  // counts as no repository, so Git controls can appear but never mount and
+  // drop again (a chat without a project starts in a folder without Git).
+  const isGitRepo =
+    liveIsGitRepo ??
+    recallCheckoutIsRepo(environmentId, gitStatusCwd) ??
+    !showsUpComputerComposerContextRow();
   // A provider-native subagent cannot take messages: a status bar replaces the
   // composer and its strips. Its approvals and questions are asked on the
   // top-level parent thread.

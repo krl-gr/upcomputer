@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { openScratchHomeDraft } from "./scratchHomeDraft";
+import { openScratchHomeDraft, resolveHomeWithoutDraft } from "./scratchHomeDraft";
 
 describe("openScratchHomeDraft", () => {
   it("opens the scratch draft while home is still shown", async () => {
@@ -48,5 +48,17 @@ describe("openScratchHomeDraft", () => {
         openDraft: () => Promise.resolve(null),
       }),
     ).resolves.toBe("failed");
+  });
+});
+
+describe("resolveHomeWithoutDraft", () => {
+  it("keeps upstream's hero", () => {
+    expect(
+      resolveHomeWithoutDraft({
+        startsWithoutProject: false,
+        workspaceSettled: false,
+        workspaceDelivered: false,
+      }),
+    ).toBe("hero");
   });
 });

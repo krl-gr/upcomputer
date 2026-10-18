@@ -152,6 +152,140 @@ export function isProviderUpdateActive(provider: Pick<ServerProvider, "updateSta
   return provider.updateState?.status === "queued" || provider.updateState?.status === "running";
 }
 
+/**
+ * UpComputer: how long a launch prompt waits for what it depends on. At
+ * launch the cached provider list arrives first, then each provider's
+ * placeholder until its check finishes, then the check without its latest
+ * version until that lookup answers, and secondary environments connect. A
+ * prompt opened or changed on any of these would close and reopen with other
+ * providers, so it waits, but one hung check or registry must not hold back
+ * every other provider's update.
+ */
+export const PROVIDER_UPDATE_STARTUP_WAIT_MS = 15_000;
+
+/**
+ * An enabled provider whose first check or latest-version lookup is still
+ * running. A check can publish an installed provider without its advisory
+ * before the lookup adds it.
+ */
+function isProviderUpdateUnresolved(provider: ServerProvider): boolean {
+  return (
+    provider.enabled &&
+    (provider.statusPending === true ||
+      (provider.installed &&
+        (provider.versionAdvisory === undefined || provider.versionAdvisory.status === "unknown")))
+  );
+}
+
+export interface ProviderUpdateSettlingEnvironment {
+  readonly environmentId: string;
+  readonly connectionState: EnvironmentUpdateConnectionState;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}
+
+function providerUpdateKey(environmentId: string, provider: ServerProvider): string {
+  return `${environmentId}/${provider.instanceId}`;
+}
+
+/**
+ * What a launch prompt still waits for: environments that are connecting and
+ * unresolved providers of connected ones. A disconnected environment cannot
+ * resolve its providers, so it is not waited for.
+ */
+export function unresolvedProviderUpdateKeys(
+  environments: ReadonlyArray<ProviderUpdateSettlingEnvironment>,
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const environment of environments) {
+    if (environment.connectionState === "connecting") {
+      keys.add(environment.environmentId);
+    } else if (environment.connectionState === "ready") {
+      for (const provider of environment.providers) {
+        if (isProviderUpdateUnresolved(provider)) {
+          keys.add(providerUpdateKey(environment.environmentId, provider));
+        }
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * UpComputer: the one settling policy of both launch prompts (the primary
+ * environment's, and the one with local secondary environments such as the
+ * managed VM). Null while the prompt waits: for the session that decides
+ * whether it can update, and for `unresolvedProviderUpdateKeys`, until
+ * `lateKeys` is set when `PROVIDER_UPDATE_STARTUP_WAIT_MS` ends. Then the
+ * prompt shows the connected environments' settled providers, without what
+ * was late. What it shows first is admitted for the session
+ * (`admitProviderUpdatePrompt`): an environment that was offline, connecting
+ * or absent then, or a provider that was late, never joins a prompt the user
+ * saw; the next launch includes it. Unresolved providers never count as
+ * candidates.
+ */
+export function settleProviderUpdateEnvironments<
+  Environment extends ProviderUpdateSettlingEnvironment,
+>(input: {
+  readonly environments: ReadonlyArray<Environment>;
+  readonly sessionKnown: boolean;
+  readonly lateKeys: ReadonlySet<string> | null;
+  readonly admittedKeys: ReadonlySet<string> | null;
+}): Environment[] | null {
+  const { admittedKeys } = input;
+  if (
+    admittedKeys === null &&
+    input.lateKeys === null &&
+    (!input.sessionKnown || unresolvedProviderUpdateKeys(input.environments).size > 0)
+  ) {
+    return null;
+  }
+  const lateKeys = input.lateKeys ?? new Set<string>();
+  // Once admitted, an environment stays through a reconnect, so its row does not drop out.
+  const admits = (key: string) =>
+    admittedKeys === null ? !lateKeys.has(key) : admittedKeys.has(key);
+  return input.environments
+    .filter(
+      (environment) =>
+        admits(environment.environmentId) &&
+        (admittedKeys !== null || environment.connectionState === "ready"),
+    )
+    .map((environment) => {
+      const providers = environment.providers.filter(
+        (provider) =>
+          !isProviderUpdateUnresolved(provider) &&
+          admits(providerUpdateKey(environment.environmentId, provider)),
+      );
+      return providers.length === environment.providers.length
+        ? environment
+        : { ...environment, providers };
+    });
+}
+
+/**
+ * What a launch prompt admits for the session once it first has an update to
+ * show: its environments and their providers. Null until then, so a provider
+ * list that arrives after the prompt settled empty still counts.
+ */
+export function admitProviderUpdatePrompt(
+  settled: ReadonlyArray<ProviderUpdateSettlingEnvironment>,
+): ReadonlySet<string> | null {
+  if (
+    !settled.some(
+      (environment) => collectProviderUpdateCandidates(environment.providers).length > 0,
+    )
+  ) {
+    return null;
+  }
+  const keys = new Set<string>();
+  for (const environment of settled) {
+    keys.add(environment.environmentId);
+    for (const provider of environment.providers) {
+      keys.add(providerUpdateKey(environment.environmentId, provider));
+    }
+  }
+  return keys;
+}
+
 export function collectProviderUpdateCandidates(
   providers: ReadonlyArray<ServerProvider>,
 ): ProviderUpdateCandidate[] {
@@ -715,6 +849,24 @@ export function buildLocalEnvironmentUpdateGroups(
     (environment) => environment.connectionState === "connecting",
   );
   return { groups, isAnySettling };
+}
+
+/**
+ * The groups the launch prompt with local secondaries shows. Upstream's
+ * surface groups every environment as it is and waits while one connects (the
+ * prompt caps that wait); UpComputer's shows what settled, see
+ * `settleProviderUpdateEnvironments`.
+ */
+export function launchPromptEnvironmentUpdateGroups(input: {
+  readonly surface: "upstream" | "upcomputer";
+  readonly environments: ReadonlyArray<LocalEnvironmentProvidersInput>;
+  readonly settled: ReadonlyArray<LocalEnvironmentProvidersInput> | null;
+}): { groups: LocalEnvironmentUpdateGroup[]; isAnySettling: boolean } {
+  if (input.surface === "upstream") return buildLocalEnvironmentUpdateGroups(input.environments);
+  return {
+    groups: buildLocalEnvironmentUpdateGroups(input.settled ?? input.environments).groups,
+    isAnySettling: input.settled === null,
+  };
 }
 
 export function environmentGroupsWithUpdates(

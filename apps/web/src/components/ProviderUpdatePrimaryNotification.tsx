@@ -10,7 +10,11 @@ import {
 
 import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
 import { usePrimaryEnvironment } from "../state/environments";
-import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import {
+  readEnvironmentScope,
+  useEnvironmentScope,
+  useEnvironmentSessionKnown,
+} from "../state/session";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
@@ -23,12 +27,16 @@ import {
   getProviderUpdateRejectedToastView,
   providerUpdateNotificationKey,
   shouldShowPrimaryProviderUpdateToast,
+  type ProviderUpdateSettlingEnvironment,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/toast";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useProviderUpdateLaunchSettling } from "./providerUpdateStartupWait";
+import { productSurface } from "../product/productFlags";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
+const NO_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
@@ -109,6 +117,27 @@ export function ProviderUpdatePrimaryNotification() {
     primaryEnvironment?.environmentId ?? null,
     AuthProvidersManageScope,
   );
+  const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  const settlingEnvironments = useMemo(
+    (): ProviderUpdateSettlingEnvironment[] =>
+      primaryEnvironmentId === null
+        ? []
+        : [{ environmentId: primaryEnvironmentId, connectionState: "ready", providers }],
+    [primaryEnvironmentId, providers],
+  );
+  const launchSettling = productSurface("providerUpdateLaunchNotification") === "upcomputer";
+  const settledEnvironments = useProviderUpdateLaunchSettling({
+    environments: settlingEnvironments,
+    sessionKnown,
+    enabled: launchSettling,
+    presentation: "primary",
+  });
+  const promptSettled = settledEnvironments !== null;
+  // UpComputer: the prompt offers the settled providers it admitted.
+  const promptProviders = launchSettling
+    ? (settledEnvironments?.[0]?.providers ?? NO_PROVIDERS)
+    : providers;
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
@@ -126,7 +155,10 @@ export function ProviderUpdatePrimaryNotification() {
     };
   }, []);
 
-  const updateProviders = useMemo(() => collectProviderUpdateCandidates(providers), [providers]);
+  const updateProviders = useMemo(
+    () => collectProviderUpdateCandidates(promptProviders),
+    [promptProviders],
+  );
   const notificationKey = useMemo(
     () => providerUpdateNotificationKey(updateProviders),
     [updateProviders],
@@ -179,6 +211,7 @@ export function ProviderUpdatePrimaryNotification() {
   }, [providers, openProviderSettings]);
 
   useEffect(() => {
+    if (!promptSettled) return;
     const activeToast = activeToastRef.current;
     if (activeToast?.kind === "prompt" && activeToast.key !== notificationKey) {
       toastManager.close(activeToast.toastId);
@@ -342,6 +375,7 @@ export function ProviderUpdatePrimaryNotification() {
     oneClickProviders,
     openProviderSettings,
     primaryEnvironment,
+    promptSettled,
     updateProviders,
   ]);
 

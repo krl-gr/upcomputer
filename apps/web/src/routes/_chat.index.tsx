@@ -7,7 +7,10 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
+import {
+  describeWorkspaceWaiting,
+  sortScopedProjectsForSidebar,
+} from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -15,14 +18,18 @@ import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
-import { openScratchHomeDraft } from "../scratchHomeDraft";
+import { openScratchHomeDraft, resolveHomeWithoutDraft } from "../scratchHomeDraft";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
+  useWorkspaceKnown,
+  useWorkspaceDelivery,
+  useWorkspaceSettled,
 } from "../state/entities";
+import type { WaitingWorkspaceEnvironment } from "../state/workspace";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -43,10 +50,18 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const workspaceKnown = useWorkspaceKnown();
+  const workspaceSettled = useWorkspaceSettled();
+  const workspaceDelivery = useWorkspaceDelivery();
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
+  // UpComputer: the scratch project is not known before its environment's
+  // server config, so choosing between the most recent project and a chat
+  // without a project waits for it. Cached shells are enough for that choice,
+  // and the wait ends at the first-load deadline.
+  const projectsKnown = startsWithoutProject ? workspaceKnown : bootstrapped;
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
@@ -67,15 +82,15 @@ function IndexDraftLanding() {
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
+      projectsKnown
         ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [projectsKnown, projects, threads],
   );
   // UpComputer: with no projects yet, home is a chat without a project, the
   // draft New thread opens, instead of upstream's "add a project" hero.
   const scratchTarget =
-    bootstrapped && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
+    projectsKnown && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
       ? scratchEnvironmentId(primaryEnvironmentId)
       : null;
 
@@ -134,8 +149,10 @@ function IndexDraftLanding() {
     startState.retryRequest,
   ]);
 
-  if (!bootstrapped) {
-    return null;
+  // Upstream renders nothing while it waits.
+  const pending = startsWithoutProject ? <HomePending /> : null;
+  if (!projectsKnown) {
+    return pending;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (
@@ -148,13 +165,66 @@ function IndexDraftLanding() {
           }));
         }}
       />
-    ) : null;
+    ) : (
+      pending
+    );
   }
   if (scratchTarget !== null) {
-    return null;
+    return <HomePending />;
   }
-  // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
-  return <NoProjectsHero />;
+  // UpComputer: the scratch environment offers a chat once it connects.
+  switch (
+    resolveHomeWithoutDraft({
+      startsWithoutProject,
+      workspaceSettled,
+      workspaceDelivered: workspaceDelivery.delivered,
+    })
+  ) {
+    case "pending":
+      return <HomePending />;
+    case "waiting":
+      return <HomeWaiting waitingOn={workspaceDelivery.waitingOn} />;
+    case "hero":
+      // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
+      return <NoProjectsHero />;
+  }
+}
+
+/**
+ * Blank page while home picks its draft. Rendering nothing would leave the
+ * window's own background (the macOS vibrancy) where the page then appears.
+ */
+function HomePending() {
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+    </SidebarInset>
+  );
+}
+
+function HomeWaiting({
+  waitingOn,
+}: {
+  readonly waitingOn: ReadonlyArray<WaitingWorkspaceEnvironment>;
+}) {
+  const { text, unreachable } = describeWorkspaceWaiting(waitingOn);
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+      <Empty className="flex-1">
+        <EmptyHeader className="max-w-md">
+          <EmptyDescription>{text}</EmptyDescription>
+          {unreachable ? (
+            <div className="mt-5 flex justify-center">
+              <Button render={<Link to="/settings/connections" />} size="sm" variant="outline">
+                Check Connections
+              </Button>
+            </div>
+          ) : null}
+        </EmptyHeader>
+      </Empty>
+    </SidebarInset>
+  );
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {

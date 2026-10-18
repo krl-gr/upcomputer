@@ -5,6 +5,7 @@ import {
   buildGitActionProgressStages,
   buildMenuItems,
   formatGitActionElapsed,
+  gitActionsWaitForFirstStatus,
   requiresDefaultBranchConfirmation,
   resolveAutoFeatureBranchName,
   resolveDefaultBranchActionDialogCopy,
@@ -1243,5 +1244,35 @@ describe("resolveAutoFeatureBranchName", () => {
   it("falls back to feature/update when no preferred name is provided", () => {
     const ref = resolveAutoFeatureBranchName(["main"]);
     assert.equal(ref, "feature/update");
+  });
+});
+
+describe("gitActionsWaitForFirstStatus", () => {
+  it("keeps UpComputer's Git controls back until the first status", () => {
+    // A chat without a project starts in a folder without Git: Commit and
+    // Changes showed, then Initialize Git replaced them.
+    const wait = (surface: "upstream" | "upcomputer", statusKnown: boolean) =>
+      gitActionsWaitForFirstStatus({ surface, presentation: "toolbar", statusKnown });
+    assert.equal(wait("upcomputer", false), true);
+    assert.equal(wait("upcomputer", true), false);
+    assert.equal(
+      gitActionsWaitForFirstStatus({
+        surface: "upcomputer",
+        presentation: "menu",
+        statusKnown: false,
+      }),
+      false,
+    );
+  });
+
+  it("leaves upstream's Git controls mounting at once", () => {
+    assert.equal(
+      gitActionsWaitForFirstStatus({
+        surface: "upstream",
+        presentation: "toolbar",
+        statusKnown: false,
+      }),
+      false,
+    );
   });
 });

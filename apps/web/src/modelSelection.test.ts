@@ -1,14 +1,24 @@
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
+  EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ThreadId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "@t3tools/shared/model";
-import { deriveEffectiveComposerModelState } from "./composerDraftStore";
+import {
+  clearComposerDraftsEnvironment,
+  deriveEffectiveComposerModelState,
+  DraftId,
+  shownDefaultModelDraftCount,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "./providerInstances";
 import {
@@ -917,6 +927,176 @@ describe("resolveAppModelSelectionState with the opencode plan agent", () => {
   it("keeps a stored plan agent this device did not pick", () => {
     expect(resolveAppModelSelectionState(settings, [opencode])).toEqual(
       createModelSelection(instanceId, model, [{ id: "agent", value: "plan" }]),
+    );
+  });
+});
+
+describe("composer default model stability", () => {
+  const ENV_A = EnvironmentId.make("env-a");
+  const ENV_B = EnvironmentId.make("env-b");
+  const OPENCODE = ProviderInstanceId.make("opencode");
+
+  function defaultModelFor(
+    models: ReadonlyArray<string>,
+    options: {
+      readonly draftKey?: string;
+      readonly environmentId?: EnvironmentId;
+      readonly statusPending?: boolean;
+      readonly upstream?: boolean;
+      readonly instanceId?: ProviderInstanceId;
+    } = {},
+  ) {
+    const driver = ProviderDriverKind.make("opencode");
+    const instanceId = options.instanceId ?? OPENCODE;
+    return deriveEffectiveComposerModelState({
+      draft: null,
+      providers: [
+        {
+          ...provider({ provider: driver, instanceId, models }),
+          statusPending: options.statusPending ?? false,
+        },
+      ],
+      selectedProvider: driver,
+      selectedInstanceId: instanceId,
+      threadModelSelection: null,
+      // As a new draft resolves it: a selection without a model.
+      projectModelSelection: NO_PROVIDER_MODEL_SELECTION,
+      settings: settingsWithProviderInstances(),
+      shownDefaultScope: options.upstream
+        ? null
+        : {
+            draftKey: options.draftKey ?? "draft",
+            environmentId: options.environmentId ?? ENV_A,
+          },
+    }).selectedModel;
+  }
+
+  it("keeps the default it showed first when the fresh catalog reorders", () => {
+    // Relaunch: the cached catalog lists Big Pickle first, then the fresh
+    // check lists Beam Free first. The draft has no model of its own.
+    const draftKey = "draft-reorder";
+    // The placeholder for the running check carries the cached list.
+    expect(defaultModelFor(["big-pickle", "beam-free"], { draftKey, statusPending: true })).toBe(
+      "big-pickle",
+    );
+    expect(defaultModelFor([], { draftKey, statusPending: true })).toBe("big-pickle");
+    expect(defaultModelFor(["beam-free", "big-pickle"], { draftKey })).toBe("big-pickle");
+  });
+
+  it("moves on when the default it showed is no longer listed", () => {
+    const draftKey = "draft-removed";
+    expect(defaultModelFor(["big-pickle", "beam-free"], { draftKey })).toBe("big-pickle");
+    expect(defaultModelFor(["beam-free"], { draftKey })).toBe("beam-free");
+    expect(defaultModelFor(["big-pickle", "beam-free"], { draftKey })).toBe("beam-free");
+  });
+
+  it("keeps each environment's default for the same instance id", () => {
+    // Astra review G: environment B's `opencode` offers only Beam Free; a
+    // visit there changed environment A's untouched draft to Beam Free.
+    expect(defaultModelFor(["big-pickle", "beam-free"], { environmentId: ENV_A })).toBe(
+      "big-pickle",
+    );
+    expect(defaultModelFor(["beam-free"], { environmentId: ENV_B })).toBe("beam-free");
+    expect(defaultModelFor(["beam-free", "big-pickle"], { environmentId: ENV_A })).toBe(
+      "big-pickle",
+    );
+  });
+
+  it("gives every draft its own first default", () => {
+    expect(defaultModelFor(["big-pickle", "beam-free"], { draftKey: "first" })).toBe("big-pickle");
+    expect(defaultModelFor(["beam-free", "big-pickle"], { draftKey: "second" })).toBe("beam-free");
+    expect(defaultModelFor(["beam-free", "big-pickle"], { draftKey: "first" })).toBe("big-pickle");
+  });
+
+  it("keeps an explicit choice over the remembered default", () => {
+    const driver = ProviderDriverKind.make("opencode");
+    expect(defaultModelFor(["big-pickle", "beam-free"], { draftKey: "explicit" })).toBe(
+      "big-pickle",
+    );
+    expect(
+      deriveEffectiveComposerModelState({
+        draft: {
+          activeProvider: OPENCODE,
+          modelSelectionByProvider: {
+            [OPENCODE]: createModelSelection(OPENCODE, "beam-free"),
+          },
+        },
+        providers: [
+          provider({ provider: driver, instanceId: OPENCODE, models: ["big-pickle", "beam-free"] }),
+        ],
+        selectedProvider: driver,
+        selectedInstanceId: OPENCODE,
+        threadModelSelection: null,
+        projectModelSelection: NO_PROVIDER_MODEL_SELECTION,
+        settings: settingsWithProviderInstances(),
+        shownDefaultScope: { draftKey: "explicit", environmentId: ENV_A },
+      }).selectedModel,
+    ).toBe("beam-free");
+  });
+
+  it("carries the default when the draft moves to another environment", () => {
+    const draftId = DraftId.make("draft-moved");
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(scopeProjectRef(ENV_A, ProjectId.make("scratch")), draftId, {
+      threadId: ThreadId.make("thread-moved"),
+    });
+    expect(
+      defaultModelFor(["big-pickle", "beam-free"], { draftKey: draftId, environmentId: ENV_A }),
+    ).toBe("big-pickle");
+    store.setDraftThreadContext(draftId, {
+      projectRef: scopeProjectRef(ENV_B, ProjectId.make("project")),
+    });
+    // Environment B also lists Big Pickle, after Beam Free.
+    expect(
+      defaultModelFor(["beam-free", "big-pickle"], { draftKey: draftId, environmentId: ENV_B }),
+    ).toBe("big-pickle");
+    store.clearDraftThread(draftId);
+  });
+
+  it("releases a draft's memory with the draft", () => {
+    // Astra review G2: clearing, replacing or promoting a draft kept its
+    // remembered defaults for the session.
+    const ENV_C = EnvironmentId.make("env-c");
+    const before = shownDefaultModelDraftCount();
+    const store = useComposerDraftStore.getState();
+    const remember = (draftId: DraftId, environmentId: EnvironmentId = ENV_A) =>
+      defaultModelFor(["big-pickle", "beam-free"], { draftKey: draftId, environmentId });
+    for (let cycle = 0; cycle < 100; cycle += 1) {
+      const projectRef = scopeProjectRef(ENV_A, ProjectId.make(`cycle-project-${cycle}`));
+      const draft = (name: string) => {
+        const draftId = DraftId.make(`cycle-${cycle}-${name}`);
+        store.setProjectDraftThreadId(projectRef, draftId, {
+          threadId: ThreadId.make(`cycle-thread-${cycle}-${name}`),
+        });
+        remember(draftId);
+        return draftId;
+      };
+      store.clearDraftThread(draft("cleared"));
+      // A new draft for the project replaces the untouched one.
+      draft("replaced");
+      const promoted = draft("promoted");
+      store.markDraftThreadPromoting(promoted);
+      store.finalizePromotedDraftThread(promoted);
+      store.clearProjectDraftThreadById(projectRef, draft("removed"));
+      // An environment that is removed takes its drafts and what moved there.
+      const moved = draft("moved");
+      store.setDraftThreadContext(moved, {
+        projectRef: scopeProjectRef(ENV_C, ProjectId.make(`cycle-remote-${cycle}`)),
+      });
+      remember(moved, ENV_C);
+      clearComposerDraftsEnvironment(ENV_C);
+      store.clearDraftThread(moved);
+    }
+    expect(shownDefaultModelDraftCount()).toBe(before);
+  });
+
+  it("leaves upstream following the catalog's default", () => {
+    const instanceId = ProviderInstanceId.make("opencode_upstream");
+    expect(defaultModelFor(["big-pickle", "beam-free"], { upstream: true, instanceId })).toBe(
+      "big-pickle",
+    );
+    expect(defaultModelFor(["beam-free", "big-pickle"], { upstream: true, instanceId })).toBe(
+      "beam-free",
     );
   });
 });

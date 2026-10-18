@@ -49,6 +49,8 @@ import {
 } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
+import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
+import { showsUpComputerComposerContextRow } from "../composerContextRow/composerContextRowSurface";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
 import { waitForAtomValue } from "../state/waitForAtomValue";
@@ -932,7 +934,26 @@ export function isBranchMismatchDismissedForSession(key: string | null): boolean
 // Git status for a checkout arrives after the composer paints, and the branch
 // strip mounts on the assumption that a project is a Git repo. Without a
 // memory, a non-Git project would mount the strip and drop it on every visit.
+// UpComputer: the memory outlives the session, so a relaunch paints the strip
+// as it was instead of mounting and dropping it. Upstream keeps it per session.
 const sessionCheckoutIsRepo = new Map<string, boolean>();
+const CHECKOUT_IS_REPO_STORAGE_KEY = "upcomputer:checkout-is-repo:v1";
+const CHECKOUT_IS_REPO_LIMIT = 200;
+const PersistedCheckoutIsRepo = Schema.Record(Schema.String, Schema.Boolean);
+let persistedCheckoutIsRepoLoaded = false;
+
+function loadPersistedCheckoutIsRepo(): void {
+  if (persistedCheckoutIsRepoLoaded || !showsUpComputerComposerContextRow()) return;
+  persistedCheckoutIsRepoLoaded = true;
+  try {
+    const persisted = getLocalStorageItem(CHECKOUT_IS_REPO_STORAGE_KEY, PersistedCheckoutIsRepo);
+    for (const [key, isRepo] of Object.entries(persisted ?? {})) {
+      if (!sessionCheckoutIsRepo.has(key)) sessionCheckoutIsRepo.set(key, isRepo);
+    }
+  } catch {
+    // An unreadable memory only costs the first paint its guess.
+  }
+}
 
 function checkoutIsRepoKey(environmentId: EnvironmentId, cwd: string): string {
   return JSON.stringify([environmentId, cwd]);
@@ -943,16 +964,38 @@ export function rememberCheckoutIsRepo(
   cwd: string,
   isRepo: boolean,
 ): void {
-  sessionCheckoutIsRepo.set(checkoutIsRepoKey(environmentId, cwd), isRepo);
+  const key = checkoutIsRepoKey(environmentId, cwd);
+  if (!showsUpComputerComposerContextRow()) {
+    sessionCheckoutIsRepo.set(key, isRepo);
+    return;
+  }
+  loadPersistedCheckoutIsRepo();
+  if (sessionCheckoutIsRepo.get(key) === isRepo) return;
+  // Re-inserting keeps the map in recency order, so the oldest entries go first.
+  sessionCheckoutIsRepo.delete(key);
+  sessionCheckoutIsRepo.set(key, isRepo);
+  for (const oldest of sessionCheckoutIsRepo.keys()) {
+    if (sessionCheckoutIsRepo.size <= CHECKOUT_IS_REPO_LIMIT) break;
+    sessionCheckoutIsRepo.delete(oldest);
+  }
+  try {
+    setLocalStorageItem(
+      CHECKOUT_IS_REPO_STORAGE_KEY,
+      Object.fromEntries(sessionCheckoutIsRepo),
+      PersistedCheckoutIsRepo,
+    );
+  } catch {
+    // The memory still serves this session.
+  }
 }
 
 export function recallCheckoutIsRepo(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): boolean | undefined {
-  return cwd === null
-    ? undefined
-    : sessionCheckoutIsRepo.get(checkoutIsRepoKey(environmentId, cwd));
+  if (cwd === null) return undefined;
+  loadPersistedCheckoutIsRepo();
+  return sessionCheckoutIsRepo.get(checkoutIsRepoKey(environmentId, cwd));
 }
 
 export function threadHasStarted(thread: Thread | null | undefined): boolean {

@@ -103,7 +103,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams, useRouter } from "@tanstack/react-router";
 
 import { useRightPanelStore } from "../rightPanelStore";
 import {
@@ -162,7 +162,11 @@ import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
+  useSettledEnvironmentIds,
+  useWorkspaceDelivery,
   useThreadShells,
+  useWorkspaceKnown,
+  useWorkspaceSettled,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { isProductFeatureShown, productSurface } from "../product/productFlags";
@@ -211,6 +215,9 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  filterSidebarThreadsBySettledEnvironment,
+  describeWorkspaceWaiting,
+  resolveSidebarListVisibility,
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
@@ -314,6 +321,7 @@ const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new M
 // Collapsed shelves share one empty list so a route change alone does not
 // give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
+const EMPTY_PROJECT_GROUPS: readonly SidebarProjectSnapshot[] = [];
 
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
@@ -2272,6 +2280,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const threads = useThreadShells();
+  const settledEnvironmentIds = useSettledEnvironmentIds();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2615,7 +2624,15 @@ export default function Sidebar() {
   } = useMemo(() => {
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, projectLinks);
+    const visible = filterSidebarV2VisibleThreads(
+      filterSidebarThreadsBySettledEnvironment(
+        threads,
+        productSurface("sidebarProjects"),
+        settledEnvironmentIds,
+      ),
+      scopedProjectKeys,
+      projectLinks,
+    );
     inboxReturns.observe(workingShelfEnabled ? threads : null);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
@@ -2710,6 +2727,7 @@ export default function Sidebar() {
     projectLinks,
     scopedProjectKeys,
     serverConfigs,
+    settledEnvironmentIds,
     snoozeWakeTick,
     threads,
     workingShelfEnabled,
@@ -2720,6 +2738,18 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadListShown = useSidebarThreadListShown();
+  const workspaceKnown = useWorkspaceKnown();
+  const workspaceSettled = useWorkspaceSettled();
+  const workspaceDelivery = useWorkspaceDelivery();
+  const { projectRowsShown: sidebarProjectRowsShown, emptyState: sidebarEmptyState } =
+    resolveSidebarListVisibility({
+      surface: productSurface("sidebarProjects"),
+      workspaceKnown,
+      workspaceSettled,
+      workspaceDelivered: workspaceDelivery.delivered,
+    });
+  const sidebarWaiting =
+    sidebarEmptyState === "waiting" ? describeWorkspaceWaiting(workspaceDelivery.waitingOn) : null;
   const ThreadRow: typeof SidebarThreadRow =
     useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
@@ -4808,19 +4838,22 @@ export default function Sidebar() {
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
                 <SidebarProjectsSection
-                  projectGroups={projectGroups}
+                  projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
-                <SidebarThreadsSectionHeader
-                  onNewThread={handleNewThreadClick}
-                  currentEnvironmentId={
-                    newThreadContext.activeThread?.environmentId ??
-                    newThreadContext.activeDraftThread?.environmentId ??
-                    null
-                  }
-                  newThreadDisabled={projects.length === 0}
-                  newThreadShortcutLabel={newThreadShortcutLabel}
-                />
+                {/* Below the Projects rows, so it appears with them rather than moving down. */}
+                {sidebarProjectRowsShown ? (
+                  <SidebarThreadsSectionHeader
+                    onNewThread={handleNewThreadClick}
+                    currentEnvironmentId={
+                      newThreadContext.activeThread?.environmentId ??
+                      newThreadContext.activeDraftThread?.environmentId ??
+                      null
+                    }
+                    newThreadDisabled={projects.length === 0}
+                    newThreadShortcutLabel={newThreadShortcutLabel}
+                  />
+                ) : null}
               </>
             ) : null}
           </SidebarGroup>
@@ -5219,6 +5252,7 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads &&
           threadListShown &&
+          sidebarEmptyState !== "hidden" &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +
@@ -5228,7 +5262,19 @@ export default function Sidebar() {
             0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {/* The UpComputer Projects section keeps Add project, and a chat needs no project. */}
-              {projects.length === 0 && productSurface("sidebarProjects") === "upstream" ? (
+              {sidebarWaiting !== null ? (
+                <>
+                  <span>{sidebarWaiting.text}</span>
+                  {sidebarWaiting.unreachable ? (
+                    <Link
+                      to="/settings/connections"
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      Check Connections
+                    </Link>
+                  ) : null}
+                </>
+              ) : projects.length === 0 && productSurface("sidebarProjects") === "upstream" ? (
                 <>
                   <span>No projects yet</span>
                   <button

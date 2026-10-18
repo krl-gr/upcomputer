@@ -19,6 +19,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
@@ -27,6 +28,11 @@ export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environment
 export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
   if (Option.isNone(catalog)) {
+    return false;
+  }
+  // UpComputer: the persisted catalog can emit before the primary environment
+  // registers; its projects are unknown then, not absent.
+  if (expectsPrimaryEnvironment() && !hasPrimaryEnvironment(catalog.value)) {
     return false;
   }
   for (const environmentId of enabledEnvironmentIds(catalog.value)) {
@@ -47,6 +53,16 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
+export function expectsPrimaryEnvironment(): boolean {
+  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+}
+
+export function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean {
+  return Array.from(catalog.entries.values()).some(
+    (entry) => entry.target._tag === "PrimaryConnectionTarget",
+  );
+}
+
 /**
  * The persisted catalog can emit before platform discovery registers the primary environment.
  * Neither that gap nor an empty catalog proves a project is absent.
@@ -56,12 +72,7 @@ function catalogIsComplete(
   requiresPrimaryEnvironment: boolean,
 ): boolean {
   if (!catalog.isReady || catalog.entries.size === 0) return false;
-  return (
-    !requiresPrimaryEnvironment ||
-    Array.from(catalog.entries.values()).some(
-      (entry) => entry.target._tag === "PrimaryConnectionTarget",
-    )
-  );
+  return !requiresPrimaryEnvironment || hasPrimaryEnvironment(catalog);
 }
 
 export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {

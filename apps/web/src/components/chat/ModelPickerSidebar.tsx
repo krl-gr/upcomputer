@@ -19,6 +19,10 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   if (entry.status === "ready" && entry.isAvailable) {
     return label;
   }
+  // UpComputer: the placeholder before the first status check.
+  if (entry.snapshot.statusPending === true) {
+    return `${label}: Checking…`;
+  }
   const kind =
     entry.status === "error" ? "Unavailable" : entry.status === "warning" ? "Limited" : "Not ready";
   const msg = entry.snapshot.message?.trim();
