@@ -24,6 +24,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { turnContextFor } from "./TurnContext.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -510,6 +511,13 @@ export const layer: Layer.Layer<
       });
       const { isCurrentAttemptInStatus } = runControls;
 
+      const turnContext = yield* turnContextFor({
+        threadId: projection.thread.id,
+        projectId: projection.thread.projectId,
+        messageId: message.id,
+        text: message.text,
+        interactionMode: projection.thread.interactionMode,
+      });
       const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,
@@ -970,6 +978,7 @@ export const layer: Layer.Layer<
       });
       // Notes go before the user text, delivered once like the text itself.
       const turnNote = [
+        commandMessageIds.has(run.userMessageId) ? "" : turnContext.text,
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),

@@ -185,6 +185,13 @@ export function agentMayTakeTask(
  * starts also depends on its previous runs (see `startAgent`).
  */
 export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): boolean {
+  if (
+    typeof task.metadata === "object" &&
+    task.metadata !== null &&
+    "botId" in task.metadata &&
+    task.metadata.botId !== agent.id
+  )
+    return false;
   if (!agentMayTakeTask(agent, task)) return false;
   if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;

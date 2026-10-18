@@ -26,6 +26,20 @@ const LazyThreadRunCounts = lazy(() =>
     default: module.TaskThreadRunCounts,
   })),
 );
+const LazySidebarBots = lazy(() =>
+  import("./bots/Bots.tsx").then((module) => ({ default: module.SidebarBots })),
+);
+const LazyBotHeader = lazy(() =>
+  import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
+);
+
+function SidebarBots() {
+  return (
+    <Suspense fallback={null}>
+      <LazySidebarBots />
+    </Suspense>
+  );
+}
 
 function NavigationRunCounts() {
   return (
@@ -57,6 +71,7 @@ function ChatHeaderRunCounts(props: ExperimentalWebThreadAccessoryProps) {
   return (
     <Suspense fallback={null}>
       <LazyThreadRunCounts {...props} fallback={null} />
+      <LazyBotHeader {...props} />
     </Suspense>
   );
 }
@@ -71,6 +86,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rpcGroups: [TasksWebRpcGroup],
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
+  sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [
     {

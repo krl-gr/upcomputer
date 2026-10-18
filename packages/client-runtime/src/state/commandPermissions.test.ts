@@ -59,6 +59,22 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
+  it.effect("requires the destination orchestration grant for every bot mutation", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        for (const name of ["save", "remove", "remember", "forget", "assign", "extract"]) {
+          const bot = createCommandPermissions(runtime, `upcomputer.bots.v1.${name}`);
+          registry.set(sessions(env), AsyncResult.success(grant(false)));
+          expect(registry.get(bot.permissionAtom(env))).toBe(false);
+          expect((yield* bot.authorize(registry, env).pipe(Effect.result))._tag).toBe("Failure");
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(bot.permissionAtom(env))).toBe(true);
+          yield* bot.authorize(registry, env);
+        }
+      }),
+    ),
+  );
   it.effect("requires the destination settings grant to run storage cleanup", () =>
     Effect.scoped(
       Effect.gen(function* () {

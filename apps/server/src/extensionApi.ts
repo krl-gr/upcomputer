@@ -36,6 +36,7 @@ export {
   type RestartContinuationGate,
 } from "./orchestration-v2/RestartContinuationGate.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
+export { registerTurnContextResolver } from "./orchestration-v2/TurnContext.ts";
 export { forkParked } from "./serverActivation.ts";
 export {
   UPCOMPUTER_PRODUCT_FLAGS,

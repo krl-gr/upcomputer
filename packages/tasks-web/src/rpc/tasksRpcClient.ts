@@ -1,5 +1,6 @@
 import {
   TASK_AGENTS_RPC_METHODS,
+  BOTS_RPC_METHODS,
   TASK_AUTOMATIONS_RPC_METHODS,
   TASKS_RPC_METHODS,
 } from "@t3tools/tasks-contracts/v1";
@@ -27,6 +28,17 @@ type RpcUnaryMethod<Tag extends RpcTag> =
     : never;
 
 export interface TasksWebRpcClient {
+  readonly bots: {
+    readonly extract: RpcUnaryMethod<typeof BOTS_RPC_METHODS.extract>;
+    readonly list: RpcUnaryMethod<typeof BOTS_RPC_METHODS.list>;
+    readonly save: RpcUnaryMethod<typeof BOTS_RPC_METHODS.save>;
+    readonly remove: RpcUnaryMethod<typeof BOTS_RPC_METHODS.remove>;
+    readonly memory: RpcUnaryMethod<typeof BOTS_RPC_METHODS.memory>;
+    readonly remember: RpcUnaryMethod<typeof BOTS_RPC_METHODS.remember>;
+    readonly forget: RpcUnaryMethod<typeof BOTS_RPC_METHODS.forget>;
+    readonly assign: RpcUnaryMethod<typeof BOTS_RPC_METHODS.assign>;
+  };
+
   readonly tasks: {
     readonly create: RpcUnaryMethod<typeof TASKS_RPC_METHODS.create>;
     readonly search: RpcUnaryMethod<typeof TASKS_RPC_METHODS.search>;
@@ -94,6 +106,7 @@ type AccessFlag =
 /** Runs one call against an environment's current session client. */
 export type TasksWebRpcRequest = <A, E>(
   execute: (client: TasksWsRpcProtocolClient) => Effect.Effect<A, E>,
+  authorization?: { readonly method: string; readonly input: unknown },
 ) => Promise<A>;
 
 export function createTasksWebRpcClient(
@@ -110,12 +123,15 @@ export function createTasksWebRpcClient(
     if (!access[required]) {
       return Promise.reject(new TasksWebCapabilityUnavailableError(operation, access.reason));
     }
-    return requestRpc((client) => {
-      const method = client[tag] as unknown as (
-        payload: RpcInput<Tag>,
-      ) => Effect.Effect<RpcSuccess<Tag>, RpcFailure<Tag>, never>;
-      return method(input);
-    });
+    return requestRpc(
+      (client) => {
+        const method = client[tag] as unknown as (
+          payload: RpcInput<Tag>,
+        ) => Effect.Effect<RpcSuccess<Tag>, RpcFailure<Tag>, never>;
+        return method(input);
+      },
+      { method: tag, input },
+    );
   };
 
   const subscribe = createTaskChangeSubscription((signal, listener) => {
@@ -138,6 +154,18 @@ export function createTasksWebRpcClient(
   });
 
   return {
+    bots: {
+      extract: (input) =>
+        request("bots.extract", "canMutateAgents", BOTS_RPC_METHODS.extract, input),
+      list: (input) => request("bots.list", "canReadAgents", BOTS_RPC_METHODS.list, input),
+      save: (input) => request("bots.save", "canMutateAgents", BOTS_RPC_METHODS.save, input),
+      remove: (input) => request("bots.remove", "canMutateAgents", BOTS_RPC_METHODS.remove, input),
+      memory: (input) => request("bots.memory", "canReadAgents", BOTS_RPC_METHODS.memory, input),
+      remember: (input) =>
+        request("bots.remember", "canMutateAgents", BOTS_RPC_METHODS.remember, input),
+      forget: (input) => request("bots.forget", "canMutateAgents", BOTS_RPC_METHODS.forget, input),
+      assign: (input) => request("bots.assign", "canMutateAgents", BOTS_RPC_METHODS.assign, input),
+    },
     tasks: {
       create: (input) => request("tasks.create", "canMutateTasks", TASKS_RPC_METHODS.create, input),
       search: (input) => request("tasks.search", "canReadTasks", TASKS_RPC_METHODS.search, input),

@@ -1228,6 +1228,14 @@ const makeTaskRepository = Effect.gen(function* () {
               ) > 0)))
           )
           AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
+          AND NOT EXISTS (
+            SELECT 1 FROM bots WHERE agent_id = ${run.agentId}
+            AND NOT EXISTS (
+              SELECT 1 FROM tasks, json_each(bots.allowed_projects_json) AS allowed
+              WHERE tasks.id = ${run.taskId} AND tasks.project_id = allowed.value
+                AND json_extract(tasks.metadata_json, '$.botId') = ${run.agentId}
+            )
+          )
         RETURNING id
       `,
   });

@@ -37,8 +37,8 @@ function setProbe(environmentId: EnvironmentId, probe: Probe | undefined) {
 
 const requestFor =
   (environmentId: EnvironmentId): TasksWebRpcRequest =>
-  (execute) =>
-    requestExperimentalFeatureRpc(environmentId, TasksWebRpcGroup, execute);
+  (execute, authorization) =>
+    requestExperimentalFeatureRpc(environmentId, TasksWebRpcGroup, execute, authorization);
 
 /**
  * Asks the server once whether it serves the Tasks RPC group, the v2
@@ -139,4 +139,11 @@ export function useTasksWebAccessRevision(): number {
     () => revision,
     () => revision,
   );
+}
+
+/** Subscribe to availability itself so render-time access reads cannot stay cached. */
+export function useTasksWebAccess(environmentId: EnvironmentId): TasksWebAccess {
+  const read = () => readTasksWebAccess(environmentId).availability;
+  const availability = useSyncExternalStore(subscribe, read, read);
+  return resolveTasksWebAccess({ availability });
 }

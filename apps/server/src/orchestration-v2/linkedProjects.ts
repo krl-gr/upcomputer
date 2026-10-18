@@ -41,6 +41,7 @@ export const isOnlyThreadProjectLinksUpdate = (
 ) =>
   hasThreadProjectLinksUpdate(command) &&
   command.title === undefined &&
+  command.projectId === undefined &&
   command.regenerateTitle === undefined &&
   command.branch === undefined &&
   command.worktreePath === undefined &&

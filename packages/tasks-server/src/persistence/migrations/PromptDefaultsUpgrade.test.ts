@@ -78,7 +78,9 @@ const state = Effect.gen(function* () {
 const assertUpgraded = (upgraded: Effect.Success<typeof state>) => {
   assert.deepStrictEqual(
     upgraded.history.map(({ version }) => version),
-    TASK_MIGRATION_CONTRIBUTION.migrations.map(({ version }) => version),
+    TASK_MIGRATION_CONTRIBUTION.migrations
+      .filter(({ version }) => version <= 32)
+      .map(({ version }) => version),
   );
   assert.deepStrictEqual(
     upgraded.history.slice(19).map(({ name }) => name),

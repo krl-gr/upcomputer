@@ -83,6 +83,7 @@ import { TASK_TOOL_SPECS } from "../tools/TaskToolDefinitions.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TASKS_SERVER_FEATURE } from "../serverFeature.ts";
 import { TaskAgentService } from "./TaskAgentService.ts";
+import { BotService } from "../bots/BotService.ts";
 import { SOURCE_SETTLE_MS, TaskSourceWake } from "./TaskSourceWake.ts";
 
 const driver = ProviderDriverKind.make("codex");
@@ -460,7 +461,11 @@ function makeLayer(
   );
   // Feature services are erased at the product boundary; the tests read them.
   return composed as Layer.Layer<
-    Layer.Success<typeof composed> | TaskRepository | TaskAgentService | TaskSourceWake,
+    | Layer.Success<typeof composed>
+    | TaskRepository
+    | TaskAgentService
+    | TaskSourceWake
+    | BotService,
     Layer.Error<typeof composed>,
     Layer.Services<typeof composed>
   >;
@@ -558,6 +563,7 @@ const runSlice = <A, E>(
     A,
     E,
     | TaskRepository
+    | BotService
     | TaskAgentService
     | TaskSourceWake
     | SqlClient.SqlClient
@@ -1963,7 +1969,14 @@ it.live(
         const server = yield* McpServer.McpServer;
         assert.deepStrictEqual(
           new Set(server.tools.map(({ tool }) => tool.name)),
-          new Set(TASK_TOOL_SPECS.map((spec) => spec.name)),
+          new Set([
+            ...TASK_TOOL_SPECS.map((spec) => spec.name),
+            "bot_memory",
+            "bot_remember",
+            "bot_forget",
+            "bot_history_search",
+            "bot_assign",
+          ]),
         );
 
         yield* repository.upsertAgent(agent);
@@ -1998,5 +2011,293 @@ it.live(
         const fetched = yield* reader[TASKS_RPC_METHODS.get]({ id: created.id });
         assert.strictEqual(fetched?.status, "Needs Review");
       }).pipe(Effect.scoped),
+    ),
+);
+
+it.live("bots retain one chat and inject current isolated memory into real provider turns", () =>
+  runSlice("bots-memory-turns", ({ threads, started, cwd }) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const projects = yield* ProjectStore.ProjectStoreV2;
+      const otherProject = ProjectId.make("bot-project-other");
+      for (const id of [projectId, otherProject])
+        yield* projects.apply({
+          sequence: 1,
+          eventId: EventId.make(`bot-project:${id}`),
+          aggregateKind: "project",
+          aggregateId: id,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId: id,
+            title: id,
+            workspaceRoot: cwd,
+            defaultModelSelection: agentModel,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+      const input = {
+        id: TaskAgentId.make("memory-bot"),
+        projectId,
+        allowedProjectIds: [projectId, otherProject],
+        name: "Memory bot",
+        config: agent.config,
+      };
+      const created = yield* Effect.all([bots.save(input), bots.save(input)], { concurrency: 2 });
+      const bot = created[0]!;
+      assert.equal(created[1]!.threadId, bot.threadId);
+      assert.equal((yield* bots.list).length, 1);
+      const send = (number: number, text: string) =>
+        Effect.gen(function* () {
+          const workingProjectId = (yield* threads.getThreadRecords(bot.threadId, [])).thread
+            .projectId;
+          const sent = yield* threads.sendToThread({
+            projectId: workingProjectId,
+            threadId: bot.threadId,
+            commandId: CommandId.make(`bot-send:${number}`),
+            messageId: MessageId.make(`bot-message:${number}`),
+            text,
+            attachments: [],
+            mode: "auto",
+            createdBy: "user",
+            creationSource: "web",
+          });
+          const ended = yield* threads.waitForThread({
+            projectId: workingProjectId,
+            threadId: bot.threadId,
+            runId: sent.run.id,
+            timeoutMs: 10000,
+          });
+          assert.equal(ended.timedOut, false);
+          return (yield* Ref.get(started)).at(-1)!;
+        });
+      yield* bots.remember({
+        agentId: bot.agent.id,
+        id: "global",
+        projectId: null,
+        text: "global-marker",
+        source: "user",
+      });
+      yield* bots.remember({
+        agentId: bot.agent.id,
+        id: "other",
+        projectId: otherProject,
+        text: "other-project-marker",
+        source: "user",
+      });
+      let turn = yield* send(1, "Remember: local-fact-marker");
+      assert.include(turn.text, "local-fact-marker");
+      assert.include(turn.text, "global-marker");
+      assert.notInclude(turn.text, "other-project-marker");
+      yield* bots.remember({
+        agentId: bot.agent.id,
+        id: "message:bot-message:1",
+        projectId,
+        text: "corrected-local-marker",
+        source: "user",
+      });
+      turn = yield* send(2, "What do you know?");
+      assert.include(turn.text, "corrected-local-marker");
+      assert.notInclude(turn.text, "local-fact-marker");
+      yield* bots.forget(bot.agent.id, "message:bot-message:1");
+      // A retried explicit save cannot resurrect a deleted fact.
+      yield* bots.context({
+        threadId: bot.threadId,
+        projectId,
+        messageId: MessageId.make("bot-message:1"),
+        text: "Remember: local-fact-marker",
+      });
+      assert.equal(
+        (yield* bots.memory(bot.agent.id)).some((entry) => entry.id === "message:bot-message:1"),
+        false,
+      );
+      const moved = yield* bots.save({
+        ...input,
+        projectId: otherProject,
+        config: { ...agent.config, modelSelection: { ...agentModel, model: "new-bot-model" } },
+      });
+      assert.equal(moved.threadId, bot.threadId);
+      turn = yield* send(3, "Check current memory");
+      assert.equal(turn.model, "new-bot-model");
+      assert.include(turn.text, "other-project-marker");
+      assert.notInclude(turn.text, "corrected-local-marker");
+      const second = yield* bots.save({
+        ...input,
+        id: TaskAgentId.make("second-bot"),
+        config: {
+          role: agent.config.role,
+          instructions: agent.config.instructions,
+          modelSelection: agentModel,
+        },
+      });
+      assert.equal(second.agent.config.runtimeMode, "approval-required");
+      const context = yield* bots.context({
+        threadId: second.threadId,
+        projectId,
+        messageId: MessageId.make("second-bot-message"),
+        text: "Hello",
+      });
+      assert.notInclude(context.text, "global-marker");
+      assert.notInclude(context.text, "other-project-marker");
+      assert.equal(
+        (yield* threads.getThreadRecords(bot.threadId, ["messages"])).messages.filter(
+          (message) => message.role === "user",
+        ).length,
+        3,
+      );
+    }),
+  ),
+);
+
+it.live(
+  "bots adopt chats idempotently and bind background assignments to their permanent chat",
+  () =>
+    runSlice("bots-adoption", ({ threads, repository, cwd, started }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        yield* projects.apply({
+          sequence: 1,
+          eventId: EventId.make("adopt-project"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Bots",
+            workspaceRoot: cwd,
+            defaultModelSelection: agentModel,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+        const threadId = ThreadIdBrand.make("adopt-this-chat");
+        yield* threads.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("adopt-create"),
+          threadId,
+          projectId,
+          title: "Old conversation",
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const sent = yield* threads.sendToThread({
+          projectId,
+          threadId,
+          commandId: CommandId.make("adopt-message"),
+          messageId: MessageId.make("adopt-original"),
+          text: "Original history marker",
+          attachments: [],
+          mode: "auto",
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* threads.waitForThread({ projectId, threadId, runId: sent.run.id, timeoutMs: 10000 });
+        const before = (yield* threads.getThreadRecords(threadId, ["messages"])).messages;
+        const input = {
+          id: TaskAgentId.make("adopt-bot"),
+          threadId,
+          projectId,
+          allowedProjectIds: [projectId],
+          name: "Adopted bot",
+          config: agent.config,
+        };
+        const bot = yield* bots.save(input);
+        const again = yield* bots.save({ ...input, id: TaskAgentId.make("duplicate-adopt-bot") });
+        assert.equal(again.agent.id, bot.agent.id);
+        assert.equal((yield* bots.list).length, 1);
+        assert.deepStrictEqual(
+          (yield* threads.getThreadRecords(threadId, ["messages"])).messages,
+          before,
+        );
+        yield* bots.remember({
+          agentId: bot.agent.id,
+          id: "task-fact",
+          projectId,
+          text: "background-memory-marker",
+          source: "user",
+        });
+        const sink = yield* EventSink.EventSinkV2;
+        const afterSequence = yield* sink.latestSequence();
+        const assigned = yield* bots.assign({
+          agentId: bot.agent.id,
+          requestId: "stable-request",
+          title: "Background",
+          description: HOLD,
+        });
+        const retried = yield* bots.assign({
+          agentId: bot.agent.id,
+          requestId: "stable-request",
+          title: "Background retry",
+          description: HOLD,
+        });
+        assert.equal(assigned.id, retried.id);
+        assert.equal(assigned.sourceThreadId, threadId);
+        assert.deepStrictEqual(assigned.metadata, {
+          botId: bot.agent.id,
+          targetAgentId: bot.agent.id,
+        });
+        assert.equal(
+          (yield* repository.search({ projectId })).filter((task) => task.id === assigned.id)
+            .length,
+          1,
+        );
+        const running = yield* sink
+          .stream({ afterSequence, eventType: "provider-turn.updated" })
+          .pipe(
+            Stream.filterEffect((stored) =>
+              repository
+                .findLatestAgentRunByThreadId({ threadId: stored.event.threadId })
+                .pipe(Effect.map((run) => Option.isSome(run) && run.value.taskId === assigned.id)),
+            ),
+            Stream.runHead,
+            Effect.timeout("10 seconds"),
+          );
+        assert.isTrue(Option.isSome(running));
+        const taskTurn = (yield* Ref.get(started)).find(
+          (turn) => turn.threadId === Option.getOrThrow(running).event.threadId,
+        );
+        assert.isDefined(taskTurn);
+        assert.include(taskTurn!.text, "background-memory-marker");
+        assert.include(taskTurn!.text, `Bot identity: ${bot.agent.id}`);
+        const remembered = yield* callTaskTool(taskTurn!.threadId, "bot_remember", {
+          id: "task-conclusion",
+          text: "durable-task-conclusion",
+        });
+        assert.isFalse(remembered.isError, remembered.text);
+        assert.include(
+          (yield* bots.memory(bot.agent.id)).find((entry) => entry.id === "task-conclusion")
+            ?.source,
+          `task:${assigned.id}/run:`,
+        );
+        assert.include(
+          (yield* bots.context({
+            threadId: bot.threadId,
+            projectId,
+            messageId: MessageId.make("after-task-memory"),
+            text: "What did you learn?",
+          })).text,
+          "durable-task-conclusion",
+        );
+        const refused = yield* bots.save({ ...input, allowedProjectIds: [] }).pipe(Effect.result);
+        assert.equal(refused._tag, "Failure");
+      }),
     ),
 );

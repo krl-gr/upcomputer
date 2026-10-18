@@ -1,5 +1,6 @@
 import { UpdateDefaultFirstMessageEventsPromptsMigration } from "./032_UpdateDefaultFirstMessageEventsPrompts.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
+import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
 import { UpdateDefaultQueueStatePromptsMigration } from "./029_UpdateDefaultQueueStatePrompts.ts";
 import { UpdateDefaultBatchCreatePromptsMigration } from "./028_UpdateDefaultBatchCreatePrompts.ts";
@@ -126,5 +127,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
       name: "UpdateDefaultFirstMessageEventsPrompts",
       run: UpdateDefaultFirstMessageEventsPromptsMigration,
     },
+    { version: 33, name: "Bots", run: BotsMigration },
   ],
 } as const;

@@ -232,3 +232,26 @@ Choose **Snooze → Custom…** from a thread's menu to pick a date and time in 
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. On web and desktop, you can also snooze
 several selected threads together. Choose **Wake thread** to bring a thread back early.
+
+## Bots
+
+Create a personal assistant in **Bots**, or choose **Turn into bot** in an idle chat.
+Each bot has one permanent conversation. Returning from the sidebar, restarting the
+app, and changing its model keep that conversation and its history.
+
+Open **Bot settings & memory** to change its role, instructions, model, working
+project, or available projects. Project choices filter the bot's memory and tasks;
+filesystem access still follows the selected provider's existing runtime permissions.
+Background work uses Tasks and returns progress and results to the same conversation.
+
+Memory belongs to the bot, independently of its model. Use **Memory** to create,
+edit, or delete facts, or say **Remember: ...** in the conversation. The bot can
+also save useful facts during its ordinary turns. **Extract memory from chat history**
+asks it to review an existing conversation without replacing its messages.
+
+Global facts apply across projects. Project facts are supplied only for the current
+available project. Each turn receives up to 12,000 characters of current memory,
+from at most 200 stored entries. The full conversation stays searchable, while the
+provider's context remains bounded. Changes take effect on future turns; an existing
+model context can still contain earlier facts. Removing a bot deletes its memory
+and keeps its conversation as an ordinary chat.

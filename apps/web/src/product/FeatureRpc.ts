@@ -1,8 +1,10 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import {
   createEnvironmentCommand,
+  createCommandPermissions,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Data from "effect/Data";
@@ -27,6 +29,8 @@ class FeatureRpcFailure extends Data.TaggedError("FeatureRpcFailure")<{
 
 interface FeatureRpcRequest {
   readonly execute: (client: unknown) => Effect.Effect<unknown, FeatureRpcFailure>;
+  readonly method?: string;
+  readonly input?: unknown;
 }
 
 // Built on first use: feature modules load while the connection runtime,
@@ -36,8 +40,14 @@ let featureRpcRequest: ReturnType<typeof makeFeatureRpcRequest> | undefined;
 function makeFeatureRpcRequest() {
   return createEnvironmentCommand(connectionAtomRuntime, {
     label: "product-feature-rpc",
-    execute: (input: FeatureRpcRequest) =>
+    execute: (input: FeatureRpcRequest, registry, environmentId) =>
       Effect.gen(function* () {
+        if (input.method !== undefined)
+          yield* createCommandPermissions(connectionAtomRuntime, input.method).authorize(
+            registry,
+            environmentId,
+            input.input,
+          );
         const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
         const session = yield* SubscriptionRef.get(supervisor.session);
         if (Option.isNone(session)) {
@@ -60,11 +70,13 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   environmentId: EnvironmentId,
   _group: Group,
   execute: (client: ExperimentalFeatureRpcClient<Group>) => Effect.Effect<A, E>,
+  authorization?: { readonly method: string; readonly input: unknown },
 ): Promise<A> {
   featureRpcRequest ??= makeFeatureRpcRequest();
   const result = await featureRpcRequest.run(appAtomRegistry, {
     environmentId,
     input: {
+      ...authorization,
       execute: (client) =>
         execute(client as ExperimentalFeatureRpcClient<Group>).pipe(
           Effect.mapError((error) => new FeatureRpcFailure({ error })),
@@ -75,3 +87,11 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   const failure = squashAtomCommandFailure(result);
   throw failure instanceof FeatureRpcFailure ? failure.error : failure;
 }
+
+export const useExperimentalFeatureRpcPermission = (
+  environmentId: EnvironmentId | null,
+  method: string,
+) =>
+  useAtomValue(
+    createCommandPermissions(connectionAtomRuntime, method).permissionAtom(environmentId),
+  );

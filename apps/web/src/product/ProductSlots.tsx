@@ -122,6 +122,12 @@ export function ProductChatHeaderAccessory(props: ExperimentalWebThreadAccessory
   return chatHeaderAccessoryElements(WEB_PRODUCT, props);
 }
 
+export function ProductSidebarSections() {
+  return WEB_PRODUCT.features.flatMap((feature) =>
+    feature.sidebarSection ? [createElement(feature.sidebarSection, { key: feature.id })] : [],
+  );
+}
+
 /** Every feature's app-wide coordinator. */
 export function ProductCoordinators() {
   return WEB_PRODUCT.features.flatMap((feature) =>

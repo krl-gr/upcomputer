@@ -304,7 +304,11 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import { ProductSidebarNavigation, ProductThreadRowAccessory } from "../product/ProductSlots";
+import {
+  ProductSidebarNavigation,
+  ProductSidebarSections,
+  ProductThreadRowAccessory,
+} from "../product/ProductSlots";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -4844,6 +4848,7 @@ export default function Sidebar() {
                   projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
+                <ProductSidebarSections />
                 {/* Below the Projects rows, so it appears with them rather than moving down. */}
                 {sidebarProjectRowsShown ? (
                   <SidebarThreadsSectionHeader

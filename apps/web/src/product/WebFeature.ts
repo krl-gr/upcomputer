@@ -98,6 +98,7 @@ export interface ExperimentalWebFeatureContribution {
   readonly threadRowAccessory?: ComponentType<ExperimentalWebThreadRowAccessoryProps>;
   /** Follows the open thread's title in the chat header. */
   readonly chatHeaderAccessory?: ComponentType<ExperimentalWebThreadAccessoryProps>;
+  readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,
    * next to core's notification coordinators. It shows nothing of its own;

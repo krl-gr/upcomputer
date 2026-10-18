@@ -14,6 +14,7 @@ import {
   readPlannerAvailability,
   readTasksWebAccess,
   usePlannerAvailability,
+  useTasksWebAccess,
 } from "./environmentApi.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -24,6 +25,27 @@ afterEach(() => {
 });
 
 describe("Tasks access", () => {
+  it("reaches a bot view when access resolves before React subscribes", async () => {
+    rpc.request.mockResolvedValueOnce({ runCounts: [] });
+    const environmentId = EnvironmentId.make("bots-answers-before-subscribe");
+    const seen: boolean[] = [];
+    let reachEnabled = () => {};
+    const enabled = new Promise<void>((resolve) => {
+      reachEnabled = resolve;
+    });
+    function View() {
+      const access = useTasksWebAccess(environmentId);
+      seen.push(access.canReadAgents);
+      if (access.canReadAgents) reachEnabled();
+      return null;
+    }
+    const view = create(createElement(View));
+    await enabled;
+    expect(seen[0]).toBe(false);
+    expect(seen.at(-1)).toBe(true);
+    view.unmount();
+  });
+
   it("is enabled once the server answers the Tasks RPC group", async () => {
     rpc.request.mockResolvedValue({ runCounts: [] });
     const environmentId = EnvironmentId.make("environment-with-tasks");

@@ -25,6 +25,9 @@ import { TASK_RPC_CONTRIBUTIONS } from "./rpc/contributions.ts";
 import { TaskReminderSweeperLive } from "./schedule/TaskReminderSweeper.ts";
 import { TaskScheduleServiceLive } from "./schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
+import * as Bots from "./bots/BotService.ts";
+import { BotContextLive, BOTS_RPC_CONTRIBUTION } from "./bots/contributions.ts";
+import { BotMcpToolsLive } from "./bots/BotMcpTools.ts";
 
 const TASKS_FEATURE_ID = "upcomputer.tasks";
 
@@ -41,6 +44,7 @@ export const TaskServicesLive = TaskToolServiceLive.pipe(
       TaskSourceWakeLive,
       InboxProjectLive,
       TaskScheduleServiceLive,
+      Bots.layer,
     ),
   ),
   Layer.provideMerge(taskAgentsLive),
@@ -70,6 +74,7 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
           TaskReminderSweeperLive,
           TaskAgentOrchestrationInstructionsLive,
           TaskChatToolHintsLive,
+          BotContextLive,
         ).pipe(Layer.provideMerge(TaskServicesLive)),
       ),
     },
@@ -79,8 +84,8 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
       id: "task-tools",
       ownerId: TASKS_FEATURE_ID,
       version: 1,
-      layer: eraseExperimentalServerLayer(TaskMcpToolsLive),
+      layer: eraseExperimentalServerLayer(Layer.merge(TaskMcpToolsLive, BotMcpToolsLive)),
     },
   ],
-  rpc: TASK_RPC_CONTRIBUTIONS,
+  rpc: [...TASK_RPC_CONTRIBUTIONS, BOTS_RPC_CONTRIBUTION],
 });
