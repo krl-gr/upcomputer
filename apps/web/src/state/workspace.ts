@@ -17,7 +17,7 @@ import { environmentShell, expectsPrimaryEnvironment, hasPrimaryEnvironment } fr
  * the sidebar and home show what they know and a late environment fills in
  * when it connects; a loading state that never ends is worse than a late row.
  */
-export const WORKSPACE_FIRST_LOAD_DEADLINE_MS = 6_000;
+const WORKSPACE_FIRST_LOAD_DEADLINE_MS = 6_000;
 
 /** An environment that will not deliver data soon; waiting for it would hang. */
 function connectionSettledWithoutData(
