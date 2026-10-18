@@ -22,6 +22,7 @@ import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { KeybindingsConfigWarning } from "../components/KeybindingsConfigWarning";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
+import { BootSplash } from "../components/BootSplash";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -34,6 +35,7 @@ import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythin
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { ProductCoordinators } from "../product/ProductSlots";
+import { productSurface } from "../product/productFlags";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
@@ -44,6 +46,7 @@ import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useDefaultThemeAdoption } from "../hooks/useDefaultTheme";
 import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
+import { useShownPathname } from "../hooks/useShownPathname";
 import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
@@ -147,6 +150,7 @@ function RootRouteView() {
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
   const returningFromWelcomeRef = useRef(pathname === "/welcome");
+  const welcomeShown = useShownPathname() === "/welcome";
   const hostedPromptLinkLanding = useHostedPromptLinkLanding(
     authGateState.status === "hosted-static",
   );
@@ -187,6 +191,11 @@ function RootRouteView() {
   }
 
   if (pathname === "/welcome") {
+    // UpComputer: the path changes before setup's lazy chunk has loaded, and
+    // the shell around the still-empty outlet would show before setup opens.
+    if (!welcomeShown && productSurface("onboarding") === "upcomputer") {
+      return <BootSplash />;
+    }
     return (
       <ToastProvider>
         <AnchoredToastProvider>
