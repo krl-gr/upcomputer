@@ -124,3 +124,77 @@ describe("compatibility banners", () => {
     );
   });
 });
+
+describe("pending provider status", () => {
+  const checking = (driver: string, installed: boolean, message: string): ServerProvider => {
+    const { compatibilityAdvisory: _advisory, ...base } = provider;
+    return {
+      ...base,
+      instanceId: ProviderInstanceId.make(driver),
+      driver: ProviderDriverKind.make(driver),
+      installed,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message,
+      statusPending: true,
+    };
+  };
+  const placeholders = [
+    checking("codex", false, "Codex provider status has not been checked in this session yet."),
+    checking(
+      "claudeAgent",
+      false,
+      "Claude provider status has not been checked in this session yet.",
+    ),
+    checking(
+      "opencode",
+      false,
+      "OpenCode provider status has not been checked in this session yet.",
+    ),
+    checking("cursor", true, "Checking Cursor SDK availability..."),
+    checking("grok", true, "Checking Grok CLI availability..."),
+    checking("pi", true, "Checking Pi CLI availability..."),
+    checking("muse", true, "Checking Muse Code CLI availability..."),
+  ];
+
+  it("shows no banner for a provider that has not been checked yet", () => {
+    for (const placeholder of placeholders) {
+      expect(getProviderStatusBannerKey(placeholder)).toBeNull();
+    }
+  });
+
+  it("still shows real results after a check", () => {
+    const { statusPending: _pending, ...openCode } = placeholders[2]!;
+    const results: ReadonlyArray<ServerProvider> = [
+      { ...openCode, status: "error", message: "OpenCode CLI (`opencode`) was not found on PATH." },
+      {
+        ...openCode,
+        installed: true,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Sign in to OpenCode.",
+      },
+      { ...openCode, installed: true, status: "warning", message: "Could not list models." },
+      {
+        ...openCode,
+        installed: true,
+        version: "2.0.3",
+        status: "ready",
+        auth: { status: "authenticated" },
+        compatibilityAdvisory: {
+          status: "broken",
+          message: "Use 1.14.19.",
+          recommendedVersion: "1.14.19",
+          recommendedRange: null,
+        },
+      },
+    ];
+    for (const result of results) {
+      expect(getProviderStatusBannerKey(result)).not.toBeNull();
+    }
+    expect(
+      getProviderStatusBannerKey({ ...openCode, enabled: false, status: "disabled" }),
+    ).toBeNull();
+  });
+});

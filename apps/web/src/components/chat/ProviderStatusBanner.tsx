@@ -16,7 +16,8 @@ function getIncompatibleVersion(status: ServerProvider) {
 }
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  if (!status || status.status === "disabled") return null;
+  // UpComputer: the placeholder before a provider's first check is not a result.
+  if (!status || status.status === "disabled" || status.statusPending === true) return null;
   const incompatible = getIncompatibleVersion(status);
   if (incompatible) {
     return [
