@@ -119,7 +119,11 @@ export interface WaitingWorkspaceEnvironment {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly isPrimary: boolean;
-  /** Its connection stopped trying for now, so it is not just slow. */
+  /**
+   * Its connection gave up at least once since launch, so it is not just
+   * slow. It stays set while later retries cycle, so the notice does not
+   * alternate with each attempt.
+   */
   readonly unreachable: boolean;
 }
 
@@ -141,6 +145,7 @@ const WORKSPACE_DELIVERED: WorkspaceDelivery = { delivered: true, waitingOn: [] 
  */
 function createWorkspaceDeliveryAtom(input: WorkspaceReadinessInput) {
   const delivered = new Set<EnvironmentId>();
+  const unreachable = new Set<EnvironmentId>();
   let previous = WORKSPACE_NOT_DELIVERED;
   let previousKey = "";
   return Atom.make((get): WorkspaceDelivery => {
@@ -165,11 +170,14 @@ function createWorkspaceDeliveryAtom(input: WorkspaceReadinessInput) {
       const isPrimary = target?._tag === "PrimaryConnectionTarget";
       const connection = get(input.connectionStateAtom(environmentId));
       if (!isPrimary && connection?.phase === "available" && !connection.desired) continue;
+      if (connection !== null && connectionSettledWithoutData(connection, isPrimary)) {
+        unreachable.add(environmentId);
+      }
       waitingOn.push({
         environmentId,
         label: target?.label ?? environmentId,
         isPrimary,
-        unreachable: connection !== null && connectionSettledWithoutData(connection, isPrimary),
+        unreachable: unreachable.has(environmentId),
       });
     }
     if (waitingOn.length === 0) return WORKSPACE_DELIVERED;

@@ -272,7 +272,10 @@ describe("workspace readiness", () => {
       waitingOn: [{ environmentId: LOCAL, label: LOCAL, isPrimary: true, unreachable: false }],
     });
     expect(emptyStates()).toEqual({ sidebar: "waiting", home: "waiting" });
-    registry.set(connections(LOCAL), connection("offline"));
+    registry.set(connections(LOCAL), connection("backoff", { attempt: 3 }));
+    expect(delivery().waitingOn[0]?.unreachable).toBe(true);
+    // The next retry does not turn "Can’t reach" back into "Connecting".
+    registry.set(connections(LOCAL), connection("connecting", { attempt: 4 }));
     expect(delivery().waitingOn[0]?.unreachable).toBe(true);
     registry.dispose();
   });
