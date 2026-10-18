@@ -10,6 +10,7 @@ import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 import { useEscapeToGoBack } from "../hooks/useNavigateBack";
+import { useShownPathname } from "../hooks/useShownPathname";
 import {
   SettingsScopeProvider,
   useSettingsScope,
@@ -109,6 +110,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 
 function SettingsContentLayout() {
   const location = useLocation();
+  const shownPathname = useShownPathname();
   const navigateToMainApp = useNavigateToMainApp();
   useEscapeToGoBack(navigateToMainApp);
   const { search, environment } = useSettingsScope();
@@ -135,9 +137,13 @@ function SettingsContentLayout() {
         </WorkspacePageHeader>
 
         <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
-          <SettingsScopeBoundary pathname={location.pathname}>
-            <Outlet />
-          </SettingsScopeBoundary>
+          {/* UpComputer: until a page's lazy chunk has loaded on its first visit, the
+              outlet still holds the previous page, which must not sit under this header. */}
+          {shownPathname === location.pathname ? (
+            <SettingsScopeBoundary pathname={location.pathname}>
+              <Outlet />
+            </SettingsScopeBoundary>
+          ) : null}
         </div>
       </div>
     </SidebarInset>

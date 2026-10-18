@@ -1346,18 +1346,20 @@ export function AgentsView(props: AgentsViewProps) {
               {props.errorMessage ?? "Failed to load agents"}
             </div>
           ) : visibleAgents.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              {props.status === "loading" ? (
-                "Loading agents..."
-              ) : projectFilter && props.agents.length > 0 ? (
-                `No agents for ${projectFilter.label}`
-              ) : (
-                <StartThreadEmptyState
-                  title="No agents yet"
-                  body="You don't need to set them up by hand. Ask any thread for something big, and it creates the agents and tasks it needs. New tasks start their agents automatically."
-                />
-              )}
-            </div>
+            // Blank while the list loads: it arrives within a moment of the page,
+            // and a loading text would only flash before it.
+            props.status === "loading" ? null : (
+              <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                {projectFilter && props.agents.length > 0 ? (
+                  `No agents for ${projectFilter.label}`
+                ) : (
+                  <StartThreadEmptyState
+                    title="No agents yet"
+                    body="You don't need to set them up by hand. Ask any thread for something big, and it creates the agents and tasks it needs. New tasks start their agents automatically."
+                  />
+                )}
+              </div>
+            )
           ) : (
             <div className="min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">

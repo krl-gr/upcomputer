@@ -277,7 +277,20 @@ function flattenOpenCodeModels(
     }
   }
 
-  return models.toSorted((left, right) => left.name.localeCompare(right.name));
+  // UpComputer: "Automatic" takes the model marked default, else the first one
+  // by name, and the first one by name moves as OpenCode's catalog grows (Big
+  // Pickle on one launch, Beam Free on the next). OpenCode names a default
+  // model per provider, which stays put; take the first connected provider's.
+  const listed = new Set(models.map((model) => model.slug));
+  const defaultSlug = input.providerList.connected
+    .map((providerId) => {
+      const modelId = input.providerList.default[providerId];
+      return modelId === undefined ? undefined : `${providerId}/${modelId}`;
+    })
+    .find((slug) => slug !== undefined && listed.has(slug));
+  return models
+    .map((model) => (model.slug === defaultSlug ? { ...model, isDefault: true } : model))
+    .toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
 function trimOptional(value: string | null | undefined): string | undefined {

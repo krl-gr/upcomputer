@@ -11,6 +11,7 @@ interface ScopeState {
 
 const state = vi.hoisted(() => ({
   pathname: "/settings/diagnostics",
+  shownPathname: null as string | null,
   scope: { search: {}, environmentId: null } as ScopeState,
 }));
 
@@ -59,6 +60,9 @@ vi.mock("./settingsLayout", () => ({
 vi.mock("./SettingsBreadcrumb", () => ({ SettingsBreadcrumb: () => null }));
 vi.mock("../sidebar/mainAppLocation", () => ({ useNavigateToMainApp: () => vi.fn() }));
 vi.mock("../../hooks/useNavigateBack", () => ({ useEscapeToGoBack: () => undefined }));
+vi.mock("../../hooks/useShownPathname", () => ({
+  useShownPathname: () => state.shownPathname ?? state.pathname,
+}));
 vi.mock("./SettingsPanels", () => ({ useSettingsRestore: () => ({ changedSettingLabels: [] }) }));
 
 import { Route } from "../../routes/settings";
@@ -86,6 +90,7 @@ function retainedValue() {
 }
 
 beforeEach(() => {
+  state.shownPathname = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -125,4 +130,20 @@ it.each([
   await render(after);
 
   expect(retainedValue()).toBe(expected);
+});
+
+it("keeps the previous page out from under the header of a page still loading", async () => {
+  // A new scope value each time, so the layout renders again with the new paths.
+  state.pathname = "/settings/general";
+  await render({ ...first });
+  expect(retainedValue()).toBe("0");
+
+  state.pathname = "/settings/providers";
+  state.shownPathname = "/settings/general";
+  await render({ ...first });
+  expect(retainedValue()).toBeNull();
+
+  state.shownPathname = null;
+  await render({ ...first });
+  expect(retainedValue()).toBe("0");
 });

@@ -316,6 +316,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { useDraftFirstSendPending } from "../draftFirstSend";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
 // Collapsed shelves share one empty list so a route change alone does not
@@ -2540,6 +2541,8 @@ export default function Sidebar() {
     setProjectScopeKey,
   ]);
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
+  // UpComputer: the open draft's first message is on screen; its thread row follows.
+  const routeDraftFirstSendPending = useDraftFirstSendPending(routeDraftIdForRows);
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
@@ -5253,6 +5256,7 @@ export default function Sidebar() {
           {!isSearchingThreads &&
           threadListShown &&
           sidebarEmptyState !== "hidden" &&
+          !routeDraftFirstSendPending &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +

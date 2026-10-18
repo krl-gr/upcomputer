@@ -83,13 +83,17 @@ export function TaskList(props: {
     });
   };
 
+  // Blank, no text: the planner's own "Loading the planner…" comes just before
+  // and the first page within a moment, so a second loading text would flash.
+  const firstPageLoading = status === "LoadingFirstPage" && results.length === 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
         <div className={props.centered ? "mx-auto w-full max-w-3xl py-2" : "w-full py-2"}>
-          {status === "LoadingFirstPage" && results.length === 0 ? (
-            <p className="px-6 py-10 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : results.length === 0 && !props.showArchived && kind === "task" ? (
+          {firstPageLoading ? null : results.length === 0 &&
+            !props.showArchived &&
+            kind === "task" ? (
             <div className="px-6 py-10">
               <StartThreadEmptyState
                 title="No tasks yet"
