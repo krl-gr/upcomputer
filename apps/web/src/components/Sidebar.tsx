@@ -164,6 +164,7 @@ import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
+  useWorkspaceKnown,
   useWorkspaceSettled,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
@@ -2725,13 +2726,18 @@ export default function Sidebar() {
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadListShown = useSidebarThreadListShown();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
-  const { rowsShown: sidebarRowsShown, emptyStateShown: sidebarEmptyStateShown } =
-    resolveSidebarListVisibility({
-      surface: productSurface("sidebarProjects"),
-      shellsBootstrapped: bootstrapped,
-      workspaceSettled,
-    });
+  const {
+    projectRowsShown: sidebarProjectRowsShown,
+    threadRowsShown: sidebarThreadRowsShown,
+    emptyStateShown: sidebarEmptyStateShown,
+  } = resolveSidebarListVisibility({
+    surface: productSurface("sidebarProjects"),
+    shellsBootstrapped: bootstrapped,
+    workspaceKnown,
+    workspaceSettled,
+  });
   const ThreadRow: typeof SidebarThreadRow =
     useSidebarThreadRowSurface() === "upcomputer" ? SidebarCompactThreadRow : SidebarThreadRow;
   const searchableThreads = useMemo(
@@ -4820,7 +4826,7 @@ export default function Sidebar() {
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
                 <SidebarProjectsSection
-                  projectGroups={sidebarRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
+                  projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
                 <SidebarThreadsSectionHeader
@@ -4907,7 +4913,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads && threadListShown && sidebarRowsShown ? (
+          {!isSearchingThreads && threadListShown && sidebarThreadRowsShown ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}

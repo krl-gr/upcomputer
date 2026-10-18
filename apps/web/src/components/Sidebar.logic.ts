@@ -34,18 +34,29 @@ import {
 
 /**
  * What the sidebar's lists may show while startup data loads. An empty list
- * is a claim ("No threads yet"), so it waits for the shells. UpComputer's
- * Projects and thread rows also wait for the settled workspace: a cached or
- * partial list would change in front of the user, and before an environment's
- * server config the scratch project reads as an ordinary project.
+ * is a claim ("No threads yet"), so it waits for the shells. On UpComputer's
+ * surface the Projects rows wait until the scratch project can be told apart
+ * (cached shells and server configs are enough), so they never change or move
+ * the Threads header; thread rows, which only append below, and the empty
+ * state wait for live shells, as a cached list can be stale or partial.
  */
 export function resolveSidebarListVisibility(input: {
   readonly surface: "upstream" | "upcomputer";
   readonly shellsBootstrapped: boolean;
+  readonly workspaceKnown: boolean;
   readonly workspaceSettled: boolean;
-}): { readonly rowsShown: boolean; readonly emptyStateShown: boolean } {
-  const rowsShown = input.surface === "upstream" || input.workspaceSettled;
-  return { rowsShown, emptyStateShown: rowsShown && input.shellsBootstrapped };
+}): {
+  readonly projectRowsShown: boolean;
+  readonly threadRowsShown: boolean;
+  readonly emptyStateShown: boolean;
+} {
+  const upstream = input.surface === "upstream";
+  const threadRowsShown = upstream || input.workspaceSettled;
+  return {
+    projectRowsShown: upstream || input.workspaceKnown,
+    threadRowsShown,
+    emptyStateShown: threadRowsShown && input.shellsBootstrapped,
+  };
 }
 
 export function shouldNavigateAfterThreadPark(input: {

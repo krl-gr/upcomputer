@@ -2329,44 +2329,45 @@ describe("Working shelf (beta)", () => {
 });
 
 describe("resolveSidebarListVisibility", () => {
+  const visibility = (
+    surface: "upstream" | "upcomputer",
+    shellsBootstrapped: boolean,
+    workspaceKnown: boolean,
+    workspaceSettled: boolean,
+  ) =>
+    resolveSidebarListVisibility({ surface, shellsBootstrapped, workspaceKnown, workspaceSettled });
+
   it("does not claim an empty list before the shells are known", () => {
-    for (const surface of ["upstream", "upcomputer"] as const) {
-      expect(
-        resolveSidebarListVisibility({
-          surface,
-          shellsBootstrapped: false,
-          workspaceSettled: false,
-        }).emptyStateShown,
-      ).toBe(false);
-    }
+    expect(visibility("upstream", false, false, false).emptyStateShown).toBe(false);
+    expect(visibility("upcomputer", false, false, false).emptyStateShown).toBe(false);
   });
 
-  it("keeps UpComputer's rows and empty state back until the workspace settles", () => {
+  it("keeps UpComputer's rows and empty state back until their data is known", () => {
     // The relaunch frame that showed "No threads yet" without "All projects"
-    // and "No project": the cached shell was loaded, the live one was not.
-    expect(
-      resolveSidebarListVisibility({
-        surface: "upcomputer",
-        shellsBootstrapped: true,
-        workspaceSettled: false,
-      }),
-    ).toEqual({ rowsShown: false, emptyStateShown: false });
-    expect(
-      resolveSidebarListVisibility({
-        surface: "upcomputer",
-        shellsBootstrapped: true,
-        workspaceSettled: true,
-      }),
-    ).toEqual({ rowsShown: true, emptyStateShown: true });
+    // and "No project" while a thread existed.
+    expect(visibility("upcomputer", true, false, false)).toEqual({
+      projectRowsShown: false,
+      threadRowsShown: false,
+      emptyStateShown: false,
+    });
+    // Cached shells and server configs place the Projects rows; the thread
+    // list and its empty state wait for live shells.
+    expect(visibility("upcomputer", true, true, false)).toEqual({
+      projectRowsShown: true,
+      threadRowsShown: false,
+      emptyStateShown: false,
+    });
+    expect(visibility("upcomputer", true, true, true)).toEqual({
+      projectRowsShown: true,
+      threadRowsShown: true,
+      emptyStateShown: true,
+    });
   });
 
   it("keeps upstream's cached rows", () => {
-    expect(
-      resolveSidebarListVisibility({
-        surface: "upstream",
-        shellsBootstrapped: false,
-        workspaceSettled: false,
-      }).rowsShown,
-    ).toBe(true);
+    expect(visibility("upstream", false, false, false)).toMatchObject({
+      projectRowsShown: true,
+      threadRowsShown: true,
+    });
   });
 });
