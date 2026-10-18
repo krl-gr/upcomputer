@@ -476,6 +476,70 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
     }),
   );
 
+  it.effect("marks the model OpenCode names as its default, whatever the name order", () =>
+    Effect.gen(function* () {
+      const freeModel = (id: string, name: string) => ({ id, name, variants: {} });
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode"],
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode Zen",
+              models: {
+                "big-pickle": freeModel("big-pickle", "Big Pickle"),
+                "beam-free": freeModel("beam-free", "Beam Free"),
+              },
+            },
+            {
+              id: "openai",
+              name: "OpenAI",
+              models: { "gpt-5.4": freeModel("gpt-5.4", "GPT-5.4") },
+            },
+          ],
+          default: { openai: "gpt-5.4", opencode: "big-pickle" },
+        },
+        agents: [],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(
+        snapshot.models.map((model) => [model.slug, model.isDefault === true]),
+        [
+          ["opencode/beam-free", false],
+          ["opencode/big-pickle", true],
+        ],
+      );
+    }),
+  );
+
+  it.effect("marks no default when OpenCode's default is not listed", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode"],
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode Zen",
+              models: { "beam-free": { id: "beam-free", name: "Beam Free", variants: {} } },
+            },
+          ],
+          default: { opencode: "big-pickle" },
+        },
+        agents: [],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(
+        snapshot.models.filter((model) => model.isDefault === true),
+        [],
+      );
+    }),
+  );
+
   it.effect("includes OpenCode skills in the provider snapshot", () =>
     Effect.gen(function* () {
       runtimeMock.state.inventory = {
