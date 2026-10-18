@@ -1,4 +1,7 @@
 import { findRecordedWorktreeSetup, resolveVisibleWorktreeSetup } from "./ChatView.logic";
+import * as Schema from "effect/Schema";
+
+import { getLocalStorageItem } from "../hooks/useLocalStorage";
 import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
@@ -1874,6 +1877,16 @@ describe("checkout Git memory", () => {
   it("does not confuse an environment id containing the separator with a path", () => {
     rememberCheckoutIsRepo(EnvironmentId.make("env"), "a:b", false);
     expect(recallCheckoutIsRepo(EnvironmentId.make("env:a"), "b")).toBeUndefined();
+  });
+  it("keeps what it saw for the next launch", () => {
+    // Without it, a relaunch into a folder without Git mounted the branch strip
+    // ("Current checkout | Select ref") and dropped it a moment later.
+    rememberCheckoutIsRepo(environmentId, "/repo/persisted-folder", false);
+    const persisted = getLocalStorageItem(
+      "upcomputer:checkout-is-repo:v1",
+      Schema.Record(Schema.String, Schema.Boolean),
+    );
+    expect(persisted?.[JSON.stringify([environmentId, "/repo/persisted-folder"])]).toBe(false);
   });
 });
 

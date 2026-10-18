@@ -1688,6 +1688,10 @@ export default function GitActionsControl({
   );
 
   if (!gitCwd) return null;
+  // UpComputer: until the first status, neither the repository actions nor
+  // "Initialize Git" is known to apply, and `isRepo` assumes a repository, so
+  // a folder without git showed Commit before Initialize Git.
+  if (presentation !== "menu" && gitStatus === null && !gitStatusError) return null;
 
   return (
     <>
