@@ -32,9 +32,14 @@ import { usePlannerWindows, windowStoreFor, type WindowStore } from "../windows/
 import { AutomationList } from "./AutomationList.tsx";
 import { AutomationDragPreview } from "./AutomationRow.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
-import { Notice, pickEnvironment, plannerProjectsOf, tasksAccessPending } from "./PlannerView.tsx";
+import { Notice, pickEnvironment, plannerProjectsOf } from "./PlannerView.tsx";
 import type { PlannerProject } from "./ProjectChip.tsx";
 import { PlannerWindows } from "./TaskWindows.tsx";
+import {
+  resolveTasksViewGate,
+  tasksAccessPending,
+  useTasksInitialWaitOver,
+} from "./tasksViewGate.ts";
 import { usePlannerDnd } from "./usePlannerDnd.ts";
 import type { WeekSelection } from "./WeekQueue.tsx";
 
@@ -173,6 +178,12 @@ export function AutomationsView(props: {
   );
   const triggerTags = useMemo(() => agentTriggerTags(agents), [agents]);
   const availability = usePlannerAvailability(environmentId);
+  const gate = resolveTasksViewGate({
+    environmentId,
+    availability,
+    accessPending: tasksAccessPending(props.taskTargets),
+    initialWaitOver: useTasksInitialWaitOver(),
+  });
   const ready = environmentId !== null && availability === "enabled";
   const windows =
     environmentId === null
@@ -218,10 +229,15 @@ export function AutomationsView(props: {
       onNavigateBack={props.onNavigateBack}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {environmentId === null && !tasksAccessPending(props.taskTargets) ? (
+        {gate === "none" ? (
           <Notice>No connected environment serves Tasks.</Notice>
-        ) : environmentId === null || windows === null || availability === "loading" ? (
+        ) : gate === "loading" ? (
           <Notice>Loading the automations…</Notice>
+        ) : gate === "offline" || environmentId === null || windows === null ? (
+          <Notice>
+            The environment with Tasks is not reachable right now. Automations open when it
+            connects.
+          </Notice>
         ) : availability === "unavailable" ? (
           <Notice>This environment runs an older server without automations here.</Notice>
         ) : (

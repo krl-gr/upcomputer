@@ -51,6 +51,11 @@ import { PlannerLayout } from "./PlannerLayout.tsx";
 import { isInboxRoot, type PlannerProject } from "./ProjectChip.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { PlannerWindows } from "./TaskWindows.tsx";
+import {
+  resolveTasksViewGate,
+  tasksAccessPending,
+  useTasksInitialWaitOver,
+} from "./tasksViewGate.ts";
 import { usePlannerDnd } from "./usePlannerDnd.ts";
 import { WeekCalendar } from "./WeekCalendar.tsx";
 import { WeekHeader } from "./WeekHeader.tsx";
@@ -377,14 +382,6 @@ function PlannerBody(props: {
   );
 }
 
-/**
- * UpComputer: whether an environment's Tasks access is still being probed.
- * Until it answers, "no environment serves Tasks" would be a guess.
- */
-export function tasksAccessPending(targets: readonly TasksStateTarget[]): boolean {
-  return targets.some((target) => target.access.availability === "loading");
-}
-
 /** The stored environment if it serves Tasks, else the primary one, else the first. */
 export function pickEnvironment(
   candidates: readonly TasksStateTarget[],
@@ -467,6 +464,12 @@ export function PlannerView(props: {
     [candidates, environments],
   );
   const availability = usePlannerAvailability(environmentId);
+  const gate = resolveTasksViewGate({
+    environmentId,
+    availability,
+    accessPending: tasksAccessPending(props.taskTargets),
+    initialWaitOver: useTasksInitialWaitOver(),
+  });
   const [kind, setKind] = useStoredPlannerKind();
   const agents = useMemo(
     () => props.agents.filter((agent) => agent.environmentId === environmentId),
@@ -534,10 +537,15 @@ export function PlannerView(props: {
       onNavigateBack={props.onNavigateBack}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {environmentId === null && !tasksAccessPending(props.taskTargets) ? (
+        {gate === "none" ? (
           <Notice>No connected environment serves Tasks.</Notice>
-        ) : environmentId === null || availability === "loading" ? (
+        ) : gate === "loading" ? (
           <Notice>Loading the planner…</Notice>
+        ) : gate === "offline" || environmentId === null ? (
+          <Notice>
+            The environment with Tasks is not reachable right now. The planner opens when it
+            connects.
+          </Notice>
         ) : availability === "unavailable" ? (
           <Notice
             action={
