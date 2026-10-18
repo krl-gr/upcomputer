@@ -334,6 +334,7 @@ describe("buildInitialGrokProviderSnapshot", () => {
       const snapshot = yield* buildInitialGrokProviderSnapshot(decodeGrokSettings({}));
       expect(snapshot.enabled).toBe(false);
       expect(snapshot.status).toBe("disabled");
+      expect(snapshot.statusPending).toBeUndefined();
     }),
   );
 
@@ -347,6 +348,7 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.status).toBe("warning");
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
+      expect(snapshot.statusPending).toBe(true);
       expect(snapshot.requiresNewThreadForModelChange).toBeUndefined();
       expect(snapshot.supportsConversationRollback).toBe(false);
     }),

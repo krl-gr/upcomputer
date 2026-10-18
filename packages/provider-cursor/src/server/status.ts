@@ -62,6 +62,7 @@ export function buildInitialCursorProviderSnapshot(
       enabled: true,
       checkedAt,
       models,
+      statusPending: true,
       probe: {
         installed: true,
         version: null,

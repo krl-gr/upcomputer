@@ -76,7 +76,12 @@ export const hydrateCachedProvider = (input: {
     return input.fallbackProvider;
   }
 
-  const { message: _fallbackMessage, ...fallbackWithoutMessage } = input.fallbackProvider;
+  // UpComputer: the cached status comes from an earlier finished check.
+  const {
+    message: _fallbackMessage,
+    statusPending: _fallbackStatusPending,
+    ...fallbackWithoutMessage
+  } = input.fallbackProvider;
   const hydratedProvider: ServerProvider = {
     ...fallbackWithoutMessage,
     models: mergeProviderModels(input.fallbackProvider.models, input.cachedProvider.models),

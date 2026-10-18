@@ -6,7 +6,11 @@ import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import { checkPiProviderStatus, MINIMUM_PI_VERSION } from "./status.ts";
+import {
+  buildInitialPiProviderSnapshot,
+  checkPiProviderStatus,
+  MINIMUM_PI_VERSION,
+} from "./status.ts";
 
 const encoder = new TextEncoder();
 
@@ -53,12 +57,22 @@ const settings = {
 } as const;
 
 describe("PiProvider", () => {
+  it.effect("marks only the enabled placeholder as pending", () =>
+    Effect.gen(function* () {
+      const pending = yield* buildInitialPiProviderSnapshot(settings);
+      assert.equal(pending.statusPending, true);
+      const disabled = yield* buildInitialPiProviderSnapshot({ ...settings, enabled: false });
+      assert.equal(disabled.statusPending, undefined);
+    }),
+  );
+
   it.effect("requires the first published Pi version with entries and settlement hooks", () =>
     Effect.gen(function* () {
       const snapshot = yield* checkPiProviderStatus(settings).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, piProbeSpawner("0.80.3")),
       );
       assert.equal(snapshot.status, "error");
+      assert.equal(snapshot.statusPending, undefined);
       assert.equal(snapshot.version, "0.80.3");
       assert.include(snapshot.message ?? "", `Pi ${MINIMUM_PI_VERSION} or newer`);
     }).pipe(Effect.provide(NodeServices.layer)),

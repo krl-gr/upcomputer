@@ -100,6 +100,7 @@ describe("buildInitialCursorProviderSnapshot", () => {
       expect(provider).toMatchObject({
         status: "warning",
         message: "Checking Cursor SDK availability...",
+        statusPending: true,
       });
     }),
   );
