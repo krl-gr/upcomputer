@@ -57,6 +57,24 @@ export function providerStreamHasRecheck(
   return streamed !== undefined && Date.parse(streamed.checkedAt) >= Date.parse(recheckedAt);
 }
 
+/** How long the step waits for the stream to carry a recheck that answered. */
+export const ONBOARDING_RECHECK_STREAM_WAIT_MS = 5_000;
+
+/**
+ * Whether the step still shows its checking state: until the recheck answers,
+ * then until the stream carries it, for at most
+ * `ONBOARDING_RECHECK_STREAM_WAIT_MS`. A stream that stopped then shows its
+ * latest snapshot instead of checking forever.
+ */
+export function onboardingRecheckPending(input: {
+  readonly streamed: ServerProvider | undefined;
+  readonly recheckedAt: string | null;
+  readonly streamWaitOver: boolean;
+}): boolean {
+  if (input.recheckedAt === null) return true;
+  return !input.streamWaitOver && !providerStreamHasRecheck(input.streamed, input.recheckedAt);
+}
+
 const PROVIDER_STATE_PRIORITY = {
   checking: 0,
   disabled: 1,

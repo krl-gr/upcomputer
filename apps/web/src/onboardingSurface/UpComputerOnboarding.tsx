@@ -42,7 +42,8 @@ import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
 import {
   getOnboardingProviderState,
-  providerStreamHasRecheck,
+  ONBOARDING_RECHECK_STREAM_WAIT_MS,
+  onboardingRecheckPending,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -171,7 +172,19 @@ export function UpComputerOnboarding({
   const [rechecking, setRechecking] = useState<{
     readonly driver: UpComputerOnboardingDriver;
     readonly checkedAt: string | null;
+    readonly streamWaitOver: boolean;
   } | null>(null);
+  useEffect(() => {
+    if (rechecking === null || rechecking.checkedAt === null || rechecking.streamWaitOver) return;
+    const timer = setTimeout(
+      () =>
+        setRechecking((current) =>
+          current === rechecking ? { ...rechecking, streamWaitOver: true } : current,
+        ),
+      ONBOARDING_RECHECK_STREAM_WAIT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [rechecking]);
 
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
@@ -268,7 +281,7 @@ export function UpComputerOnboarding({
   };
 
   const recheck = (driver: UpComputerOnboardingDriver) => {
-    setRechecking({ driver, checkedAt: null });
+    setRechecking({ driver, checkedAt: null, streamWaitOver: false });
     return refreshProviders({ environmentId, input: {} }).then((refreshed) => {
       const checkedAt =
         refreshed._tag === "Success"
@@ -276,15 +289,22 @@ export function UpComputerOnboarding({
             null)
           : null;
       setRechecking((current) =>
-        current?.driver !== driver ? current : checkedAt === null ? null : { driver, checkedAt },
+        current?.driver !== driver
+          ? current
+          : checkedAt === null
+            ? null
+            : { driver, checkedAt, streamWaitOver: false },
       );
       return refreshed;
     });
   };
   const recheckingDriver =
     rechecking !== null &&
-    (rechecking.checkedAt === null ||
-      !providerStreamHasRecheck(byDriver.get(rechecking.driver), rechecking.checkedAt))
+    onboardingRecheckPending({
+      streamed: byDriver.get(rechecking.driver),
+      recheckedAt: rechecking.checkedAt,
+      streamWaitOver: rechecking.streamWaitOver,
+    })
       ? rechecking.driver
       : null;
 

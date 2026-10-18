@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getOnboardingProviderState,
+  onboardingRecheckPending,
   providerStreamHasRecheck,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
@@ -106,6 +107,18 @@ describe("providerStreamHasRecheck", () => {
     expect(providerStreamHasRecheck({ ...readyCodex, checkedAt: recheckedAt }, recheckedAt)).toBe(
       true,
     );
+  });
+
+  it("stops checking when the stream does not carry the recheck in time", () => {
+    // Astra review G: a stream that stopped after a successful recheck left
+    // the step checking with no way out.
+    const before = { ...readyCodex, installed: false, checkedAt: "2026-10-18T03:30:40.000Z" };
+    const recheckedAt = "2026-10-18T03:30:45.000Z";
+    const pending = (recheckedAt: string | null, streamWaitOver: boolean) =>
+      onboardingRecheckPending({ streamed: before, recheckedAt, streamWaitOver });
+    expect(pending(null, false)).toBe(true);
+    expect(pending(recheckedAt, false)).toBe(true);
+    expect(pending(recheckedAt, true)).toBe(false);
   });
 });
 
