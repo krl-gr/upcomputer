@@ -920,3 +920,40 @@ describe("resolveAppModelSelectionState with the opencode plan agent", () => {
     );
   });
 });
+
+describe("composer default model stability", () => {
+  function defaultModelFor(
+    instanceId: ProviderInstanceId,
+    models: ReadonlyArray<string>,
+    statusPending = false,
+  ) {
+    const driver = ProviderDriverKind.make("opencode");
+    return deriveEffectiveComposerModelState({
+      draft: null,
+      providers: [{ ...provider({ provider: driver, instanceId, models }), statusPending }],
+      selectedProvider: driver,
+      selectedInstanceId: instanceId,
+      threadModelSelection: null,
+      // As a new draft resolves it: a selection without a model.
+      projectModelSelection: NO_PROVIDER_MODEL_SELECTION,
+      settings: settingsWithProviderInstances(),
+    }).selectedModel;
+  }
+
+  it("keeps the default it showed first when the fresh catalog reorders", () => {
+    // Relaunch: the cached catalog lists Big Pickle first, then the fresh
+    // check lists Beam Free first. The draft has no model of its own.
+    const instanceId = ProviderInstanceId.make("opencode_stable_reorder");
+    // The placeholder for the running check carries the cached list.
+    expect(defaultModelFor(instanceId, ["big-pickle", "beam-free"], true)).toBe("big-pickle");
+    expect(defaultModelFor(instanceId, [], true)).toBe("big-pickle");
+    expect(defaultModelFor(instanceId, ["beam-free", "big-pickle"])).toBe("big-pickle");
+  });
+
+  it("moves on when the default it showed is no longer listed", () => {
+    const instanceId = ProviderInstanceId.make("opencode_stable_removed");
+    expect(defaultModelFor(instanceId, ["big-pickle", "beam-free"])).toBe("big-pickle");
+    expect(defaultModelFor(instanceId, ["beam-free"])).toBe("beam-free");
+    expect(defaultModelFor(instanceId, ["big-pickle", "beam-free"])).toBe("beam-free");
+  });
+});

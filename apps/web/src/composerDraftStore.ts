@@ -1078,6 +1078,28 @@ function legacyToModelSelectionByProvider(
   return result;
 }
 
+// UpComputer: a draft without a chosen model shows its provider's default,
+// and the default moves when the fresh provider check replaces the cached
+// catalog in a new order (OpenCode's Big Pickle, then Beam Free a second
+// later). For the session, the composer keeps the default it showed first
+// while the catalog still lists it.
+const shownDefaultModelByInstance = new Map<ProviderInstanceId, string>();
+
+function keepShownDefaultModel(
+  instanceId: ProviderInstanceId,
+  model: string,
+  catalog: { readonly settled: boolean; readonly lists: (model: string) => boolean },
+): string {
+  const shown = shownDefaultModelByInstance.get(instanceId);
+  // Only a finished check can tell that the shown model is gone: the
+  // placeholder before it may list cached models, or none.
+  if (shown !== undefined && shown !== model && (!catalog.settled || catalog.lists(shown))) {
+    return shown;
+  }
+  shownDefaultModelByInstance.set(instanceId, model);
+  return model;
+}
+
 export function deriveEffectiveComposerModelState(input: {
   draft:
     | Pick<ComposerThreadDraftState, "modelSelectionByProvider" | "activeProvider">
@@ -1096,7 +1118,7 @@ export function deriveEffectiveComposerModelState(input: {
     input.selectedInstanceId !== null &&
     input.selectedInstanceId !== undefined &&
     input.threadModelSelection?.instanceId === input.selectedInstanceId;
-  const baseModel =
+  const resolvedBaseModel =
     (input.selectedInstanceId
       ? resolveAppModelSelectionForInstance(
           input.selectedInstanceId,
@@ -1116,6 +1138,22 @@ export function deriveEffectiveComposerModelState(input: {
     ) ??
     normalizeModelSlug(baseModelCandidate, input.selectedProvider) ??
     getDefaultServerModel(input.providers, input.selectedProvider);
+  const selectedInstanceId = input.selectedInstanceId;
+  const baseModel =
+    !baseModelCandidate && selectedInstanceId && resolvedBaseModel
+      ? keepShownDefaultModel(selectedInstanceId, resolvedBaseModel, {
+          settled:
+            input.providers.find((provider) => provider.instanceId === selectedInstanceId)
+              ?.statusPending !== true,
+          lists: (shown) =>
+            resolveAppModelSelectionForInstance(
+              selectedInstanceId,
+              input.settings,
+              input.providers,
+              shown,
+            ) === shown,
+        })
+      : resolvedBaseModel;
   const instanceSelection = input.selectedInstanceId
     ? input.draft?.modelSelectionByProvider?.[input.selectedInstanceId]
     : undefined;
