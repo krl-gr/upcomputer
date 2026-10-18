@@ -186,7 +186,9 @@ export function DraftHeroHeadline({
   const offersProjectLine = isScratchDraft && !showsDraftHeroNoProjectPicker();
   // Adding a project from that line takes this draft along (`draftIntoAddedProject`).
   const addProject = () => {
-    if (offersProjectLine && draftId) moveDraftIntoNextAddedProject(draftId, projects);
+    if (offersProjectLine && draftId && activeProjectRef) {
+      moveDraftIntoNextAddedProject(draftId, activeProjectRef);
+    }
     openAddProject();
   };
   useEffect(() => {

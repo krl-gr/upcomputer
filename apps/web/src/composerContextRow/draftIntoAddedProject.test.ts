@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 const state = vi.hoisted(() => ({
-  sessions: new Map<string, { threadId: string; promotedTo?: unknown }>(),
+  sessions: new Map<
+    string,
+    { threadId: string; environmentId: string; projectId: string; promotedTo?: unknown }
+  >(),
   retargeted: [] as Array<[string, string]>,
+  resolveProject: null as ((project: { id: string }) => void) | null,
+  deferProject: false,
 }));
 
 vi.mock("../composerDraftStore", () => ({
@@ -12,7 +17,12 @@ vi.mock("../composerDraftStore", () => ({
   },
 }));
 vi.mock("../state/entities", () => ({
-  waitForProject: (ref: { projectId: string }) => Promise.resolve({ id: ref.projectId }),
+  waitForProject: (ref: { projectId: string }) =>
+    state.deferProject
+      ? new Promise((resolve) => {
+          state.resolveProject = resolve;
+        })
+      : Promise.resolve({ id: ref.projectId }),
 }));
 vi.mock("./useRetargetDraftToProject", () => ({
   retargetDraftToProject: (draftId: string, project: { id: string }) =>
@@ -21,50 +31,143 @@ vi.mock("./useRetargetDraftToProject", () => ({
 
 const {
   cancelMoveDraftIntoAddedProject,
+  claimDraftMoveForAddedProject,
+  disarmDraftMoveIntoAddedProject,
   moveDraftIntoNextAddedProject,
   openDraftMovedIntoProject,
   takeDraftMovingIntoProject,
 } = await import("./draftIntoAddedProject");
 
 const ENV = EnvironmentId.make("env-1");
-const ref = (id: string) => ({ environmentId: ENV, projectId: ProjectId.make(id) });
-const KNOWN = [{ environmentId: ENV, id: ProjectId.make("p-scratch") }];
+const OTHER_ENV = EnvironmentId.make("env-2");
+const ref = (id: string, environmentId = ENV) => ({
+  environmentId,
+  projectId: ProjectId.make(id),
+});
+const SCRATCH = ref("p-scratch");
 const DRAFT = "draft-1" as never;
+const context = (isDraftOpen: () => boolean = () => true) => ({
+  serverSettings: undefined,
+  projectGroupingSettings: {} as never,
+  isDraftOpen,
+});
 
 beforeEach(() => {
-  state.sessions = new Map([["draft-1", { threadId: "thread-1" }]]);
+  state.sessions = new Map([
+    ["draft-1", { threadId: "thread-1", environmentId: "env-1", projectId: "p-scratch" }],
+  ]);
   state.retargeted = [];
+  state.deferProject = false;
+  state.resolveProject = null;
   cancelMoveDraftIntoAddedProject(DRAFT);
 });
 
 describe("moving a draft into the project added from it", () => {
-  it("takes the draft once, for a project added since, not a known one", () => {
-    moveDraftIntoNextAddedProject(DRAFT, KNOWN);
-    expect(takeDraftMovingIntoProject(ref("p-scratch"))).toBeNull();
-    expect(takeDraftMovingIntoProject(ref("p-new"))).toBe(DRAFT);
+  it("moves only into the project the palette's add claimed", async () => {
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    expect(takeDraftMovingIntoProject(ref("p-new"))).toBeNull();
+    claimDraftMoveForAddedProject(ref("p-new"));
     expect(takeDraftMovingIntoProject(ref("p-other"))).toBeNull();
+    const move = takeDraftMovingIntoProject(ref("p-new"));
+    expect(move).not.toBeNull();
+    await expect(openDraftMovedIntoProject(move!, ref("p-new"), context())).resolves.toEqual({
+      draftId: DRAFT,
+      threadId: "thread-1",
+    });
+    expect(state.retargeted).toEqual([["draft-1", "p-new"]]);
+    expect(takeDraftMovingIntoProject(ref("p-new"))).toBeNull();
   });
 
-  it("does nothing once cancelled or after the draft was sent", () => {
-    moveDraftIntoNextAddedProject(DRAFT, KNOWN);
+  it("is disarmed when the palette closes without an add, so a later project does not take it", () => {
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    disarmDraftMoveIntoAddedProject();
+    claimDraftMoveForAddedProject(ref("p-added-later"));
+    expect(takeDraftMovingIntoProject(ref("p-added-later"))).toBeNull();
+  });
+
+  it("survives the palette closing once claimed, as the clone flow closes it first", () => {
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    claimDraftMoveForAddedProject(ref("p-clone"));
+    disarmDraftMoveIntoAddedProject();
+    expect(takeDraftMovingIntoProject(ref("p-clone"))).not.toBeNull();
+  });
+
+  it("is not taken by the same project id in another environment", () => {
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    claimDraftMoveForAddedProject(ref("p-new"));
+    expect(takeDraftMovingIntoProject(ref("p-new", OTHER_ENV))).toBeNull();
+    expect(takeDraftMovingIntoProject(ref("added-in-other-window", OTHER_ENV))).toBeNull();
+  });
+
+  it("does nothing once cancelled, sent or given a project", () => {
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    claimDraftMoveForAddedProject(ref("p-new"));
     cancelMoveDraftIntoAddedProject(DRAFT);
     expect(takeDraftMovingIntoProject(ref("p-new"))).toBeNull();
 
-    state.sessions.set("draft-1", { threadId: "thread-1", promotedTo: { threadId: "t" } });
-    moveDraftIntoNextAddedProject(DRAFT, KNOWN);
+    state.sessions.set("draft-1", {
+      threadId: "thread-1",
+      environmentId: "env-1",
+      projectId: "p-scratch",
+      promotedTo: { threadId: "t" },
+    });
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    claimDraftMoveForAddedProject(ref("p-new"));
+    expect(takeDraftMovingIntoProject(ref("p-new"))).toBeNull();
+
+    state.sessions.set("draft-1", { threadId: "thread-1", environmentId: "env-1", projectId: "p" });
+    moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+    claimDraftMoveForAddedProject(ref("p-new"));
     expect(takeDraftMovingIntoProject(ref("p-new"))).toBeNull();
   });
 
-  it("retargets the draft and opens it unless it is already open", async () => {
-    const open = vi.fn(() => Promise.resolve());
-    const context = { serverSettings: undefined, projectGroupingSettings: {} as never, open };
-    await expect(
-      openDraftMovedIntoProject(DRAFT, ref("p-new"), { ...context, isOpen: () => false }),
-    ).resolves.toEqual({ draftId: DRAFT, threadId: "thread-1" });
-    expect(state.retargeted).toEqual([["draft-1", "p-new"]]);
-    expect(open).toHaveBeenCalledOnce();
+  describe("while waiting for the project to reach the store", () => {
+    const takeDeferred = () => {
+      state.deferProject = true;
+      moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+      claimDraftMoveForAddedProject(ref("p-new"));
+      return takeDraftMovingIntoProject(ref("p-new"))!;
+    };
 
-    await openDraftMovedIntoProject(DRAFT, ref("p-new"), { ...context, isOpen: () => true });
-    expect(open).toHaveBeenCalledOnce();
+    it("gives up when the move is cancelled", async () => {
+      const opened = openDraftMovedIntoProject(takeDeferred(), ref("p-new"), context());
+      cancelMoveDraftIntoAddedProject(DRAFT);
+      state.resolveProject!({ id: "p-new" });
+      await expect(opened).resolves.toBeNull();
+      expect(state.retargeted).toEqual([]);
+    });
+
+    it("gives up when the user switched to another thread", async () => {
+      let onDraft = true;
+      const opened = openDraftMovedIntoProject(
+        takeDeferred(),
+        ref("p-new"),
+        context(() => onDraft),
+      );
+      onDraft = false;
+      state.resolveProject!({ id: "p-new" });
+      await expect(opened).resolves.toBeNull();
+      expect(state.retargeted).toEqual([]);
+    });
+
+    it("gives up when the draft got another project meanwhile", async () => {
+      const opened = openDraftMovedIntoProject(takeDeferred(), ref("p-new"), context());
+      state.sessions.set("draft-1", {
+        threadId: "thread-1",
+        environmentId: "env-1",
+        projectId: "p-picked",
+      });
+      state.resolveProject!({ id: "p-new" });
+      await expect(opened).resolves.toBeNull();
+      expect(state.retargeted).toEqual([]);
+    });
+
+    it("gives up when another move was armed meanwhile", async () => {
+      const opened = openDraftMovedIntoProject(takeDeferred(), ref("p-new"), context());
+      moveDraftIntoNextAddedProject(DRAFT, SCRATCH);
+      state.resolveProject!({ id: "p-new" });
+      await expect(opened).resolves.toBeNull();
+      expect(state.retargeted).toEqual([]);
+    });
   });
 });

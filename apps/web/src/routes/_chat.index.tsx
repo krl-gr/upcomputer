@@ -15,6 +15,7 @@ import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { openScratchHomeDraft } from "../scratchHomeDraft";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import {
   readProject,
@@ -51,6 +52,13 @@ function IndexDraftLanding() {
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [startState, setStartState] = useState({
     failed: false,
     scratchFailed: false,
@@ -81,17 +89,18 @@ function IndexDraftLanding() {
       startingRef.current = true;
       // The scratch project lands in the store before this resolves, so the
       // effect reruns with it as the most recent project; startingRef holds it off.
-      void openScratchProject(scratchTarget)
-        .then((project) =>
-          project === null
-            ? null
-            : handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-                replace: true,
-              }),
-        )
-        .then((opened) => {
-          if (opened === null) {
-            startingRef.current = false;
+      void openScratchHomeDraft({
+        openScratchProject: () => openScratchProject(scratchTarget),
+        isStillHome: () => mountedRef.current && isStillOnIndex(),
+        openDraft: (project) =>
+          handleNewThread(scopeProjectRef(project.environmentId, project.id), {
+            replace: true,
+          }),
+      })
+        .then((outcome) => {
+          if (outcome === "opened") return;
+          startingRef.current = false;
+          if (outcome === "failed") {
             setStartState((state) => ({ ...state, scratchFailed: true }));
           }
         })
