@@ -114,8 +114,6 @@ export function SidebarProjectsSection(props: {
     },
   });
 
-  if (projectGroups.length === 0) return null;
-
   return (
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP}>
@@ -144,70 +142,73 @@ export function SidebarProjectsSection(props: {
           }
         />
       </div>
-      <CollapsiblePanel>
-        <div className={cn(SIDEBAR_SECTION_HEADER_GAP, SIDEBAR_MENU_SCOPE)}>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
-                <AllProjectsIcon />
-                <span className="flex-1 truncate">All projects</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            {rows.preview.map((project) => (
-              <SidebarMenuItem key={project.projectKey}>
-                <SidebarProjectRow
-                  label={project.displayName}
-                  icon={<ProjectRowIcon project={project} />}
-                  isActive={scopeKey === project.projectKey}
-                  onSelect={() => setScopeKey(project.projectKey)}
-                  newChatLabel={`New chat in ${project.displayName}`}
-                  onNewChat={() => startNewThread(project)}
-                  menuLabel={`Project actions for ${project.displayName}`}
-                  menuItems={
-                    <>
-                      <MenuItem onClick={() => openProjectSettings(project)}>
-                        <SettingsIcon />
-                        Project settings
-                      </MenuItem>
-                      <MenuItem
-                        onClick={() =>
-                          copyPathToClipboard(project.workspaceRoot, {
-                            path: project.workspaceRoot,
-                          })
-                        }
-                      >
-                        <CopyIcon />
-                        Copy path
-                      </MenuItem>
-                    </>
-                  }
-                />
-              </SidebarMenuItem>
-            ))}
-            {rows.scratch ? (
+      {/* With no projects the header stays, so Add project is always one click away. */}
+      {projectGroups.length === 0 ? null : (
+        <CollapsiblePanel>
+          <div className={cn(SIDEBAR_SECTION_HEADER_GAP, SIDEBAR_MENU_SCOPE)}>
+            <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarProjectRow
-                  label="No project"
-                  icon={<NoProjectIcon />}
-                  isActive={scopeKey === rows.scratch.projectKey}
-                  onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
-                  newChatLabel="New chat without a project"
-                  onNewChat={() => rows.scratch && startNewThread(rows.scratch)}
-                />
+                <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
+                  <AllProjectsIcon />
+                  <span className="flex-1 truncate">All projects</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
-            ) : null}
-            {rows.overflow.length > 0 ? (
-              <SidebarMenuItem>
-                <SidebarProjectsMore
-                  projects={rows.overflow}
-                  onSelect={setScopeKey}
-                  onOpenProjectSettings={openProjectSettings}
-                />
-              </SidebarMenuItem>
-            ) : null}
-          </SidebarMenu>
-        </div>
-      </CollapsiblePanel>
+              {rows.preview.map((project) => (
+                <SidebarMenuItem key={project.projectKey}>
+                  <SidebarProjectRow
+                    label={project.displayName}
+                    icon={<ProjectRowIcon project={project} />}
+                    isActive={scopeKey === project.projectKey}
+                    onSelect={() => setScopeKey(project.projectKey)}
+                    newChatLabel={`New chat in ${project.displayName}`}
+                    onNewChat={() => startNewThread(project)}
+                    menuLabel={`Project actions for ${project.displayName}`}
+                    menuItems={
+                      <>
+                        <MenuItem onClick={() => openProjectSettings(project)}>
+                          <SettingsIcon />
+                          Project settings
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() =>
+                            copyPathToClipboard(project.workspaceRoot, {
+                              path: project.workspaceRoot,
+                            })
+                          }
+                        >
+                          <CopyIcon />
+                          Copy path
+                        </MenuItem>
+                      </>
+                    }
+                  />
+                </SidebarMenuItem>
+              ))}
+              {rows.scratch ? (
+                <SidebarMenuItem>
+                  <SidebarProjectRow
+                    label="No project"
+                    icon={<NoProjectIcon />}
+                    isActive={scopeKey === rows.scratch.projectKey}
+                    onSelect={() => setScopeKey(rows.scratch?.projectKey ?? null)}
+                    newChatLabel="New chat without a project"
+                    onNewChat={() => rows.scratch && startNewThread(rows.scratch)}
+                  />
+                </SidebarMenuItem>
+              ) : null}
+              {rows.overflow.length > 0 ? (
+                <SidebarMenuItem>
+                  <SidebarProjectsMore
+                    projects={rows.overflow}
+                    onSelect={setScopeKey}
+                    onOpenProjectSettings={openProjectSettings}
+                  />
+                </SidebarMenuItem>
+              ) : null}
+            </SidebarMenu>
+          </div>
+        </CollapsiblePanel>
+      )}
     </Collapsible>
   );
 }

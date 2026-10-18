@@ -40,6 +40,10 @@ import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import {
+  openDraftMovedIntoProject,
+  takeDraftMovingIntoProject,
+} from "../composerContextRow/draftIntoAddedProject";
 import { useClientSettings } from "./useSettings";
 
 interface NewThreadWorkspaceOptions {
@@ -78,6 +82,25 @@ export function useNewThreadHandler() {
         replace?: boolean;
       },
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      // UpComputer: after "or add a project" in a draft without one, the added
+      // project takes that draft instead of opening a fresh one.
+      const movingDraftId = takeDraftMovingIntoProject(projectRef);
+      if (movingDraftId !== null) {
+        return openDraftMovedIntoProject(movingDraftId, projectRef, {
+          serverSettings: environmentServerConfigs.get(projectRef.environmentId)?.settings,
+          projectGroupingSettings,
+          isOpen: () => {
+            const target = getCurrentRouteTarget();
+            return target?.kind === "draft" && target.draftId === movingDraftId;
+          },
+          open: () =>
+            router.navigate({
+              to: "/draft/$draftId",
+              params: { draftId: movingDraftId },
+              replace: options?.replace ?? false,
+            }),
+        });
+      }
       const projects = readProjects();
       const targetServerSettings =
         environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
