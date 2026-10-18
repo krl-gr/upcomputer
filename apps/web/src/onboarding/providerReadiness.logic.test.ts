@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getOnboardingProviderState,
+  providerStreamHasRecheck,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -79,6 +80,32 @@ describe("getOnboardingProviderState", () => {
 
   it("waits for a provider snapshot before offering an action", () => {
     expect(getOnboardingProviderState(undefined)).toBe("checking");
+  });
+
+  it("waits for a provider's first check instead of offering an install", () => {
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        installed: false,
+        status: "error",
+        statusPending: true,
+      }),
+    ).toBe("checking");
+  });
+});
+
+describe("providerStreamHasRecheck", () => {
+  it("keeps checking after Close until the stream carries the recheck", () => {
+    // After the OpenCode install, the recheck answered "installed" while the
+    // stream still held the earlier "not installed" snapshot, so the step
+    // briefly offered Install again before the app opened.
+    const before = { ...readyCodex, installed: false, checkedAt: "2026-10-18T03:30:40.000Z" };
+    const recheckedAt = "2026-10-18T03:30:45.000Z";
+    expect(providerStreamHasRecheck(before, recheckedAt)).toBe(false);
+    expect(providerStreamHasRecheck(undefined, recheckedAt)).toBe(false);
+    expect(providerStreamHasRecheck({ ...readyCodex, checkedAt: recheckedAt }, recheckedAt)).toBe(
+      true,
+    );
   });
 });
 
