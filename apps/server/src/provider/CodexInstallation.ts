@@ -179,6 +179,9 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   const activePath = path.join(managedDirectory, "active.json");
   const executableName = platform === "win32" ? "codex.exe" : "codex";
   const gate = yield* Semaphore.make(1);
+  // UpComputer: one local CLI probe at a time, so consumers that arrive while
+  // the startup probe runs wait for its cached result instead of probing again.
+  const localProbe = yield* Semaphore.make(1);
   let leases = 0;
   let running: { readonly operationId: string; readonly fiber: Fiber.Fiber<void> } | undefined;
   const state = yield* SubscriptionRef.make<ProviderInstallState>({
@@ -375,6 +378,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       return advisory?.status === "supported" ? executable : null;
     },
     Effect.orElseSucceed(() => null),
+    (effect) => localProbe.withPermit(effect),
   );
   const resolve = Effect.fn("CodexInstallation.resolve")(function* () {
     const local = yield* resolveLocal();
@@ -383,20 +387,22 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   const reuseLocal = Effect.fn("CodexInstallation.reuseLocal")(function* () {
     const local = yield* resolveLocal();
     if (!local) return false;
-    yield* SubscriptionRef.update(
-      state,
-      (current) =>
-        ({
-          ...current,
-          phase: "succeeded",
-          source: "local",
-          operationId: null,
-          installedVersion: local.version,
-          executablePath: local.executablePath,
-          downloadedBytes: 0,
-          totalBytes: null,
-          message: null,
-        }) satisfies ProviderInstallState,
+    yield* SubscriptionRef.update(state, (current) =>
+      // UpComputer: the startup probe finishes in the background and must not
+      // overwrite an install the user started meanwhile.
+      isRunning(current)
+        ? current
+        : ({
+            ...current,
+            phase: "succeeded",
+            source: "local",
+            operationId: null,
+            installedVersion: local.version,
+            executablePath: local.executablePath,
+            downloadedBytes: 0,
+            totalBytes: null,
+            message: null,
+          } satisfies ProviderInstallState),
     );
     return true;
   });
@@ -727,7 +733,6 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       canRemove = Option.isNone(remaining) || remaining.value.length > 0;
     }
     yield* SubscriptionRef.update(state, (current) => ({ ...current, canRemove }));
-    if (yield* reuseLocal()) return;
     if (!(yield* fs.exists(activePath))) return;
     const active = yield* readRecord(activePath, ActiveRelease);
     const installed = yield* completedRelease(active.version);
@@ -754,6 +759,10 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       ),
     ),
   );
+  // UpComputer: a local CLI still wins over the managed runtime, but probing it
+  // (up to VERSION_PROBE_TIMEOUT_MS on a cold or hung launcher) runs after
+  // construction, so server startup never waits on `codex --version`.
+  yield* Effect.forkIn(reuseLocal(), serviceScope);
 
   return CodexInstallation.of({
     managedDirectory,
