@@ -8,6 +8,7 @@ import {
 } from "../state/taskPages.ts";
 import type { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import { planTaskQueryLanes, type TaskQueryLane, type ViewProjectFilter } from "./projectFilter.ts";
+import { useTasksInitialWaitOver } from "../planner/ui/tasksViewGate.ts";
 
 const PAGE_SIZE = 100;
 
@@ -51,6 +52,7 @@ export function useTaskPages(
       }),
     ),
   );
+  const initialWaitOver = useTasksInitialWaitOver();
   const loaders = useRef<TaskPageLoader[]>([]);
   const taskCache = useRef<readonly ScopedTaskListItem[]>([]);
 
@@ -129,7 +131,9 @@ export function useTaskPages(
             },
           ),
         );
-      else for (const loader of targetLoaders) loader.fail(new Error(target.access.reason));
+      // An access probe still running is not an answer: the lane keeps loading.
+      else if (target.access.availability !== "loading")
+        for (const loader of targetLoaders) loader.fail(new Error(target.access.reason));
     }
     // Foreground is a recovery boundary, not a recurring polling interval.
     const foreground = () => {
@@ -166,6 +170,7 @@ export function useTaskPages(
   const errors = states.flatMap((state) => (state.error ? [state.error] : []));
   const initialLoading =
     states.length < lanes.length || states.some((state) => state.initialLoading);
+  const accessPending = lanes.some((lane) => lane.target.access.availability === "loading");
   return {
     tasks: taskCache.current,
     statuses: [...new Set(states.flatMap((state) => state.page?.statuses ?? []))],
@@ -173,7 +178,9 @@ export function useTaskPages(
     loadingMore: states.some((state) => state.loadingMore),
     errorMessage: [...new Set(errors)].join(" "),
     status: initialLoading
-      ? ("loading" as const)
+      ? accessPending && initialWaitOver
+        ? ("offline" as const)
+        : ("loading" as const)
       : errors.length > 0
         ? ("error" as const)
         : ("ready" as const),

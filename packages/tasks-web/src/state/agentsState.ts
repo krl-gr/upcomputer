@@ -73,14 +73,17 @@ export async function loadAgentsState(
       const previousAgents = prior?.agents ?? [];
       const previousRuns = prior?.runs ?? [];
       if (!target.access.canReadAgents) {
+        // An access probe still running is not an answer: the page waits for it.
         return [
           target.environmentId,
-          {
-            status: "unavailable",
-            agents: previousAgents,
-            runs: previousRuns,
-            message: target.access.reason,
-          },
+          target.access.availability === "loading"
+            ? { status: "loading", agents: previousAgents, runs: previousRuns }
+            : {
+                status: "unavailable",
+                agents: previousAgents,
+                runs: previousRuns,
+                message: target.access.reason,
+              },
         ];
       }
       const [agentsResult, runsResult] = await Promise.allSettled([

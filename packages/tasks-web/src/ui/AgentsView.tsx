@@ -94,7 +94,7 @@ export interface AgentsViewProps {
   readonly projectSelect?: ReactNode;
   readonly tasks: readonly ScopedTask[];
   readonly runs: readonly ScopedTaskAgentRun[];
-  readonly status: "loading" | "ready" | "error";
+  readonly status: "loading" | "ready" | "error" | "offline";
   readonly errorMessage?: string;
   readonly initialSelectedAgentKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
@@ -1345,10 +1345,15 @@ export function AgentsView(props: AgentsViewProps) {
             <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
               {props.errorMessage ?? "Failed to load agents"}
             </div>
-          ) : visibleAgents.length === 0 ? (
+          ) : props.status === "offline" ? (
+            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+              The environment with Tasks is not reachable right now. Agents show when it connects.
+            </div>
+          ) : null}
+          {props.status === "error" ? null : visibleAgents.length === 0 ? (
             // Blank while the list loads: it arrives within a moment of the page,
             // and a loading text would only flash before it.
-            props.status === "loading" ? null : (
+            props.status === "loading" || props.status === "offline" ? null : (
               <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                 {projectFilter && props.agents.length > 0 ? (
                   `No agents for ${projectFilter.label}`
