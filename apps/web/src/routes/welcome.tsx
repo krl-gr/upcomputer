@@ -4,10 +4,8 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 
+import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { SidebarInset } from "../components/ui/sidebar";
-import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
-import { isElectron } from "../env";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
@@ -43,13 +41,7 @@ function WelcomeRouteView() {
   const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
   return (
     <>
-      {startsWithoutProject ? (
-        <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-          {isElectron ? <WorkspacePageHeader electron /> : null}
-        </SidebarInset>
-      ) : (
-        <NoProjectsHero />
-      )}
+      {startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />}
       {isWelcomeRoute && !dismissed ? (
         <FirstRunSetup
           localAvailable={localAvailable}

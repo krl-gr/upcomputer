@@ -87,6 +87,9 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => () => undefined,
   useParams: (options: { select: (params: object) => unknown }) => options.select({}),
   useRouter: () => ({ navigate: () => undefined }),
+  useRouterState: (options: {
+    select: (state: { matches: ReadonlyArray<{ pathname: string }> }) => unknown;
+  }) => options.select({ matches: [{ pathname: "/tasks" }] }),
   Link: (props: { className?: string; children?: ReactNode; "aria-label"?: string }) => (
     <a aria-label={props["aria-label"]} className={props.className}>
       {props.children}

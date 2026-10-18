@@ -6,6 +6,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
+import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import {
   describeWorkspaceWaiting,
@@ -150,7 +151,7 @@ function IndexDraftLanding() {
   ]);
 
   // Upstream renders nothing while it waits.
-  const pending = startsWithoutProject ? <HomePending /> : null;
+  const pending = startsWithoutProject ? <BlankWorkspacePage /> : null;
   if (!projectsKnown) {
     return pending;
   }
@@ -170,7 +171,7 @@ function IndexDraftLanding() {
     );
   }
   if (scratchTarget !== null) {
-    return <HomePending />;
+    return <BlankWorkspacePage />;
   }
   // UpComputer: the scratch environment offers a chat once it connects.
   switch (
@@ -181,25 +182,13 @@ function IndexDraftLanding() {
     })
   ) {
     case "pending":
-      return <HomePending />;
+      return <BlankWorkspacePage />;
     case "waiting":
       return <HomeWaiting waitingOn={workspaceDelivery.waitingOn} />;
     case "hero":
       // Without a chat to open (no environment offers one, or opening it failed), the hero offers both ways in.
       return <NoProjectsHero />;
   }
-}
-
-/**
- * Blank page while home picks its draft. Rendering nothing would leave the
- * window's own background (the macOS vibrancy) where the page then appears.
- */
-function HomePending() {
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      {isElectron ? <WorkspacePageHeader electron /> : null}
-    </SidebarInset>
-  );
 }
 
 function HomeWaiting({
