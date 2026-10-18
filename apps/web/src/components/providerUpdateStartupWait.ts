@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import {
-  admittedProviderUpdateKeys,
+  admitProviderUpdatePrompt,
   PROVIDER_UPDATE_STARTUP_WAIT_MS,
   settleProviderUpdateEnvironments,
   unresolvedProviderUpdateKeys,
@@ -71,13 +71,11 @@ export function useProviderUpdateLaunchSettling<
         : environments,
     [admittedKeys, enabled, environments, lateKeys, sessionKnown],
   );
-  // Before paint, so no later render can show a set other than the admitted
-  // one. Nothing is admitted before an environment registers.
+  // Before paint, so no later render can show a set other than the admitted one.
   useLayoutEffect(() => {
-    if (!enabled || settled === null || settled.length === 0 || state.admittedKeys !== null) {
-      return;
-    }
-    publish({ admittedKeys: admittedProviderUpdateKeys(settled) });
+    if (!enabled || settled === null || state.admittedKeys !== null) return;
+    const admittedKeys = admitProviderUpdatePrompt(settled);
+    if (admittedKeys !== null) publish({ admittedKeys });
   }, [enabled, settled]);
   return settled;
 }

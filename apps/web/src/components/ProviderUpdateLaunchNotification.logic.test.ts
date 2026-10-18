@@ -9,7 +9,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 
 import {
-  admittedProviderUpdateKeys,
+  admitProviderUpdatePrompt,
   buildLocalEnvironmentUpdateGroups,
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -1301,7 +1301,7 @@ describe("provider update launch prompt settling", () => {
             admittedKeys,
           });
           if (settled === null) return "waiting";
-          if (settled.length > 0) admittedKeys ??= admittedProviderUpdateKeys(settled);
+          admittedKeys ??= admitProviderUpdatePrompt(settled);
           return localEnvironmentUpdateNotificationKey(
             buildLocalEnvironmentUpdateGroups(settled).groups,
           );
@@ -1338,6 +1338,16 @@ describe("provider update launch prompt settling", () => {
       );
       expect(session.shownKey(inputs("ready", [vmCodex], [codex, openCode]))).toBe(
         "primary-env=codex:2.0.0",
+      );
+    });
+
+    it("admits nothing before there is an update to show", () => {
+      // The frame audit's slow cold start: the primary settled before its
+      // provider list arrived, and the providers that came then were left out.
+      const session = launch();
+      expect(session.shownKey(inputs("connecting", [], []).slice(0, 1))).toBeNull();
+      expect(session.shownKey(inputs("connecting", [], [codex, openCode]).slice(0, 1))).toBe(
+        "primary-env=codex:2.0.0,opencode:2.0.0",
       );
     });
 

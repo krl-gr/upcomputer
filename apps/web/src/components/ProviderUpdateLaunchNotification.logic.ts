@@ -217,8 +217,8 @@ export function unresolvedProviderUpdateKeys(
  * whether it can update, and for `unresolvedProviderUpdateKeys`, until
  * `lateKeys` is set when `PROVIDER_UPDATE_STARTUP_WAIT_MS` ends. Then the
  * prompt shows the connected environments' settled providers, without what
- * was late. Its first result is admitted for the session
- * (`admittedProviderUpdateKeys`): an environment that was offline, connecting
+ * was late. What it shows first is admitted for the session
+ * (`admitProviderUpdatePrompt`): an environment that was offline, connecting
  * or absent then, or a provider that was late, never joins a prompt the user
  * saw; the next launch includes it. Unresolved providers never count as
  * candidates.
@@ -261,10 +261,21 @@ export function settleProviderUpdateEnvironments<
     });
 }
 
-/** The environments and providers a launch prompt admitted when it first settled. */
-export function admittedProviderUpdateKeys(
+/**
+ * What a launch prompt admits for the session once it first has an update to
+ * show: its environments and their providers. Null until then, so a provider
+ * list that arrives after the prompt settled empty still counts.
+ */
+export function admitProviderUpdatePrompt(
   settled: ReadonlyArray<ProviderUpdateSettlingEnvironment>,
-): ReadonlySet<string> {
+): ReadonlySet<string> | null {
+  if (
+    !settled.some(
+      (environment) => collectProviderUpdateCandidates(environment.providers).length > 0,
+    )
+  ) {
+    return null;
+  }
   const keys = new Set<string>();
   for (const environment of settled) {
     keys.add(environment.environmentId);
