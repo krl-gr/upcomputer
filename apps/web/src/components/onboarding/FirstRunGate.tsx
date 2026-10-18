@@ -29,11 +29,12 @@ import { environmentProjects } from "../../state/projects";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../../state/server";
 import { environmentShell } from "../../state/shell";
 import { environmentThreadShells } from "../../state/threads";
+import { BootSplash } from "../BootSplash";
 import { Button } from "../ui/button";
 
 /**
- * Nothing renders while pending — no shell, no EventRouter (whose welcome
- * payload would otherwise navigate into a thread), no dialogs.
+ * Only the boot splash renders while pending: no shell, no EventRouter (whose
+ * welcome payload would otherwise navigate into a thread), no dialogs.
  */
 
 const FIRST_RUN_DECISION_TIMEOUT_MS = 4_000;
@@ -174,7 +175,7 @@ export function FirstRunGate({
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
   if (decision !== "app") {
-    return stalled ? <FirstRunRecovery reason="connection" /> : null;
+    return stalled ? <FirstRunRecovery reason="connection" /> : <BootSplash />;
   }
   return children;
 }
