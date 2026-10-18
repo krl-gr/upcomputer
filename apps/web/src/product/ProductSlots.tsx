@@ -1,6 +1,7 @@
 import { createElement, lazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -139,11 +140,15 @@ const rightPanelSurfaces = new Map<string, ComponentType<ExperimentalWebRightPan
   WEB_PRODUCT.rightPanelSurfaces.map((surface) => [surface.id, lazy(surface.load)]),
 );
 
-function ProductPage(props: { readonly page: ComponentType | undefined }) {
+function ProductPage(props: {
+  readonly page: ComponentType | undefined;
+  readonly fallback: ReactNode;
+}) {
   const Page = props.page;
-  if (Page === undefined) return null;
+  // The path moved on to another route that is still loading.
+  if (Page === undefined) return props.fallback;
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={props.fallback}>
       <Page />
     </Suspense>
   );
@@ -151,12 +156,23 @@ function ProductPage(props: { readonly page: ComponentType | undefined }) {
 
 /** The feature page at a top-level path; the route has already checked it exists. */
 export function ProductRoutePage(props: { readonly pathname: string }) {
-  return <ProductPage page={routePages.get(props.pathname)} />;
+  // A page sets its own background, so it loads on a blank page. Keyed by
+  // path, so the previous page never stays up under the next one's nav item.
+  // The pathname is the location's, which moves before the next route loads.
+  return (
+    <ProductPage
+      key={props.pathname}
+      page={routePages.get(props.pathname)}
+      fallback={<BlankWorkspacePage />}
+    />
+  );
 }
 
 /** The feature settings section at a path; the route has already checked it exists. */
 export function ProductSettingsPage(props: { readonly pathname: string }) {
-  return <ProductPage page={settingsPages.get(props.pathname)} />;
+  return (
+    <ProductPage key={props.pathname} page={settingsPages.get(props.pathname)} fallback={null} />
+  );
 }
 
 /** Feature surfaces the right panel beside a thread offers after core's. */
