@@ -1,7 +1,11 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { getProviderSummary, getProviderVersionAdvisoryPresentation } from "./providerStatus";
+import {
+  getProviderStatusKey,
+  getProviderSummary,
+  getProviderVersionAdvisoryPresentation,
+} from "./providerStatus";
 
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -18,6 +22,25 @@ const provider: ServerProvider = {
 };
 
 describe("getProviderSummary", () => {
+  it("shows a provider whose first check is still running as checking, without a warning", () => {
+    // The placeholder a driver publishes at startup: not installed, warning,
+    // unknown auth. Before this it read "Not found" or "Needs attention".
+    const pending: ServerProvider = {
+      ...provider,
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "OpenCode provider status has not been checked in this session yet.",
+      statusPending: true,
+    };
+    expect(getProviderSummary(pending)).toEqual({ headline: "Checking…", detail: null });
+    expect(getProviderStatusKey(pending, true)).toBe("checking");
+    expect(getProviderStatusKey(undefined, true)).toBe("checking");
+    expect(getProviderStatusKey(pending, false)).toBe("disabled");
+    expect(getProviderStatusKey({ ...pending, statusPending: false }, true)).toBe("warning");
+  });
+
   it("reports ready providers with unknown authentication as available", () => {
     expect(getProviderSummary({ ...provider, auth: { status: "unknown" } })).toEqual({
       headline: "Available",

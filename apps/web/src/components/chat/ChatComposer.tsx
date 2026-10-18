@@ -2154,6 +2154,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
+    environmentId,
     providers: providerStatuses,
     selectedProvider,
     selectedInstanceId,

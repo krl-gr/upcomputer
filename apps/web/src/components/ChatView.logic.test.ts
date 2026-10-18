@@ -1,4 +1,7 @@
 import { findRecordedWorktreeSetup, resolveVisibleWorktreeSetup } from "./ChatView.logic";
+import * as Schema from "effect/Schema";
+
+import { getLocalStorageItem } from "../hooks/useLocalStorage";
 import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
@@ -1874,6 +1877,16 @@ describe("checkout Git memory", () => {
   it("does not confuse an environment id containing the separator with a path", () => {
     rememberCheckoutIsRepo(EnvironmentId.make("env"), "a:b", false);
     expect(recallCheckoutIsRepo(EnvironmentId.make("env:a"), "b")).toBeUndefined();
+  });
+  it("stays in the session on the upstream surface", () => {
+    rememberCheckoutIsRepo(environmentId, "/repo/session-folder", false);
+    expect(recallCheckoutIsRepo(environmentId, "/repo/session-folder")).toBe(false);
+    expect(
+      getLocalStorageItem(
+        "upcomputer:checkout-is-repo:v1",
+        Schema.Record(Schema.String, Schema.Boolean),
+      ),
+    ).toBeNull();
   });
 });
 

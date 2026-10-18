@@ -32,6 +32,82 @@ import {
   type LinkedProjectScopeThread,
 } from "../linkedProjects/projectScope";
 
+/**
+ * What the sidebar's lists may show while startup data loads. On UpComputer's
+ * surface an empty list is a claim ("No threads yet"), so it needs every
+ * environment's live data; past the first-load deadline an environment that
+ * has not sent it gets a waiting notice instead. The Projects rows wait until
+ * the scratch project can be told apart (cached shells and server configs are
+ * enough), so they never change or move the Threads header. The gates never
+ * turn false again. Upstream shows its lists as they load.
+ */
+export function resolveSidebarListVisibility(input: {
+  readonly surface: "upstream" | "upcomputer";
+  readonly workspaceKnown: boolean;
+  readonly workspaceSettled: boolean;
+  readonly workspaceDelivered: boolean;
+}): {
+  readonly projectRowsShown: boolean;
+  readonly emptyState: "hidden" | "empty" | "waiting";
+} {
+  if (input.surface === "upstream") return { projectRowsShown: true, emptyState: "empty" };
+  return {
+    projectRowsShown: input.workspaceKnown,
+    emptyState: input.workspaceDelivered ? "empty" : input.workspaceSettled ? "waiting" : "hidden",
+  };
+}
+
+/** UpComputer: what to say instead of an empty claim while environments have not sent data. */
+export function describeWorkspaceWaiting(
+  waitingOn: ReadonlyArray<{
+    readonly label: string;
+    readonly isPrimary: boolean;
+    readonly unreachable: boolean;
+  }>,
+): { readonly text: string; readonly unreachable: boolean } {
+  const name = (environment: (typeof waitingOn)[number]) =>
+    environment.isPrimary ? "this device" : environment.label;
+  const unreachable = waitingOn.filter((environment) => environment.unreachable);
+  const [firstUnreachable] = unreachable;
+  if (firstUnreachable !== undefined) {
+    return {
+      text:
+        unreachable.length === 1
+          ? `Can’t reach ${name(firstUnreachable)} right now.`
+          : `Can’t reach ${unreachable.length} environments right now.`,
+      unreachable: true,
+    };
+  }
+  const [first] = waitingOn;
+  return {
+    text:
+      first === undefined
+        ? "Connecting…"
+        : waitingOn.length === 1
+          ? `Connecting to ${name(first)}…`
+          : `Connecting to ${waitingOn.length} environments…`,
+    unreachable: false,
+  };
+}
+
+/**
+ * UpComputer: thread rows of an environment appear once its live shell
+ * settled, as a cached list can be stale or partial. Each environment counts
+ * on its own, so a slow or reconnecting one never hides another's rows.
+ */
+export function filterSidebarThreadsBySettledEnvironment<
+  T extends { readonly environmentId: EnvironmentId },
+>(
+  threads: readonly T[],
+  surface: "upstream" | "upcomputer",
+  settledEnvironmentIds: ReadonlySet<EnvironmentId>,
+): readonly T[] {
+  if (surface === "upstream") return threads;
+  return threads.every((thread) => settledEnvironmentIds.has(thread.environmentId))
+    ? threads
+    : threads.filter((thread) => settledEnvironmentIds.has(thread.environmentId));
+}
+
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
   readonly currentThreadKey: string | null;

@@ -481,3 +481,17 @@ export function resolveLiveThreadBranchUpdate(input: {
 }
 
 export { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
+
+/**
+ * UpComputer: whether the Git controls wait for their first status. Until it
+ * arrives neither the repository actions nor "Initialize Git" is known to
+ * apply, and a folder without Git showed Commit before Initialize Git.
+ * Upstream mounts them at once, as a repository.
+ */
+export function gitActionsWaitForFirstStatus(input: {
+  readonly surface: "upstream" | "upcomputer";
+  readonly presentation: "toolbar" | "menu";
+  readonly statusKnown: boolean;
+}): boolean {
+  return input.surface === "upcomputer" && input.presentation !== "menu" && !input.statusKnown;
+}

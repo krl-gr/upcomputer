@@ -113,6 +113,8 @@ export function shouldOfferModelPickerSetup(
   return (
     entry.enabled &&
     entry.status !== "disabled" &&
+    // UpComputer: a provider still being checked has not shown that it needs setup.
+    entry.snapshot.statusPending !== true &&
     hasProviderSetup(entry.snapshot) &&
     (!isProviderInstancePickerReady(entry) ||
       !entry.installed ||

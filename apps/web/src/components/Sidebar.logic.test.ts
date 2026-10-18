@@ -6,6 +6,8 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
+  describeWorkspaceWaiting,
+  resolveSidebarListVisibility,
   animateSidebarLayoutChanges,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
@@ -2324,5 +2326,79 @@ describe("Working shelf (beta)", () => {
         unsnooze: false,
       });
     });
+  });
+});
+
+describe("resolveSidebarListVisibility", () => {
+  const visibility = (
+    surface: "upstream" | "upcomputer",
+    workspaceKnown: boolean,
+    workspaceSettled: boolean,
+    workspaceDelivered: boolean,
+  ) =>
+    resolveSidebarListVisibility({ surface, workspaceKnown, workspaceSettled, workspaceDelivered });
+
+  it("keeps UpComputer's Projects rows and empty state back until their data is known", () => {
+    // The relaunch frame that showed "No threads yet" without "All projects"
+    // and "No project" while a thread existed.
+    expect(visibility("upcomputer", false, false, false)).toEqual({
+      projectRowsShown: false,
+      emptyState: "hidden",
+    });
+    // Cached shells and server configs place the Projects rows; the empty
+    // state waits for live shells.
+    expect(visibility("upcomputer", true, false, false)).toEqual({
+      projectRowsShown: true,
+      emptyState: "hidden",
+    });
+    expect(visibility("upcomputer", true, true, true)).toEqual({
+      projectRowsShown: true,
+      emptyState: "empty",
+    });
+  });
+
+  it("says it is waiting, not empty, when the deadline passed without live data", () => {
+    // Astra review G2: a slow cold start reached the deadline and claimed
+    // "No threads yet" while the primary was still connecting.
+    expect(visibility("upcomputer", true, true, false)).toEqual({
+      projectRowsShown: true,
+      emptyState: "waiting",
+    });
+  });
+
+  it("keeps upstream's lists as they were", () => {
+    expect(visibility("upstream", false, false, false)).toEqual({
+      projectRowsShown: true,
+      emptyState: "empty",
+    });
+  });
+});
+
+describe("describeWorkspaceWaiting", () => {
+  const environment = (label: string, unreachable = false, isPrimary = false) => ({
+    label,
+    isPrimary,
+    unreachable,
+  });
+
+  it("names the environment it is connecting to", () => {
+    expect(describeWorkspaceWaiting([])).toEqual({ text: "Connecting…", unreachable: false });
+    expect(describeWorkspaceWaiting([environment("Local", false, true)])).toEqual({
+      text: "Connecting to this device…",
+      unreachable: false,
+    });
+    expect(describeWorkspaceWaiting([environment("Cloud VM"), environment("Laptop")])).toEqual({
+      text: "Connecting to 2 environments…",
+      unreachable: false,
+    });
+  });
+
+  it("says which environment it cannot reach, so the user can check its connection", () => {
+    expect(
+      describeWorkspaceWaiting([environment("Laptop"), environment("Cloud VM", true)]),
+    ).toEqual({ text: "Can’t reach Cloud VM right now.", unreachable: true });
+    expect(
+      describeWorkspaceWaiting([environment("Laptop", true), environment("Cloud VM", true)]),
+    ).toEqual({ text: "Can’t reach 2 environments right now.", unreachable: true });
   });
 });

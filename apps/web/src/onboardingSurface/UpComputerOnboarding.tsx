@@ -42,6 +42,8 @@ import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
 import {
   getOnboardingProviderState,
+  ONBOARDING_RECHECK_STREAM_WAIT_MS,
+  onboardingRecheckPending,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -165,8 +167,24 @@ export function UpComputerOnboarding({
   const [installFailed, setInstallFailed] = useState<ReadonlySet<UpComputerOnboardingDriver>>(
     new Set(),
   );
-  // Between Close and the recheck's answer the provider still reads as before.
-  const [rechecking, setRechecking] = useState<UpComputerOnboardingDriver | null>(null);
+  // Between Close and the recheck's result reaching the provider stream, the
+  // provider still reads as before. `checkedAt` is that result's, once it answered.
+  const [rechecking, setRechecking] = useState<{
+    readonly driver: UpComputerOnboardingDriver;
+    readonly checkedAt: string | null;
+    readonly streamWaitOver: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (rechecking === null || rechecking.checkedAt === null || rechecking.streamWaitOver) return;
+    const timer = setTimeout(
+      () =>
+        setRechecking((current) =>
+          current === rechecking ? { ...rechecking, streamWaitOver: true } : current,
+        ),
+      ONBOARDING_RECHECK_STREAM_WAIT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [rechecking]);
 
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
@@ -263,12 +281,32 @@ export function UpComputerOnboarding({
   };
 
   const recheck = (driver: UpComputerOnboardingDriver) => {
-    setRechecking(driver);
+    setRechecking({ driver, checkedAt: null, streamWaitOver: false });
     return refreshProviders({ environmentId, input: {} }).then((refreshed) => {
-      setRechecking((current) => (current === driver ? null : current));
+      const checkedAt =
+        refreshed._tag === "Success"
+          ? (selectOnboardingProvidersByDriver(refreshed.value.providers).get(driver)?.checkedAt ??
+            null)
+          : null;
+      setRechecking((current) =>
+        current?.driver !== driver
+          ? current
+          : checkedAt === null
+            ? null
+            : { driver, checkedAt, streamWaitOver: false },
+      );
       return refreshed;
     });
   };
+  const recheckingDriver =
+    rechecking !== null &&
+    onboardingRecheckPending({
+      streamed: byDriver.get(rechecking.driver),
+      recheckedAt: rechecking.checkedAt,
+      streamWaitOver: rechecking.streamWaitOver,
+    })
+      ? rechecking.driver
+      : null;
 
   const closeTerminal = (session: AgentTerminalSession) => {
     setTerminalSession(null);
@@ -483,7 +521,7 @@ export function UpComputerOnboarding({
           serverConfig={serverConfig}
           canOperateTerminal={canOperateTerminal}
           terminalOpen={terminal !== null}
-          rechecking={rechecking === driver}
+          rechecking={recheckingDriver === driver}
           installFailed={installFailed.has(driver)}
           onRun={() => provider && openTerminal(driver, provider)}
           onRecheck={() => void recheck(driver)}

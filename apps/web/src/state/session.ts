@@ -29,6 +29,16 @@ export function useEnvironmentScope(
   return sessionHasScope(result, scope);
 }
 
+/** Whether the environment's session has loaded, so a missing scope is a real answer. */
+export function useEnvironmentSessionKnown(environmentId: EnvironmentId | null): boolean {
+  const result = useAtomValue(
+    environmentId === null
+      ? EMPTY_SESSION_STATE_ATOM
+      : environmentSession.sessionStateAtom(environmentId),
+  );
+  return !AsyncResult.isInitial(result);
+}
+
 function sessionHasScope(
   result: AsyncResult.AsyncResult<AuthSessionState, unknown>,
   scope: AuthEnvironmentScope,

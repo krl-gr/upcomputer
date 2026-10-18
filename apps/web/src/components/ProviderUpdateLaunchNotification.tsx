@@ -14,6 +14,7 @@ import {
   localEnvironmentUpdateNotificationKey,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
+import { useProviderUpdateLaunchPresentation } from "./providerUpdateStartupWait";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 function useHasLocalSecondaryEnvironment(): boolean {
@@ -27,8 +28,12 @@ function useHasLocalSecondaryEnvironment(): boolean {
 
 export function ProviderUpdateLaunchNotification() {
   const hasLocalSecondary = useHasLocalSecondaryEnvironment();
+  // Upstream never admits, so this is the topology there.
+  const presentation = useProviderUpdateLaunchPresentation(
+    hasLocalSecondary ? "environments" : "primary",
+  );
 
-  return hasLocalSecondary ? (
+  return presentation === "environments" ? (
     <ProviderUpdateEnvironmentsNotification />
   ) : (
     <ProviderUpdatePrimaryNotification />
@@ -79,6 +84,7 @@ function ProviderUpdateEnvironmentsNotification() {
     [updateGroups],
   );
 
+  // UpComputer's settling in `useLocalEnvironmentUpdateGroups` ends sooner.
   const [settleGraceElapsed, setSettleGraceElapsed] = useState(false);
   useEffect(() => {
     if (!isAnySettling) {

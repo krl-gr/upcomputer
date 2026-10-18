@@ -4,9 +4,12 @@ import { useMemo } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { useEnvironmentSessionKnown } from "~/state/session";
+import { productSurface } from "~/product/productFlags";
+import { useProviderUpdateLaunchSettling } from "./providerUpdateStartupWait";
 import {
-  buildLocalEnvironmentUpdateGroups,
   deriveEnvironmentDisplayLabel,
+  launchPromptEnvironmentUpdateGroups,
   type EnvironmentUpdateConnectionState,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
@@ -39,8 +42,9 @@ export function useLocalEnvironmentUpdateGroups(): {
 } {
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const sessionKnown = useEnvironmentSessionKnown(primaryEnvironmentId);
 
-  return useMemo(() => {
+  const inputs = useMemo(() => {
     const inputs: LocalEnvironmentProvidersInput[] = [];
 
     for (const environment of environments) {
@@ -70,7 +74,18 @@ export function useLocalEnvironmentUpdateGroups(): {
     }
 
     inputs.sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
-
-    return buildLocalEnvironmentUpdateGroups(inputs);
+    return inputs;
   }, [environments, primaryEnvironmentId]);
+  const surface = productSurface("providerUpdateLaunchNotification");
+  const settled = useProviderUpdateLaunchSettling({
+    environments: inputs,
+    sessionKnown,
+    enabled: surface === "upcomputer",
+    presentation: "environments",
+  });
+
+  return useMemo(
+    () => launchPromptEnvironmentUpdateGroups({ surface, environments: inputs, settled }),
+    [inputs, settled, surface],
+  );
 }

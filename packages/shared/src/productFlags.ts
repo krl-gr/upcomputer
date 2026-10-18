@@ -124,6 +124,13 @@ export interface ProductSurfaces {
    * which has the Connect step it needs.
    */
   readonly onboarding: ProductSurfaceVariant;
+  /**
+   * The provider update prompt at launch. With `upcomputer` it waits a bounded
+   * time for provider checks and connecting local environments, then admits
+   * what settled once, so it never changes text or count; anything later waits
+   * for the next launch.
+   */
+  readonly providerUpdateLaunchNotification: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -136,6 +143,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerContextRow: "upstream",
   sidebarVibrancy: "upstream",
   onboarding: "upstream",
+  providerUpdateLaunchNotification: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -146,6 +154,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerContextRow: "upcomputer",
   sidebarVibrancy: "upcomputer",
   onboarding: "upcomputer",
+  providerUpdateLaunchNotification: "upcomputer",
 });
 
 type CapabilityKey = {

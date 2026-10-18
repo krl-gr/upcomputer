@@ -157,6 +157,27 @@ describe("resolveModelPickerSelectedModel", () => {
 describe("shouldOfferModelPickerSetup", () => {
   const availableModel = { slug: "gemini-3.1-pro", name: "Gemini 3.1 Pro" };
 
+  it("does not offer setup for a provider whose first check is still running", () => {
+    const providerEntry = entry("warning", "antigravity");
+    const pending = {
+      ...providerEntry,
+      installed: false,
+      snapshot: {
+        ...providerEntry.snapshot,
+        installed: false,
+        auth: { status: "unknown" as const },
+        statusPending: true,
+      },
+    };
+    expect(shouldOfferModelPickerSetup(pending, [])).toBe(false);
+    expect(
+      shouldOfferModelPickerSetup(
+        { ...pending, snapshot: { ...pending.snapshot, statusPending: false } },
+        [],
+      ),
+    ).toBe(true);
+  });
+
   it("offers setup before an Antigravity account has models", () => {
     expect(shouldOfferModelPickerSetup(entry("error", "antigravity"), [])).toBe(true);
   });
