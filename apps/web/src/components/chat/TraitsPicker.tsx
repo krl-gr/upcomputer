@@ -652,7 +652,12 @@ export const TraitsPicker = memo(function TraitsPicker({
                 size === "xs" ? "gap-1" : "gap-1.5",
               )}
             >
-              <ComposerControlIcon icon={BrainIcon} size={size} />
+              <span
+                data-composer-control-compact-icon
+                className="pointer-events-none invisible absolute"
+              >
+                <ComposerControlIcon icon={BrainIcon} size={size} />
+              </span>
               <span data-composer-control-label className="min-w-0 truncate">
                 {triggerLabel}
               </span>
@@ -660,7 +665,12 @@ export const TraitsPicker = memo(function TraitsPicker({
             </span>
           ) : (
             <>
-              <ComposerControlIcon icon={BrainIcon} size={size} />
+              <span
+                data-composer-control-compact-icon
+                className="pointer-events-none invisible absolute"
+              >
+                <ComposerControlIcon icon={BrainIcon} size={size} />
+              </span>
               <span data-composer-control-label>{triggerLabel}</span>
               <ComposerControlChevron size={size} />
             </>
