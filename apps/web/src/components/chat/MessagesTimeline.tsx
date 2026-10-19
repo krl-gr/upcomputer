@@ -230,6 +230,8 @@ import {
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestRun,
   type WorkGroupScrollAnchor,
+  resolveTimelineListMount,
+  type TimelineListMount,
 } from "./MessagesTimeline.logic";
 import { type ThreadFindMatch } from "./threadFind";
 import { useThreadFindNavigation } from "./useThreadFindNavigation";
@@ -1089,6 +1091,19 @@ const ConversationTimeline = memo(function ConversationTimeline({
       ? { ...config, onReady: handleAnchorReady, onSizeChanged: handleAnchorSizeChanged }
       : undefined;
   }, [anchorMessageId, handleAnchorReady, handleAnchorSizeChanged, rows]);
+  const showsEmptyState =
+    rows.length === 0 &&
+    !isWorking &&
+    parentThreadLink === null &&
+    historyControls === undefined &&
+    footer === null;
+  const [listMount, setListMount] = useState<TimelineListMount | null>(null);
+  const nextListMount = resolveTimelineListMount(listMount, {
+    listShown: !showsEmptyState,
+    identity: listIdentityKey,
+    anchoring: anchorMessageId !== null,
+  });
+  if (nextListMount !== listMount) setListMount(nextListMount);
   const maintainVisibleContentPosition = useMemo(
     () => ({
       data: true,
@@ -1521,13 +1536,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     [listRef],
   );
 
-  if (
-    rows.length === 0 &&
-    !isWorking &&
-    parentThreadLink === null &&
-    historyControls === undefined &&
-    footer === null
-  ) {
+  if (showsEmptyState) {
     if (hideEmptyPlaceholder) {
       return <div className="h-full min-h-0 bg-background" data-timeline-loading="true" />;
     }
@@ -1568,7 +1577,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
               renderItem={renderItem}
               estimatedItemSize={90}
               initialScrollAtEnd={
-                !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
+                !findActive &&
+                citationRequest === null &&
+                rememberedPosition?.atEnd !== false &&
+                nextListMount?.forSentMessage !== true
               }
               // Legend needs a data refresh to mount new pins without a scroll event.
               dataVersion={readyCitationRequest?.key ?? listIdentityKey}
