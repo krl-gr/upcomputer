@@ -301,6 +301,24 @@ it("checks OpenCode again from a failed check without asking to sign in", async 
   expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "OpenCode is ready" }));
 });
 
+it("opens the app once the stream says OpenCode is ready, before the recheck answers", async () => {
+  // LT23: Close to chat took 7.4 s because the first `opencode --version`
+  // after install took 4 s on the VM. The app opens with the stream, so the
+  // recheck adds nothing on top of the probe.
+  render();
+  await click(button("Connect", "OpenCode"));
+  setProvider("opencode", missing);
+  await click(button("Install"));
+  mocks.refresh.mockImplementationOnce(() => new Promise(() => undefined));
+  await click(button("Close terminal"));
+  expect(() => button("Install")).toThrow();
+
+  setProvider("opencode", { checkedAt: "2026-10-17T00:00:07.000Z" });
+  await act(async () => {});
+  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "OpenCode is ready" }));
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
 it("turns Grok on and installs it from its own screen", async () => {
   render();
   await click(button("Connect", "Grok"));
