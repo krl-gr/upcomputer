@@ -35,6 +35,10 @@ import {
 import { buildSidebarProjectSnapshots } from "../../../../apps/web/src/sidebarProjectGrouping.ts";
 import { orderItemsByPreferredIds } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 
+import {
+  resolveEnvironmentsViewStatus,
+  useTasksInitialWaitOver,
+} from "../planner/ui/tasksViewGate.ts";
 import type { AgentProject } from "./AgentsView.tsx";
 import { tasksEnvironmentIds, type TasksWebProject } from "./shared.ts";
 
@@ -51,9 +55,9 @@ export interface TasksWorkspaceData {
   readonly agentProjects: readonly AgentProject[];
   readonly tasks: TasksDataState;
   readonly agents: AgentsDataState;
-  readonly tasksStatus: "loading" | "ready" | "error";
+  readonly tasksStatus: "loading" | "ready" | "error" | "offline";
   readonly tasksErrorMessage?: string;
-  readonly agentsStatus: "loading" | "ready" | "error";
+  readonly agentsStatus: "loading" | "ready" | "error" | "offline";
   readonly agentsErrorMessage?: string;
   readonly getClient: (environmentId: EnvironmentId) => TasksWebRpcClient | null;
   readonly canMutateTasks: (environmentId: EnvironmentId) => boolean;
@@ -128,23 +132,6 @@ function useWorkspaceProjects(): {
       ),
     };
   }, [snapshots]);
-}
-
-function viewStatus(
-  loading: boolean,
-  states: ReadonlyArray<{
-    readonly status: "loading" | "ready" | "unavailable" | "error";
-    readonly message?: string;
-  }>,
-): { readonly status: "loading" | "ready" | "error"; readonly message?: string } {
-  if (loading) return { status: "loading" };
-  if (states.length === 0 || states.some((state) => state.status === "ready")) {
-    return { status: "ready" };
-  }
-  const failure = states.find(
-    (state) => state.status === "error" || state.status === "unavailable",
-  );
-  return failure?.message ? { status: "error", message: failure.message } : { status: "ready" };
 }
 
 export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceData {
@@ -306,8 +293,17 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
     [clientsAndAccess],
   );
   const reload = useCallback(() => setReloadVersion((current) => current + 1), []);
-  const tasksViewStatus = viewStatus(loading, Object.values(tasks.byEnvironment));
-  const agentsViewStatus = viewStatus(loading, Object.values(agents.byEnvironment));
+  const initialWaitOver = useTasksInitialWaitOver();
+  const tasksViewStatus = resolveEnvironmentsViewStatus({
+    loading,
+    states: Object.values(tasks.byEnvironment),
+    initialWaitOver,
+  });
+  const agentsViewStatus = resolveEnvironmentsViewStatus({
+    loading,
+    states: Object.values(agents.byEnvironment),
+    initialWaitOver,
+  });
 
   return {
     taskTargets,

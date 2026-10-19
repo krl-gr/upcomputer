@@ -2271,3 +2271,29 @@ export function shouldCollapseUserMessage(text: string): boolean {
     visible.split("\n").length > MAX_COLLAPSED_USER_MESSAGE_LINES
   );
 }
+
+export interface TimelineListMount {
+  readonly identity: string | null;
+  readonly forSentMessage: boolean;
+}
+
+/**
+ * UpComputer: whether the shown list mounted for a message just sent. LegendList
+ * keeps its rows hidden until a scroll to the end has landed, two frames after
+ * it mounts; the list that mounts for a message sent from the draft hero has
+ * nothing below it, and on a slow Mac those frames showed the docked composer
+ * over an empty thread for about 0.23 s. Latched per list, so the anchor of a
+ * later send never changes how a mounted list scrolls.
+ */
+export function resolveTimelineListMount(
+  previous: TimelineListMount | null,
+  input: {
+    readonly listShown: boolean;
+    readonly identity: string | null;
+    readonly anchoring: boolean;
+  },
+): TimelineListMount | null {
+  if (!input.listShown) return null;
+  if (previous !== null && previous.identity === input.identity) return previous;
+  return { identity: input.identity, forSentMessage: input.anchoring };
+}
