@@ -4,6 +4,7 @@ import {
   type Task,
   type TaskAgent,
   type TaskAgentRun,
+  type TaskEvent,
   type TaskPromptSettings,
 } from "@t3tools/tasks-contracts/v1";
 import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
@@ -34,6 +35,11 @@ import {
   composeTaskPromptSettings,
   TaskPromptSettingsStore,
 } from "../persistence/TaskPromptSettingsStore.ts";
+import {
+  previousRunSection,
+  RECENT_EVENTS_READ_LIMIT,
+  recentEventsSection,
+} from "./TaskAgentRunContext.ts";
 import {
   latestFinalizedAssistantMessage,
   makeTaskAgentResultConsumer,
@@ -274,16 +280,23 @@ function outputSection(task: Task): string {
   return output ? `\nCurrent output:\n${output}\n` : "";
 }
 
-/** `task` is read after the run started, so it shows the run's claim and current output. */
-function prompt(
-  agent: TaskAgent,
-  task: Task,
-  runId: TaskAgentRunId,
-  threadId: ThreadId,
-  settings: TaskPromptSettings,
-  globalPosition: { readonly index: number; readonly total: number },
-  trigger: RunTrigger | null,
-): string {
+/**
+ * `task` and `events` are read after the run started, so they show the run's
+ * claim, current output and recent events. Nothing here depends on the time
+ * the message is built.
+ */
+function prompt(input: {
+  readonly agent: TaskAgent;
+  readonly task: Task;
+  readonly runId: TaskAgentRunId;
+  readonly threadId: ThreadId;
+  readonly settings: TaskPromptSettings;
+  readonly globalPosition: { readonly index: number; readonly total: number };
+  readonly trigger: RunTrigger | null;
+  readonly events: ReadonlyArray<TaskEvent>;
+  readonly previousRun: TaskAgentRun | null;
+}): string {
+  const { agent, task, runId, threadId, settings, globalPosition, trigger } = input;
   return `${agent.config.instructions.trim()}
 
 Task execution guidance:
@@ -302,14 +315,14 @@ ${task.description || "(empty)"}
 ${outputSection(task)}
 Metadata:
 ${taskMetadata(task.metadata)}
-
+${recentEventsSection(input.events)}${previousRunSection(input.previousRun, Boolean(task.output?.trim()))}
 Agent run identity:
 - agentId: ${agent.id}
 - agentRunId: ${runId}
 - threadId: ${threadId}
 ${triggerSection(trigger)}
 Task system protocol:
-- Work only on the assigned task. The task above, with its output, is current as of this run's start; call task_get only when you need its events or another run may have changed it since.
+- Work only on the assigned task. The task above, its output and its recent events are current as of this run's start, so do not call task_get at the start. Call it only right before changing the task, when another run may have changed it since.
 ${claimLine(task, runId)}
 - Update task status and append concise findings as work proceeds.
 - Keep task output synchronized with the latest concise result when explicitly continuing work in this thread.
@@ -881,6 +894,11 @@ const make = Effect.gen(function* () {
       )
         return;
 
+      const [previousRun] = yield* repository.searchAgentRuns({
+        taskId: task.id,
+        agentId: agent.id,
+        limit: 1,
+      });
       let trigger: RunTrigger | null = null;
       if (agent.startRunStatuses.length > 0) {
         const triggerRuns = yield* repository.findRunStatusTriggers({
@@ -924,13 +942,8 @@ const make = Effect.gen(function* () {
           break;
         }
         if (trigger === null) return;
-      } else {
-        const [latestRun] = yield* repository.searchAgentRuns({
-          taskId: task.id,
-          agentId: agent.id,
-          limit: 1,
-        });
-        if (latestRun !== undefined && !runsAgain(agent, task, latestRun)) return;
+      } else if (previousRun !== undefined && !runsAgain(agent, task, previousRun)) {
+        return;
       }
 
       const timestamp = yield* now;
@@ -984,6 +997,10 @@ const make = Effect.gen(function* () {
           index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
           total: globallyOrderedTasks.length,
         };
+        const { events } = yield* repository.events({
+          taskId: task.id,
+          limit: RECENT_EVENTS_READ_LIMIT,
+        });
         // Task-agent threads run in the project root and stay out of thread
         // lists; the task UI links to them.
         yield* threads.dispatch({
@@ -1006,7 +1023,17 @@ const make = Effect.gen(function* () {
           commandId: CommandId.make(yield* randomId("task-agent-turn-start")),
           threadId,
           messageId: taskAgentRunMessageId(run.id),
-          text: prompt(agent, startedTask, run.id, threadId, settings, globalPosition, trigger),
+          text: prompt({
+            agent,
+            task: startedTask,
+            runId: run.id,
+            threadId,
+            settings,
+            globalPosition,
+            trigger,
+            events,
+            previousRun: previousRun ?? null,
+          }),
           attachments: [],
           modelSelection,
           mode: "auto",
