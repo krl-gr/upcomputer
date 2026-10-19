@@ -36,6 +36,33 @@ export function resolveTasksViewGate(input: {
   return input.initialWaitOver ? "offline" : "loading";
 }
 
+/**
+ * UpComputer: the Agents page's status from its environments' loads. An
+ * environment whose Tasks access is still probed loads until the initial wait
+ * passes, then counts as offline; neither is shown as an error.
+ */
+export function resolveEnvironmentsViewStatus(input: {
+  readonly loading: boolean;
+  readonly states: ReadonlyArray<{
+    readonly status: "loading" | "ready" | "unavailable" | "error";
+    readonly message?: string;
+  }>;
+  readonly initialWaitOver: boolean;
+}): { readonly status: "loading" | "ready" | "error" | "offline"; readonly message?: string } {
+  if (input.loading) return { status: "loading" };
+  const { states } = input;
+  if (states.length === 0 || states.some((state) => state.status === "ready")) {
+    return { status: "ready" };
+  }
+  if (states.some((state) => state.status === "loading")) {
+    return { status: input.initialWaitOver ? "offline" : "loading" };
+  }
+  const failure = states.find(
+    (state) => state.status === "error" || state.status === "unavailable",
+  );
+  return failure?.message ? { status: "error", message: failure.message } : { status: "ready" };
+}
+
 let initialWaitEndsAt: number | null = null;
 
 /** Whether the session's first Tasks view has waited `TASKS_INITIAL_WAIT_MS`. */

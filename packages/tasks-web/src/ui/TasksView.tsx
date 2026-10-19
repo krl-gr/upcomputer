@@ -87,6 +87,8 @@ interface TaskFormState {
 
 /** Who does a task, in its details: changing it moves the task between Agents and Me. */
 const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Agents", person: "Me" };
+const TASKS_OFFLINE_TEXT =
+  "The environment with Tasks is not reachable right now. Tasks show when it connects.";
 
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
@@ -111,7 +113,7 @@ export interface TasksViewProps {
     EnvironmentId,
     readonly ProviderInstanceEntry[]
   >;
-  readonly status: "loading" | "ready" | "error";
+  readonly status: "loading" | "ready" | "error" | "offline";
   readonly errorMessage?: string;
   readonly initialSelectedTaskKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
@@ -1376,18 +1378,24 @@ export function TasksView(props: TasksViewProps) {
                 Retry
               </button>
             </div>
+          ) : props.status === "offline" && props.tasks.length > 0 ? (
+            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+              {TASKS_OFFLINE_TEXT}
+            </div>
           ) : null}
 
           {props.tasks.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
               {props.status === "loading"
                 ? "Loading tasks..."
-                : projectFilter !== null ||
-                    statusFilter !== ALL_FILTER ||
-                    filters.tags.length > 0 ||
-                    archiveFilter !== "active"
-                  ? "No tasks match the current filters."
-                  : "No tasks yet"}
+                : props.status === "offline"
+                  ? TASKS_OFFLINE_TEXT
+                  : projectFilter !== null ||
+                      statusFilter !== ALL_FILTER ||
+                      filters.tags.length > 0 ||
+                      archiveFilter !== "active"
+                    ? "No tasks match the current filters."
+                    : "No tasks yet"}
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
