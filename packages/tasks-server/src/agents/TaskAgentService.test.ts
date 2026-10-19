@@ -12,6 +12,8 @@ import {
   type Task,
   type TaskAgent,
   type TaskAgentRun,
+  type TaskEvent,
+  TaskEventId,
 } from "@t3tools/tasks-contracts/v1";
 import {
   ProjectId,
@@ -265,7 +267,20 @@ function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
   );
 }
 
-test("a run prompt gets the global taskExecution plus its project's, from real storage", async () => {
+/**
+ * Starts the agent on the task through the service, on real prompt storage,
+ * and returns the first message of the run.
+ */
+async function firstTurn(input: {
+  readonly task?: Task;
+  /** Newest first, as the repository returns them. */
+  readonly events?: ReadonlyArray<TaskEvent>;
+  readonly previousRun?: TaskAgentRun;
+  readonly taskExecution?: ReadonlyArray<{
+    readonly projectId: string | null;
+    readonly text: string;
+  }>;
+}): Promise<string | undefined> {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upcomputer-run-prompt-"));
   try {
     const sql = NodeSqliteClient.layer({ filename: NodePath.join(directory, "tasks.sqlite") });
@@ -291,7 +306,7 @@ test("a run prompt gets the global taskExecution plus its project's, from real s
       );
 
     const configuredAgent = agent();
-    const assignedTask = task();
+    const assignedTask = input.task ?? task();
     const turns: string[] = [];
     const unused = () => Effect.die("unused repository method");
     const repository = new Proxy(
@@ -303,8 +318,10 @@ test("a run prompt gets the global taskExecution plus its project's, from real s
         getById: () => Effect.succeed(Option.some(assignedTask)),
         getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
         findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),
-        searchAgentRuns: () => Effect.succeed([]),
+        searchAgentRuns: () =>
+          Effect.succeed(input.previousRun === undefined ? [] : [input.previousRun]),
         startAgentRun: (run: unknown) => Effect.succeed(Option.some(run as never)),
+        events: () => Effect.succeed({ events: input.events ?? [] }),
         appendEvent: (event: unknown) => Effect.succeed(event as never),
       } as unknown as TaskRepositoryShape,
       {
@@ -337,22 +354,104 @@ test("a run prompt gets the global taskExecution plus its project's, from real s
 
     await Effect.runPromise(
       Effect.gen(function* () {
-        yield* write(null, "Global execution rule.");
-        yield* write(assignedTask.projectId, "Run the UpComputer checks.");
-        yield* write("project-other", "Other project rule.");
+        for (const { projectId, text } of input.taskExecution ?? []) {
+          yield* write(projectId, text);
+        }
         yield* (yield* TaskAgentService).recover;
       }).pipe(Effect.provide(layer)),
     );
-
-    const [turn] = turns;
-    NodeAssert.ok(
-      turn?.includes(
-        'Task execution guidance:\nGlobal execution rule.\n\nProject "UpComputer":\nRun the UpComputer checks.\n\nAssigned task:',
-      ),
-      turn,
-    );
-    NodeAssert.ok(!turn?.includes("Other project rule."));
+    return turns[0];
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
+}
+
+test("a run prompt gets the global taskExecution plus its project's, from real storage", async () => {
+  const turn = await firstTurn({
+    taskExecution: [
+      { projectId: null, text: "Global execution rule." },
+      { projectId: "project-1", text: "Run the UpComputer checks." },
+      { projectId: "project-other", text: "Other project rule." },
+    ],
+  });
+  NodeAssert.ok(
+    turn?.includes(
+      'Task execution guidance:\nGlobal execution rule.\n\nProject "UpComputer":\nRun the UpComputer checks.\n\nAssigned task:',
+    ),
+    turn,
+  );
+  NodeAssert.ok(!turn?.includes("Other project rule."));
+});
+
+function taskEvent(kind: string, payload: unknown, createdAt: string): TaskEvent {
+  return {
+    id: TaskEventId.make(`event-${createdAt}`),
+    taskId: TaskId.make("task-1"),
+    kind,
+    payload,
+    createdAt,
+  };
+}
+
+test("a first run without events gets no event or previous-run section", async () => {
+  const turn = await firstTurn({});
+  NodeAssert.ok(turn !== undefined);
+  NodeAssert.ok(!turn.includes("Recent task events"), turn);
+  NodeAssert.ok(!turn.includes("Your previous run"), turn);
+  NodeAssert.ok(turn.includes("Metadata:\n(none)\n\nAgent run identity:"), turn);
+  NodeAssert.ok(turn.includes("so do not call task_get at the start"), turn);
+  NodeAssert.ok(turn.includes('Claim the task by setting assigneeAgentRunId to "task-agent-run-'));
+});
+
+test("a repeat run's first message carries recent events and its previous run, deterministically", async () => {
+  const input = {
+    task: task({
+      output: "Step 1 done; blocked on the staging password.",
+      triggerChangedAt: "2026-08-04T12:00:00.000Z",
+    }),
+    previousRun: run({ status: "blocked" }),
+    events: [
+      taskEvent(
+        "note",
+        { text: "Password is in 1Password, item staging-db." },
+        "2026-08-04T11:30:00.000Z",
+      ),
+      taskEvent(
+        "task.agent-result",
+        {
+          source: "task_update",
+          agentId: "agent-1",
+          agentRunId: "run-1",
+          status: "Blocked",
+          blocked: true,
+          summary: "Needs the staging password.",
+        },
+        "2026-08-04T11:20:00.000Z",
+      ),
+      taskEvent("task.updated", { status: "Blocked", tags: ["test"] }, "2026-08-04T11:20:00.000Z"),
+      taskEvent(
+        "task.status-changed",
+        { from: "new", to: "In Progress", actor: { type: "agent-run", agentRunId: "run-1" } },
+        "2026-08-04T11:12:00.000Z",
+      ),
+    ],
+  };
+  const turn = await firstTurn(input);
+  NodeAssert.ok(turn !== undefined);
+  NodeAssert.ok(
+    turn.includes(`Recent task events (newest last; server snapshots and run starts left out):
+- 2026-08-04T11:12:00.000Z task.status-changed by run run-1: new -> In Progress
+- 2026-08-04T11:20:00.000Z task.agent-result by agent agent-1 run run-1: Needs the staging password.
+  {"source":"task_update","status":"Blocked","blocked":true}
+- 2026-08-04T11:30:00.000Z note: Password is in 1Password, item staging-db.
+
+Your previous run on this task:
+- runId: run-1
+- status: blocked
+- ended: 2026-08-04T11:20:00.000Z
+Its result is in the current output above;`),
+    turn,
+  );
+  NodeAssert.ok(turn.indexOf("Current output:") < turn.indexOf("Recent task events"));
+  NodeAssert.equal(await firstTurn(input), turn, "the same task state gives the same message");
 });

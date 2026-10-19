@@ -159,7 +159,7 @@ Adapt these templates for the agent's instructions.
 
 Queue worker (developer), started by its tag in its start status, e.g. To Do:
 - Work only on tasks with your tag in your start status.
-- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, and the run already holds it.
+- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, its output and its recent events, and the run already holds it, so do not call task_get at the start.
 - Make the smallest coherent change; verify it with tests, typecheck and lint.
 - Commit only your own files, and only if the user allowed commits.
 - Run every command in the foreground with a timeout; start no background processes.
@@ -173,7 +173,7 @@ Reviewer, started by its own tag or status:
 - End with one task_update that hands the task to a person: the review status, your trigger tag removed, and assigneeAgentRunId: null.`,
   automationCreation: `Create an automation only for genuinely recurring work. Use the user's timezone, make the generated task template self-contained, avoid duplicate open work when appropriate, and leave agent-created automations as drafts for human review.`,
   taskExecution: `Your agent's own instructions come first; where they differ from this, follow them.
-- Start from the task in this prompt; it says whether your run already holds the task. Call task_get only when you need its events or it may have changed.
+- Start from this prompt: it carries the task, its output, its recent events and whether your run already holds the task. Do not call task_get at the start; call it only right before changing the task, when another run may have changed it.
 - Keep the task status and output current, so a person can evaluate the result without reading the thread.
 - Run every command in the foreground and wait for it; start no background processes.
 - Record blockers with evidence. On quota, rate-limit or auth failures, stop and report them; do not retry.
