@@ -392,6 +392,12 @@ describe("UpComputerComposerFooter", () => {
     expect(block("traits")?.querySelector("[data-composer-control-label]")?.textContent).toBe(
       "High",
     );
+    // The brain shows only when the row runs out of room, like the access lock.
+    const brain = block("traits")!.querySelector<HTMLElement>(
+      "[data-composer-control-compact-icon]",
+    )!;
+    expect(brain.querySelector("svg")?.classList.contains("lucide-brain")).toBe(true);
+    expect(brain.className).toContain("invisible");
 
     await render(footerProps({ descriptors: [] }));
     expect(block("traits")).toBeNull();
