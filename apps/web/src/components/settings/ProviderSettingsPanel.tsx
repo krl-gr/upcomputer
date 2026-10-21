@@ -41,6 +41,7 @@ import { PlusIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
+import { withoutManagedOpenCodeNote } from "./providerStatus";
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
@@ -896,8 +897,9 @@ export function EnvironmentProviderSettings({
 
   const renderProviderInstance = (row: InstanceRow, mode: "list" | "editor") => {
     const driverOption = providerClients.get(row.driver);
-    const liveProvider = serverProviders.find(
-      (candidate) => candidate.instanceId === row.instanceId,
+    const liveProvider = withoutManagedOpenCodeNote(
+      serverProviders.find((candidate) => candidate.instanceId === row.instanceId),
+      configuredBinaryPath(row.instance.config),
     );
     const updateCandidate = providerUpdateCandidateByInstanceId.get(row.instanceId);
     const isInstanceUpdateRunning =

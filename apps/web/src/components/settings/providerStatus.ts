@@ -170,3 +170,25 @@ export function getProviderVersionAdvisoryPresentation(
     targetVersion: null,
   };
 }
+
+const MANAGED_OPENCODE_BINARY = /[\\/]tools[\\/]opencode[\\/]([^\\/]+)[\\/]opencode(?:\.exe)?$/;
+
+/**
+ * UpComputer: the OpenCode the desktop app installs for a new user, at
+ * `<home>/tools/opencode/<version>/opencode`, is a 1.x release the app pins and
+ * tests, so OpenCode's "Limited support" note for 1.x is not shown for it.
+ */
+export function withoutManagedOpenCodeNote(
+  provider: ServerProvider | undefined,
+  binaryPath: string,
+): ServerProvider | undefined {
+  if (
+    provider?.driver !== "opencode" ||
+    provider.compatibilityAdvisory?.status !== "graceful" ||
+    MANAGED_OPENCODE_BINARY.exec(binaryPath)?.[1] !== provider.version
+  ) {
+    return provider;
+  }
+  const { compatibilityAdvisory: _note, ...rest } = provider;
+  return rest;
+}

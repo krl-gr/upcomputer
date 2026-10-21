@@ -16,7 +16,8 @@ not by **Update now**.
 
 T3 Code supports OpenCode 2.0.18 and newer. It detects the version on its own, so
 the same provider settings work for OpenCode 1.x and 2.x. OpenCode 1.x shows
-**Limited support** in its provider settings.
+**Limited support** in its provider settings, except the copy the desktop app
+installs, a 1.x release that Up.computer pins and tests.
 
 OpenCode 2 is a separate package, `@opencode/cli`. To move from 1.x, install it
 yourself, for example `npm install -g @opencode/cli`. Then refresh provider status.

@@ -5,6 +5,7 @@ import {
   getProviderStatusKey,
   getProviderSummary,
   getProviderVersionAdvisoryPresentation,
+  withoutManagedOpenCodeNote,
 } from "./providerStatus";
 
 const provider: ServerProvider = {
@@ -177,5 +178,42 @@ describe("provider status copy", () => {
       headline: "Not authenticated · Company login",
       detail: "Complete this authentication method on the server.",
     });
+  });
+});
+
+describe("withoutManagedOpenCodeNote", () => {
+  const openCode: ServerProvider = {
+    ...provider,
+    instanceId: ProviderInstanceId.make("opencode"),
+    driver: ProviderDriverKind.make("opencode"),
+    version: "1.19.3",
+    compatibilityAdvisory: {
+      status: "graceful",
+      message: "This provider version has limited compatibility with this Up.computer release.",
+      recommendedVersion: null,
+      recommendedRange: null,
+    },
+  };
+  const managed =
+    "/Users/me/Library/Application Support/Up.computer/tools/opencode/1.19.3/opencode";
+
+  it("drops the 1.x note for the OpenCode the app pinned and installed", () => {
+    expect(withoutManagedOpenCodeNote(openCode, managed)?.compatibilityAdvisory).toBeUndefined();
+    expect(
+      withoutManagedOpenCodeNote(openCode, "C:\\Up\\tools\\opencode\\1.19.3\\opencode.exe")
+        ?.compatibilityAdvisory,
+    ).toBeUndefined();
+  });
+
+  it("keeps it for the user's own OpenCode and for any other advisory", () => {
+    expect(withoutManagedOpenCodeNote(openCode, "")).toBe(openCode);
+    expect(withoutManagedOpenCodeNote(openCode, "/Users/me/.opencode/bin/opencode")).toBe(openCode);
+    const other = { ...openCode, version: "1.19.4" };
+    expect(withoutManagedOpenCodeNote(other, managed)).toBe(other);
+    const broken = {
+      ...openCode,
+      compatibilityAdvisory: { ...openCode.compatibilityAdvisory!, status: "broken" as const },
+    };
+    expect(withoutManagedOpenCodeNote(broken, managed)).toBe(broken);
   });
 });
