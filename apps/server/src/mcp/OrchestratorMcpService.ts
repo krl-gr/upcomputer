@@ -2,6 +2,7 @@ import {
   CommandId,
   type RunId,
   isProviderAvailable,
+  isProviderReady,
   MessageId,
   type ModelSelection,
   NodeId,
@@ -265,8 +266,9 @@ function providerConstraints(
   if (!isProviderAvailable(provider)) {
     constraints.push(provider.unavailableReason ?? "Provider driver is unavailable.");
   }
-  // `warning` also covers not yet checked and unverified sign-in; the composer refuses those too.
-  if (provider.status !== "ready") {
+  // `warning` (not yet checked, unverified sign-in) stays delegatable: a parent running on that
+  // very instance proves it works. Readiness only decides what the listings offer.
+  if (provider.status === "error" || provider.status === "disabled") {
     constraints.push(provider.message ?? `Provider status is ${provider.status}.`);
   }
   if (provider.auth.status === "unauthenticated") {
@@ -1857,37 +1859,43 @@ const make = Effect.gen(function* () {
           runtimeMode: limits.runtimeMode,
           interactionMode: limits.interactionMode,
           providers: providers.map((provider) => {
-            const constraints = providerConstraints(
+            const blockers = providerConstraints(
               provider,
               orchestrationCapableInstanceIds.has(provider.instanceId),
             );
+            const listsModels = blockers.length === 0 && isProviderReady(provider);
+            const constraints =
+              blockers.length > 0 || listsModels
+                ? blockers
+                : [
+                    `Not verified yet. ${provider.message ?? `Provider status is ${provider.status}.`} Child tasks are still accepted, but do not offer this provider or its models to the user as available.`,
+                  ];
             return {
               providerInstanceId: provider.instanceId,
               driverKind: provider.driver,
               displayName: provider?.displayName ?? null,
-              // Agents offer any listed model, so a provider that cannot run work lists none.
-              models:
-                constraints.length > 0
-                  ? []
-                  : provider.models
-                      .filter(
-                        (model) =>
-                          model.isCustom ||
-                          !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
-                      )
-                      .map((model) => ({
-                        id: model.slug,
-                        label: model.name ?? null,
-                        ...(model.capabilities?.optionDescriptors === undefined
-                          ? {}
-                          : { options: model.capabilities.optionDescriptors }),
-                      })),
+              // Agents offer any listed model, so only a ready provider lists them.
+              models: !listsModels
+                ? []
+                : provider.models
+                    .filter(
+                      (model) =>
+                        model.isCustom ||
+                        !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
+                    )
+                    .map((model) => ({
+                      id: model.slug,
+                      label: model.name ?? null,
+                      ...(model.capabilities?.optionDescriptors === undefined
+                        ? {}
+                        : { options: model.capabilities.optionDescriptors }),
+                    })),
               ...(provider.supportedRuntimeModes === undefined ||
               provider.supportedRuntimeModes.length === 0
                 ? {}
                 : { runtimeModes: [...provider.supportedRuntimeModes] }),
-              canRunChildTask: constraints.length === 0,
-              canRunCrossProviderChildTask: constraints.length === 0,
+              canRunChildTask: blockers.length === 0,
+              canRunCrossProviderChildTask: blockers.length === 0,
               constraints: [...constraints],
             };
           }),
