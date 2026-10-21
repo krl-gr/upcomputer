@@ -326,7 +326,11 @@ const FIRST_RUN_MODELS = [
   "opencode/minimax-m3.1-flash-free",
 ];
 
-export function resolveFirstRunModel(provider: ServerProvider | undefined): string | undefined {
-  const listed = new Set(provider?.models.map((model) => model.slug));
-  return FIRST_RUN_MODELS.find((slug) => listed.has(slug));
+/**
+ * Before OpenCode lists its models, the first preference: saving it early
+ * keeps OpenCode's own default from showing for a moment once it is ready.
+ */
+export function resolveFirstRunModel(listed: ReadonlyArray<string> | null): string | undefined {
+  if (listed === null) return FIRST_RUN_MODELS[0];
+  return FIRST_RUN_MODELS.find((slug) => listed.includes(slug));
 }

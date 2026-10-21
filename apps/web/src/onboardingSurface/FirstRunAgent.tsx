@@ -85,18 +85,23 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
 
   const openCode = providers?.find((provider) => provider.instanceId === OPENCODE_INSTANCE_ID);
-  const model = openCode?.status === "ready" ? resolveFirstRunModel(openCode) : undefined;
-  const hasDefaultModel =
-    serverConfig === null || serverConfig.settings.defaultModelSelection !== null;
-  const modelSaved = useRef(false);
+  const model = resolveFirstRunModel(
+    openCode?.status === "ready" ? openCode.models.map((entry) => entry.slug) : null,
+  );
+  // `undefined` until settings load; `null` when the user already had a default model.
+  const savedModel = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (model === undefined || hasDefaultModel || modelSaved.current) return;
-    modelSaved.current = true;
+    if (serverConfig === null) return;
+    if (savedModel.current === undefined && serverConfig.settings.defaultModelSelection !== null) {
+      savedModel.current = null;
+    }
+    if (savedModel.current === null || model === undefined || model === savedModel.current) return;
+    savedModel.current = model;
     void updateSettings({
       environmentId,
       input: { patch: { defaultModelSelection: { instanceId: OPENCODE_INSTANCE_ID, model } } },
     });
-  }, [environmentId, hasDefaultModel, model, updateSettings]);
+  }, [environmentId, model, serverConfig, updateSettings]);
 
   const ready = countReadyOnboardingProviders(providers) > 0;
   const completed = useRef(false);
