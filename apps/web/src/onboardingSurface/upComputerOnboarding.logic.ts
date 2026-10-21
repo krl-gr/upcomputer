@@ -285,6 +285,31 @@ export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined
   return entry?.instanceId === FIRST_RUN_AGENT_INSTANCE_ID && entry.snapshot.statusPending === true;
 }
 
+/** How long a new user's setup waits for the agents already on the Mac to answer their first check. */
+export const FIRST_RUN_AGENT_CHECK_WAIT_MS = 10_000;
+
+/**
+ * Whether a new user's window installs OpenCode. A user whose own agent works
+ * needs no download, so this waits for each turned-on agent's first check, but
+ * a check that does not answer within `FIRST_RUN_AGENT_CHECK_WAIT_MS` does not
+ * hold setup back.
+ */
+export function resolveFirstRunAgentStart(input: {
+  readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
+  readonly waitOver: boolean;
+}): "wait" | "install" | "skip" {
+  const others =
+    input.providers?.filter(
+      (provider) => provider.enabled && provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID,
+    ) ?? [];
+  if (others.some((provider) => getOnboardingProviderState(provider) === "ready")) return "skip";
+  if (input.waitOver) return "install";
+  if (!input.providers || others.some((provider) => provider.statusPending === true)) {
+    return "wait";
+  }
+  return "install";
+}
+
 export type FirstRunAgentStatus =
   | { readonly kind: "preparing"; readonly progress: number | null }
   | { readonly kind: "failed"; readonly message: string };

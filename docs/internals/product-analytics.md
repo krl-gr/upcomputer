@@ -66,7 +66,8 @@ sends `connection` or `import`, so funnels comparing the flows should stop at
 `agents`. `flow: "first_run"` is no screen at all: the desktop app opens a new user's
 workspace directly and installs OpenCode, sending `onboarding.first_run_agent` with
 `outcome` `started`, then `ready` (followed by `onboarding.completed`) or `failed`, and
-`retried` or `connect_other` from the composer's buttons. The download itself is
+`retried` or `connect_other` from the composer's buttons. `ready` without `started` is a
+new user whose own agent already worked, so nothing was installed. The download itself is
 `provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with
 `step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and

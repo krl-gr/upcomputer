@@ -10,7 +10,8 @@ straight into a chat. While it sets up your first agent, the composer shows
 **Setting up your agent…**. The app downloads OpenCode by itself, about 50 MB,
 with no terminal and no account: new threads use a free OpenCode Zen model. If
 OpenCode 1.14.19 or newer is already installed, the app uses it and
-downloads nothing.
+downloads nothing. If an agent you already use, such as Claude or Codex, is
+installed and signed in, the app keeps it for new threads and downloads nothing.
 
 If the download fails, for example without a network connection, the composer says
 why. Select **Retry**, or **Connect another agent** to set up Codex, Claude or

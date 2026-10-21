@@ -1,7 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
@@ -11,7 +11,9 @@ import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
+  FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
+  resolveFirstRunAgentStart,
   resolveFirstRunAgentStatus,
   resolveFirstRunModel,
   type FirstRunAgentStatus,
@@ -19,7 +21,7 @@ import {
 
 const START_FAILED = "Could not start setting up your agent. Check your connection and try again.";
 
-/** Set once a new user's window starts OpenCode setup, so the composer shows it at once. */
+/** Set once a new user's window opens, so the composer shows setup at once. */
 const firstRunAgentAtom = Atom.make<{
   readonly requested: boolean;
   readonly startError: string | null;
@@ -46,11 +48,13 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
 
 /**
  * Renders nothing. In place of the agent table, a new user's window installs
- * OpenCode, then finishes onboarding once any agent works. The first thread
- * gets a zero-retention free model, unless a default model is already set.
+ * OpenCode unless an agent of theirs already works, then finishes onboarding
+ * once any agent works. The first thread gets a zero-retention free model,
+ * unless a default model is already set.
  */
 export function FirstRunAgentStarter({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const start = useStartFirstRunAgent(environmentId);
+  const setSetup = useAtomSet(firstRunAgentAtom);
   const recordClientEvent = useRecordClientEvent();
   const completeOnboarding = useCompleteOnboarding();
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
@@ -66,13 +70,25 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     }),
   ).data;
 
+  const [checkWaitOver, setCheckWaitOver] = useState(false);
+  useEffect(() => {
+    setSetup({ requested: true, startError: null });
+    const timer = window.setTimeout(() => setCheckWaitOver(true), FIRST_RUN_AGENT_CHECK_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [setSetup]);
+  const startDecision = resolveFirstRunAgentStart({ providers, waitOver: checkWaitOver });
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
+    if (startDecision === "skip") {
+      setSetup({ requested: false, startError: null });
+      return;
+    }
+    if (startDecision !== "install") return;
     started.current = true;
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
     start();
-  }, [environmentId, recordClientEvent, start]);
+  }, [environmentId, recordClientEvent, setSetup, start, startDecision]);
 
   const failedOperation = useRef<string | null>(null);
   useEffect(() => {
@@ -98,7 +114,8 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   // `undefined` until settings load; `null` when the default model is not ours to set.
   const savedModel = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (serverConfig === null) return;
+    // Only a user this window installs OpenCode for gets its model as the default.
+    if (serverConfig === null || !(started.current || startDecision === "install")) return;
     if (savedModel.current === undefined && serverConfig.settings.defaultModelSelection !== null) {
       savedModel.current = null;
     }
@@ -117,7 +134,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
         patch: { defaultModelSelection: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID, model } },
       },
     });
-  }, [environmentId, model, otherAgentReady, serverConfig, updateSettings]);
+  }, [environmentId, model, otherAgentReady, serverConfig, startDecision, updateSettings]);
 
   const ready = countReadyOnboardingProviders(providers) > 0;
   const completed = useRef(false);

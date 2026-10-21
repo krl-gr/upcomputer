@@ -24,6 +24,7 @@ import {
   resolveCliInstallCommand,
   resolveCliInstallNote,
   resolveCliLoginCommand,
+  resolveFirstRunAgentStart,
   resolveFirstRunAgentStatus,
   resolveFirstRunModel,
   showsUpComputerOnboarding,
@@ -293,6 +294,35 @@ describe("first-run agent status", () => {
       kind: "preparing",
       progress: null,
     });
+  });
+});
+
+describe("first-run agent start", () => {
+  const decide = (providers: ReadonlyArray<ServerProvider> | null, waitOver = false) =>
+    resolveFirstRunAgentStart({ providers, waitOver });
+
+  it("installs OpenCode on a Mac whose agents have all answered without one that works", () => {
+    expect(
+      decide([
+        provider("codex", missing),
+        provider("claudeAgent", signedOut),
+        provider("opencode", { enabled: false }),
+      ]),
+    ).toBe("install");
+  });
+
+  it("keeps a working agent of the user's and downloads nothing", () => {
+    expect(decide([provider("codex", missing), provider("claudeAgent")])).toBe("skip");
+    expect(decide([provider("claudeAgent")], true)).toBe("skip");
+    expect(decide([provider("claudeAgent", { enabled: false })])).toBe("install");
+  });
+
+  it("waits for the first checks, but not past the wait", () => {
+    expect(decide(null)).toBe("wait");
+    expect(decide([provider("claudeAgent", { statusPending: true })])).toBe("wait");
+    expect(decide([provider("claudeAgent", { statusPending: true })], true)).toBe("install");
+    expect(decide(null, true)).toBe("install");
+    expect(decide([provider("opencode", { statusPending: true })])).toBe("install");
   });
 });
 
