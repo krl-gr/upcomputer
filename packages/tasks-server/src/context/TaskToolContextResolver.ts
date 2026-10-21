@@ -1,9 +1,10 @@
-import type {
-  ModelSelection,
-  OrchestrationProjectShell,
-  OrchestrationV2AppThread,
-  ProjectId,
-  ServerProvider,
+import {
+  isProviderReady,
+  type ModelSelection,
+  type OrchestrationProjectShell,
+  type OrchestrationV2AppThread,
+  type ProjectId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import type { TaskToolContextInclude, TaskToolContextInput } from "@t3tools/tasks-contracts/v1";
@@ -30,15 +31,22 @@ export interface TaskProviderCandidate {
   readonly instanceId: string;
   readonly driver: string;
   readonly displayName: string | null;
-  readonly enabled: boolean;
-  readonly installed: boolean;
-  readonly status: string;
-  readonly availability: string;
   readonly models: ReadonlyArray<{
     readonly slug: string;
     readonly name: string;
     readonly shortName: string | null;
   }>;
+}
+
+/**
+ * A provider instance the user has configured but cannot use yet. It carries
+ * no models: agents read any listed model as one they can offer.
+ */
+export interface TaskProviderNotSetUp {
+  readonly instanceId: string;
+  readonly driver: string;
+  readonly displayName: string | null;
+  readonly reason: string;
 }
 
 export interface TaskResolvedProject {
@@ -71,6 +79,7 @@ export interface TaskToolContextResolution {
   };
   readonly projects: ReadonlyArray<TaskProjectCandidate>;
   readonly providers: ReadonlyArray<TaskProviderCandidate>;
+  readonly providersNotSetUp: ReadonlyArray<TaskProviderNotSetUp>;
   readonly resolvedProject: TaskResolvedProject | null;
   readonly resolvedModel: TaskResolvedModel | null;
   readonly warnings: ReadonlyArray<string>;
@@ -78,8 +87,8 @@ export interface TaskToolContextResolution {
 }
 
 /**
- * The resolution as tools return it. Every project and every provider's model
- * catalog are large and only needed to pick another project or a model, so
+ * The resolution as tools return it. Every project and the providers' model
+ * catalogs are large and only needed to pick another project or a model, so
  * they are left out unless included; projects are also listed when the
  * project could not be resolved, so the caller can pick one.
  */
@@ -87,11 +96,11 @@ export function compactTaskToolContext(
   resolution: TaskToolContextResolution,
   include: ReadonlyArray<TaskToolContextInclude> = [],
 ) {
-  const { projects, providers, ...rest } = resolution;
+  const { projects, providers, providersNotSetUp, ...rest } = resolution;
   return {
     ...rest,
     ...(include.includes("projects") || rest.resolvedProject === null ? { projects } : {}),
-    ...(include.includes("providers") ? { providers } : {}),
+    ...(include.includes("providers") ? { providers, providersNotSetUp } : {}),
   };
 }
 
@@ -130,10 +139,6 @@ function providerCandidate(provider: ServerProvider): TaskProviderCandidate {
     instanceId: provider.instanceId,
     driver: provider.driver,
     displayName: provider.displayName ?? null,
-    enabled: provider.enabled,
-    installed: provider.installed,
-    status: provider.status,
-    availability: provider.availability ?? "available",
     models: provider.models.map((model) => ({
       slug: model.slug,
       name: model.name,
@@ -142,14 +147,23 @@ function providerCandidate(provider: ServerProvider): TaskProviderCandidate {
   };
 }
 
-function eligibleProvider(provider: ServerProvider): boolean {
-  return (
-    provider.enabled &&
-    provider.installed &&
-    provider.status !== "disabled" &&
-    provider.availability !== "unavailable" &&
-    provider.models.length > 0
-  );
+function notSetUpReason(provider: ServerProvider): string {
+  if (isProviderReady(provider)) return "No models available.";
+  if (provider.unavailableReason) return provider.unavailableReason;
+  if (provider.message) return provider.message;
+  if (!provider.enabled) return "Disabled in settings.";
+  if (!provider.installed) return "Not installed.";
+  if (provider.auth.status === "unauthenticated") return "Not signed in.";
+  return `Status is ${provider.status}.`;
+}
+
+function providerNotSetUp(provider: ServerProvider): TaskProviderNotSetUp {
+  return {
+    instanceId: provider.instanceId,
+    driver: provider.driver,
+    displayName: provider.displayName ?? null,
+    reason: notSetUpReason(provider),
+  };
 }
 
 function resolveProject(input: {
@@ -336,9 +350,12 @@ const make = Effect.gen(function* () {
               ),
               Effect.orElseSucceed(() => undefined),
             );
-      const candidates = providers
-        .filter(eligibleProvider)
-        .flatMap((provider) => provider.models.map((model) => ({ provider, model })));
+      const readyProviders = providers.filter(
+        (provider) => isProviderReady(provider) && provider.models.length > 0,
+      );
+      const candidates = readyProviders.flatMap((provider) =>
+        provider.models.map((model) => ({ provider, model })),
+      );
       const resolvedProject = resolveProject({ args, projects, thread, warnings, errors });
       const resolvedModel = resolveModel({
         args,
@@ -364,7 +381,10 @@ const make = Effect.gen(function* () {
           mutationPolicy: invocationContext.mutationPolicy ?? "deny",
         },
         projects: projects.map(projectCandidate),
-        providers: providers.map(providerCandidate),
+        providers: readyProviders.map(providerCandidate),
+        providersNotSetUp: providers
+          .filter((provider) => !readyProviders.includes(provider))
+          .map(providerNotSetUp),
         resolvedProject,
         resolvedModel,
         warnings,
@@ -383,6 +403,7 @@ const make = Effect.gen(function* () {
           },
           projects: [],
           providers: [],
+          providersNotSetUp: [],
           resolvedProject: null,
           resolvedModel: null,
           warnings: [],
