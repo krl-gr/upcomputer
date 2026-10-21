@@ -1071,7 +1071,10 @@ import {
 } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { useNavigate } from "@tanstack/react-router";
-import { composerProviderSetupInstanceId } from "../../onboardingSurface/upComputerOnboarding.logic";
+import {
+  composerProviderSetupInstanceId,
+  isFirstRunAgentChecking,
+} from "../../onboardingSurface/upComputerOnboarding.logic";
 import { useFirstRunAgentStatus } from "../../onboardingSurface/FirstRunAgent";
 import {
   applyProviderInstanceSettings,
@@ -2114,8 +2117,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
-  const noProviderAvailable =
+  const noSelectableProvider =
     selectedProviderEntry === undefined && multipleModelSelections === null;
+  const firstRunAgent = useFirstRunAgentStatus(
+    environmentId,
+    lockedProvider === null &&
+      (noSelectableProvider
+        ? providerCatalogKnown
+        : multipleModelSelections === null && isFirstRunAgentChecking(selectedProviderEntry)),
+  );
+  const firstRunAgentStatus = firstRunAgent.status;
+  const noProviderAvailable = noSelectableProvider || firstRunAgentStatus !== null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
   const providerSetupInstanceId = noProviderAvailable
@@ -2129,11 +2141,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   )?.driverKind;
   const recordClientEvent = useRecordClientEvent();
   const navigate = useNavigate();
-  const firstRunAgent = useFirstRunAgentStatus(
-    environmentId,
-    showProviderUnavailable && lockedProvider === null,
-  );
-  const firstRunAgentStatus = firstRunAgent.status;
   const providerSetupShownRef = useRef(false);
   useEffect(() => {
     // New users who skipped agent setup land here; once per composer is enough.

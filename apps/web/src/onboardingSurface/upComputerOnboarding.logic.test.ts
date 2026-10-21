@@ -18,6 +18,7 @@ import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
   isCodexExistingCliChosen,
+  isFirstRunAgentChecking,
   resolveAgentInstallCell,
   resolveAgentReadyCell,
   resolveCliInstallCommand,
@@ -292,6 +293,32 @@ describe("first-run agent status", () => {
       kind: "preparing",
       progress: null,
     });
+  });
+});
+
+describe("isFirstRunAgentChecking", () => {
+  const entry = (snapshot: ServerProvider): ProviderInstanceEntry => ({
+    instanceId: snapshot.instanceId,
+    driverKind: snapshot.driver,
+    displayName: snapshot.driver,
+    enabled: snapshot.enabled,
+    installed: snapshot.installed,
+    status: snapshot.status,
+    isDefault: true,
+    isAvailable: true,
+    snapshot,
+    models: [],
+  });
+
+  it("holds the composer only for OpenCode before its first check answers", () => {
+    expect(isFirstRunAgentChecking(entry(provider("opencode", { statusPending: true })))).toBe(
+      true,
+    );
+    expect(isFirstRunAgentChecking(entry(provider("opencode")))).toBe(false);
+    expect(isFirstRunAgentChecking(entry(provider("claudeAgent", { statusPending: true })))).toBe(
+      false,
+    );
+    expect(isFirstRunAgentChecking(undefined)).toBe(false);
   });
 });
 

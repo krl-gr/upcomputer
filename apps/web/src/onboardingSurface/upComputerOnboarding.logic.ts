@@ -1,9 +1,11 @@
-import type {
-  EnvironmentId,
-  ExecutionEnvironmentPlatformOs,
-  ProviderInstallState,
-  ProviderInstanceId,
-  ServerProvider,
+import {
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  type EnvironmentId,
+  type ExecutionEnvironmentPlatformOs,
+  type ProviderInstallState,
+  type ProviderInstanceId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
@@ -270,6 +272,19 @@ function resolveProviderSetupInstanceId(
  * models answer without an account, and the composer shows that setup until
  * the first agent works.
  */
+export const FIRST_RUN_AGENT_INSTANCE_ID = defaultInstanceIdForDriver(
+  ProviderDriverKind.make("opencode"),
+);
+
+/**
+ * OpenCode turns selectable as soon as it is on, but lists no models until its
+ * first check answers. The composer keeps the setup state until then, so the
+ * saved model never shows as a raw id.
+ */
+export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined): boolean {
+  return entry?.instanceId === FIRST_RUN_AGENT_INSTANCE_ID && entry.snapshot.statusPending === true;
+}
+
 export type FirstRunAgentStatus =
   | { readonly kind: "preparing"; readonly progress: number | null }
   | { readonly kind: "failed"; readonly message: string };

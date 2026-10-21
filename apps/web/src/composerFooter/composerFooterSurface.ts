@@ -144,6 +144,11 @@ export function composerModelPickerLabel(input: {
     (entry.driverKind === "opencode" || entry.driverKind === "antigravity"
       ? undefined
       : options[0]);
+  // Before its first check a provider lists no models, so a saved model it
+  // does not list yet is not known to be unavailable; its raw id is no label.
+  if (entry.snapshot.statusPending === true && (!selected || selected.isUnavailable)) {
+    return entry.displayName;
+  }
   const modelName = selected
     ? `${getTriggerDisplayModelName(selected)}${selected.isUnavailable ? " (Unavailable)" : ""}`
     : input.model || "Choose model";

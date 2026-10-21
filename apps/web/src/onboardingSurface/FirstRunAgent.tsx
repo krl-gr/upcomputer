@@ -1,9 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import {
-  defaultInstanceIdForDriver,
-  ProviderDriverKind,
-  type EnvironmentId,
-} from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -15,12 +11,12 @@ import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
+  FIRST_RUN_AGENT_INSTANCE_ID,
   resolveFirstRunAgentStatus,
   resolveFirstRunModel,
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
 
-const OPENCODE_INSTANCE_ID = defaultInstanceIdForDriver(ProviderDriverKind.make("opencode"));
 const START_FAILED = "Could not start setting up your agent. Check your connection and try again.";
 
 /** Set once a new user's window starts OpenCode setup, so the composer shows it at once. */
@@ -40,7 +36,7 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
   });
   return useCallback(() => {
     setSetup({ requested: true, startError: null });
-    void startInstall({ environmentId, input: { instanceId: OPENCODE_INSTANCE_ID } }).then(
+    void startInstall({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } }).then(
       (result) => {
         if (result._tag !== "Success") setSetup({ requested: true, startError: START_FAILED });
       },
@@ -66,7 +62,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const install = useEnvironmentQuery(
     serverEnvironment.providerInstallState({
       environmentId,
-      input: { instanceId: OPENCODE_INSTANCE_ID },
+      input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID },
     }),
   ).data;
 
@@ -85,7 +81,9 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "failed" });
   }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
 
-  const openCode = providers?.find((provider) => provider.instanceId === OPENCODE_INSTANCE_ID);
+  const openCode = providers?.find(
+    (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
+  );
   const model = resolveFirstRunModel(
     openCode?.status === "ready" ? openCode.models.map((entry) => entry.slug) : null,
   );
@@ -93,7 +91,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const otherAgentReady =
     providers?.some(
       (provider) =>
-        provider.instanceId !== OPENCODE_INSTANCE_ID &&
+        provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID &&
         provider.enabled &&
         getOnboardingProviderState(provider) === "ready",
     ) ?? false;
@@ -115,7 +113,9 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     savedModel.current = model;
     void updateSettings({
       environmentId,
-      input: { patch: { defaultModelSelection: { instanceId: OPENCODE_INSTANCE_ID, model } } },
+      input: {
+        patch: { defaultModelSelection: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID, model } },
+      },
     });
   }, [environmentId, model, otherAgentReady, serverConfig, updateSettings]);
 
@@ -156,7 +156,7 @@ export function useFirstRunAgentStatus(
     active
       ? serverEnvironment.providerInstallState({
           environmentId,
-          input: { instanceId: OPENCODE_INSTANCE_ID },
+          input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID },
         })
       : null,
   ).data;
@@ -171,7 +171,9 @@ export function useFirstRunAgentStatus(
         requested: setup.requested,
         startError: setup.startError,
         install,
-        provider: providers?.find((provider) => provider.instanceId === OPENCODE_INSTANCE_ID),
+        provider: providers?.find(
+          (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
+        ),
       })
     : null;
   return { status, retry };
