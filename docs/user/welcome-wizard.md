@@ -8,8 +8,10 @@ hosted app for the first time. Existing workspaces skip this flow.
 The Up.computer desktop app skips the setup flow on a new installation and opens
 straight into a chat. While it sets up your first agent, the composer shows
 **Setting up your agent…**. The app downloads OpenCode by itself, about 50 MB,
-with no terminal and no account: new threads use a free OpenCode Zen model. If
-OpenCode 1.14.19 or newer is already installed, the app uses it and
+with no terminal and no account. New threads use OpenCode's automatic model, a free
+OpenCode Zen model, which moves to another free model by itself if that one stops
+being free. A model you choose in **Settings → General** stays chosen.
+If OpenCode 1.14.19 or newer is already installed, the app uses it and
 downloads nothing. If an agent you already use, such as Claude or Codex, is
 installed and signed in, the app keeps it for new threads and downloads nothing.
 

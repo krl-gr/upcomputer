@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useClientSettings } from "../hooks/useSettings";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
-import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -17,7 +16,6 @@ import {
   FIRST_RUN_AGENT_INSTANCE_ID,
   latchFirstRunAgentStart,
   resolveFirstRunAgentStatus,
-  resolveFirstRunModel,
   type FirstRunAgentStart,
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
@@ -78,8 +76,9 @@ let activationWait: { readonly operationId: string; readonly until: number } | n
 /**
  * Renders nothing. In place of the agent table, a new user's window installs
  * OpenCode unless an agent of theirs already works, then finishes onboarding
- * once any agent works. The first thread gets a zero-retention free model,
- * unless a default model is already set.
+ * once any agent works. It saves no default model: OpenCode's automatic
+ * model is already a zero-retention free one and moves on by itself if that
+ * model leaves the free tier, while a saved one would stay unavailable.
  */
 export function FirstRunAgentStarter({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const start = useStartFirstRunAgent(environmentId);
@@ -91,11 +90,6 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const recordClientEvent = useRecordClientEvent();
   const completeOnboarding = useCompleteOnboarding();
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    reportFailure: false,
-    reportDefect: false,
-  });
   const install = useEnvironmentQuery(
     serverEnvironment.providerInstallState({
       environmentId,
@@ -152,45 +146,6 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     reportedOperations.add(`failed:${install.operationId}`);
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "failed" });
   }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
-
-  const openCode = providers?.find(
-    (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
-  );
-  const model = resolveFirstRunModel(
-    openCode?.status === "ready" ? openCode.models.map((entry) => entry.slug) : null,
-  );
-  // A user whose own agent already works keeps it for new threads.
-  const otherAgentReady =
-    providers?.some(
-      (provider) =>
-        provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID &&
-        provider.enabled &&
-        getOnboardingProviderState(provider) === "ready",
-    ) ?? false;
-  // `undefined` until settings load; `null` when the default model is not ours to set.
-  const savedModel = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    // Only a user this window installs OpenCode for gets its model as the default.
-    if (serverConfig === null || startDecision !== "install") return;
-    if (savedModel.current === undefined && serverConfig.settings.defaultModelSelection !== null) {
-      savedModel.current = null;
-    }
-    if (otherAgentReady) {
-      if (savedModel.current) {
-        void updateSettings({ environmentId, input: { patch: { defaultModelSelection: null } } });
-      }
-      savedModel.current = null;
-      return;
-    }
-    if (savedModel.current === null || model === undefined || model === savedModel.current) return;
-    savedModel.current = model;
-    void updateSettings({
-      environmentId,
-      input: {
-        patch: { defaultModelSelection: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID, model } },
-      },
-    });
-  }, [environmentId, model, otherAgentReady, serverConfig, startDecision, updateSettings]);
 
   const ready = countReadyOnboardingProviders(providers) > 0;
   const completed = useRef(false);

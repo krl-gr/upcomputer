@@ -27,7 +27,6 @@ import {
   resolveCliLoginCommand,
   resolveFirstRunAgentStart,
   resolveFirstRunAgentStatus,
-  resolveFirstRunModel,
   showsUpComputerOnboarding,
   UPCOMPUTER_ONBOARDING_AGENTS,
 } from "./upComputerOnboarding.logic";
@@ -349,9 +348,7 @@ describe("first-run agent start latch", () => {
   it("skips for good once the user's own agent worked, whatever it does later", () => {
     const decided = latch(null, working);
     expect(decided).toBe("skip");
-    // Turned off, signed out, or a recheck that briefly failed: still no
-    // download, and the starter, which saves a default model only after
-    // "install", saves none.
+    // Turned off, signed out, or a recheck that briefly failed: still no download.
     expect(latch(decided, [provider("codex", { enabled: false }), provider("opencode")])).toBe(
       "skip",
     );
@@ -397,31 +394,5 @@ describe("isFirstRunAgentChecking", () => {
       false,
     );
     expect(isFirstRunAgentChecking(undefined)).toBe(false);
-  });
-});
-
-describe("first-run model", () => {
-  it("prefers GLM-5.3-Flash Free, then the other zero-retention free models", () => {
-    expect(resolveFirstRunModel(null)).toBe("opencode/glm-5.3-flash-free");
-    expect(
-      resolveFirstRunModel([
-        "opencode/big-pickle",
-        "opencode/minimax-m3.1-flash-free",
-        "opencode/glm-5.3-flash-free",
-      ]),
-    ).toBe("opencode/glm-5.3-flash-free");
-    expect(
-      resolveFirstRunModel([
-        "opencode/minimax-m3.1-flash-free",
-        "opencode/deepseek-v4.1-flash-free",
-      ]),
-    ).toBe("opencode/deepseek-v4.1-flash-free");
-    expect(resolveFirstRunModel(["opencode/minimax-m3.1-flash-free"])).toBe(
-      "opencode/minimax-m3.1-flash-free",
-    );
-  });
-
-  it("never falls back to Big Pickle", () => {
-    expect(resolveFirstRunModel(["opencode/big-pickle"])).toBeUndefined();
   });
 });

@@ -280,7 +280,7 @@ export const FIRST_RUN_AGENT_INSTANCE_ID = defaultInstanceIdForDriver(
  * OpenCode turns selectable as soon as settings turn it on, but lists no models
  * until its first check answers, and for a moment the stream still holds the
  * snapshot from while it was off. The composer keeps the setup state until
- * then, so the saved model never shows as a raw id.
+ * then, so its model picker never flashes "Choose model" in between.
  */
 export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined): boolean {
   if (entry?.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID) return false;
@@ -318,8 +318,7 @@ export type FirstRunAgentStart = "install" | "skip";
 /**
  * The starter decides once per window session. After `skip`, or once
  * onboarding is complete, an agent of the user's that later stops working
- * (turned off, signed out, a failed recheck) starts no download and saves no
- * default model.
+ * (turned off, signed out, a failed recheck) starts no download.
  */
 export function latchFirstRunAgentStart(input: {
   readonly latched: FirstRunAgentStart | null;
@@ -385,24 +384,4 @@ export function resolveFirstRunAgentStatus(input: {
     default:
       return input.requested ? { kind: "preparing", progress: null } : null;
   }
-}
-
-/**
- * Free Zen models whose providers keep no data, in the order a new user's
- * threads prefer them. Big Pickle is OpenCode's own default, and its team
- * collects data during the free period, so it is never picked here.
- */
-const FIRST_RUN_MODELS = [
-  "opencode/glm-5.3-flash-free",
-  "opencode/deepseek-v4.1-flash-free",
-  "opencode/minimax-m3.1-flash-free",
-];
-
-/**
- * Before OpenCode lists its models, the first preference: saving it early
- * keeps OpenCode's own default from showing for a moment once it is ready.
- */
-export function resolveFirstRunModel(listed: ReadonlyArray<string> | null): string | undefined {
-  if (listed === null) return FIRST_RUN_MODELS[0];
-  return FIRST_RUN_MODELS.find((slug) => listed.includes(slug));
 }
