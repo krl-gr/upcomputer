@@ -1100,7 +1100,7 @@ const make = Effect.gen(function* () {
   /**
    * Provider snapshots only re-probe while a client is in the foreground, so an
    * unattended agent can see a provider as unavailable after it was fixed.
-   * Re-probe the requested instance once before refusing it.
+   * Re-probe the requested instance, or a driver's unusable instances, once before refusing.
    */
   const assertTargetEnabledForProject = (
     parent: Pick<OrchestrationV2ThreadProjection, "thread">,
@@ -1121,15 +1121,29 @@ const make = Effect.gen(function* () {
       (input.target?.driverKind === undefined
         ? input.parent.thread.modelSelection.instanceId
         : undefined);
+    const requestedDriver = input.target?.driverKind;
+    const refreshIds =
+      instanceId !== undefined
+        ? [instanceId]
+        : input.providers
+            .filter(
+              (provider) =>
+                provider.driver === requestedDriver &&
+                providerConstraints(provider, true).length > 0,
+            )
+            .map((provider) => provider.instanceId);
     const resolved = resolveTarget(input);
-    if (instanceId === undefined) return resolved;
+    if (refreshIds.length === 0) return resolved;
     return resolved.pipe(
       Effect.catchIf(
         (error) => error.code === "provider_unavailable",
         () =>
-          providerRegistry
-            .refreshInstance(instanceId)
-            .pipe(Effect.flatMap((providers) => resolveTarget({ ...input, providers }))),
+          // Sequential, so the last refresh returns a list that holds every re-probed instance.
+          Effect.forEach(refreshIds, (id) => providerRegistry.refreshInstance(id)).pipe(
+            Effect.flatMap((lists) =>
+              resolveTarget({ ...input, providers: lists.at(-1) ?? input.providers }),
+            ),
+          ),
       ),
     );
   };
