@@ -2162,10 +2162,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectModelSelection: activeProjectDefaultModelSelection,
     settings,
   });
-  const providerSendBlockReason = getAntigravitySendBlockReason(
-    selectedProviderEntry?.snapshot,
-    selectedModel,
-  );
+  const providerSendBlockReason =
+    getAntigravitySendBlockReason(selectedProviderEntry?.snapshot, selectedModel) ??
+    (selectedProviderEntry?.driverKind === "opencode" && selectedModel.trim().length === 0
+      ? "Choose an OpenCode model before sending."
+      : null);
   const sendDisabledReason =
     externalSendDisabledReason ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
