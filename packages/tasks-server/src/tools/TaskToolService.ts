@@ -436,17 +436,15 @@ function resolveAgentCreateModelDecision(
     : { ok: false, reason: "unresolved-selection" };
 }
 
+/** Undefined when the given modelAlias did not resolve: keeping the old model would hide that. */
 function resolveAgentUpdateModelSelection(
   input: typeof AgentUpdateInput.Type,
   existing: ModelSelection,
   resolvedModel: ModelSelection | undefined,
-): ModelSelection {
-  return (
-    input.modelSelection ??
-    input.config?.modelSelection ??
-    (input.modelAlias !== undefined ? resolvedModel : undefined) ??
-    existing
-  );
+): ModelSelection | undefined {
+  const explicit = input.modelSelection ?? input.config?.modelSelection;
+  if (explicit) return explicit;
+  return input.modelAlias !== undefined ? resolvedModel : existing;
 }
 
 function hasAgentConfigPatch(input: typeof AgentCreateInput.Type | typeof AgentUpdateInput.Type) {
@@ -1159,6 +1157,14 @@ const make = Effect.gen(function* () {
             existing.value.config.modelSelection,
             resolution?.resolvedModel?.modelSelection,
           );
+          if (model === undefined)
+            return {
+              isError: true,
+              text: json({
+                error: "Unable to resolve the explicit agent model selection or alias.",
+                resolution,
+              }),
+            };
           const agent: TaskAgent = {
             ...existing.value,
             projectId,

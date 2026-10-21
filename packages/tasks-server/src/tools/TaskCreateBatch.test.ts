@@ -1,9 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { TaskAgentId } from "@t3tools/tasks-contracts/v1";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import {
   ProjectStoreV2,
@@ -410,6 +412,43 @@ it.effect("a person task is To Do or Done on create, in a list and on update", (
         ["call the bank", "Done", "person"],
         ["build", "To Do", "person"],
       ],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("agent_update refuses a modelAlias that does not resolve and keeps the old model", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    const agent = yield* repository.upsertAgent({
+      id: TaskAgentId.make("task-agent-dev"),
+      projectId: project,
+      name: "Dev",
+      enabled: false,
+      startStatuses: [],
+      startTags: [],
+      startRunStatuses: [],
+      config: {
+        role: "Dev",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        instructions: "Build it.",
+      },
+      createdAt: "2026-10-22T00:00:00.000Z",
+      updatedAt: "2026-10-22T00:00:00.000Z",
+    });
+    const result = yield* (yield* TaskToolService).call({
+      name: "agent_update",
+      args: { id: agent.id, modelAlias: "claude-opus-5-5" },
+      context: chat,
+    });
+    assert.isTrue(result.isError, result.text);
+    assert.equal(
+      JSON.parse(result.text).error,
+      "Unable to resolve the explicit agent model selection or alias.",
+    );
+    assert.deepStrictEqual(
+      Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.modelSelection,
+      agent.config.modelSelection,
     );
   }).pipe(Effect.provide(layer));
 });
