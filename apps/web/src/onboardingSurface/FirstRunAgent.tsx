@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
+import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -88,12 +89,27 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const model = resolveFirstRunModel(
     openCode?.status === "ready" ? openCode.models.map((entry) => entry.slug) : null,
   );
-  // `undefined` until settings load; `null` when the user already had a default model.
+  // A user whose own agent already works keeps it for new threads.
+  const otherAgentReady =
+    providers?.some(
+      (provider) =>
+        provider.instanceId !== OPENCODE_INSTANCE_ID &&
+        provider.enabled &&
+        getOnboardingProviderState(provider) === "ready",
+    ) ?? false;
+  // `undefined` until settings load; `null` when the default model is not ours to set.
   const savedModel = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (serverConfig === null) return;
     if (savedModel.current === undefined && serverConfig.settings.defaultModelSelection !== null) {
       savedModel.current = null;
+    }
+    if (otherAgentReady) {
+      if (savedModel.current) {
+        void updateSettings({ environmentId, input: { patch: { defaultModelSelection: null } } });
+      }
+      savedModel.current = null;
+      return;
     }
     if (savedModel.current === null || model === undefined || model === savedModel.current) return;
     savedModel.current = model;
@@ -101,7 +117,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       environmentId,
       input: { patch: { defaultModelSelection: { instanceId: OPENCODE_INSTANCE_ID, model } } },
     });
-  }, [environmentId, model, serverConfig, updateSettings]);
+  }, [environmentId, model, otherAgentReady, serverConfig, updateSettings]);
 
   const ready = countReadyOnboardingProviders(providers) > 0;
   const completed = useRef(false);
