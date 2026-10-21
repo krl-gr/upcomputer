@@ -5277,11 +5277,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         <ComposerControl
           type="button"
           onClick={firstRunAgent.retry}
+          disabled={firstRunAgent.retrying}
           data-chat-first-run-agent="failed"
           className="shrink-0"
         >
           <RefreshCwIcon className="size-4" />
-          Retry
+          {firstRunAgent.retrying ? "Retrying…" : "Retry"}
         </ComposerControl>
         <ComposerControl
           type="button"

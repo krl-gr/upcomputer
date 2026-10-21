@@ -336,11 +336,16 @@ export type FirstRunAgentStatus =
 
 const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
 
+/** How long setup still shows once the install succeeds, while the server turns OpenCode on. */
+export const FIRST_RUN_AGENT_ACTIVATION_WAIT_MS = 10_000;
+
 export function resolveFirstRunAgentStatus(input: {
   readonly requested: boolean;
   readonly startError: string | null;
   readonly install: ProviderInstallState | null;
   readonly provider: ServerProvider | undefined;
+  /** Within `FIRST_RUN_AGENT_ACTIVATION_WAIT_MS` of this window seeing the install succeed. */
+  readonly activating: boolean;
 }): FirstRunAgentStatus | null {
   const { install } = input;
   if (input.startError !== null && (install === null || install.phase === "idle")) {
@@ -362,13 +367,17 @@ export function resolveFirstRunAgentStatus(input: {
     case "cancelled":
       return { kind: "failed", message: install.message ?? FIRST_RUN_SETUP_FAILED };
     case "succeeded": {
-      // Until the turned-on instance reports, the stream still holds the disabled one.
       const state = getOnboardingProviderState(input.provider);
       if (state === "ready") return null;
       if (state === "attention" || state === "install" || state === "signIn") {
         return { kind: "failed", message: input.provider?.message ?? FIRST_RUN_SETUP_FAILED };
       }
-      return { kind: "preparing", progress: null };
+      if (state === "checking" && input.provider?.enabled === true) {
+        return { kind: "preparing", progress: null };
+      }
+      // Until the turned-on instance reports, the stream still holds the disabled
+      // one. Past that wait, OpenCode is off by the user's choice.
+      return input.activating ? { kind: "preparing", progress: null } : null;
     }
     default:
       return input.requested ? { kind: "preparing", progress: null } : null;

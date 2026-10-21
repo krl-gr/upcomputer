@@ -12,6 +12,7 @@ import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
+  FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
   FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
   latchFirstRunAgentStart,
@@ -22,6 +23,8 @@ import {
 } from "./upComputerOnboarding.logic";
 
 const START_FAILED = "Could not start setting up your agent. Check your connection and try again.";
+/** A Retry that fails at once still shows that it ran. */
+const RETRY_FEEDBACK_MS = 1_000;
 
 /**
  * Set once a new user's window opens, so the composer shows setup at once.
@@ -31,7 +34,11 @@ const START_FAILED = "Could not start setting up your agent. Check your connecti
 const firstRunAgentAtom = Atom.make<{
   readonly start: "wait" | FirstRunAgentStart | null;
   readonly startError: string | null;
-}>({ start: null, startError: null }).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent"));
+  readonly activating: boolean;
+}>({ start: null, startError: null, activating: false }).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("web-first-run-agent"),
+);
 
 function useStartFirstRunAgent(environmentId: EnvironmentId) {
   const setSetup = useAtomSet(firstRunAgentAtom);
@@ -39,16 +46,18 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     reportFailure: false,
     reportDefect: false,
   });
-  return useCallback(() => {
+  return useCallback(async () => {
     setSetup((setup) => ({ ...setup, startError: null }));
-    void startInstall({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } }).then(
-      (result) => {
-        if (result._tag !== "Success")
-          setSetup((setup) => ({ ...setup, startError: START_FAILED }));
-      },
-    );
+    const result = await startInstall({
+      environmentId,
+      input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID },
+    });
+    if (result._tag !== "Success") setSetup((setup) => ({ ...setup, startError: START_FAILED }));
   }, [environmentId, setSetup, startInstall]);
 }
+
+/** When this window first saw each install succeed, keyed by its operation, across remounts. */
+let activationWait: { readonly operationId: string; readonly until: number } | null = null;
 
 /**
  * Renders nothing. In place of the agent table, a new user's window installs
@@ -98,8 +107,30 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     setSetup((current) => ({ ...current, start: startDecision }));
     if (startDecision !== "install") return;
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
-    start();
+    void start();
   }, [environmentId, recordClientEvent, setSetup, setup.start, start, startDecision]);
+
+  const succeededOperation = install?.phase === "succeeded" ? install.operationId : null;
+  useEffect(() => {
+    if (succeededOperation === null) return;
+    if (activationWait?.operationId !== succeededOperation) {
+      activationWait = {
+        operationId: succeededOperation,
+        until: Date.now() + FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
+      };
+    }
+    const remaining = activationWait.until - Date.now();
+    if (remaining <= 0) return;
+    setSetup((current) => ({ ...current, activating: true }));
+    const timer = window.setTimeout(
+      () => setSetup((current) => ({ ...current, activating: false })),
+      remaining,
+    );
+    return () => {
+      window.clearTimeout(timer);
+      setSetup((current) => ({ ...current, activating: false }));
+    };
+  }, [setSetup, succeededOperation]);
 
   const failedOperation = useRef<string | null>(null);
   useEffect(() => {
@@ -177,7 +208,11 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
 export function useFirstRunAgentStatus(
   environmentId: EnvironmentId,
   active: boolean,
-): { readonly status: FirstRunAgentStatus | null; readonly retry: () => void } {
+): {
+  readonly status: FirstRunAgentStatus | null;
+  readonly retrying: boolean;
+  readonly retry: () => void;
+} {
   const setup = useAtomValue(firstRunAgentAtom);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const install = useEnvironmentQuery(
@@ -189,11 +224,25 @@ export function useFirstRunAgentStatus(
       : null,
   ).data;
   const start = useStartFirstRunAgent(environmentId);
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const recordClientEvent = useRecordClientEvent();
+  const [retrying, setRetrying] = useState(false);
+  const installSucceeded = install?.phase === "succeeded";
   const retry = useCallback(() => {
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "retried" });
-    start();
-  }, [environmentId, recordClientEvent, start]);
+    setRetrying(true);
+    // Once installed, a failure is OpenCode's own check; installing again would not rerun it.
+    const attempt = installSucceeded
+      ? refreshProviders({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } })
+      : start();
+    void Promise.all([
+      attempt,
+      new Promise((resolve) => window.setTimeout(resolve, RETRY_FEEDBACK_MS)),
+    ]).finally(() => setRetrying(false));
+  }, [environmentId, installSucceeded, recordClientEvent, refreshProviders, start]);
   const status = active
     ? resolveFirstRunAgentStatus({
         requested: setup.start === "wait" || setup.start === "install",
@@ -202,7 +251,8 @@ export function useFirstRunAgentStatus(
         provider: providers?.find(
           (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
         ),
+        activating: setup.activating,
       })
     : null;
-  return { status, retry };
+  return { status, retrying, retry };
 }

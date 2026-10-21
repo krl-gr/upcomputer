@@ -240,6 +240,7 @@ describe("first-run agent status", () => {
       startError: null,
       install: null,
       provider: undefined,
+      activating: false,
       ...input,
     });
   const openCode = (overrides: Partial<ServerProvider> = {}) => provider("opencode", overrides);
@@ -263,15 +264,25 @@ describe("first-run agent status", () => {
       progress: 1,
     });
     const done = install({ phase: "succeeded" });
-    expect(status({ install: done, provider: openCode({ enabled: false }) })).toEqual({
-      kind: "preparing",
-      progress: null,
-    });
+    expect(
+      status({ install: done, provider: openCode({ enabled: false }), activating: true }),
+    ).toEqual({ kind: "preparing", progress: null });
     expect(status({ install: done, provider: openCode({ statusPending: true }) })).toEqual({
       kind: "preparing",
       progress: null,
     });
     expect(status({ install: done, provider: openCode() })).toBeNull();
+  });
+
+  it("falls back to the normal composer once OpenCode is off past the activation wait", () => {
+    const done = install({ phase: "succeeded" });
+    expect(status({ install: done, provider: openCode({ enabled: false }) })).toBeNull();
+    expect(status({ install: done, provider: openCode({ status: "disabled" }) })).toBeNull();
+    expect(status({ install: done, provider: undefined })).toBeNull();
+    expect(status({ install: done, provider: undefined, activating: true })).toEqual({
+      kind: "preparing",
+      progress: null,
+    });
   });
 
   it("fails with the install's own message, or the agent's when it will not start", () => {
