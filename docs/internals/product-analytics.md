@@ -63,7 +63,12 @@ order. `flow: "upcomputer"` is our agent table, which has one step, `agents` (th
 each agent's own screen): it completes with `continued` as soon as an agent works and
 with `skipped` from the close button, then `onboarding.completed` follows. It never
 sends `connection` or `import`, so funnels comparing the flows should stop at
-`agents`. `onboarding.step.completed` with `step: "agents"` and
+`agents`. `flow: "first_run"` is no screen at all: the desktop app opens a new user's
+workspace directly and installs OpenCode, sending `onboarding.first_run_agent` with
+`outcome` `started`, then `ready` (followed by `onboarding.completed`) or `failed`, and
+`retried` or `connect_other` from the composer's buttons. The download itself is
+`provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with
+`step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and
 `onboarding.agent.terminal_closed` with `installed: false` after an install is an
 install that did not finish, or a CLI outside the PATH the server searches. `composer.provider_setup.*` records where "Open

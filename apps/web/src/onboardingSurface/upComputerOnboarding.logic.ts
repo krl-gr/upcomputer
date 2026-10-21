@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ExecutionEnvironmentPlatformOs,
+  ProviderInstallState,
   ProviderInstanceId,
   ServerProvider,
 } from "@t3tools/contracts";
@@ -262,4 +263,70 @@ function resolveProviderSetupInstanceId(
     if (best === undefined || rank(entry) < rank(best)) best = entry;
   }
   return best?.instanceId;
+}
+
+/*
+ * A new user skips the agent table: the app installs OpenCode, whose free Zen
+ * models answer without an account, and the composer shows that setup until
+ * the first agent works.
+ */
+export type FirstRunAgentStatus =
+  | { readonly kind: "preparing"; readonly progress: number | null }
+  | { readonly kind: "failed"; readonly message: string };
+
+const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
+
+export function resolveFirstRunAgentStatus(input: {
+  readonly requested: boolean;
+  readonly startError: string | null;
+  readonly install: ProviderInstallState | null;
+  readonly provider: ServerProvider | undefined;
+}): FirstRunAgentStatus | null {
+  const { install } = input;
+  if (input.startError !== null && (install === null || install.phase === "idle")) {
+    return { kind: "failed", message: input.startError };
+  }
+  switch (install?.phase) {
+    case "downloading":
+      return {
+        kind: "preparing",
+        progress:
+          install.totalBytes !== null && install.totalBytes > 0
+            ? Math.min(1, install.downloadedBytes / install.totalBytes)
+            : null,
+      };
+    case "extracting":
+    case "verifying":
+      return { kind: "preparing", progress: 1 };
+    case "failed":
+    case "cancelled":
+      return { kind: "failed", message: install.message ?? FIRST_RUN_SETUP_FAILED };
+    case "succeeded": {
+      // Until the turned-on instance reports, the stream still holds the disabled one.
+      const state = getOnboardingProviderState(input.provider);
+      if (state === "ready") return null;
+      if (state === "attention" || state === "install" || state === "signIn") {
+        return { kind: "failed", message: input.provider?.message ?? FIRST_RUN_SETUP_FAILED };
+      }
+      return { kind: "preparing", progress: null };
+    }
+    default:
+      return input.requested ? { kind: "preparing", progress: null } : null;
+  }
+}
+
+/**
+ * Free Zen models whose providers keep no data, in the order a new user's
+ * threads prefer them. Big Pickle is OpenCode's own default, and its team
+ * collects data during the free period, so it is never picked here.
+ */
+const FIRST_RUN_MODELS = [
+  "opencode/glm-5.3-flash-free",
+  "opencode/deepseek-v4.1-flash-free",
+  "opencode/minimax-m3.1-flash-free",
+];
+
+export function resolveFirstRunModel(provider: ServerProvider | undefined): string | undefined {
+  const listed = new Set(provider?.models.map((model) => model.slug));
+  return FIRST_RUN_MODELS.find((slug) => listed.has(slug));
 }

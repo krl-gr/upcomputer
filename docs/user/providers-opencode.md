@@ -5,6 +5,13 @@ enable it in **Settings > Providers**. See [provider setup](./install.md#provide
 T3 Code requires OpenCode 1.14.19 or newer, including when you connect an existing
 OpenCode server.
 
+On a new installation, the Up.computer desktop app installs OpenCode for you (see
+[first launch](./welcome-wizard.md#first-launch-of-the-desktop-app)). That copy lives
+in the app's own data directory, under `tools/opencode`, and is the binary path in
+OpenCode's provider settings. It does not replace an OpenCode you install yourself;
+to use yours instead, set its path there. The app's copy is updated with app releases,
+not by **Update now**.
+
 ## OpenCode 2
 
 T3 Code supports OpenCode 2.0.18 and newer. It detects the version on its own, so

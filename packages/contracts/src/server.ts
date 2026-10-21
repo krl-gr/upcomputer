@@ -898,8 +898,12 @@ export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateEr
 }
 
 const OnboardingStep = Schema.Literals(["connection", "agents", "import"]);
-/** Which first-run screens sent the event; absent means upstream's wizard. */
-const OnboardingFlow = Schema.optionalKey(Schema.Literals(["upstream", "upcomputer"]));
+/**
+ * Which first-run screens sent the event; absent means upstream's wizard.
+ * `first_run` is no screen at all: a new user lands in the app while it
+ * installs OpenCode for them.
+ */
+const OnboardingFlow = Schema.optionalKey(Schema.Literals(["upstream", "upcomputer", "first_run"]));
 
 // Driver kinds are free-form slugs, so a client could put any text there. Telemetry names
 // only the drivers we ship; anything else is "other".
@@ -949,6 +953,10 @@ export const ClientTelemetryEvent = Schema.Union([
     action: Schema.Literals(["install", "sign_in"]),
     installed: Schema.Boolean,
     authStatus: ServerProviderAuthStatus,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("onboarding.first_run_agent"),
+    outcome: Schema.Literals(["started", "ready", "failed", "retried", "connect_other"]),
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),

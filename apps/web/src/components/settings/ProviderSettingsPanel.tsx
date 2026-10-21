@@ -35,7 +35,9 @@ import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Result from "effect/Result";
-import { PlusIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { productSurface } from "../../product/productFlags";
+import { PlusIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
@@ -555,6 +557,13 @@ export function EnvironmentProviderSettings({
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  // UpComputer: the agent table a new user no longer sees on first launch.
+  // It sets up agents on the primary environment only.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const connectAgentsAvailable =
+    !readOnly &&
+    environmentId === primaryEnvironmentId &&
+    productSurface("onboarding") === "upcomputer";
   const canRefreshProviders = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const updateModelPreferences = useUpdateEnvironmentModelPreferences(environmentId);
@@ -1195,6 +1204,15 @@ export function EnvironmentProviderSettings({
                     <PlusIcon className="size-4 shrink-0" />
                     Add provider
                   </button>
+                ) : null}
+                {connectAgentsAvailable ? (
+                  <Link
+                    to="/welcome"
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
+                  >
+                    <SparklesIcon className="size-4 shrink-0" />
+                    Connect your agents
+                  </Link>
                 ) : null}
               </div>
             </ScrollArea>

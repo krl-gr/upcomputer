@@ -11,6 +11,8 @@ import {
 } from "../../hooks/useSettings";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
+import { FirstRunAgentStarter } from "../../onboardingSurface/FirstRunAgent";
+import { productSurface } from "../../product/productFlags";
 import {
   isFirstRunWorkspaceProvenanceAuthoritative,
   isFreshFirstRunWorkspace,
@@ -165,14 +167,30 @@ export function FirstRunGate({
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
 
+  // UpComputer: a new user lands in the app while it sets up OpenCode; the
+  // agent table stays at /welcome for connecting other agents.
+  const installsFirstAgent =
+    decision === "wizard" &&
+    !hostedStatic &&
+    primaryEnvironmentId !== null &&
+    productSurface("onboarding") === "upcomputer";
+
   useEffect(() => {
-    if (decision === "wizard" && pathname !== "/welcome") {
+    if (decision === "wizard" && !installsFirstAgent && pathname !== "/welcome") {
       void navigate({ to: "/welcome", replace: true });
     }
-  }, [decision, navigate, pathname]);
+  }, [decision, installsFirstAgent, navigate, pathname]);
 
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
+  }
+  if (installsFirstAgent) {
+    return (
+      <>
+        <FirstRunAgentStarter environmentId={primaryEnvironmentId} />
+        {children}
+      </>
+    );
   }
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : <BootSplash />;
