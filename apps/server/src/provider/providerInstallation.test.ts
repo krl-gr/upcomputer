@@ -15,6 +15,7 @@ import * as Stream from "effect/Stream";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CodexInstallation from "./CodexInstallation.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
+import * as OpenCodeInstallation from "./OpenCodeInstallation.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { makeProviderInstallation } from "./providerInstallation.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
@@ -96,6 +97,20 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
               protectedPaths = paths ?? [];
               calls.push("codex-remove");
             }),
+        }),
+        Layer.mock(OpenCodeInstallation.OpenCodeInstallation)({
+          managedDirectory: "/managed-opencode",
+          start: Effect.sync(() => {
+            calls.push("opencode-start");
+            return { ...state, driver: ProviderDriverKind.make("opencode") };
+          }),
+          cancel: () =>
+            Effect.sync(() => {
+              calls.push("opencode-cancel");
+              return { ...state, driver: ProviderDriverKind.make("opencode") };
+            }),
+          state: Effect.succeed({ ...state, driver: ProviderDriverKind.make("opencode") }),
+          changes: Stream.succeed({ ...state, driver: ProviderDriverKind.make("opencode") }),
         }),
         Layer.mock(AntigravityInstallation.AntigravityInstallation)({
           managedDirectory: "/unused-managed-runtime",
@@ -186,6 +201,54 @@ describe("provider installation routing", () => {
       assert.equal(Array.from(observed)[0]?.driver, "codex");
       yield* harness.router.remove({ instanceId: codexId });
       assert.deepEqual(harness.calls, ["codex-start", "codex-cancel", "codex-remove", "refresh"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("routes the default OpenCode instance to its installer, without removal", () =>
+    Effect.gen(function* () {
+      const openCodeId = ProviderInstanceId.make("opencode");
+      const harness = yield* makeHarness({
+        instance: instance(ProviderDriverKind.make("opencode"), openCodeId),
+      });
+      assert.equal((yield* harness.router.start({ instanceId: openCodeId })).driver, "opencode");
+      yield* harness.router.cancel({ instanceId: openCodeId, operationId: "operation" });
+      const observed = yield* Stream.runCollect(
+        harness.router.subscribe({ instanceId: openCodeId }),
+      );
+      assert.equal(Array.from(observed)[0]?.driver, "opencode");
+      const remove = yield* Effect.flip(harness.router.remove({ instanceId: openCodeId }));
+      assert.equal(remove._tag, "ProviderSetupError");
+      assert.deepEqual(harness.calls, ["opencode-start", "opencode-cancel"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("leaves an OpenCode instance with its own executable alone", () =>
+    Effect.gen(function* () {
+      const openCodeId = ProviderInstanceId.make("opencode");
+      const harness = yield* makeHarness({
+        instance: instance(ProviderDriverKind.make("opencode"), openCodeId),
+        settings: {
+          providerInstances: {
+            [openCodeId]: {
+              driver: ProviderDriverKind.make("opencode"),
+              config: { binaryPath: "/usr/local/bin/opencode" },
+            },
+          },
+        },
+      });
+      assert.include(
+        (yield* Effect.flip(harness.router.start({ instanceId: openCodeId }))).detail,
+        "custom executable",
+      );
+      const other = ProviderInstanceId.make("opencode-work");
+      const second = yield* makeHarness({
+        instance: instance(ProviderDriverKind.make("opencode"), other),
+      });
+      assert.equal(
+        (yield* Effect.flip(second.router.start({ instanceId: other })))._tag,
+        "ProviderSetupError",
+      );
+      assert.deepEqual([...harness.calls, ...second.calls], []);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

@@ -1063,13 +1063,19 @@ import {
   BotIcon,
   CircleAlertIcon,
   PaperclipIcon,
+  RefreshCwIcon,
   PencilRulerIcon,
   PlayIcon,
   ShieldIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
-import { composerProviderSetupInstanceId } from "../../onboardingSurface/upComputerOnboarding.logic";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  composerProviderSetupInstanceId,
+  isFirstRunAgentChecking,
+} from "../../onboardingSurface/upComputerOnboarding.logic";
+import { useFirstRunAgentStatus } from "../../onboardingSurface/FirstRunAgent";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -2111,8 +2117,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
-  const noProviderAvailable =
+  const noSelectableProvider =
     selectedProviderEntry === undefined && multipleModelSelections === null;
+  const firstRunAgent = useFirstRunAgentStatus(
+    environmentId,
+    lockedProvider === null &&
+      (noSelectableProvider
+        ? providerCatalogKnown
+        : multipleModelSelections === null && isFirstRunAgentChecking(selectedProviderEntry)),
+  );
+  const firstRunAgentStatus = firstRunAgent.status;
+  const noProviderAvailable = noSelectableProvider || firstRunAgentStatus !== null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
   const providerSetupInstanceId = noProviderAvailable
@@ -2125,10 +2140,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (entry) => entry.instanceId === providerSetupInstanceId,
   )?.driverKind;
   const recordClientEvent = useRecordClientEvent();
+  const navigate = useNavigate();
   const providerSetupShownRef = useRef(false);
   useEffect(() => {
     // New users who skipped agent setup land here; once per composer is enough.
-    if (!showProviderUnavailable || providerSetupShownRef.current) return;
+    // While the first agent installs, its own events tell the story instead.
+    if (!showProviderUnavailable || firstRunAgentStatus !== null || providerSetupShownRef.current)
+      return;
     providerSetupShownRef.current = true;
     recordClientEvent(environmentId, {
       event: "composer.provider_setup.shown",
@@ -2136,7 +2154,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? {}
         : { target: toTelemetryProvider(providerSetupTarget) }),
     });
-  }, [environmentId, providerSetupTarget, recordClientEvent, showProviderUnavailable]);
+  }, [
+    environmentId,
+    firstRunAgentStatus,
+    providerSetupTarget,
+    recordClientEvent,
+    showProviderUnavailable,
+  ]);
+  const firstRunAgentPlaceholder =
+    firstRunAgentStatus?.kind === "preparing"
+      ? "Setting up your agent. This takes a moment the first time."
+      : firstRunAgentStatus?.kind === "failed"
+        ? firstRunAgentStatus.message
+        : null;
   const resolvedCompactDisabledReason =
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);
   const selectedProvider: ProviderDriverKind =
@@ -5230,27 +5260,68 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onOpenProviderSetup={onOpenProviderSetup}
     />
   );
+  const firstRunAgentControls =
+    firstRunAgentStatus?.kind === "preparing" ? (
+      <ComposerControl
+        type="button"
+        disabled
+        data-chat-first-run-agent="preparing"
+        className="shrink-0"
+      >
+        {firstRunAgentStatus.progress === null
+          ? "Setting up your agent…"
+          : `Setting up your agent… ${Math.round(firstRunAgentStatus.progress * 100)}%`}
+      </ComposerControl>
+    ) : firstRunAgentStatus?.kind === "failed" ? (
+      <>
+        <ComposerControl
+          type="button"
+          onClick={firstRunAgent.retry}
+          disabled={firstRunAgent.retrying}
+          data-chat-first-run-agent="failed"
+          className="shrink-0"
+        >
+          <RefreshCwIcon className="size-4" />
+          {firstRunAgent.retrying ? "Retrying…" : "Retry"}
+        </ComposerControl>
+        <ComposerControl
+          type="button"
+          onClick={() => {
+            recordClientEvent(environmentId, {
+              event: "onboarding.first_run_agent",
+              outcome: "connect_other",
+            });
+            void navigate({ to: "/welcome" });
+          }}
+          className="shrink-0"
+        >
+          Connect another agent
+        </ComposerControl>
+      </>
+    ) : null;
   const composerControls = showProviderUnavailable ? (
-    <ComposerControl
-      type="button"
-      disabled={!providerSetupInstanceId}
-      onClick={() => {
-        if (providerSetupInstanceId) {
-          recordClientEvent(environmentId, {
-            event: "composer.provider_setup.clicked",
-            ...(providerSetupTarget === undefined
-              ? {}
-              : { target: toTelemetryProvider(providerSetupTarget) }),
-          });
-          onOpenProviderSetup(providerSetupInstanceId);
-        }
-      }}
-      data-chat-provider-unavailable="true"
-      className="shrink-0"
-    >
-      <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
-    </ComposerControl>
+    (firstRunAgentControls ?? (
+      <ComposerControl
+        type="button"
+        disabled={!providerSetupInstanceId}
+        onClick={() => {
+          if (providerSetupInstanceId) {
+            recordClientEvent(environmentId, {
+              event: "composer.provider_setup.clicked",
+              ...(providerSetupTarget === undefined
+                ? {}
+                : { target: toTelemetryProvider(providerSetupTarget) }),
+            });
+            onOpenProviderSetup(providerSetupInstanceId);
+          }
+        }}
+        data-chat-provider-unavailable="true"
+        className="shrink-0"
+      >
+        <CircleAlertIcon className="size-4" />
+        {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      </ComposerControl>
+    ))
   ) : (
     <>
       {composerControlsCollapsed &&
@@ -6730,7 +6801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         "Type your own answer, or leave this blank to use the selected option"
                     : prompt.trim() ||
                       (showProviderUnavailable
-                        ? "Enable a provider in Settings"
+                        ? (firstRunAgentPlaceholder ?? "Enable a provider in Settings")
                         : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
@@ -7292,7 +7363,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : projectSelectionRequired
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
-                                ? "Enable a provider in Settings to send a message"
+                                ? (firstRunAgentPlaceholder ??
+                                  "Enable a provider in Settings to send a message")
                                 : phase === "disconnected"
                                   ? DISCONNECTED_COMPOSER_PLACEHOLDER
                                   : composerIdlePlaceholder(routeKind === "server")

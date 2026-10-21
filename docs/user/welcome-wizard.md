@@ -3,6 +3,23 @@
 T3 Code shows a setup flow when you open a new installation or connect to the
 hosted app for the first time. Existing workspaces skip this flow.
 
+## First launch of the desktop app
+
+The Up.computer desktop app skips the setup flow on a new installation and opens
+straight into a chat. While it sets up your first agent, the composer shows
+**Setting up your agent…**. The app downloads OpenCode by itself, about 50 MB,
+with no terminal and no account. New threads use OpenCode's automatic model, a free
+OpenCode Zen model, which moves to another free model by itself if that one stops
+being free. A model you choose in **Settings → General** stays chosen.
+If OpenCode 1.14.19 or newer is already installed, the app uses it and
+downloads nothing. If an agent you already use, such as Claude or Codex, is
+installed and signed in, the app keeps it for new threads and downloads nothing.
+
+If the download fails, for example without a network connection, the composer says
+why. Select **Retry**, or **Connect another agent** to set up Codex, Claude or
+another agent instead. To connect more agents later, open **Settings → Providers**
+and select **Connect your agents**.
+
 ## Connect your computers
 
 Select one or more computers to set up. If you opened T3 Code directly from a

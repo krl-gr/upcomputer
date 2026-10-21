@@ -1,6 +1,7 @@
 import {
   AntigravitySettings,
   CodexSettings,
+  defaultInstanceIdForDriver,
   ProviderDriverKind,
   type ProviderInstallCancelInput,
   type ProviderInstanceId,
@@ -15,12 +16,14 @@ import * as Stream from "effect/Stream";
 import * as CodexInstallation from "./CodexInstallation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
+import * as OpenCodeInstallation from "./OpenCodeInstallation.ts";
 import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
+const OPENCODE = ProviderDriverKind.make("opencode");
 const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
 const decodeCodexSettings = Schema.decodeUnknownEffect(CodexSettings);
 const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings);
@@ -28,6 +31,7 @@ const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings
 export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(function* () {
   const antigravityInstallation = yield* AntigravityInstallation.AntigravityInstallation;
   const codexInstallation = yield* CodexInstallation.CodexInstallation;
+  const openCodeInstallation = yield* OpenCodeInstallation.OpenCodeInstallation;
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const settings = yield* ServerSettings.ServerSettingsService;
@@ -96,16 +100,46 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
     return { installation, driver: instance.driverKind };
   });
 
+  /**
+   * UpComputer: a new user's first agent. Only the default instance installs,
+   * since a finished install turns that instance on (`layerOpenCodeActivation`).
+   */
+  const requireOpenCodeInstance = Effect.fn("ProviderInstallation.requireOpenCodeInstance")(
+    function* (instanceId: ProviderInstanceId, operation: string) {
+      const instance = yield* instances.getInstance(instanceId);
+      if (instance?.driverKind !== OPENCODE || instanceId !== defaultInstanceIdForDriver(OPENCODE))
+        return undefined;
+      const config = (yield* readEntries(instanceId, operation))[instanceId]?.config;
+      const binaryPath = hasBinaryPath(config) ? config.binaryPath.trim() : "";
+      if (
+        binaryPath !== "" &&
+        binaryPath !== "opencode" &&
+        !binaryPath.startsWith(openCodeInstallation.managedDirectory)
+      ) {
+        return yield* new ProviderSetupError({
+          instanceId,
+          operation,
+          detail:
+            "This instance uses a custom executable. Clear its binary path to install OpenCode in Up.computer.",
+        });
+      }
+      return openCodeInstallation;
+    },
+  );
+
   const failure =
     (instanceId: ProviderInstanceId) =>
     (
       error:
         | AntigravityInstallation.AntigravityInstallationError
-        | CodexInstallation.CodexInstallationError,
+        | CodexInstallation.CodexInstallationError
+        | OpenCodeInstallation.OpenCodeInstallationError,
     ) =>
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 
   const start = Effect.fn("ProviderInstallation.start")(function* (input: ProviderSetupInput) {
+    const openCode = yield* requireOpenCodeInstance(input.instanceId, "install");
+    if (openCode) return yield* openCode.start.pipe(Effect.mapError(failure(input.instanceId)));
     const { installation } = yield* requireInstance(input.instanceId, "install", true);
     return yield* installation.start.pipe(Effect.mapError(failure(input.instanceId)));
   });
@@ -113,7 +147,9 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
   const cancel = Effect.fn("ProviderInstallation.cancel")(function* (
     input: ProviderInstallCancelInput,
   ) {
-    const { installation } = yield* requireInstance(input.instanceId, "cancel-install");
+    const installation =
+      (yield* requireOpenCodeInstance(input.instanceId, "cancel-install")) ??
+      (yield* requireInstance(input.instanceId, "cancel-install")).installation;
     return yield* installation
       .cancel(input.operationId)
       .pipe(Effect.mapError(failure(input.instanceId)));
@@ -121,8 +157,14 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
 
   const subscribe = (input: ProviderSetupInput) =>
     Stream.unwrap(
-      requireInstance(input.instanceId, "observe-install").pipe(
-        Effect.map(({ installation }) => installation.changes),
+      requireOpenCodeInstance(input.instanceId, "observe-install").pipe(
+        Effect.flatMap((openCode) =>
+          openCode
+            ? Effect.succeed(openCode.changes)
+            : requireInstance(input.instanceId, "observe-install").pipe(
+                Effect.map(({ installation }) => installation.changes),
+              ),
+        ),
       ),
     );
 

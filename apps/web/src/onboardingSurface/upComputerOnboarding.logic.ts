@@ -1,8 +1,11 @@
-import type {
-  EnvironmentId,
-  ExecutionEnvironmentPlatformOs,
-  ProviderInstanceId,
-  ServerProvider,
+import {
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  type EnvironmentId,
+  type ExecutionEnvironmentPlatformOs,
+  type ProviderInstallState,
+  type ProviderInstanceId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
@@ -262,4 +265,123 @@ function resolveProviderSetupInstanceId(
     if (best === undefined || rank(entry) < rank(best)) best = entry;
   }
   return best?.instanceId;
+}
+
+/*
+ * A new user skips the agent table: the app installs OpenCode, whose free Zen
+ * models answer without an account, and the composer shows that setup until
+ * the first agent works.
+ */
+export const FIRST_RUN_AGENT_INSTANCE_ID = defaultInstanceIdForDriver(
+  ProviderDriverKind.make("opencode"),
+);
+
+/**
+ * OpenCode turns selectable as soon as settings turn it on, but lists no models
+ * until its first check answers, and for a moment the stream still holds the
+ * snapshot from while it was off. The composer keeps the setup state until
+ * then, so its model picker never flashes "Choose model" in between.
+ */
+export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined): boolean {
+  if (entry?.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID) return false;
+  const { snapshot } = entry;
+  return snapshot.statusPending === true || !snapshot.enabled || snapshot.status === "disabled";
+}
+
+/** How long a new user's setup waits for the agents already on the Mac to answer their first check. */
+export const FIRST_RUN_AGENT_CHECK_WAIT_MS = 10_000;
+
+/**
+ * Whether a new user's window installs OpenCode. A user whose own agent works
+ * needs no download, so this waits for each turned-on agent's first check, but
+ * a check that does not answer within `FIRST_RUN_AGENT_CHECK_WAIT_MS` does not
+ * hold setup back.
+ */
+export function resolveFirstRunAgentStart(input: {
+  readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
+  readonly waitOver: boolean;
+}): "wait" | "install" | "skip" {
+  const others =
+    input.providers?.filter(
+      (provider) => provider.enabled && provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID,
+    ) ?? [];
+  if (others.some((provider) => getOnboardingProviderState(provider) === "ready")) return "skip";
+  if (input.waitOver) return "install";
+  if (!input.providers || others.some((provider) => provider.statusPending === true)) {
+    return "wait";
+  }
+  return "install";
+}
+
+export type FirstRunAgentStart = "install" | "skip";
+
+/**
+ * The starter decides once per window session. After `skip`, or once
+ * onboarding is complete, an agent of the user's that later stops working
+ * (turned off, signed out, a failed recheck) starts no download.
+ */
+export function latchFirstRunAgentStart(input: {
+  readonly latched: FirstRunAgentStart | null;
+  readonly completed: boolean;
+  readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
+  readonly waitOver: boolean;
+}): FirstRunAgentStart | null {
+  if (input.latched !== null) return input.latched;
+  if (input.completed) return "skip";
+  const next = resolveFirstRunAgentStart(input);
+  return next === "wait" ? null : next;
+}
+
+export type FirstRunAgentStatus =
+  | { readonly kind: "preparing"; readonly progress: number | null }
+  | { readonly kind: "failed"; readonly message: string };
+
+const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
+
+/** How long setup still shows once the install succeeds, while the server turns OpenCode on. */
+export const FIRST_RUN_AGENT_ACTIVATION_WAIT_MS = 10_000;
+
+export function resolveFirstRunAgentStatus(input: {
+  readonly requested: boolean;
+  readonly startError: string | null;
+  readonly install: ProviderInstallState | null;
+  readonly provider: ServerProvider | undefined;
+  /** Within `FIRST_RUN_AGENT_ACTIVATION_WAIT_MS` of this window seeing the install succeed. */
+  readonly activating: boolean;
+}): FirstRunAgentStatus | null {
+  const { install } = input;
+  if (input.startError !== null && (install === null || install.phase === "idle")) {
+    return { kind: "failed", message: input.startError };
+  }
+  switch (install?.phase) {
+    case "downloading":
+      return {
+        kind: "preparing",
+        progress:
+          install.totalBytes !== null && install.totalBytes > 0
+            ? Math.min(1, install.downloadedBytes / install.totalBytes)
+            : null,
+      };
+    case "extracting":
+    case "verifying":
+      return { kind: "preparing", progress: 1 };
+    case "failed":
+    case "cancelled":
+      return { kind: "failed", message: install.message ?? FIRST_RUN_SETUP_FAILED };
+    case "succeeded": {
+      const state = getOnboardingProviderState(input.provider);
+      if (state === "ready") return null;
+      if (state === "attention" || state === "install" || state === "signIn") {
+        return { kind: "failed", message: input.provider?.message ?? FIRST_RUN_SETUP_FAILED };
+      }
+      if (state === "checking" && input.provider?.enabled === true) {
+        return { kind: "preparing", progress: null };
+      }
+      // Until the turned-on instance reports, the stream still holds the disabled
+      // one. Past that wait, OpenCode is off by the user's choice.
+      return input.activating ? { kind: "preparing", progress: null } : null;
+    }
+    default:
+      return input.requested ? { kind: "preparing", progress: null } : null;
+  }
 }

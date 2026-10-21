@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 
 import * as AntigravityInstallation from "../provider/AntigravityInstallation.ts";
 import * as CodexInstallation from "../provider/CodexInstallation.ts";
+import * as OpenCodeInstallation from "../provider/OpenCodeInstallation.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
@@ -167,8 +168,9 @@ export const layerProviderInstallTelemetry = Layer.effectDiscard(
     const analytics = yield* AnalyticsService.AnalyticsService;
     const codex = yield* CodexInstallation.CodexInstallation;
     const antigravity = yield* AntigravityInstallation.AntigravityInstallation;
+    const openCode = yield* OpenCodeInstallation.OpenCodeInstallation;
     yield* Effect.forEach(
-      [codex.changes, antigravity.changes],
+      [codex.changes, antigravity.changes, openCode.changes],
       (changes) => recordInstallTransitions(changes, analytics.record).pipe(Effect.forkScoped),
       { discard: true },
     );
