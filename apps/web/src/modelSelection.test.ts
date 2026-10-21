@@ -1100,3 +1100,87 @@ describe("composer default model stability", () => {
     );
   });
 });
+
+describe("OpenCode automatic model", () => {
+  const OPENCODE = ProviderInstanceId.make("opencode");
+  const driver = ProviderDriverKind.make("opencode");
+  const GLM = "opencode/glm-5.3-flash-free";
+  const BIG_PICKLE = "opencode/big-pickle";
+
+  function openCode(
+    models: ReadonlyArray<string>,
+    snapshot: Partial<Pick<ServerProvider, "enabled" | "statusPending">> = {},
+  ): ServerProvider {
+    const base = provider({ provider: driver, instanceId: "opencode", models });
+    return {
+      ...base,
+      ...snapshot,
+      // The server marks GLM-5.3-Flash Free as Zen's automatic model.
+      models: base.models.map((model) =>
+        model.slug === GLM ? { ...model, isDefault: true } : model,
+      ),
+    };
+  }
+
+  function shownModel(input: {
+    readonly providers: ReadonlyArray<ServerProvider>;
+    readonly draftKey: string;
+    readonly threadModelSelection?: ReturnType<typeof createModelSelection>;
+    readonly chosen?: string;
+  }) {
+    return deriveEffectiveComposerModelState({
+      draft: input.chosen
+        ? {
+            activeProvider: OPENCODE,
+            modelSelectionByProvider: { [OPENCODE]: createModelSelection(OPENCODE, input.chosen) },
+          }
+        : null,
+      providers: input.providers,
+      selectedProvider: driver,
+      selectedInstanceId: OPENCODE,
+      threadModelSelection: input.threadModelSelection ?? NO_PROVIDER_MODEL_SELECTION,
+      projectModelSelection: null,
+      settings: DEFAULT_UNIFIED_SETTINGS,
+      shownDefaultScope: { draftKey: input.draftKey, environmentId: EnvironmentId.make("env") },
+    }).selectedModel;
+  }
+
+  it("is the model OpenCode marks for a Zen-only user, not the first by name", () => {
+    expect(shownModel({ providers: [openCode([BIG_PICKLE, GLM])], draftKey: "zen" })).toBe(GLM);
+  });
+
+  it("names no other provider's model while OpenCode's snapshot is not enabled yet", () => {
+    // First run: settings turn OpenCode on before the server's snapshot does.
+    // This showed Codex's default, "gpt-6-astra", under OpenCode.
+    const draftKey = "first-run";
+    expect(shownModel({ providers: [openCode([], { enabled: false })], draftKey })).toBe("");
+    expect(shownModel({ providers: [openCode([BIG_PICKLE, GLM])], draftKey })).toBe(GLM);
+  });
+
+  it("names no static model while OpenCode's first check is pending", () => {
+    expect(
+      shownModel({ providers: [openCode([], { statusPending: true })], draftKey: "pending" }),
+    ).toBe("");
+  });
+
+  it("keeps a saved model that OpenCode no longer lists, marked unavailable", () => {
+    const saved = createModelSelection(OPENCODE, "opencode/deepseek-v4.1-flash-free");
+    expect(
+      shownModel({
+        providers: [openCode([BIG_PICKLE, GLM])],
+        draftKey: "saved",
+        threadModelSelection: saved,
+      }),
+    ).toBe(saved.model);
+  });
+
+  it("keeps an explicit choice, even one never picked automatically", () => {
+    expect(
+      shownModel({
+        providers: [openCode([BIG_PICKLE, GLM])],
+        draftKey: "chosen",
+        chosen: BIG_PICKLE,
+      }),
+    ).toBe(BIG_PICKLE);
+  });
+});

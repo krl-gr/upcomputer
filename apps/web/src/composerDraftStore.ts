@@ -1112,6 +1112,7 @@ function keepShownDefaultModel(
   if (shown !== undefined && shown !== model && (!catalog.settled || catalog.lists(shown))) {
     return shown;
   }
+  if (model === "") return model;
   if (byEnvironment === undefined) {
     byEnvironment = new Map();
     shownDefaultModelsByDraft.set(scope.draftKey, byEnvironment);
@@ -1172,6 +1173,11 @@ export function deriveEffectiveComposerModelState(input: {
     input.selectedInstanceId !== null &&
     input.selectedInstanceId !== undefined &&
     input.threadModelSelection?.instanceId === input.selectedInstanceId;
+  // Antigravity and OpenCode run only what their live catalog lists, so a
+  // static default, or another provider's while theirs is not ready, would
+  // name a model they cannot run (Codex's "gpt-6-astra" under OpenCode).
+  const catalogOnly =
+    input.selectedProvider === "antigravity" || input.selectedProvider === "opencode";
   const resolvedBaseModel =
     (input.selectedInstanceId
       ? resolveAppModelSelectionForInstance(
@@ -1182,8 +1188,7 @@ export function deriveEffectiveComposerModelState(input: {
           { preserveUnavailableSelection: preserveThreadModel },
         )
       : null) ??
-    // Antigravity has no static model or cross-account catalog fallback.
-    (input.selectedProvider === "antigravity" && input.selectedInstanceId ? "" : null) ??
+    (catalogOnly && input.selectedInstanceId ? "" : null) ??
     resolveAppModelSelection(
       input.selectedProvider,
       input.settings,
@@ -1194,7 +1199,7 @@ export function deriveEffectiveComposerModelState(input: {
     getDefaultServerModel(input.providers, input.selectedProvider);
   const selectedInstanceId = input.selectedInstanceId;
   const baseModel =
-    !baseModelCandidate && selectedInstanceId && resolvedBaseModel && input.shownDefaultScope
+    !baseModelCandidate && selectedInstanceId && input.shownDefaultScope
       ? keepShownDefaultModel(input.shownDefaultScope, selectedInstanceId, resolvedBaseModel, {
           settled:
             input.providers.find((provider) => provider.instanceId === selectedInstanceId)
@@ -1229,7 +1234,7 @@ export function deriveEffectiveComposerModelState(input: {
         activeSelection.model,
         { preserveUnavailableSelection: true },
       ) ??
-      (input.selectedProvider === "antigravity" ? "" : null) ??
+      (catalogOnly ? "" : null) ??
       resolveAppModelSelection(
         input.selectedProvider,
         input.settings,
