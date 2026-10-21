@@ -50,7 +50,7 @@ const makeHarness = Effect.fn("test.makeOpenCodeInstallation")(function* (
     baseDir,
     releaseAsset: {
       version: "1.19.3",
-      url: "https://github.com/sst/opencode/releases/download/test/opencode-test.tar.gz",
+      url: "https://github.com/anomalyco/opencode/releases/download/test/opencode-test.tar.gz",
       sha256,
       archiveBytes: archive.length,
     },
@@ -87,7 +87,7 @@ it.each([
   expect(OpenCodeInstallation.resolveOpenCodeReleaseAsset(platform, arch)).toMatchObject({
     version: "1.19.3",
     url: expect.stringMatching(
-      /^https:\/\/github\.com\/sst\/opencode\/releases\/download\/v1\.19\.3\//u,
+      /^https:\/\/github\.com\/anomalyco\/opencode\/releases\/download\/v1\.19\.3\//u,
     ),
     sha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
   });

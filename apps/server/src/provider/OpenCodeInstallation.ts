@@ -59,7 +59,7 @@ export interface OpenCodeReleaseAsset {
   readonly archiveBytes: number;
 }
 
-const RELEASE_BASE_URL = "https://github.com/sst/opencode/releases/download/v1.19.3";
+const RELEASE_BASE_URL = "https://github.com/anomalyco/opencode/releases/download/v1.19.3";
 // x64 takes the `baseline` builds: the default ones need AVX2, which Rosetta
 // and some older or virtual CPUs lack.
 const RELEASES: Readonly<Record<string, OpenCodeReleaseAsset>> = {
