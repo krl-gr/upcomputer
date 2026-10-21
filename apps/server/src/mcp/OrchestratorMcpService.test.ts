@@ -13,6 +13,7 @@ import {
   RunId,
   ThreadId,
   type OrchestrationV2ThreadProjection,
+  type OrchestratorMcpCapabilitiesResult,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -951,10 +952,13 @@ describe("OrchestratorMcpService provider resolution", () => {
           const byId = new Map(
             capabilities.providers.map((provider) => [provider.providerInstanceId, provider]),
           );
+          const unusable = new Set([disabledAntigravityInstanceId, forkOnlyInstanceId]);
+          const expectedModelIds = (provider: ServerProvider) =>
+            unusable.has(provider.instanceId) ? [] : provider.models.map((model) => model.slug);
           for (const provider of providers) {
             assert.deepEqual(
               byId.get(provider.instanceId)?.models.map((model) => model.id),
-              provider.models.map((model) => model.slug),
+              expectedModelIds(provider),
             );
           }
 
@@ -976,7 +980,7 @@ describe("OrchestratorMcpService provider resolution", () => {
               refreshed.providers
                 .find((entry) => entry.providerInstanceId === provider.instanceId)
                 ?.models.map((model) => model.id),
-              provider.models.map((model) => model.slug),
+              expectedModelIds(provider),
             );
           }
 
@@ -1014,6 +1018,105 @@ describe("OrchestratorMcpService provider resolution", () => {
           );
         }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
       }),
+  );
+
+  it.effect("offers no models from providers that cannot run work until they are ready", () =>
+    Effect.gen(function* () {
+      const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+      const opencodeInstanceId = ProviderInstanceId.make("opencode");
+      const claudeReady = providerSnapshot({
+        instanceId: claudeInstanceId,
+        driver: ProviderDriverKind.make("claudeAgent"),
+        model: "claude-opus-5-5",
+      });
+      const codexReady = providerSnapshot({
+        instanceId: codexInstanceId,
+        driver: ProviderDriverKind.make("codex"),
+        model: "gpt-5.4",
+      });
+      let providers: ReadonlyArray<ServerProvider> = [
+        {
+          ...claudeReady,
+          installed: false,
+          status: "error",
+          auth: { status: "unknown" },
+          message: "Claude Agent CLI (`claude`) was not found on PATH.",
+        },
+        { ...codexReady, status: "error", auth: { status: "unauthenticated" } },
+        providerSnapshot({
+          instanceId: opencodeInstanceId,
+          driver: ProviderDriverKind.make("opencode"),
+          model: "opencode/glm-5.3-flash-free",
+        }),
+      ];
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: () => Effect.succeed(parentProjection([])),
+        }),
+        ServerSettings.layerTest(),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({
+          getProviders: Effect.sync(() => providers),
+        }),
+        adapterRegistryLayer([claudeInstanceId, codexInstanceId, opencodeInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const offered = (capabilities: OrchestratorMcpCapabilitiesResult) =>
+          Object.fromEntries(
+            capabilities.providers.map((provider) => [
+              provider.providerInstanceId,
+              [provider.canRunChildTask, provider.models.map((model) => model.id)],
+            ]),
+          );
+
+        const initial = yield* service.capabilities(scope);
+        assert.deepEqual(offered(initial), {
+          claudeAgent: [false, []],
+          codex: [false, []],
+          opencode: [true, ["opencode/glm-5.3-flash-free"]],
+        });
+        assert.deepEqual(
+          initial.providers.find((provider) => provider.providerInstanceId === codexInstanceId)
+            ?.constraints,
+          ["Provider status is error.", "Provider is not authenticated."],
+        );
+
+        providers = providers.map((provider) =>
+          provider.instanceId === claudeInstanceId
+            ? {
+                ...claudeReady,
+                enabled: true,
+                installed: false,
+                status: "warning",
+                auth: { status: "unknown" },
+                statusPending: true,
+                message: "Claude provider status has not been checked in this session yet.",
+              }
+            : provider.instanceId === codexInstanceId
+              ? { ...codexReady, enabled: false, status: "warning", auth: { status: "unknown" } }
+              : provider,
+        );
+        assert.deepEqual(offered(yield* service.capabilities(scope)), {
+          claudeAgent: [false, []],
+          codex: [false, []],
+          opencode: [true, ["opencode/glm-5.3-flash-free"]],
+        });
+
+        providers = providers.map((provider) =>
+          provider.instanceId === claudeInstanceId ? claudeReady : provider,
+        );
+        assert.deepEqual(offered(yield* service.capabilities(scope)), {
+          claudeAgent: [true, ["claude-opus-5-5"]],
+          codex: [false, []],
+          opencode: [true, ["opencode/glm-5.3-flash-free"]],
+        });
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
   );
 
   it.effect("leaves models the user hid out of the capability catalog", () =>

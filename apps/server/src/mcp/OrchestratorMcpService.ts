@@ -265,7 +265,8 @@ function providerConstraints(
   if (!isProviderAvailable(provider)) {
     constraints.push(provider.unavailableReason ?? "Provider driver is unavailable.");
   }
-  if (provider.status === "error" || provider.status === "disabled") {
+  // `warning` also covers not yet checked and unverified sign-in; the composer refuses those too.
+  if (provider.status !== "ready") {
     constraints.push(provider.message ?? `Provider status is ${provider.status}.`);
   }
   if (provider.auth.status === "unauthenticated") {
@@ -1864,20 +1865,23 @@ const make = Effect.gen(function* () {
               providerInstanceId: provider.instanceId,
               driverKind: provider.driver,
               displayName: provider?.displayName ?? null,
+              // Agents offer any listed model, so a provider that cannot run work lists none.
               models:
-                provider?.models
-                  .filter(
-                    (model) =>
-                      model.isCustom ||
-                      !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
-                  )
-                  .map((model) => ({
-                    id: model.slug,
-                    label: model.name ?? null,
-                    ...(model.capabilities?.optionDescriptors === undefined
-                      ? {}
-                      : { options: model.capabilities.optionDescriptors }),
-                  })) ?? [],
+                constraints.length > 0
+                  ? []
+                  : provider.models
+                      .filter(
+                        (model) =>
+                          model.isCustom ||
+                          !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
+                      )
+                      .map((model) => ({
+                        id: model.slug,
+                        label: model.name ?? null,
+                        ...(model.capabilities?.optionDescriptors === undefined
+                          ? {}
+                          : { options: model.capabilities.optionDescriptors }),
+                      })),
               ...(provider.supportedRuntimeModes === undefined ||
               provider.supportedRuntimeModes.length === 0
                 ? {}
