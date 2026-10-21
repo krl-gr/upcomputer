@@ -310,6 +310,26 @@ export function resolveFirstRunAgentStart(input: {
   return "install";
 }
 
+export type FirstRunAgentStart = "install" | "skip";
+
+/**
+ * The starter decides once per window session. After `skip`, or once
+ * onboarding is complete, an agent of the user's that later stops working
+ * (turned off, signed out, a failed recheck) starts no download and saves no
+ * default model.
+ */
+export function latchFirstRunAgentStart(input: {
+  readonly latched: FirstRunAgentStart | null;
+  readonly completed: boolean;
+  readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
+  readonly waitOver: boolean;
+}): FirstRunAgentStart | null {
+  if (input.latched !== null) return input.latched;
+  if (input.completed) return "skip";
+  const next = resolveFirstRunAgentStart(input);
+  return next === "wait" ? null : next;
+}
+
 export type FirstRunAgentStatus =
   | { readonly kind: "preparing"; readonly progress: number | null }
   | { readonly kind: "failed"; readonly message: string };

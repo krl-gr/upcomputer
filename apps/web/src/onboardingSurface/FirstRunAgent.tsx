@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useClientSettings } from "../hooks/useSettings";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
@@ -13,22 +14,24 @@ import {
   countReadyOnboardingProviders,
   FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
-  resolveFirstRunAgentStart,
+  latchFirstRunAgentStart,
   resolveFirstRunAgentStatus,
   resolveFirstRunModel,
+  type FirstRunAgentStart,
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
 
 const START_FAILED = "Could not start setting up your agent. Check your connection and try again.";
 
-/** Set once a new user's window opens, so the composer shows setup at once. */
+/**
+ * Set once a new user's window opens, so the composer shows setup at once.
+ * `start` is `wait` until the starter decides, then latched for the session,
+ * so a remount (for example after /welcome) never decides again.
+ */
 const firstRunAgentAtom = Atom.make<{
-  readonly requested: boolean;
+  readonly start: "wait" | FirstRunAgentStart | null;
   readonly startError: string | null;
-}>({ requested: false, startError: null }).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("web-first-run-agent"),
-);
+}>({ start: null, startError: null }).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent"));
 
 function useStartFirstRunAgent(environmentId: EnvironmentId) {
   const setSetup = useAtomSet(firstRunAgentAtom);
@@ -37,10 +40,11 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     reportDefect: false,
   });
   return useCallback(() => {
-    setSetup({ requested: true, startError: null });
+    setSetup((setup) => ({ ...setup, startError: null }));
     void startInstall({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } }).then(
       (result) => {
-        if (result._tag !== "Success") setSetup({ requested: true, startError: START_FAILED });
+        if (result._tag !== "Success")
+          setSetup((setup) => ({ ...setup, startError: START_FAILED }));
       },
     );
   }, [environmentId, setSetup, startInstall]);
@@ -54,7 +58,11 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
  */
 export function FirstRunAgentStarter({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const start = useStartFirstRunAgent(environmentId);
+  const setup = useAtomValue(firstRunAgentAtom);
   const setSetup = useAtomSet(firstRunAgentAtom);
+  const onboardingCompleted = useClientSettings(
+    (settings) => settings.onboardingCompletedAt !== null,
+  );
   const recordClientEvent = useRecordClientEvent();
   const completeOnboarding = useCompleteOnboarding();
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
@@ -72,23 +80,26 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
 
   const [checkWaitOver, setCheckWaitOver] = useState(false);
   useEffect(() => {
-    setSetup({ requested: true, startError: null });
+    setSetup((current) => (current.start === null ? { ...current, start: "wait" } : current));
     const timer = window.setTimeout(() => setCheckWaitOver(true), FIRST_RUN_AGENT_CHECK_WAIT_MS);
     return () => window.clearTimeout(timer);
   }, [setSetup]);
-  const startDecision = resolveFirstRunAgentStart({ providers, waitOver: checkWaitOver });
-  const started = useRef(false);
+  const startDecision = latchFirstRunAgentStart({
+    latched: setup.start === "wait" || setup.start === null ? null : setup.start,
+    completed: onboardingCompleted,
+    providers,
+    waitOver: checkWaitOver,
+  });
+  // The ref covers StrictMode's second effect run, before the latch re-renders.
+  const decided = useRef(false);
   useEffect(() => {
-    if (started.current) return;
-    if (startDecision === "skip") {
-      setSetup({ requested: false, startError: null });
-      return;
-    }
+    if (startDecision === null || setup.start === startDecision || decided.current) return;
+    decided.current = true;
+    setSetup((current) => ({ ...current, start: startDecision }));
     if (startDecision !== "install") return;
-    started.current = true;
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
     start();
-  }, [environmentId, recordClientEvent, setSetup, start, startDecision]);
+  }, [environmentId, recordClientEvent, setSetup, setup.start, start, startDecision]);
 
   const failedOperation = useRef<string | null>(null);
   useEffect(() => {
@@ -115,7 +126,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const savedModel = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     // Only a user this window installs OpenCode for gets its model as the default.
-    if (serverConfig === null || !(started.current || startDecision === "install")) return;
+    if (serverConfig === null || startDecision !== "install") return;
     if (savedModel.current === undefined && serverConfig.settings.defaultModelSelection !== null) {
       savedModel.current = null;
     }
@@ -185,7 +196,7 @@ export function useFirstRunAgentStatus(
   }, [environmentId, recordClientEvent, start]);
   const status = active
     ? resolveFirstRunAgentStatus({
-        requested: setup.requested,
+        requested: setup.start === "wait" || setup.start === "install",
         startError: setup.startError,
         install,
         provider: providers?.find(

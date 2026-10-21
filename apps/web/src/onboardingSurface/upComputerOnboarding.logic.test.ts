@@ -19,6 +19,7 @@ import {
   countReadyOnboardingProviders,
   isCodexExistingCliChosen,
   isFirstRunAgentChecking,
+  latchFirstRunAgentStart,
   resolveAgentInstallCell,
   resolveAgentReadyCell,
   resolveCliInstallCommand,
@@ -323,6 +324,39 @@ describe("first-run agent start", () => {
     expect(decide([provider("claudeAgent", { statusPending: true })], true)).toBe("install");
     expect(decide(null, true)).toBe("install");
     expect(decide([provider("opencode", { statusPending: true })])).toBe("install");
+  });
+});
+
+describe("first-run agent start latch", () => {
+  const working = [provider("codex"), provider("opencode", { enabled: false })];
+  const latch = (
+    latched: Parameters<typeof latchFirstRunAgentStart>[0]["latched"],
+    providers: ReadonlyArray<ServerProvider> | null,
+    completed = false,
+  ) => latchFirstRunAgentStart({ latched, completed, providers, waitOver: false });
+
+  it("skips for good once the user's own agent worked, whatever it does later", () => {
+    const decided = latch(null, working);
+    expect(decided).toBe("skip");
+    // Turned off, signed out, or a recheck that briefly failed: still no
+    // download, and the starter, which saves a default model only after
+    // "install", saves none.
+    expect(latch(decided, [provider("codex", { enabled: false }), provider("opencode")])).toBe(
+      "skip",
+    );
+    expect(latch(decided, [provider("codex", signedOut)])).toBe("skip");
+    expect(latch(decided, [provider("codex", { status: "error" })])).toBe("skip");
+    expect(latch(decided, [])).toBe("skip");
+  });
+
+  it("never installs once onboarding is complete", () => {
+    expect(latch(null, [provider("codex", missing)], true)).toBe("skip");
+  });
+
+  it("keeps an install decision, and decides nothing while the checks run", () => {
+    expect(latch(null, [provider("claudeAgent", { statusPending: true })])).toBeNull();
+    expect(latch(null, [provider("codex", missing)])).toBe("install");
+    expect(latch("install", working)).toBe("install");
   });
 });
 
