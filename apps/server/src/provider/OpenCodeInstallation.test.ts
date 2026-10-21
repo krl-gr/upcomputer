@@ -146,6 +146,33 @@ it.effect("downloads the pinned release past an old OpenCode and reuses it next 
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect.each([
+  ["a missing binary", "opencode"],
+  ["a missing install record", ".install-complete.json"],
+])("repairs a managed install with %s on Retry", ([, file]) =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness();
+    yield* h.installation.start;
+    expect((yield* terminalState(h.installation)).phase).toBe("succeeded");
+    const destination = `${h.installation.managedDirectory}/1.19.3`;
+    yield* h.fs.remove(`${destination}/${file}`);
+
+    const relaunched = yield* makeHarness({ baseDir: h.baseDir });
+    yield* relaunched.installation.start;
+    expect(yield* terminalState(relaunched.installation)).toMatchObject({
+      phase: "succeeded",
+      source: "managed",
+      executablePath: `${destination}/opencode`,
+    });
+    expect(relaunched.downloads()).toBe(1);
+    expect(yield* h.fs.exists(`${destination}/.install-complete.json`)).toBe(true);
+    const setAside = (yield* h.fs.readDirectory(h.installation.managedDirectory)).filter((entry) =>
+      entry.startsWith(".install-damaged-"),
+    );
+    expect(setAside).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("rejects a corrupted download without installing anything", () =>
   Effect.gen(function* () {
     const h = yield* makeHarness({ body: Stream.succeed(new Uint8Array(archive.length)) });

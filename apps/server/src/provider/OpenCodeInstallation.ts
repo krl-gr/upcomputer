@@ -354,20 +354,32 @@ export const makeOpenCodeInstallation = Effect.fn("makeOpenCodeInstallation")(fu
         Effect.uninterruptible,
       );
       if (yield* fs.exists(destination)) {
-        const record = yield* readRecord(
-          path.join(destination, ".install-complete.json"),
-          InstalledRelease,
-        );
-        if (record.sha256 !== release.sha256)
-          return yield* installationError(
-            "verify",
-            "The existing managed OpenCode release differs from the official package.",
+        const intact = yield* Effect.gen(function* () {
+          const record = yield* readRecord(
+            path.join(destination, ".install-complete.json"),
+            InstalledRelease,
           );
-        yield* validate(yield* executableIn(destination), release.version).pipe(
-          Effect.timeout("90 seconds"),
+          if (record.sha256 !== release.sha256)
+            return yield* installationError(
+              "verify",
+              "The existing managed OpenCode release differs from the official package.",
+            );
+          yield* validate(yield* executableIn(destination), release.version).pipe(
+            Effect.timeout("90 seconds"),
+          );
+        }).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
         );
-        yield* activate();
-        return;
+        if (intact) {
+          yield* activate();
+          return;
+        }
+        // Quarantined or half-deleted: set it aside under a staging name, which
+        // startup removes after a day if it cannot be removed now, and download again.
+        const damaged = path.join(managedDirectory, `.install-damaged-${operationId}`);
+        yield* fs.rename(destination, damaged);
+        yield* fs.remove(damaged, { recursive: true, force: true }).pipe(Effect.ignore);
       }
       const staging = yield* fs.makeTempDirectoryScoped({
         directory: managedDirectory,
