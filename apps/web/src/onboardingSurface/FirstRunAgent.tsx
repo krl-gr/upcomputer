@@ -40,8 +40,15 @@ const firstRunAgentAtom = Atom.make<{
   Atom.withLabel("web-first-run-agent"),
 );
 
+/**
+ * Install operations whose `started` or `failed` event this window already
+ * sent, so a remount (for example after /welcome) does not count one twice.
+ */
+const reportedOperations = new Set<string>();
+
 function useStartFirstRunAgent(environmentId: EnvironmentId) {
   const setSetup = useAtomSet(firstRunAgentAtom);
+  const recordClientEvent = useRecordClientEvent();
   const startInstall = useAtomCommand(serverEnvironment.startProviderInstall, {
     reportFailure: false,
     reportDefect: false,
@@ -52,8 +59,17 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
       environmentId,
       input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID },
     });
-    if (result._tag !== "Success") setSetup((setup) => ({ ...setup, startError: START_FAILED }));
-  }, [environmentId, setSetup, startInstall]);
+    if (result._tag !== "Success") {
+      setSetup((setup) => ({ ...setup, startError: START_FAILED }));
+      return;
+    }
+    // A user's own OpenCode succeeds at once; `started` counts real downloads.
+    const { operationId, phase } = result.value;
+    if (phase !== "downloading" || operationId === null) return;
+    if (reportedOperations.has(`started:${operationId}`)) return;
+    reportedOperations.add(`started:${operationId}`);
+    recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
+  }, [environmentId, recordClientEvent, setSetup, startInstall]);
 }
 
 /** When this window first saw each install succeed, keyed by its operation, across remounts. */
@@ -105,10 +121,8 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     if (startDecision === null || setup.start === startDecision || decided.current) return;
     decided.current = true;
     setSetup((current) => ({ ...current, start: startDecision }));
-    if (startDecision !== "install") return;
-    recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
-    void start();
-  }, [environmentId, recordClientEvent, setSetup, setup.start, start, startDecision]);
+    if (startDecision === "install") void start();
+  }, [setSetup, setup.start, start, startDecision]);
 
   const succeededOperation = install?.phase === "succeeded" ? install.operationId : null;
   useEffect(() => {
@@ -132,10 +146,10 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     };
   }, [setSetup, succeededOperation]);
 
-  const failedOperation = useRef<string | null>(null);
   useEffect(() => {
-    if (install?.phase !== "failed" || install.operationId === failedOperation.current) return;
-    failedOperation.current = install.operationId;
+    if (install?.phase !== "failed" || install.operationId === null) return;
+    if (reportedOperations.has(`failed:${install.operationId}`)) return;
+    reportedOperations.add(`failed:${install.operationId}`);
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "failed" });
   }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
 
