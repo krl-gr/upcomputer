@@ -277,20 +277,54 @@ function flattenOpenCodeModels(
     }
   }
 
-  // UpComputer: "Automatic" takes the model marked default, else the first one
-  // by name, and the first one by name moves as OpenCode's catalog grows (Big
-  // Pickle on one launch, Beam Free on the next). OpenCode names a default
-  // model per provider, which stays put; take the first connected provider's.
+  return markOpenCodeDefaultModel(
+    models.toSorted((left, right) => left.name.localeCompare(right.name)),
+    input.providerList.connected,
+    input.providerList.default,
+  );
+}
+
+const ZEN_PROVIDER_ID = "opencode";
+// UpComputer: Zen's free models that keep no data, in the first-run order.
+const ZEN_AUTOMATIC_MODELS = [
+  "opencode/glm-5.3-flash-free",
+  "opencode/deepseek-v4.1-flash-free",
+  "opencode/minimax-m3.1-flash-free",
+];
+// Free while its team collects feedback on it, so only a user's own choice.
+const ZEN_NEVER_AUTOMATIC = "opencode/big-pickle";
+
+/**
+ * UpComputer: "Automatic" takes the model marked default, else the first one
+ * by name, which moves as OpenCode's catalog grows. A provider the user signed
+ * in to wins, with OpenCode's own default for it where OpenCode names one. Zen,
+ * connected for everyone, names Big Pickle, so it gets a zero-retention free
+ * model instead.
+ */
+function markOpenCodeDefaultModel(
+  models: ReadonlyArray<ServerProviderModel>,
+  connected: ReadonlyArray<string>,
+  defaults: Readonly<Record<string, string>>,
+): ReadonlyArray<ServerProviderModel> {
   const listed = new Set(models.map((model) => model.slug));
-  const defaultSlug = input.providerList.connected
-    .map((providerId) => {
-      const modelId = input.providerList.default[providerId];
-      return modelId === undefined ? undefined : `${providerId}/${modelId}`;
-    })
-    .find((slug) => slug !== undefined && listed.has(slug));
-  return models
-    .map((model) => (model.slug === defaultSlug ? { ...model, isDefault: true } : model))
-    .toSorted((left, right) => left.name.localeCompare(right.name));
+  const automatic = (slug: string | undefined) =>
+    slug !== undefined && listed.has(slug) && slug !== ZEN_NEVER_AUTOMATIC ? slug : undefined;
+  const openCodeDefault = (providerId: string) =>
+    automatic(
+      defaults[providerId] === undefined ? undefined : `${providerId}/${defaults[providerId]}`,
+    );
+  const signedIn = connected.filter((providerId) => providerId !== ZEN_PROVIDER_ID);
+  const defaultSlug =
+    signedIn.map(openCodeDefault).find((slug) => slug !== undefined) ??
+    signedIn
+      .map((providerId) => models.find((model) => model.slug.startsWith(`${providerId}/`))?.slug)
+      .find((slug) => slug !== undefined) ??
+    ZEN_AUTOMATIC_MODELS.find((slug) => listed.has(slug)) ??
+    openCodeDefault(ZEN_PROVIDER_ID) ??
+    models.find((model) => model.slug !== ZEN_NEVER_AUTOMATIC)?.slug;
+  return models.map((model) =>
+    model.slug === defaultSlug ? { ...model, isDefault: true } : model,
+  );
 }
 
 function trimOptional(value: string | null | undefined): string | undefined {
@@ -559,18 +593,23 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
     });
   }
   const models = providerModelsFromSettings(
-    result.value
-      .map((model) => {
-        const subProvider = subProviderLabelFor(model);
-        return {
-          slug: `${model.providerID}/${model.id}`,
-          name: model.name,
-          ...(subProvider ? { subProvider } : {}),
-          isCustom: false,
-          capabilities: openCode2ModelCapabilities(model),
-        };
-      })
-      .toSorted((left, right) => left.name.localeCompare(right.name)),
+    markOpenCodeDefaultModel(
+      result.value
+        .map((model) => {
+          const subProvider = subProviderLabelFor(model);
+          return {
+            slug: `${model.providerID}/${model.id}`,
+            name: model.name,
+            ...(subProvider ? { subProvider } : {}),
+            isCustom: false,
+            capabilities: openCode2ModelCapabilities(model),
+          };
+        })
+        .toSorted((left, right) => left.name.localeCompare(right.name)),
+      // OpenCode 2 lists only connected providers' models and names no defaults.
+      [...new Set(result.value.map((model) => model.providerID))],
+      {},
+    ),
     settings.customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );

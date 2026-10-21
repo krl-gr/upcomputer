@@ -476,66 +476,170 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
     }),
   );
 
-  it.effect("marks the model OpenCode names as its default, whatever the name order", () =>
+  const model = (id: string, name: string) => ({ id, name, variants: {} });
+  const zen = (...models: ReadonlyArray<readonly [string, string]>) => ({
+    id: "opencode",
+    name: "OpenCode Zen",
+    models: Object.fromEntries(models.map(([id, name]) => [id, model(id, name)])),
+  });
+  const anthropic = {
+    id: "anthropic",
+    name: "Anthropic",
+    models: { "claude-sonnet-4-6": model("claude-sonnet-4-6", "Claude Sonnet 4.6") },
+  };
+  const defaultsOf = (snapshot: {
+    readonly models: ReadonlyArray<{
+      readonly slug: string;
+      readonly isDefault?: boolean | undefined;
+    }>;
+  }) => snapshot.models.filter((entry) => entry.isDefault === true).map((entry) => entry.slug);
+  const noLoginZen = zen(
+    ["big-pickle", "Big Pickle"],
+    ["mimo-v2.6-flash-free", "MiMo V2.6 Flash Free"],
+    ["minimax-m3.1-flash-free", "MiniMax M3.1 Flash Free"],
+    ["deepseek-v4.1-flash-free", "DeepSeek V4.1 Flash Free"],
+    ["glm-5.3-flash-free", "GLM-5.3-Flash Free"],
+  );
+
+  it.effect("is GLM-5.3-Flash Free for Zen only, not OpenCode's Big Pickle", () =>
     Effect.gen(function* () {
-      const freeModel = (id: string, name: string) => ({ id, name, variants: {} });
       runtimeMock.state.inventory = {
         providerList: {
           connected: ["opencode"],
-          all: [
-            {
-              id: "opencode",
-              name: "OpenCode Zen",
-              models: {
-                "big-pickle": freeModel("big-pickle", "Big Pickle"),
-                "beam-free": freeModel("beam-free", "Beam Free"),
-              },
-            },
-            {
-              id: "openai",
-              name: "OpenAI",
-              models: { "gpt-5.4": freeModel("gpt-5.4", "GPT-5.4") },
-            },
-          ],
-          default: { openai: "gpt-5.4", opencode: "big-pickle" },
+          // OpenCode names defaults for providers that are not connected too.
+          all: [noLoginZen, { ...anthropic, id: "openai", name: "OpenAI" }],
+          default: { opencode: "big-pickle", openai: "gpt-6-astra" },
         },
         agents: [],
       };
 
       const snapshot = yield* checkProvider(makeOpenCodeSettings());
 
-      NodeAssert.deepEqual(
-        snapshot.models.map((model) => [model.slug, model.isDefault === true]),
-        [
-          ["opencode/beam-free", false],
-          ["opencode/big-pickle", true],
-        ],
-      );
+      NodeAssert.deepEqual(defaultsOf(snapshot), ["opencode/glm-5.3-flash-free"]);
+      NodeAssert.ok(snapshot.models.every((entry) => entry.slug.startsWith("opencode/")));
     }),
   );
 
-  it.effect("marks no default when OpenCode's default is not listed", () =>
+  it.effect("falls back through the zero-retention free models in order", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [
+          zen(
+            ["big-pickle", "Big Pickle"],
+            ["minimax-m3.1-flash-free", "MiniMax M3.1 Flash Free"],
+            ["deepseek-v4.1-flash-free", "DeepSeek V4.1 Flash Free"],
+          ),
+          ["opencode/deepseek-v4.1-flash-free"],
+        ],
+        [
+          zen(["big-pickle", "Big Pickle"], ["minimax-m3.1-flash-free", "MiniMax M3.1 Flash Free"]),
+          ["opencode/minimax-m3.1-flash-free"],
+        ],
+        [
+          zen(["big-pickle", "Big Pickle"], ["mimo-v2.6-flash-free", "MiMo V2.6 Flash Free"]),
+          ["opencode/mimo-v2.6-flash-free"],
+        ],
+        [zen(["big-pickle", "Big Pickle"]), []],
+      ] as const;
+      for (const [provider, expected] of cases) {
+        runtimeMock.state.inventory = {
+          providerList: {
+            connected: ["opencode"],
+            all: [provider],
+            default: { opencode: "big-pickle" },
+          },
+          agents: [],
+        };
+
+        const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+        NodeAssert.deepEqual(defaultsOf(snapshot), expected);
+      }
+    }),
+  );
+
+  it.effect("is OpenCode's default for a provider the user signed in to", () =>
     Effect.gen(function* () {
       runtimeMock.state.inventory = {
         providerList: {
-          connected: ["opencode"],
-          all: [
-            {
-              id: "opencode",
-              name: "OpenCode Zen",
-              models: { "beam-free": { id: "beam-free", name: "Beam Free", variants: {} } },
-            },
-          ],
-          default: { opencode: "big-pickle" },
+          connected: ["opencode", "anthropic"],
+          all: [noLoginZen, anthropic],
+          default: { opencode: "big-pickle", anthropic: "claude-sonnet-4-6" },
         },
         agents: [],
       };
 
       const snapshot = yield* checkProvider(makeOpenCodeSettings());
 
+      NodeAssert.deepEqual(defaultsOf(snapshot), ["anthropic/claude-sonnet-4-6"]);
+    }),
+  );
+
+  it.effect("takes a signed-in provider's first model when OpenCode names no listed default", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["anthropic", "opencode"],
+          all: [noLoginZen, anthropic],
+          default: { opencode: "big-pickle", anthropic: "claude-opus-4-8" },
+        },
+        agents: [],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(defaultsOf(snapshot), ["anthropic/claude-sonnet-4-6"]);
+    }),
+  );
+
+  it.effect("keeps OpenCode's Zen default when it is not Big Pickle", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode"],
+          all: [zen(["big-pickle", "Big Pickle"], ["beam-free", "Beam Free"], ["gpt-6", "GPT-6"])],
+          default: { opencode: "gpt-6" },
+        },
+        agents: [],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(defaultsOf(snapshot), ["opencode/gpt-6"]);
+    }),
+  );
+
+  it.effect("applies the same choice to OpenCode 2, which names no defaults", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.versionStdout = "opencode v2.0.18\n";
+      const v2Model = (providerID: string, id: string, name: string) => ({
+        providerID,
+        id,
+        name,
+        variants: [],
+      });
+      const zenOnly = [
+        v2Model("opencode", "big-pickle", "Big Pickle"),
+        v2Model("opencode", "glm-5.3-flash-free", "GLM-5.3-Flash Free"),
+      ];
+      const check = (models: ReadonlyArray<ReturnType<typeof v2Model>>) =>
+        checkProvider(
+          makeOpenCodeSettings(),
+          process.cwd(),
+          undefined,
+          undefined,
+          Effect.succeed(models),
+        );
+
+      NodeAssert.deepEqual(defaultsOf(yield* check(zenOnly)), ["opencode/glm-5.3-flash-free"]);
       NodeAssert.deepEqual(
-        snapshot.models.filter((model) => model.isDefault === true),
-        [],
+        defaultsOf(
+          yield* check([
+            ...zenOnly,
+            v2Model("anthropic", "claude-sonnet-4-6", "Claude Sonnet 4.6"),
+          ]),
+        ),
+        ["anthropic/claude-sonnet-4-6"],
       );
     }),
   );
