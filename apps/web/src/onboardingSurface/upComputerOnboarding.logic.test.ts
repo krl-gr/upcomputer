@@ -390,6 +390,9 @@ describe("isFirstRunAgentChecking", () => {
       true,
     );
     expect(isFirstRunAgentChecking(entry(provider("opencode")))).toBe(false);
+    // Settings turned it on, but the stream still holds the snapshot from while it was off.
+    expect(isFirstRunAgentChecking(entry(provider("opencode", { enabled: false })))).toBe(true);
+    expect(isFirstRunAgentChecking(entry(provider("opencode", { status: "disabled" })))).toBe(true);
     expect(isFirstRunAgentChecking(entry(provider("claudeAgent", { statusPending: true })))).toBe(
       false,
     );

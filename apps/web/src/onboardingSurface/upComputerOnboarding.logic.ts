@@ -277,12 +277,15 @@ export const FIRST_RUN_AGENT_INSTANCE_ID = defaultInstanceIdForDriver(
 );
 
 /**
- * OpenCode turns selectable as soon as it is on, but lists no models until its
- * first check answers. The composer keeps the setup state until then, so the
- * saved model never shows as a raw id.
+ * OpenCode turns selectable as soon as settings turn it on, but lists no models
+ * until its first check answers, and for a moment the stream still holds the
+ * snapshot from while it was off. The composer keeps the setup state until
+ * then, so the saved model never shows as a raw id.
  */
 export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined): boolean {
-  return entry?.instanceId === FIRST_RUN_AGENT_INSTANCE_ID && entry.snapshot.statusPending === true;
+  if (entry?.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID) return false;
+  const { snapshot } = entry;
+  return snapshot.statusPending === true || !snapshot.enabled || snapshot.status === "disabled";
 }
 
 /** How long a new user's setup waits for the agents already on the Mac to answer their first check. */
