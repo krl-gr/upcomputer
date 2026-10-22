@@ -2733,3 +2733,169 @@ it.live("bot memory suggestions stay outside the 200-entry limit until accepted"
     }),
   ),
 );
+
+it.live(
+  "bot settings autosave writes only what changed and waits for an idle chat only to move it",
+  () =>
+    runSlice("bots-autosave", ({ threads, repository, cwd, sendAsPerson, v2Runs }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const sink = yield* EventSink.EventSinkV2;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const otherProject = ProjectId.make("autosave-other");
+        for (const id of [projectId, otherProject])
+          yield* projects.apply({
+            sequence: 1,
+            eventId: EventId.make(`autosave:${id}`),
+            aggregateKind: "project",
+            aggregateId: id,
+            occurredAt: timestamp,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            type: "project.created",
+            payload: {
+              projectId: id,
+              title: id,
+              workspaceRoot: cwd,
+              defaultModelSelection: agentModel,
+              scripts: [],
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          });
+        const input = {
+          id: TaskAgentId.make("autosave-bot"),
+          projectId,
+          allowedProjectIds: [projectId, otherProject],
+          name: "Autosave bot",
+          config: agent.config,
+        };
+        const bot = yield* bots.save(input);
+        const agentOf = repository
+          .getAgentById({ id: bot.agent.id })
+          .pipe(Effect.map(Option.getOrThrow));
+        const before = yield* agentOf;
+        const sequence = yield* sink.latestSequence();
+        // The page saves its whole form; a client may order the config's keys differently.
+        const reordered = Object.fromEntries(Object.entries(bot.agent.config).toReversed());
+        yield* bots.save({ ...input, config: reordered as typeof bot.agent.config });
+        assert.equal(yield* sink.latestSequence(), sequence, "no thread command for no change");
+        assert.equal((yield* agentOf).updatedAt, before.updatedAt, "the agent is not rewritten");
+
+        const held = yield* sendAsPerson(bot.threadId, `Keep working. ${HOLD}`);
+        yield* eventually(
+          "the bot's turn to run",
+          v2Runs(bot.threadId).pipe(
+            Effect.map((runs) =>
+              Option.fromNullishOr(
+                runs.find((run) => run.id === held.run.id && run.status === "running"),
+              ),
+            ),
+          ),
+        );
+        // Role, name and model apply from the next turn, so they save mid-turn.
+        const renamed = yield* bots.save({
+          ...input,
+          name: "Renamed bot",
+          config: {
+            ...bot.agent.config,
+            role: "Researcher",
+            modelSelection: { ...agentModel, model: "autosave-model" },
+          },
+        });
+        assert.equal(renamed.agent.config.role, "Researcher");
+        const { thread } = yield* threads.getThreadRecords(bot.threadId, []);
+        assert.equal(thread.title, "Renamed bot");
+        assert.equal(thread.modelSelection.model, "autosave-model");
+        assert.equal(thread.projectId, projectId);
+        const moved = yield* bots.save({ ...input, projectId: otherProject }).pipe(Effect.flip);
+        assert.include(moved.message, "idle");
+        assert.equal((yield* bots.forThread(bot.threadId))?.projectId, projectId);
+      }),
+    ),
+);
+
+it.live("bot tools answer invalid arguments with what is wrong and what is allowed", () =>
+  runSlice("bots-tool-validation", ({ cwd, sendAsPerson, v2Runs }) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const projects = yield* ProjectStore.ProjectStoreV2;
+      yield* projects.apply({
+        sequence: 1,
+        eventId: EventId.make("validation-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: timestamp,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "project.created",
+        payload: {
+          projectId,
+          title: "Bots",
+          workspaceRoot: cwd,
+          defaultModelSelection: agentModel,
+          scripts: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      });
+      const bot = yield* bots.save({
+        id: TaskAgentId.make("validation-bot"),
+        projectId,
+        allowedProjectIds: [projectId],
+        name: "Validation bot",
+        config: agent.config,
+      });
+      // Write tools answer only a turn that is running.
+      const held = yield* sendAsPerson(bot.threadId, `Remember things. ${HOLD}`);
+      yield* eventually(
+        "the bot's turn to run",
+        v2Runs(bot.threadId).pipe(
+          Effect.map((runs) =>
+            Option.fromNullishOr(
+              runs.find((run) => run.id === held.run.id && run.status === "running"),
+            ),
+          ),
+        ),
+      );
+      const wrongScope = yield* callTaskTool(bot.threadId, "bot_remember", {
+        id: "fact",
+        text: "A fact",
+        scope: "everywhere",
+      });
+      assert.isTrue(wrongScope.isError);
+      assert.include(wrongScope.text, "bot_remember");
+      assert.include(wrongScope.text, "scope");
+      assert.include(wrongScope.text, '"global"');
+      assert.include(wrongScope.text, '"project"');
+      // A null optional argument means its default, the working project.
+      const nullScope = yield* callTaskTool(bot.threadId, "bot_remember", {
+        id: "fact",
+        text: "A fact",
+        scope: null,
+      });
+      assert.isFalse(nullScope.isError, nullScope.text);
+      assert.equal((yield* bots.memory(bot.agent.id))[0]?.projectId, projectId);
+      for (const [name, args, field] of [
+        ["bot_remember", { id: "", text: "A fact" }, "id"],
+        ["bot_forget", {}, "id"],
+        ["bot_history_search", { query: "x", index: -1 }, "index"],
+        ["bot_assign", { requestId: "request" }, "title"],
+      ] as const) {
+        const answer = yield* callTaskTool(bot.threadId, name, args);
+        assert.isTrue(answer.isError, name);
+        assert.include(answer.text, field, name);
+        assert.notInclude(answer.text, "Internal error", name);
+      }
+      const history = yield* callTaskTool(bot.threadId, "bot_history_search", {
+        query: "nothing",
+        index: null,
+      });
+      assert.isFalse(history.isError, history.text);
+    }),
+  ),
+);

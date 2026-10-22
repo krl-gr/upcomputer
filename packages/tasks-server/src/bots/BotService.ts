@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 import { CommandId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotAppearance,
+  BotWriteInput,
   defaultBotAppearance,
   BotMemory,
   BotMemoryProposal,
@@ -11,7 +12,6 @@ import {
   TaskId,
   TaskTag,
   type Bot,
-  type BotWriteInput,
   type Task,
 } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
@@ -45,6 +45,7 @@ const decodeAppearance = Schema.decodeUnknownEffect(
   ),
 );
 const isAccessory = Schema.is(BotAppearance.fields.accessory);
+const decodeBotWrite = Schema.decodeUnknownEffect(BotWriteInput);
 // `seen` holds entries already delivered that share the cursor's millisecond.
 const MemoryMarker = Schema.fromJsonString(
   Schema.Struct({
@@ -58,9 +59,20 @@ const encodeMarker = Schema.encodeSync(MemoryMarker);
 const decodeMemoryWrite = Schema.decodeUnknownEffect(BotMemoryWriteInput);
 const fail = (message: string) => new TaskError({ message });
 const asError = (cause: unknown) =>
-  cause instanceof TaskError ? cause : new TaskError({ message: "Bot operation failed.", cause });
+  cause instanceof TaskError
+    ? cause
+    : Schema.isSchemaError(cause)
+      ? new TaskError({ message: `Invalid bot input: ${cause.message}`, cause })
+      : new TaskError({ message: "Bot operation failed.", cause });
 const MEMORY_LIMIT = 200;
 const CONTEXT_BUDGET = 11998;
+/** JSON with sorted keys, to compare settings regardless of how a client ordered them. */
+const canonical = (value: unknown) =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    item !== null && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : item,
+  );
 // JSON never needs a raw "<", so escaping it keeps memory text from closing the block's tag.
 const asData = (value: unknown) => JSON.stringify(value).replaceAll("<", "\\u003c");
 interface BotRow {
@@ -253,8 +265,9 @@ const make = Effect.gen(function* () {
         worktreePath: null,
       });
     });
-  const save = (input: BotWriteInput) =>
+  const save = (raw: BotWriteInput) =>
     Effect.gen(function* () {
+      const input = yield* decodeBotWrite(raw);
       const stored = yield* rows;
       const existing = stored.find(
         (row) => row.agentId === input.id || row.threadId === input.threadId,
@@ -299,16 +312,24 @@ const make = Effect.gen(function* () {
       if (existing) {
         yield* ensureThread(yield* decode(existing), existing.adopted === 1);
         const state = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]);
-        if (
+        const moving = state.thread.projectId !== input.projectId;
+        // Other settings apply from the bot's next turn or task run, so they save at
+        // any time. A running turn keeps the project and provider it started with.
+        const busy =
           state.runtimeRequests.some((request) => request.status === "pending") ||
-          (state.thread.projectId !== input.projectId && state.thread.worktreePath !== null) ||
           state.runs.some((run) =>
             ["running", "starting", "preparing", "waiting", "queued"].includes(run.status),
-          )
+          );
+        if (
+          busy &&
+          (moving ||
+            state.thread.modelSelection.instanceId !== input.config.modelSelection.instanceId)
         )
           return yield* fail(
-            "Settings require an idle chat. Changing projects also requires a chat without a worktree.",
+            "Wait until the bot is idle to change its working project or provider.",
           );
+        if (moving && state.thread.worktreePath !== null)
+          return yield* fail("A chat with a worktree cannot change its working project.");
       }
       const current =
         existing || input.threadId !== undefined
@@ -325,6 +346,7 @@ const make = Effect.gen(function* () {
             ? undefined
             : defaultBotAppearance(input.id)
           : input.appearance;
+      const allowed = JSON.stringify([...new Set(input.allowedProjectIds)]);
       const appearanceJson = appearance == null ? null : JSON.stringify(appearance);
       const at = yield* now;
       yield* sql.withTransaction(
@@ -332,40 +354,56 @@ const make = Effect.gen(function* () {
           const oldAgent = yield* repository.getAgentById({ id: input.id });
           if (!existing && Option.isSome(oldAgent))
             return yield* fail("This agent already exists. Create a new bot identity.");
-          yield* repository.upsertAgent({
-            id: input.id,
-            projectId: null,
-            name: input.name,
-            config,
-            enabled: true,
-            startStatuses: ["To Do"],
-            startTags: [TaskTag.make(`bot:${input.id}`)],
-            startRunStatuses: [],
-            createdAt: Option.isSome(oldAgent) ? oldAgent.value.createdAt : at,
-            updatedAt: at,
-          });
-          yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted, appearance_json)
-        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${JSON.stringify([...new Set(input.allowedProjectIds)])}, ${input.threadId === undefined ? 0 : 1}, ${appearanceJson})
+          // Settings autosave per field, so an unchanged agent or row is left untouched.
+          if (
+            Option.isNone(oldAgent) ||
+            oldAgent.value.name !== input.name ||
+            !oldAgent.value.enabled ||
+            canonical(oldAgent.value.config) !== canonical(config)
+          )
+            yield* repository.upsertAgent({
+              id: input.id,
+              projectId: null,
+              name: input.name,
+              config,
+              enabled: true,
+              startStatuses: ["To Do"],
+              startTags: [TaskTag.make(`bot:${input.id}`)],
+              startRunStatuses: [],
+              createdAt: Option.isSome(oldAgent) ? oldAgent.value.createdAt : at,
+              updatedAt: at,
+            });
+          if (
+            !existing ||
+            existing.projectId !== input.projectId ||
+            existing.allowed !== allowed ||
+            (appearance !== undefined && existing.appearance !== appearanceJson)
+          )
+            yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted, appearance_json)
+        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${allowed}, ${input.threadId === undefined ? 0 : 1}, ${appearanceJson})
         ON CONFLICT(agent_id) DO UPDATE SET project_id = excluded.project_id, allowed_projects_json = excluded.allowed_projects_json,
         appearance_json = CASE WHEN ${appearance === undefined ? 0 : 1} = 1 THEN excluded.appearance_json ELSE bots.appearance_json END`;
         }),
       );
       const bot = yield* get(input.id);
       yield* ensureThread(bot, existing ? existing.adopted === 1 : input.threadId !== undefined);
+      const thread = (yield* threads.getThreadRecords(threadId, [])).thread;
       const commandSuffix = yield* crypto.randomUUIDv4();
-      yield* threads.dispatch({
-        type: "thread.metadata.update",
-        commandId: CommandId.make(`bot:settings:${input.id}:${commandSuffix}`),
-        threadId,
-        title: input.name,
-        projectId: input.projectId,
-      });
-      yield* threads.dispatch({
-        type: "thread.model-selection.set",
-        commandId: CommandId.make(`bot:model:${input.id}:${commandSuffix}`),
-        threadId,
-        modelSelection: input.config.modelSelection,
-      });
+      if (thread.title !== input.name || thread.projectId !== input.projectId)
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`bot:settings:${input.id}:${commandSuffix}`),
+          threadId,
+          title: input.name,
+          projectId: input.projectId,
+        });
+      if (canonical(thread.modelSelection) !== canonical(input.config.modelSelection))
+        yield* threads.dispatch({
+          type: "thread.model-selection.set",
+          commandId: CommandId.make(`bot:model:${input.id}:${commandSuffix}`),
+          threadId,
+          modelSelection: input.config.modelSelection,
+        });
       return bot;
     });
   const context = (input: TurnContextInput) =>

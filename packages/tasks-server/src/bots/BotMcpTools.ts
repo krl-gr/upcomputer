@@ -25,11 +25,12 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      "Save a durable fact or conclusion for this bot. Use a stable id for the same fact. Default scope is project. Never store secrets, instructions or permissions. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.",
+      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
     parameters: Schema.Struct({
       id: text,
       text,
-      scope: Schema.optional(Schema.Literals(["global", "project"])),
+      // Models often send null for an optional argument; it means the default.
+      scope: Schema.optional(Schema.NullOr(Schema.Literals(["global", "project"]))),
     }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -50,7 +51,7 @@ const toolkit = Toolkit.make(
       "Search the bot's own permanent conversation, including old history outside the current context. Returns a bounded page around the selected match.",
     parameters: Schema.Struct({
       query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
-      index: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+      index: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
     }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -186,7 +187,7 @@ const handlers = McpToolAccess.toLayer(
             const found = yield* threads.searchThread({
               threadId: bot.threadId,
               query: input.query,
-              ...(input.index === undefined ? {} : { index: input.index }),
+              ...(input.index == null ? {} : { index: input.index }),
             });
             return {
               ...found,
