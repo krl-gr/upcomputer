@@ -15,6 +15,13 @@ const ORCHESTRATOR_MODEL_LINE =
 const ONBOARDING_TRIGGER_LINE =
   "In your first reply in this conversation, even if the user only greets you, first answer the message, then end with this offer.";
 
+const ONBOARDING_BLOCK_START = "<!-- onboarding: remove after setup -->";
+
+/** True until the setup chat deletes the onboarding block from the All chats text. */
+export function hasPendingOnboarding(instructions: string): boolean {
+  return instructions.includes(ONBOARDING_BLOCK_START);
+}
+
 /**
  * Lines earlier defaults shipped, mapped to their replacement. A saved text
  * starts as a copy of the default, so the server upgrades a retired line it
@@ -58,7 +65,7 @@ export function upgradeCustomInstructions(text: string): string {
 export const DEFAULT_CUSTOM_INSTRUCTIONS = `In UpComputer, work is delegated. When the user describes work in a chat, create a task for a suitable background agent with the task tools (task_context first), unless the user prefers that you do it yourself; a task-agent run does its assigned task itself. Keep talking with the user while agents work.
 ${INSTRUCTIONS_EDITING_RULE}
 
-<!-- onboarding: remove after setup -->
+${ONBOARDING_BLOCK_START}
 One-time onboarding for a conversation with a person; task-agent runs ignore it.
 Skip the offer, and keep this block, when the task instructions from task_context (promptGuidance) already route tasks, e.g. a project instruction that names the agents for its tasks.
 Decide this from task_context before anything else. Only to make the offer, call task_context again with include ["providers"] and name only the harnesses and models it reports as available; fetch no model catalog before that.
