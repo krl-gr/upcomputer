@@ -85,11 +85,10 @@ export function botsChanged() {
     if (store.listeners.size > 0) void refresh(environmentId, store);
 }
 
-/** The environment's bots, from the shown list when there is one. */
-export async function readBots(environmentId: EnvironmentId) {
-  const store = storeFor(environmentId);
-  if (!store.list.loaded) await refresh(environmentId, store);
-  return store.list.bots;
+/** The environment's bots as last shown; null before a list has loaded. */
+export function readShownBots(environmentId: EnvironmentId) {
+  const list = stores.get(environmentId)?.list;
+  return list?.loaded ? list.bots : null;
 }
 
 function subscribeBots(environmentId: EnvironmentId, listener: () => void) {

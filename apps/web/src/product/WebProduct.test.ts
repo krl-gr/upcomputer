@@ -31,6 +31,7 @@ import {
   type ExperimentalWebThreadRowAccessoryProps,
 } from "./WebFeature";
 import {
+  collectExperimentalWebThreadActions,
   composeExperimentalWebFeatures,
   findExperimentalWebRightPanelSurface,
   findExperimentalWebRoute,
@@ -136,6 +137,34 @@ describe("web product composition", () => {
         fallback: "5m",
       }),
     ).toBe("5m");
+  });
+
+  it("collects thread actions under feature ids, skipping a feature that fails", () => {
+    const thread = { environmentId, threadId: ThreadId.make("thread-actions") };
+    const product = composeExperimentalWebFeatures([
+      {
+        id: "test.broken",
+        version: 1,
+        threadActions: () => {
+          throw new Error("unavailable");
+        },
+      },
+      {
+        id: "test.helper",
+        version: 1,
+        threadActions: (target) =>
+          target.threadId === thread.threadId
+            ? [{ id: "help", label: "Help", icon: "bot", run: () => {} }]
+            : [],
+      },
+    ]);
+    const actions = collectExperimentalWebThreadActions(product, thread);
+    expect(actions.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "feature:test.helper:help", label: "Help" },
+    ]);
+    expect(collectExperimentalWebThreadActions(composeExperimentalWebFeatures([]), thread)).toEqual(
+      [],
+    );
   });
 
   it("rejects features that collide with core or each other", () => {

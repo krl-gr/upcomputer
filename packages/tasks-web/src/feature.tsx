@@ -26,8 +26,14 @@ const LazyThreadRunCounts = lazy(() =>
     default: module.TaskThreadRunCounts,
   })),
 );
+// The thread menu asks synchronously, so its bot module loads with the Bots section, which
+// every sidebar shows. Until then the menu simply has no bot entry.
+let botMenu: typeof import("./bots/botMenu.ts") | undefined;
 const LazySidebarBots = lazy(() =>
-  import("./bots/Bots.tsx").then((module) => ({ default: module.SidebarBots })),
+  Promise.all([import("./bots/Bots.tsx"), import("./bots/botMenu.ts")]).then(([bots, menu]) => {
+    botMenu = menu;
+    return { default: bots.SidebarBots };
+  }),
 );
 const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
@@ -86,6 +92,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rpcGroups: [TasksWebRpcGroup],
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
+  threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [

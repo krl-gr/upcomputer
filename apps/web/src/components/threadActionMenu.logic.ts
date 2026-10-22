@@ -23,7 +23,8 @@ export type ThreadActionMenuId =
   | "copy-branch"
   | "copy-thread-id"
   | "archive"
-  | "delete";
+  | "delete"
+  | `feature:${string}`;
 
 export type DraftActionMenuId =
   | "copy"
@@ -86,6 +87,12 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
+  /** Entries product features add, such as turning a chat into a bot. */
+  readonly featureActions?: ReadonlyArray<{
+    readonly id: `feature:${string}`;
+    readonly label: string;
+    readonly icon?: string;
+  }>;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -191,6 +198,12 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
+    ...(state.featureActions ?? []).map((action, index) => ({
+      id: action.id,
+      label: action.label,
+      ...(action.icon === undefined ? {} : { icon: action.icon }),
+      ...(index === 0 ? { separatorBefore: true } : {}),
+    })),
     {
       id: "copy",
       label: "Copy",

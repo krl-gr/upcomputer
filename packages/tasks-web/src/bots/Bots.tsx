@@ -9,13 +9,11 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
-import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
 import {
   useConnectedEnvironmentIds,
   usePrimaryEnvironmentId,
 } from "../../../../apps/web/src/state/environments.ts";
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
-import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import {
   Collapsible,
   CollapsiblePanel,
@@ -224,7 +222,8 @@ function BotRow({
 /**
  * The chat header accessory. A bot chat has no header: the marker hides the
  * header's content (`ChatHeader`), and the bar floats over the chat with only
- * the window controls (`ChatView`). Other chats offer "Turn into bot".
+ * the window controls (`ChatView`). Other chats are left as they are; the
+ * thread's action menu offers turning one into a bot.
  */
 export function BotHeader({
   environmentId,
@@ -234,21 +233,6 @@ export function BotHeader({
   readonly threadId: ThreadId;
 }) {
   const { bots, loaded, enabled } = useBots(environmentId);
-  const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
-  const navigate = useNavigate();
-  if (!enabled || !loaded || !thread || thread.sidebarHidden) return null;
-  if (bots.some((bot) => bot.threadId === threadId)) {
-    return <span hidden data-chat-header-hidden />;
-  }
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        void navigate(botPage(environmentId, { thread: threadId }));
-      }}
-    >
-      Turn into bot
-    </Button>
-  );
+  if (!enabled || !loaded || !bots.some((bot) => bot.threadId === threadId)) return null;
+  return <span hidden data-chat-header-hidden />;
 }

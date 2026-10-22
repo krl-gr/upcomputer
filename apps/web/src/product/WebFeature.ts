@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { NavigateOptions } from "@tanstack/react-router";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
@@ -56,6 +57,21 @@ export interface ExperimentalWebThreadAccessoryProps {
   readonly threadId: ThreadId;
 }
 
+/** What a feature's thread action can do when chosen. */
+export interface ExperimentalWebThreadActionContext {
+  readonly navigate: (options: NavigateOptions) => Promise<void>;
+}
+
+/** An entry a feature adds to a thread's action menu. */
+export interface ExperimentalWebThreadAction {
+  /** Unique within the feature. */
+  readonly id: string;
+  readonly label: string;
+  /** A context menu icon name, such as "bot"; desktop menus show none. */
+  readonly icon?: string;
+  readonly run: (context: ExperimentalWebThreadActionContext) => void;
+}
+
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {
   /** The row's timestamp. Render it when there is nothing to show instead. */
   readonly fallback: ReactNode;
@@ -98,6 +114,14 @@ export interface ExperimentalWebFeatureContribution {
   readonly threadRowAccessory?: ComponentType<ExperimentalWebThreadRowAccessoryProps>;
   /** Follows the open thread's title in the chat header. */
   readonly chatHeaderAccessory?: ComponentType<ExperimentalWebThreadAccessoryProps>;
+  /**
+   * Entries for a thread's action menu, asked each time it opens. The menu shows at once, so
+   * answer from state the feature already holds. Like the menu's other thread changes they
+   * need the operate scope.
+   */
+  readonly threadActions?: (
+    thread: ExperimentalWebThreadAccessoryProps,
+  ) => ReadonlyArray<ExperimentalWebThreadAction>;
   readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,

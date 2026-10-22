@@ -309,6 +309,7 @@ import {
   ProductSidebarSections,
   ProductThreadRowAccessory,
 } from "../product/ProductSlots";
+import { productThreadActions } from "../product/threadActions";
 import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -4378,6 +4379,7 @@ export default function Sidebar() {
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const featureActions = productThreadActions(threadRef);
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -4415,12 +4417,19 @@ export default function Sidebar() {
                 titleRegeneration: supportsTitleRegeneration,
               },
               snoozePresets,
+              featureActions,
             }),
             position,
           ),
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
+        if (clicked.value.startsWith("feature:")) {
+          featureActions
+            .find((candidate) => candidate.id === clicked.value)
+            ?.run({ navigate: (options) => router.navigate(options) });
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
             clicked.value === "snooze:custom"

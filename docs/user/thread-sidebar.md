@@ -235,15 +235,16 @@ several selected threads together. Choose **Wake thread** to bring a thread back
 
 ## Bots
 
-Create a personal assistant with **+** next to **Bots** in the sidebar, or choose
-**Turn into bot** in the header of an idle chat. Each bot has one permanent
+Create a personal assistant with **+** next to **Bots** in the sidebar, or turn an
+idle chat into one: right-click it in the sidebar, or click its title in the chat
+header, and choose **Turn into bot**. Each bot has one permanent
 conversation: click its row to open it. The conversation is listed under **Bots**
 instead of **Threads**, and search still finds it. Returning from the sidebar,
 restarting the app, and changing its model keep that conversation and its history.
 A bot's chat has no header; its row shows the same statuses as a thread row, and
 counts its background task too: **Waiting** while the task runs, **Awaiting Input**
-when it is blocked, and **Failed** when it fails or is interrupted. Hover the bot's
-name for the cause.
+when it is blocked, and **Failed** when it fails or is interrupted, until you open
+the bot's conversation. Hover the bot's name for the cause.
 
 Hover the row and click the settings button to open the bot's page. There you
 change its name, appearance, role, instructions, model, working project, and
@@ -257,7 +258,9 @@ appearance follows the bot across projects, models, and restarts.
 
 Memory belongs to the bot, independently of its model. Under **Memory** on the
 bot's page, click a fact to edit it (Enter saves, Escape cancels), choose
-**Add memory** to add one, or say **Remember: ...** in the conversation.
+**Add memory** to add one, or start a message in the conversation with
+**Remember:** followed by the fact. The colon is required, and only your own
+messages save this way, not messages agents post into the conversation.
 The bot can also save useful facts during its ordinary turns. **Extract from chat
 history** asks it to review an existing conversation without replacing its
 messages.
