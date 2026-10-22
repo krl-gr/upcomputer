@@ -24,6 +24,7 @@ const runtimeMock = {
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
     sessionCreateCalls: 0,
+    sessionPermissions: [] as unknown[],
     connectionError: undefined as Error | undefined,
     sessionCreateError: undefined as unknown,
     sessionResult: undefined as { data?: { id: string } } | undefined,
@@ -39,6 +40,7 @@ const runtimeMock = {
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
     this.state.sessionCreateCalls = 0;
+    this.state.sessionPermissions.length = 0;
     this.state.connectionError = undefined;
     this.state.sessionCreateError = undefined;
     this.state.sessionResult = undefined;
@@ -93,8 +95,9 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
       session: {
-        create: async () => {
+        create: async (input: { readonly permission?: unknown }) => {
           runtimeMock.state.sessionCreateCalls += 1;
+          runtimeMock.state.sessionPermissions.push(input.permission);
           if (runtimeMock.state.sessionCreateError !== undefined) {
             throw runtimeMock.state.sessionCreateError;
           }
@@ -262,6 +265,29 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
         expect(runtimeMock.state.promptParts[0]).toEqual([
           expect.objectContaining({ type: "text" }),
           expect.objectContaining({ type: "file", filename: "screenshot.png" }),
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("keeps the read tool, without which OpenCode's free tier refuses the request", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: { parts: [{ type: "text", text: '{"title":"Greeting"}' }] },
+        };
+
+        yield* textGeneration.generateThreadTitle({
+          cwd: process.cwd(),
+          message: "hi",
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+
+        expect(runtimeMock.state.sessionPermissions).toEqual([
+          [
+            { permission: "*", pattern: "*", action: "deny" },
+            { permission: "read", pattern: "*", action: "allow" },
+          ],
         ]);
       }),
     ),

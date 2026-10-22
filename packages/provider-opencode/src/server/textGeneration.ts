@@ -189,7 +189,13 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           try: () =>
             client.session.create({
               title: `Up.computer ${input.operation}`,
-              permission: [{ permission: "*", pattern: "*", action: "deny" }],
+              // OpenCode's free tier refuses a request with no tools ("can only be used
+              // from within OpenCode"), so the read-only `read` tool stays. Reads outside
+              // the folder stay denied through `external_directory`.
+              permission: [
+                { permission: "*", pattern: "*", action: "deny" },
+                { permission: "read", pattern: "*", action: "allow" },
+              ],
             }),
           catch: (cause) =>
             new OpenCodeTextGenerationSessionRequestError({
