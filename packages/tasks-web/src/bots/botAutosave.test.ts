@@ -25,6 +25,30 @@ const setup = (write: (value: Form) => Promise<void>) => {
 };
 
 describe("bot settings autosave", () => {
+  it("stopping waits for a save already sent, and sends nothing more", async () => {
+    let finish = () => {};
+    const { autosave, saves, change } = setup(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    change({ ...start, name: "Sent" }, 0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saves).toHaveLength(1);
+    change({ ...start, name: "Queued" }, 0);
+    let stopped = false;
+    const stopping = autosave.stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    finish();
+    await stopping;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saves.map((form) => form.name)).toEqual(["Sent"]);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

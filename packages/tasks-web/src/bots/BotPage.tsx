@@ -500,9 +500,10 @@ function BotForm({
                     size="sm"
                     disabled={!editable}
                     onClick={() => {
-                      // A pending save after removal would recreate the bot.
-                      autosave.stop();
+                      // A save that lands after removal would recreate the bot.
+                      const saving = autosave.stop();
                       void act(async () => {
+                        await saving;
                         await client.remove({ agentId: id }).catch((cause: unknown) => {
                           autosave.resume();
                           throw cause;

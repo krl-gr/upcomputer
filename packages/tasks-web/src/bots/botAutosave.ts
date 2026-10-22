@@ -14,6 +14,7 @@ export function createAutosave<T>(initial: T | null, initialWrite: (value: T) =>
   let running = false;
   let again = false;
   let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   const run = async (): Promise<void> => {
     timer = undefined;
     if (stopped) return;
@@ -25,7 +26,12 @@ export function createAutosave<T>(initial: T | null, initialWrite: (value: T) =>
     if (value === null || keyOf(value) === saved) return;
     running = true;
     try {
-      await write(value);
+      const writing = write(value);
+      inFlight = writing.then(
+        () => undefined,
+        () => undefined,
+      );
+      await writing;
       saved = keyOf(value);
     } catch {
       // `write` reports the failure; the next change tries again.
@@ -53,10 +59,12 @@ export function createAutosave<T>(initial: T | null, initialWrite: (value: T) =>
       clearTimeout(timer);
       return run();
     },
+    /** Sends nothing more; resolves once a save already sent has settled. */
     stop() {
       stopped = true;
       clearTimeout(timer);
       timer = undefined;
+      return inFlight;
     },
     resume() {
       stopped = false;
