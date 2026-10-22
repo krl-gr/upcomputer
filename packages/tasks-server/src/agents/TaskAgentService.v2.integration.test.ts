@@ -24,6 +24,10 @@ import {
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
+  BOTS_RPC_METHODS,
+  BotsRpcGroup,
+  BotWriteInput,
+  defaultBotAppearance,
   TASKS_RPC_METHODS,
   TaskAgentId,
   TaskId,
@@ -39,6 +43,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Schema from "effect/Schema";
 
 import { McpSchema, McpServer } from "effect/ai";
 import type * as Rpc from "effect/rpc/Rpc";
@@ -356,6 +361,8 @@ function makeTaskAgentAdapter(
       }),
   };
 }
+
+const decodeBotWrite = Schema.decodeUnknownSync(BotWriteInput);
 
 const timestamp = "2026-10-04T12:00:00.000Z";
 
@@ -2299,5 +2306,166 @@ it.live(
         const refused = yield* bots.save({ ...input, allowedProjectIds: [] }).pipe(Effect.result);
         assert.equal(refused._tag, "Failure");
       }),
+    ),
+);
+
+it.live(
+  "bot appearance roundtrips through RPC without changing identity, memory or permissions",
+  () =>
+    runSlice("bots-appearance", ({ threads, repository, cwd }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const sql = yield* SqlClient.SqlClient;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const otherProject = ProjectId.make("appearance-other");
+        for (const id of [projectId, otherProject])
+          yield* projects.apply({
+            sequence: 1,
+            eventId: EventId.make(`appearance:${id}`),
+            aggregateKind: "project",
+            aggregateId: id,
+            occurredAt: timestamp,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            type: "project.created",
+            payload: {
+              projectId: id,
+              title: id,
+              workspaceRoot: cwd,
+              defaultModelSelection: agentModel,
+              scripts: [],
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          });
+        const client = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
+          RpcTest.makeClient(BotsRpcGroup.middleware(RpcScopeAuthorization)).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                rpcContributionHandlersLayer(TASKS_PRODUCT.rpc, {
+                  currentSessionId: AuthSessionId.make("appearance-session"),
+                }) as Layer.Layer<Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsRpcGroup>>>,
+                RpcAuthorization.layer(scopes, rpcContributionScopes(TASKS_PRODUCT.rpc)),
+              ),
+            ),
+          );
+        const writer = yield* client([AuthOrchestrationReadScope, AuthOrchestrationOperateScope]);
+        const reader = yield* client([AuthOrchestrationReadScope]);
+        const input = {
+          id: TaskAgentId.make("appearance-bot"),
+          projectId,
+          allowedProjectIds: [projectId, otherProject],
+          name: "Appearance bot",
+          config: {
+            ...agent.config,
+            runtimeMode: "approval-required" as const,
+            tools: ["tool"],
+            skills: ["skill"],
+          },
+        };
+        const first = yield* writer[BOTS_RPC_METHODS.save](input);
+        assert.deepStrictEqual(first.appearance, defaultBotAppearance(input.id));
+        yield* bots.remember({
+          agentId: first.agent.id,
+          id: "fact",
+          projectId,
+          text: "Keep this fact",
+          source: "user",
+        });
+        const appearance = { shape: "star", color: "navy", accessory: "wizard" } as const;
+        const saved = yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance });
+        assert.deepStrictEqual(saved.appearance, appearance);
+        assert.deepStrictEqual(
+          (yield* reader[BOTS_RPC_METHODS.list]({}))[0]?.appearance,
+          appearance,
+        );
+        assert.equal(saved.threadId, first.threadId);
+        assert.deepStrictEqual(saved.agent.config, first.agent.config);
+        assert.deepStrictEqual(
+          Option.getOrThrow(yield* repository.getAgentById({ id: first.agent.id })).config,
+          first.agent.config,
+        );
+        const denied = yield* reader[BOTS_RPC_METHODS.save]({ ...input, appearance: null }).pipe(
+          Effect.result,
+        );
+        assert.equal(denied._tag, "Failure");
+        for (const invalid of [
+          { ...appearance, shape: "unknown" },
+          { ...appearance, color: "unknown" },
+          { ...appearance, accessory: "unknown" },
+          { shape: "star" },
+        ]) {
+          assert.throws(() => decodeBotWrite({ ...input, appearance: invalid }));
+          const rejected = yield* bots
+            .save({ ...input, appearance: invalid } as unknown as BotWriteInput)
+            .pipe(Effect.result);
+          assert.equal(rejected._tag, "Failure");
+        }
+        assert.deepStrictEqual((yield* bots.list)[0]?.appearance, appearance);
+        const moved = yield* writer[BOTS_RPC_METHODS.save]({
+          ...input,
+          projectId: otherProject,
+          config: {
+            ...input.config,
+            modelSelection: { ...agentModel, model: "appearance-new-model" },
+          },
+        });
+        assert.deepStrictEqual(
+          moved.appearance,
+          appearance,
+          "old client omission preserves choice",
+        );
+        assert.equal(moved.agent.config.runtimeMode, "approval-required");
+        assert.equal(moved.threadId, first.threadId);
+        assert.equal(
+          (yield* threads.getThreadRecords(first.threadId, [])).thread.runtimeMode,
+          "approval-required",
+        );
+        assert.equal((yield* bots.memory(first.agent.id))[0]?.text, "Keep this fact");
+        const second = yield* writer[BOTS_RPC_METHODS.save]({
+          ...input,
+          id: TaskAgentId.make("appearance-second"),
+          appearance: { ...appearance, accessory: "bunny" },
+        });
+        assert.deepStrictEqual(second.appearance, { ...appearance, accessory: "bunny" });
+        assert.deepStrictEqual((yield* bots.forThread(first.threadId))?.appearance, appearance);
+        const original = yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance: null });
+        assert.equal(original.appearance, null);
+        assert.equal((yield* writer[BOTS_RPC_METHODS.save](input)).appearance, null);
+        // A pre-upgrade bot has no stored style; clients draw it with the default look.
+        yield* sql`UPDATE bots SET appearance_json = NULL WHERE agent_id = ${second.agent.id}`;
+        const legacy = yield* writer[BOTS_RPC_METHODS.save]({ ...input, id: second.agent.id });
+        assert.equal(legacy.appearance, null);
+        assert.equal(legacy.threadId, second.threadId);
+        assert.deepStrictEqual(
+          (yield* bots.save({ ...input, id: second.agent.id, appearance })).appearance,
+          appearance,
+        );
+        // The retired stethoscope still opens, drawn without an accessory, and saves back.
+        yield* sql`UPDATE bots SET appearance_json = ${JSON.stringify({ ...appearance, accessory: "doctor" })}
+          WHERE agent_id = ${second.agent.id}`;
+        const retired = (yield* reader[BOTS_RPC_METHODS.list]({})).find(
+          (bot) => bot.agent.id === second.agent.id,
+        );
+        assert.deepStrictEqual(retired?.appearance, { ...appearance, accessory: "none" });
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({ ...input, id: second.agent.id })).appearance,
+          { ...appearance, accessory: "none" },
+        );
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({
+            ...input,
+            id: second.agent.id,
+            appearance: retired?.appearance ?? null,
+          })).appearance,
+          { ...appearance, accessory: "none" },
+        );
+        assert.deepStrictEqual(
+          yield* sql`SELECT appearance_json FROM bots WHERE agent_id = ${second.agent.id}`,
+          [{ appearance_json: JSON.stringify({ ...appearance, accessory: "none" }) }],
+        );
+      }).pipe(Effect.scoped),
     ),
 );

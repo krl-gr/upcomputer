@@ -1,5 +1,7 @@
 import { CommandId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  BotAppearance,
+  defaultBotAppearance,
   BotMemory,
   BotMemoryWriteInput,
   TaskAgentId,
@@ -33,6 +35,13 @@ import type {
 const now = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeProjects = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(ProjectId)));
 const decodeMemories = Schema.decodeUnknownEffect(Schema.Array(BotMemory));
+// A saved accessory may since have been retired; such bots draw without one.
+const decodeAppearance = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.NullOr(Schema.Struct({ ...BotAppearance.fields, accessory: Schema.String })),
+  ),
+);
+const isAccessory = Schema.is(BotAppearance.fields.accessory);
 const decodeMemoryWrite = Schema.decodeUnknownEffect(BotMemoryWriteInput);
 const fail = (message: string) => new TaskError({ message });
 const asError = (cause: unknown) =>
@@ -43,6 +52,7 @@ interface BotRow {
   readonly projectId: string;
   readonly allowed: string;
   readonly adopted: number;
+  readonly appearance: string | null;
 }
 
 export class BotService extends Context.Service<
@@ -79,13 +89,18 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const lock = yield* Semaphore.make(1);
   const rows = sql<BotRow>`SELECT agent_id AS "agentId", thread_id AS "threadId",
-    project_id AS "projectId", allowed_projects_json AS allowed, adopted FROM bots`;
+    project_id AS "projectId", allowed_projects_json AS allowed, adopted, appearance_json AS appearance FROM bots`;
   const decode = (row: BotRow) =>
     Effect.gen(function* () {
       const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
       if (Option.isNone(agent)) return yield* fail("Bot agent was deleted.");
+      const appearance = row.appearance === null ? null : yield* decodeAppearance(row.appearance);
       return {
         agent: agent.value,
+        appearance: appearance && {
+          ...appearance,
+          accessory: isAccessory(appearance.accessory) ? appearance.accessory : "none",
+        },
         threadId: ThreadId.make(row.threadId),
         projectId: ProjectId.make(row.projectId),
         allowedProjectIds: yield* decodeProjects(row.allowed),
@@ -219,6 +234,13 @@ const make = Effect.gen(function* () {
         runtimeMode: input.config.runtimeMode ?? current?.runtimeMode ?? "approval-required",
         interactionMode: input.config.interactionMode ?? current?.interactionMode ?? "default",
       };
+      const appearance =
+        input.appearance === undefined
+          ? existing
+            ? undefined
+            : defaultBotAppearance(input.id)
+          : input.appearance;
+      const appearanceJson = appearance == null ? null : JSON.stringify(appearance);
       const at = yield* now;
       yield* sql.withTransaction(
         Effect.gen(function* () {
@@ -237,9 +259,10 @@ const make = Effect.gen(function* () {
             createdAt: Option.isSome(oldAgent) ? oldAgent.value.createdAt : at,
             updatedAt: at,
           });
-          yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
-        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${JSON.stringify([...new Set(input.allowedProjectIds)])}, ${input.threadId === undefined ? 0 : 1})
-        ON CONFLICT(agent_id) DO UPDATE SET project_id = excluded.project_id, allowed_projects_json = excluded.allowed_projects_json`;
+          yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted, appearance_json)
+        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${JSON.stringify([...new Set(input.allowedProjectIds)])}, ${input.threadId === undefined ? 0 : 1}, ${appearanceJson})
+        ON CONFLICT(agent_id) DO UPDATE SET project_id = excluded.project_id, allowed_projects_json = excluded.allowed_projects_json,
+        appearance_json = CASE WHEN ${appearance === undefined ? 0 : 1} = 1 THEN excluded.appearance_json ELSE bots.appearance_json END`;
         }),
       );
       const bot = yield* get(input.id);

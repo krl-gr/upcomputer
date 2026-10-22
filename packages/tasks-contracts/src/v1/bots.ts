@@ -5,8 +5,80 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { TaskAgent, TaskAgentConfig, TaskAgentId } from "./agents.ts";
 import { TaskError, TaskResponse } from "./tasks.ts";
 
+const botColorIds = [
+  "gray",
+  "blue",
+  "orange",
+  "black",
+  "green",
+  "brown",
+  "purple",
+  "red",
+  "teal",
+  "yellow",
+  "coral",
+  "navy",
+] as const;
+
+export const BotAppearance = Schema.Struct({
+  shape: Schema.Literals([
+    "drop",
+    "triangle",
+    "cloud",
+    "circle",
+    "capsule",
+    "peanut",
+    "diamond",
+    "bean",
+    "dome",
+    "squircle",
+    "star",
+    "blob",
+  ]),
+  color: Schema.Literals(botColorIds),
+  accessory: Schema.Literals([
+    "none",
+    "bowtie",
+    "gentleman",
+    "detective",
+    "chef",
+    "builder",
+    "artist",
+    "graduate",
+    "cowboy",
+    "wizard",
+    "professor",
+    "headphones",
+    "crown",
+    "pirate",
+    "firefighter",
+    "police",
+    "nurse",
+    "scientist",
+    "pilot",
+    "santa",
+    "winter",
+    "summer",
+    "photographer",
+    "bunny",
+  ]),
+});
+export type BotAppearance = typeof BotAppearance.Type;
+
+/** The look of a bot that never chose one: a capsule in a color derived from its id. */
+export const defaultBotAppearance = (id: string): BotAppearance => ({
+  shape: "capsule",
+  color:
+    botColorIds[
+      [...id].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 0) % botColorIds.length
+    ]!,
+  accessory: "none",
+});
+
 export const Bot = Schema.Struct({
   agent: TaskAgent,
+  /** Missing or null draws `defaultBotAppearance` for older bots and servers. */
+  appearance: Schema.optional(Schema.NullOr(BotAppearance)),
   threadId: ThreadId,
   projectId: ProjectId,
   allowedProjectIds: Schema.Array(ProjectId),
@@ -21,6 +93,8 @@ export const BotWriteInput = Schema.Struct({
   allowedProjectIds: Schema.Array(ProjectId),
   name: TrimmedNonEmptyString,
   config: TaskAgentConfig,
+  /** Omitted preserves the saved style. Null clears it back to `defaultBotAppearance`. */
+  appearance: Schema.optional(Schema.NullOr(BotAppearance)),
 });
 export type BotWriteInput = typeof BotWriteInput.Type;
 
