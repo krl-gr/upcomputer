@@ -526,6 +526,47 @@ describe("EnvironmentProviderSettings routing", () => {
     expect(resetPatch ?? {}).toEqual({});
   });
 
+  it("offers no reset for the OpenCode the app installed, but keeps its Enabled toggle", async () => {
+    const openCodeId = ProviderInstanceId.make("opencode");
+    const managed = {
+      driver: ProviderDriverKind.make("opencode"),
+      enabled: true,
+      config: { binaryPath: "/Users/a/.upcomputer/tools/opencode/1.19.3/opencode" },
+    };
+    const editorCard = (instance: typeof managed) => {
+      settingsState.value = {
+        ...DEFAULT_UNIFIED_SETTINGS,
+        providerInstances: { [openCodeId]: instance },
+      };
+      const row = visitElements(
+        renderPanel(),
+        (element) => element.props.instanceId === openCodeId && element.props.mode === "list",
+      );
+      (row?.props.onSelect as (() => void) | undefined)?.();
+      return visitElements(
+        renderPanel(),
+        (element) => element.props.instanceId === openCodeId && element.props.mode === "editor",
+      );
+    };
+
+    const card = editorCard(managed);
+    expect(card).not.toBeNull();
+    expect(card?.props.headerAction).toBeNull();
+
+    const disabled = { ...managed, enabled: false };
+    (card?.props.onUpdate as ((instance: typeof managed) => void) | undefined)?.(disabled);
+    await flushPromises();
+    expect(settingsState.mutateProviderInstance).toHaveBeenLastCalledWith(
+      { operation: "upsert", instanceId: openCodeId, instance: disabled },
+      expect.anything(),
+    );
+    // A turned-off OpenCode stays listed, so the user can turn it back on.
+    expect(editorCard(disabled)?.props.headerAction).toBeNull();
+
+    const own = { ...managed, config: { binaryPath: "/Users/a/.opencode/bin/opencode" } };
+    expect(editorCard(own)?.props.headerAction).not.toBeNull();
+  });
+
   it("updates one provider instance without sending a stale whole map", async () => {
     settingsState.value = {
       ...DEFAULT_UNIFIED_SETTINGS,
