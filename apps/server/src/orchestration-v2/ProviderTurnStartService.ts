@@ -40,6 +40,7 @@ import {
 } from "@t3tools/provider-core/server/handoffBudget";
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/userInstructions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
@@ -55,6 +56,7 @@ import {
   pendingRecordedNotifications,
   recordedNotificationsNote,
 } from "./RecordedNotificationNote.ts";
+import { onboardingTurnNote } from "./OnboardingTurnNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -972,6 +974,14 @@ export const layer: Layer.Layer<
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
         recordedNotificationsNote(recordedNotifications),
+        onboardingTurnNote({
+          instructions: currentUserInstructionsBlock(),
+          thread: projection.thread,
+          run,
+          runs: projection.runs,
+          message,
+          isCommand: commandMessageIds.has(run.userMessageId),
+        }),
       ]
         .filter((part) => part !== "")
         .join("\n\n");

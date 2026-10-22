@@ -1,6 +1,7 @@
 import { SshDeviceHostConfigs } from "./device.ts";
 import {
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  hasPendingOnboarding,
   upgradeCustomInstructions,
 } from "./defaultCustomInstructions.ts";
 import {
@@ -1050,7 +1051,7 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
-export { DEFAULT_CUSTOM_INSTRUCTIONS, upgradeCustomInstructions };
+export { DEFAULT_CUSTOM_INSTRUCTIONS, hasPendingOnboarding, upgradeCustomInstructions };
 /** The longest "all chats" text a settings write accepts. */
 export const CUSTOM_INSTRUCTIONS_MAX_CHARS = 20_000;
 

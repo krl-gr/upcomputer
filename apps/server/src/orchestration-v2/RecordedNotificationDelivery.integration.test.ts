@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  DEFAULT_CUSTOM_INSTRUCTIONS,
   CommandId,
   MessageId,
   ProjectId,
@@ -22,6 +23,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { setUserInstructions } from "@t3tools/provider-core/server/userInstructions";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
@@ -259,4 +261,26 @@ it.effect("a slash command stays a command, and the next prompt carries the card
       }).pipe(Effect.provide(harness.layer));
     }),
   ),
+);
+
+it.effect(
+  "only a person's first prompt carries the onboarding note while the block is pending",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("onboarding-turn-note");
+        setUserInstructions(DEFAULT_CUSTOM_INSTRUCTIONS);
+        yield* Effect.gen(function* () {
+          const { send } = yield* scenario(harness.cwd);
+          yield* send("hi");
+          assert.isTrue(harness.prompts[0]!.startsWith("[UpComputer: this is the first message"));
+          assert.isTrue(harness.prompts[0]!.endsWith("User message:\nhi"));
+          yield* send("second");
+          assert.strictEqual(harness.prompts[1], "second");
+        }).pipe(
+          Effect.provide(harness.layer),
+          Effect.ensuring(Effect.sync(() => setUserInstructions(""))),
+        );
+      }),
+    ),
 );

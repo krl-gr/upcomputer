@@ -34,3 +34,26 @@ it("upgrades a saved copy of the shipped model examples without adding new onboa
   expect(DEFAULT_CUSTOM_INSTRUCTIONS).toContain(upgraded.split("\n").slice(0, 2).join("\n"));
   expect(DEFAULT_CUSTOM_INSTRUCTIONS).not.toMatch(/Astra|Opus/);
 });
+
+it("ends the onboarding block with the trigger, which covers a bare greeting", () => {
+  // A small model reads "hi" as no request and follows the line closest to the user turn.
+  const block = DEFAULT_CUSTOM_INSTRUCTIONS.slice(
+    DEFAULT_CUSTOM_INSTRUCTIONS.indexOf("<!-- onboarding: remove after setup -->"),
+    DEFAULT_CUSTOM_INSTRUCTIONS.indexOf("<!-- /onboarding -->"),
+  );
+  const lines = block.trimEnd().split("\n");
+  expect(lines.at(-1)).toMatch(
+    /^In your first reply in this conversation, even if the user only greets you/,
+  );
+  expect(block).not.toContain("After answering the user's first request");
+});
+
+it("gives a saved copy of the shipped onboarding intro the greeting trigger", () => {
+  const shipped =
+    "One-time onboarding for a conversation with a person; task-agent runs ignore it. After answering the user's first request, offer once, briefly, in the user's language, to agree on how to work:";
+  const upgraded = upgradeCustomInstructions(shipped);
+
+  expect(upgraded).toContain("even if the user only greets you");
+  expect(upgraded).not.toContain("After answering the user's first request");
+  expect(upgradeCustomInstructions(upgraded)).toBe(upgraded);
+});
