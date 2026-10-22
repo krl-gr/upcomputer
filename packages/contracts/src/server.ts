@@ -287,6 +287,18 @@ export const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
 
 /**
+ * Whether a person or agent can start work on this instance now. Matches the
+ * composer's model picker, which only offers `ready` instances: `warning`
+ * covers disabled, not yet checked, and unverified sign-in states.
+ */
+export const isProviderReady = (snapshot: ServerProvider): boolean =>
+  snapshot.enabled &&
+  snapshot.installed &&
+  isProviderAvailable(snapshot) &&
+  snapshot.status === "ready" &&
+  snapshot.auth.status !== "unauthenticated";
+
+/**
  * Treat an absent `supportsTextGeneration` as supported so legacy
  * producers, which all support application text generation, keep working
  * without resending the field.
