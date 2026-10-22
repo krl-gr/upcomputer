@@ -63,7 +63,16 @@ describe("command permissions", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        for (const name of ["save", "remove", "remember", "forget", "assign", "extract"]) {
+        for (const name of [
+          "save",
+          "remove",
+          "remember",
+          "forget",
+          "acceptProposal",
+          "rejectProposal",
+          "assign",
+          "extract",
+        ]) {
           const bot = createCommandPermissions(runtime, `upcomputer.bots.v1.${name}`);
           registry.set(sessions(env), AsyncResult.success(grant(false)));
           expect(registry.get(bot.permissionAtom(env))).toBe(false);

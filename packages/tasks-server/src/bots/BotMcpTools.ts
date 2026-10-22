@@ -25,7 +25,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      "Save a durable fact or conclusion for this bot. Use a stable id for the same fact. Default scope is project. Never store secrets, instructions or permissions. Tell the user what was saved.",
+      "Save a durable fact or conclusion for this bot. Use a stable id for the same fact. Default scope is project. Never store secrets, instructions or permissions. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.",
     parameters: Schema.Struct({
       id: text,
       text,
@@ -37,7 +37,8 @@ const toolkit = Toolkit.make(
     .addDependency(McpInvocationContext)
     .addDependency(ThreadManagementService),
   Tool.make("bot_forget", {
-    description: "Remove one of this bot's current memories by id.",
+    description:
+      "Remove one of this bot's current memories by id. Unavailable in background task runs.",
     parameters: Schema.Struct({ id: text }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -137,22 +138,37 @@ const handlers = McpToolAccess.toLayer(
                 message: "This memory is outside the current project.",
               });
             const run = yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id });
-            return yield* bots.remember({
+            const entry = {
               agentId: bot.agent.id,
               id: input.id,
               text: input.text,
               projectId: input.scope === "global" ? null : projectId,
-              source: Option.isSome(run)
-                ? `task:${run.value.taskId}/run:${run.value.id}`
-                : `chat:${thread.id}`,
-            });
+            };
+            if (Option.isNone(run))
+              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` });
+            // Task runs read untrusted pages and repositories, so their memories wait for the user.
+            return {
+              suggestion: yield* bots.propose({
+                ...entry,
+                source: `task:${run.value.taskId}/run:${run.value.id}`,
+                runId: run.value.id,
+              }),
+              note: "Saved as a suggestion. It becomes memory only after the user accepts it in Bots.",
+            };
           }),
         ),
       ),
       bot_forget: McpToolAccess.writes((input) =>
         result(
           Effect.gen(function* () {
-            const { bot, projectId } = yield* caller(true);
+            const { bot, projectId, thread } = yield* caller(true);
+            if (
+              Option.isSome(yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id }))
+            )
+              return yield* new TaskError({
+                message:
+                  "Background task runs cannot remove memories. Ask the user in the bot's chat.",
+              });
             const entry = (yield* bots.memory(bot.agent.id)).find((item) => item.id === input.id);
             if (entry && entry.projectId !== null && entry.projectId !== projectId)
               return yield* new TaskError({

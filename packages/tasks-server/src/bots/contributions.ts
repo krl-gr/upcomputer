@@ -39,6 +39,9 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [M.remove]: AuthOrchestrationOperateScope,
     [M.remember]: AuthOrchestrationOperateScope,
     [M.forget]: AuthOrchestrationOperateScope,
+    [M.proposals]: AuthOrchestrationReadScope,
+    [M.acceptProposal]: AuthOrchestrationOperateScope,
+    [M.rejectProposal]: AuthOrchestrationOperateScope,
     [M.assign]: AuthOrchestrationOperateScope,
     [M.extract]: AuthOrchestrationOperateScope,
   },
@@ -65,6 +68,12 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           ),
         [M.forget]: (input) =>
           Effect.flatMap(BotService, (bots) => bots.forget(input.agentId, input.id)),
+        [M.proposals]: (input) =>
+          Effect.flatMap(BotService, (bots) => bots.proposals(input.agentId)),
+        [M.acceptProposal]: (input) =>
+          Effect.flatMap(BotService, (bots) => bots.acceptProposal(input.agentId, input.id)),
+        [M.rejectProposal]: (input) =>
+          Effect.flatMap(BotService, (bots) => bots.rejectProposal(input.agentId, input.id)),
         [M.assign]: (input) => Effect.flatMap(BotService, (bots) => bots.assign(input)),
         [M.extract]: (input) =>
           Effect.flatMap(BotService, (bots) => bots.extract(input.agentId, input.requestId)),

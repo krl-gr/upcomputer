@@ -591,6 +591,8 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
    * carried. A completed provider turn of the attempt delivers them.
    */
   promptedNotificationIds: Schema.optional(Schema.Array(TurnItemId)),
+  /** Opaque marker of the turn context this attempt's prompt carried, for sending only changes. */
+  turnContextMarker: Schema.optional(Schema.String),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
 

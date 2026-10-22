@@ -36,6 +36,9 @@ export interface TasksWebRpcClient {
     readonly memory: RpcUnaryMethod<typeof BOTS_RPC_METHODS.memory>;
     readonly remember: RpcUnaryMethod<typeof BOTS_RPC_METHODS.remember>;
     readonly forget: RpcUnaryMethod<typeof BOTS_RPC_METHODS.forget>;
+    readonly proposals: RpcUnaryMethod<typeof BOTS_RPC_METHODS.proposals>;
+    readonly acceptProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.acceptProposal>;
+    readonly rejectProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.rejectProposal>;
     readonly assign: RpcUnaryMethod<typeof BOTS_RPC_METHODS.assign>;
   };
 
@@ -164,6 +167,12 @@ export function createTasksWebRpcClient(
       remember: (input) =>
         request("bots.remember", "canMutateAgents", BOTS_RPC_METHODS.remember, input),
       forget: (input) => request("bots.forget", "canMutateAgents", BOTS_RPC_METHODS.forget, input),
+      proposals: (input) =>
+        request("bots.proposals", "canReadAgents", BOTS_RPC_METHODS.proposals, input),
+      acceptProposal: (input) =>
+        request("bots.acceptProposal", "canMutateAgents", BOTS_RPC_METHODS.acceptProposal, input),
+      rejectProposal: (input) =>
+        request("bots.rejectProposal", "canMutateAgents", BOTS_RPC_METHODS.rejectProposal, input),
       assign: (input) => request("bots.assign", "canMutateAgents", BOTS_RPC_METHODS.assign, input),
     },
     tasks: {

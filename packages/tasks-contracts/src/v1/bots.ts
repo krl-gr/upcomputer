@@ -108,6 +108,12 @@ export const BotMemory = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type BotMemory = typeof BotMemory.Type;
+/** Suggested by a background task run; accepting writes `targetId` as an ordinary memory. */
+export const BotMemoryProposal = Schema.Struct({
+  ...BotMemory.fields,
+  targetId: TrimmedNonEmptyString,
+});
+export type BotMemoryProposal = typeof BotMemoryProposal.Type;
 export const BotMemoryWriteInput = Schema.Struct({
   agentId: TaskAgentId,
   id: TrimmedNonEmptyString,
@@ -125,10 +131,14 @@ export const BOTS_RPC_METHODS = {
   memory: `${BOTS_RPC_NAMESPACE}.memory`,
   remember: `${BOTS_RPC_NAMESPACE}.remember`,
   forget: `${BOTS_RPC_NAMESPACE}.forget`,
+  proposals: `${BOTS_RPC_NAMESPACE}.proposals`,
+  acceptProposal: `${BOTS_RPC_NAMESPACE}.acceptProposal`,
+  rejectProposal: `${BOTS_RPC_NAMESPACE}.rejectProposal`,
   assign: `${BOTS_RPC_NAMESPACE}.assign`,
   extract: `${BOTS_RPC_NAMESPACE}.extract`,
 } as const;
 const agentInput = Schema.Struct({ agentId: TaskAgentId });
+const entryInput = Schema.Struct({ ...agentInput.fields, id: TrimmedNonEmptyString });
 export const BotsRpcGroup = RpcGroup.make(
   Rpc.make(BOTS_RPC_METHODS.extract, {
     payload: Schema.Struct({ ...agentInput.fields, requestId: TrimmedNonEmptyString }),
@@ -151,10 +161,18 @@ export const BotsRpcGroup = RpcGroup.make(
     success: BotMemory,
     error: TaskError,
   }),
-  Rpc.make(BOTS_RPC_METHODS.forget, {
-    payload: Schema.Struct({ ...agentInput.fields, id: TrimmedNonEmptyString }),
+  Rpc.make(BOTS_RPC_METHODS.forget, { payload: entryInput, error: TaskError }),
+  Rpc.make(BOTS_RPC_METHODS.proposals, {
+    payload: agentInput,
+    success: Schema.Array(BotMemoryProposal),
     error: TaskError,
   }),
+  Rpc.make(BOTS_RPC_METHODS.acceptProposal, {
+    payload: entryInput,
+    success: BotMemory,
+    error: TaskError,
+  }),
+  Rpc.make(BOTS_RPC_METHODS.rejectProposal, { payload: entryInput, error: TaskError }),
   Rpc.make(BOTS_RPC_METHODS.assign, {
     payload: Schema.Struct({
       ...agentInput.fields,

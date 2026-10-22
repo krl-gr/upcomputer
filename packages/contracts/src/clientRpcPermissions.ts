@@ -15,6 +15,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   "upcomputer.bots.v1.remove": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.remember": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.forget": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.acceptProposal": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.rejectProposal": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.assign": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.extract": AuthOrchestrationOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
