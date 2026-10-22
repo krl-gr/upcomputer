@@ -66,13 +66,26 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
   return kind === null || kind === "woke" ? null : { kind, detail: null };
 }
 
-/** The bot's latest background task run, whose result returns to the bot chat. */
+/**
+ * The bot's latest background task run, whose result returns to the bot chat. How a run
+ * ended shows until the chat is opened after it ended, as a thread's own result does.
+ */
 export function botTaskStatus(
   runStatus: string | undefined,
   taskThread: Pick<SidebarThreadSummary, "runtime"> | null,
+  seen: {
+    readonly completedAt?: string | null | undefined;
+    readonly lastVisitedAt?: string | null | undefined;
+  } = {},
 ): BotStatusCandidate | null {
   if (runStatus === "running" || runStatus?.startsWith("finalizing:"))
     return { kind: "waiting", detail: "Waiting for its background task" };
+  if (
+    seen.completedAt != null &&
+    seen.lastVisitedAt != null &&
+    Date.parse(seen.lastVisitedAt) >= Date.parse(seen.completedAt)
+  )
+    return null;
   if (runStatus === "blocked") return { kind: "input", detail: "Background task is blocked" };
   if (runStatus === "interrupted")
     return { kind: "failed", detail: "Background task was interrupted" };

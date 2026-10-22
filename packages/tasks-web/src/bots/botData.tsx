@@ -171,15 +171,14 @@ export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined)
   const background = useThreadShell(
     bot?.latestTaskRun ? scopeThreadRef(environmentId, bot.latestTaskRun.threadId) : null,
   );
+  const lastVisitedAt = thread
+    ? resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt)
+    : undefined;
   return botStatus(
-    botChatStatus(
-      thread
-        ? {
-            ...thread,
-            lastVisitedAt: resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt),
-          }
-        : null,
-    ),
-    botTaskStatus(bot?.latestTaskRun?.status, background),
+    botChatStatus(thread ? { ...thread, lastVisitedAt } : null),
+    botTaskStatus(bot?.latestTaskRun?.status, background, {
+      completedAt: bot?.latestTaskRun?.completedAt,
+      lastVisitedAt,
+    }),
   );
 }

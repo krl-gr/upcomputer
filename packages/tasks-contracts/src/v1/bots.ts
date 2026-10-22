@@ -82,7 +82,14 @@ export const Bot = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
   allowedProjectIds: Schema.Array(ProjectId),
-  latestTaskRun: Schema.optional(Schema.Struct({ threadId: ThreadId, status: Schema.String })),
+  latestTaskRun: Schema.optional(
+    Schema.Struct({
+      threadId: ThreadId,
+      status: Schema.String,
+      /** When the run ended; absent from older servers and while it runs. */
+      completedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+    }),
+  ),
 });
 export type Bot = typeof Bot.Type;
 

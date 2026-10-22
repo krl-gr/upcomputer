@@ -99,6 +99,27 @@ describe("bot status", () => {
     expect(task("failed", { runtime: runtime("failed", "usage_limit") }).state).toBe("limited");
   });
 
+  it("stops reporting how the task ended once the chat is opened after it", () => {
+    const ended = { completedAt: "2026-10-20T10:00:00.000Z" };
+    for (const status of ["failed", "interrupted", "blocked"]) {
+      const before = botTaskStatus(status, null, {
+        ...ended,
+        lastVisitedAt: "2026-10-20T09:59:00.000Z",
+      });
+      expect(before).not.toBeNull();
+      expect(
+        botTaskStatus(status, null, { ...ended, lastVisitedAt: "2026-10-20T10:01:00.000Z" }),
+      ).toBeNull();
+    }
+    // A server that does not say when the run ended keeps the status, as before.
+    expect(
+      botTaskStatus("failed", null, { lastVisitedAt: "2026-10-20T10:01:00.000Z" }),
+    ).not.toBeNull();
+    expect(
+      botTaskStatus("running", null, { ...ended, lastVisitedAt: "2026-10-20T10:01:00.000Z" }),
+    ).not.toBeNull();
+  });
+
   it("orders the chat and the task as thread statuses are ordered", () => {
     const background = botTaskStatus("running", null);
     expect(

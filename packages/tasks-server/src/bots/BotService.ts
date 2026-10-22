@@ -544,7 +544,13 @@ const make = Effect.gen(function* () {
               ...bot,
               ...(run === undefined
                 ? {}
-                : { latestTaskRun: { threadId: run.threadId, status: run.status } }),
+                : {
+                    latestTaskRun: {
+                      threadId: run.threadId,
+                      status: run.status,
+                      completedAt: run.completedAt,
+                    },
+                  }),
             };
           }),
         ),
