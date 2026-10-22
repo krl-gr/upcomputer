@@ -5,7 +5,12 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
@@ -139,6 +144,92 @@ describe("TextGeneration.make", () => {
 
       expect(result.branch).toBe("personal-branch");
       expect(personalCalls).toEqual(["Refactor the routing layer"]);
+    }),
+  );
+
+  it.effect("titles a thread with a ready provider when the unchosen Codex is not installed", () =>
+    Effect.gen(function* () {
+      const withSnapshot = (
+        instance: ProviderInstance,
+        snapshot: Partial<ServerProvider>,
+      ): ProviderInstance => ({
+        ...instance,
+        snapshot: {
+          getSnapshot: Effect.succeed({
+            instanceId: instance.instanceId,
+            driver: ProviderDriverKind.make(instance.instanceId),
+            enabled: true,
+            installed: true,
+            version: null,
+            status: "ready",
+            auth: { status: "unknown" },
+            checkedAt: "2026-10-22T00:00:00.000Z",
+            models: [],
+            slashCommands: [],
+            skills: [],
+            ...snapshot,
+          }),
+        } as unknown as ProviderInstance["snapshot"],
+      });
+      const codex = withSnapshot(
+        makeStubInstance(
+          ProviderInstanceId.make("codex"),
+          makeStubTextGeneration({
+            generateThreadTitle: () => Effect.die("Codex is not installed"),
+          }),
+        ),
+        { installed: false, status: "error" },
+      );
+      const titledWith: string[] = [];
+      const openCode = withSnapshot(
+        makeStubInstance(
+          ProviderInstanceId.make("opencode"),
+          makeStubTextGeneration({
+            generateThreadTitle: (input) => {
+              titledWith.push(input.modelSelection.model);
+              return Effect.succeed({ title: "Greeting" });
+            },
+          }),
+        ),
+        {
+          models: [
+            {
+              slug: "opencode/big-pickle",
+              name: "Big Pickle",
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "opencode/glm-5.3-flash-free",
+              name: "GLM",
+              isCustom: false,
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+        },
+      );
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([codex, openCode]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("No link lookup expected"),
+          }),
+        ),
+      );
+
+      const result = yield* generation.generateThreadTitle({
+        cwd: process.cwd(),
+        message: "hi",
+        linkedContext: "",
+        modelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      });
+
+      expect(result.title).toBe("Greeting");
+      expect(titledWith).toEqual(["opencode/glm-5.3-flash-free"]);
     }),
   );
 

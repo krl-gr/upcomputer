@@ -1061,7 +1061,12 @@ export function EnvironmentProviderSettings({
           mode === "editor" && !row.isDefault ? () => deleteProviderInstance(row) : undefined
         }
         headerAction={
-          mode === "editor" && row.isDefault && row.isDirty ? (
+          // Resetting the app-installed OpenCode drops its binary path and its opt-in
+          // (OpenCode is off by default), which leaves a new user with no agent.
+          mode === "editor" &&
+          row.isDefault &&
+          row.isDirty &&
+          !isManagedOpenCodeBinaryPath(configuredBinaryPath(row.instance.config)) ? (
             <SettingResetButton
               label={`${resetLabel} provider settings`}
               onClick={() => resetDefaultInstance(row.driver)}
