@@ -128,8 +128,9 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const taskAgents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
-  // `lock` orders bot identity writes; `memoryLock` only memory writes, so a turn start that
-  // saves an explicit memory never waits on a bot save. Take `lock` first when both are needed.
+  // `lock` orders bot identity writes; `memoryLock` memory writes and a bot turn's memory
+  // reads, so a write cannot land between a turn's marker time and its snapshot, and a bot
+  // turn start never waits on a bot save. Take `lock` first when both are needed.
   const lock = yield* Semaphore.make(1);
   const memoryLock = yield* Semaphore.make(1);
   const rows = sql<BotRow>`SELECT agent_id AS "agentId", thread_id AS "threadId",
@@ -451,7 +452,7 @@ const make = Effect.gen(function* () {
             source: `chat:${bot.threadId}/message:${input.messageId}`,
           },
           true,
-        ).pipe(memoryLock.withPermits(1));
+        );
       const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nRole: ${bot.agent.config.role}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\nUse bot_history_search to search this bot's saved chat history. Use bot_assign for background work; its results return to the permanent chat.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Do not rewrite your role or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
       // Settings changes resend everything; the cursor bounds which memory rows changed.
       const fingerprint = NodeCrypto.createHash("sha256").update(header).digest("hex").slice(0, 16);
@@ -613,7 +614,9 @@ const make = Effect.gen(function* () {
           Effect.logWarning("Bot lookup for a turn failed", { cause }).pipe(Effect.as(null)),
         ),
         Effect.flatMap((row) =>
-          row === null ? Effect.succeed({ text: "" }) : context(row, input),
+          row === null
+            ? Effect.succeed({ text: "" })
+            : context(row, input).pipe(memoryLock.withPermits(1)),
         ),
         Effect.mapError(asError),
       ),
