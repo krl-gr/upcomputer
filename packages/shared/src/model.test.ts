@@ -332,7 +332,8 @@ describe("provider-reported option display", () => {
     ).toBe("None");
     expect(descriptor.options.map((option) => option.id)).toEqual(["none", "thinking"]);
     expect(buildProviderOptionSelectionsFromDescriptors([descriptor])).toBeUndefined();
-    expect(getProviderOptionCurrentLabel(descriptor, selection)).toBe("Unknown");
+    expect(getProviderOptionCurrentLabel(descriptor, selection)).toBe("Default");
+    expect(getProviderOptionCurrentLabel(descriptor)).toBe("Default");
     const effortDescriptor = { ...descriptor, id: "effort", currentValue: "default" };
     expect(getProviderOptionCurrentLabel(effortDescriptor, selection)).toBeUndefined();
     expect(
@@ -350,14 +351,18 @@ describe("provider-reported option display", () => {
     ).toBe("Default");
     expect(
       getProviderOptionCurrentLabel({ ...descriptor, currentValue: "thinking" }, selection),
-    ).toBe("Unknown");
+    ).toBe("Default");
   });
 
   it.each([
     { ...selection, model: "other" },
     { ...selection, instanceId: ProviderInstanceId.make("other") },
-    { ...selection, options: [{ id: "variant", value: "none" }] },
-  ])("ignores reports after changing the model, instance, or option: %j", (selected) => {
+  ])("ignores reports after changing the model or instance: %j", (selected) => {
+    expect(getProviderOptionCurrentLabel(descriptor, selected, reported)).toBe("Default");
+  });
+
+  it("keeps Unknown for a chosen variant the model does not list", () => {
+    const selected = { ...selection, options: [{ id: "variant", value: "none" }] };
     expect(getProviderOptionCurrentLabel(descriptor, selected, reported)).toBe("Unknown");
   });
 });

@@ -671,7 +671,7 @@ describe("provider-reported model selection", () => {
     ];
     const variantReport = { ...selected, options: [{ id: "variant", value: "default" }] };
     expect(formatModelSelectionEffort(selected, models, variantReport)).toBe("Default");
-    expect(formatModelSelectionEffort(selected, models)).toBe("Unknown");
+    expect(formatModelSelectionEffort(selected, models)).toBe("Default");
   });
 });
 

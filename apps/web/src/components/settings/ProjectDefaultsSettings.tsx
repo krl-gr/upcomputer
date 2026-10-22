@@ -178,6 +178,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             {!mixedModel ? (
               <TraitsPicker
                 provider={activeEntry.driverKind}
+                instanceId={selection.instanceId}
                 models={activeEntry.models}
                 model={selection.model}
                 prompt=""

@@ -256,7 +256,10 @@ export function getProviderOptionCurrentLabel(
     (getReportedOptionValue(descriptor.id, selection, reportedSelection) === "default"
       ? "Default"
       : descriptor.id === "variant"
-        ? "Unknown"
+        ? // An unchosen variant is never sent, so OpenCode applies its own default until a turn reports it.
+          selection?.options?.some((option) => option.id === descriptor.id)
+          ? "Unknown"
+          : "Default"
         : undefined)
   );
 }
