@@ -167,6 +167,8 @@ const runtimeMock = {
     inventoryError: null as Error | null,
     connectionError: null as Error | null,
     inventoryCwd: null as string | null,
+    catalogRefreshPending: false,
+    calls: [] as string[],
     closeCalls: 0,
     sdkClientInputs: [] as Array<{
       baseUrl: string;
@@ -187,6 +189,8 @@ const runtimeMock = {
     this.state.inventoryError = null;
     this.state.connectionError = null;
     this.state.inventoryCwd = null;
+    this.state.catalogRefreshPending = false;
+    this.state.calls.length = 0;
     this.state.closeCalls = 0;
     this.state.sdkClientInputs.length = 0;
     this.state.inventory = {
@@ -244,8 +248,16 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
         external: Boolean(serverUrl),
       };
     }),
-  runOpenCodeCommand: () =>
-    runtimeMock.state.runVersionPending
+  runOpenCodeCommand: ({ args }) => {
+    if (args[0] === "models") {
+      return Effect.suspend(() => {
+        runtimeMock.state.calls.push(args.join(" "));
+        return runtimeMock.state.catalogRefreshPending
+          ? Effect.never
+          : Effect.succeed({ stdout: "", stderr: "", code: 0 });
+      });
+    }
+    return runtimeMock.state.runVersionPending
       ? Effect.never
       : runtimeMock.state.runVersionError
         ? Effect.fail(
@@ -257,15 +269,17 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
           )
         : Effect.succeed({ stdout: runtimeMock.state.versionStdout, stderr: "", code: 0 }).pipe(
             Effect.delay(runtimeMock.state.runVersionDelay ?? 0),
-          ),
+          );
+  },
   createOpenCodeSdkClient: (input) => {
     runtimeMock.state.sdkClientInputs.push(input);
     return {} as unknown as ReturnType<
       OpenCodeRuntime.OpenCodeRuntime["Service"]["createOpenCodeSdkClient"]
     >;
   },
-  loadOpenCodeInventory: () =>
-    runtimeMock.state.inventoryError
+  loadOpenCodeInventory: () => {
+    runtimeMock.state.calls.push("inventory");
+    return runtimeMock.state.inventoryError
       ? Effect.fail(
           new OpenCodeRuntime.OpenCodeRuntimeError({
             operation: "loadOpenCodeInventory",
@@ -273,7 +287,8 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
             cause: runtimeMock.state.inventoryError,
           }),
         )
-      : Effect.succeed(runtimeMock.state.inventory as OpenCodeRuntime.OpenCodeInventory),
+      : Effect.succeed(runtimeMock.state.inventory as OpenCodeRuntime.OpenCodeInventory);
+  },
   loadInventoryFromCli: ({ cwd }) => {
     runtimeMock.state.inventoryCwd = cwd;
     return runtimeMock.state.inventoryError
@@ -346,9 +361,13 @@ const checkProvider = Effect.fn("checkProvider")(function* (
         Effect.provideService(HttpClient.HttpClient, server),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, OpenCodeRuntimeTestDouble),
       );
-      return yield* checkOpenCodeProviderStatus(settings, cwd, probe, openCode2Models).pipe(
-        Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
-      );
+      return yield* checkOpenCodeProviderStatus(
+        settings,
+        cwd,
+        probe,
+        openCode2Models,
+        environment,
+      ).pipe(Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner));
     }),
   );
 });
@@ -798,6 +817,39 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
     }),
   );
 
+  it.effect("refreshes OpenCode's model catalog before a local server lists it", () =>
+    Effect.gen(function* () {
+      yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(runtimeMock.state.calls, ["models opencode --refresh", "inventory"]);
+    }),
+  );
+
+  it.effect("lists models when the catalog refresh does not finish", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.catalogRefreshPending = true;
+      const probeFiber = yield* checkProvider(makeOpenCodeSettings()).pipe(Effect.forkChild);
+
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("15 seconds");
+      const snapshot = yield* Fiber.join(probeFiber);
+
+      NodeAssert.equal(snapshot.installed, true);
+      NodeAssert.notEqual(snapshot.status, "error");
+      NodeAssert.deepEqual(runtimeMock.state.calls, ["models opencode --refresh", "inventory"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("leaves the catalog alone when OpenCode's model downloads are off", () =>
+    Effect.gen(function* () {
+      yield* checkProvider(makeOpenCodeSettings(), process.cwd(), {
+        OPENCODE_DISABLE_MODELS_FETCH: "true",
+      });
+
+      NodeAssert.deepEqual(runtimeMock.state.calls, ["inventory"]);
+    }),
+  );
+
   it.effect("uses an environment-only password for local inventory", () =>
     Effect.gen(function* () {
       yield* checkProvider(makeOpenCodeSettings(), process.cwd(), {
@@ -858,6 +910,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus with configured server URL", (i
           directory: process.cwd(),
         },
       ]);
+      NodeAssert.deepEqual(runtimeMock.state.calls, ["inventory"]);
     }),
   );
 
