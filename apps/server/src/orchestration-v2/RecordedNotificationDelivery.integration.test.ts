@@ -154,16 +154,19 @@ function makeHarness(name: string) {
   });
 }
 
-const threadId = ThreadId.make("thread:recorded-notification");
+const defaultThreadId = ThreadId.make("thread:recorded-notification");
 /** Each step happens later than the previous one, as it would outside the test clock. */
 const tick = TestClock.adjust("1 second");
 
-const scenario = Effect.fn("recordedNotificationScenario")(function* (cwd: string) {
+const scenario = Effect.fn("recordedNotificationScenario")(function* (
+  cwd: string,
+  threadId = defaultThreadId,
+) {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
   yield* orchestrator.dispatch({
     type: "thread.create",
-    commandId: CommandId.make("create"),
+    commandId: CommandId.make(`create:${threadId}`),
     threadId,
     projectId: ProjectId.make("project:recorded-notification"),
     title: "Recorded notifications",
@@ -273,10 +276,18 @@ it.effect(
         yield* Effect.gen(function* () {
           const { send } = yield* scenario(harness.cwd);
           yield* send("hi");
-          assert.isTrue(harness.prompts[0]!.startsWith("[UpComputer: this is the first message"));
+          assert.isTrue(
+            harness.prompts[0]!.startsWith(
+              "[UpComputer onboarding note: this is the user's first conversation",
+            ),
+          );
           assert.isTrue(harness.prompts[0]!.endsWith("User message:\nhi"));
           yield* send("second");
           assert.strictEqual(harness.prompts[1], "second");
+          // A new chat after the first one, which never answered the offer.
+          const next = yield* scenario(harness.cwd, ThreadId.make("thread:next-chat"));
+          yield* next.send("hello again");
+          assert.strictEqual(harness.prompts[2], "hello again");
         }).pipe(
           Effect.provide(harness.layer),
           Effect.ensuring(Effect.sync(() => setUserInstructions(""))),

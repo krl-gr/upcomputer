@@ -4,16 +4,20 @@ import {
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2Run,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 
 /**
- * Hidden note for the first prompt a person sends in a new conversation while
- * the All chats instructions still hold the onboarding block. Small models skip
- * the block's one-time offer on a bare greeting; a short note next to the user's
- * message is the instruction they follow. Task-agent runs, scheduled tasks and
- * threads another agent or thread started do not get it: their first message
- * is not a person opening a conversation. Removing the block stops it.
+ * Hidden note for the first prompt of the user's first conversation while the
+ * All chats instructions still hold the onboarding block. Small models skip the
+ * block's one-time offer on a bare greeting; a short note next to the user's
+ * message is the instruction they follow, and the block makes the offer only
+ * with this note. A person who already wrote in another thread was offered
+ * there, answered or not, so later chats do not get it. Task-agent runs,
+ * scheduled tasks and threads another agent or thread started do not get it:
+ * their first message is not a person opening a conversation. Removing the
+ * block stops it.
  */
-export function onboardingTurnNote(input: {
+export function onboardingTurnNote<E, R>(input: {
   readonly instructions: string | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "lineage">;
   readonly run: Pick<OrchestrationV2Run, "ordinal">;
@@ -23,7 +27,9 @@ export function onboardingTurnNote(input: {
     "createdBy" | "creationSource" | "scheduledTaskId" | "senderThreadId"
   >;
   readonly isCommand: boolean;
-}): string {
+  /** Read only when everything else holds, so ordinary turns skip the query. */
+  readonly personMessagedElsewhere: Effect.Effect<boolean, E, R>;
+}): Effect.Effect<string, E, R> {
   const { message } = input;
   const due =
     hasPendingOnboarding(input.instructions ?? "") &&
@@ -34,6 +40,12 @@ export function onboardingTurnNote(input: {
     input.thread.lineage.parentThreadId === null &&
     !input.isCommand &&
     !input.runs.some((run) => run.ordinal < input.run.ordinal);
-  if (!due) return "";
-  return "[UpComputer: this is the first message of this conversation, and the one-time onboarding in your instructions is still pending. Follow it in this reply.]";
+  if (!due) return Effect.succeed("");
+  return input.personMessagedElsewhere.pipe(
+    Effect.map((elsewhere) =>
+      elsewhere
+        ? ""
+        : "[UpComputer onboarding note: this is the user's first conversation. Make the one-time onboarding offer from your instructions in this reply.]",
+    ),
+  );
 }

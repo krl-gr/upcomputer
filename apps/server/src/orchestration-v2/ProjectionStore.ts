@@ -375,6 +375,10 @@ export interface ProjectionStoreV2Shape {
     options: ProjectionTimelinePageOptions,
   ) => Effect.Effect<ProjectionTimelinePage, ProjectionStoreV2Error>;
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
+  /** Whether a person sent a message, from web or mobile, in any thread other than this one. */
+  readonly hasPersonMessageOutsideThread: (
+    threadId: ThreadId,
+  ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly getNextTurnItemOrdinal: (
     threadId: ThreadId,
   ) => Effect.Effect<number, ProjectionStoreV2Error>;
@@ -4784,6 +4788,19 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.map((rows) => rows[0]?.count ?? 0),
         Effect.mapError(controlReadError(threadId)),
       );
+    // Uses the partial index on user messages and stops at the first match.
+    const hasPersonMessageOutsideThread: ProjectionStoreV2Shape["hasPersonMessageOutsideThread"] = (
+      threadId,
+    ) =>
+      sql<{ found: number }>`SELECT 1 AS found FROM orchestration_v2_projection_messages
+        WHERE role = 'user'
+          AND thread_id <> ${threadId}
+          AND json_extract(payload_json, '$.createdBy') = 'user'
+          AND json_extract(payload_json, '$.creationSource') IN ('web', 'mobile')
+        LIMIT 1`.pipe(
+        Effect.map((rows) => rows.length > 0),
+        Effect.mapError(controlReadError(threadId)),
+      );
     const getNextTurnItemOrdinal: ProjectionStoreV2Shape["getNextTurnItemOrdinal"] = (threadId) =>
       sql<{ ordinal: number | null }>`SELECT MAX(ordinal) AS ordinal
         FROM orchestration_v2_projection_turn_items WHERE thread_id = ${threadId}`.pipe(
@@ -6044,6 +6061,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       hasUnpairedRunInterruptRequest,
       isNodeStored,
       getMessageCount,
+      hasPersonMessageOutsideThread,
       getNextTurnItemOrdinal,
       getTurnItem,
       getThreadRecords,
@@ -6330,6 +6348,21 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
       getMessageCount: (threadId) =>
         Ref.get(replayState).pipe(
           Effect.map((state) => state.projections.get(threadId)?.messages.length ?? 0),
+        ),
+      hasPersonMessageOutsideThread: (threadId) =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.projections.values()].some(
+              (projection) =>
+                projection.thread.id !== threadId &&
+                projection.messages.some(
+                  (message) =>
+                    message.role === "user" &&
+                    message.createdBy === "user" &&
+                    (message.creationSource === "web" || message.creationSource === "mobile"),
+                ),
+            ),
+          ),
         ),
       getNextTurnItemOrdinal: (threadId) =>
         Ref.get(replayState).pipe(
