@@ -629,6 +629,12 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
   });
 });
 
+// Read the way OpenCode reads its boolean flags. The user turned catalog downloads off.
+function isModelsFetchDisabled(environment: NodeJS.ProcessEnv | undefined): boolean {
+  const value = (environment ?? process.env)["OPENCODE_DISABLE_MODELS_FETCH"]?.toLowerCase();
+  return value === "true" || value === "1";
+}
+
 export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatus")(function* (
   openCodeSettings: OpenCodeSettings,
   cwd: string,
@@ -637,6 +643,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     ReadonlyArray<OpenCode2Model>,
     OpenCodeRuntime.OpenCodeRuntimeError
   >,
+  environment?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -739,6 +746,21 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         }),
       )
       .pipe(Effect.map((inventory) => ({ inventory, version: server.version })));
+  // UpComputer: `opencode serve` keeps the models.dev catalog it loaded for its first request:
+  // the copy bundled in the binary on a cold cache, else the cached copy, however old. The fresh
+  // catalog reaches only servers started after its background refresh, such as each session's.
+  // Refreshing first lists what sessions will serve, so "Automatic" never names a model they
+  // reject (ProviderModelNotFoundError). Offline, every server falls back to the same copy.
+  const refreshModelCatalog = isModelsFetchDisabled(environment)
+    ? Effect.void
+    : openCodeRuntime
+        .runOpenCodeCommand({
+          binaryPath: openCodeSettings.binaryPath,
+          args: ["models", ZEN_PROVIDER_ID, "--refresh"],
+          cwd,
+          ...(environment === undefined ? {} : { environment }),
+        })
+        .pipe(Effect.timeoutOption("15 seconds"), Effect.ignore);
   const inventoryEffect = isExternalServer
     ? openCodeRuntime
         .connectToOpenCodeServer({
@@ -750,7 +772,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
             : {}),
         })
         .pipe(Effect.flatMap(loadInventory), Effect.scoped)
-    : serverOwner.withServer(loadInventory);
+    : refreshModelCatalog.pipe(Effect.andThen(serverOwner.withServer(loadInventory)));
   const inventoryExit = yield* Effect.exit(
     inventoryEffect.pipe(
       Effect.mapError(

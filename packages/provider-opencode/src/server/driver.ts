@@ -350,6 +350,7 @@ export const OpenCodeDriver: ProviderDriver<
             host.paths.cwd,
             runtimeProbe.refresh,
             loadOpenCode2Models,
+            processEnv,
           ),
           usageLimits: readOpenCodeGoUsageLimits({
             enabled: effectiveConfig.enabled,
