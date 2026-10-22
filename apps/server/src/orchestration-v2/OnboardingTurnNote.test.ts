@@ -47,11 +47,15 @@ it.effect("is sent with a person's first message in their first conversation", (
   }),
 );
 
-it.effect("is not sent in a later conversation, answered or not, while the block is pending", () =>
-  Effect.gen(function* () {
-    // The block stays until the user answers, so only another thread's person message tells.
-    assert.strictEqual(yield* note({ personMessagedElsewhere: Effect.succeed(true) }), "");
-  }),
+it.effect(
+  "forbids the offer in a later conversation, answered or not, while the block is pending",
+  () =>
+    Effect.gen(function* () {
+      // The block stays until the user answers, so only another thread's person message tells.
+      const later = yield* note({ personMessagedElsewhere: Effect.succeed(true) });
+      assert.include(later, "this is not the user's first conversation");
+      assert.include(later, "Do not make the onboarding offer");
+    }),
 );
 
 it.effect("reads other threads only for a turn that would otherwise get the note", () =>

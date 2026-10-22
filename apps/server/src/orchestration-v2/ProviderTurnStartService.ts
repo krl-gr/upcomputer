@@ -981,7 +981,7 @@ export const layer: Layer.Layer<
           runs: projection.runs,
           message,
           isCommand: commandMessageIds.has(run.userMessageId),
-          // The run is already marked running; a failed read only skips the note.
+          // The run is already marked running; a failed read only withholds the offer.
           personMessagedElsewhere: projectionStore
             .hasPersonMessageOutsideThread(projection.thread.id)
             .pipe(Effect.orElseSucceed(() => true)),

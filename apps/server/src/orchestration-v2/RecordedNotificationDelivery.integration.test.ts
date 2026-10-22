@@ -267,7 +267,7 @@ it.effect("a slash command stays a command, and the next prompt carries the card
 );
 
 it.effect(
-  "only a person's first prompt carries the onboarding note while the block is pending",
+  "a person's first prompt in each chat carries the onboarding note while the block is pending",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -287,7 +287,12 @@ it.effect(
           // A new chat after the first one, which never answered the offer.
           const next = yield* scenario(harness.cwd, ThreadId.make("thread:next-chat"));
           yield* next.send("hello again");
-          assert.strictEqual(harness.prompts[2], "hello again");
+          assert.isTrue(
+            harness.prompts[2]!.startsWith(
+              "[UpComputer onboarding note: this is not the user's first conversation",
+            ),
+          );
+          assert.isTrue(harness.prompts[2]!.endsWith("User message:\nhello again"));
         }).pipe(
           Effect.provide(harness.layer),
           Effect.ensuring(Effect.sync(() => setUserInstructions(""))),

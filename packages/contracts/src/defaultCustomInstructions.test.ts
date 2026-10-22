@@ -37,16 +37,16 @@ it("upgrades a saved copy of the shipped model examples without adding new onboa
 
 it("ends the onboarding block with the trigger, tied to the first-conversation note", () => {
   // A small model reads "hi" as no request and follows the line closest to the user turn.
-  // Only the server's note marks the user's first conversation, so later chats skip the offer.
+  // Only the server's note tells the first conversation from later ones.
   const block = DEFAULT_CUSTOM_INSTRUCTIONS.slice(
     DEFAULT_CUSTOM_INSTRUCTIONS.indexOf("<!-- onboarding: remove after setup -->"),
     DEFAULT_CUSTOM_INSTRUCTIONS.indexOf("<!-- /onboarding -->"),
   );
   const lines = block.trimEnd().split("\n");
   expect(lines.at(-1)).toMatch(
-    /^Make this offer only when this turn carries the UpComputer onboarding note: then, even if the user only greets you/,
+    /^Make this offer only when this turn's UpComputer onboarding note asks for it: then, even if the user only greets you/,
   );
-  expect(lines.at(-1)).toContain("Without the note, do not make the offer");
+  expect(lines.at(-1)).toContain("Otherwise do not make the offer");
   expect(block).not.toContain("After answering the user's first request");
   expect(block).not.toContain("first reply in this conversation");
 });
@@ -56,7 +56,7 @@ it("ties a saved copy of the shipped onboarding intro to the note, greetings inc
     "One-time onboarding for a conversation with a person; task-agent runs ignore it. After answering the user's first request, offer once, briefly, in the user's language, to agree on how to work:";
   const upgraded = upgradeCustomInstructions(shipped);
 
-  expect(upgraded).toContain("Only when this turn carries the UpComputer onboarding note");
+  expect(upgraded).toContain("Only when this turn's UpComputer onboarding note asks for it");
   expect(upgraded).toContain("even a greeting");
   expect(upgraded).not.toContain("After answering the user's first request");
   expect(upgradeCustomInstructions(upgraded)).toBe(upgraded);
