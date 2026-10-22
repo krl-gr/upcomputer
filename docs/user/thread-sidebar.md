@@ -235,23 +235,45 @@ several selected threads together. Choose **Wake thread** to bring a thread back
 
 ## Bots
 
-Create a personal assistant in **Bots**, or choose **Turn into bot** in an idle chat.
-Each bot has one permanent conversation. Returning from the sidebar, restarting the
-app, and changing its model keep that conversation and its history.
+Create a personal assistant with **+** next to **Bots** in the sidebar, or choose
+**Turn into bot** in the header of an idle chat. Each bot has one permanent
+conversation: click its row to open it. The conversation is listed under **Bots**
+instead of **Threads**, and search still finds it. Returning from the sidebar,
+restarting the app, and changing its model keep that conversation and its history.
+A bot's chat has no header; its row shows the same statuses as a thread row, and
+counts its background task too: **Waiting** while the task runs, **Awaiting Input**
+when it is blocked, and **Failed** when it fails or is interrupted. Hover the bot's
+name for the cause.
 
-Open **Bot settings & memory** to change its role, instructions, model, working
-project, or available projects. Project choices filter the bot's memory and tasks;
-filesystem access still follows the selected provider's existing runtime permissions.
-Background work uses Tasks and returns progress and results to the same conversation.
+Hover the row and click the settings button to open the bot's page. There you
+change its name, appearance, role, instructions, model, working project, and
+available projects. Changes save automatically and apply from the bot's next turn.
+Changing the working project or provider waits until the bot is idle. Project
+choices filter the bot's memory and tasks; filesystem access still follows the
+selected provider's existing runtime permissions.
 
-Memory belongs to the bot, independently of its model. Use **Memory** to create,
-edit, or delete facts, or say **Remember: ...** in the conversation. The bot can
-also save useful facts during its ordinary turns. **Extract memory from chat history**
-asks it to review an existing conversation without replacing its messages.
+Pick the bot's shape, color, and accessories from the pictures on its page. The
+appearance follows the bot across projects, models, and restarts.
+
+Memory belongs to the bot, independently of its model. Under **Memory** on the
+bot's page, click a fact to edit it (Enter saves, Escape cancels), choose
+**Add memory** to add one, or say **Remember: ...** in the conversation.
+The bot can also save useful facts during its ordinary turns. **Extract from chat
+history** asks it to review an existing conversation without replacing its
+messages.
 
 Global facts apply across projects. Project facts are supplied only for the current
-available project. Each turn receives up to 12,000 characters of current memory,
-from at most 200 stored entries. The full conversation stays searchable, while the
-provider's context remains bounded. Changes take effect on future turns; an existing
-model context can still contain earlier facts. Removing a bot deletes its memory
-and keeps its conversation as an ordinary chat.
+available project. A new model conversation receives up to 12,000 characters of
+current memory, from at most 200 stored entries. It receives them again after a
+provider change, a handoff, a restart that cannot resume the earlier session, or a
+compaction the provider reports. Later turns receive only what changed, and nothing
+when memory is unchanged. The full conversation stays searchable, while the
+provider's context remains bounded. **Remove bot** at the bottom of its page deletes
+its memory and returns its conversation to **Threads** as an ordinary chat.
+
+To give the bot a task, choose **Assign task** under **Background work** on its page.
+The task runs in Tasks and returns progress and results to the bot's conversation. Background tasks can read untrusted pages
+and files, so a fact a bot saves while working on a task becomes a suggestion
+instead of memory. Review them under **Suggestions** on the bot's page: **Accept**
+adds a fact to memory for the bot's next turn; **Reject** discards it. Facts saved
+in the bot's own conversation, including **Remember: ...**, apply at once.
