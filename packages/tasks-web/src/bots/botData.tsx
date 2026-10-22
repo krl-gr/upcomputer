@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
@@ -14,68 +14,122 @@ import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bo
 import { readTasksWebClient, useTasksWebAccess } from "../environmentApi.ts";
 import { botChatStatus, botStatus, botTaskStatus, type BotCharacterState } from "./botStatus.ts";
 
-let revision = 0;
-const listeners = new Set<() => void>();
-/** Refetches every bot list after a write from this client. */
-export function botsChanged() {
-  revision += 1;
-  for (const listener of listeners) listener();
-}
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+interface BotList {
+  readonly bots: ReadonlyArray<Bot>;
+  readonly loaded: boolean;
+  readonly error: string;
 }
 
-// The last list per environment, so a newly mounted chat header knows at once
-// whether its thread is a bot chat instead of showing the header until it loads.
-const lastLists = new Map<EnvironmentId, ReadonlyArray<Bot>>();
+/**
+ * One list per environment, shared by every mounted view, so a change costs one request
+ * however many sidebars, headers and pages show bots. The last list stays after the views
+ * unmount, so a newly mounted header knows at once whether its thread is a bot chat.
+ */
+interface BotListStore {
+  list: BotList;
+  readonly listeners: Set<() => void>;
+  fetching: boolean;
+  again: boolean;
+  stopChanges: (() => void) | undefined;
+}
+
+const EMPTY: BotList = { bots: [], loaded: false, error: "" };
+const stores = new Map<EnvironmentId, BotListStore>();
 
 export const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "Bot operation failed.";
 
+function storeFor(environmentId: EnvironmentId) {
+  let store = stores.get(environmentId);
+  if (!store) {
+    store = {
+      list: EMPTY,
+      listeners: new Set(),
+      fetching: false,
+      again: false,
+      stopChanges: undefined,
+    };
+    stores.set(environmentId, store);
+  }
+  return store;
+}
+
+function publish(store: BotListStore, list: BotList) {
+  store.list = list;
+  for (const listener of store.listeners) listener();
+}
+
+async function refresh(environmentId: EnvironmentId, store: BotListStore) {
+  if (store.fetching) {
+    store.again = true;
+    return;
+  }
+  store.fetching = true;
+  try {
+    const bots = await readTasksWebClient(environmentId).bots.list({});
+    publish(store, { bots, loaded: true, error: "" });
+  } catch (cause) {
+    publish(store, { ...store.list, error: errorText(cause) });
+  } finally {
+    store.fetching = false;
+  }
+  if (store.again) {
+    store.again = false;
+    await refresh(environmentId, store);
+  }
+}
+
+/** Refetches every shown bot list after a write from this client. */
+export function botsChanged() {
+  for (const [environmentId, store] of stores)
+    if (store.listeners.size > 0) void refresh(environmentId, store);
+}
+
+/** The environment's bots, from the shown list when there is one. */
+export async function readBots(environmentId: EnvironmentId) {
+  const store = storeFor(environmentId);
+  if (!store.list.loaded) await refresh(environmentId, store);
+  return store.list.bots;
+}
+
+function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
+  const store = storeFor(environmentId);
+  store.listeners.add(listener);
+  if (store.listeners.size === 1) {
+    // Bots change through this client's writes, which refresh on their own; other clients
+    // and background runs reach the list through run changes. Task edits never do.
+    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
+      (change) => {
+        if (change.kind === "sync" || change.runsChanged) void refresh(environmentId, store);
+      },
+      (cause) => publish(store, { ...store.list, error: errorText(cause) }),
+    );
+  }
+  return () => {
+    store.listeners.delete(listener);
+    if (store.listeners.size === 0) {
+      store.stopChanges?.();
+      store.stopChanges = undefined;
+    }
+  };
+}
+
+const noBots = () => () => {};
+
 export function useBots(environmentId: EnvironmentId) {
-  const version = useSyncExternalStore(
-    subscribe,
-    () => revision,
-    () => revision,
-  );
   const access = useTasksWebAccess(environmentId);
   const enabled = access.canReadAgents;
-  const [bots, setBots] = useState<ReadonlyArray<Bot>>(() => lastLists.get(environmentId) ?? []);
-  const [loaded, setLoaded] = useState(() => lastLists.has(environmentId));
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (!enabled) return;
-    return readTasksWebClient(environmentId).tasks.subscribe(
-      () => botsChanged(),
-      (cause) => setError(errorText(cause)),
-    );
-  }, [environmentId, enabled]);
-  useEffect(() => {
-    if (!enabled) return;
-    let disposed = false;
-    readTasksWebClient(environmentId)
-      .bots.list({})
-      .then(
-        (value) => {
-          if (disposed) return;
-          lastLists.set(environmentId, value);
-          setBots(value);
-          setLoaded(true);
-          setError("");
-        },
-        (cause: unknown) => {
-          if (!disposed) setError(errorText(cause));
-        },
-      );
-    return () => {
-      disposed = true;
-    };
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- External revisions invalidate persisted data without changing the environment.
-  }, [environmentId, version, enabled]);
-  return { bots, loaded, error, enabled };
+  // A new subscribe function would resubscribe, and the last unsubscribe closes the stream.
+  const subscribe = useCallback(
+    (listener: () => void) => (enabled ? subscribeBots(environmentId, listener) : noBots()),
+    [environmentId, enabled],
+  );
+  const list = useSyncExternalStore(
+    subscribe,
+    () => (enabled ? storeFor(environmentId).list : EMPTY),
+    () => EMPTY,
+  );
+  return { ...list, enabled };
 }
 
 /** Navigation to a bot's page: an existing bot, a chat to turn into one, or a new bot. */
