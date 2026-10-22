@@ -3358,6 +3358,7 @@ export function GeneralSettingsPanel() {
                 {textGenInstanceEntry ? (
                   <TraitsPicker
                     provider={textGenProvider}
+                    instanceId={textGenInstanceId}
                     models={textGenInstanceEntry?.models ?? []}
                     model={textGenModel}
                     prompt=""

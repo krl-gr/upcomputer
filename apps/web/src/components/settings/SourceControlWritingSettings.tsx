@@ -391,6 +391,7 @@ export function SourceControlWritingSettingsSection() {
               writerInstanceEntry ? (
                 <TraitsPicker
                   provider={writerInstanceEntry.driverKind}
+                  instanceId={activeSelection.instanceId}
                   models={writerInstanceEntry.models}
                   model={activeSelection.model}
                   prompt=""
@@ -499,6 +500,7 @@ export function SourceControlWritingSettingsSection() {
                   reviewGuideInstanceEntry ? (
                     <TraitsPicker
                       provider={reviewGuideInstanceEntry.driverKind}
+                      instanceId={reviewGuideSelection.instanceId}
                       models={reviewGuideInstanceEntry.models}
                       model={reviewGuideSelection.model}
                       prompt=""
