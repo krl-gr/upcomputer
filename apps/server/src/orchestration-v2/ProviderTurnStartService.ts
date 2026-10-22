@@ -524,6 +524,7 @@ export const layer: Layer.Layer<
         projectId: projection.thread.projectId,
         messageId: message.id,
         text: message.text,
+        createdBy: message.createdBy,
         interactionMode: projection.thread.interactionMode,
         ...(deliveredMarker === undefined ? {} : { deliveredMarker }),
       });

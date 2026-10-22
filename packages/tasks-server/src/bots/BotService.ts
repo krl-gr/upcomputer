@@ -128,7 +128,10 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const taskAgents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
+  // `lock` orders bot identity writes; `memoryLock` only memory writes, so a turn start that
+  // saves an explicit memory never waits on a bot save. Take `lock` first when both are needed.
   const lock = yield* Semaphore.make(1);
+  const memoryLock = yield* Semaphore.make(1);
   const rows = sql<BotRow>`SELECT agent_id AS "agentId", thread_id AS "threadId",
     project_id AS "projectId", allowed_projects_json AS allowed, adopted, appearance_json AS appearance FROM bots`;
   const decode = (row: BotRow) =>
@@ -153,15 +156,22 @@ const make = Effect.gen(function* () {
       if (!row) return yield* fail("Bot was not found.");
       return yield* decode(row);
     });
-  const forThread = (threadId: ThreadId) =>
+  // With no bots this is one read of an empty table, so threads of people who never made a
+  // bot pay nothing more per turn.
+  const rowForThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const direct = (yield* rows).find((row) => row.threadId === threadId);
-      if (direct) return yield* decode(direct);
+      const stored = yield* rows;
+      if (stored.length === 0) return null;
+      const direct = stored.find((row) => row.threadId === threadId);
+      if (direct) return direct;
       const run = yield* repository.findLatestAgentRunByThreadId({ threadId });
       if (Option.isNone(run)) return null;
-      const row = (yield* rows).find((item) => item.agentId === run.value.agentId);
-      return row ? yield* decode(row) : null;
+      return stored.find((item) => item.agentId === run.value.agentId) ?? null;
     });
+  const forThread = (threadId: ThreadId) =>
+    rowForThread(threadId).pipe(
+      Effect.flatMap((row) => (row === null ? Effect.succeed(null) : decode(row))),
+    );
   const memory = (agentId: TaskAgentId) =>
     Effect.gen(function* () {
       yield* get(agentId);
@@ -406,10 +416,9 @@ const make = Effect.gen(function* () {
         });
       return bot;
     });
-  const context = (input: TurnContextInput) =>
+  const context = (row: BotRow, input: TurnContextInput) =>
     Effect.gen(function* () {
-      const bot = yield* forThread(input.threadId);
-      if (bot === null) return { text: "" };
+      const bot = yield* decode(row);
       const canonical = bot.threadId === input.threadId;
       const projectId = canonical ? bot.projectId : input.projectId;
       if (canonical && bot.projectId !== input.projectId)
@@ -417,9 +426,15 @@ const make = Effect.gen(function* () {
       if (!bot.allowedProjectIds.includes(projectId))
         return yield* fail("This project is not available to the bot.");
       // Explicit requests are saved without a second model call. A stable message id
-      // also stops a retried start from resurrecting a deleted or edited memory.
-      const explicit = /^(?:запомни|remember)\s*[: ,]\s*([\s\S]+)/iu.exec(input.text.trim());
-      if (canonical && input.interactionMode !== "plan" && explicit?.[1])
+      // also stops a retried start from resurrecting a deleted or edited memory. Only the
+      // person's own message counts: an agent posting into the chat must go through the model.
+      const explicit = /^(?:запомни|remember)\s*:\s*([\s\S]+)/iu.exec(input.text.trim());
+      if (
+        canonical &&
+        input.createdBy === "user" &&
+        input.interactionMode !== "plan" &&
+        explicit?.[1]
+      )
         yield* remember(
           {
             agentId: bot.agent.id,
@@ -429,7 +444,7 @@ const make = Effect.gen(function* () {
             source: `chat:${bot.threadId}/message:${input.messageId}`,
           },
           true,
-        );
+        ).pipe(memoryLock.withPermits(1));
       const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nRole: ${bot.agent.config.role}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\nUse bot_history_search to search this bot's saved chat history. Use bot_assign for background work; its results return to the permanent chat.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Do not rewrite your role or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
       // Settings changes resend everything; the cursor bounds which memory rows changed.
       const fingerprint = NodeCrypto.createHash("sha256").update(header).digest("hex").slice(0, 16);
@@ -542,7 +557,7 @@ const make = Effect.gen(function* () {
     forThread: (threadId) => forThread(threadId).pipe(Effect.mapError(asError)),
     memory: (id) => memory(id).pipe(Effect.mapError(asError)),
     remember: (input, onlyIfNew) =>
-      remember(input, onlyIfNew).pipe(lock.withPermits(1), Effect.mapError(asError)),
+      remember(input, onlyIfNew).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
     forget: (agentId, id) =>
       now.pipe(
         Effect.flatMap(
@@ -550,21 +565,21 @@ const make = Effect.gen(function* () {
             sql`UPDATE bot_memories SET deleted_at = ${at}
             WHERE agent_id = ${agentId} AND id = ${id} AND status = 'active'`,
         ),
-        lock.withPermits(1),
+        memoryLock.withPermits(1),
         Effect.asVoid,
         Effect.mapError(asError),
       ),
-    propose: (input) => propose(input).pipe(lock.withPermits(1), Effect.mapError(asError)),
+    propose: (input) => propose(input).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
     proposals: (agentId) => proposals(agentId).pipe(Effect.mapError(asError)),
     acceptProposal: (agentId, id) =>
-      acceptProposal(agentId, id).pipe(lock.withPermits(1), Effect.mapError(asError)),
+      acceptProposal(agentId, id).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
     rejectProposal: (agentId, id) =>
       Effect.gen(function* () {
         yield* get(agentId);
         const at = yield* now;
         yield* sql`UPDATE bot_memories SET status = 'rejected', updated_at = ${at}
         WHERE agent_id = ${agentId} AND id = ${id} AND status = 'proposed'`;
-      }).pipe(lock.withPermits(1), Effect.mapError(asError)),
+      }).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
     remove: (agentId) =>
       Effect.gen(function* () {
         const bot = yield* get(agentId);
@@ -576,8 +591,19 @@ const make = Effect.gen(function* () {
           }),
         );
         yield* taskAgents.scheduleAgentChanged({ agent: bot.agent, reason: "deleted" });
-      }).pipe(lock.withPermits(1), Effect.mapError(asError)),
-    context: (input) => context(input).pipe(lock.withPermits(1), Effect.mapError(asError)),
+      }).pipe(memoryLock.withPermits(1), lock.withPermits(1), Effect.mapError(asError)),
+    // A failed lookup cannot tell a bot chat from any other thread, and every thread's turn
+    // passes here, so it must not stop the turn. Once the thread is a bot's, failures do.
+    context: (input) =>
+      rowForThread(input.threadId).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Bot lookup for a turn failed", { cause }).pipe(Effect.as(null)),
+        ),
+        Effect.flatMap((row) =>
+          row === null ? Effect.succeed({ text: "" }) : context(row, input),
+        ),
+        Effect.mapError(asError),
+      ),
     assign,
     extract: (agentId, requestId) =>
       Effect.gen(function* () {

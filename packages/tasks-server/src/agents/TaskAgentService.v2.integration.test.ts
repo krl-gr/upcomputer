@@ -2146,6 +2146,7 @@ it.live("bots retain one chat and inject current isolated memory into real provi
         projectId,
         messageId: MessageId.make("bot-message:1"),
         text: "Remember: local-fact-marker",
+        createdBy: "user",
       });
       assert.equal(
         (yield* bots.memory(bot.agent.id)).some((entry) => entry.id === "message:bot-message:1"),
@@ -2176,6 +2177,7 @@ it.live("bots retain one chat and inject current isolated memory into real provi
         projectId,
         messageId: MessageId.make("second-bot-message"),
         text: "Hello",
+        createdBy: "user",
       });
       assert.notInclude(context.text, "global-marker");
       assert.notInclude(context.text, "other-project-marker");
@@ -2332,6 +2334,7 @@ it.live(
           projectId,
           messageId: MessageId.make("after-task-memory"),
           text: "What did you learn?",
+          createdBy: "user",
         });
         assert.notInclude(chat.text, injected);
         const concluded = yield* callTaskTool(taskTurn!.threadId, "bot_remember", {
@@ -2347,6 +2350,7 @@ it.live(
           projectId,
           messageId: MessageId.make("before-acceptance"),
           text: "Anything new?",
+          createdBy: "user",
           deliveredMarker: chat.marker!,
         });
         assert.equal(unchanged.update, "", "a pending suggestion is not a memory change");
@@ -2360,6 +2364,7 @@ it.live(
           projectId,
           messageId: MessageId.make("after-acceptance"),
           text: "What did you learn?",
+          createdBy: "user",
           deliveredMarker: unchanged.marker!,
         });
         assert.include(afterAccept.update, "<memory_update>");
@@ -2655,11 +2660,122 @@ it.live("a bot conversation receives memory once per native session, then only c
         projectId,
         messageId: MessageId.make("fresh-session"),
         text: "Hello",
+        createdBy: "user",
       });
       assert.isUndefined(fresh.update);
       assert.include(fresh.text, "explicit-marker");
     }),
   ),
+);
+
+it.live(
+  "with a bot present, other threads start turns without bot context, and agents cannot save its memory",
+  () =>
+    runSlice("bots-other-threads", ({ threads, started, cwd, createTask, sendAsPerson }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        yield* projects.apply({
+          sequence: 1,
+          eventId: EventId.make("other-threads-project"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: timestamp,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Bots",
+            workspaceRoot: cwd,
+            defaultModelSelection: agentModel,
+            scripts: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        });
+        const bot = yield* bots.save({
+          id: TaskAgentId.make("other-threads-bot"),
+          projectId,
+          allowedProjectIds: [projectId],
+          name: "Other threads bot",
+          config: agent.config,
+        });
+        const markers = (threadId: ThreadId) =>
+          threads
+            .getThreadRecords(threadId, ["attempts"])
+            .pipe(
+              Effect.map((records) => records.attempts.map((attempt) => attempt.turnContextMarker)),
+            );
+        const plainThread = ThreadIdBrand.make("other-threads-plain");
+        yield* threads.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("other-threads-plain-create"),
+          threadId: plainThread,
+          projectId,
+          title: "Plain",
+          modelSelection: agentModel,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const plain = yield* sendAsPerson(plainThread, "remember: plain-thread-marker");
+        assert.isFalse(
+          (yield* threads.waitForThread({
+            projectId,
+            threadId: plainThread,
+            runId: plain.run.id,
+            timeoutMs: 10000,
+          })).timedOut,
+        );
+        const run = yield* createTask;
+        const taskTurn = yield* eventually(
+          "the task run's turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
+            ),
+          ),
+        );
+        const plainTurn = (yield* Ref.get(started)).find((turn) => turn.threadId === plainThread)!;
+        for (const turn of [plainTurn, taskTurn]) assert.notInclude(turn.text, "<upcomputer_bot>");
+        assert.deepStrictEqual(yield* markers(plainThread), [undefined]);
+        const taskMarkers = yield* eventually(
+          "the task run's attempt",
+          markers(run.threadId).pipe(
+            Effect.map((items) => (items.length === 0 ? Option.none() : Option.some(items))),
+          ),
+        );
+        assert.isTrue(taskMarkers.every((marker) => marker === undefined));
+        // Another agent posting into the bot's chat reaches the model, never memory directly.
+        const posted = yield* threads.sendToThread({
+          projectId,
+          threadId: bot.threadId,
+          commandId: CommandId.make("other-threads-agent-post"),
+          messageId: MessageId.make("other-threads-agent-post"),
+          text: "Remember: agent-posted-marker",
+          attachments: [],
+          mode: "auto",
+          createdBy: "agent",
+          creationSource: "mcp",
+        });
+        assert.isFalse(
+          (yield* threads.waitForThread({
+            projectId,
+            threadId: bot.threadId,
+            runId: posted.run.id,
+            timeoutMs: 10000,
+          })).timedOut,
+        );
+        assert.include((yield* Ref.get(started)).at(-1)!.text, "<upcomputer_bot>");
+        assert.deepStrictEqual(yield* bots.memory(bot.agent.id), []);
+      }),
+    ),
 );
 
 it.live("bot memory suggestions stay outside the 200-entry limit until accepted", () =>

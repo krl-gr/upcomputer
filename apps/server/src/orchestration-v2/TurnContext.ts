@@ -1,5 +1,6 @@
 import type {
   MessageId,
+  OrchestrationV2Actor,
   OrchestrationV2ProviderTurn,
   OrchestrationV2Run,
   OrchestrationV2RunAttempt,
@@ -17,6 +18,8 @@ export interface TurnContextInput {
   readonly projectId: ProjectId;
   readonly messageId: MessageId;
   readonly text: string;
+  /** Who wrote the message; agents posting into a thread are not the person. */
+  readonly createdBy: OrchestrationV2Actor;
   readonly interactionMode?: ProviderInteractionMode;
   /** The marker of the context the current native conversation already holds. */
   readonly deliveredMarker?: string;
