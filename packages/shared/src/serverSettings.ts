@@ -4,7 +4,9 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  DEFAULT_SERVER_SETTINGS,
   isProviderAvailable,
+  isProviderReady,
   isUnconfiguredDefaultInstanceEnabled,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -131,6 +133,51 @@ export function fallbackTextGenerationModelSelection(
       DEFAULT_MODEL_BY_PROVIDER[driver] ??
       DEFAULT_TEXT_GENERATION_MODEL,
   };
+}
+
+/**
+ * The text-generation model a user never picked is Codex's, which a new user
+ * may not have. Settings cannot tell an explicit pick of that same model apart.
+ */
+export function isDefaultTextGenerationModelSelection(selection: ModelSelection): boolean {
+  const fallback = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
+  return selection.instanceId === fallback.instanceId && selection.model === fallback.model;
+}
+
+/**
+ * Moves the default selection to the first ready provider once its own has
+ * been checked and is not ready, so titles do not fail on a missing Codex. The
+ * model is the provider's text-generation default when it serves it, else the
+ * model it marks default: for OpenCode that is the automatic free model, never
+ * Big Pickle. A selection the user made is kept.
+ */
+export function resolveReadyTextGenerationModelSelection(
+  selection: ModelSelection,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  if (!isDefaultTextGenerationModelSelection(selection)) return selection;
+  const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
+  if (selected !== undefined && (selected.statusPending === true || isProviderReady(selected))) {
+    return selection;
+  }
+  for (const driver of TEXT_GENERATION_FALLBACK_DRIVERS) {
+    for (const provider of providers) {
+      if (
+        provider.driver !== driver ||
+        provider.statusPending === true ||
+        !isProviderReady(provider) ||
+        !isProviderTextGenerationCapable(provider)
+      ) {
+        continue;
+      }
+      const preferred = DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver];
+      const model = provider.models.some((candidate) => candidate.slug === preferred)
+        ? preferred
+        : provider.models.find((candidate) => candidate.isDefault === true)?.slug;
+      if (model !== undefined) return { instanceId: provider.instanceId, model };
+    }
+  }
+  return selection;
 }
 
 export function resolveSourceControlWriterModelSelection(

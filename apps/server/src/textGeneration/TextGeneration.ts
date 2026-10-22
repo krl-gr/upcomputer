@@ -1,9 +1,13 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ProviderInstanceId } from "@t3tools/contracts";
+import type { ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import { TextGenerationError } from "@t3tools/contracts";
+import {
+  isDefaultTextGenerationModelSelection,
+  resolveReadyTextGenerationModelSelection,
+} from "@t3tools/shared/serverSettings";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
@@ -56,39 +60,86 @@ const resolveInstance = (
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  const withReadySelection = <Input extends { readonly modelSelection: ModelSelection }>(
+    input: Input,
+  ): Effect.Effect<Input> =>
+    isDefaultTextGenerationModelSelection(input.modelSelection)
+      ? registry.listInstances.pipe(
+          Effect.flatMap((instances) =>
+            Effect.forEach(instances, (instance) =>
+              instance.snapshot.getSnapshot.pipe(
+                Effect.map((snapshot) => ({ ...snapshot, instanceId: instance.instanceId })),
+              ),
+            ),
+          ),
+          Effect.map((providers) => ({
+            ...input,
+            modelSelection: resolveReadyTextGenerationModelSelection(
+              input.modelSelection,
+              providers,
+            ),
+          })),
+        )
+      : Effect.succeed(input);
   return TextGeneration.of({
-    generateCommitMessage: (input) =>
-      resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),
-      ),
-    generatePrContent: (input) =>
-      resolveInstance(registry, "generatePrContent", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generatePrContent(input)),
-      ),
-    generateBranchName: (input) =>
-      resolveInstance(registry, "generateBranchName", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateBranchName(input)),
-      ),
-    generateReviewGuide: (input) =>
-      resolveInstance(registry, "generateReviewGuide", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateReviewGuide(input)),
-      ),
-    generateThreadTitle: (input) =>
-      resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) =>
-          Effect.gen(function* () {
-            const linkedContext =
-              input.linkedContext ??
-              (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
-                Effect.provideService(
-                  SourceControlProviderRegistry.SourceControlProviderRegistry,
-                  sourceControl,
-                ),
-              ));
-            return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
-          }),
-        ),
-      ),
+    generateCommitMessage: (requested) =>
+      Effect.gen(function* () {
+        const input = yield* withReadySelection(requested);
+        const textGeneration = yield* resolveInstance(
+          registry,
+          "generateCommitMessage",
+          input.modelSelection.instanceId,
+        );
+        return yield* textGeneration.generateCommitMessage(input);
+      }),
+    generatePrContent: (requested) =>
+      Effect.gen(function* () {
+        const input = yield* withReadySelection(requested);
+        const textGeneration = yield* resolveInstance(
+          registry,
+          "generatePrContent",
+          input.modelSelection.instanceId,
+        );
+        return yield* textGeneration.generatePrContent(input);
+      }),
+    generateBranchName: (requested) =>
+      Effect.gen(function* () {
+        const input = yield* withReadySelection(requested);
+        const textGeneration = yield* resolveInstance(
+          registry,
+          "generateBranchName",
+          input.modelSelection.instanceId,
+        );
+        return yield* textGeneration.generateBranchName(input);
+      }),
+    generateReviewGuide: (requested) =>
+      Effect.gen(function* () {
+        const input = yield* withReadySelection(requested);
+        const textGeneration = yield* resolveInstance(
+          registry,
+          "generateReviewGuide",
+          input.modelSelection.instanceId,
+        );
+        return yield* textGeneration.generateReviewGuide(input);
+      }),
+    generateThreadTitle: (requested) =>
+      Effect.gen(function* () {
+        const input = yield* withReadySelection(requested);
+        const textGeneration = yield* resolveInstance(
+          registry,
+          "generateThreadTitle",
+          input.modelSelection.instanceId,
+        );
+        const linkedContext =
+          input.linkedContext ??
+          (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
+            Effect.provideService(
+              SourceControlProviderRegistry.SourceControlProviderRegistry,
+              sourceControl,
+            ),
+          ));
+        return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
+      }),
   });
 });
 

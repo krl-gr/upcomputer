@@ -18,6 +18,7 @@ import {
   resolveModelPreferences,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
+  resolveReadyTextGenerationModelSelection,
   resolveSourceControlWriterModelSelection,
   resolveProjectAgentBrowserAccess,
   resolveProjectAutoPull,
@@ -48,6 +49,76 @@ describe("fallbackTextGenerationModelSelection", () => {
       { includeConfiguredInstances: true },
     );
     expect(fallback?.instanceId).toBe(configured);
+  });
+});
+
+describe("resolveReadyTextGenerationModelSelection", () => {
+  const provider = (driver: string, overrides: Partial<ServerProvider> = {}): ServerProvider => ({
+    instanceId: ProviderInstanceId.make(driver),
+    driver: ProviderDriverKind.make(driver),
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready",
+    auth: { status: "unknown" },
+    checkedAt: "2026-10-22T00:00:00.000Z",
+    models: [],
+    slashCommands: [],
+    skills: [],
+    ...overrides,
+  });
+  const notInstalledCodex = provider("codex", { installed: false, status: "error" });
+  const freeOpenCode = provider("opencode", {
+    models: [
+      { slug: "opencode/big-pickle", name: "Big Pickle", isCustom: false, capabilities: null },
+      {
+        slug: "opencode/glm-5.3-flash-free",
+        name: "GLM",
+        isCustom: false,
+        isDefault: true,
+        capabilities: null,
+      },
+    ],
+  });
+  const unchosen = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
+
+  it("moves the unchosen Codex default to OpenCode's automatic free model", () => {
+    expect(
+      resolveReadyTextGenerationModelSelection(unchosen, [notInstalledCodex, freeOpenCode]),
+    ).toEqual({ instanceId: "opencode", model: "opencode/glm-5.3-flash-free" });
+  });
+
+  it("prefers a ready provider's own text-generation model", () => {
+    const claude = provider("claudeAgent", {
+      models: [
+        {
+          slug: "claude-opus-5-5",
+          name: "Opus",
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+        { slug: "claude-haiku-5-5", name: "Haiku", isCustom: false, capabilities: null },
+      ],
+    });
+    expect(
+      resolveReadyTextGenerationModelSelection(unchosen, [notInstalledCodex, freeOpenCode, claude]),
+    ).toEqual({ instanceId: "claudeAgent", model: "claude-haiku-5-5" });
+  });
+
+  it("keeps the default while Codex is ready or not yet checked, or nothing else is ready", () => {
+    const ready = [provider("codex"), freeOpenCode];
+    expect(resolveReadyTextGenerationModelSelection(unchosen, ready)).toBe(unchosen);
+    const pending = [provider("codex", { statusPending: true, status: "warning" }), freeOpenCode];
+    expect(resolveReadyTextGenerationModelSelection(unchosen, pending)).toBe(unchosen);
+    expect(resolveReadyTextGenerationModelSelection(unchosen, [notInstalledCodex])).toBe(unchosen);
+  });
+
+  it("keeps a selection the user made, even on a provider that is not ready", () => {
+    const chosen = createModelSelection(ProviderInstanceId.make("codex"), "gpt-6-astra");
+    expect(
+      resolveReadyTextGenerationModelSelection(chosen, [notInstalledCodex, freeOpenCode]),
+    ).toBe(chosen);
   });
 });
 
