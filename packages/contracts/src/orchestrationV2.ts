@@ -3025,11 +3025,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
     ),
   }),
   /**
-   * Records a notification in the thread's timeline without a message or a run, so no
-   * provider turn starts. The agent is told on its next turn. The command id names the
-   * timeline item, so a retry records it once.
-   */
-  /**
    * Moves an idle thread without a worktree to another project, for a bot whose working
    * project changed. Clears what belonged to the old project: branch, project and pull request
    * links, and provider sessions started in its directory.
@@ -3041,6 +3036,11 @@ const OrchestrationV2InternalCommand = Schema.Union([
     projectId: ProjectId,
     title: Schema.optional(TrimmedNonEmptyString),
   }),
+  /**
+   * Records a notification in the thread's timeline without a message or a run, so no
+   * provider turn starts. The agent is told on its next turn. The command id names the
+   * timeline item, so a retry records it once.
+   */
   Schema.Struct({
     type: Schema.Literal("thread.notification.record"),
     commandId: CommandId,
