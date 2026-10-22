@@ -5,6 +5,7 @@ import {
   getProviderStatusKey,
   getProviderSummary,
   getProviderVersionAdvisoryPresentation,
+  isManagedOpenCodeBinaryPath,
   withoutManagedOpenCodeNote,
 } from "./providerStatus";
 
@@ -178,6 +179,21 @@ describe("provider status copy", () => {
       headline: "Not authenticated · Company login",
       detail: "Complete this authentication method on the server.",
     });
+  });
+});
+
+describe("isManagedOpenCodeBinaryPath", () => {
+  it("recognizes only the OpenCode the app installed", () => {
+    expect(isManagedOpenCodeBinaryPath("/Users/a/.upcomputer/tools/opencode/1.19.3/opencode")).toBe(
+      true,
+    );
+    expect(
+      isManagedOpenCodeBinaryPath(
+        "C:\\Users\\a\\.upcomputer\\tools\\opencode\\1.19.3\\opencode.exe",
+      ),
+    ).toBe(true);
+    expect(isManagedOpenCodeBinaryPath("/Users/a/.opencode/bin/opencode")).toBe(false);
+    expect(isManagedOpenCodeBinaryPath("opencode")).toBe(false);
   });
 });
 

@@ -76,6 +76,17 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
 }
 
 /**
+ * UpComputer: the OpenCode the app installs for a new user, at
+ * `<home>/tools/opencode/<version>/opencode`, is pinned and moves only with app
+ * releases. `opencode upgrade` cannot replace it in place: it installs another
+ * copy through whichever package manager or install script it detects, or waits
+ * on a prompt, so this copy offers no update.
+ */
+function isManagedOpenCodeBinaryPath(binaryPath: string): boolean {
+  return /\/tools\/opencode\/[^/]+\/opencode(?:\.exe)?$/.test(normalizeCommandPath(binaryPath));
+}
+
+/**
  * OpenCode 1.x ships as `opencode-ai` and 2.x as `@opencode/cli`. An install is
  * only ever updated within its own package: T3 never moves a 1.x install onto
  * 2.x or back, since 2.x converts the shared database in place.
@@ -224,7 +235,7 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.map((result) => result.generation),
           Effect.option,
           Effect.flatMap((generation) =>
-            Option.isNone(generation)
+            Option.isNone(generation) || isManagedOpenCodeBinaryPath(effectiveConfig.binaryPath)
               ? Effect.succeed(noUpdate)
               : resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdateFor(generation.value), {
                   binaryPath: effectiveConfig.binaryPath,

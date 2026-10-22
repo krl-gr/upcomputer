@@ -269,4 +269,46 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         assert.isNull(v2.update);
       }).pipe(Effect.scoped),
   );
+
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "offers no update for the OpenCode the app installed, and native upgrade for the install script's",
+    () =>
+      Effect.gen(function* () {
+        const root = NodeFS.realpathSync(
+          NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-driver-managed-")),
+        );
+        const executable = (...segments: ReadonlyArray<string>) => {
+          const target = NodePath.join(root, ...segments);
+          NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+          NodeFS.writeFileSync(target, "#!/bin/sh\n");
+          NodeFS.chmodSync(target, 0o755);
+          return target;
+        };
+        versionOutput.current = "1.19.3\n";
+        const create = (instanceId: string, binaryPath: string) =>
+          OpenCodeDriver.create({
+            instanceId: ProviderInstanceId.make(instanceId),
+            displayName: undefined,
+            environment: [],
+            enabled: true,
+            config: { ...OpenCodeDriver.defaultConfig(), binaryPath },
+          }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
+
+        const managed = yield* create(
+          "opencode-managed",
+          executable(".upcomputer", "tools", "opencode", "1.19.3", "opencode"),
+        );
+        const managedUpdate = yield* managed.snapshot.resolveMaintenance({ fresh: true });
+        assert.isNull(managedUpdate.update);
+        // No package name means no latest-version lookup, so no update advisory.
+        assert.isNull(managedUpdate.packageName);
+
+        const scriptBinary = executable("home", ".opencode", "bin", "opencode");
+        const script = yield* create("opencode-script", scriptBinary);
+        const scriptUpdate = yield* script.snapshot.resolveMaintenance({ fresh: true });
+        assert.strictEqual(scriptUpdate.packageName, "opencode-ai");
+        assert.strictEqual(scriptUpdate.update?.executable, scriptBinary);
+        assert.deepStrictEqual(scriptUpdate.update?.args, ["upgrade"]);
+      }).pipe(Effect.scoped),
+  );
 });
