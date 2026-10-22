@@ -10,6 +10,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 export interface TurnContextInput {
   readonly threadId: ThreadId;
@@ -30,7 +31,7 @@ export interface TurnContext {
    */
   readonly update?: string;
 }
-type Resolver = (input: TurnContextInput) => Effect.Effect<TurnContext, unknown>;
+type Resolver = (input: TurnContextInput) => Effect.Effect<TurnContext, Error>;
 let resolver: Resolver | undefined;
 
 export const registerTurnContextResolver = (value: Resolver) =>
@@ -44,9 +45,20 @@ export const registerTurnContextResolver = (value: Resolver) =>
       }),
   );
 
+export class TurnContextError extends Schema.TaggedError<TurnContextError>()("TurnContextError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
+
 // Unlike optional tool hints, a failed context/access read must stop the turn.
-export const turnContextFor = (input: TurnContextInput): Effect.Effect<TurnContext, unknown> =>
-  resolver === undefined ? Effect.succeed({ text: "" }) : resolver(input);
+export const turnContextFor = (
+  input: TurnContextInput,
+): Effect.Effect<TurnContext, TurnContextError> =>
+  resolver === undefined
+    ? Effect.succeed({ text: "" })
+    : resolver(input).pipe(
+        Effect.mapError((cause) => new TurnContextError({ message: cause.message, cause })),
+      );
 
 /**
  * The marker of the latest turn context this native conversation accepted. A compaction in or

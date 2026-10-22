@@ -11,14 +11,6 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
-  "upcomputer.bots.v1.save": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.remove": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.remember": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.forget": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.acceptProposal": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.rejectProposal": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.assign": AuthOrchestrationOperateScope,
-  "upcomputer.bots.v1.extract": AuthOrchestrationOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
@@ -57,6 +49,19 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 
+// Feature RPCs are outside the core WS group, so the server's core scope table must not
+// list them; their server contributions declare the same scopes.
+const CLIENT_GUARDED_FEATURE_RPC_SCOPES = {
+  "upcomputer.bots.v1.save": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.remove": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.remember": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.forget": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.acceptProposal": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.rejectProposal": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.assign": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.extract": AuthOrchestrationOperateScope,
+} as const;
+
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);
 
 export function clientRpcRequiredScopes(
@@ -68,7 +73,9 @@ export function clientRpcRequiredScopes(
     if (payload.mode === "worktree" && payload.threadId !== undefined)
       return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   }
-  return Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method)
-    ? [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]]
+  if (Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method))
+    return [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]];
+  return Object.hasOwn(CLIENT_GUARDED_FEATURE_RPC_SCOPES, method)
+    ? [CLIENT_GUARDED_FEATURE_RPC_SCOPES[method as keyof typeof CLIENT_GUARDED_FEATURE_RPC_SCOPES]]
     : [];
 }
