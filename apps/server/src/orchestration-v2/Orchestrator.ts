@@ -437,6 +437,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.visit":
     case "thread.mark-unread":
     case "thread.metadata.update":
+    case "thread.project.move":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":
     case "thread.pull-request-link.sync":
@@ -2407,6 +2408,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.active.reorder"
           | "thread.mark-unread"
           | "thread.metadata.update"
+          | "thread.project.move"
           | "thread.pull-request.link"
           | "thread.pull-request.unlink"
           | "thread.pull-request-link.sync"
@@ -2517,12 +2519,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     const movingProject =
-      command.type === "thread.metadata.update" &&
-      command.projectId !== undefined &&
-      command.projectId !== thread.projectId;
+      command.type === "thread.project.move" && command.projectId !== thread.projectId;
     if (movingProject) {
-      const state = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"]);
-      const target = yield* projects.get(command.projectId!).pipe(mapDispatchError(command));
+      const state = yield* projectionStore
+        .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
+        .pipe(mapDispatchError(command));
+      const target = yield* projects.get(command.projectId).pipe(mapDispatchError(command));
       if (
         Option.isNone(target) ||
         state.runs.some((run) => run.status === "queued" || isBlockingRun(run)) ||
@@ -2985,18 +2987,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   };
           return {
             ...thread,
-            ...(movingProject
-              ? {
-                  projectId: command.projectId!,
-                  branch: null,
-                  worktreePath: null,
-                  linkedProjectIds: [],
-                  projectLinksPinned: true,
-                  linkedPullRequest: null,
-                  branchPullRequest: null,
-                  pullRequests: [],
-                }
-              : {}),
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
@@ -3054,6 +3044,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: isOnlyThreadProjectLinksUpdate(command) ? thread.updatedAt : now,
           };
         }
+        case "thread.project.move":
+          return {
+            ...thread,
+            ...(movingProject
+              ? {
+                  projectId: command.projectId,
+                  branch: null,
+                  worktreePath: null,
+                  linkedProjectIds: [],
+                  projectLinksPinned: true,
+                  linkedPullRequest: null,
+                  branchPullRequest: null,
+                  pullRequests: [],
+                }
+              : {}),
+            ...(command.title === undefined
+              ? {}
+              : { title: command.title, titleRegeneration: null }),
+            updatedAt: now,
+          };
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":
         case "thread.pull-request-link.sync": {
@@ -3304,6 +3314,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.mark-unread":
           return "thread.marked-unread" as const;
         case "thread.metadata.update":
+        case "thread.project.move":
         case "thread.title.regeneration.complete":
           return "thread.metadata-updated" as const;
         case "thread.pull-request.link":
@@ -3456,7 +3467,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ? "Thread archived."
                     : command.type === "thread.settle"
                       ? "Thread settled."
-                      : command.type === "thread.metadata.update"
+                      : command.type === "thread.metadata.update" ||
+                          command.type === "thread.project.move"
                         ? "Workspace changed."
                         : command.type === "thread.runtime-mode.set"
                           ? "Runtime mode changed."
@@ -3475,7 +3487,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ? "Thread archived."
                     : command.type === "thread.settle"
                       ? "Thread settled."
-                      : command.type === "thread.metadata.update"
+                      : command.type === "thread.metadata.update" ||
+                          command.type === "thread.project.move"
                         ? "Workspace changed."
                         : command.type === "thread.runtime-mode.set"
                           ? "Runtime mode changed."
@@ -10929,6 +10942,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.active.reorder":
       case "thread.mark-unread":
       case "thread.metadata.update":
+      case "thread.project.move":
       case "thread.pull-request.link":
       case "thread.pull-request.unlink":
       case "thread.pull-request-link.sync":

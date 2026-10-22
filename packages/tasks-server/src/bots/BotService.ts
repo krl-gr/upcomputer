@@ -399,13 +399,20 @@ const make = Effect.gen(function* () {
       yield* ensureThread(bot, existing ? existing.adopted === 1 : input.threadId !== undefined);
       const thread = (yield* threads.getThreadRecords(threadId, [])).thread;
       const commandSuffix = yield* crypto.randomUUIDv4();
-      if (thread.title !== input.name || thread.projectId !== input.projectId)
+      if (thread.projectId !== input.projectId)
+        yield* threads.dispatch({
+          type: "thread.project.move",
+          commandId: CommandId.make(`bot:settings:${input.id}:${commandSuffix}`),
+          threadId,
+          title: input.name,
+          projectId: input.projectId,
+        });
+      else if (thread.title !== input.name)
         yield* threads.dispatch({
           type: "thread.metadata.update",
           commandId: CommandId.make(`bot:settings:${input.id}:${commandSuffix}`),
           threadId,
           title: input.name,
-          projectId: input.projectId,
         });
       if (canonical(thread.modelSelection) !== canonical(input.config.modelSelection))
         yield* threads.dispatch({

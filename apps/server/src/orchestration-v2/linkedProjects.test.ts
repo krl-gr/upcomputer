@@ -3,6 +3,7 @@ import {
   type ApplicationProjectEvent,
   CommandId,
   EventId,
+  MessageId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -338,6 +339,96 @@ it.layer(runtimePolicyLayer)("linked project folders in the runtime policy", (it
         "/work/project-docs",
         "/work/project-infra",
       ]);
+    }),
+  );
+});
+
+it.layer(testLayer)("moving a thread to another project", (it) => {
+  const move = (threadId: ThreadId, projectId: ProjectId, id: string) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      return yield* Effect.exit(
+        orchestrator.dispatch({
+          type: "thread.project.move",
+          commandId: CommandId.make(`move:${id}`),
+          threadId,
+          projectId,
+          title: "Moved",
+        }),
+      );
+    });
+  const threadOf = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      return (yield* projections.getThreadProjection(threadId)).thread;
+    });
+
+  it.effect("moves an idle thread and clears what belonged to the old project", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:move-accept");
+      const orchestrator = yield* seed(threadId);
+      yield* links(threadId, { linkProjectIds: [infra] });
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("move-accept-branch"),
+        threadId,
+        branch: "feature/old-project",
+      });
+      const exit = yield* move(threadId, docs, "accept");
+      assert.equal(exit._tag, "Success");
+      const thread = yield* threadOf(threadId);
+      assert.equal(thread.projectId, docs);
+      assert.equal(thread.title, "Moved");
+      assert.equal(thread.branch, null);
+      assert.equal(thread.worktreePath, null);
+      assert.deepEqual(thread.linkedProjectIds, []);
+      assert.equal(thread.projectLinksPinned, true);
+      assert.deepEqual(thread.pullRequests, []);
+    }),
+  );
+
+  it.effect("rejects a missing or deleted project, a worktree and queued work", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:move-reject");
+      const orchestrator = yield* seed(threadId);
+      for (const projectId of [gone, ProjectId.make("project-missing")])
+        assert.equal((yield* move(threadId, projectId, `missing:${projectId}`))._tag, "Failure");
+
+      const worktreeThread = ThreadId.make("thread:move-worktree");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("create:move-worktree"),
+        threadId: worktreeThread,
+        projectId: home,
+        title: "Worktree",
+        modelSelection: { instanceId, model: "gpt-5.1-codex" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/worktree",
+        worktreePath: "/work/project-home/.worktrees/feature",
+        createdBy: "user",
+        creationSource: "web",
+      });
+      assert.equal((yield* move(worktreeThread, docs, "worktree"))._tag, "Failure");
+
+      // The effect worker is off, so the dispatched message's run never leaves its start.
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("move-reject-message"),
+        threadId,
+        messageId: MessageId.make("move-reject-message"),
+        text: "Work on this",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      assert.equal((yield* move(threadId, docs, "busy"))._tag, "Failure");
+      for (const id of [threadId, worktreeThread]) {
+        const thread = yield* threadOf(id);
+        assert.equal(thread.projectId, home);
+        assert.notEqual(thread.title, "Moved");
+      }
     }),
   );
 });

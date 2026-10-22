@@ -2687,7 +2687,6 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.metadata.update"),
     commandId: CommandId,
     threadId: ThreadId,
-    projectId: Schema.optional(ProjectId),
     title: Schema.optional(TrimmedNonEmptyString),
     regenerateTitle: Schema.optional(Schema.Boolean),
     branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -3030,6 +3029,18 @@ const OrchestrationV2InternalCommand = Schema.Union([
    * provider turn starts. The agent is told on its next turn. The command id names the
    * timeline item, so a retry records it once.
    */
+  /**
+   * Moves an idle thread without a worktree to another project, for a bot whose working
+   * project changed. Clears what belonged to the old project: branch, project and pull request
+   * links, and provider sessions started in its directory.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.move"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+    title: Schema.optional(TrimmedNonEmptyString),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.notification.record"),
     commandId: CommandId,
