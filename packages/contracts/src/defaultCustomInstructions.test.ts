@@ -57,3 +57,14 @@ it("gives a saved copy of the shipped onboarding intro the greeting trigger", ()
   expect(upgraded).not.toContain("After answering the user's first request");
   expect(upgradeCustomInstructions(upgraded)).toBe(upgraded);
 });
+
+it("gives sign-in commands by the path each installer uses", () => {
+  // The app's PATH already has these folders, so an installer run from the agent's
+  // shell skips the shell profile and a new Terminal cannot find the bare command.
+  const installLine = DEFAULT_CUSTOM_INSTRUCTIONS.split("\n").find((line) =>
+    line.includes("codex/install.sh"),
+  );
+  expect(installLine).toContain("`~/.local/bin/claude auth login`");
+  expect(installLine).toContain("`~/.local/bin/codex login`");
+  expect(installLine).toContain("`~/.grok/bin/grok login`");
+});
