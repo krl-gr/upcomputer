@@ -41,7 +41,7 @@ import { PlusIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
-import { withoutManagedOpenCodeNote } from "./providerStatus";
+import { isManagedOpenCodeBinaryPath, withoutManagedOpenCodeNote } from "./providerStatus";
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
@@ -1029,6 +1029,13 @@ export function EnvironmentProviderSettings({
             <SettingsRow
               title="Cursor account"
               description="Using CURSOR_API_KEY. Remove it from this provider's environment to use browser sign-in."
+            />
+          ) : mode === "editor" &&
+            row.driver === "opencode" &&
+            isManagedOpenCodeBinaryPath(configuredBinaryPath(row.instance.config)) ? (
+            <SettingsRow
+              title="Managed by Up.computer"
+              description="Up.computer installed this OpenCode and updates it with app releases."
             />
           ) : null
         }

@@ -173,6 +173,10 @@ export function getProviderVersionAdvisoryPresentation(
 
 const MANAGED_OPENCODE_BINARY = /[\\/]tools[\\/]opencode[\\/]([^\\/]+)[\\/]opencode(?:\.exe)?$/;
 
+/** UpComputer: its server offers no update for this copy; app releases move the pin. */
+export const isManagedOpenCodeBinaryPath = (binaryPath: string) =>
+  MANAGED_OPENCODE_BINARY.test(binaryPath);
+
 /**
  * UpComputer: the OpenCode the desktop app installs for a new user, at
  * `<home>/tools/opencode/<version>/opencode`, is a 1.x release the app pins and
