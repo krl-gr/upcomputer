@@ -304,7 +304,13 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import { ProductSidebarNavigation, ProductThreadRowAccessory } from "../product/ProductSlots";
+import {
+  ProductSidebarNavigation,
+  ProductSidebarSections,
+  ProductThreadRowAccessory,
+} from "../product/ProductSlots";
+import { productThreadActions } from "../product/threadActions";
+import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -2602,6 +2608,8 @@ export default function Sidebar() {
     },
   );
 
+  // A bot's chat is listed under Bots, so Threads leaves it out.
+  const claimedThreadKeys = useClaimedSidebarThreadKeys();
   // Keep a dropped row at its destination while its server applies the
   // lifecycle command and any order-key writes. The next pickup waits for
   // this hold so a second drop cannot replace an unconfirmed placement.
@@ -2623,11 +2631,12 @@ export default function Sidebar() {
     workingThreads,
     snoozedThreads,
     settledThreads,
+    claimedThreads,
     snoozeNow,
   } = useMemo(() => {
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = filterSidebarV2VisibleThreads(
+    const scoped = filterSidebarV2VisibleThreads(
       filterSidebarThreadsBySettledEnvironment(
         threads,
         productSurface("sidebarProjects"),
@@ -2636,6 +2645,14 @@ export default function Sidebar() {
       scopedProjectKeys,
       projectLinks,
     );
+    const claimed: EnvironmentThreadShell[] = [];
+    const visible = scoped.filter((thread) => {
+      const listed = !claimedThreadKeys.has(
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      );
+      if (!listed) claimed.push(thread);
+      return listed;
+    });
     inboxReturns.observe(workingShelfEnabled ? threads : null);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
@@ -2722,9 +2739,11 @@ export default function Sidebar() {
           firstValidTimestampMs(right.snoozedUntil ?? null),
       ),
       settledThreads: sortSettledThreads(settled),
+      claimedThreads: claimed,
       snoozeNow: preciseNow,
     };
   }, [
+    claimedThreadKeys,
     nowMinute,
     optimisticDrop,
     projectLinks,
@@ -2762,8 +2781,10 @@ export default function Sidebar() {
       ...workingThreads,
       ...snoozedThreads,
       ...settledThreads,
+      // Listed under their own section, but search still finds them.
+      ...claimedThreads,
     ],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads, workingThreads],
+    [activeThreads, claimedThreads, pinnedThreads, settledThreads, snoozedThreads, workingThreads],
   );
   const searchEnvironmentIds = useConnectedEnvironmentIds();
   const threadSearch = useThreadSearch(searchEnvironmentIds, threadSearchQuery);
@@ -4358,6 +4379,7 @@ export default function Sidebar() {
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const featureActions = productThreadActions(threadRef);
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -4395,12 +4417,19 @@ export default function Sidebar() {
                 titleRegeneration: supportsTitleRegeneration,
               },
               snoozePresets,
+              featureActions,
             }),
             position,
           ),
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
+        if (clicked.value.startsWith("feature:")) {
+          featureActions
+            .find((candidate) => candidate.id === clicked.value)
+            ?.run({ navigate: (options) => router.navigate(options) });
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
             clicked.value === "snooze:custom"
@@ -4844,6 +4873,7 @@ export default function Sidebar() {
                   projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
                 />
+                <ProductSidebarSections />
                 {/* Below the Projects rows, so it appears with them rather than moving down. */}
                 {sidebarProjectRowsShown ? (
                   <SidebarThreadsSectionHeader

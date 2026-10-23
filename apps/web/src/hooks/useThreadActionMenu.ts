@@ -16,6 +16,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets } from "../components/Sidebar.snooze";
+import { productThreadActions } from "../product/threadActions";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -134,6 +135,10 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+        const featureActions = productThreadActions({
+          environmentId: threadRef.environmentId,
+          threadId: threadRef.threadId,
+        });
         const items = buildThreadActionMenuItems({
           canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
           branch: thread.branch ?? null,
@@ -147,6 +152,7 @@ export function useThreadActionMenu(input: {
           isRunning: !threadRuntimeCanArchive(thread.runtime),
           supports,
           snoozePresets,
+          featureActions,
         });
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -159,6 +165,12 @@ export function useThreadActionMenu(input: {
             "Thread action unavailable",
             new Error("This connection cannot change threads."),
           );
+          return;
+        }
+        if (action.startsWith("feature:")) {
+          featureActions
+            .find((candidate) => candidate.id === action)
+            ?.run({ navigate: (options) => router.navigate(options) });
           return;
         }
         if (action.startsWith("snooze:")) {

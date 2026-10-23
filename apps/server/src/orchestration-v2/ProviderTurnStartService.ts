@@ -24,6 +24,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { deliveredTurnContextMarker, turnContextFor } from "./TurnContext.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -510,6 +511,23 @@ export const layer: Layer.Layer<
       });
       const { isCurrentAttemptInStatus } = runControls;
 
+      const deliveredMarker = deliveredTurnContextMarker({
+        providerThreadId: providerThread.id,
+        nativeThreadId: providerThread.nativeThreadRef?.nativeId ?? undefined,
+        runs: projection.runs,
+        attempts: projection.attempts,
+        providerTurns: projection.providerTurns,
+        turnItems: projection.turnItems,
+      });
+      const turnContext = yield* turnContextFor({
+        threadId: projection.thread.id,
+        projectId: projection.thread.projectId,
+        messageId: message.id,
+        text: message.text,
+        createdBy: message.createdBy,
+        interactionMode: projection.thread.interactionMode,
+        ...(deliveredMarker === undefined ? {} : { deliveredMarker }),
+      });
       const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,
@@ -825,6 +843,16 @@ export const layer: Layer.Layer<
           .filter((candidate) => candidate.text.trimStart().startsWith("/"))
           .map((candidate) => candidate.id),
       );
+      // The marker was looked up for the native conversation before loading; a resume
+      // fallback to a fresh native session needs the full context again.
+      const turnContextText = commandMessageIds.has(run.userMessageId)
+        ? ""
+        : sameNativeThread && turnContext.update !== undefined
+          ? turnContext.update
+          : turnContext.text;
+      const turnContextMarker = commandMessageIds.has(run.userMessageId)
+        ? undefined
+        : turnContext.marker;
       // Read with this snapshot and recorded on the attempt, so a notification recorded
       // while the provider starts waits for the next prompt.
       const recordedNotifications =
@@ -846,6 +874,7 @@ export const layer: Layer.Layer<
         ...(recordedNotifications.length === 0
           ? {}
           : { promptedNotificationIds: recordedNotifications.map((item) => item.id) }),
+        ...(turnContextMarker === undefined ? {} : { turnContextMarker }),
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
@@ -970,6 +999,7 @@ export const layer: Layer.Layer<
       });
       // Notes go before the user text, delivered once like the text itself.
       const turnNote = [
+        turnContextText,
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),

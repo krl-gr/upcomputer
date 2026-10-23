@@ -18,6 +18,8 @@ import {
   type ExperimentalWebRightPanelSurfaceContribution,
   type ExperimentalWebRouteContribution,
   type ExperimentalWebSettingsPageContribution,
+  type ExperimentalWebThreadAccessoryProps,
+  type ExperimentalWebThreadAction,
 } from "./WebFeature";
 
 type ErasedRpcGroup = RpcGroup.RpcGroup<Rpc.Any>;
@@ -138,6 +140,29 @@ export function composeExperimentalWebFeatures(
     makeRpcClient: rpcGroup === WsRpcGroup ? makeWsRpcProtocolClient : RpcClient.make(rpcGroup),
     flags: Object.freeze({ ...(options.flags ?? UPSTREAM_PRODUCT_FLAGS) }),
     surfaces: Object.freeze({ ...(options.surfaces ?? UPSTREAM_PRODUCT_SURFACES) }),
+  });
+}
+
+/**
+ * The features' entries for a thread's action menu, with ids no core entry or other feature
+ * uses. A feature that fails to answer adds nothing rather than breaking the menu.
+ */
+export function collectExperimentalWebThreadActions(
+  composition: ExperimentalWebProductComposition,
+  thread: ExperimentalWebThreadAccessoryProps,
+) {
+  return composition.features.flatMap((feature) => {
+    if (!feature.threadActions) return [];
+    let actions: ReadonlyArray<ExperimentalWebThreadAction>;
+    try {
+      actions = feature.threadActions(thread);
+    } catch {
+      return [];
+    }
+    return actions.map((action) => ({
+      ...action,
+      id: `feature:${feature.id}:${action.id}` as const,
+    }));
   });
 }
 

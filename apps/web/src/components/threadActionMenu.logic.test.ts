@@ -40,6 +40,19 @@ function allIds(state: ThreadActionMenuState): string[] {
 }
 
 describe("buildThreadActionMenuItems", () => {
+  it("puts feature entries in their own group before Copy, and needs operate for them", () => {
+    const featureActions = [
+      { id: "feature:test.bots:turn-into-bot" as const, label: "Turn into bot", icon: "bot" },
+    ];
+    const items = buildThreadActionMenuItems({ ...baseState, featureActions });
+    const index = items.findIndex((item) => item.id === "feature:test.bots:turn-into-bot");
+    expect(items[index]).toMatchObject({ label: "Turn into bot", separatorBefore: true });
+    expect(items[index + 1]?.id).toBe("copy");
+    expect(ids(baseState)).not.toContain("feature:test.bots:turn-into-bot");
+    const denied = buildThreadActionMenuItems({ ...baseState, canOperate: false, featureActions });
+    expect(denied.find((item) => item.id.startsWith("feature:"))?.disabled).toBe(true);
+  });
+
   it.each([false, true])(
     "disables both lifecycle directions without permission (reversed: %s)",
     (reversed) => {

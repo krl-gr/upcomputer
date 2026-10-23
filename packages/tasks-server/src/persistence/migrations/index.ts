@@ -1,5 +1,8 @@
 import { UpdateDefaultFirstMessageEventsPromptsMigration } from "./032_UpdateDefaultFirstMessageEventsPrompts.ts";
+import { BotAppearanceMigration } from "./034_BotAppearance.ts";
+import { BotMemoryProposalsMigration } from "./035_BotMemoryProposals.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
+import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
 import { UpdateDefaultQueueStatePromptsMigration } from "./029_UpdateDefaultQueueStatePrompts.ts";
 import { UpdateDefaultBatchCreatePromptsMigration } from "./028_UpdateDefaultBatchCreatePrompts.ts";
@@ -126,5 +129,8 @@ export const TASK_MIGRATION_CONTRIBUTION = {
       name: "UpdateDefaultFirstMessageEventsPrompts",
       run: UpdateDefaultFirstMessageEventsPromptsMigration,
     },
+    { version: 33, name: "Bots", run: BotsMigration },
+    { version: 34, name: "BotAppearance", run: BotAppearanceMigration },
+    { version: 35, name: "BotMemoryProposals", run: BotMemoryProposalsMigration },
   ],
 } as const;

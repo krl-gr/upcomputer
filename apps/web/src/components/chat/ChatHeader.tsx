@@ -279,10 +279,13 @@ export const ChatHeader = memo(function ChatHeader({
     [commitRename],
   );
   return (
+    // A product accessory can hide this content (a bot chat has no header).
+    // The bar around it then floats over the chat (`ChatView`): it stays the
+    // window drag region and holds the panel controls.
     <div
       ref={breadcrumbContainerRef}
       className={cn(
-        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3 has-[[data-chat-header-hidden]]:hidden",
         rightPanelOpen ? "pr-10" : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}

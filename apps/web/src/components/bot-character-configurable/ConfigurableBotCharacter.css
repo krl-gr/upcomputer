@@ -1,0 +1,249 @@
+.cbc {
+  --cbc-shadow: #20324a15;
+  --cbc-device: #9dafc5;
+  --cbc-device-edge: #7d93af;
+  --cbc-rim: #8fa7c4;
+  --cbc-outline: #0f1c2e8c;
+  --cbc-attention: #f08700;
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  overflow: hidden;
+  isolation: isolate;
+}
+.dark .cbc,
+[data-theme="dark"] .cbc {
+  --cbc-shadow: #0004;
+  --cbc-device: #849ab5;
+  --cbc-device-edge: #5d7798;
+  --cbc-rim: #94b3d7;
+  --cbc-outline: #ffffff8c;
+  --cbc-attention: #ffb224;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-selected="true"]) .cbc {
+    --cbc-shadow: #0004;
+    --cbc-device: #849ab5;
+    --cbc-device-edge: #5d7798;
+    --cbc-rim: #94b3d7;
+    --cbc-outline: #ffffff8c;
+    --cbc-attention: #ffb224;
+  }
+}
+[data-theme="light"] .cbc {
+  --cbc-shadow: #20324a15;
+  --cbc-device: #9dafc5;
+  --cbc-device-edge: #7d93af;
+  --cbc-rim: #8fa7c4;
+  --cbc-outline: #0f1c2e8c;
+  --cbc-attention: #f08700;
+}
+.cbc-shadow {
+  fill: var(--cbc-shadow);
+}
+.cbc-body {
+  stroke: #fff;
+  stroke-opacity: 0.12;
+  stroke-width: 0.7px;
+}
+.cbc-pose {
+  transform-origin: 64px 106px;
+  transition: transform 420ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.cbc[data-state="working"] .cbc-pose {
+  transform: translateY(-2px) rotate(-2deg);
+}
+.cbc[data-state="waiting"] .cbc-pose {
+  transform: rotate(3deg);
+}
+/* Lifted inside the cage so the lock clears a camera and the cage clears tall hats. */
+.cbc[data-state="limited"] .cbc-pose {
+  transform: translateY(-7px) scale(0.85);
+}
+.cbc[data-state="attention"] .cbc-pose {
+  transform: translateY(-3px) rotate(-4deg);
+}
+.cbc[data-state="done"] .cbc-pose {
+  transform: translateY(-2px);
+}
+.cbc[data-state="failed"] .cbc-pose {
+  transform: translateY(1px) rotate(3deg) scale(0.96);
+}
+.cbc-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 360ms ease;
+}
+.cbc[data-state="working"] .cbc-eye {
+  transform: scaleY(0.8) translateY(2px);
+}
+.cbc[data-state="waiting"] .cbc-eye {
+  transform: scaleY(0.65);
+}
+.cbc[data-state="limited"] .cbc-eye {
+  transform: scaleY(0.78);
+}
+.cbc[data-state="attention"] .cbc-eye-right {
+  transform: translateY(-3px) scaleY(1.08);
+}
+.cbc[data-state="done"] .cbc-eye {
+  transform: translateY(-3px) scaleY(0.55);
+}
+.cbc[data-state="failed"] .cbc-eye-left {
+  transform: rotate(16deg) scaleY(0.7);
+}
+.cbc[data-state="failed"] .cbc-eye-right {
+  transform: rotate(-16deg) scaleY(0.7);
+}
+.cbc-blink {
+  transform-origin: 64px 73px;
+  animation: cbc-blink 9s steps(1, end) infinite;
+}
+/* Settled outcomes hold still: nothing repaints until the state changes. */
+.cbc[data-state="done"] .cbc-blink,
+.cbc[data-state="failed"] .cbc-blink {
+  animation: none;
+}
+@keyframes cbc-blink {
+  0%,
+  45%,
+  48%,
+  100% {
+    transform: scaleY(1);
+  }
+  46%,
+  47% {
+    transform: scaleY(0.12);
+  }
+}
+.cbc-prop {
+  opacity: 0;
+  transform: translateY(6px) scale(0.94);
+  transform-origin: 64px 112px;
+  transition:
+    opacity 260ms ease,
+    transform 420ms cubic-bezier(0.22, 0.8, 0.3, 1);
+  pointer-events: none;
+}
+.cbc[data-state="working"] .cbc-laptop,
+.cbc[data-state="waiting"] .cbc-clock,
+.cbc[data-state="limited"] .cbc-dome,
+.cbc[data-state="attention"] .cbc-attention,
+.cbc[data-state="done"] .cbc-done,
+.cbc[data-state="failed"] .cbc-failed {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.cbc-device {
+  fill: var(--cbc-device);
+  stroke: #e1ebf9;
+  stroke-width: 1.3px;
+}
+.cbc-device-edge {
+  fill: var(--cbc-device-edge);
+}
+/* A light ring keeps a status badge apart from a body of the same color. */
+.cbc-badge {
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-opacity: 0.9;
+  stroke-width: 3px;
+}
+.cbc-clock .cbc-badge {
+  fill: var(--cbc-rim);
+}
+.cbc-attention {
+  stroke: var(--cbc-attention);
+}
+.cbc-dome-base {
+  fill: #e9ad1d;
+}
+.cbc-typing {
+  animation: cbc-typing 2.4s steps(1, end) infinite;
+}
+@keyframes cbc-typing {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  25% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  75% {
+    opacity: 0.8;
+  }
+}
+.cbc:not([data-state="working"]) .cbc-typing {
+  animation-play-state: paused;
+}
+/* An alpha color, not stroke-opacity: opacity would also fade the strokes
+   the artwork draws itself, such as the headphone band and white hat rims. */
+.cbc-headwear {
+  paint-order: stroke;
+  stroke: #dfebfa38;
+  stroke-width: 0.8px;
+}
+.cbc[data-detail="compact"] .cbc-detail {
+  display: none;
+}
+.cbc[data-detail="compact"] .cbc-eye {
+  width: 11px;
+}
+.cbc[data-detail="compact"] .cbc-body {
+  stroke-width: 0;
+}
+.cbc[data-detail="compact"] .cbc-shadow {
+  display: none;
+}
+.cbc[data-detail="compact"] .cbc-blink {
+  animation: none;
+}
+/* At sidebar size the round badge is the whole status, so it grows over the
+   lower face instead of shrinking to a dot. */
+.cbc[data-detail="compact"] :is(.cbc-clock, .cbc-done, .cbc-failed) {
+  transform-origin: 64px 104px;
+}
+.cbc[data-detail="compact"][data-state="waiting"] .cbc-clock,
+.cbc[data-detail="compact"][data-state="done"] .cbc-done,
+.cbc[data-detail="compact"][data-state="failed"] .cbc-failed {
+  transform: scale(1.3);
+}
+.cbc[data-paused="true"] *,
+.cbc[data-motion="reduced"] * {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbc *,
+  .cbc *::before,
+  .cbc *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.cbc[data-motion="reduced"] * {
+  animation: none !important;
+  transition: none !important;
+}
+/* Ink-colored accessories would vanish into a black or navy body. */
+.cbc:is([data-color="black"], [data-color="navy"]):is(
+    [data-accessory="bowtie"],
+    [data-accessory="gentleman"],
+    [data-accessory="artist"],
+    [data-accessory="graduate"],
+    [data-accessory="professor"],
+    [data-accessory="pirate"],
+    [data-accessory="photographer"]
+  )
+  :is(.cbc-headwear, .cbc-eyewear, .cbc-accessory-front) {
+  filter: drop-shadow(0 0 0.8px #ffffffa6) drop-shadow(0 0 0.8px #ffffffa6);
+}
+/* A picker icon has no body behind it: the outline keeps white art visible on
+   a light tile and dark art on a dark one. */
+.cbc-icon {
+  filter: drop-shadow(0 0 0.6px var(--cbc-outline)) drop-shadow(0 0 0.6px var(--cbc-outline));
+}

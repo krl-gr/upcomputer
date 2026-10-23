@@ -591,6 +591,8 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
    * carried. A completed provider turn of the attempt delivers them.
    */
   promptedNotificationIds: Schema.optional(Schema.Array(TurnItemId)),
+  /** Opaque marker of the turn context this attempt's prompt carried, for sending only changes. */
+  turnContextMarker: Schema.optional(Schema.String),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
 
@@ -3021,6 +3023,18 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  /**
+   * Moves an idle thread without a worktree to another project, for a bot whose working
+   * project changed. Clears what belonged to the old project: branch, project and pull request
+   * links, and provider sessions started in its directory.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.move"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+    title: Schema.optional(TrimmedNonEmptyString),
   }),
   /**
    * Records a notification in the thread's timeline without a message or a run, so no

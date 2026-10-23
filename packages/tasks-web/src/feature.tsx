@@ -26,6 +26,26 @@ const LazyThreadRunCounts = lazy(() =>
     default: module.TaskThreadRunCounts,
   })),
 );
+// The thread menu asks synchronously, so its bot module loads with the Bots section, which
+// every sidebar shows. Until then the menu simply has no bot entry.
+let botMenu: typeof import("./bots/botMenu.ts") | undefined;
+const LazySidebarBots = lazy(() =>
+  Promise.all([import("./bots/Bots.tsx"), import("./bots/botMenu.ts")]).then(([bots, menu]) => {
+    botMenu = menu;
+    return { default: bots.SidebarBots };
+  }),
+);
+const LazyBotHeader = lazy(() =>
+  import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
+);
+
+function SidebarBots() {
+  return (
+    <Suspense fallback={null}>
+      <LazySidebarBots />
+    </Suspense>
+  );
+}
 
 function NavigationRunCounts() {
   return (
@@ -57,6 +77,7 @@ function ChatHeaderRunCounts(props: ExperimentalWebThreadAccessoryProps) {
   return (
     <Suspense fallback={null}>
       <LazyThreadRunCounts {...props} fallback={null} />
+      <LazyBotHeader {...props} />
     </Suspense>
   );
 }
@@ -71,6 +92,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rpcGroups: [TasksWebRpcGroup],
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
+  threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
+  sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [
     {
@@ -94,6 +117,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   routes: [
     { id: "tasks", path: "/tasks", load: () => import("./ui/TasksRoute.tsx") },
     { id: "agents", path: "/agents", load: () => import("./ui/AgentsRoute.tsx") },
+    { id: "bots", path: "/bots", load: () => import("./bots/BotPage.tsx") },
     // Automations live on the Agents side of Tasks; old links redirect there.
     { id: "automations", path: "/automations", load: () => import("./ui/AutomationsRoute.tsx") },
   ],

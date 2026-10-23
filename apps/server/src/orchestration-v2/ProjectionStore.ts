@@ -430,7 +430,10 @@ export interface ProjectionStoreV2Shape {
     ReadonlyArray<{ readonly threadId: ThreadId; readonly worktreePath: string }>,
     ProjectionStoreV2Error
   >;
-  /** Turn items are the run's own plus the thread's notifications recorded without a run. */
+  /**
+   * Turn items are the run's own, the thread's notifications recorded without a run, and its
+   * compactions, which end what a native conversation still holds.
+   */
   readonly getTurnStartContext: (
     threadId: ThreadId,
     runId: RunId,
@@ -3980,7 +3983,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             const turnItems = yield* sql<PayloadRow>`
               SELECT payload_json FROM orchestration_v2_projection_turn_items
               WHERE thread_id = ${threadId}
-                AND (run_id = ${runId} OR (run_id IS NULL AND type = 'notification'))
+                AND (run_id = ${runId} OR (run_id IS NULL AND type = 'notification') OR type = 'compaction')
               ORDER BY ordinal ASC, turn_item_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeTurnItemPayload, threadId)));
             const providerSessions = yield* sql<PayloadRow>`
@@ -6656,7 +6659,9 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
             ),
             turnItems: projection.turnItems.filter(
               (item) =>
-                item.runId === runId || (item.runId === null && item.type === "notification"),
+                item.runId === runId ||
+                (item.runId === null && item.type === "notification") ||
+                item.type === "compaction",
             ),
           })),
         ),

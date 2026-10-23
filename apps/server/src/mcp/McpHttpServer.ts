@@ -810,8 +810,11 @@ export const resultToolkitRegistration = <Tools extends Record<string, Tool.Any>
                 Stream.run(Sink.last()),
                 Effect.flatMap(Effect.fromOption),
                 Effect.map(({ result }) => result as McpSchema.CallToolResult),
+                // Invalid arguments are the model's to fix, so it gets the schema's
+                // explanation instead of an internal error.
                 Effect.catch((error: unknown) =>
-                  isOrchestratorMcpFailure(error)
+                  isOrchestratorMcpFailure(error) ||
+                  (AiError.isAiError(error) && error.reason._tag === "ToolParameterValidationError")
                     ? Effect.succeed(
                         new McpSchema.CallToolResult({
                           isError: true,

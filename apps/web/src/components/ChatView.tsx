@@ -10912,7 +10912,7 @@ export default function ChatView(props: ChatViewProps) {
       {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
+          "group/chat-column flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
@@ -10931,6 +10931,10 @@ export default function ChatView(props: ChatViewProps) {
                 )
               : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            // A header accessory can hide the header's content (a bot chat has
+            // none). The messages then run up under the bar (see the timeline
+            // below): it stays the window drag region, and only its controls take clicks.
+            "has-[[data-chat-header-hidden]]:pointer-events-none has-[[data-chat-header-hidden]]:z-30 has-[[data-chat-header-hidden]]:bg-transparent! has-[[data-chat-header-hidden]]:[&_[data-workspace-titlebar-controls]]:pointer-events-auto",
           )}
         >
           {isElectron && rightPanelControlsAtRoot ? (
@@ -11012,7 +11016,7 @@ export default function ChatView(props: ChatViewProps) {
                 }}
               />
             </div>
-            <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+            <div className="relative flex min-h-0 flex-1 flex-col bg-background group-has-[[data-chat-header-hidden]]/chat-column:-mt-[var(--workspace-topbar-height)]">
               <MessagesTimeline
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
                 citationHistoryLoading={threadDetailLoading}
