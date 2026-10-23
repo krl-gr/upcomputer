@@ -11,9 +11,11 @@ const ORCHESTRATOR_MODEL_LINE =
 /**
  * Small models follow a short instruction closest to the user's turn, and read a
  * greeting as no request, so the trigger is the block's last line and names greetings.
+ * The server's note asks for the offer only in the user's first conversation, so it
+ * is not repeated in later chats while the block waits for an answer.
  */
 const ONBOARDING_TRIGGER_LINE =
-  "In your first reply in this conversation, even if the user only greets you, first answer the message, then end with this offer.";
+  "Make this offer only when this turn's UpComputer onboarding note asks for it: then, even if the user only greets you, first answer the message and end with the offer. Otherwise do not make the offer; use this block only if the user asks about setting up agents or how to work.";
 
 const ONBOARDING_BLOCK_START = "<!-- onboarding: remove after setup -->";
 
@@ -43,7 +45,7 @@ const RETIRED_DEFAULT_LINES: ReadonlyArray<readonly [string, string]> = [
   // A saved copy keeps the old order, where the intro line is the only trigger.
   [
     "One-time onboarding for a conversation with a person; task-agent runs ignore it. After answering the user's first request, offer once, briefly, in the user's language, to agree on how to work:",
-    "One-time onboarding for a conversation with a person; task-agent runs ignore it. In your first reply in this conversation, even if the user only greets you, first answer the message, then offer once, briefly, in the user's language, to agree on how to work:",
+    "One-time onboarding for a conversation with a person; task-agent runs ignore it. Only when this turn's UpComputer onboarding note asks for it, first answer the message, even a greeting, then offer once, briefly, in the user's language, to agree on how to work:",
   ],
 ];
 
