@@ -1004,13 +1004,17 @@ export const layer: Layer.Layer<
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
         recordedNotificationsNote(recordedNotifications),
-        onboardingTurnNote({
+        yield* onboardingTurnNote({
           instructions: currentUserInstructionsBlock(),
           thread: projection.thread,
           run,
           runs: projection.runs,
           message,
           isCommand: commandMessageIds.has(run.userMessageId),
+          // The run is already marked running; a failed read only withholds the offer.
+          personMessagedElsewhere: projectionStore
+            .hasPersonMessageOutsideThread(projection.thread.id)
+            .pipe(Effect.orElseSucceed(() => true)),
         }),
       ]
         .filter((part) => part !== "")
