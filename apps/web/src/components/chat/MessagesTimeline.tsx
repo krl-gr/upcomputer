@@ -1045,6 +1045,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onCitationListLoad();
     setFindListReady(true);
   }, [onCitationListLoad]);
+  const canvas = useChatCanvas();
+  // A preview docked over the chat's right side covers that part of the
+  // timeline, so the minimap sits left of it and measures the gutter without it.
+  const minimapInsetEnd = canvas?.layout.chat.insetEnd ?? 0;
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
   const [fullscreenAppRowId, setFullscreenAppRowId] = useState<string | null>(null);
   const onAppFullscreenChange = useCallback((rowId: string, fullscreen: boolean) => {
@@ -1264,7 +1268,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
 
     const measure = () => {
-      const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
+      const viewportWidth = Math.max(
+        0,
+        timelineViewportElement.getBoundingClientRect().width - minimapInsetEnd,
+      );
       const contentWidth =
         timelineViewportElement
           .querySelector<HTMLElement>("[data-timeline-root]")
@@ -1288,7 +1295,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       cancelAnimationFrame(frame);
       stopObserving();
     };
-  }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth]);
+  }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth, minimapInsetEnd]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -1429,7 +1436,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     );
   }, [historyControls, onOpenThread, parentThreadLink, topFadeEnabled]);
 
-  const canvas = useChatCanvas();
   const registerTimeline = canvas?.registerTimeline;
   const setTimelineList = useCallback(
     (list: LegendListRef | null) => {
@@ -1621,6 +1627,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
               hitStripWidth={minimapHitStripWidth}
+              insetEnd={minimapInsetEnd}
               currentIndex={minimapCurrentIndex}
               stripMap={minimapStripMap}
               onWheel={forwardMinimapWheel}
@@ -1718,6 +1725,7 @@ function onMouseButtonsReleased(onRelease: () => void): () => void {
 function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
+  insetEnd,
   currentIndex,
   items,
   stripMap,
@@ -1726,6 +1734,7 @@ function TimelineMinimap({
 }: {
   hasPersistentGutter: boolean;
   hitStripWidth: number;
+  insetEnd: number;
   currentIndex: number | null;
   items: ReadonlyArray<TimelineMinimapItem>;
   stripMap: Map<string, HTMLSpanElement>;
@@ -1817,7 +1826,7 @@ function TimelineMinimap({
   return (
     <div
       className={cn(
-        "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
+        "group/minimap pointer-events-none absolute inset-y-0 right-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
         hasPersistentGutter
           ? "opacity-100"
           : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
@@ -1825,11 +1834,12 @@ function TimelineMinimap({
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
       ref={wheelTargetRef}
+      style={insetEnd > 0 ? { right: insetEnd } : undefined}
     >
       <div className="relative h-full w-full select-none">
         <div
           className={cn(
-            "absolute top-1/2 left-3 -translate-y-1/2",
+            "absolute top-1/2 right-3 -translate-y-1/2",
             hitStripWidth > 0 && !passThrough ? "pointer-events-auto" : "pointer-events-none",
           )}
           onMouseDown={() => {
@@ -1857,7 +1867,7 @@ function TimelineMinimap({
           />
           <button
             aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
-            className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            className="absolute inset-y-0 right-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
             onBlur={() => setActiveIndex(null)}
             onClick={(event) => {
               if (timelineMinimapEventTargetsPreview(event.target)) {
@@ -1904,7 +1914,7 @@ function TimelineMinimap({
             }}
             type="button"
           >
-            <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
+            <div className="absolute top-0 right-3 h-full w-px bg-border/15" />
             {items.map((item, index) => {
               const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
               const activeDistance =
@@ -1917,7 +1927,7 @@ function TimelineMinimap({
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "group/strip pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150",
+                    "group/strip pointer-events-none absolute right-0 h-0.5 w-6 origin-right -translate-y-1/2 rounded-full transition-transform duration-150",
                     activeDistance === 0 ? "bg-muted-foreground/75" : "bg-muted-foreground/35",
                     activeDistance === 0
                       ? "scale-x-100"
@@ -1945,7 +1955,7 @@ function TimelineMinimap({
             })}
             {activeItem ? (
               <span
-                className="pointer-events-auto absolute left-8 w-80 cursor-text select-text"
+                className="pointer-events-auto absolute right-8 w-80 cursor-text select-text"
                 data-minimap-preview
                 onMouseMove={(event) => event.stopPropagation()}
                 style={{
@@ -2008,7 +2018,7 @@ function TimelineMinimapNavigationButton({
         render={
           <span
             className={cn(
-              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+              "absolute right-1 z-10 inline-flex translate-x-1/2 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
               interactive ? "pointer-events-auto" : "pointer-events-none",
               previous ? "bottom-[calc(100%+2px)]" : "top-[calc(100%+2px)]",
             )}

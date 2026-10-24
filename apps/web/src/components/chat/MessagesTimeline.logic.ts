@@ -411,7 +411,7 @@ export function resolveTimelineMinimapHasPersistentGutter(
   );
 }
 
-const TIMELINE_MINIMAP_HIT_STRIP_LEFT = 12;
+const TIMELINE_MINIMAP_HIT_STRIP_INSET = 12;
 const TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH = 40;
 const TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH = "22rem";
 
@@ -424,7 +424,7 @@ export function resolveTimelineMinimapHitStripWidth(
     0,
     Math.min(
       TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH,
-      Math.floor(sideGutter) - TIMELINE_MINIMAP_HIT_STRIP_LEFT,
+      Math.floor(sideGutter) - TIMELINE_MINIMAP_HIT_STRIP_INSET,
     ),
   );
 }
