@@ -9,6 +9,7 @@ import {
   filterSidebarProjectScopeItems,
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
+import { CompactSidebarButton } from "../components/sidebar/CompactSidebarPill";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
 import {
   Combobox,
@@ -216,13 +217,15 @@ export function SidebarProjectsSection(props: {
 /**
  * "More": upstream's scope menu shape (search, then projects) over the
  * remaining projects. As in upstream's menu, right-click opens a project's settings.
+ * The compact sidebar shows it as an icon button that opens the menu to its right.
  */
-function SidebarProjectsMore(props: {
+export function SidebarProjectsMore(props: {
   readonly projects: ReadonlyArray<SidebarProjectSnapshot>;
   readonly onSelect: (projectKey: string) => void;
   readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
+  readonly compact?: boolean;
 }) {
-  const { projects, onSelect, onOpenProjectSettings } = props;
+  const { projects, onSelect, onOpenProjectSettings, compact = false } = props;
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
@@ -260,11 +263,20 @@ function SidebarProjectsMore(props: {
         if (item) onSelect(item.value);
       }}
     >
-      <ComboboxTrigger render={<SidebarMenuButton />}>
-        <EllipsisIcon />
-        <span className="flex-1 truncate">More</span>
-      </ComboboxTrigger>
-      <ComboboxPopup className="max-w-[min(18rem,var(--available-width))] overflow-hidden">
+      {compact ? (
+        <ComboboxTrigger render={<CompactSidebarButton label="More projects" />}>
+          <EllipsisIcon />
+        </ComboboxTrigger>
+      ) : (
+        <ComboboxTrigger render={<SidebarMenuButton />}>
+          <EllipsisIcon />
+          <span className="flex-1 truncate">More</span>
+        </ComboboxTrigger>
+      )}
+      <ComboboxPopup
+        side={compact ? "right" : "bottom"}
+        className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
+      >
         <ComboboxSearchInput
           aria-label="Search projects"
           placeholder="Search projects..."

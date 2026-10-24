@@ -1,2 +1,4 @@
+// From md up, the collapsed sidebar leaves the compact sidebar's column at the
+// main area's left edge, which already clears part of the fixed toggle.
 export const COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS =
-  "[[data-sidebar-state=collapsed]_&]:pl-[var(--workspace-titlebar-content-left)] max-md:[[data-sidebar-state=expanded]_&]:pl-[var(--workspace-titlebar-content-left)]";
+  "[[data-sidebar-state=collapsed]_&]:pl-[var(--workspace-titlebar-content-left)] md:[[data-sidebar-state=collapsed]_&]:pl-[max(0px,calc(var(--workspace-titlebar-content-left)-var(--compact-sidebar-width,0px)))] max-md:[[data-sidebar-state=expanded]_&]:pl-[var(--workspace-titlebar-content-left)]";
