@@ -163,7 +163,6 @@ function BotForm({
   const [appearance, setAppearance] = useState<BotAppearance>(
     () => bot?.appearance ?? defaultBotAppearance(id),
   );
-  const [role, setRole] = useState(bot?.agent.config.role ?? "Personal assistant");
   const [instructions, setInstructions] = useState(
     bot?.agent.config.instructions ??
       "Help the user, remember useful facts, and keep them informed about your work.",
@@ -215,7 +214,6 @@ function BotForm({
   const editable = canWrite && !busy;
   const draft: BotWriteInput | null =
     name.trim() !== "" &&
-    role.trim() !== "" &&
     instructions.trim() !== "" &&
     selection !== undefined &&
     projectId !== null &&
@@ -229,7 +227,8 @@ function BotForm({
           appearance,
           config: {
             ...bot?.agent.config,
-            role,
+            // Task agents require a role; bots describe themselves through instructions.
+            role: bot?.agent.config.role ?? "Personal assistant",
             instructions,
             modelSelection: selection,
           },
@@ -252,7 +251,7 @@ function BotForm({
       throw cause;
     }
   });
-  const textKey = JSON.stringify([name, role, instructions]);
+  const textKey = JSON.stringify([name, instructions]);
   const choiceKey = JSON.stringify([appearance, selection, projectId, allowed]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
   useEffect(() => {
@@ -357,19 +356,7 @@ function BotForm({
           />
         </SettingsSection>
 
-        <SettingsSection title="Role and instructions">
-          <SettingsRow
-            title="Role"
-            control={
-              <Input
-                value={role}
-                disabled={!editable}
-                aria-invalid={role.trim() === ""}
-                onChange={(event) => setRole(event.target.value)}
-                onBlur={saveNow}
-              />
-            }
-          />
+        <SettingsSection title="Instructions" hideTitle>
           <SettingsRow title="Instructions">
             <div className="pt-2 pb-2">
               <Textarea

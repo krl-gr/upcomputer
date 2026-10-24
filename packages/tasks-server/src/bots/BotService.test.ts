@@ -177,6 +177,18 @@ it.effect("threads that belong to no bot get no context, also with no bots at al
   ),
 );
 
+it.effect("bot context describes the bot by its instructions, not the hidden stored role", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      const { text } = yield* bots.context(turn(botThread, "Hello"));
+      assert.include(text, "Instructions:\nHelp.");
+      assert.notInclude(text, config.role);
+    }),
+  ),
+);
+
 it.effect("turn starts never wait on a bot save, in bot chats or anywhere else", () =>
   Effect.gen(function* () {
     const { entered, gate, services } = yield* harness;
