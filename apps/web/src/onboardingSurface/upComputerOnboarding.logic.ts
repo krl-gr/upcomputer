@@ -338,6 +338,14 @@ export type FirstRunAgentStatus =
 
 const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
 
+/**
+ * How long a new user may stay on the first screen with a working agent and
+ * no turn before `onboarding.first_screen_idle` reports it. Reading the
+ * screen and typing a first prompt fits well inside it, while a session that
+ * ends without a turn is usually still open by then.
+ */
+export const FIRST_SCREEN_IDLE_THRESHOLD_MS = 3 * 60_000;
+
 /** How long setup still shows once the install succeeds, while the server turns OpenCode on. */
 export const FIRST_RUN_AGENT_ACTIVATION_WAIT_MS = 10_000;
 
