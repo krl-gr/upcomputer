@@ -35,6 +35,7 @@ import {
   nestedToolCallFromEnvelope,
 } from "./adapter.ts";
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
+import { CursorSdkError } from "./sdk.ts";
 
 const decodeCursorSettings = Schema.decodeEffect(CursorSettings);
 
@@ -335,6 +336,10 @@ describe("CursorAdapterV2", () => {
       if (Option.isSome(first)) {
         assert.equal(first.value.status, "failed");
         assert.equal(first.value.failure?.class, "transport_error");
+        assert.equal(
+          first.value.failure?.message,
+          "Error: RetriableError: WritableIterable is closed",
+        );
       }
 
       assert.isDefined(runtime.compactThread);
@@ -362,6 +367,139 @@ describe("CursorAdapterV2", () => {
         Stream.runHead,
       );
       assert.equal(sentMessages[1], "/compress");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    {
+      name: "a run that ends with Cursor's error",
+      wait: Effect.succeed({
+        id: "native-cursor-run",
+        status: "error" as const,
+        error: {
+          message:
+            "You've hit your usage limit Switch to Auto for more requests or set a Spend Limit to continue with Claude.",
+        },
+      }),
+    },
+    {
+      name: "a wait that throws Cursor's SDK error",
+      wait: Effect.fail(
+        new CursorAgentSdk.CursorAgentSdkRunnerError({
+          method: "run.wait",
+          cause: new CursorSdkError(
+            "You've hit your usage limit Switch to Auto for more requests or set a Spend Limit to continue with Claude.",
+            { code: "PRO_USER_USAGE_LIMIT" },
+          ),
+        }),
+      ),
+    },
+  ])("reports Cursor's usage limit reason for $name", ({ wait }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "cursor-v2-limit-" });
+      const instanceId = ProviderInstanceId.make("cursor");
+      const threadId = ThreadId.make("cursor-limit-thread");
+      const modelSelection = { instanceId, model: "claude-opus-5-5" };
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const adapter = yield* makeCursorAdapterV2({
+        instanceId,
+        settings: yield* decodeCursorSettings({}),
+        environment: { HOME: workspace },
+      }).pipe(
+        Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
+          assertComplete: Effect.void,
+          open: () =>
+            Effect.succeed({
+              agentId: "native-cursor-limit",
+              listMessages: Effect.succeed([]),
+              close: Effect.void,
+              send: () =>
+                Effect.succeed({
+                  agentId: "native-cursor-limit",
+                  runId: "native-cursor-run",
+                  wait,
+                  cancel: Effect.void,
+                }),
+            }),
+        }),
+        Effect.provide(TestProviderHost.layer({ cwd: workspace })),
+      );
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("cursor-limit-session"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      yield* runtime.startTurn({
+        threadId,
+        providerThread,
+        modelSelection,
+        runtimePolicy,
+        runId: RunId.make("cursor-limit-run"),
+        runOrdinal: 1,
+        providerTurnOrdinal: 1,
+        attemptId: RunAttemptId.make("cursor-limit-attempt"),
+        rootNodeId: NodeId.make("cursor-limit-root"),
+        appThread: {
+          id: threadId,
+          projectId: ProjectId.make("cursor-limit-project"),
+          createdBy: "user",
+          creationSource: "web",
+          title: "Cursor usage limit",
+          providerInstanceId: instanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: providerThread.id,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+        message: {
+          messageId: MessageId.make("cursor-limit-message"),
+          createdBy: "user",
+          creationSource: "web",
+          text: "continue",
+          attachments: [],
+        },
+      });
+      const terminal = yield* runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+      assert.isTrue(Option.isSome(terminal));
+      if (Option.isSome(terminal)) {
+        assert.equal(terminal.value.status, "failed");
+        assert.equal(terminal.value.failure?.class, "usage_limit");
+        assert.equal(
+          terminal.value.failure?.message,
+          "Cursor usage limit reached for claude-opus-5-5. Switch model or try again later. Cursor says: You've hit your usage limit Switch to Auto for more requests or set a Spend Limit to continue with Claude.",
+        );
+      }
     }).pipe(
       Effect.scoped,
       Effect.provide(
