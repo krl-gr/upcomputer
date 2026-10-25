@@ -178,8 +178,8 @@ function BotRow({
         onOpen();
       }}
     >
-      {/* The 20px portrait overflows the 16px icon slot, so the name lines up
-          with the other rows' labels. */}
+      {/* The face overflows the 16px icon slot, so the name lines up with the
+          other rows' labels and switching styles moves nothing. */}
       <span className="flex size-4 shrink-0 items-center justify-center">
         <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
       </span>
