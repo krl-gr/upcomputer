@@ -46,6 +46,7 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environmentKeys.ts";
+import { observeRelayResponseDate, RelayClock } from "../cloud/RelayClock.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -191,7 +192,11 @@ function sanitizeRelayAgentActivityState(
 }
 
 function relayEnvironmentClient(token: string) {
-  return HttpClient.mapRequest(HttpClientRequest.setHeader("authorization", `Bearer ${token}`));
+  return (client: HttpClient.HttpClient) =>
+    client.pipe(
+      HttpClient.mapRequest(HttpClientRequest.setHeader("authorization", `Bearer ${token}`)),
+      HttpClient.tap(observeRelayResponseDate),
+    );
 }
 
 function deliveryStats(
@@ -252,7 +257,7 @@ const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
   readonly state: RelayAgentActivityState | null;
   readonly jti: string;
 }) {
-  const now = yield* DateTime.now;
+  const now = yield* (yield* RelayClock).now;
   const expiresAt = DateTime.add(now, { minutes: 5 });
   const payload = {
     iss: `t3-env:${input.environmentId}`,
