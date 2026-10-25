@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, InfoIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, InfoIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, ThreadId, type ModelSelection } from "@t3tools/contracts";
@@ -20,6 +20,7 @@ import {
   type BotMemoryProposal,
   type BotWriteInput,
   defaultBotAppearance,
+  defaultBotPortrait,
 } from "@t3tools/tasks-contracts/v1";
 import {
   useProjects,
@@ -60,18 +61,14 @@ import {
   TooltipTrigger,
 } from "../../../../apps/web/src/components/ui/tooltip.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
-import {
-  BotAccessoryIcon,
-  ConfigurableBotCharacter,
-  botAppearanceCatalog,
-} from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
-import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
+import { randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
 import { botsChanged, errorText, useBots, useBotStatus } from "./botData.tsx";
+import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
 
 const readSearchString = (search: Record<string, unknown>, key: string) => {
   const value = search[key];
@@ -329,15 +326,13 @@ function BotForm({
           </p>
         ) : null}
         <SettingsSection title="Appearance">
-          <div className="flex items-center gap-4 px-3 py-3 sm:px-4">
-            <span className="flex size-24 shrink-0 items-center justify-center">
-              <ConfigurableBotCharacter
-                appearance={appearance}
-                state={status.state}
-                size={96}
-                decorative
-              />
-            </span>
+          <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
+            <BotPortraitPicker
+              value={appearance.portrait ?? defaultBotPortrait(id)}
+              working={status.state === "working"}
+              disabled={!editable}
+              onChange={(portrait) => setAppearance({ ...appearance, portrait })}
+            />
             <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium">
               Name
               <Input
@@ -349,11 +344,6 @@ function BotForm({
               />
             </label>
           </div>
-          <AppearancePicker
-            appearance={appearance}
-            disabled={!editable}
-            onAppearanceChange={setAppearance}
-          />
         </SettingsSection>
 
         <SettingsSection title="Instructions" hideTitle>
@@ -536,121 +526,6 @@ function ProjectLabel({ project }: { readonly project: EnvironmentProject }) {
       <ProjectFavicon project={project} className="size-4 shrink-0" />
       <span className="truncate">{project.title}</span>
     </span>
-  );
-}
-
-/** A picture option, styled like the project icon picker's tiles. */
-function Tile({
-  label,
-  selected,
-  disabled,
-  round = false,
-  onSelect,
-  children,
-}: {
-  readonly label: string;
-  readonly selected: boolean;
-  readonly disabled: boolean;
-  readonly round?: boolean;
-  readonly onSelect: () => void;
-  readonly children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            aria-pressed={selected}
-            disabled={disabled}
-            className={cn(
-              "flex items-center justify-center border border-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
-              round ? "size-8 rounded-full" : "size-12 rounded-md hover:bg-accent",
-              selected && (round ? "border-foreground/64" : "border-border bg-accent"),
-            )}
-            onClick={onSelect}
-          />
-        }
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function AppearancePicker({
-  appearance,
-  disabled,
-  onAppearanceChange,
-}: {
-  readonly appearance: BotAppearance;
-  readonly disabled: boolean;
-  readonly onAppearanceChange: (appearance: BotAppearance) => void;
-}) {
-  return (
-    <>
-      <SettingsRow title="Shape">
-        <div role="group" aria-label="Shape" className="flex flex-wrap gap-1 pt-2 pb-2">
-          {botAppearanceCatalog.shapes.map((shape) => (
-            <Tile
-              key={shape.id}
-              label={shape.label}
-              selected={appearance.shape === shape.id}
-              disabled={disabled}
-              onSelect={() => onAppearanceChange({ ...appearance, shape: shape.id })}
-            >
-              <ConfigurableBotCharacter
-                appearance={{ ...appearance, shape: shape.id, accessory: "none" }}
-                state="idle"
-                size={32}
-                decorative
-              />
-            </Tile>
-          ))}
-        </div>
-      </SettingsRow>
-      <SettingsRow title="Color">
-        <div role="group" aria-label="Color" className="flex flex-wrap gap-1.5 pt-2 pb-2">
-          {botAppearanceCatalog.colors.map((color) => (
-            <Tile
-              key={color.id}
-              label={color.label}
-              round
-              selected={appearance.color === color.id}
-              disabled={disabled}
-              onSelect={() => onAppearanceChange({ ...appearance, color: color.id })}
-            >
-              <span
-                className="size-6 rounded-full"
-                // Illustration colors from the character catalog, not theme tokens.
-                style={{ background: `linear-gradient(135deg, ${color.fill}, ${color.shade})` }}
-              />
-            </Tile>
-          ))}
-        </div>
-      </SettingsRow>
-      <SettingsRow title="Accessories">
-        <div role="group" aria-label="Accessories" className="flex flex-wrap gap-1 pt-2 pb-2">
-          {botAppearanceCatalog.accessories.map((accessory) => (
-            <Tile
-              key={accessory.id}
-              label={accessory.label}
-              selected={appearance.accessory === accessory.id}
-              disabled={disabled}
-              onSelect={() => onAppearanceChange({ ...appearance, accessory: accessory.id })}
-            >
-              {accessory.id === "none" ? (
-                <BanIcon className="size-6 text-muted-foreground" />
-              ) : (
-                <BotAccessoryIcon accessory={accessory.id} size={36} />
-              )}
-            </Tile>
-          ))}
-        </div>
-      </SettingsRow>
-    </>
   );
 }
 
