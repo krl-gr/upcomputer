@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 import { CommandId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotAppearance,
+  BotPortraitId,
   BotWriteInput,
   defaultBotAppearance,
   BotMemory,
@@ -38,13 +39,20 @@ const now = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeProjects = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(ProjectId)));
 const decodeMemories = Schema.decodeUnknownEffect(Schema.Array(BotMemory));
 const decodeProposals = Schema.decodeUnknownEffect(Schema.Array(BotMemoryProposal));
-// A saved accessory may since have been retired; such bots draw without one.
+// A saved accessory or portrait may since have been retired; such bots draw without one.
 const decodeAppearance = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
-    Schema.NullOr(Schema.Struct({ ...BotAppearance.fields, accessory: Schema.String })),
+    Schema.NullOr(
+      Schema.Struct({
+        ...BotAppearance.fields,
+        accessory: Schema.String,
+        portrait: Schema.optional(Schema.String),
+      }),
+    ),
   ),
 );
 const isAccessory = Schema.is(BotAppearance.fields.accessory);
+const isPortrait = Schema.is(BotPortraitId);
 const decodeBotWrite = Schema.decodeUnknownEffect(BotWriteInput);
 // `seen` holds entries already delivered that share the cursor's millisecond.
 const MemoryMarker = Schema.fromJsonString(
@@ -143,8 +151,10 @@ const make = Effect.gen(function* () {
       return {
         agent: agent.value,
         appearance: appearance && {
-          ...appearance,
+          shape: appearance.shape,
+          color: appearance.color,
           accessory: isAccessory(appearance.accessory) ? appearance.accessory : "none",
+          ...(isPortrait(appearance.portrait) ? { portrait: appearance.portrait } : {}),
         },
         threadId: ThreadId.make(row.threadId),
         projectId: ProjectId.make(row.projectId),

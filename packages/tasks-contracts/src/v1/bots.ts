@@ -20,7 +20,51 @@ const botColorIds = [
   "navy",
 ] as const;
 
+// Keep this order stable: bots that never picked a portrait derive theirs from their id.
+export const botPortraitIds = [
+  "vermeer-girl",
+  "leonardo",
+  "mona-lisa",
+  "venus",
+  "rembrandt",
+  "beethoven",
+  "ada",
+  "socrates",
+  "frida",
+  "van-gogh",
+  "mozart",
+  "newton",
+  "shakespeare",
+  "napoleon",
+  "cleopatra",
+  "athena",
+  "the-scream",
+  "american-gothic",
+  "the-fifer",
+  "son-of-man",
+  "the-milkmaid",
+  "lady-with-an-ermine",
+  "girl-with-peaches",
+  "the-blue-boy",
+  "infanta",
+  "the-swing",
+  "the-astronomer",
+  "the-sleeping-gypsy",
+] as const;
+export const BotPortraitId = Schema.Literals(botPortraitIds);
+export type BotPortraitId = typeof BotPortraitId.Type;
+
+/** The portrait of a bot that never picked one, an FNV-1a hash of its id. */
+export const defaultBotPortrait = (id: string): BotPortraitId => {
+  let hash = 2166136261;
+  for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  return botPortraitIds[hash % botPortraitIds.length]!;
+};
+
 export const BotAppearance = Schema.Struct({
+  /** The picked portrait the UI draws. Missing draws `defaultBotPortrait`. */
+  portrait: Schema.optional(BotPortraitId),
+  // The shape character the UI drew before portraits; kept so older clients still draw it.
   shape: Schema.Literals([
     "drop",
     "triangle",

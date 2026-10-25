@@ -2540,6 +2540,27 @@ it.live(
           yield* sql`SELECT appearance_json FROM bots WHERE agent_id = ${second.agent.id}`,
           [{ appearance_json: JSON.stringify({ ...appearance, accessory: "none" }) }],
         );
+        // A picked portrait saves beside the shape character, which stays as it was.
+        const pictured = { ...appearance, portrait: "the-astronomer" } as const;
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance: pictured })).appearance,
+          pictured,
+        );
+        assert.deepStrictEqual(
+          (yield* reader[BOTS_RPC_METHODS.list]({})).find((bot) => bot.agent.id === input.id)
+            ?.appearance,
+          pictured,
+        );
+        assert.throws(() =>
+          decodeBotWrite({ ...input, appearance: { ...appearance, portrait: "unknown" } }),
+        );
+        // A retired portrait loads without one, so clients draw the bot's derived portrait.
+        yield* sql`UPDATE bots SET appearance_json = ${JSON.stringify({ ...appearance, portrait: "retired" })}
+          WHERE agent_id = ${input.id}`;
+        assert.deepStrictEqual(
+          (yield* bots.list).find((bot) => bot.agent.id === input.id)?.appearance,
+          appearance,
+        );
       }).pipe(Effect.scoped),
     ),
 );
