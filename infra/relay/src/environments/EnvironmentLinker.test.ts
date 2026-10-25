@@ -56,56 +56,59 @@ function signTestJwt(payload: object, typ: string, privateKey: string): string {
   return `${signingInput}.${NodeCrypto.sign(null, Buffer.from(signingInput), privateKey).toString("base64url")}`;
 }
 
-const makeRequest = Effect.gen(function* () {
-  const now = yield* DateTime.now;
-  const expiresAt = DateTime.add(now, { minutes: 5 });
-  const relayTokens = yield* RelayTokens.RelayTokens;
-  const challenge = yield* relayTokens.issueLinkChallenge({
-    userId: "user_123",
-    request: {
-      notificationsEnabled: true,
-      liveActivitiesEnabled: true,
-      managedTunnelsEnabled: true,
-    },
-    jti: "challenge-jti",
-    issuedAtEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
-    expiresAtEpochSeconds: Math.floor(expiresAt.epochMilliseconds / 1_000),
-  });
-  const payload = {
-    iss: "t3-env:env-link-test",
-    aud: "https://relay.example.test",
-    sub: "env-link-test",
-    jti: "link-proof-jti",
-    iat: Math.floor(now.epochMilliseconds / 1_000),
-    exp: Math.floor(expiresAt.epochMilliseconds / 1_000),
-    challenge,
-    environmentId: "env-link-test" as RelayEnvironmentLinkProofPayload["environmentId"],
-    descriptor: {
+/** `environmentClockSkewSeconds` is how far the signing computer's clock is off. */
+const makeRequestSignedAt = (environmentClockSkewSeconds: number) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const expiresAt = DateTime.add(now, { minutes: 5 });
+    const relayTokens = yield* RelayTokens.RelayTokens;
+    const challenge = yield* relayTokens.issueLinkChallenge({
+      userId: "user_123",
+      request: {
+        notificationsEnabled: true,
+        liveActivitiesEnabled: true,
+        managedTunnelsEnabled: true,
+      },
+      jti: "challenge-jti",
+      issuedAtEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
+      expiresAtEpochSeconds: Math.floor(expiresAt.epochMilliseconds / 1_000),
+    });
+    const payload = {
+      iss: "t3-env:env-link-test",
+      aud: "https://relay.example.test",
+      sub: "env-link-test",
+      jti: "link-proof-jti",
+      iat: Math.floor(now.epochMilliseconds / 1_000) + environmentClockSkewSeconds,
+      exp: Math.floor(expiresAt.epochMilliseconds / 1_000) + environmentClockSkewSeconds,
+      challenge,
       environmentId: "env-link-test" as RelayEnvironmentLinkProofPayload["environmentId"],
-      label: "Link Test Environment",
-      platform: { os: "darwin", arch: "arm64" },
-      serverVersion: "0.0.0-test",
-      capabilities: { repositoryIdentity: true },
-    },
-    environmentPublicKey: environmentKeyPair.publicKey.trim(),
-    endpoint: {
-      httpBaseUrl: "https://env.example.test/",
-      wsBaseUrl: "wss://env.example.test/",
-      providerKind: "manual",
-    },
-    origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
-    scopes: ["agent_activity_notifications", "managed_tunnels"],
-  } satisfies RelayEnvironmentLinkProofPayload;
-  return {
-    request: {
-      proof: signTestJwt(payload, RELAY_LINK_PROOF_TYP, environmentKeyPair.privateKey),
-      notificationsEnabled: true,
-      liveActivitiesEnabled: true,
-      managedTunnelsEnabled: false,
-    } satisfies RelayEnvironmentLinkRequest,
-    payload,
-  };
-});
+      descriptor: {
+        environmentId: "env-link-test" as RelayEnvironmentLinkProofPayload["environmentId"],
+        label: "Link Test Environment",
+        platform: { os: "darwin", arch: "arm64" },
+        serverVersion: "0.0.0-test",
+        capabilities: { repositoryIdentity: true },
+      },
+      environmentPublicKey: environmentKeyPair.publicKey.trim(),
+      endpoint: {
+        httpBaseUrl: "https://env.example.test/",
+        wsBaseUrl: "wss://env.example.test/",
+        providerKind: "manual",
+      },
+      origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+      scopes: ["agent_activity_notifications", "managed_tunnels"],
+    } satisfies RelayEnvironmentLinkProofPayload;
+    return {
+      request: {
+        proof: signTestJwt(payload, RELAY_LINK_PROOF_TYP, environmentKeyPair.privateKey),
+        notificationsEnabled: true,
+        liveActivitiesEnabled: true,
+        managedTunnelsEnabled: false,
+      } satisfies RelayEnvironmentLinkRequest,
+      payload,
+    };
+  });
+const makeRequest = makeRequestSignedAt(0);
 
 function layerTest(input?: {
   readonly upsert?: EnvironmentLinks.EnvironmentLinks["Service"]["upsert"];
@@ -249,6 +252,20 @@ describe("EnvironmentLinker", () => {
       ),
     );
   });
+
+  // Environments sign in relay time now; these are what a proof signed in a
+  // computer's own wrong time runs into.
+  it.effect.each([
+    { name: "10 minutes behind", skewSeconds: -600, tag: "EnvironmentLinkProofExpired" },
+    { name: "10 minutes ahead", skewSeconds: 600, tag: "EnvironmentLinkProofInvalid" },
+  ] as const)("rejects a proof signed on a clock $name", ({ skewSeconds, tag }) =>
+    Effect.gen(function* () {
+      const { request } = yield* makeRequestSignedAt(skewSeconds);
+      const linker = yield* EnvironmentLinker.EnvironmentLinker;
+      const error = yield* Effect.flip(linker.link({ userId: "user_123", request }));
+      expect(error._tag).toBe(tag);
+    }).pipe(Effect.provide(layerTest())),
+  );
 
   it.effect("rejects a tampered compact proof before persistence", () => {
     let persisted = false;
