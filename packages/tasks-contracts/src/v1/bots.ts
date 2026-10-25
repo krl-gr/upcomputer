@@ -61,10 +61,14 @@ export const defaultBotPortrait = (id: string): BotPortraitId => {
   return botPortraitIds[hash % botPortraitIds.length]!;
 };
 
+export const BotAppearanceStyle = Schema.Literals(["portrait", "character"]);
+
 export const BotAppearance = Schema.Struct({
-  /** The picked portrait the UI draws. Missing draws `defaultBotPortrait`. */
+  /** Which face the UI draws. Missing draws the portrait; both configs stay either way. */
+  style: Schema.optional(BotAppearanceStyle),
+  /** The picked portrait. Missing draws `defaultBotPortrait`. */
   portrait: Schema.optional(BotPortraitId),
-  // The shape character the UI drew before portraits; kept so older clients still draw it.
+  // The shape character, drawn when `style` is "character"; older clients always draw it.
   shape: Schema.Literals([
     "drop",
     "triangle",

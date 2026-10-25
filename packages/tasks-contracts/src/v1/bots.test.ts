@@ -24,3 +24,12 @@ test("appearance decodes with or without a portrait, but not an unknown one", ()
   });
   assert.throws(() => decodeAppearance({ ...character, portrait: "unknown" }));
 });
+
+test("appearance decodes with or without a style, but not an unknown one", () => {
+  const character = { shape: "capsule", color: "blue", accessory: "none" } as const;
+  assert.deepStrictEqual(decodeAppearance({ ...character, style: "character" }), {
+    ...character,
+    style: "character",
+  });
+  assert.throws(() => decodeAppearance({ ...character, style: "unknown" }));
+});

@@ -2561,6 +2561,33 @@ it.live(
           (yield* bots.list).find((bot) => bot.agent.id === input.id)?.appearance,
           appearance,
         );
+        // The style switch keeps both configs, and an older client's save keeps the switch.
+        const character = { ...pictured, style: "character" } as const;
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance: character })).appearance,
+          character,
+        );
+        const recolored = { ...appearance, color: "teal" } as const;
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance: recolored })).appearance,
+          { ...character, color: "teal" },
+        );
+        assert.deepStrictEqual(
+          (yield* writer[BOTS_RPC_METHODS.save]({
+            ...input,
+            appearance: { ...character, color: "teal", style: "portrait" },
+          })).appearance,
+          { ...character, color: "teal", style: "portrait" },
+        );
+        assert.throws(() =>
+          decodeBotWrite({ ...input, appearance: { ...appearance, style: "unknown" } }),
+        );
+        yield* sql`UPDATE bots SET appearance_json = ${JSON.stringify({ ...appearance, style: "retired" })}
+          WHERE agent_id = ${input.id}`;
+        assert.deepStrictEqual(
+          (yield* bots.list).find((bot) => bot.agent.id === input.id)?.appearance,
+          appearance,
+        );
       }).pipe(Effect.scoped),
     ),
 );
