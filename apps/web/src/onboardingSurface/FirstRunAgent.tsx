@@ -14,8 +14,10 @@ import {
   FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
   FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
+  isFirstRunAgentActivating,
   latchFirstRunAgentStart,
   resolveFirstRunAgentStatus,
+  type FirstRunAgentActivation,
   type FirstRunAgentStart,
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
@@ -32,8 +34,8 @@ const RETRY_FEEDBACK_MS = 1_000;
 const firstRunAgentAtom = Atom.make<{
   readonly start: "wait" | FirstRunAgentStart | null;
   readonly startError: string | null;
-  readonly activating: boolean;
-}>({ start: null, startError: null, activating: false }).pipe(
+  readonly activation: FirstRunAgentActivation | null;
+}>({ start: null, startError: null, activation: null }).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-first-run-agent"),
 );
@@ -127,16 +129,21 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
         until: Date.now() + FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
       };
     }
+    const settle = (active: boolean) =>
+      setSetup((current) => ({
+        ...current,
+        activation: { operationId: succeededOperation, active },
+      }));
     const remaining = activationWait.until - Date.now();
-    if (remaining <= 0) return;
-    setSetup((current) => ({ ...current, activating: true }));
-    const timer = window.setTimeout(
-      () => setSetup((current) => ({ ...current, activating: false })),
-      remaining,
-    );
+    if (remaining <= 0) {
+      settle(false);
+      return;
+    }
+    settle(true);
+    const timer = window.setTimeout(() => settle(false), remaining);
     return () => {
       window.clearTimeout(timer);
-      setSetup((current) => ({ ...current, activating: false }));
+      settle(false);
     };
   }, [setSetup, succeededOperation]);
 
@@ -220,7 +227,11 @@ export function useFirstRunAgentStatus(
         provider: providers?.find(
           (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
         ),
-        activating: setup.activating,
+        activating: isFirstRunAgentActivating({
+          succeededOperationId: install?.phase === "succeeded" ? install.operationId : null,
+          starterRunning: setup.start !== null,
+          activation: setup.activation,
+        }),
       })
     : null;
   return { status, retrying, retry };
