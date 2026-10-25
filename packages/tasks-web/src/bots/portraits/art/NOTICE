@@ -1,0 +1,21 @@
+Bot portraits
+
+The 28 SVG files in this directory are copied without modification from
+https://github.com/nuphos/nuphos (apps/desktop/public/bot-avatars, commit
+7cb5ae81dfe465ac61402ea26a876d48b29d4041). They are licensed under the Apache
+License, Version 2.0; its full text is in LICENSE in this directory. No file in
+that folder carries a separate license or notice.
+
+The NOTICE file of that work includes:
+
+  Nuphos
+  Copyright 2026 Zeabur Inc.
+
+  This product includes software developed at Zeabur Inc.
+
+The portrait catalog and motion next to this directory (../botPortraits.ts,
+../BotPortrait.tsx and ../botPortrait.css) are adapted from
+apps/desktop/src/lib/botAvatars.ts, apps/desktop/src/lib/botAvatarMotion.ts and
+apps/desktop/src/components/agent/BotAvatarImage.tsx of the same work, and were
+changed for Up.computer: portraits render inline, blink on a timer, and play
+the motion loop only while a bot works. Each of those files says so at its top.
