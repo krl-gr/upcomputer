@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
@@ -29,7 +30,11 @@ const backendEntry = NodeURL.fileURLToPath(
   ),
 );
 
-function makeQuitTestInstance(marker: string, onOutput: (text: string) => Effect.Effect<void>) {
+function makeQuitTestInstance(
+  marker: string,
+  platform: NodeJS.Platform | undefined,
+  onOutput: (text: string) => Effect.Effect<void>,
+) {
   const config: DesktopBackendManager.DesktopBackendStartConfig = {
     executablePath: process.execPath,
     args: [backendEntry],
@@ -92,37 +97,57 @@ function makeQuitTestInstance(marker: string, onOutput: (text: string) => Effect
     id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
     label: Effect.succeed("Local environment"),
     configResolve: Effect.succeed(config),
-  }).pipe(Effect.provide(services));
+  }).pipe(
+    Effect.provide(services),
+    // This OS's own stop unless a test picks another.
+    platform === undefined
+      ? (effect) => effect
+      : Effect.provideService(HostProcess.Platform, platform),
+  );
 }
+
+/** Starts a real backend, stops it the way quit does, and reports whether its shutdown ran. */
+const quitRunsBackendShutdown = (platform: NodeJS.Platform | undefined) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const directory = yield* Effect.acquireRelease(
+        Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-desktop-quit-"))),
+        (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
+      );
+      const marker = NodePath.join(directory, "stopped");
+      let output = "";
+      const ready = yield* Deferred.make<void>();
+      const instance = yield* makeQuitTestInstance(marker, platform, (text) => {
+        output += text;
+        return output.includes("ready\n") ? Deferred.succeed(ready, undefined) : Effect.void;
+      });
+
+      yield* instance.start;
+      yield* Deferred.await(ready).pipe(Effect.timeout("15 seconds"));
+      // The bound `stopAllPoolInstances` gives each backend on quit.
+      yield* instance.stop({ timeout: Duration.seconds(5) });
+
+      return NodeFS.existsSync(marker);
+    }),
+  );
 
 describe("desktop quit", () => {
   // On Windows a child kill is TerminateProcess, which skips this finalizer.
   it.live(
     "lets a real backend process run its shutdown before quit returns",
     () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const directory = yield* Effect.acquireRelease(
-            Effect.sync(() =>
-              NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-desktop-quit-")),
-            ),
-            (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
-          );
-          const marker = NodePath.join(directory, "stopped");
-          let output = "";
-          const ready = yield* Deferred.make<void>();
-          const instance = yield* makeQuitTestInstance(marker, (text) => {
-            output += text;
-            return output.includes("ready\n") ? Deferred.succeed(ready, undefined) : Effect.void;
-          });
+      quitRunsBackendShutdown(undefined).pipe(
+        Effect.map((ran) => assert.isTrue(ran, "the backend's shutdown finalizer did not run")),
+      ),
+    30_000,
+  );
 
-          yield* instance.start;
-          yield* Deferred.await(ready).pipe(Effect.timeout("15 seconds"));
-          // The bound `stopAllPoolInstances` gives each backend on quit.
-          yield* instance.stop({ timeout: Duration.seconds(5) });
-
-          assert.isTrue(NodeFS.existsSync(marker), "the backend's shutdown finalizer did not run");
-        }),
+  // Windows' stop, on every OS.
+  it.live(
+    "lets a real backend process shut down on request before quit kills it",
+    () =>
+      quitRunsBackendShutdown("win32").pipe(
+        Effect.map((ran) => assert.isTrue(ran, "the backend's shutdown finalizer did not run")),
       ),
     30_000,
   );

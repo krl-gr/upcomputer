@@ -521,6 +521,14 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
           );
         }
 
+        if (message.type === "desktopShutdownRequest") {
+          // runMain's own SIGTERM handler then interrupts the server, so its
+          // shutdown (session stops, the final telemetry flush) runs as on macOS.
+          return Effect.sync(() => {
+            process.emit("SIGTERM", "SIGTERM");
+          });
+        }
+
         if (message.type === "desktopUpdateStatus") {
           return recordContact.pipe(
             Effect.andThen(Ref.set(latestUpdateReport, Option.some(message))),

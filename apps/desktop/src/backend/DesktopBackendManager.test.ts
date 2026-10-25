@@ -22,6 +22,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopApp from "../app/DesktopApp.ts";
@@ -1109,6 +1110,153 @@ describe("DesktopBackendManager", () => {
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
+
+  describe("stop by shutdown request on Windows", () => {
+    const onWindows = Effect.provideService(HostProcess.Platform, "win32");
+
+    /**
+     * A backend whose kill is its scope finalizer, as with the real spawner.
+     * It exits by itself on a shutdown request only when `exitsOnRequest`.
+     */
+    const layerRequestSpawner = (
+      events: Array<string>,
+      started: Deferred.Deferred<void>,
+      exitsOnRequest: boolean,
+    ) =>
+      Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            const scope = yield* Scope.Scope;
+            const exited = yield* Deferred.make<void>();
+            yield* Scope.addFinalizer(
+              scope,
+              Effect.sync(() => events.push("kill")).pipe(
+                Effect.andThen(Deferred.succeed(exited, undefined)),
+              ),
+            );
+            const fd4 =
+              command._tag === "StandardCommand" ? command.options.additionalFds?.fd4 : undefined;
+            if (fd4?.type === "input" && fd4.stream) {
+              yield* fd4.stream.pipe(
+                Stream.decodeText(),
+                Stream.splitLines,
+                Stream.runForEach((line) =>
+                  Effect.gen(function* () {
+                    events.push(line);
+                    if (exitsOnRequest) {
+                      events.push("exit");
+                      yield* Deferred.succeed(exited, undefined);
+                    }
+                  }),
+                ),
+                Effect.forkIn(scope),
+              );
+            }
+            yield* Deferred.succeed(started, undefined);
+            return makeProcess({
+              exitCode: Deferred.await(exited).pipe(Effect.as(ChildProcessSpawner.ExitCode(130))),
+            });
+          }),
+        ),
+      );
+
+    it.effect("lets a backend that answers the request exit before its kill", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const events: Array<string> = [];
+          const started = yield* Deferred.make<void>();
+          let persistedFailures = 0;
+          const instance = yield* makeTestInstance({
+            spawnerLayer: layerRequestSpawner(events, started, true),
+            desktopTelemetryStream: Stream.never,
+            backendOutputLog: {
+              persistFailure: () =>
+                Effect.sync(() => {
+                  persistedFailures += 1;
+                }),
+            },
+          }).pipe(onWindows);
+
+          yield* instance.start;
+          yield* Deferred.await(started);
+          yield* instance.stop({ timeout: Duration.seconds(5) });
+
+          assert.deepEqual(events, [
+            '{"version":1,"type":"desktopShutdownRequest"}',
+            "exit",
+            "kill",
+          ]);
+          assert.equal(persistedFailures, 0);
+          assert.equal((yield* instance.snapshot).desiredRunning, false);
+        }),
+      ),
+    );
+
+    it.effect("kills a backend that does not answer the request once the wait ends", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const events: Array<string> = [];
+          const started = yield* Deferred.make<void>();
+          const instance = yield* makeTestInstance({
+            spawnerLayer: layerRequestSpawner(events, started, false),
+            desktopTelemetryStream: Stream.never,
+          }).pipe(onWindows);
+
+          yield* instance.start;
+          yield* Deferred.await(started);
+          const stopFiber = yield* instance
+            .stop({ timeout: Duration.seconds(5) })
+            .pipe(Effect.forkChild);
+          yield* TestClock.adjust(Duration.millis(2_999));
+          assert.deepEqual(events, ['{"version":1,"type":"desktopShutdownRequest"}']);
+
+          yield* TestClock.adjust(Duration.millis(1));
+          yield* Fiber.join(stopFiber);
+          assert.deepEqual(events, ['{"version":1,"type":"desktopShutdownRequest"}', "kill"]);
+        }).pipe(Effect.provide(TestClock.layer())),
+      ),
+    );
+
+    it.effect("keeps the signal stop on macOS and Linux, where SIGTERM is graceful", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const events: Array<string> = [];
+          const started = yield* Deferred.make<void>();
+          const instance = yield* makeTestInstance({
+            spawnerLayer: layerRequestSpawner(events, started, true),
+            desktopTelemetryStream: Stream.never,
+          }).pipe(Effect.provideService(HostProcess.Platform, "darwin"));
+
+          yield* instance.start;
+          yield* Deferred.await(started);
+          yield* instance.stop({ timeout: Duration.seconds(5) });
+
+          assert.deepEqual(events, ["kill"]);
+        }),
+      ),
+    );
+
+    it.effect("keeps the signal stop without a telemetry descriptor to ask over", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const events: Array<string> = [];
+          const started = yield* Deferred.make<void>();
+          const instance = yield* makeTestInstance({
+            config: { ...baseConfig, bootstrapDelivery: "stdin" },
+            spawnerLayer: layerRequestSpawner(events, started, true),
+            desktopTelemetryStream: Stream.never,
+          }).pipe(onWindows);
+
+          yield* instance.start;
+          yield* Deferred.await(started);
+          yield* instance.stop({ timeout: Duration.seconds(5) });
+
+          assert.deepEqual(events, ["kill"]);
+        }),
+      ),
+    );
+  });
 
   it.effect("does not notify shutdown before the first start has prior state", () =>
     Effect.scoped(

@@ -295,10 +295,20 @@ export const DesktopUpdateStatusReport = Schema.Struct({
 });
 export type DesktopUpdateStatusReport = typeof DesktopUpdateStatusReport.Type;
 
+/**
+ * The desktop app quitting. On Windows a child process kill is TerminateProcess,
+ * so the server cannot see a SIGTERM there; this asks it to stop the same way.
+ */
+export const DesktopShutdownRequest = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("desktopShutdownRequest"),
+});
+
 export const DesktopHostTelemetryMessage = Schema.Union([
   DesktopHostTelemetryHello,
   DesktopHostTelemetrySnapshot,
   DesktopUpdateStatusReport,
+  DesktopShutdownRequest,
 ]);
 export type DesktopHostTelemetryMessage = typeof DesktopHostTelemetryMessage.Type;
 
