@@ -22,7 +22,11 @@ import {
 import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay";
+import {
+  environmentLinkFailureDetail,
+  ManagedRelay,
+  relayRequestFailureDetail,
+} from "@t3tools/client-runtime/relay";
 
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 import { resolveCloudPublicConfig } from "./publicConfig";
@@ -113,11 +117,18 @@ const isEnvironmentCloudApiError = Schema.is(
   ]),
 );
 
-function decodedRelayClientError(message: string) {
+function decodedRelayClientError(
+  message: string,
+  link?: { readonly challenge: string; readonly proof: string },
+) {
   return (cause: ManagedRelay.ManagedRelayClientError) => {
     const failed = cause._tag === "ManagedRelayRequestFailedError" ? cause : undefined;
     const traceId = failed?.traceId;
-    const detail = failed ? relayRequestFailureDetail(failed) : null;
+    const detail = failed
+      ? link
+        ? environmentLinkFailureDetail(failed, link)
+        : relayRequestFailureDetail(failed)
+      : null;
     return new CloudEnvironmentLinkError({
       message: detail ? `${message}: ${detail}` : message,
       cause,
@@ -320,7 +331,10 @@ export function linkPrimaryEnvironmentToCloud(input: {
       })
       .pipe(
         Effect.mapError(
-          decodedRelayClientError(`${configuredRelayUrl}/v1/client/environment-links failed`),
+          decodedRelayClientError(`${configuredRelayUrl}/v1/client/environment-links failed`, {
+            challenge: challenge.challenge,
+            proof,
+          }),
         ),
       );
     yield* ensureLinkedEnvironmentMatches({

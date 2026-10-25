@@ -1,5 +1,9 @@
 import type { DpopFailureReason } from "@t3tools/contracts";
 import type { RelayEnvironmentStatusResponse, RelayProtectedError } from "@t3tools/contracts/relay";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Option from "effect/Option";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 export const DPOP_CLOCK_HINT =
   "Hint: Check that automatic date and time is enabled on both devices, then try again.";
@@ -21,6 +25,67 @@ export function dpopFailureMessage(message: string, reason: DpopFailureReason | 
   return `${message} ${dpopFailureHint(reason)}`;
 }
 
+const CLOCK_SYNC_HINT = "Sync the date and time in system settings, then try again.";
+
+const LINK_PROOF_CLOCK_MESSAGE = `Relay rejected an expired environment link proof. The computer's clock is probably wrong. ${CLOCK_SYNC_HINT}`;
+
+// The relay tolerates a minute; past that, its checks fail.
+const RELAY_CLOCK_TOLERANCE_SECONDS = 60;
+
+const decodeJwtIssuedAt = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ iat: Schema.Finite })),
+);
+
+function jwtIssuedAt(token: string): Option.Option<number> {
+  const payload = token.split(".")[1];
+  if (payload === undefined) return Option.none();
+  return Option.flatMap(Result.getSuccess(Base64Url.decodeString(payload)), (json) =>
+    Option.map(decodeJwtIssuedAt(json), (claims) => claims.iat),
+  );
+}
+
+/**
+ * How far the environment's clock was off when it signed a link proof: the
+ * proof carries its time, the relay challenge inside it was issued moments
+ * earlier in relay time. Null when within the relay's tolerance or unknown.
+ */
+export function environmentLinkClockSkewSeconds(input: {
+  readonly challenge: string;
+  readonly proof: string;
+}): number | null {
+  const challengeIssuedAt = jwtIssuedAt(input.challenge);
+  const proofIssuedAt = jwtIssuedAt(input.proof);
+  if (Option.isNone(challengeIssuedAt) || Option.isNone(proofIssuedAt)) return null;
+  const skew = proofIssuedAt.value - challengeIssuedAt.value;
+  return Math.abs(skew) > RELAY_CLOCK_TOLERANCE_SECONDS ? skew : null;
+}
+
+function environmentClockSkewMessage(skewSeconds: number): string {
+  const minutes = Math.max(1, Math.round(Math.abs(skewSeconds) / 60));
+  const direction = skewSeconds < 0 ? "behind" : "ahead";
+  return `Relay rejected the environment link proof because the computer's clock is about ${minutes} ${minutes === 1 ? "minute" : "minutes"} ${direction}. ${CLOCK_SYNC_HINT}`;
+}
+
+/**
+ * An older environment signs link proofs in its own time, so a wrong clock
+ * fails as expired (behind) or as an invalid signature (ahead).
+ */
+export function environmentLinkFailureDetail(
+  error: Parameters<typeof relayRequestFailureDetail>[0],
+  link: { readonly challenge: string; readonly proof: string },
+): string | null {
+  const relayError = error.relayError;
+  if (
+    relayError?._tag === "RelayEnvironmentLinkProofExpiredError" ||
+    (relayError?._tag === "RelayEnvironmentLinkProofInvalidError" &&
+      relayError.reason === "invalid_signature_or_scope")
+  ) {
+    const skew = environmentLinkClockSkewSeconds(link);
+    if (skew !== null) return environmentClockSkewMessage(skew);
+  }
+  return relayRequestFailureDetail(error);
+}
+
 export function relayProtectedErrorMessage(error: RelayProtectedError): string {
   switch (error._tag) {
     case "RelayAuthInvalidError":
@@ -34,7 +99,7 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
           return "Relay rejected the authenticated request.";
       }
     case "RelayEnvironmentLinkProofExpiredError":
-      return "Relay rejected an expired environment link proof.";
+      return LINK_PROOF_CLOCK_MESSAGE;
     case "RelayEnvironmentLinkProofInvalidError":
       return `Relay rejected the environment link proof (${error.reason}).`;
     case "RelayEnvironmentConnectNotAuthorizedError":
@@ -63,7 +128,7 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
     case "RelayEnvironmentLinkLimitExceededError":
       return `Relay refused the link: this account already has its maximum of ${error.maxTunnels} managed tunnels. Unlink an environment to free one up.`;
     case "RelayAgentActivityPublishProofExpiredError":
-      return "Relay rejected an expired agent activity publish proof.";
+      return `Relay rejected an expired agent activity publish proof. The computer's clock is probably wrong. ${CLOCK_SYNC_HINT}`;
     case "RelayAgentActivityPublishProofInvalidError":
       return `Relay rejected the agent activity publish proof (${error.reason}).`;
     case "RelayWebPushSubscriptionConflictError":
