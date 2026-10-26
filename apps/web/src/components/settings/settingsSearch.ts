@@ -374,7 +374,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Guest links",
     to: "/settings/beta",
     scope: "environment",
-    searchTerms: ["beta share guest invite link teammate watch t3 connect tunnel"],
+    searchTerms: ["beta share guest invite link teammate watch upcomputer connect tunnel"],
   },
   {
     id: "auto-settle-inactive-threads",
