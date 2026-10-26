@@ -10,7 +10,14 @@ import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, BanIcon, InfoIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ThreadId, type ModelSelection } from "@t3tools/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type ModelSelection,
+  type RuntimeMode,
+} from "@t3tools/contracts";
 import {
   BOTS_RPC_METHODS,
   TaskAgentId,
@@ -38,6 +45,10 @@ import {
 import { getAppModelOptionsForInstance } from "../../../../apps/web/src/modelSelection.ts";
 import { ProviderModelPicker } from "../../../../apps/web/src/components/chat/ProviderModelPicker.tsx";
 import { TraitsPicker } from "../../../../apps/web/src/components/chat/TraitsPicker.tsx";
+import {
+  runtimeModeConfig,
+  runtimeModeOptions,
+} from "../../../../apps/web/src/components/chat/runtimeModeConfig.ts";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { WorkspacePageContainer } from "../../../../apps/web/src/components/WorkspacePageContainer.tsx";
 import {
@@ -71,6 +82,7 @@ import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/ex
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
 import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
+import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
 import { botsChanged, errorText, useBots, useBotStatus } from "./botData.tsx";
@@ -182,6 +194,10 @@ function BotForm({
       projects[0]?.defaultModelSelection ??
       undefined,
   );
+  // A chat turned into a bot keeps its permissions; a new bot gets a new thread's.
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
+    bot?.agent.config.runtimeMode ?? source?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
@@ -216,6 +232,7 @@ function BotForm({
     [providers, settings],
   );
   const editable = canWrite && !busy;
+  const PermissionIcon = runtimeModeConfig[runtimeMode].icon;
   const draft: BotWriteInput | null =
     name.trim() !== "" &&
     instructions.trim() !== "" &&
@@ -235,6 +252,7 @@ function BotForm({
             role: bot?.agent.config.role ?? "Personal assistant",
             instructions,
             modelSelection: selection,
+            runtimeMode,
           },
         }
       : null;
@@ -256,7 +274,7 @@ function BotForm({
     }
   });
   const textKey = JSON.stringify([name, instructions]);
-  const choiceKey = JSON.stringify([appearance, selection, projectId, allowed]);
+  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId, allowed]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
   useEffect(() => {
     autosave.schedule(800);
@@ -440,6 +458,43 @@ function BotForm({
               ) : (
                 <span className="text-sm text-muted-foreground">Configure a provider first</span>
               )
+            }
+          />
+          <SettingsRow
+            title="Permissions"
+            description="For the bot's chat and its background tasks."
+            control={
+              <Select
+                value={runtimeMode}
+                disabled={!editable}
+                onValueChange={(value) => {
+                  if (value) setRuntimeMode(value);
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Permissions">
+                  <PermissionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <SelectValue>{runtimeModeConfig[runtimeMode].label}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {runtimeModeOptions.map((mode) => {
+                    const option = runtimeModeConfig[mode];
+                    const Icon = option.icon;
+                    return (
+                      <SelectItem key={mode} value={mode} className="min-w-64">
+                        <div className="grid gap-0.5">
+                          <span className="inline-flex items-center gap-1.5 font-medium">
+                            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                            {option.label}
+                          </span>
+                          <span className="text-xs leading-4 text-muted-foreground">
+                            {option.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectPopup>
+              </Select>
             }
           />
         </SettingsSection>
@@ -1165,13 +1220,26 @@ function BackgroundWork({
   };
   return (
     <SettingsSection
-      title="Background work"
+      title="Tasks"
       titleAction={
-        <InfoTip label="About background work">
-          Runs as a task. Progress and results return to this bot's chat.
+        <InfoTip label="About tasks">
+          Tasks the bot delegates from its chat, and tasks assigned to the bot itself. Their
+          progress and results return to the bot's chat.
         </InfoTip>
       }
     >
+      <SettingsRow
+        title="Task runs"
+        control={
+          <span className="flex items-center text-sm">
+            <TaskThreadRunCounts
+              environmentId={environmentId}
+              threadId={bot.threadId}
+              fallback={<span className="text-muted-foreground">None yet</span>}
+            />
+          </span>
+        }
+      />
       {open ? (
         <div className="grid gap-2 px-3 py-2.5 sm:px-4">
           <Input
