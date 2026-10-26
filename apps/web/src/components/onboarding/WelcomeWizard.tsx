@@ -135,6 +135,7 @@ export function WelcomeWizard({
   const primaryEnvironmentId = primaryEnvironment?.environmentId;
   const recordClientEvent = useRecordClientEvent();
   const viewedSteps = useRef(new Set<WizardStep>());
+  // oxlint-disable-next-line t3code/react-effect-budget -- records a telemetry event once each step has rendered
   useEffect(() => {
     if (primaryEnvironmentId === undefined || viewedSteps.current.has(step)) return;
     viewedSteps.current.add(step);
@@ -784,6 +785,7 @@ function ConnectedAgentsStep({
     providers?.filter(
       (provider) => provider.enabled && getOnboardingProviderState(provider) === "ready",
     ).length ?? 0;
+  // oxlint-disable-next-line t3code/react-effect-budget -- reports a derived count to the parent step, which owns the totals
   useEffect(() => {
     onReadyCountChange(environmentId, readyCount);
   }, [environmentId, onReadyCountChange, readyCount]);

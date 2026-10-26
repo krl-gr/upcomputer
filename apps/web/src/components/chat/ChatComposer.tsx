@@ -74,7 +74,6 @@ import {
   extendReplacementRangeForTrailingSpace,
   replaceTextRange,
 } from "../../composer-logic";
-import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
@@ -1004,6 +1003,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const recordClientEvent = useRecordClientEvent();
   const navigate = useNavigate();
   const providerSetupShownRef = useRef(false);
+  // oxlint-disable-next-line t3code/react-effect-budget -- records a telemetry event once the setup prompt has rendered
   useEffect(() => {
     // New users who skipped agent setup land here; once per composer is enough.
     // While the first agent installs, its own events tell the story instead.

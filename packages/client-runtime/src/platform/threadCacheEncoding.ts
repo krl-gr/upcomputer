@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { StoredOrchestrationThreadSnapshot } from "./orchestrationCache.ts";
 
 // Keep the full format for web/desktop; older clients discard compact records.
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const COMPACT_THREAD_CACHE_SCHEMA_VERSION = 6 as const;
 
 const StoredCompactThreadSnapshot = StoredOrchestrationThreadSnapshot.mapFields((fields) => ({
@@ -32,6 +33,7 @@ const decodeCompatible = Schema.decodeUnknownEffect(
   ),
 );
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const encodeStoredThreadSnapshot = Effect.fn("ThreadCache.encode")(function* (
   stored: Pick<
     typeof StoredOrchestrationThreadSnapshot.Type,
@@ -53,6 +55,7 @@ export const encodeStoredThreadSnapshot = Effect.fn("ThreadCache.encode")(functi
   });
 });
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const decodeStoredThreadSnapshot = Effect.fn("ThreadCache.decode")(function* (raw: string) {
   const stored = yield* decodeCompatible(raw);
   if (stored.schemaVersion !== COMPACT_THREAD_CACHE_SCHEMA_VERSION) return stored;

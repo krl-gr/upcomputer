@@ -67,6 +67,7 @@ function IndexDraftLanding() {
   // The project draft starts once per attempt; Retry asks for a new attempt.
   const startedAttemptRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
+  // oxlint-disable-next-line t3code/react-effect-budget -- tracks mount so an async draft start never updates an unmounted route
   useEffect(() => {
     mountedRef.current = true;
     return () => {

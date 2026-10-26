@@ -88,7 +88,6 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { productSurface } from "../product/productFlags";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import {
@@ -265,6 +264,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
     dispatch({ _tag: "OpenChildSearch", mode, context });
   // UpComputer: a draft move armed for an add from this palette ends when it closes.
+  // oxlint-disable-next-line t3code/react-effect-budget -- disarms a module-level intent when the palette closes
   useEffect(() => {
     if (!state.open) disarmDraftMoveIntoAddedProject();
   }, [state.open]);

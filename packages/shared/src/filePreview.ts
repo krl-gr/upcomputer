@@ -7,6 +7,7 @@ export {
   isWorkspaceAudioPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaKindFromPath,
+  /** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
   mediaMimeTypeFromExtension,
 } from "./mediaPreview.ts";
 import { videoMimeType } from "./video.ts";
