@@ -280,13 +280,6 @@ function BotRow({
           <ThreadStatusLabel status={status.label} />
         </span>
       ) : null}
-      <span className="flex shrink-0 items-center text-xs">
-        <TaskThreadRunCounts
-          environmentId={environmentId}
-          threadId={bot.threadId}
-          fallback={null}
-        />
-      </span>
       <span className="hidden items-center group-focus-visible/sidebar-row:flex group-has-[:focus-visible]/sidebar-row:flex group-any-hover/sidebar-row:flex">
         <Tooltip>
           <TooltipTrigger
@@ -303,6 +296,14 @@ function BotRow({
           </TooltipTrigger>
           <TooltipPopup side="top">Bot settings</TooltipPopup>
         </Tooltip>
+      </span>
+      {/* Last, so hovering the row does not move the counts under the pointer. */}
+      <span className="flex shrink-0 items-center text-xs">
+        <TaskThreadRunCounts
+          environmentId={environmentId}
+          threadId={bot.threadId}
+          fallback={null}
+        />
       </span>
     </SidebarMenuButton>
   );
