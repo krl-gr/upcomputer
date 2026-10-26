@@ -899,7 +899,7 @@ export function resolveKnownPosixCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<
   return home ? [`${home}/.local/bin`, `${home}/.opencode/bin`, `${home}/.grok/bin`] : [];
 }
 
-export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {
+function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArray<string> {
   const appData = env.APPDATA?.trim();
   const localAppData = env.LOCALAPPDATA?.trim();
   const userProfile = env.USERPROFILE?.trim();

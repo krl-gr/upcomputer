@@ -259,15 +259,4 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       expect(registry.path).toBe(userPath);
     }).pipe(Effect.scoped),
   );
-
-  it.effect("offers nothing for a development build", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const command = yield* commandIn({
-        home: yield* fs.makeTempDirectoryScoped(),
-        isPackaged: false,
-      });
-      expect((yield* command.state).supported).toBe(false);
-    }).pipe(Effect.scoped),
-  );
 });

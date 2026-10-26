@@ -267,7 +267,7 @@ function finalizeRunProcess<R>(
   );
 }
 
-export const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
+const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
 
 /** Reads as the tool not being installed, which is how callers already degrade. */
 export const missingMacDeveloperTools = (command: string) =>

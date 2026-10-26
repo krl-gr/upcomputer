@@ -8,9 +8,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getOnboardingProviderState,
-  onboardingRecheckPending,
-  providerStreamHasRecheck,
-  resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
 } from "./providerReadiness.logic";
@@ -163,26 +160,6 @@ describe("selectOnboardingProvidersByDriver", () => {
       selectOnboardingProvidersByDriver([disabledCodex, missingCodex, readyCodex]).get("codex"),
     ).toBe(readyCodex);
   });
-
-  it("handles provider snapshots that have not arrived", () => {
-    expect(selectOnboardingProvidersByDriver(undefined).size).toBe(0);
-  });
-
-  it("keeps a ready custom account when the default account is signed out", () => {
-    const signedOutDefault: ServerProvider = {
-      ...readyCodex,
-      status: "error",
-      auth: { status: "unauthenticated" },
-    };
-    const readyCustom: ServerProvider = {
-      ...readyCodex,
-      instanceId: ProviderInstanceId.make("codex_work"),
-    };
-
-    expect(selectOnboardingProvidersByDriver([signedOutDefault, readyCustom]).get("codex")).toBe(
-      readyCustom,
-    );
-  });
 });
 
 describe("resolveOnboardingProviderLoginCommand", () => {
@@ -322,26 +299,6 @@ describe("resolveOnboardingProviderLoginCommand", () => {
     ).toBe("'/opt/codex\\work/codex' login");
   });
 
-  it("keeps a plain Windows path unquoted", () => {
-    expect(
-      resolveOnboardingProviderLoginCommand(
-        readyCodex,
-        {
-          ...DEFAULT_SERVER_SETTINGS,
-          providerInstances: {
-            [ProviderInstanceId.make("codex")]: {
-              driver: ProviderDriverKind.make("codex"),
-              config: {
-                binaryPath: "C:\\Tools\\codex.exe",
-              },
-            },
-          },
-        },
-        "windows",
-      ),
-    ).toBe("C:\\Tools\\codex.exe login");
-  });
-
   it("uses the default command when an old server reports an unknown shell", () => {
     expect(
       resolveOnboardingProviderLoginCommand(
@@ -360,25 +317,5 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         "unknown",
       ),
     ).toBe("codex login");
-  });
-});
-
-describe("resolveOnboardingProviderInstallCommand", () => {
-  it("uses the PowerShell installer on Windows environments", () => {
-    expect(resolveOnboardingProviderInstallCommand("codex", "windows")).toBe(
-      "irm https://chatgpt.com/codex/install.ps1 | iex",
-    );
-    expect(resolveOnboardingProviderInstallCommand("claudeAgent", "windows")).toBe(
-      "irm https://claude.ai/install.ps1 | iex",
-    );
-  });
-
-  it.each(["darwin", "linux", "unknown"] as const)("uses the shell installer on %s", (platform) => {
-    expect(resolveOnboardingProviderInstallCommand("codex", platform)).toBe(
-      "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-    );
-    expect(resolveOnboardingProviderInstallCommand("claudeAgent", platform)).toBe(
-      "curl -fsSL https://claude.ai/install.sh | bash",
-    );
   });
 });

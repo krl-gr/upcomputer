@@ -26,87 +26,6 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { normalizeSearchText } from "../lib/utils";
 import { isProductFeatureShown } from "../product/productFlags";
 import { isLatestRunSettled } from "../session-logic";
-import { resolveServerBackedAppStageLabel } from "../branding.logic";
-import {
-  isThreadInProjectScope,
-  type LinkedProjectScopeThread,
-} from "../linkedProjects/projectScope";
-
-/**
- * What the sidebar's lists may show while startup data loads. On UpComputer's
- * surface an empty list is a claim ("No threads yet"), so it needs every
- * environment's live data; past the first-load deadline an environment that
- * has not sent it gets a waiting notice instead. The Projects rows wait until
- * the scratch project can be told apart (cached shells and server configs are
- * enough), so they never change or move the Threads header. The gates never
- * turn false again. Upstream shows its lists as they load.
- */
-export function resolveSidebarListVisibility(input: {
-  readonly surface: "upstream" | "upcomputer";
-  readonly workspaceKnown: boolean;
-  readonly workspaceSettled: boolean;
-  readonly workspaceDelivered: boolean;
-}): {
-  readonly projectRowsShown: boolean;
-  readonly emptyState: "hidden" | "empty" | "waiting";
-} {
-  if (input.surface === "upstream") return { projectRowsShown: true, emptyState: "empty" };
-  return {
-    projectRowsShown: input.workspaceKnown,
-    emptyState: input.workspaceDelivered ? "empty" : input.workspaceSettled ? "waiting" : "hidden",
-  };
-}
-
-/** UpComputer: what to say instead of an empty claim while environments have not sent data. */
-export function describeWorkspaceWaiting(
-  waitingOn: ReadonlyArray<{
-    readonly label: string;
-    readonly isPrimary: boolean;
-    readonly unreachable: boolean;
-  }>,
-): { readonly text: string; readonly unreachable: boolean } {
-  const name = (environment: (typeof waitingOn)[number]) =>
-    environment.isPrimary ? "this device" : environment.label;
-  const unreachable = waitingOn.filter((environment) => environment.unreachable);
-  const [firstUnreachable] = unreachable;
-  if (firstUnreachable !== undefined) {
-    return {
-      text:
-        unreachable.length === 1
-          ? `Can’t reach ${name(firstUnreachable)} right now.`
-          : `Can’t reach ${unreachable.length} environments right now.`,
-      unreachable: true,
-    };
-  }
-  const [first] = waitingOn;
-  return {
-    text:
-      first === undefined
-        ? "Connecting…"
-        : waitingOn.length === 1
-          ? `Connecting to ${name(first)}…`
-          : `Connecting to ${waitingOn.length} environments…`,
-    unreachable: false,
-  };
-}
-
-/**
- * UpComputer: thread rows of an environment appear once its live shell
- * settled, as a cached list can be stale or partial. Each environment counts
- * on its own, so a slow or reconnecting one never hides another's rows.
- */
-export function filterSidebarThreadsBySettledEnvironment<
-  T extends { readonly environmentId: EnvironmentId },
->(
-  threads: readonly T[],
-  surface: "upstream" | "upcomputer",
-  settledEnvironmentIds: ReadonlySet<EnvironmentId>,
-): readonly T[] {
-  if (surface === "upstream") return threads;
-  return threads.every((thread) => settledEnvironmentIds.has(thread.environmentId))
-    ? threads
-    : threads.filter((thread) => settledEnvironmentIds.has(thread.environmentId));
-}
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -125,7 +44,7 @@ export function shouldNavigateAfterThreadPark(input: {
 }
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
-export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
+const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 
 export function resolveSidebarRowAccessibility(input: {
   readonly title: string;
@@ -594,7 +513,7 @@ export function buildMultiSelectThreadContextMenuItems(input: {
   ];
 }
 
-export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
+function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
   return thread.lineage.relationshipToParent === "subagent";
 }
 
@@ -633,17 +552,6 @@ export function filterSidebarV2VisibleThreads<
       thread.sidebarHidden !== true &&
       isThreadInProjectScope(thread, scopedProjectKeys, projectLinks),
   );
-}
-
-export function getSidebarForkParentThreadId(
-  thread: Pick<SidebarThreadSummary, "forkedFrom" | "lineage">,
-) {
-  if (thread.lineage.relationshipToParent !== "fork") {
-    return null;
-  }
-  return thread.forkedFrom?.type === "run"
-    ? thread.forkedFrom.threadId
-    : thread.lineage.parentThreadId;
 }
 
 export function buildBulkTitleRegenerationContextMenuItem(input: {
@@ -717,14 +625,7 @@ export interface ThreadJumpHintVisibilityController {
   dispose: () => void;
 }
 
-export function resolveSidebarStageBadgeLabel(input: {
-  primaryServerVersion: string | null | undefined;
-  fallbackStageLabel: string;
-}): string {
-  return resolveServerBackedAppStageLabel(input);
-}
-
-export function createThreadJumpHintVisibilityController(input: {
+function createThreadJumpHintVisibilityController(input: {
   delayMs: number;
   onVisibilityChange: (visible: boolean) => void;
   setTimeoutFn?: typeof globalThis.setTimeout;
@@ -1054,10 +955,6 @@ export function resolveSidebarV2TopStatus(input: {
   return input.isUnread ? "done" : null;
 }
 
-export function shouldShowSidebarV2Duration(status: SidebarThreadStatus): boolean {
-  return status === "working";
-}
-
 export function firstValidTimestampMs(
   ...candidates: ReadonlyArray<string | null | undefined>
 ): number {
@@ -1312,7 +1209,7 @@ export function getFallbackThreadIdAfterDelete<
     )[0]?.id ?? null
   );
 }
-export function getProjectSortTimestamp(
+function getProjectSortTimestamp(
   project: SidebarProject,
   projectThreads: readonly ThreadSortInput[],
   sortOrder: Exclude<SidebarProjectSortOrder, "manual">,

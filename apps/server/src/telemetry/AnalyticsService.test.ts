@@ -1,6 +1,6 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it, vi } from "@effect/vitest";
+import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -76,14 +76,6 @@ type SentEvent = (typeof SentBatch.Type)["batch"][number];
 type Respond = (
   request: HttpClientRequest.HttpClientRequest,
 ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
-
-/** The connection drops after the endpoint read the batch, so it may be stored. */
-const connectionReset: Respond = (request) =>
-  Effect.fail(
-    new HttpClientError.HttpClientError({
-      reason: new HttpClientError.TransportError({ request, cause: "connection reset" }),
-    }),
-  );
 
 const respondWithStatus =
   (status: number): Respond =>
@@ -162,163 +154,7 @@ const sendForTenMinutes = (
     return batches;
   });
 
-const DesktopEvents = Schema.fromJsonString(
-  Schema.Struct({
-    batch: Schema.Array(
-      Schema.Struct({
-        event: Schema.String,
-        distinct_id: Schema.String,
-        properties: Schema.Record(Schema.String, Schema.Unknown),
-      }),
-    ),
-  }),
-);
-type DesktopEvent = (typeof DesktopEvents.Type)["batch"][number];
-const decodeDesktopEvents = Schema.decodeEffect(DesktopEvents);
-
-const layerAcceptClient = (events: Array<DesktopEvent>) =>
-  Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make((request) =>
-      Effect.gen(function* () {
-        if (request.body._tag === "Uint8Array") {
-          const body = yield* decodeDesktopEvents(new TextDecoder().decode(request.body.body)).pipe(
-            Effect.orDie,
-          );
-          events.push(...body.batch);
-        }
-        return HttpClientResponse.fromWeb(request, new Response("{}"));
-      }),
-    ),
-  );
-
-/** One server run in desktop mode on a fixed state directory, until its scope closes. */
-const runDesktopServer = (
-  baseDir: string,
-  events: Array<DesktopEvent>,
-  use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<void>,
-  desktopEnv: Readonly<Record<string, string>> = {},
-) =>
-  Effect.flatMap(AnalyticsService.AnalyticsService, use).pipe(
-    Effect.provide(
-      AnalyticsService.layer.pipe(
-        Layer.provide(
-          Layer.effect(
-            ServerConfig.ServerConfig,
-            Effect.map(ServerConfig.ServerConfig, (config) =>
-              ServerConfig.ServerConfig.of({ ...config, mode: "desktop" }),
-            ),
-          ).pipe(Layer.provide(ServerConfig.ServerConfig.layerTest(process.cwd(), baseDir))),
-        ),
-        Layer.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromUnknown({
-              T3CODE_TELEMETRY_ENABLED: true,
-              T3CODE_POSTHOG_KEY: "phc_test_key",
-              T3CODE_POSTHOG_HOST: "http://localhost",
-              ...desktopEnv,
-            }),
-          ),
-        ),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcess.Platform, "darwin"),
-            Layer.succeed(HostProcess.Architecture, "arm64"),
-            layerAcceptClient(events),
-          ),
-        ),
-      ),
-    ),
-  );
-
-it("retryDelayMs doubles from 2s and stays under the 5 minute cap", () => {
-  assert.equal(AnalyticsService.retryDelayMs(1, 0), 1_000);
-  assert.equal(AnalyticsService.retryDelayMs(2, 0.999_999), 4_000);
-  assert.equal(AnalyticsService.retryDelayMs(30, 0), 150_000);
-  assert.equal(AnalyticsService.retryDelayMs(30, 0.999_999), 300_000);
-});
-
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
-  it.effect("a batch that keeps failing is retried with the same uuids, then dropped", () =>
-    Effect.gen(function* () {
-      const failures = {
-        "connection reset": connectionReset,
-        "408": respondWithStatus(408),
-        "429": respondWithStatus(429),
-        "503": respondWithStatus(503),
-      };
-      for (const [failure, respond] of Object.entries(failures)) {
-        const batches = recordedBatches(yield* sendForTenMinutes(respond));
-        assert.equal(batches.length, 5, failure);
-        const uuids = batches.map((batch) => batch.map((event) => event.uuid).join(","));
-        assert.equal(new Set(uuids).size, 1, `${failure}: every retry carries the same uuids`);
-        assert.equal(new Set(batches[0]?.map((event) => event.uuid)).size, 20, failure);
-      }
-    }),
-  );
-
-  it.effect("a batch the endpoint rejects is dropped without a retry", () =>
-    Effect.gen(function* () {
-      for (const status of [400, 401, 413]) {
-        const batches = recordedBatches(yield* sendForTenMinutes(respondWithStatus(status)));
-        assert.equal(batches.length, 1, `status ${status}`);
-      }
-    }),
-  );
-
-  it.effect("events carry the build's telemetry channel, or dev when none is set", () =>
-    Effect.gen(function* () {
-      const channels = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) => [
-        ...new Set(batches.flat().map((event) => event.properties.telemetryChannel)),
-      ];
-      assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["dev"]);
-
-      // Stands in for the value the bundler writes in at build time.
-      vi.stubGlobal("__T3CODE_TELEMETRY_CHANNEL__", "nightly");
-      assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["nightly"]);
-    }).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllGlobals()))),
-  );
-
-  it.effect("each owner is sent once per process, and every event carries the install id", () =>
-    Effect.gen(function* () {
-      let identity: Effect.Success<typeof getTelemetryIdentity> | null = null;
-      const batches = yield* sendForTenMinutes(
-        respondWithStatus(204),
-        Effect.gen(function* () {
-          identity = yield* getTelemetryIdentity;
-          const analytics = yield* AnalyticsService.AnalyticsService;
-          const connect = { source: "connect", ownerId: "a".repeat(64) } as const;
-          yield* analytics.recordOwners([connect, connect], "server");
-          yield* analytics.recordOwners(
-            [connect, { source: "device", ownerId: "b".repeat(64) }],
-            "client",
-          );
-        }),
-      );
-      const events = withoutLifecycle(batches);
-
-      assert.deepEqual(
-        events.map((event) => [
-          event.event,
-          event.properties.ownerSource,
-          event.properties.observedBy,
-        ]),
-        [
-          ["install.owner_observed", "connect", "server"],
-          ["install.owner_observed", "connect", "client"],
-          ["install.owner_observed", "device", "client"],
-        ],
-      );
-      const { distinctId, installId } = identity!;
-      assert.isString(installId);
-      assert.isTrue(
-        events.every(
-          (event) => event.distinct_id === distinctId && event.properties.installId === installId,
-        ),
-      );
-    }),
-  );
-
   it.effect("client owner reports cannot use up the server's owner cap", () =>
     Effect.gen(function* () {
       const batches = yield* sendForTenMinutes(

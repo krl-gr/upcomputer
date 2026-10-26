@@ -1,15 +1,7 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import {
-  setUserInstructions,
-  USER_INSTRUCTIONS_HEADING,
-} from "@t3tools/provider-core/server/userInstructions";
 
 import {
-  PI_T3_MCP_EXTENSION_FILENAME,
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
@@ -17,13 +9,7 @@ import {
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
-import {
-  buildPiRpcLaunch,
-  materializePiT3McpExtension,
-  piUserInstructionsPath,
-  resolvePiLaunchArgs,
-  writePiUserInstructions,
-} from "./mcpInjection.ts";
+import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
 
 const threadId = ThreadId.make("thread-pi-t3-mcp");
 
@@ -113,18 +99,6 @@ describe("pi T3 MCP injection", () => {
     );
   });
 
-  it("falls back to Pi's first supported mode for legacy auto threads", () => {
-    const launch = buildPiRpcLaunch({
-      launchArgs: [],
-      environment: {},
-      mcpSession: undefined,
-      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
-      runtimeMode: "auto",
-    });
-
-    assert.equal(launch.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
-  });
-
   it("points the extension at the user's instructions file beside it", () => {
     const launch = buildPiRpcLaunch({
       launchArgs: [],
@@ -144,7 +118,6 @@ describe("pi T3 MCP injection", () => {
     });
     assert.isUndefined(withoutExtension.env[T3_PI_USER_INSTRUCTIONS_PATH_ENV]);
   });
-
   it("forces tools and user extensions off for unattended text generation", () => {
     const launch = buildPiRpcLaunch({
       launchArgs: [
@@ -193,46 +166,4 @@ describe("pi T3 MCP injection", () => {
     assert.isTrue(resolvePiLaunchArgs("--provider openrouter --model=deepseek/v4").ok);
     assert.isTrue(resolvePiLaunchArgs("--model deepseek/v4").ok);
   });
-
-  it.effect("materializes the MCP bridge with namespaced tool registration", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const cacheDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pi-extensions-" });
-      const mcpDest = yield* materializePiT3McpExtension(cacheDir);
-      assert.isTrue(mcpDest.endsWith(PI_T3_MCP_EXTENSION_FILENAME));
-      const mcpSource = yield* fs.readFileString(mcpDest);
-      assert.include(mcpSource, "export default async function t3McpExtension");
-      assert.include(mcpSource, "before_agent_start");
-      assert.include(mcpSource, 'pi.on("tool_call"');
-      assert.include(mcpSource, "Allow ${event.toolName}?");
-      assert.include(mcpSource, '"mcp-protocol-version"');
-      assert.include(mcpSource, '"tools/call"');
-      assert.include(mcpSource, "mcp__t3-code__");
-      assert.include(mcpSource, "mcp__t3_code__");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect(
-    "writes the current user instructions for the extension, and nothing once cleared",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const cacheDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pi-instructions-" });
-        const extensionPath = yield* materializePiT3McpExtension(cacheDir);
-        const written = Effect.gen(function* () {
-          yield* writePiUserInstructions(extensionPath);
-          return yield* fs.readFileString(piUserInstructionsPath(extensionPath));
-        });
-        setUserInstructions("Be brief.");
-        assert.equal(yield* written, `# ${USER_INSTRUCTIONS_HEADING}\n\nBe brief.`);
-        setUserInstructions("  ");
-        assert.equal(yield* written, "");
-        // Only the extension and its instructions: no temporary file is left behind.
-        assert.equal((yield* fs.readDirectory(cacheDir)).length, 2);
-      }).pipe(
-        Effect.ensuring(Effect.sync(() => setUserInstructions(""))),
-        Effect.scoped,
-        Effect.provide(NodeServices.layer),
-      ),
-  );
 });

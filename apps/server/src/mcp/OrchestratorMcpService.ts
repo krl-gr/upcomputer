@@ -377,7 +377,7 @@ function taskStatusForRun(
   }
 }
 
-export function delegatedTaskRun(
+function delegatedTaskRun(
   childProjection: Pick<OrchestrationV2ThreadProjection, "runs" | "contextTransfers">,
   task: OrchestrationV2Subagent,
 ): OrchestrationV2Run | undefined {
@@ -397,7 +397,7 @@ export function delegatedTaskRun(
     : childProjection.runs.find((run) => run.id === spawnTransfer.targetRunId);
 }
 
-export function hasPendingChildRuns(
+function hasPendingChildRuns(
   childProjection: Pick<OrchestrationV2ThreadProjection, "runs">,
   delegatedRun: OrchestrationV2Run | undefined,
 ): boolean {

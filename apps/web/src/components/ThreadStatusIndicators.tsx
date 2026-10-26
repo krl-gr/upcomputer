@@ -169,7 +169,7 @@ export interface ThreadPullRequestBadgePresentation {
   readonly text: string | number;
 }
 
-export function resolveThreadPullRequestBadgePresentation({
+function resolveThreadPullRequestBadgePresentation({
   badge,
   number,
   url,
@@ -720,7 +720,7 @@ export function terminalStatusFromRunningIds(
   };
 }
 
-export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
+function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
   if (event.animationName !== "status-pulse") return;
 
   for (const animation of event.currentTarget.getAnimations()) {
