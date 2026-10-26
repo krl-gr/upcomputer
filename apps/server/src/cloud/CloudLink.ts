@@ -96,6 +96,7 @@ import {
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
+import { observeRelayResponseDate, observeRelayTokenIssuedAt, RelayClock } from "./RelayClock.ts";
 import {
   filterRelayResponse,
   relayRequestError,
@@ -527,6 +528,7 @@ const make = Effect.gen(function* () {
   const httpServer = yield* HttpServer.HttpServer;
   const awarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const crypto = yield* Crypto.Crypto;
+  const relayClock = yield* RelayClock;
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -591,7 +593,10 @@ const make = Effect.gen(function* () {
     ) {
       return yield* new CloudLinkOriginInvalidError({ origin: "endpoint" });
     }
-    const now = yield* DateTime.now;
+    // The challenge was issued by the relay moments ago, so its iat is the
+    // freshest relay time there is, even on a first link.
+    yield* observeRelayTokenIssuedAt(request.challenge);
+    const now = yield* relayClock.now;
     const expiresAt = DateTime.add(now, { minutes: 5 });
     const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
     const descriptor = yield* environment.getDescriptor;
@@ -829,6 +834,7 @@ const make = Effect.gen(function* () {
       HttpClientRequest.bearerToken(input.token),
       HttpClientRequest.bodyJson(input.payload),
       Effect.flatMap(httpClient.execute),
+      Effect.tap(observeRelayResponseDate),
       Effect.flatMap(filterRelayResponse),
       Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
       Effect.timeout(input.timeout ?? "10 seconds"),
@@ -932,7 +938,7 @@ const make = Effect.gen(function* () {
   )(function* (input: ManagedTunnelRecoveryProofInput) {
     const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
     const configuredIssuer = yield* secrets.get(RELAY_ISSUER_SECRET);
-    const now = yield* DateTime.now;
+    const now = yield* relayClock.now;
     const issuedAt = Math.floor(now.epochMilliseconds / 1_000);
     const claims = {
       iss: `t3-env:${input.environmentId}`,
@@ -966,6 +972,30 @@ const make = Effect.gen(function* () {
       ),
     );
   });
+
+  /**
+   * The relay answers 401 for a recovery proof signed in the wrong time, and
+   * that response's Date has just corrected the relay clock. One retry with a
+   * fresh proof keeps a wrong clock from reading as a revoked link.
+   */
+  const withRecoveryProof = <A>(
+    proofInput: ManagedTunnelRecoveryProofInput,
+    request: (proof: string) => Effect.Effect<A, RelayRequestError>,
+  ) =>
+    Effect.gen(function* () {
+      const offsetBefore = yield* relayClock.offsetMillis;
+      const attempt = makeManagedTunnelRecoveryProof(proofInput).pipe(Effect.flatMap(request));
+      return yield* attempt.pipe(
+        Effect.catchTags({
+          RelayRequestError: (error) =>
+            error.rejection === "unauthorized"
+              ? Effect.flatMap(relayClock.offsetMillis, (offsetAfter) =>
+                  offsetAfter === offsetBefore ? Effect.fail(error) : attempt,
+                )
+              : Effect.fail(error),
+        }),
+      );
+    });
 
   /**
    * Nothing stored is removed: the relay also answers 401 for a skewed clock,
@@ -1023,26 +1053,30 @@ const make = Effect.gen(function* () {
     const environmentId = yield* environment.getEnvironmentId;
     const relayUrlValue = bytesToString(relayUrl.value);
     const cloudUserIdValue = bytesToString(cloudUserId.value);
-    const proof = yield* makeManagedTunnelRecoveryProof({
-      action: "register",
-      environmentId,
-      cloudUserId: cloudUserIdValue,
-      relayUrl: relayUrlValue,
-      tunnelId: config.tunnelId,
-      origin,
-    });
+    const tunnelId = config.tunnelId;
     const credential = bytesToString(environmentCredential.value);
-    const registered = yield* relayClientRequest({
-      url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel/recovery`,
-      token: credential,
-      payload: {
+    const registered = yield* withRecoveryProof(
+      {
+        action: "register",
+        environmentId,
         cloudUserId: cloudUserIdValue,
-        tunnelId: config.tunnelId,
+        relayUrl: relayUrlValue,
+        tunnelId,
         origin,
-        proof,
       },
-      schema: RelayManagedEndpointRecoveryRegistrationResponse,
-    }).pipe(
+      (proof) =>
+        relayClientRequest({
+          url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel/recovery`,
+          token: credential,
+          payload: {
+            cloudUserId: cloudUserIdValue,
+            tunnelId,
+            origin,
+            proof,
+          },
+          schema: RelayManagedEndpointRecoveryRegistrationResponse,
+        }),
+    ).pipe(
       Effect.catchTags({
         RelayRequestError: (error) =>
           error.rejection === "unauthorized"
@@ -1113,26 +1147,29 @@ const make = Effect.gen(function* () {
     const relayUrlValue = bytesToString(relayUrl.value);
     const cloudUserIdValue = bytesToString(cloudUserId.value);
     const origin = parsedOrigin.origin;
-    const proof = yield* makeManagedTunnelRecoveryProof({
-      action: "recover",
-      environmentId,
-      cloudUserId: cloudUserIdValue,
-      relayUrl: relayUrlValue,
-      origin,
-    });
     const credential = bytesToString(environmentCredential.value);
-    const recovered = yield* relayClientRequest({
-      url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel`,
-      token: credential,
-      payload: {
+    const recovered = yield* withRecoveryProof(
+      {
+        action: "recover",
+        environmentId,
         cloudUserId: cloudUserIdValue,
+        relayUrl: relayUrlValue,
         origin,
-        proof,
       },
-      schema: RelayManagedEndpointRecoveryResponse,
-      timeout: MANAGED_ENDPOINT_PROVISION_REQUEST_TIMEOUT,
-    }).pipe(
-      Effect.tapError((error) =>
+      (proof) =>
+        relayClientRequest({
+          url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel`,
+          token: credential,
+          payload: {
+            cloudUserId: cloudUserIdValue,
+            origin,
+            proof,
+          },
+          schema: RelayManagedEndpointRecoveryResponse,
+          timeout: MANAGED_ENDPOINT_PROVISION_REQUEST_TIMEOUT,
+        }),
+    ).pipe(
+      Effect.tapErrorTag("RelayRequestError", (error) =>
         error.rejection === "unauthorized" ? markLinkRevoked(credential, error) : Effect.void,
       ),
     );
@@ -1466,7 +1503,7 @@ const make = Effect.gen(function* () {
         );
       const environmentId = yield* environment.getEnvironmentId;
       const linkedCloudUserId = yield* readInstalledCloudUserId;
-      const now = yield* DateTime.now;
+      const now = yield* relayClock.now;
       const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
       const proofOption = yield* verifyRelayJwt({
         publicKey: cloudMintPublicKey,
@@ -1570,7 +1607,7 @@ const make = Effect.gen(function* () {
         );
       const environmentId = yield* environment.getEnvironmentId;
       const linkedCloudUserId = yield* readInstalledCloudUserId;
-      const now = yield* DateTime.now;
+      const now = yield* relayClock.now;
       const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
       const proofOption = yield* verifyRelayJwt({
         publicKey: cloudMintPublicKey,
@@ -1611,13 +1648,16 @@ const make = Effect.gen(function* () {
         label: "UpComputer Connect connect",
         proofKeyThumbprint: proof.clientProofKeyThumbprint,
       });
+      // The credential's own expiry is checked here, in local time; the relay
+      // and the client read this copy in theirs.
+      const relayExpiresAt = yield* relayClock.toRelayTime(issued.expiresAt);
       const responsePayload = {
         iss: `t3-env:${environmentId}`,
         aud: normalizeRelayIssuer(relayIssuer),
         sub: environmentId,
         jti: yield* crypto.randomUUIDv4(),
         iat: nowSeconds,
-        exp: Math.floor(issued.expiresAt.epochMilliseconds / 1_000),
+        exp: Math.floor(relayExpiresAt.epochMilliseconds / 1_000),
         environmentId,
         clientProofKeyThumbprint: proof.clientProofKeyThumbprint,
         requestNonce: proof.nonce,
@@ -1637,7 +1677,7 @@ const make = Effect.gen(function* () {
       );
       return {
         credential: issued.credential,
-        expiresAt: DateTime.formatIso(issued.expiresAt),
+        expiresAt: DateTime.formatIso(relayExpiresAt),
         proof: responseProof,
       } satisfies RelayEnvironmentMintResponse;
     },

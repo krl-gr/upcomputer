@@ -15,7 +15,11 @@ import {
   type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
-import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay";
+import {
+  environmentLinkFailureDetail,
+  ManagedRelay,
+  relayRequestFailureDetail,
+} from "@t3tools/client-runtime/relay";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
@@ -87,11 +91,18 @@ function withDevCause(message: string, cause: unknown): string {
   return detail ? `${message} (${detail})` : message;
 }
 
-function decodedRelayClientError(message: string) {
+function decodedRelayClientError(
+  message: string,
+  link?: { readonly challenge: string; readonly proof: string },
+) {
   return (cause: ManagedRelay.ManagedRelayClientError) => {
     const failed = cause._tag === "ManagedRelayRequestFailedError" ? cause : undefined;
     const traceId = failed?.traceId;
-    const detail = failed ? relayRequestFailureDetail(failed) : null;
+    const detail = failed
+      ? link
+        ? environmentLinkFailureDetail(failed, link)
+        : relayRequestFailureDetail(failed)
+      : null;
     return new CloudEnvironmentLinkError({
       message: detail ? `${message}: ${detail}` : message,
       cause,
@@ -212,7 +223,12 @@ export function linkEnvironmentToCloudWithPreference(
         },
       })
       .pipe(
-        Effect.mapError(decodedRelayClientError(`${relayUrl}/v1/client/environment-links failed`)),
+        Effect.mapError(
+          decodedRelayClientError(`${relayUrl}/v1/client/environment-links failed`, {
+            challenge: challenge.challenge,
+            proof,
+          }),
+        ),
       );
     yield* ensureLinkedEnvironmentMatches({
       expectedEnvironmentId: input.connection.environmentId,

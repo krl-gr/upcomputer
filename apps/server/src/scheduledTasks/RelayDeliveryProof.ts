@@ -11,7 +11,6 @@ import {
   RELAY_HOOK_DELIVERY_TYP,
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,6 +19,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_MINT_PUBLIC_KEY, RELAY_ISSUER_SECRET, RELAY_URL_SECRET } from "../cloud/config.ts";
+import { RelayClock } from "../cloud/RelayClock.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 /** Covers the relay's 24-hour hold plus a margin. */
@@ -66,7 +66,7 @@ const make = Effect.gen(function* () {
         typ: RELAY_HOOK_DELIVERY_TYP,
         issuer: normalizeRelayIssuer(relayIssuer.value),
         audience: `t3-env:${environmentId}`,
-        nowEpochSeconds: Math.floor((yield* Clock.currentTimeMillis) / 1_000),
+        nowEpochSeconds: Math.floor((yield* (yield* RelayClock).now).epochMilliseconds / 1_000),
         maxTokenAge: MAX_PROOF_AGE_SECONDS,
       }).pipe(Effect.map(decodePayload), Effect.orElseSucceed(Option.none));
       // The proof must name exactly this delivery, so it cannot be lifted onto another one.
