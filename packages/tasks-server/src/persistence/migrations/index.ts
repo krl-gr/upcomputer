@@ -1,6 +1,7 @@
 import { UpdateDefaultFirstMessageEventsPromptsMigration } from "./032_UpdateDefaultFirstMessageEventsPrompts.ts";
 import { BotAppearanceMigration } from "./034_BotAppearance.ts";
 import { BotMemoryProposalsMigration } from "./035_BotMemoryProposals.ts";
+import { BotMemoryOwnerMigration } from "./036_BotMemoryOwner.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -132,5 +133,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 33, name: "Bots", run: BotsMigration },
     { version: 34, name: "BotAppearance", run: BotAppearanceMigration },
     { version: 35, name: "BotMemoryProposals", run: BotMemoryProposalsMigration },
+    { version: 36, name: "BotMemoryOwner", run: BotMemoryOwnerMigration },
   ],
 } as const;

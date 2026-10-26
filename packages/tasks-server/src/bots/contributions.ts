@@ -55,7 +55,7 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
         [M.remember]: (input) =>
           Effect.flatMap(BotService, (bots) =>
             bots
-              .remember(input)
+              .remember(input, "user")
               .pipe(
                 Effect.flatMap((entry) =>
                   entry === null
@@ -67,7 +67,7 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               ),
           ),
         [M.forget]: (input) =>
-          Effect.flatMap(BotService, (bots) => bots.forget(input.agentId, input.id)),
+          Effect.flatMap(BotService, (bots) => bots.forget(input.agentId, input.id, "user")),
         [M.proposals]: (input) =>
           Effect.flatMap(BotService, (bots) => bots.proposals(input.agentId)),
         [M.acceptProposal]: (input) =>

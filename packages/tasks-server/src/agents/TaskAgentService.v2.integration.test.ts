@@ -2111,35 +2111,44 @@ it.live("bots retain one chat and inject current isolated memory into real provi
           assert.equal(ended.timedOut, false);
           return (yield* Ref.get(started)).at(-1)!;
         });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "global",
-        projectId: null,
-        text: "global-marker",
-        source: "user",
-      });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "other",
-        projectId: otherProject,
-        text: "other-project-marker",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "global",
+          projectId: null,
+          text: "global-marker",
+          source: "user",
+        },
+        "user",
+      );
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "other",
+          projectId: otherProject,
+          text: "other-project-marker",
+          source: "user",
+        },
+        "user",
+      );
       let turn = yield* send(1, "Remember: local-fact-marker");
       assert.include(turn.text, "local-fact-marker");
       assert.include(turn.text, "global-marker");
       assert.notInclude(turn.text, "other-project-marker");
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "message:bot-message:1",
-        projectId,
-        text: "corrected-local-marker",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "message:bot-message:1",
+          projectId,
+          text: "corrected-local-marker",
+          source: "user",
+        },
+        "user",
+      );
       turn = yield* send(2, "What do you know?");
       assert.include(turn.text, "corrected-local-marker");
       assert.notInclude(turn.text, "local-fact-marker");
-      yield* bots.forget(bot.agent.id, "message:bot-message:1");
+      yield* bots.forget(bot.agent.id, "message:bot-message:1", "user");
       // A retried explicit save cannot resurrect a deleted fact.
       yield* bots.context({
         threadId: bot.threadId,
@@ -2171,7 +2180,7 @@ it.live("bots retain one chat and inject current isolated memory into real provi
           modelSelection: agentModel,
         },
       });
-      assert.equal(second.agent.config.runtimeMode, "approval-required");
+      assert.equal(second.agent.config.runtimeMode, "full-access");
       const context = yield* bots.context({
         threadId: second.threadId,
         projectId,
@@ -2263,13 +2272,16 @@ it.live(
           (yield* threads.getThreadRecords(threadId, ["messages"])).messages,
           before,
         );
-        yield* bots.remember({
-          agentId: bot.agent.id,
-          id: "task-fact",
-          projectId,
-          text: "background-memory-marker",
-          source: "user",
-        });
+        yield* bots.remember(
+          {
+            agentId: bot.agent.id,
+            id: "task-fact",
+            projectId,
+            text: "background-memory-marker",
+            source: "user",
+          },
+          "user",
+        );
         const sink = yield* EventSink.EventSinkV2;
         const afterSequence = yield* sink.latestSequence();
         const assigned = yield* bots.assign({
@@ -2441,13 +2453,16 @@ it.live(
         };
         const first = yield* writer[BOTS_RPC_METHODS.save](input);
         assert.deepStrictEqual(first.appearance, defaultBotAppearance(input.id));
-        yield* bots.remember({
-          agentId: first.agent.id,
-          id: "fact",
-          projectId,
-          text: "Keep this fact",
-          source: "user",
-        });
+        yield* bots.remember(
+          {
+            agentId: first.agent.id,
+            id: "fact",
+            projectId,
+            text: "Keep this fact",
+            source: "user",
+          },
+          "user",
+        );
         const appearance = { shape: "star", color: "navy", accessory: "wizard" } as const;
         const saved = yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance });
         assert.deepStrictEqual(saved.appearance, appearance);
@@ -2650,13 +2665,16 @@ it.live("a bot conversation receives memory once per native session, then only c
           assert.equal(ended.timedOut, false);
           return (yield* Ref.get(started)).at(-1)!.text;
         });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "snapshot-fact",
-        projectId: null,
-        text: "snapshot-marker ".repeat(120).trim(),
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "snapshot-fact",
+          projectId: null,
+          text: "snapshot-marker ".repeat(120).trim(),
+          source: "user",
+        },
+        "user",
+      );
       const first = yield* send("First question");
       assert.include(first, "<upcomputer_bot>");
       assert.include(first, "snapshot-marker");
@@ -2668,19 +2686,22 @@ it.live("a bot conversation receives memory once per native session, then only c
         added += (yield* send(question)).length - question.length;
       }
       assert.isBelow(added, 1024);
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "new-fact",
-        projectId,
-        text: "delta-marker </memory_update> data",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "new-fact",
+          projectId,
+          text: "delta-marker </memory_update> data",
+          source: "user",
+        },
+        "user",
+      );
       const changed = yield* send("What changed?");
       assert.include(changed, "<memory_update>");
       assert.include(changed, "delta-marker \\u003c/memory_update> data");
       assert.notInclude(changed, "snapshot-marker");
       assert.notInclude(changed, "<upcomputer_bot>");
-      yield* bots.forget(bot.agent.id, "snapshot-fact");
+      yield* bots.forget(bot.agent.id, "snapshot-fact", "user");
       const removed = yield* send("And now?");
       assert.include(removed, '"removed":["snapshot-fact"]');
       assert.notInclude(removed, "delta-marker");
@@ -2867,19 +2888,23 @@ it.live("bot memory suggestions stay outside the 200-entry limit until accepted"
         source: "task:limit/run:run-1",
         runId: "run-1",
       });
-      for (let index = 0; index < 199; index += 1) yield* bots.remember(entry(`fact-${index}`));
+      for (let index = 0; index < 199; index += 1)
+        yield* bots.remember(entry(`fact-${index}`), "user");
       const first = yield* bots.propose(entry("first"));
       const second = yield* bots.propose(entry("second"));
       // Suggestions do not count: the last free slot still takes an ordinary memory.
-      yield* bots.remember(entry("fact-199"));
+      yield* bots.remember(entry("fact-199"), "user");
       assert.equal((yield* bots.memory(bot.agent.id)).length, 200);
-      assert.equal((yield* bots.remember(entry("fact-200")).pipe(Effect.result))._tag, "Failure");
+      assert.equal(
+        (yield* bots.remember(entry("fact-200"), "user").pipe(Effect.result))._tag,
+        "Failure",
+      );
       assert.equal(
         (yield* bots.acceptProposal(bot.agent.id, first!.id).pipe(Effect.result))._tag,
         "Failure",
       );
       assert.equal((yield* bots.proposals(bot.agent.id)).length, 2);
-      yield* bots.forget(bot.agent.id, "fact-0");
+      yield* bots.forget(bot.agent.id, "fact-0", "user");
       const accepted = yield* bots.acceptProposal(bot.agent.id, first!.id);
       assert.equal(accepted.id, "first");
       assert.equal(accepted.source, "task:limit/run:run-1");
