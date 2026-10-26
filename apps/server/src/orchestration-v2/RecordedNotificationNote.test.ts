@@ -124,6 +124,8 @@ it("ignores notifications of runs and other turn items", () => {
     // A wake's notification belongs to its own run, whose prompt is its text.
     notice(3, { runId: RunId.make("run:1") }),
     { ...notice(4), type: "system_notice", message: "Other" } as OrchestrationV2TurnItem,
+    // Memory changes reach the model through its turn context.
+    notice(5, { source: { kind: "memory" } }),
   ];
   assert.deepEqual(pending({ runs: [], items }), ["Notice 2"]);
 });

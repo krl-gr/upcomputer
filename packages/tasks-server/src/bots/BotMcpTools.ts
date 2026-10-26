@@ -16,16 +16,20 @@ import { TaskRepository } from "../persistence/TaskRepository.ts";
 
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000));
 const toolkit = Toolkit.make(
-  Tool.dynamic("bot_memory", {
-    description: "Read this bot's current global and working-project memories.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
+  Tool.make("bot_memory", {
+    description:
+      "Read this bot's global and working-project memories, a bounded page at a time, in the order the turn context selects them. inContext marks entries the context snapshot shows. Pass nextOffset as offset for the next page.",
+    parameters: Schema.Struct({
+      offset: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+    }),
+    success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
   })
     .addDependency(McpInvocationContext)
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
+      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Memories the user wrote (owner "user") cannot be changed; ask the user instead. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
     parameters: Schema.Struct({
       id: text,
       text,
@@ -39,7 +43,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_forget", {
     description:
-      "Remove one of this bot's current memories by id. Unavailable in background task runs.",
+      'Remove one of this bot\'s current memories by id. Memories the user wrote (owner "user") cannot be removed; ask the user instead. Unavailable in background task runs.',
     parameters: Schema.Struct({ id: text }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -117,13 +121,11 @@ const handlers = McpToolAccess.toLayer(
         }),
       );
     return {
-      bot_memory: McpToolAccess.readsAsCaller(() =>
+      bot_memory: McpToolAccess.readsAsCaller((input) =>
         result(
           Effect.gen(function* () {
             const { bot, projectId } = yield* caller(false);
-            return (yield* bots.memory(bot.agent.id)).filter(
-              (entry) => entry.projectId === null || entry.projectId === projectId,
-            );
+            return yield* bots.memoryPage(bot.agent.id, projectId, input.offset ?? 0);
           }),
         ),
       ),
@@ -146,7 +148,7 @@ const handlers = McpToolAccess.toLayer(
               projectId: input.scope === "global" ? null : projectId,
             };
             if (Option.isNone(run))
-              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` });
+              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` }, "bot");
             // Task runs read untrusted pages and repositories, so their memories wait for the user.
             return {
               suggestion: yield* bots.propose({
@@ -175,7 +177,7 @@ const handlers = McpToolAccess.toLayer(
               return yield* new TaskError({
                 message: "This memory is outside the current project.",
               });
-            yield* bots.forget(bot.agent.id, input.id);
+            yield* bots.forget(bot.agent.id, input.id, "bot");
             return { forgotten: input.id };
           }),
         ),

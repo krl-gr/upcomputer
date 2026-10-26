@@ -7,7 +7,15 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, InfoIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BanIcon,
+  InfoIcon,
+  LockIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
@@ -19,7 +27,9 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 import {
+  BOT_MEMORY_CONTEXT_BUDGET,
   BOTS_RPC_METHODS,
+  botMemoryContext,
   TaskAgentId,
   type Bot,
   type BotAppearance,
@@ -55,6 +65,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "../../../../apps/web/src/components/settings/settingsLayout.tsx";
+import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Input } from "../../../../apps/web/src/components/ui/input.tsx";
 import { Textarea } from "../../../../apps/web/src/components/ui/textarea.tsx";
@@ -833,6 +844,11 @@ function MemorySections({
   const meta = (entry: BotMemory) =>
     `${scopeName(entry.projectId)} · ${sourceLabel(entry.source)} · ${formatRelativeTimeLabel(entry.updatedAt)}`;
   const disabled = busy || !canWrite;
+  // The same selection the server makes for the bot's chat, so the marks match its context.
+  const context = botMemoryContext(entries, bot.projectId);
+  const inContext = new Set(context.selected.map((entry) => entry.id));
+  const inScope = new Set(context.entries.map((entry) => entry.id));
+  const ordered = [...context.entries, ...entries.filter((entry) => !inScope.has(entry.id))];
   return (
     <>
       {proposals.length > 0 ? (
@@ -887,7 +903,9 @@ function MemorySections({
         title="Memory"
         titleAction={
           <InfoTip label="About memory">
-            Up to 200 facts. Global facts apply everywhere, project facts only in that project.
+            Up to 200 facts. Global facts apply everywhere, project facts only in that project. The
+            chat's context holds what fits the budget, your facts first, and the bot reads the rest
+            when needed. The bot cannot change or forget facts you wrote.
           </InfoTip>
         }
         headerAction={
@@ -931,11 +949,20 @@ function MemorySections({
             </Button>
           </div>
         )}
-        {entries.map((entry) => (
+        {entries.length > 0 ? (
+          <MemoryBudget
+            used={context.used}
+            shown={context.selected.length}
+            total={context.entries.length}
+          />
+        ) : null}
+        {ordered.map((entry) => (
           <MemoryEntry
             key={`${entry.id}:${entry.updatedAt}`}
             entry={entry}
             meta={meta(entry)}
+            // Entries of other projects reach the bot only in task runs there.
+            inContext={inScope.has(entry.id) ? inContext.has(entry.id) : null}
             disabled={!canWrite}
             onSave={(value) => {
               void mutate(() => client.remember({ ...entry, text: value }));
@@ -960,13 +987,54 @@ function MemorySections({
   );
 }
 
+/** How much of the context budget the chat's memory snapshot uses. */
+function MemoryBudget({
+  used,
+  shown,
+  total,
+}: {
+  readonly used: number;
+  readonly shown: number;
+  readonly total: number;
+}) {
+  return (
+    <div className="grid gap-1.5 px-3 py-2.5 sm:px-4">
+      <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+        <span>
+          {shown === total
+            ? `All ${total} ${total === 1 ? "memory is" : "memories are"} in the chat's context`
+            : `${shown} of ${total} memories are in the chat's context`}
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {used.toLocaleString()} / {BOT_MEMORY_CONTEXT_BUDGET.toLocaleString()} characters
+        </span>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+        role="progressbar"
+        aria-label="Memory in the chat's context"
+        aria-valuemin={0}
+        aria-valuemax={BOT_MEMORY_CONTEXT_BUDGET}
+        aria-valuenow={used}
+      >
+        <div
+          className="h-full rounded-full bg-primary"
+          style={{ width: `${Math.min(100, (used / BOT_MEMORY_CONTEXT_BUDGET) * 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /** One fact as text with its scope, source and age, and its actions at the end. */
 function MemoryRow({
   meta,
+  marks,
   actions,
   children,
 }: {
   readonly meta: string;
+  readonly marks?: ReactNode;
   readonly actions: ReactNode;
   readonly children: ReactNode;
 }) {
@@ -974,7 +1042,10 @@ function MemoryRow({
     <div className="group/memory flex items-start gap-3 px-3 py-2.5 sm:px-4">
       <div className="grid min-w-0 flex-1 gap-0.5">
         {children}
-        <p className="truncate text-xs text-muted-foreground">{meta}</p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {marks}
+          <p className="truncate text-xs text-muted-foreground">{meta}</p>
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">{actions}</div>
     </div>
@@ -1000,12 +1071,15 @@ function handleMemoryKey(
 function MemoryEntry({
   entry,
   meta,
+  inContext,
   disabled,
   onSave,
   onDelete,
 }: {
   readonly entry: BotMemory;
   readonly meta: string;
+  /** Null for entries outside the chat's working project. */
+  readonly inContext: boolean | null;
   readonly disabled: boolean;
   readonly onSave: (text: string) => void;
   readonly onDelete: () => void;
@@ -1027,6 +1101,32 @@ function MemoryEntry({
   return (
     <MemoryRow
       meta={meta}
+      marks={
+        <>
+          {entry.owner === "user" ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    aria-label="Locked: written by you"
+                    className="inline-flex text-muted-foreground"
+                  >
+                    <LockIcon className="size-3" />
+                  </span>
+                }
+              />
+              <TooltipPopup side="top">
+                You wrote this, so the bot cannot change or forget it. You can.
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {inContext === null ? null : (
+            <Badge size="sm" variant={inContext ? "secondary" : "warning"}>
+              {inContext ? "In context" : "Not in context"}
+            </Badge>
+          )}
+        </>
+      }
       actions={
         text === null ? (
           <span className="flex gap-0.5 opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100">

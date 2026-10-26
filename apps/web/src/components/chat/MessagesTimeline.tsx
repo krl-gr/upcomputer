@@ -5268,6 +5268,8 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
         return "zap";
       case "system":
         return "t3-code";
+      case "memory":
+        return "brain";
       default:
         source satisfies never;
         return "zap";

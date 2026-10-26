@@ -1090,6 +1090,9 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
       childThreadId: Schema.optional(ThreadId),
     }),
     Schema.Struct({ kind: Schema.Literal("system") }),
+    // A change to an agent's memory, shown to the user. The model learns memory changes from
+    // its turn context, so these are not repeated to it as notifications.
+    Schema.Struct({ kind: Schema.Literal("memory") }),
   ],
   (kind) => Schema.Struct({ kind }),
   () => ({ kind: "background_task" }),
