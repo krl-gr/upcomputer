@@ -24,6 +24,7 @@ export interface OutdatedServerUpdateTarget {
   readonly fromVersion?: string;
 }
 
+/** @public Used by apps/mobile, which this workspace does not build. */
 export function createOutdatedServerDescriptionCommand<E>(
   runtime: Atom.AtomRuntime<
     EnvironmentRegistry.EnvironmentRegistry | ConnectionResolver.ConnectionResolver,

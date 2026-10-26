@@ -3,9 +3,8 @@ import type {
   OrchestrationV2ProviderFailureClass,
 } from "@t3tools/contracts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import * as Schema from "effect/Schema";
 
-import { CursorAgentSdkRunnerError, cursorSdkFailureMessage } from "./CursorAgentSdk.ts";
+import { cursorSdkFailureMessage, isCursorAgentSdkRunnerError } from "./CursorAgentSdk.ts";
 import { CursorSdkError } from "./sdk.ts";
 
 export interface CursorFailureReason {
@@ -27,8 +26,6 @@ const usageLimitCodes = new Set([
   "USAGE_PRICING_REQUIRED_CHANGEABLE",
   "resource_exhausted",
 ]);
-
-const isCursorAgentSdkRunnerError = Schema.is(CursorAgentSdkRunnerError);
 
 // Local agent-loop failures reach RunResult.error as `{ message: "<title> <detail>" }` without
 // the ErrorCode, so the server's own wording is the only signal left.
