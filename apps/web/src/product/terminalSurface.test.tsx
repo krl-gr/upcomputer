@@ -16,8 +16,17 @@ await vi.hoisted(async () => {
     pretendToBeVisual: true,
   });
   const source = window as unknown as Record<string, unknown>;
-  // Node's own event classes cannot be dispatched on jsdom nodes.
-  const replaced = new Set(["navigator", "Event", "CustomEvent", "EventTarget", "KeyboardEvent"]);
+  // Node's own event classes cannot be dispatched on jsdom nodes, and Node 26's
+  // own Web Storage globals are undefined without --localstorage-file.
+  const replaced = new Set([
+    "navigator",
+    "Event",
+    "CustomEvent",
+    "EventTarget",
+    "KeyboardEvent",
+    "localStorage",
+    "sessionStorage",
+  ]);
   for (const key of Object.getOwnPropertyNames(window)) {
     if (replaced.has(key) || !(key in globalThis)) {
       Object.defineProperty(globalThis, key, { configurable: true, value: source[key] });
