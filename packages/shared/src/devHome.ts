@@ -15,12 +15,7 @@ import * as Path from "effect/Path";
 
 import { UPCOMPUTER_HOME_DIRECTORY_NAME } from "./upcomputerIdentity.ts";
 
-/**
- * The common dir is not necessarily named `.git`: a worktree of a bare repo
- * points at `<repo>.git/worktrees/<name>`, and `$GIT_COMMON_DIR` can be
- * anything. So match on the `worktrees/<name>` tail, which git always uses,
- * rather than on the name of the directory containing it.
- */
+// Match worktrees/<name>; bare repos and GIT_COMMON_DIR need not use a directory named .git.
 const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boolean => {
   const gitdir = gitFileContents
     .split(/\r?\n/)

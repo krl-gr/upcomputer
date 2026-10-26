@@ -1,7 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
+import { secondTick } from "@t3tools/client-runtime/clock";
 import { type VcsActionState, type VcsActionTarget } from "@t3tools/client-runtime/state/vcs";
 import { Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { vcsActionManager } from "./vcs";
@@ -61,6 +62,8 @@ export interface GitActionProgress {
   readonly prUrl?: string;
 }
 
+const subscribeNever = () => () => {};
+
 const EMPTY_PROGRESS: GitActionProgress = {
   phase: "idle",
   label: null,
@@ -78,15 +81,11 @@ export function useGitActionProgress(target: VcsActionTarget): GitActionProgress
   const actionState = useVcsActionState(target);
   const { result } = useGitActionResultNotification();
 
-  // The clock is state the interval advances: a render-time Date.now() would be
-  // cached on the start timestamp by the compiler and the label would freeze.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (!actionState.isRunning) return;
-    setNowMs(Date.now());
-    const interval = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [actionState.isRunning]);
+  // Only a running action shows elapsed time, so only it subscribes to the second tick.
+  const nowMs = useSyncExternalStore(
+    actionState.isRunning ? secondTick.subscribe : subscribeNever,
+    secondTick.getSnapshot,
+  );
 
   if (actionState.isRunning) {
     const description =

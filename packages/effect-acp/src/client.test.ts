@@ -53,10 +53,7 @@ const PermissionResponse = jsonRpcResponse(AcpSchema.RequestPermissionResponse);
 const ErrorResponse = Schema.Struct({ id: Schema.String, error: Schema.Unknown });
 const DieResponse = Schema.Struct({
   id: Schema.String,
-  error: Schema.Struct({
-    _tag: Schema.Literal("Cause"),
-    data: Schema.Tuple([Schema.Struct({ _tag: Schema.Literal("Die") })]),
-  }),
+  error: Schema.TaggedStruct("Cause", { data: Schema.Tuple([Schema.TaggedStruct("Die", {})]) }),
 });
 const decodePromptRequestLine = Schema.decodeEffect(Schema.fromJsonString(PromptRequest));
 const XAiPromptCompleteNotification = jsonRpcNotification(
@@ -1068,16 +1065,14 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
       yield* Queue.offer(
         input,
         concatBytes(
-          yield* Effect.all(
-            ["permission-a", "permission-b"].map((id) =>
-              encodeJsonl(PermissionRequest, {
-                jsonrpc: "2.0",
-                id,
-                method: "session/request_permission",
-                params: payload,
-                headers: [],
-              }),
-            ),
+          yield* Effect.forEach(["permission-a", "permission-b"], (id) =>
+            encodeJsonl(PermissionRequest, {
+              jsonrpc: "2.0",
+              id,
+              method: "session/request_permission",
+              params: payload,
+              headers: [],
+            }),
           ),
         ),
       );

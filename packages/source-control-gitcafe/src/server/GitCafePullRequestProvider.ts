@@ -27,7 +27,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   comment: true,
   actions: [...definition.changeRequestActions],
   mergeMethods: ["merge", "squash", "rebase"],
-  // Only through a stack: GitCafe's one branch update restacks every layer above it.
+  // Branch updates restack every layer above the target.
   updateMethods: ["rebase"],
   search: true,
   stacks: true,
@@ -56,10 +56,9 @@ const AUTHOR_DISCOVERY_PAGES = 5;
 const KNOWN_AUTHORS_LIMIT = 10_000;
 /** GitCafe's cap on paths per `/diff-files` read, and so one diff page. */
 const DIFF_FILES_BATCH = 64;
-/**
- * Line totals cost one hunk read per batch, so a pull request larger than this reports none
- * rather than reading every file.
- */
+/** Changed-path pages carry no hunks, so they can be read in larger pages. */
+const CHANGES_PAGE_LIMIT = 500;
+/** Line totals require hunk reads; omit them for large PRs. */
 const LINE_STATS_MAX_FILES = DIFF_FILES_BATCH * 4;
 const MAX_CHANGE_PAGES = 20;
 const LINE_STATS_CACHE_SIZE = 256;
@@ -214,7 +213,7 @@ const withDetails = (
   return files.map((file) => byPath.get(file.path) ?? file);
 };
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const api = yield* GitCafeApi.GitCafeApi;
   // GitCafe filters by actor id and has no lookup from a GitHub login to the actor sync made for
@@ -414,12 +413,12 @@ export const make = Effect.gen(function* () {
         { path: `/users/${encodeURIComponent(handle)}` },
         User,
       ).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchTags({
           PullRequestProviderError: (error) =>
             error.reason === "unauthenticated" || error.reason === "rate-limited"
               ? Effect.fail(error)
-              : Effect.succeed(Option.none()),
+              : Effect.succeedNone,
         }),
       );
       const actorId = Option.isSome(user)
@@ -525,6 +524,45 @@ export const make = Effect.gen(function* () {
     return { ...stack, members };
   });
 
+  const readDiffPage = Effect.fn("GitCafePullRequestProvider.readDiffPage")(function* (
+    operation: string,
+    input: Parameters<PullRequestProviderApi["getDiff"]>[0],
+    limit: number,
+  ) {
+    if (input.commit !== undefined)
+      return yield* failure(operation, "GitCafe commit diffs are not supported yet.");
+    const cursor =
+      input.cursor === undefined
+        ? null
+        : yield* decodeDiffCursor(input.cursor).pipe(
+            Effect.mapError((cause) => failure(operation, "Invalid GitCafe diff cursor.", cause)),
+          );
+    // A pull without a head yet has nothing to pin; its version still is.
+    const expected = cursor ?? (yield* readPull(operation, input));
+    const version = expected.version;
+    const path = yield* pullPath(operation, input);
+    const query = new URLSearchParams({ expectedVersion: String(version), limit: String(limit) });
+    if (cursor !== null) query.set("after", cursor.after);
+    const page = yield* read(operation, input, { path: `${path}/changes?${query}` }, Changes);
+    if (
+      page.version !== version ||
+      (expected.headOid !== null && page.headOid !== expected.headOid) ||
+      (cursor !== null && cursor.baseOid !== page.comparisonBaseOid)
+    )
+      return yield* failure(
+        operation,
+        "GitCafe answered from a different revision of the pull request. Refresh the diff.",
+      );
+    if (cursor !== null && page.next !== null && page.next === cursor.after)
+      return yield* failure(operation, "GitCafe returned a repeated diff page cursor.");
+    const revision = { version, headOid: page.headOid, baseOid: page.comparisonBaseOid };
+    return {
+      items: page.items,
+      revision,
+      nextCursor: page.next === null ? null : encodeDiffCursor({ ...revision, after: page.next }),
+    };
+  });
+
   const readDiffFiles = Effect.fn("GitCafePullRequestProvider.readDiffFiles")(function* (
     input: PullRef,
     revision: { readonly version: number; readonly headOid: string; readonly baseOid: string },
@@ -608,7 +646,10 @@ export const make = Effect.gen(function* () {
     let revision: { version: number; headOid: string; baseOid: string } | undefined;
     let after: string | null = null;
     for (let page = 0; page < MAX_CHANGE_PAGES; page++) {
-      const query = new URLSearchParams({ expectedVersion: String(version), limit: "500" });
+      const query = new URLSearchParams({
+        expectedVersion: String(version),
+        limit: String(CHANGES_PAGE_LIMIT),
+      });
       if (after !== null) query.set("after", after);
       const batch: typeof Changes.Type = yield* read(
         "getChangeRequest",
@@ -663,8 +704,7 @@ export const make = Effect.gen(function* () {
     if (pull.mergeRoute === "unsupported")
       return yield* failure("merge", "This GitCafe pull request has no supported merge route.");
     const base = yield* repositoryPath("merge", input);
-    // GitCafe observes the base only for merges it routes to the provider; a native merge is
-    // fenced on the target branch's current commit.
+    // Native merges fence on the current target commit; provider-routed merges supply the base.
     const baseOid =
       pull.mergeRoute === "provider"
         ? pull.observedBaseOid
@@ -728,12 +768,12 @@ export const make = Effect.gen(function* () {
             { path: "/auth/principal" },
             Principal,
           ).pipe(
-            Effect.map(Option.some),
+            Effect.asSome,
             Effect.catchTags({
               PullRequestProviderError: (error) =>
                 error.reason === "unauthenticated" || error.reason === "rate-limited"
                   ? Effect.fail(error)
-                  : Effect.succeed(Option.none()),
+                  : Effect.succeedNone,
             }),
           );
           if (Option.isSome(principal)) {
@@ -746,7 +786,7 @@ export const make = Effect.gen(function* () {
           { ...input, authorNarrowed: actorId !== undefined && input.involvement === "authored" },
           base,
         );
-        const readPage = (rows: number, after: string | null) => {
+        const readPage = Effect.fn("readPage")(function (rows: number, after: string | null) {
           const query = new URLSearchParams({ limit: String(rows), sort: "newest" });
           if (input.state !== "all") query.set("state", input.state);
           if (input.query?.trim()) query.set("q", input.query.trim());
@@ -763,7 +803,7 @@ export const make = Effect.gen(function* () {
             { path: `${base}/pulls?${query}` },
             Json.GitCafePulls,
           ).pipe(Effect.tap((page) => Effect.sync(() => learnAuthors(input.host, page.items))));
-        };
+        });
         if (unresolvedAuthor !== null) {
           // Rows are only ever handed out narrowed by actor, so a continuation always carries on
           // the same narrowed listing.
@@ -820,6 +860,10 @@ export const make = Effect.gen(function* () {
         };
       },
     ),
+    getChangeRequestPreview: (input) =>
+      readPull("getChangeRequestPreview", input).pipe(
+        Effect.map((pull) => Json.toChangeRequest(pull, input)),
+      ),
     getChangeRequestSummary: Effect.fn("GitCafePullRequestProvider.getChangeRequestSummary")(
       function* (input) {
         const pull = yield* readPull("getChangeRequestSummary", input);
@@ -863,6 +907,7 @@ export const make = Effect.gen(function* () {
             : readLineStats(input, pull.version).pipe(Effect.orElseSucceed(() => null)),
           // Reviewers need `pr:review:read`, which a contents-only token lacks.
           readPages("getChangeRequest", input, `${path}/reviewers`, Json.GitCafeActorEntries).pipe(
+            // @effect-diagnostics-next-line catchConditionalRefailToCatchIf:off - catchIf widens this paginated result to any in tsc-rs.
             Effect.catch((error) =>
               isForbidden(error) ? Effect.succeed({ items: [], next: null }) : Effect.fail(error),
             ),
@@ -945,6 +990,7 @@ export const make = Effect.gen(function* () {
               : // A closed pull request whose branch is gone keeps its head, but git.cafe answers
                 // 404 for commits it no longer has; the conversation still stands without them.
                 readPages(operation, input, `${path}/commits`, Json.GitCafeCommits).pipe(
+                  // @effect-diagnostics-next-line catchConditionalRefailToCatchIf:off - catchIf widens this paginated result to any in tsc-rs.
                   Effect.catch((error) =>
                     error.reason === "not-found"
                       ? Effect.succeed({ items: [], next: null })
@@ -970,36 +1016,21 @@ export const make = Effect.gen(function* () {
     getViewerPermissions: (input) =>
       readPull("getViewerPermissions", input).pipe(Effect.map(Json.toViewerPermissions)),
     getDiff: Effect.fn("GitCafePullRequestProvider.getDiff")(function* (input) {
-      if (input.commit !== undefined)
-        return yield* failure("getDiff", "GitCafe commit diffs are not supported yet.");
-      const cursor =
-        input.cursor === undefined
-          ? null
-          : yield* decodeDiffCursor(input.cursor).pipe(
-              Effect.mapError((cause) => failure("getDiff", "Invalid GitCafe diff cursor.", cause)),
-            );
-      const version = cursor?.version ?? (yield* readPull("getDiff", input)).version;
-      const path = yield* pullPath("getDiff", input);
-      const query = new URLSearchParams({
-        expectedVersion: String(version),
-        limit: String(DIFF_FILES_BATCH),
-      });
-      if (cursor !== null) query.set("after", cursor.after);
-      const page = yield* read("getDiff", input, { path: `${path}/changes?${query}` }, Changes);
-      if (
-        page.version !== version ||
-        (cursor !== null &&
-          (cursor.headOid !== page.headOid || cursor.baseOid !== page.comparisonBaseOid))
-      )
-        return yield* failure(
-          "getDiff",
-          "GitCafe answered from a different revision of the pull request. Refresh the diff.",
-        );
-      const revision = { version, headOid: page.headOid, baseOid: page.comparisonBaseOid };
-      const details = yield* readDiffFiles(input, revision, detailablePaths(page.items));
+      const page = yield* readDiffPage("getDiff", input, DIFF_FILES_BATCH);
+      const details = yield* readDiffFiles(input, page.revision, detailablePaths(page.items));
       return {
         ...Json.toDiff({ items: withDetails(page.items, details) }),
-        nextCursor: page.next === null ? null : encodeDiffCursor({ ...revision, after: page.next }),
+        nextCursor: page.nextCursor,
+      };
+    }),
+    getDiffFilePaths: Effect.fn("GitCafePullRequestProvider.getDiffFilePaths")(function* (input) {
+      const page = yield* readDiffPage("getDiffFilePaths", input, CHANGES_PAGE_LIMIT);
+      return {
+        files: page.items.map((file) => ({
+          oldPath: file.oldPath ?? file.path,
+          newPath: file.path,
+        })),
+        nextCursor: page.nextCursor,
       };
     }),
     getDiffFileContents: Effect.fn("GitCafePullRequestProvider.getDiffFileContents")(

@@ -85,8 +85,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
   it.effect("does not sweep branch pull requests while no client is connected", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        // Reproduces #23702: an idle server with one active branch thread kept
-        // calling GitHub for that branch every minute with no client connected.
+        // Polling active branches without a connected client wastes GitHub requests.
         const thread = { ...threadShell("idle-branch-thread"), branch: "feature/idle" };
         const project: OrchestrationProjectShell = {
           id: thread.projectId,
@@ -116,7 +115,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           }),
           Layer.mock(ProjectStore.ProjectStoreV2)({
             listShells: () => Effect.succeed([project]),
-            getShell: () => Effect.succeed(Option.some(project)),
+            getShell: () => Effect.succeedSome(project),
           }),
           Layer.mock(GitManager.GitManager)({
             branchPullRequest: (_input, options) =>
@@ -235,7 +234,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             }),
             Layer.mock(ProjectStore.ProjectStoreV2)({
               listShells: () => Effect.succeed([project]),
-              getShell: () => Effect.succeed(Option.some(project)),
+              getShell: () => Effect.succeedSome(project),
             }),
             Layer.mock(GitManager.GitManager)({
               branchPullRequest: () => Effect.succeed(null),

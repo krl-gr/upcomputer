@@ -11,6 +11,7 @@ import {
   resolveTerminalMouseData,
   terminalLinkAtPositionWithRange,
   terminalContentOriginY,
+  terminalSelectionAutoscrollRows,
   terminalWheelDeltaRows,
   GhosttyTerminalSurface,
   type GhosttyTerminalSurfaceOptions,
@@ -645,8 +646,7 @@ describe("isTerminalCopyShortcut", () => {
 describe("applyTerminalCopyEvent", () => {
   // regression: #7678 copying a terminal selection produced a blank clipboard
   it("leaves the writeText fallback alive when clipboardData is missing", () => {
-    // Electron's edit-menu Copy often delivers a copy event with no
-    // clipboardData.
+    // Electron menu Copy often omits clipboardData.
     expect(applyTerminalCopyEvent("ls -la", null)).toEqual({
       preventDefault: false,
       claimWriteFallback: false,
@@ -745,6 +745,21 @@ describe("terminalWheelDeltaRows", () => {
     }
     expect(scrolled).toBe(1);
     expect(remainder).toBeCloseTo(4 / 16);
+  });
+});
+
+// regression: #19492 drag selection scrolled one row per tick however far past the edge
+describe("terminalSelectionAutoscrollRows", () => {
+  it("scrolls more rows per tick the farther the pointer is past an edge", () => {
+    const top = 100;
+    const bottom = 500;
+    expect(terminalSelectionAutoscrollRows(300, top, bottom)).toBe(0);
+    expect(terminalSelectionAutoscrollRows(99, top, bottom)).toBe(-1);
+    expect(terminalSelectionAutoscrollRows(75, top, bottom)).toBe(-8);
+    expect(terminalSelectionAutoscrollRows(501, top, bottom)).toBe(1);
+    expect(terminalSelectionAutoscrollRows(525, top, bottom)).toBe(8);
+    expect(terminalSelectionAutoscrollRows(550, top, bottom)).toBe(15);
+    expect(terminalSelectionAutoscrollRows(2_000, top, bottom)).toBe(15);
   });
 });
 

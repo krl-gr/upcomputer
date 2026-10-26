@@ -1,4 +1,4 @@
-import { PermissionUpdateNotice } from "./features/connection/PermissionUpdateNotice";
+import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -6,7 +6,12 @@ import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { createStaticNavigation, getStateFromPath } from "@react-navigation/native";
+import {
+  createNavigationContainerRef,
+  createStaticNavigation,
+  getActionFromState,
+  getStateFromPath,
+} from "@react-navigation/native";
 
 import { RegistryContext } from "@effect/atom-react";
 import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
@@ -26,6 +31,12 @@ import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
+import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
+import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
+import {
+  disposeOnFoundationReplace,
+  type FoundationHotModule,
+} from "./lib/foundation-fast-refresh";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -38,6 +49,7 @@ import {
   recordWorkspaceSelections,
   settingsLinkPage,
 } from "./features/workspace/workspace-selection-store";
+import { workspaceDetailLinkAction } from "./features/workspace/workspace-detail-selection";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 
 import "../global.css";
@@ -52,16 +64,34 @@ void hydrateWorkspaceSelections();
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
   config: { initialRouteName: "Home" },
-  filter: shouldHandleAppLink,
+  filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
   getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),
+  getActionFromState: (
+    state: Parameters<typeof getActionFromState>[0],
+    options: Parameters<typeof getActionFromState>[1],
+  ): ReturnType<typeof getActionFromState> =>
+    // Our router handles the selection; React Navigation's type only lists its own actions.
+    (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
+    getActionFromState(state, options),
   getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
-    restoreSettingsLinkState(
-      restoreDraftLinkState(getStateFromPath(path, options), path),
-      settingsLinkPage(),
+    takeScheduledTaskNewLink(
+      restoreSettingsLinkState(
+        restoreDraftLinkState(getStateFromPath(path, options), path),
+        settingsLinkPage(),
+      ),
     ),
 };
 
 const Navigation = createStaticNavigation(RootStack);
+const navigationRef = createNavigationContainerRef();
+
+declare const module: { readonly hot?: FoundationHotModule } | undefined;
+
+const disposePermissionUpdateNotice = installPermissionUpdateNotice();
+disposeOnFoundationReplace(
+  typeof module === "undefined" ? undefined : module.hot,
+  disposePermissionUpdateNotice,
+);
 
 function SplashScreenCoordinator() {
   const { isReady } = useAppearancePreferences();
@@ -105,22 +135,19 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
-      <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
             <VoiceInputProvider>
               <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
-              {/* The navigation theme drives the NATIVE header appearance: native-stack
-                forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
-                this, React Navigation defaults to its light theme and every native
-                header (glass buttons, title, materials) is forced light even when
-                the system is in dark mode. */}
+              {/* native-stack needs the theme's dark flag to select dark native headers. */}
               <GlobalVoiceInputControl>
                 <NativeLayoutMetricsProvider>
                   <IncomingShareProvider>
                     <Navigation
+                      ref={navigationRef}
                       linking={appLinking}
+                      onReady={() => recordWorkspaceSelections(navigationRef.getRootState())}
                       theme={navigationTheme}
                       onStateChange={recordWorkspaceSelections}
                     />
@@ -130,8 +157,6 @@ function AppContent() {
                   <ProjectChipIconRasterizer />
                 </NativeLayoutMetricsProvider>
               </GlobalVoiceInputControl>
-              {/* Anchored-menu overlays render here — in-window, so the
-                keyboard stays up while a dropdown is open. */}
               <OverlayPortalHost />
             </VoiceInputProvider>
           </SafeAreaProvider>

@@ -1,9 +1,3 @@
-/**
- * That key still ends in the thread id segment, so everything keyed off the
- * draft key (attachment uploads resolving an environment, per-draft
- * persistence) keeps working, while the user's draft is never touched and is
- * waiting unchanged when the edit is cancelled.
- */
 import type {
   ChatAttachment,
   MessageId,
@@ -16,6 +10,7 @@ import { useAtomValue } from "@effect/atom-react";
 
 import { uploadedComposerContext } from "../lib/composerContext";
 import { appAtomRegistry } from "./atom-registry";
+import { abortComposerDraftOperations } from "./composerDraftOperations";
 import { queuedEditDraftKey } from "./queued-edit-draft-key";
 import {
   clearComposerDraft,
@@ -65,6 +60,8 @@ export function beginQueuedRunEdit(threadKey: string, edit: QueuedRunEdit): void
   if (previous !== null && previous.runId !== edit.runId) {
     clearComposerDraft(queuedEditDraftKey(threadKey, previous.runId));
   }
+  // The composer moves off the thread draft, so a paste or pick still running for it is dropped.
+  abortComposerDraftOperations(threadKey);
   const draftKey = queuedEditDraftKey(threadKey, edit.runId);
   clearComposerDraft(draftKey);
   setComposerDraftText(draftKey, edit.originalText);
@@ -93,10 +90,7 @@ export function endQueuedRunEdit(
   setQueuedRunEdit(threadKey, null);
 }
 
-/**
- * Attachments replace the message's list wholesale, so kept server attachments
- * are resent alongside the newly uploaded ones, in composer order.
- */
+/** Attachments replace wholesale; resend kept server attachments with uploads in composer order. */
 export function resolveQueuedEditPayload(input: {
   readonly edit: QueuedRunEdit;
   readonly draftContext: OrchestrationMessageContext | undefined;

@@ -21,7 +21,8 @@
       // worktree setup (from t3.json) run directly. Up.computer's apply-branding
       // runs by hand after an upstream merge (docs/branding.md). release-desktop.yml
       // bundles the Windows verify script with esbuild through a path knip does not
-      // trace, and electron-builder loads the macOS signer by path.
+      // trace, electron-builder loads the macOS signer by path, and mobile-e2e.ts
+      // runs agent-device's CLI by path.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
@@ -32,7 +33,7 @@
         "sign-macos.ts",
         "verify-windows-desktop-artifact.ts",
       ],
-      "ignoreDependencies": ["esbuild"],
+      "ignoreDependencies": ["agent-device", "esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
@@ -147,6 +148,19 @@
         "src/*NativeComponent.ts!",
         "react-native.config.js",
         "scripts/sync-pierre-file-icons.mjs",
+      ],
+    },
+    "infra/task-cache": {
+      "ignore": ["vendor/**"],
+      // The bootstrap and Vite+ hook are loaded by shell/package configuration.
+      "entry": [
+        "alchemy.run.ts!",
+        "scripts/install.ts",
+        "scripts/install-ci.ts",
+        "src/runHook.ts",
+        "src/flush.ts",
+        "src/nativeRunHook.js",
+        "src/preload.mjs",
       ],
     },
     "infra/relay": {

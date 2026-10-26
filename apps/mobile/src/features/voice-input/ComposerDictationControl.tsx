@@ -90,7 +90,7 @@ export function ComposerDictationDraftContent(props: {
 }) {
   const rotation = useSharedValue(props.hidden ? 1 : 0);
   useLayoutEffect(() => {
-    rotation.value = withTiming(props.hidden ? 1 : 0, TOOLBAR_FLIP_TIMING);
+    rotation.set(withTiming(props.hidden ? 1 : 0, TOOLBAR_FLIP_TIMING));
   }, [props.hidden, rotation]);
   const compact = props.compact;
   const animatedStyle = useAnimatedStyle(() => ({
@@ -235,10 +235,7 @@ const VoiceWaveform = memo(function VoiceWaveform(props: {
   );
 });
 
-/**
- * Renders the recording time in the system font: DM Sans has no tabular
- * figures, so `tabular-nums` alone would still let the width jitter.
- */
+/** Use system tabular figures; DM Sans lacks them and would jitter. */
 export function DictationElapsedTime(props: {
   readonly seconds: number;
   readonly className?: string;
@@ -266,7 +263,7 @@ function VoiceActionButton(props: {
   const variant = props.variant ?? "plain";
   const loadingVisibility = useSharedValue(props.loading ? 1 : 0);
   useLayoutEffect(() => {
-    loadingVisibility.value = withTiming(props.loading ? 1 : 0, DICTATION_TIMING);
+    loadingVisibility.set(withTiming(props.loading ? 1 : 0, DICTATION_TIMING));
   }, [loadingVisibility, props.loading]);
   const primaryStyle = useAnimatedStyle(() => ({ opacity: 1 - loadingVisibility.value }));
 
@@ -325,7 +322,7 @@ export function ComposerDictationStatus(props: {
 }) {
   const recordingVisibility = useSharedValue(props.phase === "recording" ? 1 : 0);
   useLayoutEffect(() => {
-    recordingVisibility.value = withTiming(props.phase === "recording" ? 1 : 0, DICTATION_TIMING);
+    recordingVisibility.set(withTiming(props.phase === "recording" ? 1 : 0, DICTATION_TIMING));
   }, [props.phase, recordingVisibility]);
   const waveformStyle = useAnimatedStyle(() => ({
     opacity: recordingVisibility.value,

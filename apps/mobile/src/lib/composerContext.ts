@@ -78,7 +78,7 @@ export function composerDocumentAttachmentRecord(
 ): ComposerDocumentAttachment | null {
   if (!record || "payload" in record || record.kind !== "file") return null;
   if (videoMimeType(record) !== null) return null;
-  const kind = filePreviewKind(record);
+  const kind = filePreviewKind(record, { richDocuments: false });
   if (kind === "image" || kind === "pdf" || kind === "video") return null;
   return record;
 }
@@ -256,9 +256,7 @@ export function reidentifyComposerContext(
   };
 }
 
-/**
- * Keep queued records canonical; choose the wire format against the host at dispatch time.
- */
+/** Keep queued records canonical; select wire format at dispatch against the host. */
 export function serializeComposerMessageForServer(
   composerText: string,
   context: OrchestrationMessageContext | undefined,

@@ -56,8 +56,7 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
     () => (isProjectFaviconFallbackUrl(faviconUrl) ? null : faviconUrl),
     [faviconUrl],
   );
-  // Inline images are self-contained; remote URLs key on their revision so signed-token
-  // rotation reuses the disk cache while a changed icon starts from the loading state.
+  // Key remote images by revision so token rotation reuses the cache while changed icons reload.
   const cacheKey = useMemo(
     () =>
       renderableFaviconUrl && props.workspaceRoot
@@ -169,6 +168,7 @@ function ProjectFaviconImage(props: {
     if (faviconRequest === null) return;
 
     const endRequest = beginProjectFaviconRequest(faviconRequest);
+    // oxlint-disable-next-line react/set-state-in-effect -- Publishes the favicon request registered with the external loader until its cleanup runs.
     setActiveFaviconRequest(faviconRequest);
     return endRequest;
   }, [faviconRequest]);

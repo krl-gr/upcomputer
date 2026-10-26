@@ -40,8 +40,7 @@ const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(1);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
-// Same as the service launcher. A killed backend leaves its agents running,
-// and a busy one needs a few seconds to stop every provider session.
+// Match the service launcher's grace period so backends can stop provider sessions.
 const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(5);
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 // Quit and update stop each backend within 5 seconds, so a backend that does
@@ -75,9 +74,7 @@ export type DesktopBackendBootstrapDelivery = "fd3" | "stdin";
 export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly args: ReadonlyArray<string>;
   readonly env: Record<string, string | undefined>;
-  // When true the spawner merges the desktop process.env on top of `env`;
-  // when false `env` is passed verbatim. WSL mode opts out so a leaking
-  // T3CODE_HOME can't pin the WSL backend to /mnt/c/...\.t3.
+  /** False passes env verbatim, preventing the Windows T3CODE_HOME from leaking into WSL. */
   readonly extendEnv: boolean;
   readonly bootstrap: DesktopBackendBootstrapValue;
   readonly bootstrapDelivery: DesktopBackendBootstrapDelivery;
@@ -246,11 +243,7 @@ export interface BackendInstanceSpec {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
   readonly configResolve: Effect.Effect<DesktopBackendStartConfig, PlatformError.PlatformError>;
-  // Receives the *resolved* httpBaseUrl of the run that just became
-  // ready. The window service uses this to decide what URL to load
-  // (the WSL backend reports its distro IP, the Windows backend reports
-  // 127.0.0.1). Splitting this off from configResolve avoids races
-  // between "fired onReady" and "currentConfig already advanced".
+  /** Receives the ready run's resolved URL; reading current config could race a subsequent restart. */
   readonly onReady?: (httpBaseUrl: URL) => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
@@ -448,16 +441,12 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     cwd: options.cwd,
     env: options.env,
     extendEnv: options.extendEnv,
-    // In Electron main, process.execPath points to the Electron binary.
-    // Run the child in Node mode so this backend process does not become a GUI app instance.
     stdin: options.bootstrapDelivery === "stdin" ? bootstrapStream : "ignore",
     stdout: options.captureOutput ? "pipe" : "inherit",
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
     forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
-    // wsl.exe drops additional file descriptors when forwarding to the Linux
-    // side, so the WSL spawn path delivers the bootstrap envelope via stdin
-    // (`--bootstrap-fd 0`) instead.
+    // wsl.exe drops extra file descriptors; deliver its bootstrap via stdin.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
 
@@ -559,12 +548,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       ).pipe(Effect.forkScoped),
     );
   }
-  // Probe readiness in a loop while the backend process is still alive instead
-  // of giving up after the first budget. A slow cold boot (the WSL bundle
-  // loading across /mnt/c, or a first launch right after an update) can exceed
-  // the initial readiness budget while the backend is about to come up moments
-  // later; a one-shot probe left the app stuck on "Connecting to WSL…" forever
-  // even though the backend kept running and became healthy.
+  // Cold WSL boots across /mnt/c can exceed one probe budget; retry while the backend is alive.
   const probeReadiness = Effect.fn("desktop.backendProcess.probeReadiness")(() =>
     waitForHttpReady({
       executablePath: options.executablePath,
@@ -1102,58 +1086,58 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
     yield* Option.match(active, {
       onNone: () => Effect.void,
-      onSome: (run) =>
-        Effect.gen(function* () {
-          const closed = yield* closeRun(run, parentScope, options);
-          if (!closed) {
-            return;
-          }
-          const cleanup = yield* mutex.withPermits(1)(
-            Ref.modify(
-              state,
-              (
-                latest,
-              ): readonly [
-                {
-                  readonly needsCleanup: boolean;
-                  readonly shouldStart: boolean;
-                },
-                BackendManagerState,
-              ] => {
-                const current = Option.getOrUndefined(latest.active);
-                if (current?.id !== run.id) {
-                  return [
-                    {
-                      needsCleanup: false,
-                      shouldStart:
-                        latest.desiredRunning &&
-                        Option.isNone(latest.active) &&
-                        Option.isNone(latest.restartFiber),
-                    },
-                    latest,
-                  ];
-                }
+      // The enclosing operation owns the span for this inline handler.
+      onSome: Effect.fnUntraced(function* (run) {
+        const closed = yield* closeRun(run, parentScope, options);
+        if (!closed) {
+          return;
+        }
+        const cleanup = yield* mutex.withPermits(1)(
+          Ref.modify(
+            state,
+            (
+              latest,
+            ): readonly [
+              {
+                readonly needsCleanup: boolean;
+                readonly shouldStart: boolean;
+              },
+              BackendManagerState,
+            ] => {
+              const current = Option.getOrUndefined(latest.active);
+              if (current?.id !== run.id) {
                 return [
                   {
-                    needsCleanup: true,
-                    shouldStart: latest.desiredRunning,
+                    needsCleanup: false,
+                    shouldStart:
+                      latest.desiredRunning &&
+                      Option.isNone(latest.active) &&
+                      Option.isNone(latest.restartFiber),
                   },
-                  {
-                    ...latest,
-                    active: Option.none<ActiveBackendRun>(),
-                  },
+                  latest,
                 ];
-              },
-            ),
-          );
-          if (cleanup.needsCleanup) {
-            yield* desktopTelemetryPublisher.removeControlSource(spec.id);
-            yield* backendOutputLog.discardSession;
-          }
-          if (cleanup.shouldStart) {
-            yield* start;
-          }
-        }),
+              }
+              return [
+                {
+                  needsCleanup: true,
+                  shouldStart: latest.desiredRunning,
+                },
+                {
+                  ...latest,
+                  active: Option.none<ActiveBackendRun>(),
+                },
+              ];
+            },
+          ),
+        );
+        if (cleanup.needsCleanup) {
+          yield* desktopTelemetryPublisher.removeControlSource(spec.id);
+          yield* backendOutputLog.discardSession;
+        }
+        if (cleanup.shouldStart) {
+          yield* start;
+        }
+      }),
     });
   });
 

@@ -75,8 +75,8 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
   Effect.gen(function* () {
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     return ProviderAdapterRegistryV2.of({
-      get: (instanceId) =>
-        instances.getInstance(instanceId).pipe(
+      get: Effect.fn("ProviderAdapterRegistryV2.get")(function (instanceId) {
+        return instances.getInstance(instanceId).pipe(
           Effect.flatMap((instance) => {
             if (instance === undefined)
               return new ProviderAdapterRegistryLookupError({ instanceId });
@@ -131,11 +131,13 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
               },
             } satisfies ProviderAdapter.ProviderAdapterV2["Service"]);
           }),
-        ),
-      list: () =>
-        instances.listInstances.pipe(
+        );
+      }),
+      list: Effect.fn("ProviderAdapterRegistryV2.list")(function () {
+        return instances.listInstances.pipe(
           Effect.map((available) => available.map((instance) => instance.instanceId)),
-        ),
+        );
+      }),
       getMetadata: Effect.fn("ProviderAdapterRegistry.getMetadata")(function* (instanceId) {
         const instance = yield* instances.getInstance(instanceId);
         if (instance === undefined) {
@@ -342,21 +344,3 @@ export function layerFromDrivers<R>(input: {
     ),
   ) as Layer.Layer<ProviderAdapterRegistryV2, ProviderAdapterRegistryBuildError, R>;
 }
-
-const layerFromProviderAdapter: Layer.Layer<
-  ProviderAdapterRegistryV2,
-  never,
-  ProviderAdapter.ProviderAdapterV2
-> = Layer.effect(
-  ProviderAdapterRegistryV2,
-  Effect.gen(function* () {
-    const adapter = yield* ProviderAdapter.ProviderAdapterV2;
-    return ProviderAdapterRegistryV2.of({
-      get: (instanceId) =>
-        adapter.instanceId === instanceId
-          ? Effect.succeed(adapter)
-          : Effect.fail(new ProviderAdapterRegistryLookupError({ instanceId })),
-      list: () => Effect.succeed([adapter.instanceId]),
-    } satisfies ProviderAdapterRegistryV2Shape);
-  }),
-);

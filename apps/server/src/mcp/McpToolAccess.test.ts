@@ -165,7 +165,7 @@ export const refusedAtCompileTime = () => {
   // @ts-expect-error a declaration built outside McpToolAccess
   McpToolAccess.Declaration.make(unchecked);
   // @ts-expect-error a declaration constructed directly
-  new McpToolAccess.Declaration(unchecked);
+  new McpToolAccess.Declaration(unchecked); // oxlint-disable-line eslint/no-new -- This type-contract test checks direct construction.
   // @ts-expect-error a handlers layer built outside McpToolAccess
   McpToolAccess.HandlersLayer.make(Layer.empty);
   // @effect-diagnostics-next-line anyUnknownInErrorContext:off
@@ -216,7 +216,6 @@ const supervised = threadCaller(supervisedThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
-// Its turn ended, but a background subagent it started still runs.
 const background = threadCaller(backgroundThreadId);
 const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);

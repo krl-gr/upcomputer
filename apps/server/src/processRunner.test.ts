@@ -227,9 +227,7 @@ describe("runProcess", () => {
 
   it.effect("types spawn failures that the platform spawner throws synchronously", () =>
     Effect.gen(function* () {
-      // A non-directory entry on PATH makes node's spawn throw ENOTDIR
-      // synchronously. The platform spawner calls it inside `Effect.callback`,
-      // so the throw arrives as a defect rather than a typed error.
+      // File-valued PATH entries make spawn throw ENOTDIR synchronously, arriving through Effect.callback as a defect.
       const defect = Object.assign(new Error("spawn jj ENOTDIR"), { code: "ENOTDIR" });
       const spawner = makeSpawner(() =>
         Effect.callback<never, never>(() => {
@@ -370,9 +368,6 @@ describe("runProcess", () => {
       expect(result.code).toBe(0);
     }),
   );
-
-  for (const {} of ["timeout", "success"] as const) {
-  }
 });
 
 describe("isWindowsCommandNotFound", () => {

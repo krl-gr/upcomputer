@@ -59,9 +59,8 @@ const workspaceEvidenceLiveAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-onboarding-workspace-evidence-live"));
 
-// The gate only needs how many threads exist and, while there is at most one,
-// that thread; a shell update of any thread in a populated workspace must not
-// re-render the app root.
+// Subscribe only to thread count and the sole thread so populated-workspace shell updates cannot rerender the
+// app root.
 const threadCountAtom = Atom.make(
   (get) => get(environmentThreadShells.threadShellsAtom).length,
 ).pipe(Atom.withLabel("web-onboarding-thread-count"));
@@ -103,10 +102,7 @@ export function FirstRunGate({
   }));
   const { decision, stalled } = gateState;
   const settingsReadFailed = hydrationStatus === "failed" || hydrationStatus === "retrying";
-  // A workspace still counts as fresh when its only content is the server's own
-  // cwd auto-bootstrap: web mode creates a project + thread from cwd at startup
-  // (`autoBootstrapProjectFromCwd` defaults on there), so "no projects at all"
-  // would mean `npx t3` users never see the wizard.
+  // The server's sole cwd-bootstrap project/thread still counts as fresh so npx t3 users see onboarding.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
   const workspaceFresh =

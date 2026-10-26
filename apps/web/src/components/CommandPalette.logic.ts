@@ -169,8 +169,6 @@ export interface CommandPaletteItem {
   readonly timestamp?: string;
   /** Thread rows rank by this, with use history, instead of by `searchTerms`. */
   readonly threadSearch?: ThreadSearchSubject;
-  /** Title ranges the current query matched, for highlighting. */
-  readonly titleRanges?: ReadonlyArray<SearchRange>;
   /** Shown in place of the description when the match is not in the title. */
   readonly matchHint?: SearchMatchHint;
   readonly icon: ReactNode;
@@ -513,16 +511,18 @@ function scorePaletteItem(
 }
 
 /**
- * Filters and ranks the palette for a query. Groups order by the class of their
- * best match, and on equal classes commands come first, then threads, so "new"
- * runs "New thread" and a thread's title is not stuck under a setting. Server
- * message matches always come last, in their own group, so rows above never
- * move when they arrive.
+ * Equal match classes put commands before threads, so "new" runs "New thread".
+ * Server message matches stay in a final group so late results cannot move earlier rows.
  */
 export function filterCommandPaletteGroups(input: {
   activeGroups: ReadonlyArray<CommandPaletteGroup>;
   query: string;
   isInSubmenu: boolean;
+  /** Submenu options join the root search, and a submenu with no match falls back to it. */
+  allOptions?: {
+    readonly rootGroups: ReadonlyArray<CommandPaletteGroup>;
+    readonly nestedItems: ReadonlyArray<CommandPaletteActionItem>;
+  };
   projectSearchItems: ReadonlyArray<CommandPaletteActionItem>;
   settingsSearchItems?: ReadonlyArray<CommandPaletteActionItem>;
   threadSearchItems: ReadonlyArray<CommandPaletteActionItem>;
@@ -530,6 +530,17 @@ export function filterCommandPaletteGroups(input: {
   threadMessageItems?: ReadonlyArray<CommandPaletteActionItem>;
   now?: number;
 }): CommandPaletteGroup[] {
+  if (input.allOptions && input.isInSubmenu) {
+    const { allOptions, ...submenuInput } = input;
+    const scoped = filterCommandPaletteGroups(submenuInput);
+    if (scoped.length > 0 || input.query.trim().length === 0) return scoped;
+    return filterCommandPaletteGroups({
+      ...input,
+      activeGroups: allOptions.rootGroups,
+      isInSubmenu: false,
+    });
+  }
+
   const isActionsFilter = input.query.startsWith(">");
   const searchQuery = isActionsFilter ? input.query.slice(1) : input.query;
   const normalizedQuery = foldSearchQuery(searchQuery);
@@ -553,6 +564,13 @@ export function filterCommandPaletteGroups(input: {
   // On equal match classes, groups keep this order: threads, what people search
   // for most, right after commands.
   if (searchesEverything) {
+    if (input.allOptions && input.allOptions.nestedItems.length > 0) {
+      searchableGroups.push({
+        value: "nested-search",
+        label: "Suggestions",
+        items: input.allOptions.nestedItems,
+      });
+    }
     if (input.threadSearchItems.length > 0) {
       searchableGroups.push({
         value: "threads-search",
@@ -587,7 +605,7 @@ export function filterCommandPaletteGroups(input: {
     const limit =
       group.value === "threads-search"
         ? PALETTE_THREAD_LIMIT
-        : searchesEverything && threadsMatch
+        : group.value === "nested-search" || (searchesEverything && threadsMatch)
           ? PALETTE_SECONDARY_LIMIT
           : ranked.length;
     // Hints are built only for the rows shown.
@@ -598,7 +616,7 @@ export function filterCommandPaletteGroups(input: {
       )
       .slice(0, limit)
       .map(({ item, match }) => {
-        if (match.ranges.length > 0) return { ...item, titleRanges: match.ranges };
+        if (match.ranges.length > 0) return item;
         // Built only for the rows shown.
         const matchHint = match.explain?.();
         return matchHint ? { ...item, matchHint } : item;
@@ -613,6 +631,35 @@ export function filterCommandPaletteGroups(input: {
   return messageItems.length === 0
     ? groups
     : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
+}
+
+/** Every option inside a submenu as one row, e.g. "New thread in t3code" or "Change theme: Dracula". */
+export function buildNestedSearchItems(
+  items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>,
+  query: string,
+): CommandPaletteActionItem[] {
+  const nameOf = (item: CommandPaletteItem) =>
+    typeof item.title === "string" ? item.title : item.searchTitle;
+  const topLevelNames = new Set(items.map(nameOf));
+  const foldedQuery = foldSearchQuery(query);
+  return items.flatMap((parent) => {
+    if (parent.kind !== "submenu" || typeof parent.title !== "string") return [];
+    const stem = parent.title.replace(/(\.\.\.|…)$/u, "");
+    // A query that only names the submenu ("new thread in") wants the submenu row itself.
+    if (foldSearchQuery(stem).startsWith(foldedQuery)) return [];
+    const prefix = stem === parent.title ? `${stem}: ` : `${stem.trimEnd()} `;
+    return parent.groups.flatMap((group) =>
+      group.items.flatMap((child) => {
+        const name = nameOf(child);
+        if (child.kind !== "action" || name === undefined) return [];
+        const title = `${prefix}${name}`;
+        if (topLevelNames.has(title)) return [];
+        const { searchTitle: _searchTitle, ...rest } = child;
+        // Only the combined title: child keywords like "theme" would list every theme.
+        return [{ ...rest, title, searchTerms: [title] }];
+      }),
+    );
+  });
 }
 
 export function buildBrowseGroups(input: {
@@ -774,8 +821,8 @@ export function buildPaletteRemoteSourceReadiness(
       : {
           ...entry,
           hint: entry.hint.replace(
-            "Open Source Control settings",
-            "Open Settings -> Source Control",
+            "Open source control settings",
+            "Open Settings -> Source control",
           ),
         };
   };

@@ -101,7 +101,7 @@ function asyncEventStream() {
   };
 }
 
-const OPENCODE_TEST_SETTINGS = Schema.decodeUnknownSync(OpenCodeSettings)({});
+const OPENCODE_TEST_SETTINGS = Schema.decodeSync(OpenCodeSettings)({});
 
 function runtimePolicy(
   runtimeMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["runtimeMode"],
@@ -145,6 +145,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   suffix: string,
   nativeSessionId: string,
   client: object,
+  host: Partial<ProviderHost.ProviderHost["Service"]> = {},
   options: { readonly external?: boolean } = {},
 ) {
   const instanceId = ProviderInstanceId.make(`opencode-${suffix}`);
@@ -172,6 +173,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     Effect.provideService(ProviderHost.ProviderHost, {
       paths: { cwd: "/workspace" },
       resolveAttachmentPath: () => null,
+      ...host,
     } as unknown as ProviderHost.ProviderHost["Service"]),
   );
   const runtime = yield* adapter.openSession({
@@ -619,9 +621,6 @@ describe("OpenCodeAdapterV2", () => {
       ),
   );
 
-  // Event order from a live OpenCode 1.18.32 run of a `task` call with
-  // background=true: the task part completes at launch, the root session
-  // settles, and the child session stays busy until its own work ends.
   it.effect.each([true, false])(
     "sends the orchestration block in the system prompt only when wanted (%s)",
     (orchestrationInstructions) =>
@@ -663,6 +662,7 @@ describe("OpenCodeAdapterV2", () => {
               children: async () => ({ data: [] }),
             },
           },
+          {},
           { external: false },
         );
         yield* harness.startTurn();
@@ -678,6 +678,7 @@ describe("OpenCodeAdapterV2", () => {
       ),
   );
 
+  // OpenCode 1.18.32 background tasks complete at launch; children stay busy after root settlement.
   it.effect("reports a background task child as pending work after the root turn settles", () =>
     Effect.gen(function* () {
       const nativeEvents = asyncEventStream();
@@ -1693,6 +1694,97 @@ describe("OpenCodeAdapterV2", () => {
     ),
   );
 
+  it.effect("rejects steering when stop wins the extracted-text lookup", () =>
+    Effect.gen(function* () {
+      const events = asyncEventStream();
+      const lookup = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let prompts = 0;
+      const harness = yield* makeOpenCodeRuntimeHarness(
+        "extraction-stop",
+        "root",
+        {
+          event: {
+            subscribe: async (_input: unknown, options: { signal?: AbortSignal }) => {
+              options.signal?.addEventListener("abort", () => events.close(), { once: true });
+              return { stream: events.stream };
+            },
+          },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            get: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            promptAsync: async () => {
+              prompts++;
+              return { data: true };
+            },
+            status: async () => ({ data: { root: { type: "busy" } } }),
+            messages: async () => ({ data: [] }),
+            children: async () => ({ data: [] }),
+            abort: async () => ({ data: true }),
+          },
+          mcp: { add: async () => ({ data: true }) },
+        },
+        {
+          resolveAttachmentPath: () => "/workspace/report.docx",
+          resolveExtractedTextPath: () =>
+            Deferred.succeed(lookup, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as("/workspace/report.docx.txt"),
+            ),
+        },
+      );
+      yield* harness.startTurn();
+      const snapshot = yield* harness.runtime.readThreadSnapshot({
+        providerThread: harness.providerThread,
+      });
+      const turn = snapshot.providerTurns.at(-1)!;
+      const steer = yield* harness.runtime
+        .steerTurn({
+          threadId: harness.threadId,
+          runId: harness.runId,
+          providerThread: harness.providerThread,
+          providerTurnId: turn.id,
+          message: {
+            messageId: MessageId.make("steer-extraction-stop"),
+            text: "read this",
+            createdBy: "user",
+            creationSource: "web",
+            attachments: [
+              {
+                type: "file",
+                id: "report-docx",
+                name: "report.docx",
+                mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                sizeBytes: 1,
+              },
+            ],
+          },
+        })
+        .pipe(Effect.exit, Effect.forkScoped);
+      yield* Deferred.await(lookup);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: turn.id,
+      });
+      yield* Deferred.succeed(release, undefined);
+      assert.isTrue(Exit.isFailure(yield* Fiber.join(steer)));
+      assert.equal(prompts, 1);
+      yield* Effect.promise(() =>
+        events.push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "idle" } },
+        }),
+      );
+      const stopped = yield* harness.runtime.readThreadSnapshot({
+        providerThread: harness.providerThread,
+      });
+      assert.equal(stopped.providerTurns.at(-1)?.status, "interrupted");
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
   it.effect("interrupts an initial prompt while its SDK request is pending", () =>
     Effect.gen(function* () {
       const nativeEvents = asyncEventStream();
@@ -2237,8 +2329,6 @@ describe("OpenCodeAdapterV2", () => {
       });
       assert.notEqual(minted.id, placeholder.id);
       assert.equal(minted.nativeThreadRef?.nativeId, "ses_native_2");
-      // OpenCode names a session from its first prompt only when create
-      // leaves the title unset, so the adapter never sends one.
       for (const input of createInputs) {
         assert.notProperty(input, "title");
       }

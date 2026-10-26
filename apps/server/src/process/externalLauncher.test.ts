@@ -19,10 +19,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
-// Tests below write `#!/bin/sh` stubs into a real temp dir and hand that
-// directory to a posix-mocked resolver as PATH. On a Windows host the temp
-// path carries a drive letter, so the posix `:` split shatters it; there is
-// no posix executable to find there anyway.
+// Windows drive letters break mocked POSIX PATH splitting; these tests also require /bin/sh stubs.
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 interface MockSpawnResult {
@@ -183,17 +180,6 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-for (const {} of ["darwin", "linux"] as const) {
-}
-
-for (const {} of [
-  { kind: "browser", folderVerb: "none" },
-  { kind: "reveal", folderVerb: "none" },
-  { kind: "reveal", folderVerb: "" },
-  { kind: "reveal", folderVerb: "open" },
-] as const) {
-}
-
 it.effect.skipIf(windowsHost)(
   "reveals a WSL file in Windows File Explorer through its UNC path",
   () =>
@@ -306,91 +292,6 @@ for (const wsl of [false, true]) {
         );
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
-}
-
-for (const {} of ["rejected", "spawn-error", "stalled"] as const) {
-}
-
-for (const {} of [
-  {
-    platform: "darwin",
-    installPath: "Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide",
-    editor: "antigravity",
-    args: ["--goto", "/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "linux",
-    installPath: ".local/bin/antigravity-ide",
-    editor: "antigravity",
-    args: ["--goto", "/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "darwin",
-    installPath: "Applications/Cursor.app/Contents/Resources/app/bin/code",
-    editor: "cursor",
-    args: ["--classic", "--goto", "/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "darwin",
-    installPath: "Applications/Kiro.app/Contents/Resources/app/bin/code",
-    editor: "kiro",
-    args: ["--goto", "/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "darwin",
-    installPath: "Applications/WebStorm.app/Contents/MacOS/webstorm",
-    editor: "webstorm",
-    args: ["--line", "12", "--column", "3", "/workspace with spaces/file.ts"],
-  },
-  {
-    platform: "darwin",
-    installPath: "Applications/Zed.app/Contents/MacOS/cli",
-    editor: "zed",
-    args: ["/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "win32",
-    installPath: "Programs/Cursor/resources/app/bin/cursor.cmd",
-    editor: "cursor",
-    args: ['^"--classic^"', '^"--goto^"', '^"/workspace^ with^ spaces/file.ts:12:4^"'],
-  },
-  {
-    platform: "win32",
-    installPath: "Programs/Microsoft VS Code/bin/code.cmd",
-    editor: "vscode",
-    args: ['^"--goto^"', '^"/workspace^ with^ spaces/file.ts:12:4^"'],
-  },
-  {
-    platform: "win32",
-    installPath: "Programs/JetBrains/WebStorm 2026.2/bin/webstorm64.exe",
-    editor: "webstorm",
-    args: ["--line", "12", "--column", "3", "/workspace with spaces/file.ts"],
-  },
-  {
-    platform: "win32",
-    installPath: "Programs/WebStorm/bin/webstorm64.exe",
-    editor: "webstorm",
-    args: ["--line", "12", "--column", "3", "/workspace with spaces/file.ts"],
-  },
-  {
-    platform: "win32",
-    installPath: "Programs/Zed/bin/zed.exe",
-    editor: "zed",
-    args: ["/workspace with spaces/file.ts:12:4"],
-  },
-  {
-    platform: "linux",
-    installPath: ".local/share/JetBrains/Toolbox/scripts/idea",
-    editor: "idea",
-    args: ["--line", "12", "--column", "3", "/workspace with spaces/file.ts"],
-  },
-  {
-    platform: "linux",
-    installPath: ".local/bin/zed",
-    editor: "zed",
-    args: ["/workspace with spaces/file.ts:12:4"],
-  },
-] as const) {
 }
 
 for (const cwd of ["/workspace with spaces/", "/workspace with spaces/file.ts:12:4"]) {

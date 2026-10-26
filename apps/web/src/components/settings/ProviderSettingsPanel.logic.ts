@@ -1,7 +1,6 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   AuthProvidersManageScope,
-  type AuthSessionState,
   type EnvironmentId,
   type ProjectId,
   type ProjectSettingsOverrides,
@@ -101,12 +100,7 @@ export function resolveRemoteOperateAccess(input: {
   return resolveSessionOperateAccess(input);
 }
 
-/**
- * `providerInstances` is always sent explicitly, even as `{}`, because the
- * server keeps a stored `providerInstances` map when an incoming entry omits
- * the key (so older clients that don't know the field cannot wipe it by editing
- * another setting).
- */
+/** Send providerInstances even when empty; omission preserves the stored map for older clients. */
 
 export function buildProviderInstanceOverridePatch(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,

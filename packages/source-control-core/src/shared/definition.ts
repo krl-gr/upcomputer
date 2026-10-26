@@ -237,6 +237,11 @@ export interface SourceControlDefinition {
    * sends T3 no notification of its own. Absent for a host with no such CLI.
    */
   readonly changeRequestCloseCommand?: RegExp;
+  /**
+   * Matches a shell command that opens a change request with this host's CLI and prints its URL
+   * on a line of its own. Absent for a host with no such CLI.
+   */
+  readonly changeRequestCreateCommand?: RegExp;
   readonly authorProfileUrl: (login: string, repositoryUrl: string) => string | null;
   /**
    * The references this host's own renderer links in plain text, such as `#12` or a commit SHA,
@@ -569,12 +574,9 @@ function inOrder(
 }
 
 /**
- * `definitions` is display order, and its first entry is what `get` returns for a repository
- * that has not reported its host yet. A change request URL goes to the first definition that
- * reads it, trying `claimChangeRequestUrlsFirst` before the rest, so a host that claims a route
- * only on its own hostnames can precede one that claims the route everywhere. A remote likewise
- * goes to the first that recognises it, in `recognizeRemotesIn` order and then the rest, because
- * one hostname can carry several hosts' labels.
+ * `definitions` sets display order and the fallback for repositories with an unknown host.
+ * Claim host-specific URL routes before hosts that accept them on any hostname.
+ * Remote recognition needs a separate order because one hostname can carry several hosts' labels.
  */
 export function makeSourceControlDefinitionRegistry(
   definitions: ReadonlyArray<SourceControlDefinition>,

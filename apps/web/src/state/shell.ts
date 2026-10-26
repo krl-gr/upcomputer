@@ -105,10 +105,7 @@ export function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean
   );
 }
 
-/**
- * The persisted catalog can emit before platform discovery registers the primary environment.
- * Neither that gap nor an empty catalog proves a project is absent.
- */
+// Catalog can precede primary discovery; an empty or incomplete catalog cannot prove absence.
 function catalogIsComplete(
   catalog: EnvironmentCatalogState,
   requiresPrimaryEnvironment: boolean,

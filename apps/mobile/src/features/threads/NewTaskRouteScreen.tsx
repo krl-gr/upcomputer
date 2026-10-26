@@ -37,6 +37,7 @@ import { usePromptLinkResolver } from "../prompt-links/usePromptLinkResolver";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -154,6 +155,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();
@@ -231,11 +233,14 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       root?.goBack();
       return;
     }
-    root?.navigate("Thread", {
-      draft: {
-        environmentId: String(project.environmentId),
-        projectId: String(project.id),
-        incomingShareId: incomingShare?.id,
+    selectDetail({
+      name: "Thread",
+      params: {
+        draft: {
+          environmentId: String(project.environmentId),
+          projectId: String(project.id),
+          incomingShareId: incomingShare?.id,
+        },
       },
     });
   }
@@ -270,8 +275,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return;
     }
     if (!isFocused) {
-      // Returning from the reserved draft is a fresh resume attempt. Keeping
-      // this latch set would leave every project row disabled with no route.
+      // Reset on return so reserved-draft resume can retry without leaving project rows disabled.
       resumedDestinationKeyRef.current = null;
       return;
     }
@@ -283,18 +287,18 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return;
     }
     resumedDestinationKeyRef.current = destinationKey;
-    (navigation.getState()?.routeNames.includes("NewTaskProject")
-      ? navigation
-      : navigation.getParent()
-    )?.navigate("Thread", {
-      draft: {
-        environmentId: reservedDestinationProject.environmentId,
-        projectId: reservedDestinationProject.id,
-        title: reservedDestinationProject.title,
-        incomingShareId: incomingShare.id,
+    selectDetail({
+      name: "Thread",
+      params: {
+        draft: {
+          environmentId: reservedDestinationProject.environmentId,
+          projectId: reservedDestinationProject.id,
+          title: reservedDestinationProject.title,
+          incomingShareId: incomingShare.id,
+        },
       },
     });
-  }, [incomingShare, isFocused, navigation, reservedDestinationProject]);
+  }, [incomingShare, isFocused, reservedDestinationProject, selectDetail]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">

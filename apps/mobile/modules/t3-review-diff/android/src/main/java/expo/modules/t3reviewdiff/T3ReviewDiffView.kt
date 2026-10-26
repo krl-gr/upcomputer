@@ -33,6 +33,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   private val onToggleComment by EventDispatcher()
   private var rows: List<DiffRow> = emptyList()
   private var visibleRows: List<DiffRow> = emptyList()
+  private var visibleRowIndices = IntArray(0)
   private var collapsedFileIds: Set<String> = emptySet()
   private var viewedFileIds: Set<String> = emptySet()
   private var selectedRowIds: Set<String> = emptySet()
@@ -75,8 +76,8 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
       onDebug(
         mapOf(
           "message" to "visible-range",
-          "firstRowIndex" to first,
-          "lastRowIndex" to last,
+          "firstRowIndex" to visibleRowIndices[first],
+          "lastRowIndex" to visibleRowIndices[last],
           "totalRows" to rows.size,
         ),
       )
@@ -105,6 +106,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     horizontalScroller.forceFinished(true)
     rows = emptyList()
     visibleRows = emptyList()
+    visibleRowIndices = IntArray(0)
     canvasView.rows = emptyList()
     canvasView.tokensByRowId = emptyMap()
     lastVisibleFileId = null
@@ -393,16 +395,20 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   private fun rebuildVisibleRows() {
     canvasView.setViewportEventsPaused(true)
     val filtered = ArrayList<DiffRow>(rows.size)
+    val indices = IntArray(rows.size)
     var currentFileCollapsed = false
-    rows.forEach { row ->
+    rows.forEachIndexed { index, row ->
       if (row.kind == "file") {
         currentFileCollapsed = collapsedFileIds.contains(row.resolvedFileId)
-        filtered.add(row)
-      } else if (!currentFileCollapsed) {
+      }
+      if (row.kind == "file" || !currentFileCollapsed) {
+        indices[filtered.size] = index
         filtered.add(row)
       }
     }
     visibleRows = filtered
+    // JS selects highlights from the full payload, including collapsed rows.
+    visibleRowIndices = indices.copyOf(filtered.size)
     canvasView.rows = filtered
     canvasView.viewedFileIds = viewedFileIds
     canvasView.selectedRowIds = selectedRowIds
@@ -846,7 +852,6 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
     super.onSizeChanged(width, height, oldWidth, oldHeight)
-    // Wrapped rows take their height from the width, so a new width is a new layout.
     if (style.wordWrap && width != oldWidth) layoutRows()
     onViewportSizeChanged?.invoke()
     setVerticalOffset(verticalOffset)
@@ -1283,7 +1288,6 @@ private class DiffCanvasView(context: Context) : View(context) {
     }
     val selected = selectedRowIds.contains(row.id)
     if (selected) {
-      // Keep the diff and syntax colors intact; selection lives in the gutter.
       fill(
         canvas,
         withAlpha(theme.hunkText, 242),

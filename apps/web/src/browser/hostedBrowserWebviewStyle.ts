@@ -52,9 +52,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   }
 
   if (renderingActive) {
-    // Electron stops compositing a guest that is fully outside the window, even
-    // when background throttling is disabled. Keep capture-active guests inside
-    // the viewport but behind the app so recordings receive complete frames.
+    // Electron stops compositing offscreen guests; keep capture-active guests inside the viewport behind the app.
     // With a backdrop, the wrapper is clipped to it; the guest keeps `hiddenSize`.
     return {
       left: hiddenBackdrop?.x ?? 0,

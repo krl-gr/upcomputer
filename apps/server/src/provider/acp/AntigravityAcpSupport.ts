@@ -231,6 +231,7 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
   readonly input: ProviderSendTurnInput["input"];
   readonly attachments: ProviderSendTurnInput["attachments"];
   readonly attachmentsDir: string;
+  readonly promptCapabilities: EffectAcpSchema.AgentCapabilities["promptCapabilities"];
 }): Effect.fn.Return<
   ReadonlyArray<EffectAcpSchema.ContentBlock>,
   EffectAcpErrors.AcpError,
@@ -248,9 +249,7 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
       attachment.type === "file" &&
       "source" in attachment &&
       attachment.source?._tag === "pasted-text";
-    // ProviderService has already put the file path in the text block. Keep a
-    // folded clipboard paste lazy so the agent can search or sample it rather
-    // than paying to embed the entire resource in context immediately.
+    // The text already carries the path; keep folded pastes lazy so agents can search without embedding the whole file.
     const mimeType = attachment.mimeType.toLowerCase().split(";", 1)[0] ?? "";
     const image = attachment.type === "image" && IMAGE_MIME_TYPES.has(mimeType);
     const audio = attachment.type === "file" && AUDIO_MIME_TYPES.has(mimeType);
@@ -261,12 +260,14 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
         TEXT_MIME_TYPES.has(mimeType) ||
         TEXT_FILE_EXTENSIONS.has(path.extname(attachment.name).toLowerCase()));
     const isPathOnly =
-      attachment.type === "file" && (isPastedText || (!audio && !pdf && !textFile));
-    if (attachment.type === "image" && !image) {
-      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
-        `Antigravity does not support '${attachment.name}' (${attachment.mimeType}). Attach a BMP, JPEG, PNG, WebP, PDF, audio, or text file.`,
-      );
-    }
+      (attachment.type === "image" && (!image || input.promptCapabilities?.image !== true)) ||
+      (attachment.type === "file" &&
+        (isPastedText ||
+          (audio
+            ? input.promptCapabilities?.audio !== true
+            : pdf || textFile
+              ? input.promptCapabilities?.embeddedContext !== true
+              : true)));
     const attachmentPath = resolveAttachmentPath({
       attachmentsDir: input.attachmentsDir,
       attachment,

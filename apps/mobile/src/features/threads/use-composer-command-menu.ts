@@ -11,10 +11,7 @@ import { matchComposerThreadItems } from "@t3tools/client-runtime/composerThread
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 
 const EMPTY_THREAD_SHELLS: ReadonlyArray<EnvironmentThreadShell> = [];
-import {
-  COMPOSER_CONTEXT_MAX_RECORDS,
-  PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS,
-} from "@t3tools/contracts";
+import { COMPOSER_CONTEXT_MAX_RECORDS } from "@t3tools/contracts";
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { pullRequestComposerContext, threadComposerContext } from "../../lib/composerContext";
 import { uuidv4 } from "../../lib/uuid";
@@ -36,25 +33,36 @@ import {
   scoreQueryMatch,
 } from "@t3tools/shared/searchRanking";
 import {
+  createProviderWorkspaceSnapshotRefreshAtomFamily,
   dedupeProviderSkillsByName,
   getProviderSkillsForSlashMenu,
   getProviderSlashCommandsForSlashMenu,
   isProviderSkillUserInvocable,
-  hasCompleteProviderWorkspaceSnapshot,
-  hasCurrentProviderWorkspaceSnapshot,
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
+import { useAtomRefresh } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { serverEnvironment } from "../../state/server";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { useComposerPathSearch, useComposerPullRequestSearch } from "../../state/queries";
+import {
+  useComposerPathSearch,
+  useComposerPullRequestSearch,
+  useThreadSearch,
+} from "../../state/queries";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 
-const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
+const providerWorkspaceSnapshotRefresh = createProviderWorkspaceSnapshotRefreshAtomFamily({
+  providers: serverEnvironment.providersValueAtom,
+  refreshProviders: serverEnvironment.refreshProviders,
+});
+
+const idleWorkspaceSnapshotRefreshAtom: Atom.Atom<unknown> = Atom.make<void>(undefined).pipe(
+  Atom.withLabel("mobile:provider-workspace-snapshot-refresh:idle"),
+);
 
 function composerSelectionAtEnd(draftMessage: string): ComposerEditorSelection {
   return { start: draftMessage.length, end: draftMessage.length };
@@ -208,12 +216,10 @@ export function useComposerCommandMenu({
   // Thread mentions rank by recency as of when the composer mounted.
   const [now] = useState(() => Date.now());
   const previousOwnerKeyRef = useRef(ownerKey);
-  const onSelectionChange = (nextSelection: ComposerEditorSelection) => {
-    setSelection(nextSelection);
-  };
   useEffect(() => {
     const inserted = ownerKey ? readComposerDraftSelection(ownerKey, draftMessage) : null;
     if (inserted) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Applies a selection inserted into the draft store by another surface.
       setSelection((current) =>
         current.start === inserted.start && current.end === inserted.end ? current : inserted,
       );
@@ -238,101 +244,28 @@ export function useComposerCommandMenu({
   const skills = selectedProviderStatus
     ? resolveProviderSkillsForCwd(selectedProviderStatus, projectCwd)
     : [];
-  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
-    reportFailure: false,
-  });
   const selectedProviderInstanceId = selectedProviderStatus?.instanceId;
-  const hasWorkspaceSnapshot = hasCompleteProviderWorkspaceSnapshot(
-    selectedProviderStatus,
-    projectCwd,
-  );
-  // The last scan this composer asked for. A request inside the TTL is not
-  // repeated, so a client clock ahead of the server's cannot loop rescans.
-  const workspaceRefreshKeyRef = useRef<{ key: string; requestedAt: number } | null>(null);
-  const [workspaceRefreshRetry, setWorkspaceRefreshRetry] = useState<{
-    key: string;
-    notBefore: number;
-  } | null>(null);
-  const workspaceRefreshScopeKey =
+  const refreshWorkspaceSnapshot = useAtomRefresh(
     environmentId && projectCwd && selectedProviderInstanceId
-      ? `${environmentId}:${selectedProviderInstanceId}:${projectCwd}`
-      : null;
-  const workspaceSlashCommandsPending =
-    selectedProviderStatus?.workspaceSnapshots?.some(
-      (snapshot) => snapshot.cwd === projectCwd && snapshot.slashCommandsPending === true,
-    ) ?? false;
+      ? providerWorkspaceSnapshotRefresh({
+          environmentId,
+          instanceId: selectedProviderInstanceId,
+          cwd: projectCwd,
+        })
+      : idleWorkspaceSnapshotRefreshAtom,
+  );
+  // Every draft change rechecks a stale snapshot, including drafts written by
+  // another surface (a prompt link) that never move the editor selection.
   useEffect(() => {
-    if (
-      !workspaceSlashCommandsPending ||
-      !workspaceRefreshRetry ||
-      workspaceRefreshRetry.key !== workspaceRefreshScopeKey
-    )
-      return;
-    const timeout = setTimeout(
-      () => {
-        setWorkspaceRefreshRetry((current) => (current === workspaceRefreshRetry ? null : current));
-      },
-      Math.max(0, workspaceRefreshRetry.notBefore - Date.now()),
-    );
-    return () => clearTimeout(timeout);
-  }, [workspaceRefreshRetry, workspaceRefreshScopeKey, workspaceSlashCommandsPending]);
-  const hadWorkspaceSnapshotRef = useRef(false);
-  useEffect(() => {
-    if (hadWorkspaceSnapshotRef.current && !hasWorkspaceSnapshot) {
-      workspaceRefreshKeyRef.current = null;
-      setWorkspaceRefreshRetry(null);
-    }
-    hadWorkspaceSnapshotRef.current = hasWorkspaceSnapshot;
-  }, [hasWorkspaceSnapshot]);
-  useEffect(() => {
-    if (!environmentId || !projectCwd || !selectedProviderInstanceId) return;
-    const key = `${environmentId}:${selectedProviderInstanceId}:${projectCwd}`;
-    const now = Date.now();
-    const lastRequest = workspaceRefreshKeyRef.current;
-    if (
-      lastRequest?.key === key &&
-      now - lastRequest.requestedAt < PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS
-    )
-      return;
-    if (hasCurrentProviderWorkspaceSnapshot(selectedProviderStatus, projectCwd, now)) {
-      setWorkspaceRefreshRetry(null);
-      return;
-    }
-    const retry = workspaceRefreshRetry;
-    if (retry?.key === key && now < retry.notBefore) return;
-    const request = { key, requestedAt: now };
-    workspaceRefreshKeyRef.current = request;
-    const retryLater = () => {
-      if (workspaceRefreshKeyRef.current !== request) return;
-      workspaceRefreshKeyRef.current = null;
-      setWorkspaceRefreshRetry({
-        key,
-        notBefore: Date.now() + WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS,
-      });
-    };
-    void refreshProviders({
-      environmentId,
-      input: { instanceId: selectedProviderInstanceId, cwd: projectCwd },
-    }).then((result) => {
-      const refreshed =
-        result._tag === "Success" &&
-        hasCompleteProviderWorkspaceSnapshot(
-          result.value.providers.find(
-            (provider) => provider.instanceId === selectedProviderInstanceId,
-          ),
-          projectCwd,
-        );
-      if (!refreshed) retryLater();
-    }, retryLater);
+    refreshWorkspaceSnapshot();
   }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Draft changes are the recheck signal.
     draftMessage,
-    environmentId,
-    projectCwd,
-    refreshProviders,
-    selectedProviderInstanceId,
-    selectedProviderStatus,
-    workspaceRefreshRetry,
+    refreshWorkspaceSnapshot,
   ]);
+  const onSelectionChange = (nextSelection: ComposerEditorSelection) => {
+    setSelection(nextSelection);
+  };
 
   const trigger = (() => {
     if (!enabled || selection.start !== selection.end) {
@@ -345,6 +278,12 @@ export function useComposerCommandMenu({
     cwd: trigger?.kind === "path" ? projectCwd : null,
     query: trigger?.kind === "path" ? trigger.query : null,
   });
+  // Mounts older settled threads matching the mention, which shells may leave out.
+  useThreadSearch(
+    trigger?.kind === "path" && environmentId ? [environmentId] : [],
+    trigger?.kind === "path" ? trigger.query : "",
+    { titlesOnly: true },
+  );
   const pullRequestSearch = useComposerPullRequestSearch({
     environmentId,
     projectId: pullRequestProjectId,

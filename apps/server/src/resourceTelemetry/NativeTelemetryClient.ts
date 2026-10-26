@@ -361,7 +361,7 @@ function canCommandNativeTelemetrySidecar(
   return hasHandle && (status === "healthy" || status === "degraded");
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(function* () {
   const binary = yield* ResourceMonitorBinary.ResourceMonitorBinary;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -1088,14 +1088,19 @@ export const layerTest = (
         processTree: true,
       }),
       snapshots: Stream.empty,
-      readHistory: () =>
-        Effect.fail(
+      readHistory: Effect.fn("NativeTelemetryClient.readHistory")(function () {
+        return Effect.fail(
           new NativeTelemetryUnavailable({
             reason: "No resource monitor history was configured for this test.",
           }),
-        ),
-      setExternalProcesses: () => Effect.void,
-      setHostPowerState: () => Effect.void,
+        );
+      }),
+      setExternalProcesses: Effect.fn("NativeTelemetryClient.setExternalProcesses")(function () {
+        return Effect.void;
+      }),
+      setHostPowerState: Effect.fn("NativeTelemetryClient.setHostPowerState")(function () {
+        return Effect.void;
+      }),
       sampleNow: Effect.fail(
         new NativeTelemetryUnavailable({
           reason: "No resource monitor sample was configured for this test.",

@@ -3,9 +3,6 @@ import {
   AudioModule,
   RecordingPresets,
   requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  setIsAudioActiveAsync,
-  type RecorderState,
   type RecordingStatus,
 } from "expo-audio";
 import { File } from "expo-file-system";
@@ -37,14 +34,18 @@ import {
   voiceInputBlocksSubmission,
   type VoiceInputState,
 } from "@t3tools/client-runtime/voice-input";
-import { createLazyVoiceRecorder, type LazyVoiceRecorder } from "./lazyVoiceRecorder";
+import { createLazyVoiceRecorder } from "./lazyVoiceRecorder";
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 import { VoiceInputSession } from "./voiceInputSession";
+import {
+  acquireAudioSession,
+  activateAudioSession,
+  releaseAudioSession,
+} from "../../lib/audioSession";
 
 const INITIAL_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const VOICE_METERING_INTERVAL_MS = 80;
-// The native constructor takes platform-flattened options, as `useAudioRecorder`
-// builds them with expo-audio's internal `createRecordingOptions`.
+// The native constructor expects platform-flattened options, as built by useAudioRecorder.
 const { ios: IOS_RECORDING_OPTIONS, android: ANDROID_RECORDING_OPTIONS } =
   RecordingPresets.HIGH_QUALITY;
 const VOICE_RECORDING_OPTIONS = {
@@ -55,33 +56,6 @@ const VOICE_RECORDING_OPTIONS = {
   isMeteringEnabled: true,
   ...(Platform.OS === "ios" ? IOS_RECORDING_OPTIONS : ANDROID_RECORDING_OPTIONS),
 };
-
-async function releaseVoiceRecordingAudio(): Promise<void> {
-  try {
-    await setAudioModeAsync({ allowsRecording: false });
-  } finally {
-    // Expo does not deactivate AVAudioSession when recording stops or its
-    // category changes. Explicit deactivation resumes interrupted app audio.
-    await setIsAudioActiveAsync(false);
-  }
-}
-
-async function configureVoiceRecordingAudio(): Promise<void> {
-  try {
-    await setAudioModeAsync({
-      allowsRecording: true,
-      interruptionMode: "doNotMix",
-      playsInSilentMode: true,
-      shouldPlayInBackground: false,
-    });
-    await setIsAudioActiveAsync(true);
-  } catch (error) {
-    try {
-      await releaseVoiceRecordingAudio();
-    } catch {}
-    throw error;
-  }
-}
 
 const VoiceInputContext = createContext<ReturnType<typeof useVoiceInputRuntime> | null>(null);
 
@@ -118,16 +92,18 @@ function useVoiceInputRuntime() {
   const keepAwakeId = useId();
   const keepAwakeSessionRef = useRef(0);
   const elapsedSecondsRef = useRef(0);
-  const audioLevelsRef = useRef(Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0));
-  const audioLevels = useSharedValue(audioLevelsRef.current);
-  const sessionRef = useRef<VoiceInputSession | null>(null);
-  const recorderRef = useRef<LazyVoiceRecorder<RecorderState> | null>(null);
+  const [initialLevels] = useState(() => Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0));
+  const audioLevelsRef = useRef(initialLevels);
+  const audioLevels = useSharedValue(initialLevels);
+  const audioToken = useRef<ReturnType<typeof acquireAudioSession> | null>(null);
 
-  if (!sessionRef.current || !recorderRef.current) {
+  /* oxlint-disable react/refs -- The initializer captures the audio-session ref for later recording callbacks; it does not read it. */
+  const [{ session, recorder }] = useState(() => {
+    let session: VoiceInputSession | null = null;
     const recorder = createLazyVoiceRecorder({
       create: () => new AudioModule.AudioRecorder(VOICE_RECORDING_OPTIONS),
       onStatus: (status: RecordingStatus) => {
-        sessionRef.current?.controller.handleRecorderStatus({
+        session?.controller.handleRecorderStatus({
           isFinished: status.isFinished,
           hasError: status.hasError || status.mediaServicesDidReset === true,
           error: status.error,
@@ -150,35 +126,44 @@ function useVoiceInputRuntime() {
         return preferredMicrophoneInput(inputs, order);
       },
     });
-    recorderRef.current = recorder;
-    sessionRef.current = new VoiceInputSession({
+    session = new VoiceInputSession({
       recorder,
       getTranscriber: getLocalVoiceTranscriber,
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };
       },
-      configureRecording: configureVoiceRecordingAudio,
-      releaseRecording: releaseVoiceRecordingAudio,
+      configureRecording: async () => {
+        const token = acquireAudioSession("recording");
+        audioToken.current = token;
+        try {
+          await activateAudioSession(token);
+        } catch (error) {
+          await releaseAudioSession(token).catch(() => {});
+          throw error;
+        }
+      },
+      releaseRecording: async () => {
+        if (audioToken.current) await releaseAudioSession(audioToken.current);
+        audioToken.current = null;
+      },
       deleteRecording: (uri) => new File(uri).delete(),
       onStateChange: (nextState) =>
         setState({
           state: nextState,
-          ownerKey: sessionRef.current?.ownerKey ?? null,
-          label: sessionRef.current?.label ?? null,
+          ownerKey: session?.ownerKey ?? null,
+          label: session?.label ?? null,
         }),
     });
-  }
+    return { session, recorder };
+  });
+  /* oxlint-enable react/refs */
 
-  const session = sessionRef.current;
   const controller = session.controller;
-  const recorder = recorderRef.current;
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      // iOS reports `inactive` while its permission dialog is open. Only the
-      // real background state cancels preparation; recorder status handles
-      // calls and route interruptions during capture.
+      // iOS permission dialogs report inactive; cancel preparation only on background. Recorder status handles capture interruptions.
       if (nextState === "background") controller.appMovedToBackground();
     });
     return () => subscription.remove();
@@ -209,7 +194,7 @@ function useVoiceInputRuntime() {
 
     if (audioLevelsRef.current.some((level) => level !== 0)) {
       audioLevelsRef.current = Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0);
-      audioLevels.value = audioLevelsRef.current;
+      audioLevels.set(audioLevelsRef.current);
     }
     if (elapsedSecondsRef.current !== 0) {
       elapsedSecondsRef.current = 0;
@@ -227,7 +212,7 @@ function useVoiceInputRuntime() {
       if (level !== 0 || history.some((sample) => sample !== 0)) {
         const nextLevels = [...history.slice(1), level];
         audioLevelsRef.current = nextLevels;
-        audioLevels.value = nextLevels;
+        audioLevels.set(nextLevels);
       }
 
       const nextElapsedSeconds = Math.min(

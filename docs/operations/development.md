@@ -18,43 +18,35 @@ Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Cod
 ## GitCafe mirror (optional)
 
 GitHub is the source of truth. [git.cafe/pingdotgg/t3code](https://git.cafe/pingdotgg/t3code) is a
-two-way synced mirror with much higher API rate limits, which helps when many agents read PRs and
-issues at once. You never need it to contribute.
+two-way synced mirror with much higher API rate limits, which helps when many agents work at once.
+You never need it to contribute.
 
-Comments, reviews, labels, and issue edits made on GitCafe sync back to GitHub. The exception is
-code: push branches and open PRs on GitHub, where CI runs. GitCafe mirrors a new PR within about a
-minute, and from then on you can work with it through either forge.
+Pushes, PRs, comments, reviews, labels, and issue edits made on GitCafe sync to GitHub within
+about a minute, and PR and issue numbers match. CI runs on GitHub, and its checks show up on
+GitCafe.
 
 ```sh
 git remote set-url origin https://git.cafe/pingdotgg/t3code.git
 git remote add github https://github.com/pingdotgg/t3code.git
-# The GitHub remote you push to: `github`, or your fork's remote.
-git config remote.pushDefault github
-gh repo set-default pingdotgg/t3code
-bun install -g @gitcafe/cli   # `cafe` needs Bun 1.2 or newer
+gh repo set-default pingdotgg/t3code   # `gh` is still used for merging
+bun install -g @gitcafe/cli@latest   # `cafe` needs Bun 1.2 or newer
 cafe auth login && cafe auth http setup
 cafe skills install --global  # optional: cafe-* skills for coding agents
 ```
 
-With `origin` on git.cafe:
+With `origin` on git.cafe, work through GitCafe and leave GitHub's API alone:
 
-- Use `cafe` for existing PRs, issues, comments, reviews, and labels, both reading and writing. Check status
-  comes from `cafe pr status <n> --json`.
-- Create PRs on GitHub: `git push` (to the `pushDefault` remote), then `gh pr create` or `gh stack`.
-  A PR opened with `cafe pr create` or `cafe stack submit` can get a different number on each forge,
-  a sync marker appended to its body, and rewritten references, and it cannot come from a fork.
-- Write or edit text with closing keywords using `gh`. Any text GitCafe writes to GitHub has its
-  `#<n>` references turned into GitCafe links, so a `Fixes #<n>` edited through `cafe` silently stops
-  closing the issue.
-- Merge with `gh pr merge <branch> --match-head-commit <sha>`. `cafe pr merge` only pins the head
-  GitCafe last saw, not the commit you reviewed.
-- Use `gh` where the mirror falls short: CI logs and reruns, a fork PR's head repository, and
-  anything `cafe` returns empty or 403/404 for.
-- PR and issue numbers can differ between the forges. Name PRs by branch
-  (`cafe pr list --head <branch>`, `gh pr view <branch>`), and write `Fixes #<GitHub number>`.
-- `cafe` flags differ from `gh`: `--repo` not `-R`, `cafe issue comments <n>` not `--comments`,
-  `cafe pr status` not `pr checks`. This repository's CI is GitHub Actions on GitHub, so `cafe ci`
-  has no runs for it; read logs with `gh run view`. `cafe api` paths omit `/api` (`cafe api /repos/...`).
+- Push to `origin`, open PRs with `cafe pr create` (`--head owner/repo:branch` from a fork) or
+  `cafe stack submit`, and use `cafe` for everything after that. Link the git.cafe PR URL, not the
+  github.com one, wherever a tool tracks the PR, so polling stays on GitCafe.
+- Read checks with `cafe pr status <n>`, and GitHub Actions logs with `cafe ci logs <run>` (run ids
+  from `cafe ci list --pr <n>`). `cafe ci rerun <run>` reruns one. These need `cafe` 0.11 or newer.
+- Write closing references as `Fixes pingdotgg/t3code#<n>`. GitCafe turns a bare `#<n>` in text it
+  syncs to GitHub into a git.cafe link, and GitHub does not close issues from those.
+- Merge with `gh pr merge <n> --match-head-commit <sha>`, because `cafe pr merge` cannot pin the
+  commit you reviewed.
+- `cafe` commands differ from `gh`: `cafe issue comments <n>` not `--comments`, `cafe pr status`
+  not `pr checks`.
 
 ## Choosing a dev process
 
@@ -70,7 +62,10 @@ Add `--browser` to open a browser automatically.
 Linked worktrees default to their own `.t3/userdata`, even when `T3CODE_HOME` is set.
 The main checkout defaults to `~/.t3/dev`. An explicit `--home-dir` wins in both cases.
 The first start in a worktree seeds its empty database from a read-only copy of
-`~/.t3/userdata`; `--no-seed` or `T3CODE_DEV_SEED=0` skips that.
+`~/.t3/userdata/statev2.sqlite` if the source is at most 500 MiB. Larger sources warn
+and dev starts with an empty database. `--no-seed` or `T3CODE_DEV_SEED=0` skips seeding.
+To copy a larger source, run `vp run migrate-dev-db` with dev stopped. It may use
+substantial disk space before pruning.
 Never run a development server against the live `~/.t3/userdata`.
 See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
 

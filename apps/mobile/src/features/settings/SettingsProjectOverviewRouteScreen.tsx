@@ -12,7 +12,7 @@ import {
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -42,6 +42,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 import { leaveSettingsPage } from "./settings-navigation";
 import { workspaceHasColumns } from "../workspace/workspace-selection-store";
 import { DEFAULT_SETTINGS_PAGE } from "../workspace/workspace-tab-navigation";
+import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 
 export function SettingsProjectOverviewRouteScreen() {
   const insets = useSafeAreaInsets();
@@ -57,15 +58,16 @@ export function SettingsProjectOverviewRouteScreen() {
     setIsRemoving(false);
   };
   const navigation = useNavigation();
-  const { selectedTargets, projectGroups, selectedProjectKey, selectProject } =
-    useSettingsEnvironmentFilter();
-  const latestProjectKey = useRef(selectedProjectKey);
-  useEffect(() => {
-    latestProjectKey.current = selectedProjectKey;
-  }, [selectedProjectKey]);
+  const {
+    selectedTargets,
+    projectGroups,
+    selectedProjectKey,
+    selectProject,
+    getSelectedProjectKey,
+  } = useSettingsEnvironmentFilter();
   // The filter can move to another project while a removal is still running.
   const finishProjectRemoval = (projectKey: string | null) => {
-    if (latestProjectKey.current !== projectKey) return;
+    if (getSelectedProjectKey() !== projectKey) return;
     if (navigation.isFocused())
       leaveSettingsPage(navigation, workspaceHasColumns(), DEFAULT_SETTINGS_PAGE);
     // Otherwise the filter keeps pointing at the removed project as an unavailable one.
@@ -175,6 +177,7 @@ function ProjectOverviewContent(props: {
       hasOtherMembers: props.hasOtherMembers,
       displayName,
       threads,
+      unloadedThreadCount: readUnloadedThreadCount(members, threads),
     });
     Dialog.confirm({
       title: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",

@@ -6,6 +6,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback } from "react";
 
+import { hasCloudPublicConfig } from "../features/cloud/publicConfig";
 import { useConnectionController } from "../features/connection/useConnectionController";
 import { environmentPresentations } from "./presentation";
 import { useWorkspaceConnectionState, useWorkspaceEnvironments } from "./workspace";
@@ -36,6 +37,14 @@ const remoteEnvironmentProjections = createRemoteEnvironmentProjectionAtoms({
   preparedConnectionAtom: environmentSession.preparedConnectionValueAtom,
   serverConfigAtom: serverEnvironment.configValueAtom,
 });
+
+export const environmentConnectedAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make(
+    (get) =>
+      get(remoteEnvironmentProjections.runtimeStateAtom(environmentId))?.connectionState ===
+      "connected",
+  ).pipe(Atom.withLabel(`mobile:environment-connected:${environmentId}`)),
+);
 
 const EMPTY_SAVED_CONNECTION_ATOM = Atom.make<SavedRemoteConnection | null>(null).pipe(
   Atom.withLabel("mobile:saved-connection:empty"),
@@ -174,10 +183,15 @@ export function useRemoteConnections() {
           `Forget ${environment.environmentLabel} and its cached threads on this device.\n\nIt stays on your T3 Connect account and keeps its host space. Deregister it under T3 Account → T3 Connect to free it.`,
           [
             { text: "Cancel", style: "cancel" },
-            {
-              text: "Open T3 Account",
-              onPress: () => navigation.navigate("SettingsAuth"),
-            },
+            // SettingsAuth renders nothing in builds without cloud config.
+            ...(hasCloudPublicConfig()
+              ? [
+                  {
+                    text: "Open T3 Account",
+                    onPress: () => navigation.navigate("SettingsAuth"),
+                  },
+                ]
+              : []),
             remove,
           ],
         );

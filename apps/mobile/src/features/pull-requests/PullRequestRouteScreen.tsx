@@ -43,7 +43,8 @@ import {
 import { usePullRequestDiffHighlightFiles } from "./usePullRequestDiffHighlightFiles";
 import { isPullRequestTestFile } from "./pullRequestFileFilters";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { RegistryContext, useAtomRefresh } from "@effect/atom-react";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
 import { type PullRequestDetail, type PullRequestListEntry } from "@t3tools/contracts";
 import { PullRequestOverviewLoading } from "./PullRequestOverviewLoading";
@@ -76,6 +77,9 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { relativeTime } from "../../lib/time";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { usePullRequestConnected } from "./usePullRequestConnected";
+import { usePullRequestLiveChecks } from "./usePullRequestLiveChecks";
+import { pullRequestLabelColor } from "./pullRequestList";
+import { PullRequestReactions } from "./PullRequestReactions";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useEnvironmentQuery } from "../../state/query";
 import { usePullToRefresh } from "../../state/use-pull-to-refresh";
@@ -85,7 +89,7 @@ import {
   type NativeReviewDiffViewProps,
 } from "../diffs/nativeReviewDiffSurface";
 import {
-  buildNativeReviewDiffData,
+  getCachedNativeReviewDiffData,
   NATIVE_REVIEW_DIFF_CONTENT_WIDTH,
 } from "../review/nativeReviewDiffAdapter";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -96,6 +100,7 @@ import { PullRequestActionToolbar, PullRequestCardGroup } from "./PullRequestCon
 import {
   pullRequestTarget as requestTarget,
   usePullRequestDiff,
+  usePullRequestDiffEntry,
   type PullRequestDiffParams,
   type PullRequestParams,
 } from "./usePullRequestDiff";
@@ -106,6 +111,7 @@ import {
 } from "./PullRequestPresentation";
 import { usePullRequestFilesSection } from "./PullRequestFiles";
 import { PullRequestDescription } from "./PullRequestDescription";
+import { PullRequestMediaVisibleContext } from "./PullRequestMedia";
 import { PullRequestMarkdownRepository } from "./PullRequestMarkdown";
 import {
   PullRequestStatusMenu,
@@ -135,10 +141,15 @@ function PullRequestTabScrollView(props: ScrollViewProps) {
 function usePullRequestActivityRows(params: PullRequestParams, filter: ActivityFilter) {
   const navigation = useNavigation();
   const result = useEnvironmentQuery(composerPullRequests.activity(requestTarget(params)));
+  const detail = useEnvironmentQuery(composerPullRequests.detail(requestTarget(params)));
+  const permissions = usePullRequestPermissions(params, detail.data);
   const filtered = result.data ? filterPullRequestActivity(result.data, filter) : null;
   const rows = (() => {
     if (!filtered) return [];
-    const rows = pullRequestTimelineRows(filtered.activity, params, navigation);
+    const rows = pullRequestTimelineRows(filtered.activity, params, navigation, {
+      permissions,
+      onChanged: result.refresh,
+    });
     if (filter.newestFirst) {
       const notice = rows.at(-1)?.key === "truncated" ? rows.pop() : undefined;
       rows.reverse();
@@ -229,6 +240,54 @@ function PullRequestIdentity(props: {
   );
 }
 
+function PullRequestLabels(props: {
+  readonly pr: PullRequestDetail;
+  readonly params: PullRequestParams;
+}) {
+  const navigation = useNavigation();
+  const connected = usePullRequestConnected(props.params.environmentId);
+  const canWrite = useAtomValue(
+    composerPullRequests.setLabels.permissionAtom(requestTarget(props.params).environmentId),
+  );
+  const editable =
+    connected &&
+    canWrite &&
+    props.pr.capabilities.labels === true &&
+    props.pr.viewerPermissions.labels !== false;
+  if (!props.pr.labels.length && !editable) return null;
+  return (
+    <Animated.View layout={PR_ROW_LAYOUT} className="flex-row flex-wrap gap-2">
+      {props.pr.labels.map((label) => {
+        const color = pullRequestLabelColor(label.color);
+        // Tinted like the list row's label pills, at the overview's chip size.
+        return (
+          <View
+            key={label.name}
+            className="max-w-full flex-row items-center gap-1.5 rounded-2xl bg-grouped-card px-3 py-1"
+            style={color ? { backgroundColor: `${color}20` } : undefined}
+          >
+            {color ? (
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+            ) : null}
+            <Text textRole="caption" className="shrink text-foreground-muted" numberOfLines={1}>
+              {label.name}
+            </Text>
+          </View>
+        );
+      })}
+      {editable ? (
+        <Chip
+          label={props.pr.labels.length ? "Edit" : "Add labels"}
+          icon="tag"
+          size="small"
+          accessibilityLabel="Edit labels"
+          onPress={() => navigation.navigate("PullRequestLabels", props.params)}
+        />
+      ) : null}
+    </Animated.View>
+  );
+}
+
 function PullRequestOverview(props: {
   readonly pr: PullRequestDetail;
   readonly params: PullRequestParams;
@@ -252,13 +311,7 @@ function PullRequestOverview(props: {
           <PullRequestMergeControls pr={pr} params={props.params} stack={props.stack} />
         </Animated.View>
       </PullRequestCardGroup>
-      {pr.labels.length ? (
-        <Animated.View layout={PR_ROW_LAYOUT} className="flex-row flex-wrap gap-2">
-          {pr.labels.map((label) => (
-            <Chip key={label.name} label={label.name} size="small" />
-          ))}
-        </Animated.View>
-      ) : null}
+      <PullRequestLabels pr={pr} params={props.params} />
       <Animated.View
         layout={PR_POSITION_LAYOUT}
         onLayout={(event) => props.onDescriptionLayout(event.nativeEvent.layout.y)}
@@ -268,6 +321,7 @@ function PullRequestOverview(props: {
           onCollapse={props.onDescriptionCollapse}
           expanded={props.descriptionExpanded}
           onExpandedChange={props.onDescriptionExpandedChange}
+          footer={<PullRequestReactions params={props.params} />}
         />
       </Animated.View>
     </View>
@@ -334,9 +388,10 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
     if (!guidesEnabled && section === "guide") {
       requestedSection.current = "overview";
       currentScrollOffset.current = scrollOffsets.current.overview ?? -insets.top;
+      // oxlint-disable-next-line react/set-state-in-effect -- When guides turn off, the tab and its saved scroll offset must switch to overview together.
       setSection("overview");
     }
-  }, [guidesEnabled, section, insets.top]);
+  }, [guidesEnabled, section, insets.top, currentScrollOffset, requestedSection, scrollOffsets]);
   const tabContent = activityContent;
   const filesY = useRef(0);
   const descriptionY = useRef(0);
@@ -346,8 +401,8 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
   const result = useEnvironmentQuery(detailAtom);
   const pullRefresh = usePullToRefresh(detailAtom);
   const { refresh: refreshDetail } = result;
-  useFocusEffect(() => refreshDetail());
-  const pr = result.data;
+  useFocusEffect(refreshDetail);
+  const pr = usePullRequestLiveChecks(params, result.data);
   const summary = params.initialSummary;
   const identity = pr ?? summary;
   const terminology = sourceControlClients.get(identity?.provider).changeRequest;
@@ -436,6 +491,24 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                     },
                   ]
                 : []),
+              ...(permissions.canEditChangeRequest
+                ? [
+                    {
+                      accessibilityLabel: "Edit title",
+                      icon: "pencil" as const,
+                      overflowOnly: true,
+                      onPress: () =>
+                        navigation.navigate("PullRequestEdit", { ...params, field: "title" }),
+                    },
+                    {
+                      accessibilityLabel: "Edit description",
+                      icon: "doc.text" as const,
+                      overflowOnly: true,
+                      onPress: () =>
+                        navigation.navigate("PullRequestEdit", { ...params, field: "body" }),
+                    },
+                  ]
+                : []),
               ...(identity
                 ? [
                     {
@@ -496,6 +569,24 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                 }
               >
                 <Toolbar.Label>Add comment</Toolbar.Label>
+              </Toolbar.MenuAction>
+            ) : null}
+            {permissions.canEditChangeRequest ? (
+              <Toolbar.MenuAction
+                icon="pencil"
+                onPress={() =>
+                  navigation.navigate("PullRequestEdit", { ...params, field: "title" })
+                }
+              >
+                <Toolbar.Label>Edit title</Toolbar.Label>
+              </Toolbar.MenuAction>
+            ) : null}
+            {permissions.canEditChangeRequest ? (
+              <Toolbar.MenuAction
+                icon="doc.text"
+                onPress={() => navigation.navigate("PullRequestEdit", { ...params, field: "body" })}
+              >
+                <Toolbar.Label>Edit description</Toolbar.Label>
               </Toolbar.MenuAction>
             ) : null}
             {identity ? (
@@ -690,8 +781,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                   getItemType={(row) =>
                     row.key.endsWith(":body") ? row.key : row.key.split(":")[0]
                   }
-                  // The overview body contains the clipped description and owns collapse scroll
-                  // correction. Animating that cell fights both; file rows still fade individually.
+                  // Animating overview fights clipped markdown and collapse scroll correction; file rows can still fade.
                   itemLayoutAnimation={tab === "overview" ? undefined : PR_ROW_LAYOUT}
                   onLoad={() => setListAnimationsReady(true)}
                   renderItem={({ item }) => (
@@ -706,7 +796,9 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                         listAnimationsReady && !item.key.endsWith(":body") ? PR_ROW_EXIT : undefined
                       }
                     >
-                      {item.content}
+                      <PullRequestMediaVisibleContext value={section === tab}>
+                        {item.content}
+                      </PullRequestMediaVisibleContext>
                     </Animated.View>
                   )}
                   recycleItems={false}
@@ -761,16 +853,35 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
   );
 }
 
-export function PullRequestFileRouteScreen({
-  route,
-}: StaticScreenProps<
+type PullRequestFileRouteProps = StaticScreenProps<
   PullRequestDiffParams & {
     readonly path: string;
     readonly fileSelectionId?: string;
     readonly replacingDraftId?: string;
     readonly focus?: GuideDiffFocus;
   }
->) {
+>;
+
+export function PullRequestFileRouteScreen(props: PullRequestFileRouteProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<ReactNavigation.RootParamList, "PullRequestFile">>();
+  const ready = usePullRequestDiffEntry(navigation);
+  if (ready) return <PullRequestFileRouteContent {...props} />;
+  const title = props.route.params.commit ? "Commit changes" : "Changes";
+  return (
+    <View className="flex-1 bg-screen">
+      <NativeStackScreenOptions options={{ title, headerTitle: title }} />
+      {Platform.OS === "android" ? (
+        <AndroidScreenHeader title={title} onBack={() => navigation.goBack()} />
+      ) : null}
+      <View className="flex-1 items-center justify-center">
+        <AppActivityIndicator accessibilityLabel="Loading changes" />
+      </View>
+    </View>
+  );
+}
+
+function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -786,7 +897,7 @@ export function PullRequestFileRouteScreen({
     route.params.focus ? route.params.path : undefined,
   );
   const { refresh: refreshDetail } = detail;
-  useFocusEffect(() => refreshDetail());
+  useFocusEffect(refreshDetail);
   const { loadMore } = result;
   const parsed = filter.parsed;
   const reviewDraft = usePullRequestReviewDraft(route.params);
@@ -808,7 +919,7 @@ export function PullRequestFileRouteScreen({
     !result.isPending &&
     !result.error;
   const activity = useEnvironmentQuery(composerPullRequests.activity(requestTarget(route.params)));
-  const baseData = useMemo(() => buildNativeReviewDiffData(parsed), [parsed]);
+  const baseData = useMemo(() => getCachedNativeReviewDiffData({ parsedDiff: parsed }), [parsed]);
   const highlightFiles = usePullRequestDiffHighlightFiles(route.params, parsed, baseData.files);
   const data = useMemo(
     () =>

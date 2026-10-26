@@ -41,8 +41,7 @@ interface DeliveryState {
   readonly retryAt: number;
 }
 
-// The background flush checks for work at this interval, so a retry delay
-// shorter than it waits for the next check.
+// Retry delays shorter than this still wait for the next background check.
 const FLUSH_INTERVAL_MS = 1_000;
 // A hung send would hold the flush lock, and with it the shutdown flush.
 const SEND_TIMEOUT = "10 seconds";
@@ -53,18 +52,8 @@ const RETRY_BASE_DELAY_MS = 2_000;
 // server's own.
 const MAX_RECORDED_OWNERS = 1_000;
 const RETRY_MAX_DELAY_MS = 300_000;
-// The endpoint answers these when the batch itself is wrong (bad body, wrong
-// api_key, too large), so sending it again cannot help. 408 and 429 are not
-// here because a later send can succeed.
+// These statuses reject the batch itself; unlike 408/429, retrying cannot help.
 const REJECTED_BATCH_STATUSES = new Set([400, 401, 413]);
-
-/**
- * Release channel of this build. Release workflows set it for
- * pingdotgg/t3code builds (see apps/server/vite.config.ts); every other build
- * reports "dev". It is separate from `__T3CODE_BUILD_CHANNEL__`, which names
- * stable "latest" and preview "nightly" for the sign-in page.
- */
-declare const __T3CODE_TELEMETRY_CHANNEL__: "stable" | "nightly" | "preview" | "dev" | undefined;
 
 /** `random` is in [0, 1). */
 function retryDelayMs(failures: number, random: number): number {
@@ -131,10 +120,14 @@ export class AnalyticsService extends Context.Service<
   static readonly layerTest = Layer.succeed(
     AnalyticsService,
     AnalyticsService.of({
-      record: () => Effect.void,
+      record: Effect.fn("AnalyticsService.record")(function () {
+        return Effect.void;
+      }),
       recordMilestone: () => Effect.void,
       flush: Effect.void,
-      recordOwners: () => Effect.void,
+      recordOwners: Effect.fn("AnalyticsService.recordOwners")(function () {
+        return Effect.void;
+      }),
     }),
   );
 }
@@ -155,7 +148,7 @@ function serverOsFromNodePlatform(platform: string): ClientOs {
 }
 
 /** @public */
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const httpClient = yield* HttpClient.HttpClient;
@@ -180,8 +173,6 @@ export const make = Effect.gen(function* () {
   // The background flush and the shutdown flush must not send the same batch at once.
   const flushLock = yield* Semaphore.make(1);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
-  const telemetryChannel =
-    typeof __T3CODE_TELEMETRY_CHANNEL__ === "undefined" ? "dev" : __T3CODE_TELEMETRY_CHANNEL__;
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
 
@@ -236,7 +227,7 @@ export const make = Effect.gen(function* () {
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
           t3CodeVersion: packageJson.version,
-          telemetryChannel,
+          telemetryChannel: ServerConfig.telemetryChannel,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
           serverArch: hostArchitecture,
@@ -263,8 +254,7 @@ export const make = Effect.gen(function* () {
     return [nextBatch, current.slice(nextBatch.length)] as const;
   });
 
-  // A rejected batch is dropped at once, but the next batch still waits for the
-  // backoff, so a wrong api_key does not send every batch as fast as it can.
+  // Back off even after dropping rejected batches so bad API keys cannot drain the queue in a tight loop.
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
     while (true) {
       const delivery = yield* Ref.get(deliveryRef);
@@ -317,8 +307,7 @@ export const make = Effect.gen(function* () {
     function* (event, properties) {
       if (!telemetryConfig.enabled || !distinctId) return;
 
-      // Telemetry is best effort: an event without a uuid is not sent. The
-      // Node implementation throws (a defect) rather than failing, so catch both.
+      // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
       const uuid = yield* Effect.exit(crypto.randomUUIDv7());
       if (Exit.isFailure(uuid)) return;
 
@@ -355,7 +344,7 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  yield* Effect.forever(Effect.sleep(FLUSH_INTERVAL_MS).pipe(Effect.flatMap(() => flushWhenDue)), {
+  yield* Effect.forever(Effect.sleep(FLUSH_INTERVAL_MS).pipe(Effect.andThen(flushWhenDue)), {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
@@ -406,5 +395,3 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
-
-const layerTest = AnalyticsService.layerTest;
