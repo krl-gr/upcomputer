@@ -2171,7 +2171,7 @@ it.live("bots retain one chat and inject current isolated memory into real provi
           modelSelection: agentModel,
         },
       });
-      assert.equal(second.agent.config.runtimeMode, "approval-required");
+      assert.equal(second.agent.config.runtimeMode, "full-access");
       const context = yield* bots.context({
         threadId: second.threadId,
         projectId,
