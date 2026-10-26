@@ -1,5 +1,6 @@
 import * as Brand from "effect/Brand";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -21,9 +22,11 @@ import {
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
+  DesktopShutdownRequest,
   DesktopTelemetryControlMessage,
   type DesktopTelemetryControlMessage as DesktopTelemetryControlMessageValue,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
@@ -41,6 +44,15 @@ const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 // and a busy one needs a few seconds to stop every provider session.
 const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(5);
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
+// Quit and update stop each backend within 5 seconds, so a backend that does
+// not answer the request still gets killed inside that bound.
+const BACKEND_SHUTDOWN_REQUEST_TIMEOUT = Duration.seconds(3);
+const SHUTDOWN_REQUEST_LINE = new TextEncoder().encode(
+  `${Schema.encodeSync(Schema.fromJsonString(DesktopShutdownRequest))({
+    version: 1,
+    type: "desktopShutdownRequest",
+  })}\n`,
+);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 const { logWarning: logBackendProcessWarning } =
   DesktopObservability.makeComponentLogger("desktop-backend-process");
@@ -252,6 +264,8 @@ interface ActiveBackendRun {
   readonly pid: Option.Option<number>;
   readonly exitObserved: boolean;
   readonly stopRequested: boolean;
+  /** Asks the process to exit and waits a bounded time; a no-op where signals do this. */
+  readonly requestShutdown: Effect.Effect<void>;
 }
 
 interface BackendManagerState {
@@ -298,7 +312,10 @@ const closeRun = (
     onNone: () => Effect.void,
     onSome: (fiber) => Fiber.await(fiber).pipe(Effect.asVoid),
   });
-  const close = Scope.close(run.scope, Exit.void).pipe(Effect.andThen(waitForFiber));
+  const close = (run.exitObserved ? Effect.void : run.requestShutdown).pipe(
+    Effect.andThen(Scope.close(run.scope, Exit.void)),
+    Effect.andThen(waitForFiber),
+  );
   const timeout = options?.timeout;
 
   if (!timeout) {
@@ -622,6 +639,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
+  // A kill on Windows is TerminateProcess, so the server's SIGTERM shutdown,
+  // with its final telemetry flush, never runs. Stop asks over the telemetry
+  // descriptor first and waits for the exit.
+  const stopsByRequest = (yield* HostProcess.Platform) === "win32";
   const state = yield* Ref.make(initialState);
   const mutex = yield* Semaphore.make(1);
 
@@ -766,6 +787,20 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           return;
         }
 
+        const shutdownRequested = yield* Deferred.make<void>();
+        const exited = yield* Deferred.make<void>();
+        const requestsShutdown =
+          stopsByRequest &&
+          config.value.bootstrapDelivery === "fd3" &&
+          config.value.bootstrap.desktopTelemetryFd !== undefined;
+        const requestShutdown = requestsShutdown
+          ? Deferred.succeed(shutdownRequested, undefined).pipe(
+              Effect.andThen(Deferred.await(exited)),
+              Effect.timeoutOption(BACKEND_SHUTDOWN_REQUEST_TIMEOUT),
+              Effect.asVoid,
+            )
+          : Effect.void;
+
         const runScope = yield* Scope.make("sequential");
         const runId = yield* Ref.modify(state, (latest) => [
           latest.nextRunId,
@@ -778,6 +813,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               pid: Option.none(),
               exitObserved: false,
               stopRequested: false,
+              requestShutdown,
             } satisfies ActiveBackendRun),
             nextRunId: latest.nextRunId + 1,
           },
@@ -870,7 +906,14 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
         const program = runBackendProcess({
           ...config.value,
-          desktopTelemetryStream: desktopTelemetryPublisher.encoded,
+          desktopTelemetryStream: requestsShutdown
+            ? Stream.merge(
+                desktopTelemetryPublisher.encoded,
+                Stream.fromEffect(Deferred.await(shutdownRequested)).pipe(
+                  Stream.map(() => SHUTDOWN_REQUEST_LINE),
+                ),
+              )
+            : desktopTelemetryPublisher.encoded,
           desktopBrowserStream: desktopBrowserHost.events,
           onDesktopBrowserCommand: desktopBrowserHost.handleCommandLine,
           onDesktopTelemetryControl: (message) =>
@@ -888,7 +931,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             updateActiveRun(runId, (run) => ({
               ...run,
               exitObserved: true,
-            })),
+            })).pipe(Effect.andThen(Deferred.succeed(exited, undefined)), Effect.asVoid),
           onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
             const isCurrentRun = yield* Ref.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);

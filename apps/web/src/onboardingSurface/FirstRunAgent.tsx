@@ -8,14 +8,18 @@ import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useCompleteOnboarding } from "../onboarding/firstRun";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
+import { environmentThreadShells } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
   FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
   FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
+  FIRST_SCREEN_IDLE_THRESHOLD_MS,
+  isFirstRunAgentActivating,
   latchFirstRunAgentStart,
   resolveFirstRunAgentStatus,
+  type FirstRunAgentActivation,
   type FirstRunAgentStart,
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
@@ -32,11 +36,17 @@ const RETRY_FEEDBACK_MS = 1_000;
 const firstRunAgentAtom = Atom.make<{
   readonly start: "wait" | FirstRunAgentStart | null;
   readonly startError: string | null;
-  readonly activating: boolean;
-}>({ start: null, startError: null, activating: false }).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("web-first-run-agent"),
-);
+  readonly activation: FirstRunAgentActivation | null;
+  /** When this window finished first-run onboarding, if it did. */
+  readonly onboardedAt: number | null;
+  readonly firstScreenIdleReported: boolean;
+}>({
+  start: null,
+  startError: null,
+  activation: null,
+  onboardedAt: null,
+  firstScreenIdleReported: false,
+}).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent"));
 
 /**
  * Install operations whose `started` or `failed` event this window already
@@ -69,6 +79,13 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
   }, [environmentId, recordClientEvent, setSetup, startInstall]);
 }
+
+/** A user message in any thread means a turn was requested. */
+const turnRequestedAtom = Atom.make((get) =>
+  get(environmentThreadShells.threadShellsAtom).some(
+    (thread) => thread.latestUserMessageAt !== null,
+  ),
+).pipe(Atom.withLabel("web-first-run-turn-requested"));
 
 /** When this window first saw each install succeed, keyed by its operation, across remounts. */
 let activationWait: { readonly operationId: string; readonly until: number } | null = null;
@@ -127,16 +144,21 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
         until: Date.now() + FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
       };
     }
+    const settle = (active: boolean) =>
+      setSetup((current) => ({
+        ...current,
+        activation: { operationId: succeededOperation, active },
+      }));
     const remaining = activationWait.until - Date.now();
-    if (remaining <= 0) return;
-    setSetup((current) => ({ ...current, activating: true }));
-    const timer = window.setTimeout(
-      () => setSetup((current) => ({ ...current, activating: false })),
-      remaining,
-    );
+    if (remaining <= 0) {
+      settle(false);
+      return;
+    }
+    settle(true);
+    const timer = window.setTimeout(() => settle(false), remaining);
     return () => {
       window.clearTimeout(timer);
-      setSetup((current) => ({ ...current, activating: false }));
+      settle(false);
     };
   }, [setSetup, succeededOperation]);
 
@@ -154,18 +176,46 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     completed.current = true;
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "ready" });
     void completeOnboarding()
-      .then(() =>
+      .then(() => {
         recordClientEvent(environmentId, {
           event: "onboarding.completed",
           flow: "first_run",
           importedProject: false,
           importedThreads: 0,
-        }),
-      )
+        });
+        setSetup((current) =>
+          current.onboardedAt === null ? { ...current, onboardedAt: Date.now() } : current,
+        );
+      })
       .catch(() => {
         completed.current = false;
       });
-  }, [completeOnboarding, environmentId, ready, recordClientEvent]);
+  }, [completeOnboarding, environmentId, ready, recordClientEvent, setSetup]);
+
+  // Only a window that onboarded a new user starts this, so installs onboarded
+  // before never report it, and an app closed sooner reports nothing.
+  const turnRequested = useAtomValue(turnRequestedAtom);
+  useEffect(() => {
+    if (setup.onboardedAt === null || turnRequested || setup.firstScreenIdleReported) return;
+    const timer = window.setTimeout(
+      () => {
+        setSetup((current) => ({ ...current, firstScreenIdleReported: true }));
+        recordClientEvent(environmentId, {
+          event: "onboarding.first_screen_idle",
+          thresholdMs: FIRST_SCREEN_IDLE_THRESHOLD_MS,
+        });
+      },
+      Math.max(0, setup.onboardedAt + FIRST_SCREEN_IDLE_THRESHOLD_MS - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    environmentId,
+    recordClientEvent,
+    setSetup,
+    setup.firstScreenIdleReported,
+    setup.onboardedAt,
+    turnRequested,
+  ]);
 
   return null;
 }
@@ -220,7 +270,11 @@ export function useFirstRunAgentStatus(
         provider: providers?.find(
           (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
         ),
-        activating: setup.activating,
+        activating: isFirstRunAgentActivating({
+          succeededOperationId: install?.phase === "succeeded" ? install.operationId : null,
+          starterRunning: setup.start !== null,
+          activation: setup.activation,
+        }),
       })
     : null;
   return { status, retrying, retry };

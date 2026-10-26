@@ -981,5 +981,10 @@ export const ClientTelemetryEvent = Schema.Union([
     /** The provider "Open provider settings" leads to, if any. */
     target: Schema.optionalKey(TelemetryProvider),
   }),
+  Schema.Struct({
+    /** First-run setup finished in this window, then no turn within `thresholdMs`. */
+    event: Schema.Literal("onboarding.first_screen_idle"),
+    thresholdMs: PositiveInt,
+  }),
 ]);
 export type ClientTelemetryEvent = typeof ClientTelemetryEvent.Type;

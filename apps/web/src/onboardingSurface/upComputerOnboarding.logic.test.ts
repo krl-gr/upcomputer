@@ -18,6 +18,7 @@ import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
   isCodexExistingCliChosen,
+  isFirstRunAgentActivating,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
   resolveAgentInstallCell,
@@ -300,11 +301,55 @@ describe("first-run agent status", () => {
     ).toEqual({ kind: "failed", message: "OpenCode crashed." });
   });
 
+  it("keeps setup on from the first render that sees the install succeed until OpenCode answers", () => {
+    const disabled = openCode({ enabled: false });
+    const done = install({ phase: "succeeded" });
+    const frame = (activation: { operationId: string; active: boolean } | null) =>
+      status({
+        install: done,
+        provider: disabled,
+        activating: isFirstRunAgentActivating({
+          succeededOperationId: "operation",
+          starterRunning: true,
+          activation,
+        }),
+      });
+    const preparing = { kind: "preparing", progress: null };
+    expect(frame(null)).toEqual(preparing);
+    expect(frame({ operationId: "operation", active: true })).toEqual(preparing);
+    expect(status({ install: done, provider: openCode() })).toBeNull();
+  });
+
   it("lets a retry's download replace an earlier start failure", () => {
     expect(status({ startError: "Could not start.", install: install({}) })).toEqual({
       kind: "preparing",
       progress: null,
     });
+  });
+});
+
+describe("first-run agent activation wait", () => {
+  const activating = (input: Partial<Parameters<typeof isFirstRunAgentActivating>[0]>) =>
+    isFirstRunAgentActivating({
+      succeededOperationId: "operation",
+      starterRunning: true,
+      activation: null,
+      ...input,
+    });
+
+  it("counts as begun while the starter has not recorded this install yet", () => {
+    expect(activating({})).toBe(true);
+    expect(activating({ activation: { operationId: "earlier", active: false } })).toBe(true);
+  });
+
+  it("follows the recorded wait once the starter has one for this install", () => {
+    expect(activating({ activation: { operationId: "operation", active: true } })).toBe(true);
+    expect(activating({ activation: { operationId: "operation", active: false } })).toBe(false);
+  });
+
+  it("never holds setup without a succeeded install or a starter to end the wait", () => {
+    expect(activating({ succeededOperationId: null })).toBe(false);
+    expect(activating({ starterRunning: false })).toBe(false);
   });
 });
 

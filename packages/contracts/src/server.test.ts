@@ -290,6 +290,13 @@ describe("ClientTelemetryEvent", () => {
     );
   });
 
+  it("carries only the threshold on a first screen left idle", () => {
+    const idle = { event: "onboarding.first_screen_idle" };
+    expect(decode({ ...idle, thresholdMs: 180_000 })._tag).toBe("Success");
+    expect(decode({ ...idle, thresholdMs: 0 })._tag).toBe("Failure");
+    expect(decode(idle)._tag).toBe("Failure");
+  });
+
   it("maps a driver this app does not ship to other", () => {
     expect(toTelemetryProvider("claudeAgent")).toBe("claudeAgent");
     expect(toTelemetryProvider("private-customer-alice-123")).toBe("other");
