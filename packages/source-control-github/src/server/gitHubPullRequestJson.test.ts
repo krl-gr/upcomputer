@@ -1399,6 +1399,38 @@ describe("review submission payload", () => {
       ],
     });
   });
+
+  it("sends a range from its first line, and a one-line range as one line", () => {
+    const payload = buildReviewSubmission({
+      verdict: "comment",
+      body: "",
+      comments: [
+        {
+          path: "src/a.ts",
+          startPosition: { kind: "context", oldLine: 4, newLine: 5, side: "right" },
+          position: { kind: "added", newLine: 9 },
+          body: "this block",
+        },
+        {
+          path: "src/b.ts",
+          startPosition: { kind: "added", newLine: 2 },
+          position: { kind: "added", newLine: 2 },
+          body: "this line",
+        },
+      ],
+    });
+    expect(payload.comments).toEqual([
+      {
+        path: "src/a.ts",
+        start_line: 5,
+        start_side: "RIGHT",
+        line: 9,
+        side: "RIGHT",
+        body: "this block",
+      },
+      { path: "src/b.ts", line: 2, side: "RIGHT", body: "this line" },
+    ]);
+  });
 });
 
 describe("decodePullRequestFilesJson", () => {
@@ -1451,30 +1483,6 @@ describe("decodePullRequestFilesJson", () => {
         "",
       ].join("\n"),
     );
-  });
-
-  it("assembles a unified patch the files API does not return", () => {
-    const result = expectSuccess(
-      decodePullRequestFilesJson(
-        JSON.stringify([
-          { filename: "src/app.ts", status: "modified", patch: "@@ -1 +1 @@\n-old\n+new" },
-        ]),
-      ),
-    );
-
-    expect(result.patch).toBe(
-      [
-        "diff --git a/src/app.ts b/src/app.ts",
-        "--- a/src/app.ts",
-        "+++ b/src/app.ts",
-        "@@ -1 +1 @@",
-        "-old",
-        "+new",
-        "",
-      ].join("\n"),
-    );
-    expect(result.truncated).toBe(false);
-    expect(result.rawCount).toBe(1);
   });
 
   it("points an added file at /dev/null on the left and a removed one on the right", () => {

@@ -123,6 +123,7 @@ layer("legacy GitLab diff requests through GitLabCli", (it) => {
       expect(run).toHaveBeenCalledTimes(2);
     }),
   );
+  // regression: #15886 the older-GitLab fallback still surfaces its own failure
   it.effect("propagates failure of the legacy endpoint", () =>
     Effect.gen(function* () {
       run.mockReturnValueOnce(failure("not-found"));
@@ -146,7 +147,7 @@ layer("legacy GitLab diff requests through GitLabCli", (it) => {
   );
   it.effect("keeps modern pagination without requesting legacy changes", () =>
     Effect.gen(function* () {
-      run.mockReturnValueOnce(output(Array.from({ length: 100 }, () => file)));
+      run.mockReturnValueOnce(output(Array.from({ length: 30 }, () => file)));
       run.mockReturnValueOnce(output([file]));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
       const first = yield* cli.getMergeRequestDiff(input);
@@ -156,7 +157,7 @@ layer("legacy GitLab diff requests through GitLabCli", (it) => {
       ).toBeNull();
       expect(run).toHaveBeenCalledTimes(2);
       expect(run.mock.calls[1]?.[0].args).toContain(
-        "projects/acme%2Fnested%2Fweb/merge_requests/7/diffs?per_page=100&page=2",
+        "projects/acme%2Fnested%2Fweb/merge_requests/7/diffs?per_page=30&page=2",
       );
     }),
   );

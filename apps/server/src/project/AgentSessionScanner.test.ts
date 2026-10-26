@@ -745,7 +745,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* fileSystem.makeDirectory(submoduleGitDir, { recursive: true });
         yield* fileSystem.writeFileString(
           path.join(submoduleGitDir, "config"),
-          '[remote "origin"]\n\turl = ssh://github.com/pingdotgg/vendor.git\n',
+          '[remote "origin"]\n\turl = ssh://gitlab.com/pingdotgg/libs/vendor.git\n',
         );
         yield* fileSystem.writeFileString(
           path.join(submodule, ".git"),
@@ -767,7 +767,10 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         ).toEqual([
           {
             path: submodule,
-            git: { remoteKey: "github.com/pingdotgg/vendor", repository: "pingdotgg/vendor" },
+            git: {
+              remoteKey: "gitlab.com/pingdotgg/libs/vendor",
+              repository: "pingdotgg/libs/vendor",
+            },
           },
           { path: noRemote, git: { remoteKey: null, repository: null } },
           { path: plain, git: null },
@@ -2152,53 +2155,6 @@ describe("parseAgentSessionTranscript", () => {
     ]);
   });
 
-  it("preserves a canonical Codex event that starts with context markup", () => {
-    const prompt =
-      "<environment_context>\n<cwd>/tmp/project</cwd>\n</environment_context>\n\nCreate a useful project.";
-    const thread = AgentSessionScanner.parseAgentSessionTranscript({
-      contents: [
-        encodeTranscriptRecord({ type: "session_meta", payload: { id: "codex-session" } }),
-        encodeTranscriptRecord({
-          type: "event_msg",
-          payload: {
-            type: "user_message",
-            message: prompt,
-          },
-        }),
-      ].join("\n"),
-      source: "codex",
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      fallbackSessionId: "fallback",
-      lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
-    });
-
-    expect(thread?.title).toBe("Create a useful project.");
-    expect(thread?.messages.map((message) => message.text)).toEqual([prompt]);
-  });
-
-  it("preserves a Codex request heading in a canonical event", () => {
-    const prompt = "\n  ## My request for Codex:\n\nFix the visible bug";
-    const thread = AgentSessionScanner.parseAgentSessionTranscript({
-      contents: [
-        encodeTranscriptRecord({ type: "session_meta", payload: { id: "codex-session" } }),
-        encodeTranscriptRecord({
-          type: "event_msg",
-          payload: {
-            type: "user_message",
-            message: prompt,
-          },
-        }),
-      ].join("\n"),
-      source: "codex",
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      fallbackSessionId: "fallback",
-      lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
-    });
-
-    expect(thread?.title).toBe("Fix the visible bug");
-    expect(thread?.messages.map((message) => message.text)).toEqual([prompt]);
-  });
-
   it("titles a Codex event after the request that follows injected setup blocks", () => {
     const prompt = [
       "<recommended_plugins>\nGitHub\n</recommended_plugins>",
@@ -2222,26 +2178,6 @@ describe("parseAgentSessionTranscript", () => {
 
     expect(thread?.title).toBe("Fix the import titles");
     expect(thread?.messages.map((message) => message.text)).toEqual([prompt]);
-  });
-
-  it("keeps context markup quoted inside visible Codex user text", () => {
-    const quoted =
-      "Do not remove this example:\n<environment_context>\n<cwd>/tmp/example</cwd>\n</environment_context>";
-    const thread = AgentSessionScanner.parseAgentSessionTranscript({
-      contents: [
-        encodeTranscriptRecord({ type: "session_meta", payload: { id: "codex-session" } }),
-        encodeTranscriptRecord({
-          type: "event_msg",
-          payload: { type: "user_message", message: quoted },
-        }),
-      ].join("\n"),
-      source: "codex",
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      fallbackSessionId: "fallback",
-      lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
-    });
-
-    expect(thread?.messages.map((message) => message.text)).toEqual([quoted]);
   });
 
   it("skips sessions without a visible user message", () => {

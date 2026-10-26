@@ -62,6 +62,7 @@ const devServerInput = {
   devUrl: undefined,
   dryRun: false,
   share: false,
+  built: false,
   runArgs: ["--inspect", "secret-token-value"],
 } as const;
 
@@ -86,6 +87,31 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
 
         assert.equal(web.T3CODE_DEV_AUTH_TOKEN, input.baseEnv.T3CODE_DEV_AUTH_TOKEN);
         assert.equal(desktop.T3CODE_DEV_AUTH_TOKEN, undefined);
+      }),
+    );
+
+    it.effect("turns product analytics off unless the developer opts in", () =>
+      Effect.gen(function* () {
+        const input = {
+          mode: "dev",
+          serverOffset: 0,
+          webOffset: 0,
+          t3Home: undefined,
+          browser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: undefined,
+          devUrl: undefined,
+        } as const;
+        const byDefault = yield* createDevRunnerEnv({ ...input, baseEnv: {} });
+        const optedIn = yield* createDevRunnerEnv({
+          ...input,
+          baseEnv: { T3CODE_TELEMETRY_ENABLED: "true" },
+        });
+
+        assert.equal(byDefault.T3CODE_TELEMETRY_ENABLED, "false");
+        assert.equal(optedIn.T3CODE_TELEMETRY_ENABLED, "true");
       }),
     );
 
@@ -420,10 +446,16 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
     // per-module waterfall pays a tailnet round trip per import level. The
     // runner defaults bundled dev on for the spawned stack, but only
     // defaults: an explicit T3CODE_BUNDLED_DEV (even "0") must pass through.
-    describe("--share bundled dev default", () => {
-      const shareSpawnedEnv = (input: { readonly ambientBundledDev: string | undefined }) =>
+    describe("--share spawn wiring", () => {
+      const shareSpawned = (input: {
+        readonly ambientBundledDev?: string | undefined;
+        readonly built?: boolean;
+        readonly host?: string;
+      }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
+          let vpArgs: ReadonlyArray<string> = [];
+          const tailscaleCalls: Array<ReadonlyArray<string>> = [];
           const spawnerLayer = Layer.succeed(
             ChildProcessSpawner.ChildProcessSpawner,
             ChildProcessSpawner.make((command) => {
@@ -434,8 +466,10 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
               };
               if (spawned.command === "vp") {
                 captured = spawned.options?.env;
+                vpArgs = spawned.args;
                 return Effect.succeed(mockProcess(0));
               }
+              tailscaleCalls.push(spawned.args);
               return Effect.succeed(
                 ChildProcessSpawner.makeHandle({
                   pid: ChildProcessSpawner.ProcessId(2),
@@ -465,6 +499,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             mode: "dev",
             port: undefined,
             share: true,
+            built: input.built ?? false,
+            host: input.host,
           }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
@@ -476,15 +512,76 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             ),
           );
 
-          return captured;
+          return { env: captured, vpArgs, tailscaleCalls };
         });
 
       it.effect("keeps an explicit T3CODE_BUNDLED_DEV=0 opt-out", () =>
         Effect.gen(function* () {
-          const env = yield* shareSpawnedEnv({ ambientBundledDev: "0" });
+          const { env } = yield* shareSpawned({ ambientBundledDev: "0" });
           assert.equal(env?.T3CODE_BUNDLED_DEV, "0");
         }),
       );
+
+      it.effect("--built serves the backend on the web port's tailnet URL", () =>
+        Effect.gen(function* () {
+          const { env, vpArgs, tailscaleCalls } = yield* shareSpawned({ built: true });
+          assert.include(vpArgs, "dev:built");
+          assert.equal(env?.T3CODE_BUILT_DEV, "1");
+          assert.equal(env?.T3CODE_BUNDLED_DEV, undefined);
+          assert.equal(env?.VITE_DEV_SERVER_URL, `https://host.example.ts.net:${env?.PORT}/`);
+          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
+          assert.deepEqual(serve?.slice(-2), [
+            `--https=${env?.PORT}`,
+            `http://127.0.0.1:${env?.T3CODE_PORT}`,
+          ]);
+        }),
+      );
+
+      it.effect("--built --host ::1 targets the backend's IPv6 loopback", () =>
+        Effect.gen(function* () {
+          const { env, tailscaleCalls } = yield* shareSpawned({ built: true, host: "::1" });
+          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
+          assert.equal(serve?.at(-1), `http://[::1]:${env?.T3CODE_PORT}`);
+        }),
+      );
+
+      it.effect("without --built keeps Vite behind the tailnet URL", () =>
+        Effect.gen(function* () {
+          const { env, vpArgs, tailscaleCalls } = yield* shareSpawned({});
+          assert.include(vpArgs, "dev");
+          assert.notInclude(vpArgs, "dev:built");
+          assert.equal(env?.T3CODE_BUNDLED_DEV, "1");
+          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
+          assert.equal(serve?.at(-1), `http://localhost:${env?.PORT}`);
+        }),
+      );
+    });
+
+    it.effect.each([
+      { mode: "dev", share: false },
+      { mode: "dev:web", share: true },
+      { mode: "dev:desktop", share: true },
+    ] as const)("rejects --built for $mode with share=$share", ({ mode, share }) => {
+      const spawnerLayer = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() => Effect.succeed(mockProcess(0))),
+      );
+
+      return Effect.gen(function* () {
+        const error = yield* runDevRunnerWithInput({
+          ...devServerInput,
+          mode,
+          port: undefined,
+          share,
+          built: true,
+        }).pipe(
+          Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.flip,
+        );
+
+        assert.equal(error._tag, "DevRunnerBuiltNeedsShareError");
+      });
     });
 
     it.effect("reports non-zero exits without manufacturing a cause", () => {
@@ -550,6 +647,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
             Effect.provideService(HostProcess.WorkingDirectory, input.cwd),
+            // No ~/.t3 here, so these runs never seed from this machine's install.
+            Effect.provideService(HostProcess.HomeDirectory, input.cwd),
             Effect.provideService(
               HostProcess.Environment,
               input.ambientHome === undefined ? {} : { T3CODE_HOME: input.ambientHome },
@@ -595,6 +694,53 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             ambientHome: "/home/user/.t3",
           });
           assert.equal(home, path.join(path.resolve(root), ".upcomputer"));
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("seeds a worktree database from ~/.t3 only when it has none", () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const root = yield* makeWorktree;
+          const home = path.join(root, "home");
+          NodeFS.mkdirSync(path.join(home, ".t3", "userdata"), { recursive: true });
+          NodeFS.writeFileSync(path.join(home, ".t3", "userdata", "statev2.sqlite"), "");
+
+          const spawnedArgs = (seed: boolean | undefined) =>
+            Effect.gen(function* () {
+              const spawned: Array<ReadonlyArray<string>> = [];
+              const spawnerLayer = Layer.succeed(
+                ChildProcessSpawner.ChildProcessSpawner,
+                ChildProcessSpawner.make((command) => {
+                  spawned.push(
+                    (command as unknown as { readonly args: ReadonlyArray<string> }).args,
+                  );
+                  return Effect.succeed(mockProcess(0));
+                }),
+              );
+              yield* runDevRunnerWithInput({ ...devServerInput, t3Home: undefined, seed }).pipe(
+                Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
+                Effect.provideService(HostProcess.Platform, "linux"),
+                Effect.provideService(HostProcess.WorkingDirectory, root),
+                Effect.provideService(HostProcess.HomeDirectory, home),
+                Effect.provideService(HostProcess.Environment, {}),
+              );
+              return spawned.filter((args) =>
+                args.some((arg) => arg.endsWith("migrate-dev-db.ts")),
+              );
+            });
+
+          assert.deepStrictEqual(yield* spawnedArgs(false), []);
+          const [seedArgs] = yield* spawnedArgs(undefined);
+          assert.includeMembers([...(seedArgs ?? [])], ["--base-dir", path.join(root, ".t3")]);
+
+          // Either database means the worktree already has data.
+          for (const name of ["state.sqlite", "statev2.sqlite"]) {
+            const file = path.join(root, ".t3", "userdata", name);
+            NodeFS.mkdirSync(path.dirname(file), { recursive: true });
+            NodeFS.writeFileSync(file, "");
+            assert.deepStrictEqual(yield* spawnedArgs(undefined), []);
+            NodeFS.rmSync(file);
+          }
         }).pipe(Effect.scoped),
       );
 

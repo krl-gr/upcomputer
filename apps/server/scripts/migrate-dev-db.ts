@@ -16,6 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
+import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -216,13 +217,13 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
 ];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";
+const FTS5_SHADOW_SUFFIXES = ["_data", "_idx", "_content", "_docsize", "_config"];
 
+// Settled threads stay: they are most of real history, and the UI shows them.
 const rootIsVisible = (sql: SqlClient.SqlClient) => sql`
   root.deleted_at IS NULL
   AND json_extract(root.payload_json, '$.deletedAt') IS NULL
-  AND json_extract(root.payload_json, '$.archivedAt') IS NULL
-  AND json_extract(root.payload_json, '$.settledAt') IS NULL
-  AND json_extract(root.payload_json, '$.settledOverride') IS NOT 'settled'`;
+  AND json_extract(root.payload_json, '$.archivedAt') IS NULL`;
 
 /**
  * One transaction reads the source, so the copy is consistent while the real server writes.
@@ -237,8 +238,33 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
     SELECT m.name, c."notnull" FROM src.sqlite_master m, pragma_table_info(m.name, 'src') c
     WHERE m.type = 'table' AND c.name = 'thread_id'`;
   const threadIdNullable = new Map(threadColumns.map((row) => [row.name, row.notnull === 0]));
-  const tables = schema.filter((entry) => entry.type === "table");
+  // FTS5 makes its own shadow tables and contentless rows cannot be copied:
+  // create the virtual table, skip its shadow tables and rows, and rebuild the
+  // index once the messages and triggers are in.
+  const virtualTables = schema
+    .filter((entry) => entry.type === "table" && /^CREATE VIRTUAL TABLE/i.test(entry.sql))
+    .map((entry) => entry.name);
+  const isShadowTable = (name: string) =>
+    virtualTables.some((virtual) =>
+      FTS5_SHADOW_SUFFIXES.some((suffix) => name === `${virtual}${suffix}`),
+    );
+  const tables = schema.filter((entry) => entry.type === "table" && !isShadowTable(entry.name));
   const filtered = tables.some((table) => table.name === "orchestration_v2_projection_threads");
+  // A row that points into a cleared table cannot be copied, so whatever references one is
+  // cleared with it, however far down the chain a newer migration added it.
+  const references = yield* sql<{ name: string; parent: string }>`
+    SELECT m.name, f."table" AS parent FROM src.sqlite_master m, pragma_foreign_key_list(m.name, 'src') f
+    WHERE m.type = 'table'`;
+  const cleared = new Set(CLEARED_TABLES);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const { name, parent } of references) {
+      if (cleared.has(parent) && !cleared.has(name)) {
+        cleared.add(name);
+        grew = true;
+      }
+    }
+  }
 
   yield* sql.withTransaction(
     Effect.gen(function* () {
@@ -252,7 +278,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
           WHERE ${rootIsVisible(sql)}`;
       }
       for (const { name } of tables) {
-        if (CLEARED_TABLES.includes(name)) continue;
+        if (cleared.has(name) || virtualTables.includes(name)) continue;
         const nullable = threadIdNullable.get(name);
         const filter = !filtered
           ? ""
@@ -272,6 +298,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       for (const entry of schema) {
         if (entry.type !== "table") yield* sql.unsafe(entry.sql).unprepared;
       }
+      yield* rebuildMessageSearch(sql);
     }),
   );
   yield* sql`DETACH DATABASE src`;
@@ -309,7 +336,7 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
     FROM orchestration_v2_projection_threads`;
 
   yield* sql`CREATE TEMP TABLE stopped_families AS
-    SELECT f.root_id, root.project_id, MAX(f.updated_at) AS updated_at
+    SELECT f.root_id, root.project_id, MAX(f.updated_at) AS updated_at, COUNT(*) AS size
     FROM thread_families f
     JOIN orchestration_v2_projection_threads root ON root.thread_id = f.root_id
     WHERE ${rootIsVisible(sql)}
@@ -341,6 +368,9 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
           ) AS recency_rank
         FROM stopped_families sf
         JOIN kept_projects kp ON kp.project_id = sf.project_id
+        -- One orchestrator family can hold hundreds of subagents and most of
+        -- the database, so a family larger than the limit is skipped.
+        WHERE sf.size <= ${input.threadsPerProject}
       )
       WHERE recency_rank <= ${input.threadsPerProject}
     )`;
@@ -570,7 +600,7 @@ export const migrateDevDbCommand = Command.make(
     threadsPerProject: Flag.Int("threads-per-project").pipe(
       Flag.withDefault(10),
       Flag.withDescription(
-        "How many recent stopped threads, with their forks and subagents, to keep per project.",
+        "How many recent stopped threads, with their forks and subagents, to keep per project. A family with more threads than this is skipped.",
       ),
     ),
     baseDir: Flag.String("base-dir").pipe(

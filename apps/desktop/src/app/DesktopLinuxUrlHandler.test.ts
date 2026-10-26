@@ -31,6 +31,7 @@ const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {
     linuxDesktopEntryName: "computer.up.upcomputer.desktop",
     linuxWmClass: "upcomputer",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
+    desktopLauncherPath: Option.none(),
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
     path,
     ...overrides,
@@ -225,6 +226,18 @@ describe("DesktopLinuxUrlHandler", () => {
           iconPath: "/home/alice/.local/share/icons/computer.up.upcomputer.desktop.png",
         }),
       );
+    });
+  });
+
+  it.effect("launches a distribution package through its configured launcher", () => {
+    const recorded = emptyRecording();
+
+    return Effect.gen(function* () {
+      yield* runRegister(recorded, {
+        environment: { desktopLauncherPath: Option.some("/opt/Up.computer/t3code") },
+      });
+
+      assert.include(recorded.files[0]?.content, 'Exec="/opt/Up.computer/t3code" %U');
     });
   });
 

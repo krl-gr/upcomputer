@@ -12,7 +12,7 @@ import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
 import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
-import { GitHubRoutingSettings } from "../connection/GitHubRoutingSettings";
+import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -65,10 +65,7 @@ export function SettingsEnvironmentsRouteScreen() {
   }
 
   const openEnvironment = (environmentId: EnvironmentId) => {
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: { screen: "SettingsEnvironmentDetail", params: { environmentId } },
-    });
+    navigation.navigate("SettingsEnvironmentDetail", { environmentId });
   };
   const handleUpdateEnvironment = (
     environmentId: EnvironmentId,
@@ -127,11 +124,7 @@ export function SettingsEnvironmentsRouteScreen() {
           accessibilityLabel: "Add environment",
           icon: "plus",
           tintColor: headerIconColor,
-          onPress: () =>
-            navigation.navigate("SettingsSheet", {
-              screen: "SettingsContent",
-              params: { screen: "SettingsEnvironmentNew" },
-            }),
+          onPress: () => navigation.navigate("SettingsEnvironmentNew"),
         },
       ]}
     >
@@ -179,7 +172,7 @@ export function SettingsEnvironmentsRouteScreen() {
               }
             : {})}
         />
-        <GitHubRoutingSettings />
+        <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>
   );

@@ -82,6 +82,7 @@ export function QueuedRunsControl({
   )?.projection;
   const reorder = useAtomCommand(threadEnvironment.reorderQueuedRun);
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
+  const resume = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const [expanded, setExpanded] = useState(true);
   const queueListId = useId();
@@ -107,6 +108,7 @@ export function QueuedRunsControl({
   const queued = workflow?.queuedRuns ?? [];
   const activeRun = workflow?.activeRun ?? null;
   const canReorder = workflow?.canReorder === true;
+  const canSend = workflow?.canSendNow === true || workflow?.canPromoteToSteer === true;
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];
@@ -117,12 +119,15 @@ export function QueuedRunsControl({
     (message) => message.inputIntent === "queued_turn" && !acknowledgedMessageIds.has(message.id),
   );
   const items = [
-    ...queued.map(({ run, text, attachments }, serverIndex) => ({
+    ...queued.map(({ run, text, attachments, context }, serverIndex) => ({
       key: run.id,
       runId: run.id,
       messageId: run.userMessageId,
       serverIndex,
       text,
+      // A guest's message keeps the guest's words; the owner can cancel it, not rewrite it.
+      editable: context?.guest === undefined,
+      guestName: context?.guest?.name,
       attachments,
       thumbnails: attachments
         .filter((attachment) => attachment.type === "image")
@@ -139,6 +144,8 @@ export function QueuedRunsControl({
       messageId: null,
       serverIndex: null,
       text: message.text,
+      editable: true,
+      guestName: undefined,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
       thumbnails: (message.attachments ?? [])
         .filter(isImageAttachment)
@@ -170,14 +177,21 @@ export function QueuedRunsControl({
     void move(runId, queued[insertIndex]?.run.id ?? null);
   };
 
-  const steer = async (queuedRunId: RunId) => {
-    if (activeRun === null || !workflow?.canPromoteToSteer || steerInFlightRef.current) return;
+  const sendQueuedMessage = async (queuedRunId: RunId) => {
+    if (!canSend || steerInFlightRef.current) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
-    await promote({
-      environmentId: props.environmentId,
-      input: { threadId: props.threadId, queuedRunId, targetRunId: activeRun.id },
-    });
+    if (workflow?.canSendNow) {
+      await resume({
+        environmentId: props.environmentId,
+        input: { threadId: props.threadId, runId: queuedRunId },
+      });
+    } else if (activeRun !== null) {
+      await promote({
+        environmentId: props.environmentId,
+        input: { threadId: props.threadId, queuedRunId, targetRunId: activeRun.id },
+      });
+    }
     steerInFlightRef.current = false;
     setBusyRunId(null);
   };
@@ -185,15 +199,22 @@ export function QueuedRunsControl({
   useImperativeHandle(ref, () => ({
     steerNext(repeat) {
       const next = queued[0];
-      if (!next || !workflow?.canPromoteToSteer) return false;
-      if (!repeat && busyRunId === null) void steer(next.run.id);
+      if (!next || !canSend) return false;
+      if (!repeat && busyRunId === null) void sendQueuedMessage(next.run.id);
       return true;
     },
     // Declines while a queued message is already being edited so the key keeps
     // moving the caret inside that draft.
     editLatest(repeat) {
       const latest = queued.at(-1);
-      if (!latest || props.editingRunId !== null || busyRunId !== null) return false;
+      if (
+        !latest ||
+        latest.context?.guest !== undefined ||
+        props.editingRunId !== null ||
+        busyRunId !== null
+      ) {
+        return false;
+      }
       if (!repeat) {
         setExpanded(true);
         props.onEditQueuedRun({
@@ -371,6 +392,9 @@ export function QueuedRunsControl({
                         ))}
                       </span>
                     ) : null}
+                    {item.guestName === undefined ? null : (
+                      <span className="shrink-0 text-guest-foreground">{item.guestName}</span>
+                    )}
                     <Tooltip>
                       <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" />}>
                         {previewText}
@@ -399,7 +423,9 @@ export function QueuedRunsControl({
                                 size="icon-xs"
                                 variant="ghost-muted"
                                 aria-label="Edit queued message"
-                                disabled={item.runId === null || busyRunId !== null}
+                                disabled={
+                                  item.runId === null || !item.editable || busyRunId !== null
+                                }
                                 onClick={() => {
                                   if (item.runId !== null && item.messageId !== null) {
                                     props.onEditQueuedRun({
@@ -424,25 +450,19 @@ export function QueuedRunsControl({
                             <Button
                               size="xs"
                               variant="ghost-muted"
-                              disabled={
-                                item.runId === null ||
-                                busyRunId !== null ||
-                                !workflow?.canPromoteToSteer
-                              }
+                              disabled={item.runId === null || busyRunId !== null || !canSend}
                               onClick={() => {
                                 if (item.runId !== null) {
-                                  void steer(item.runId);
+                                  void sendQueuedMessage(item.runId);
                                 }
                               }}
                             >
                               <CornerUpRightIcon />
-                              Steer
+                              {workflow?.canSendNow ? "Send now" : "Steer"}
                             </Button>
                           </TooltipTrigger>
                           <TooltipPopup>
-                            {activeRun === null
-                              ? "There is no active run to steer"
-                              : `Send as a steer instead${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
+                            {`${workflow?.canSendNow ? "Start a turn with this message" : "Send as a steer instead"}${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
                           </TooltipPopup>
                         </Tooltip>
                         <Tooltip>

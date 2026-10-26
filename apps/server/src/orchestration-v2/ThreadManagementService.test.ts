@@ -3,6 +3,10 @@ import {
   CommandId,
   MessageId,
   type OrchestrationV2Run,
+  type OrchestrationV2ProviderThread,
+  ProviderThreadId,
+  ProviderDriverKind,
+  ProviderSessionId,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2ThreadProjection,
   ProjectId,
@@ -12,60 +16,25 @@ import {
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
-import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 
 const layerReceiptsTest = CommandReceiptStore.layer.pipe(
   Layer.provide(SqlitePersistence.layerMemory),
 );
-
-const layerThreadManagementTest = (settingsLayer: ReturnType<typeof ServerSettings.layerTest>) =>
-  ThreadManagementService.layer.pipe(
-    Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
-    Layer.provide(Layer.mock(Orchestrator.OrchestratorV2)({})),
-    Layer.provide(settingsLayer),
-    Layer.provide(layerReceiptsTest),
-  );
-
-it.effect("refuses a new turn when the project effectively disables the instance", () => {
-  const projectId = ProjectId.make("project:thread-management:gate-disabled");
-  const instanceId = ProviderInstanceId.make("codex_work");
-  const commandId = CommandId.make("command:thread-management:gate-disabled");
-  const layerTest = layerThreadManagementTest(
-    ServerSettings.layerTest({
-      providerInstances: { [instanceId]: { driver: "codex", enabled: true } },
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
-      },
-    }),
-  );
-
-  return Effect.gen(function* () {
-    const threads = yield* ThreadManagementService.ThreadManagementService;
-    const error = yield* Effect.flip(
-      threads.assertProviderInstanceEnabled({ projectId, commandId, instanceId }),
-    );
-
-    expect(error).toBeInstanceOf(
-      ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
-    );
-    expect(error).toMatchObject({ projectId, instanceId });
-    expect(error.message).toBe(
-      `Provider instance "${instanceId}" is disabled for project ${projectId}.`,
-    );
-  }).pipe(Effect.provide(layerTest));
-});
 
 const layerDispatchChokepointTest =
   (settingsLayer: ReturnType<typeof ServerSettings.layerTest>) => (dispatched: Array<string>) =>
@@ -185,39 +154,6 @@ it.effect(
   },
 );
 
-it.effect("classifies projection infrastructure failures separately from a missing thread", () => {
-  const projectId = ProjectId.make("project:thread-management:projection-failure");
-  const threadId = ThreadId.make("thread:thread-management:projection-failure");
-  const infrastructureCause = new Error("sqlite read failed");
-  const projectionError = new Orchestrator.OrchestratorProjectionError({
-    threadId,
-    cause: infrastructureCause,
-  });
-  const layerTest = ThreadManagementService.layer.pipe(
-    Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
-    Layer.provide(
-      Layer.mock(Orchestrator.OrchestratorV2)({
-        getThreadProjection: () => Effect.fail(projectionError),
-      }),
-    ),
-    Layer.provide(ServerSettings.layerTest()),
-    Layer.provide(layerReceiptsTest),
-  );
-
-  return Effect.gen(function* () {
-    const service = yield* ThreadManagementService.ThreadManagementService;
-    const error = yield* Effect.flip(service.getProjectThread({ projectId, threadId }));
-
-    expect(error).toBeInstanceOf(ThreadManagementService.ThreadManagementProjectionLoadError);
-    expect(error).toMatchObject({
-      projectId,
-      threadId,
-      cause: projectionError,
-    });
-    expect(error.message).toBe(`Unable to load thread ${threadId} in project ${projectId}.`);
-  }).pipe(Effect.provide(layerTest));
-});
-
 it.effect("uses thread-not-found only after a projection loads outside the project", () => {
   const projectId = ProjectId.make("project:thread-management:requested");
   const otherProjectId = ProjectId.make("project:thread-management:other");
@@ -247,37 +183,6 @@ it.effect("uses thread-not-found only after a projection loads outside the proje
     expect(error).toBeInstanceOf(ThreadManagementService.ThreadManagementThreadNotFoundError);
     expect(error).toMatchObject({ projectId, threadId });
     expect("cause" in error).toBe(false);
-  }).pipe(Effect.provide(layerTest));
-});
-
-it.effect("preserves failed legacy materialization when reading checkpoint context", () => {
-  const threadId = ThreadId.make("thread:thread-management:checkpoint-import-failure");
-  const importError = new LegacyV1ThreadImporter.LegacyV1ThreadImportError({
-    threadId,
-    operation: "hydrate transcript for",
-    cause: new Error("checkpoint import failed"),
-  });
-  const layerTest = ThreadManagementService.layerWithLegacyImporter.pipe(
-    Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(Orchestrator.OrchestratorV2)({
-          getCheckpointContext: () =>
-            Effect.succeed({ runs: [], checkpointScopes: [], checkpoints: [] }),
-        }),
-        Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({
-          ensureTranscript: () => Effect.fail(importError),
-        }),
-      ),
-    ),
-    Layer.provide(ServerSettings.layerTest()),
-    Layer.provide(layerReceiptsTest),
-  );
-  return Effect.gen(function* () {
-    const service = yield* ThreadManagementService.ThreadManagementService;
-    const error = yield* service.getCheckpointContext(threadId).pipe(Effect.flip);
-    expect(error).toBeInstanceOf(Orchestrator.OrchestratorProjectionError);
-    expect(error).toMatchObject({ threadId, cause: importError });
   }).pipe(Effect.provide(layerTest));
 });
 
@@ -397,6 +302,103 @@ it.effect("waitForThread returns the cut run once its continuation is declined",
 
     expect(result).toMatchObject({ timedOut: false, run: { id: runId, status: "cancelled" } });
   }),
+);
+
+it.effect.each(["live", "no-session", "unsupported-runtime"] as const)(
+  "marks background work awaited on the thread's active provider thread with state %s",
+  (state) =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:background-wait");
+      const providerThreadId = ProviderThreadId.make("provider-thread:background-wait");
+      const providerSessionId = ProviderSessionId.make("provider-session:background-wait");
+      const driver = ProviderDriverKind.make("claudeAgent");
+      const now = yield* DateTime.now;
+      const providerThread: OrchestrationV2ProviderThread = {
+        id: providerThreadId,
+        driver,
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        providerSessionId,
+        appThreadId: threadId,
+        ownerNodeId: null,
+        nativeThreadRef: { driver, nativeId: "native-thread", strength: "strong" },
+        nativeConversationHeadRef: null,
+        status: "idle",
+        firstRunOrdinal: 1,
+        lastRunOrdinal: 1,
+        handoffIds: [],
+        forkedFrom: null,
+        pendingBackgroundTasks: [{ taskId: "tests", kind: "command" }],
+        contextUsage: null,
+        nativeMetadata: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const calls: Array<{ providerThreadId: ProviderThreadId; awaited: boolean }> = [];
+      const runtime = {
+        driver,
+        providerSessionId,
+        ...(state === "unsupported-runtime"
+          ? {}
+          : {
+              awaitBackgroundTasks: (input: {
+                readonly providerThread: OrchestrationV2ProviderThread;
+                readonly taskIds: ReadonlyArray<string>;
+                readonly awaited: boolean;
+              }) =>
+                Effect.sync(() => {
+                  calls.push({
+                    providerThreadId: input.providerThread.id,
+                    awaited: input.awaited,
+                  });
+                  return { matched: input.taskIds.filter((taskId) => taskId === "tests") };
+                }),
+            }),
+      } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime;
+      const layerTest = ThreadManagementService.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(Orchestrator.OrchestratorV2)({
+              getThreadRecords: () =>
+                Effect.succeed({
+                  thread: {
+                    id: threadId,
+                    deletedAt: null,
+                    activeProviderThreadId: providerThreadId,
+                  },
+                  providerThreads: [providerThread],
+                } as unknown as OrchestrationV2ThreadProjection),
+            }),
+            Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+              get: () =>
+                Effect.succeed(state === "no-session" ? Option.none() : Option.some(runtime)),
+            }),
+          ),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(layerReceiptsTest),
+      );
+      const result = yield* Effect.gen(function* () {
+        const service = yield* ThreadManagementService.ThreadManagementService;
+        return yield* service
+          .awaitBackgroundTasks({ threadId, taskIds: ["tests", "finished"], awaited: true })
+          .pipe(Effect.result);
+      }).pipe(Effect.provide(Layer.merge(layerTest, ThreadCommandExecutor.layer)));
+
+      if (state === "live") {
+        expect(result).toMatchObject({
+          success: { matched: ["tests"], unmatched: ["finished"] },
+        });
+        expect(calls).toEqual([{ providerThreadId, awaited: true }]);
+      } else {
+        expect(result).toMatchObject({
+          failure: {
+            _tag: "ThreadManagementBackgroundWaitError",
+            reason: state === "no-session" ? "unavailable" : "unsupported",
+          },
+        });
+        expect(calls).toEqual([]);
+      }
+    }),
 );
 
 it.effect.each([

@@ -238,7 +238,22 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   }
   const access = yield* Effect.tryPromise({
     try: () => bridge.bootstrapSshBearerSession(bootstrap.httpBaseUrl, pairingToken),
-    catch: sshPreparationError,
+    catch: (cause) => {
+      const error = sshPreparationError(cause);
+      // A reused remote server on another build can fail to decode the grant
+      // the desktop's runner just minted, and answers 500 on every retry.
+      if (
+        error._tag === "ConnectionBlockedError" ||
+        descriptor.serverVersion === APP_VERSION ||
+        !error.detail.includes("[ssh_http:500]")
+      ) {
+        return error;
+      }
+      return new ConnectionBlockedError({
+        reason: "configuration",
+        detail: `${descriptor.label} runs Up.computer ${descriptor.serverVersion}, but this desktop is ${APP_VERSION}, and that server could not accept its pairing. Restart the Up.computer server on ${descriptor.label} so it runs ${APP_VERSION}, then retry.`,
+      });
+    },
   });
   return {
     environmentId: descriptor.environmentId,
@@ -527,7 +542,7 @@ export type PrimaryEnvironmentTargetRead =
       readonly cause: unknown;
     };
 
-export function readPrimaryEnvironmentTargetResult(
+function readPrimaryEnvironmentTargetResult(
   readTarget: () => PrimaryEnvironmentTarget | null = readPrimaryEnvironmentTarget,
 ): PrimaryEnvironmentTargetRead {
   try {

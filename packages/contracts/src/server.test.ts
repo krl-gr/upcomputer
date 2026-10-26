@@ -6,6 +6,7 @@ import {
   ClientTelemetryEvent,
   OtlpEndpointCheckInput,
   resolveEnvironmentMachineKind,
+  ServerObservability,
   ServerProvider,
   ServerProviders,
   toTelemetryProvider,
@@ -70,6 +71,23 @@ describe("server config forward compatibility", () => {
     expect(parsed.usageLimits?.windows).toEqual([
       { id: "primary", kind: "session", label: "Session", usedPercent: 12 },
     ]);
+  });
+});
+
+describe("ServerObservability", () => {
+  const decodeServerObservability = Schema.decodeUnknownSync(ServerObservability);
+
+  it("rejects an unknown endpoint source", () => {
+    expect(() =>
+      decodeServerObservability({
+        logsDirectoryPath: "/tmp/t3/logs",
+        localTracingEnabled: true,
+        otlpTracesUrl: "https://collector.example.com/v1/traces",
+        otlpTracesSource: "cli",
+        otlpTracesEnabled: true,
+        otlpMetricsEnabled: false,
+      }),
+    ).toThrow();
   });
 });
 

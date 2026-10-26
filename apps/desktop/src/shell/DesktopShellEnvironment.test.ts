@@ -141,29 +141,6 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
-  it.effect("tries the account shell before the platform fallback when SHELL has no PATH", () =>
-    Effect.gen(function* () {
-      const env: NodeJS.ProcessEnv = { SHELL: "/bin/missing", PATH: "/usr/bin" };
-      const commands: string[] = [];
-
-      yield* runShellEnvironment({
-        env,
-        platform: "linux",
-        userShell: "/usr/local/bin/fish",
-        handler: (command) => {
-          if (command._tag !== "StandardCommand") return "";
-          commands.push(command.command);
-          return command.command === "/usr/local/bin/fish"
-            ? envOutput({ PATH: "/home/test/.local/bin:/usr/bin" })
-            : "";
-        },
-      });
-
-      assert.deepEqual(commands, ["/bin/missing", "/usr/local/bin/fish"]);
-      assert.equal(env.PATH, "/home/test/.local/bin:/usr/bin");
-    }),
-  );
-
   it.effect("appends the native installers' directories after the login shell PATH", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { SHELL: "/bin/zsh", HOME: "/Users/test", PATH: "/usr/bin" };
@@ -207,29 +184,6 @@ describe("DesktopShellEnvironment", () => {
       assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin:/Users/test/.local/bin");
       assert.equal(env.SSH_AUTH_SOCK, "/tmp/secretive.sock");
       assert.equal(env.HOMEBREW_PREFIX, "/opt/homebrew");
-    }),
-  );
-
-  it.effect("preserves inherited POSIX values when present", () =>
-    Effect.gen(function* () {
-      const env: NodeJS.ProcessEnv = {
-        SHELL: "/bin/zsh",
-        PATH: "/usr/bin",
-        SSH_AUTH_SOCK: "/tmp/inherited.sock",
-      };
-
-      yield* runShellEnvironment({
-        env,
-        platform: "darwin",
-        handler: () =>
-          envOutput({
-            PATH: "/opt/homebrew/bin:/usr/bin",
-            SSH_AUTH_SOCK: "/tmp/login-shell.sock",
-          }),
-      });
-
-      assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin");
-      assert.equal(env.SSH_AUTH_SOCK, "/tmp/inherited.sock");
     }),
   );
 

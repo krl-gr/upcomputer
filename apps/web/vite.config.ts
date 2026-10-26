@@ -64,6 +64,10 @@ const configuredHostedAppUrl = (() => {
 })();
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
+// `vp run dev --share --built` rebuilds on every change. The license manifest
+// is about 2 s of each build, and nothing in that mode reads it.
+const builtDev = process.env.T3CODE_BUILT_DEV === "1";
+
 const bundledDevEnv = process.env.T3CODE_BUNDLED_DEV?.trim().toLowerCase();
 const bundledDev = bundledDevEnv === "1" || bundledDevEnv === "true";
 
@@ -82,7 +86,10 @@ const unitTestProject = {
     exclude: ["src/**/*.browser.test.{ts,tsx}"],
     hookTimeout: 15_000,
     testTimeout: 15_000,
-    setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
+    setupFiles: [
+      "../../packages/shared/src/testing/longTempDir.ts",
+      "../../packages/shared/src/testing/providerEnv.ts",
+    ],
     alias: [
       {
         find: /^(?:\.\.\/product|\.)\/productEntry$/,
@@ -110,6 +117,7 @@ const browserTestProject = {
     include: ["src/**/*.browser.test.{ts,tsx}"],
     hookTimeout: 15_000,
     testTimeout: 15_000,
+    setupFiles: ["./test/browserSetup.ts"],
     api: { port: browserTestApiPort, strictPort: false },
     browser: {
       enabled: true,
@@ -119,7 +127,7 @@ const browserTestProject = {
       screenshotFailures: false,
       commands: {
         // Playwright's mouse outlives each test, so whatever mounts under its last
-        // position starts hovered. test/render.tsx parks it off the page after each test.
+        // position starts hovered. test/browserSetup.ts parks it off the page before each test.
         resetPointer: async ({ page }) => {
           await page.mouse.move(-1, -1);
         },
@@ -188,18 +196,29 @@ const allowedHosts = [".ts.net", ...configuredAllowedHosts];
 
 export default defineConfig(() => {
   return {
+    run: {
+      tasks: {
+        // tsc (tsc-rs) rewrites the tsbuildinfo it reads, which keeps a task out of the cache.
+        typecheck: {
+          command: "tsc --noEmit",
+          cache: { input: [{ auto: true }, "!*.tsbuildinfo"] },
+        },
+      },
+    },
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
-      thirdPartyLicensesPlugin({
-        bundleName: "web",
-        configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
-        packageManifests: [
-          { bundle: "web", path: new URL("./package.json", import.meta.url) },
-          { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
-          { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
-        ],
-      }),
+      builtDev
+        ? undefined
+        : thirdPartyLicensesPlugin({
+            bundleName: "web",
+            configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+            packageManifests: [
+              { bundle: "web", path: new URL("./package.json", import.meta.url) },
+              { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
+              { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
+            ],
+          }),
       tanstackRouter({ autoCodeSplitting: true }),
       react({ compiler: true }),
       tailwindPlugins(bundledDev),

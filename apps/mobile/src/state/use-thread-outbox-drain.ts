@@ -1,3 +1,4 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import * as Dialog from "../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -6,6 +7,7 @@ import {
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import { threadFamilyRead, type ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
   AuthOrchestrationOperateScope,
@@ -65,7 +67,7 @@ import {
   type ThreadOutboxCommandStage,
   type ThreadOutboxFailureAction,
 } from "./thread-outbox-model";
-import { environmentThreadShells, threadEnvironment } from "./threads";
+import { environmentThreadShells, threadEnvironment, threadFamilies } from "./threads";
 import {
   appendComposerDraftAttachments,
   composerDraftsAtom,
@@ -613,6 +615,16 @@ export function useThreadOutboxDrain(): void {
   const retryNotBeforeRef = useRef(new Map<MessageId, number>());
   const retryTimersRef = useRef(new Map<MessageId, ReturnType<typeof setTimeout>>());
   const acknowledgedExistingThreadMessageIdsRef = useRef(new Set<MessageId>());
+  // Targets the shell may have left out hold their thread family until they leave the queue, so
+  // the row stays readable through dispatch.
+  const familyMountsRef = useRef(new Map<MessageId, () => void>());
+  useEffect(
+    () => () => {
+      for (const release of familyMountsRef.current.values()) release();
+      familyMountsRef.current.clear();
+    },
+    [],
+  );
   const blockedRecoverySubscriptionsRef = useRef(
     new Map<
       MessageId,
@@ -997,11 +1009,16 @@ export function useThreadOutboxDrain(): void {
         if (failure?.action === "restore")
           return restoreQueuedMessage(persistedMessage, failure.message);
         if (!AsyncResult.isSuccess(checkout)) return false;
-        if (!checkout.value.worktreePath || !checkout.value.isOnPullRequestHead)
+        if (!checkout.value.worktreePath || !checkout.value.isOnPullRequestHead) {
+          const { shortLabel } = (
+            sourceControlClients.findByChangeRequestUrl(creation.pullRequestReference) ??
+            sourceControlClients.get(undefined)
+          ).changeRequest;
           return restoreQueuedMessage(
             persistedMessage,
-            "The PR worktree has local changes and could not update to the PR head. Resolve them before trying again.",
+            `The ${shortLabel} worktree has local changes and could not update to the ${shortLabel} head. Resolve them before trying again.`,
           );
+        }
         workspace = {
           ...creation,
           workspaceMode: "local",
@@ -1096,6 +1113,12 @@ export function useThreadOutboxDrain(): void {
         acknowledgedExistingThreadMessageIdsRef.current.delete(messageId);
       }
     }
+    for (const [messageId, release] of familyMountsRef.current) {
+      if (!queuedMessageIds.has(messageId)) {
+        release();
+        familyMountsRef.current.delete(messageId);
+      }
+    }
 
     for (const [threadKey, queuedMessages] of Object.entries(queuedMessagesByThreadKey)) {
       const nextQueuedMessage = queuedMessages[0];
@@ -1147,7 +1170,7 @@ export function useThreadOutboxDrain(): void {
         continue;
       }
 
-      const thread = findThread(threads, nextQueuedMessage);
+      let thread = findThread(threads, nextQueuedMessage);
       if (thread && scopedThreadKey(thread.environmentId, thread.id) !== threadKey) {
         continue;
       }
@@ -1157,17 +1180,66 @@ export function useThreadOutboxDrain(): void {
         (candidate) => candidate.environmentId === nextQueuedMessage.environmentId,
       );
       const shellStatus = shellStatuses.get(nextQueuedMessage.environmentId) ?? "empty";
+      const serverConfig = serverConfigs.get(nextQueuedMessage.environmentId);
+      let familyRead: ThreadFamilyRead | undefined;
+      if (
+        thread === undefined &&
+        creation === undefined &&
+        serverConfig?.shellThreadFamilies === true
+      ) {
+        // The family keeps the row readable through dispatch once it loads; the current shell
+        // generation's read decides whether the thread is gone.
+        if (!familyMountsRef.current.has(nextQueuedMessage.messageId)) {
+          familyMountsRef.current.set(
+            nextQueuedMessage.messageId,
+            threadFamilies.mount(
+              appAtomRegistry,
+              nextQueuedMessage.environmentId,
+              nextQueuedMessage.threadId,
+            ),
+          );
+        }
+        familyRead = threadFamilyRead(
+          appAtomRegistry.get(
+            threadFamilies.familyAtom(nextQueuedMessage.environmentId, nextQueuedMessage.threadId),
+          ),
+        );
+        if (familyRead === "settled") {
+          // The rows from this render can lag the family that just settled; decide from the
+          // merged rows as they are now.
+          thread = findThread(
+            appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
+            nextQueuedMessage,
+          );
+        } else if (familyRead === "failed") {
+          threadFamilies.refresh(
+            appAtomRegistry,
+            nextQueuedMessage.environmentId,
+            nextQueuedMessage.threadId,
+          );
+        }
+      }
       const deliveryAction = resolveThreadOutboxDeliveryAction({
         isCreation: creation !== undefined,
         threadExists: thread !== undefined,
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
         threadBusy: threadRuntimeIsActive(thread?.runtime),
+        ...(familyRead === undefined ? {} : { familyRead }),
       });
+      if (
+        deliveryAction === "wait" &&
+        shellStatus === "live" &&
+        familyRead !== undefined &&
+        familyRead !== "settled"
+      ) {
+        // An empty family read changes no merged row, so nothing else would wake the drain.
+        scheduleQueuedMessageRetry(nextQueuedMessage.messageId);
+        continue;
+      }
       if (deliveryAction === "send" && !operableEnvironments.has(nextQueuedMessage.environmentId)) {
         continue;
       }
-      const serverConfig = serverConfigs.get(nextQueuedMessage.environmentId);
       const dispatchStep = resolveThreadOutboxDispatchStep({
         deliveryAction,
         fileAttachments: nextQueuedMessage.attachments.filter(

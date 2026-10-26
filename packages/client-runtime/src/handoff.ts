@@ -1,11 +1,12 @@
 import type {
   ModelSelection,
   OrchestrationV2Run,
-  OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ProviderInstanceId,
   ServerProvider,
 } from "@t3tools/contracts";
+
+import type { ThreadStructure } from "./state/models.ts";
 
 export type HandoffTimelineRun = Pick<
   OrchestrationV2Run,
@@ -15,15 +16,19 @@ export type HandoffTimelineRun = Pick<
 export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;
 
 export function resolvePendingHandoff(
-  projection: OrchestrationV2ThreadProjection | null | undefined,
+  projection: ThreadStructure | null | undefined,
   selection: ModelSelection | null | undefined,
   providers: ReadonlyArray<ServerProvider>,
 ): HandoffEndpoints | null {
   // A thread with an empty timeline has nothing to hand off. Any loaded row
   // counts: paging can leave a window of only tool rows.
   if (!projection?.visibleTurnItems.length) return null;
+  // The handoff row is committed before the provider starts. Use its destination
+  // during startup so the footer does not duplicate the committed handoff.
   const from = projection.runs.findLast(
-    (run) => run.startedAt !== null && run.status !== "rolled_back",
+    (run) =>
+      run.status !== "rolled_back" &&
+      (run.startedAt !== null || (run.status === "starting" && run.contextHandoffId !== null)),
   )?.modelSelection;
   if (from === undefined || selection == null) return null;
   const source = providers.find((provider) => provider.instanceId === from.instanceId);

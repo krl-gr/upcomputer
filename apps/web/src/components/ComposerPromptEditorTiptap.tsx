@@ -56,6 +56,7 @@ import {
   pastedPathQueryLength,
 } from "~/composer-logic";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import { caretLineDirection, ComposerTextDirectionExtension } from "~/composer-text-direction";
 import {
   collectComposerPromptInlineTokens,
   selectionTouchesMentionBoundary,
@@ -67,6 +68,7 @@ import {
   ComposerListExtensions,
   buildTiptapContent,
   caretTakesMarksBefore,
+  ComposerBoldSelectionOnlyExtension,
   convertBulletItemToTask,
   ComposerCodeExtension,
   ComposerItalicExtension,
@@ -264,6 +266,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
   const chip = (
     <ContextChip
       kind="mention"
+      dir="ltr"
       render={<button type="button" />}
       onClick={() => actions.openMention(path)}
       aria-label={`Preview ${path}`}
@@ -727,6 +730,7 @@ const ComposerMarkerPlugin = new Plugin({
 function decorationsForSelection(state: EditorState): DecorationSet {
   const { doc, selection } = state;
   const caretSide = caretTakesMarksBefore(state) ? 3 : 0;
+  const rtl = caretLineDirection(state) === "rtl";
   const decorations: Decoration[] = [];
   if (!selection.empty) {
     doc.nodesBetween(selection.from, selection.to, (node, pos) => {
@@ -750,8 +754,19 @@ function decorationsForSelection(state: EditorState): DecorationSet {
       marker.className = "composer-rich-marker";
       marker.textContent = text;
       marker.setAttribute("aria-hidden", "true");
+      // Inline code is isolated left to right. In a right-to-left line its
+      // opening backtick joins the closing one inside the isolate, or the line
+      // would put both on the same side of the code.
+      const codeMarks =
+        rtl && baseSide === -1 && /^`+$/.test(text)
+          ? doc.resolve(at).nodeAfter?.marks.filter((mark) => mark.type.spec.code)
+          : undefined;
       decorations.push(
-        Decoration.widget(at, marker, { side, key: `marker-${at}-${side}-${marker.textContent}` }),
+        Decoration.widget(at, marker, {
+          side,
+          key: `marker-${at}-${side}-${marker.textContent}`,
+          ...(codeMarks?.length ? { marks: codeMarks } : {}),
+        }),
       );
     }
   }
@@ -852,6 +867,7 @@ function createComposerExtensions(richText: boolean) {
       ...(richText ? {} : { bold: false, strike: false }),
     }),
     ComposerUndoGroupingExtension,
+    ComposerTextDirectionExtension,
     ComposerMentionExtension,
     ComposerSkillExtension,
     ComposerCitationExtension,
@@ -859,6 +875,7 @@ function createComposerExtensions(richText: boolean) {
     ComposerMarkersExtension,
     ...(richText
       ? [
+          ComposerBoldSelectionOnlyExtension,
           ComposerItalicExtension,
           ComposerCodeExtension,
           ComposerCodeBlockExtension.extend({
@@ -1146,6 +1163,8 @@ function ComposerPromptEditorTiptapInner(
       editorProps: {
         attributes: editorAttributes,
         handleKeyDown: (view, event) => {
+          // In a right-to-left line the start is on the right.
+          const backArrow = caretLineDirection(view.state) === "rtl" ? "ArrowRight" : "ArrowLeft";
           const boundary = event.metaKey
             ? event.key === "ArrowLeft" || event.key === "ArrowRight"
               ? "lineboundary"
@@ -1171,7 +1190,7 @@ function ComposerPromptEditorTiptapInner(
               event.preventDefault();
               event.stopPropagation();
               const backward =
-                event.key === "Home" || event.key === "ArrowLeft" || event.key === "ArrowUp";
+                event.key === "Home" || event.key === "ArrowUp" || event.key === backArrow;
               selection.modify(
                 event.shiftKey ? "extend" : "move",
                 backward ? "backward" : "forward",
@@ -1206,7 +1225,7 @@ function ComposerPromptEditorTiptapInner(
             view.state.selection.empty
           ) {
             const { $from } = view.state.selection;
-            const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+            const direction = event.key === "ArrowUp" || event.key === backArrow ? -1 : 1;
             const horizontal = event.key === "ArrowLeft" || event.key === "ArrowRight";
             // At the document's ends, native Up/Down can cross a marker without
             // changing the document position. Record the stop so DOM selection

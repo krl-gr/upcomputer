@@ -45,7 +45,7 @@ import {
 } from "../components/Sidebar.logic";
 import { resolveThreadStatusLabel, THREAD_STATUS_LABELS } from "./ThreadStatusLabel";
 
-const { SidebarThreadRow } = await import("../components/Sidebar");
+const { SidebarThreadRow } = await import("../components/sidebar/SidebarThreadRow");
 
 // Typecheck fails here when upstream adds a status this test does not walk.
 const EVERY_STATUS: Record<SidebarThreadStatus, true> = {

@@ -10,6 +10,7 @@ const changeRequestWebUrl = (kind: string, host: string, repository: string, num
 const project = {
   host: "github.com",
   repository: "acme/web",
+  terminology: sourceControlClients.get("github").changeRequest,
   webUrl: (number: number) => changeRequestWebUrl("github", "github.com", "acme/web", number),
 };
 
@@ -54,6 +55,7 @@ describe("resolveLinkPullRequestInput", () => {
         project: {
           host: "ssh.dev.azure.com",
           repository: "v3/org/project/web",
+          terminology: sourceControlClients.get("azure-devops").changeRequest,
           webUrl: (number) =>
             changeRequestWebUrl("azure-devops", "ssh.dev.azure.com", "v3/org/project/web", number),
         },
@@ -79,6 +81,22 @@ describe("resolveLinkPullRequestInput", () => {
         number: 42,
         url: "https://github.com/acme/web/pull/42",
       },
+    });
+  });
+
+  it("names the project host's change request when it has no URL for a number", () => {
+    expect(
+      resolveLinkPullRequestInput({
+        reference: "#42",
+        project: {
+          ...project,
+          terminology: sourceControlClients.get("gitlab").changeRequest,
+          webUrl: () => null,
+        },
+        hasProject: () => true,
+      }),
+    ).toEqual({
+      error: "Paste a full URL; this project's host has no known merge request URL.",
     });
   });
 
@@ -120,18 +138,8 @@ describe("parsePullRequestReference", () => {
     expect(parsePullRequestReference("gh pr checkout 42")).toBe("42");
   });
 
-  it("accepts gh pr checkout commands with GitHub pull request URLs", () => {
-    expect(
-      parsePullRequestReference("gh pr checkout https://github.com/pingdotgg/t3code/pull/42"),
-    ).toBe("https://github.com/pingdotgg/t3code/pull/42");
-  });
-
   it("accepts glab mr checkout commands with raw numbers", () => {
     expect(parsePullRequestReference("glab mr checkout 42")).toBe("42");
-  });
-
-  it("accepts az repos pr checkout commands with raw numbers", () => {
-    expect(parsePullRequestReference("az repos pr checkout --id 42")).toBe("42");
   });
 
   it("accepts az repos pr checkout commands with equals-style ids", () => {

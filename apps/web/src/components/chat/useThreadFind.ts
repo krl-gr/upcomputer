@@ -1,13 +1,10 @@
 import type { InlineSkill } from "@t3tools/shared/inlineSkills";
-import type {
-  OrchestrationV2ThreadProjection,
-  OrchestrationV2SearchThreadResult,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { OrchestrationV2SearchThreadResult, ScopedThreadRef } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { orchestrationEnvironment } from "~/state/orchestration";
+import { useThreadProjection } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useDebouncedValue } from "~/state/queries";
 import {
@@ -15,7 +12,11 @@ import {
   type ThreadFindStart,
   stepThreadFindIndex,
 } from "./threadFind";
-import { subscribeThreadFindOpen } from "./threadFindActionBus";
+import {
+  subscribeThreadFindOpen,
+  subscribeThreadFindQuery,
+  takeThreadFindQuery,
+} from "./threadFindActionBus";
 import { toastManager } from "../ui/toast";
 
 const EMPTY_SKILLS: readonly InlineSkill[] = [];
@@ -42,14 +43,15 @@ export function useThreadFind({
   enabled,
   progressive = false,
   skills = EMPTY_SKILLS,
-  content,
 }: {
   thread: ScopedThreadRef | null;
   enabled: boolean;
   progressive?: boolean;
   skills?: readonly InlineSkill[];
-  content: Pick<OrchestrationV2ThreadProjection, "visibleTurnItems" | "runs"> | undefined;
 }) {
+  // Read here rather than passed in: a streamed delta re-renders only the find
+  // provider, which refreshes open results from it.
+  const content = useThreadProjection(enabled ? thread : null)?.projection;
   // Held in state so the timeline props that carry it can be stored in state too.
   const [positionReader] = useState<RefObject<ThreadFindPositionReader | null>>(() => ({
     current: null,
@@ -96,6 +98,31 @@ export function useThreadFind({
   });
   const close = useStableCallback(() => setState(CLOSED_FIND));
   useEffect(() => subscribeThreadFindOpen(open), [open]);
+  const openOnQuery = useStableCallback((query: string, start?: ThreadFindStart) => {
+    if (threadKey === null) return;
+    setState((previous) => ({
+      ...(previous.threadKey === threadKey ? previous : CLOSED_FIND),
+      threadKey,
+      query,
+      offset: 0,
+      start,
+      localSelection: null,
+      focusRequestId: previous.focusRequestId + 1,
+      navigationId: previous.navigationId + 1,
+      requestId: previous.navigationId + 1,
+    }));
+  });
+  // A palette message result opens find on its query, at its message, once
+  // this thread shows.
+  useEffect(() => {
+    if (threadKey === null || !enabled) return;
+    const take = () => {
+      const find = takeThreadFindQuery(threadKey);
+      if (find !== null) openOnQuery(find.query, find.start);
+    };
+    take();
+    return subscribeThreadFindQuery(take);
+  }, [enabled, openOnQuery, threadKey]);
 
   const remote = useServerResults(
     isOpen ? thread : null,

@@ -1276,7 +1276,7 @@ function ScheduledTaskEditorForm({
       <DialogHeader>
         <DialogTitle>{draft.editingId ? "Edit prompt" : "New prompt"}</DialogTitle>
         <DialogDescription>
-          Run a prompt automatically — on an interval, at a fixed time, or when a webhook is called.
+          Run a prompt automatically on an interval, at a fixed time, or when a webhook is called.
         </DialogDescription>
       </DialogHeader>
 

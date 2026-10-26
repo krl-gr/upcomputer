@@ -24,7 +24,7 @@ import {
 } from "@t3tools/contracts";
 import type { ReviewGuideStackLayer } from "@t3tools/provider-core/server/textGeneration";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
 import * as ServerConfig from "../config.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
@@ -105,7 +105,7 @@ const make = Effect.gen(function* () {
               {
                 projectId: ProjectId.make("own"),
                 number: key.number,
-                repository: sourceControlRepositorySelector(identity) ?? "",
+                repository: sourceControlDefinitions.repositorySelector(identity) ?? "",
               },
               identity,
             );
@@ -252,6 +252,7 @@ const make = Effect.gen(function* () {
         ),
       );
       const fetchAndResolve = (ref: string) => fetch([ref]).pipe(Effect.andThen(resolveHead));
+      const headRef = sourceControlDefinitions.get(detail.provider).changeRequestHeadRef?.(number);
       const branchRef = `refs/heads/${branch}`;
       const checkBranch = git.execute({
         operation: "PullRequestReviewGuideService.checkHeadBranch",
@@ -267,11 +268,7 @@ const make = Effect.gen(function* () {
           source: `branch ${branch}`,
           head: checkBranch.pipe(Effect.andThen(fetchAndResolve(branchRef))),
         },
-        { source: `refs/pull/${number}/head`, head: fetchAndResolve(`refs/pull/${number}/head`) },
-        {
-          source: `refs/merge-requests/${number}/head`,
-          head: fetchAndResolve(`refs/merge-requests/${number}/head`),
-        },
+        ...(headRef === undefined ? [] : [{ source: headRef, head: fetchAndResolve(headRef) }]),
       ];
       const failures: Array<string> = [];
       for (const { source, head } of sources) {

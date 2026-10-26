@@ -7,6 +7,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import {
+  GitCommandError,
   SourceControlProviderError,
   SourceControlRepositoryError,
   type GitCommandFailureReason,
@@ -23,17 +24,19 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import {
   parseGitCloneProgressLine,
   type GitCloneProgressLine,
 } from "../project/gitCloneProgress.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
-const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
+const isGitCommandError = Schema.is(GitCommandError);
 
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
@@ -91,11 +94,9 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
           operation,
           provider,
           detail:
-            isSourceControlProviderError(cause) &&
-            cause.provider === "bitbucket" &&
-            isBitbucketRepositoryLocatorError(cause.cause)
-              ? BitbucketApi.BitbucketRepositoryLocatorError.detail
-              : "The source control operation could not be completed.",
+            (isSourceControlProviderError(cause)
+              ? SourceControlProvider.userFacingSourceControlDetail(cause.cause)
+              : undefined) ?? "The source control operation could not be completed.",
           cause,
         }),
   );
@@ -169,6 +170,27 @@ function publishPushFailureDetail(input: {
   }
 }
 
+/**
+ * Adding a project clones over SSH for most hosts, and a machine with no SSH
+ * key there would fail every time, while the host's HTTPS credential helper
+ * may be set up. A clone whose SSH login was refused is retried once over
+ * HTTPS, unless the caller asked for SSH. A looked-up repository has the
+ * provider's own HTTPS URL; any other URL is rewritten, which is refused
+ * where it would have to guess.
+ */
+function httpsFallbackUrl(
+  input: SourceControlCloneRepositoryInput,
+  prepared: SourceControlPreparedClone,
+): string | null {
+  if (input.protocol === "ssh" || cloneUrlProtocol(prepared.cloneUrl) !== "ssh") return null;
+  if (prepared.repository?.sshUrl === prepared.cloneUrl) return prepared.repository.url;
+  return cloneUrlForProtocol(prepared.cloneUrl, "https");
+}
+
+const isSshRejection = (error: SourceControlRepositoryError) =>
+  isGitCommandError(error.cause) &&
+  (error.cause.reason === "authentication_failed" || error.cause.reason === "host_key_unverified");
+
 function selectRemoteUrl(
   urls: SourceControlRepositoryCloneUrls,
   protocol: SourceControlCloneProtocol | undefined,
@@ -207,20 +229,23 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const lookupRepository = Effect.fn("SourceControlRepositoryService.lookupRepository")(function* (
-    input: SourceControlRepositoryLookupInput,
-  ) {
-    const providerKind = yield* ensureConcreteProvider({
-      operation: "lookupRepository",
-      provider: input.provider,
-    });
-    const provider = yield* providers.get(providerKind);
-    const urls = yield* provider.getRepositoryCloneUrls({
-      cwd: input.cwd ?? config.cwd,
-      repository: input.repository.trim(),
-    });
-    return toRepositoryInfo(providerKind, urls);
-  });
+  const lookupRepository = Effect.fn("SourceControlRepositoryService.lookupRepository")(
+    function* (input: SourceControlRepositoryLookupInput) {
+      const providerKind = yield* ensureConcreteProvider({
+        operation: "lookupRepository",
+        provider: input.provider,
+      });
+      const provider = yield* providers.get(providerKind);
+      const urls = yield* provider.getRepositoryCloneUrls({
+        cwd: input.cwd ?? config.cwd,
+        repository: input.repository.trim(),
+      });
+      return toRepositoryInfo(providerKind, urls);
+    },
+    // Someone adding or cloning a repository is waiting, so a background rate-limit pause must not
+    // refuse the lookup.
+    Effect.provideService(SourceControlRateLimit.Interactive, true),
+  );
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
     function* (destinationPath: string) {
@@ -312,11 +337,12 @@ export const make = Effect.gen(function* () {
     } satisfies SourceControlPreparedClone;
   });
 
-  const cloneRepository = Effect.fn("SourceControlRepositoryService.cloneRepository")(function* (
+  const runClone = Effect.fn("SourceControlRepositoryService.runClone")(function* (
     input: SourceControlCloneRepositoryInput,
+    destinationPath: string,
+    cloneUrl: string,
     options?: SourceControlCloneOptions,
   ) {
-    const prepared = yield* prepareClone(input);
     const onProgress = options?.onProgress;
     // Git interleaves progress redraws with its real messages on stderr. The
     // last non-progress lines are what explain a failure ("Repository not
@@ -336,14 +362,8 @@ export const make = Effect.gen(function* () {
     yield* git
       .execute({
         operation: "SourceControlRepositoryService.cloneRepository",
-        cwd: path.dirname(prepared.destinationPath),
-        args: [
-          "clone",
-          "--progress",
-          "--",
-          prepared.cloneUrl,
-          path.basename(prepared.destinationPath),
-        ],
+        cwd: path.dirname(destinationPath),
+        args: ["clone", "--progress", "--", cloneUrl, path.basename(destinationPath)],
         timeoutMs: options?.timeoutMs === undefined ? CLONE_TIMEOUT_MS : options.timeoutMs,
         // Progress redraws add up on a slow multi-GB clone. The buffered copy
         // is never read (the tail is kept by hand above), so keep it small
@@ -368,10 +388,42 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+  });
+
+  const cloneRepository = Effect.fn("SourceControlRepositoryService.cloneRepository")(function* (
+    input: SourceControlCloneRepositoryInput,
+    options?: SourceControlCloneOptions,
+  ) {
+    const prepared = yield* prepareClone(input);
+    const httpsUrl = httpsFallbackUrl(input, prepared);
+    const remoteUrl = yield* runClone(
+      input,
+      prepared.destinationPath,
+      prepared.cloneUrl,
+      options,
+    ).pipe(
+      Effect.as(prepared.remoteUrl),
+      Effect.catch((sshError) =>
+        httpsUrl === null || !isSshRejection(sshError)
+          ? Effect.fail(sshError)
+          : runClone(input, prepared.destinationPath, httpsUrl, options).pipe(
+              Effect.as(redactRemoteUrl(httpsUrl)),
+              Effect.mapError(
+                (httpsError) =>
+                  new SourceControlRepositoryError({
+                    operation: "cloneRepository",
+                    provider: sshError.provider,
+                    detail: `${sshError.detail} Cloning over HTTPS instead also failed: ${httpsError.detail}`,
+                    cause: httpsError.cause,
+                  }),
+              ),
+            ),
+      ),
+    );
 
     return {
       cwd: prepared.destinationPath,
-      remoteUrl: prepared.remoteUrl,
+      remoteUrl,
       repository: prepared.repository,
     };
   });

@@ -46,9 +46,11 @@ const emitXAiAskUserQuestionThenHang =
   process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION_THEN_HANG === "1";
 const emitContentThenHang = process.env.T3_ACP_EMIT_CONTENT_THEN_HANG === "1";
 const emitPlanThenHang = process.env.T3_ACP_EMIT_PLAN_THEN_HANG === "1";
+const grokKillTaskShape = process.env.T3_ACP_GROK_KILL_TASK_SHAPE;
 const emitActiveToolThenHang = process.env.T3_ACP_EMIT_ACTIVE_TOOL_THEN_HANG === "1";
 const emitGrokMonitorPostTurnPoll = process.env.T3_ACP_EMIT_GROK_MONITOR_POST_TURN_POLL === "1";
 const emitGrokBackgroundTaskStarted = process.env.T3_ACP_EMIT_GROK_BACKGROUND_TASK_STARTED === "1";
+const emitGrokBackgroundTaskPoll = process.env.T3_ACP_GROK_BACKGROUND_TASK_COMPLETION === "poll";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
 const waitForResumeRelease = process.env.T3_ACP_WAIT_FOR_RESUME_RELEASE === "1";
 const completeFirstPromptOnCancel = process.env.T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL === "1";
@@ -459,6 +461,71 @@ function modelState(): AcpCompat.SessionModelState {
     currentModelId: modelId,
     availableModels: grokAcpModels,
   };
+}
+
+function emitGrokKillTaskScenario(
+  sessionId: string,
+  promptId: string | undefined,
+  shape: string,
+): void {
+  const taskId = "call-fb9d0000-0000-0000-0000-000000000026-29";
+  const outcome =
+    shape === "already_exited" || shape === "known_failure" ? "already_exited" : "killed";
+  writeJsonRpcNotification("session/update", {
+    sessionId,
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "kill-target-command",
+      title: "run_terminal_command",
+      kind: "execute",
+      status: "in_progress",
+      rawInput: { command: "sleep 40" },
+    },
+  });
+  writeJsonRpcNotification("session/update", {
+    sessionId,
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "kill-target-command",
+      status: "completed",
+      rawOutput: {
+        type: "BackgroundTaskStarted",
+        task_id: taskId,
+        task_type: "bash",
+        command: "sleep 40",
+      },
+    },
+  });
+  if (shape === "known_failure") {
+    writeJsonRpcNotification("_x.ai/task_completed", {
+      sessionId,
+      update: {
+        sessionUpdate: "task_completed",
+        task_snapshot: { task_id: taskId, kind: "bash", exit_code: 7, output: "known failure\n" },
+      },
+    });
+  }
+  writeJsonRpcNotification("session/update", {
+    sessionId,
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "kill-command",
+      title: `kill ${taskId} (${outcome})`,
+      kind: "other",
+      status: "completed",
+      rawInput: {
+        task_id: taskId,
+        ...(shape === "output_only" ? {} : { variant: "KillTask" }),
+      },
+      ...(shape === "variant_only" ? {} : { rawOutput: { type: "KillTask", outcome } }),
+    },
+  });
+  writeJsonRpcNotification("_x.ai/session/prompt_complete", {
+    sessionId,
+    promptId,
+    stopReason: "end_turn",
+    agentResult: null,
+  });
 }
 
 const program = Effect.gen(function* () {
@@ -895,6 +962,124 @@ const program = Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
       beginAcpMockPrompt(cancelledSessions, requestedSessionId);
       promptCount += 1;
+      const idleError = process.env.T3_ACP_IDLE_ERROR;
+      if (idleError === "grok-background" && promptCount === 1) {
+        // The structured completion lands before the prompt settles, so it is buffered.
+        const taskId = "call-idle-error-background";
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: taskId,
+            title: "run_terminal_command",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: { command: "sleep 1; echo done" },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: taskId,
+            status: "completed",
+            rawOutput: {
+              type: "BackgroundTaskStarted",
+              task_id: taskId,
+              task_type: "bash",
+              status: "running",
+              command: "sleep 1; echo done",
+            },
+          },
+        });
+        writeJsonRpcNotification("_x.ai/task_completed", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "task_completed",
+            task_snapshot: { task_id: taskId, kind: "bash", exit_code: 0, output: "done\n" },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: { sessionUpdate: "state_update", state: "idle", stopReason: "error" },
+        });
+        return {};
+      }
+      if (idleError !== undefined && promptCount === 1) {
+        const toolCallId = "tool-call-idle-error-1";
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            title: "Terminal",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: { command: ["long-running-tool"] },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-call-idle-error-monitor",
+            title: "Monitor",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: { command: ["background-monitor"] },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-call-idle-error-subagent",
+            title: "Subagent",
+            kind: "other",
+            status: "in_progress",
+            rawInput: {},
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: "mock-child-session-idle-error",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-call-idle-error-child",
+            title: "Child tool",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: { command: ["child-tool"] },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "state_update",
+            state: "idle",
+            stopReason: "error",
+            ...(idleError === "details"
+              ? { error: { code: -32000, message: "Missing Authentication header" } }
+              : {}),
+          },
+        });
+        // The agent outlives the failed prompt, so its subagent finishes afterwards.
+        yield* Effect.sleep("50 millis").pipe(
+          Effect.andThen(
+            Effect.sync(() =>
+              writeJsonRpcNotification("session/update", {
+                sessionId: requestedSessionId,
+                update: {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: "tool-call-idle-error-subagent",
+                  status: "completed",
+                },
+              }),
+            ),
+          ),
+          Effect.forkDetach,
+        );
+        return {};
+      }
       if (
         process.env.T3_ACP_CRASH_PROMPT === "1" &&
         request.prompt.some((part) => part.type === "text" && part.text === "crash now")
@@ -1466,9 +1651,9 @@ const program = Effect.gen(function* () {
           },
         });
         if (exitAfterRunningCommandLaunch) {
+          // The test sends `_test/exit` once T3 has recorded the published processes.
           yield* Effect.promise(() => runningCommandPublished);
-          yield* Effect.sleep("100 millis");
-          return yield* Effect.sync(() => process.exit(0));
+          return yield* Effect.never;
         }
         while (!cancelledSessions.has(requestedSessionId)) {
           yield* Effect.sleep("25 millis");
@@ -1495,6 +1680,16 @@ const program = Effect.gen(function* () {
             content: { type: "text", text: "partial before stall" },
           },
         });
+        return yield* Effect.never;
+      }
+
+      if (grokKillTaskShape !== undefined) {
+        emitGrokKillTaskScenario(
+          requestedSessionId,
+          promptIdFromRequestMeta(request),
+          grokKillTaskShape,
+        );
+        // Keep the prompt RPC and peer alive after the kill result.
         return yield* Effect.never;
       }
 
@@ -1685,13 +1880,15 @@ const program = Effect.gen(function* () {
         return yield* Effect.never;
       }
 
-      if (emitGrokBackgroundTaskStarted) {
-        const toolCallId = "call-fb9d0000-0000-0000-0000-000000000026";
+      if (emitGrokBackgroundTaskStarted || emitGrokBackgroundTaskPoll) {
+        const toolCallId = !emitGrokBackgroundTaskPoll
+          ? "call-fb9d0000-0000-0000-0000-000000000026"
+          : "call-fb9d0000-0000-0000-0000-000000000026-29";
         const command = "sleep 40; echo done-a";
         writeJsonRpcNotification("session/update", {
           sessionId: requestedSessionId,
           update: {
-            sessionUpdate: "tool_call",
+            sessionUpdate: !emitGrokBackgroundTaskPoll ? "tool_call" : "tool_call_update",
             toolCallId,
             title: "run_terminal_command",
             kind: "execute",
@@ -1714,6 +1911,46 @@ const program = Effect.gen(function* () {
             },
           },
         });
+        if (emitGrokBackgroundTaskPoll) {
+          writeJsonRpcNotification("session/update", {
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId: "call-background-poll",
+              title: "get_command_or_subagent_output",
+              kind: "other",
+              status: "completed",
+              rawOutput: {
+                type: "TaskOutput",
+                Result: {
+                  task_id: toolCallId,
+                  command,
+                  status: "completed",
+                  exit_code: 0,
+                  output: "done-a",
+                },
+              },
+            },
+          });
+
+          yield* agent.client.sessionUpdate({
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "The background command finished." },
+            },
+          });
+          writeJsonRpcNotification("_x.ai/session/update", {
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "turn_completed",
+              prompt_id: promptIdFromRequestMeta(request),
+              stop_reason: "end_turn",
+            },
+          });
+          // Neither the prompt RPC nor the process ends, matching the Grok incident.
+          return yield* Effect.never;
+        }
         writeJsonRpcNotification("_x.ai/session/prompt_complete", {
           sessionId: requestedSessionId,
           promptId: promptIdFromRequestMeta(request) ?? "mock-xai-prompt-1",
@@ -2448,8 +2685,14 @@ const program = Effect.gen(function* () {
     return Effect.succeed({});
   });
 
-  yield* agent.handleUnknownExtNotification((method) =>
-    method === "_test/exit" ? Effect.sync(() => process.exit(19)) : Effect.void,
+  yield* agent.handleUnknownExtNotification((method, params) =>
+    method === "_test/exit"
+      ? Effect.sync(() => {
+          const code =
+            typeof params === "object" && params !== null ? Reflect.get(params, "code") : undefined;
+          process.exit(typeof code === "number" ? code : 19);
+        })
+      : Effect.void,
   );
 
   return yield* Effect.never;

@@ -13,6 +13,8 @@ import {
   mergeEnvironmentPullRequestPages,
   nextPullRequestListInput,
   PR_LIST_PAGE_SIZE,
+  pullRequestFilterChoices,
+  pullRequestLabelColors,
   pullRequestListHead,
   pullRequestListInput,
   scopedPullRequestListKey,
@@ -64,25 +66,6 @@ describe("recycled PR list rows", () => {
   const scopedEntry = (patch: Partial<PullRequestListEntry> = {}) => ({
     ...entry(1, patch),
     environmentId: EnvironmentId.make("env-one"),
-  });
-
-  it.each([
-    { title: "New title" },
-    { additions: 8 },
-    { deletions: 4 },
-    { checksState: "failing" as const },
-    { reviewDecision: "approved" as const },
-    { viewerReviewRequested: true },
-    { isDraft: true },
-    { state: "closed" as const },
-    { mergeability: "conflicting" as const },
-    { baseBranch: "release" },
-    { author: { login: "another", name: null, avatarUrl: null } },
-    { author: { login: "octocat", name: null, avatarUrl: "https://example.com/avatar.png" } },
-    { labels: [{ name: "bug", color: "ff0000" }] },
-    { stack: { number: 1, position: 2, size: 3, base: "main" } },
-  ])("updates the row when visible status or quick actions change: %j", (patch) => {
-    expect(pullRequestListRowsAreEqual(scopedEntry(), scopedEntry(patch))).toBe(false);
   });
 
   it("updates navigation and commands when a duplicate moves to another environment", () => {
@@ -363,5 +346,44 @@ describe("withoutScratchProjectScope", () => {
       projectEnvironmentId: "env-b",
     };
     expect(withoutScratchProjectScope(elsewhere, projects)).toBe(elsewhere);
+  });
+});
+
+describe("pullRequestLabelColors", () => {
+  it("keeps the first usable color each label name carries", () => {
+    expect(
+      pullRequestLabelColors([
+        { name: "Bug", color: null },
+        { name: "bug", color: "d73a4a" },
+        { name: "BUG", color: "#000000" },
+        { name: "docs", color: "not-a-color" },
+        { name: "size:S", color: "#69C35F" },
+      ]),
+    ).toEqual({ bug: "#d73a4a", "size:s": "#69C35F" });
+  });
+});
+
+describe("pullRequestFilterChoices", () => {
+  it("keeps the picked value in view and adds host answers no loaded row carries, once", () => {
+    expect(
+      pullRequestFilterChoices({
+        selected: ["size:XL"],
+        suggestions: ["bug", "size:XL", "docs"],
+        hosted: ["Bug", "backend"],
+        query: "b",
+      }),
+    ).toEqual(["size:XL", "bug", "backend"]);
+  });
+
+  it("leaves room for the host's answers when loaded matches alone would fill the list", () => {
+    const loaded = Array.from({ length: 120 }, (_, index) => `label-${index}`);
+    const rows = pullRequestFilterChoices({
+      selected: [],
+      suggestions: loaded,
+      hosted: ["label-from-host"],
+      query: "label",
+    });
+    expect(rows).toHaveLength(100);
+    expect(rows[50]).toBe("label-from-host");
   });
 });

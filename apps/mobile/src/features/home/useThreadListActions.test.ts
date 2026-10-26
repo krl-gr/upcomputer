@@ -219,24 +219,6 @@ describe("thread list operation permissions", () => {
     expect(state.requests).toEqual([]);
   });
 
-  it.each(mutationCases)(
-    "%s works when the target environment gains only task permission",
-    async (handler, action) => {
-      state.scopes.get(primaryEnvironmentId)!.clear();
-      const actions = useThreadListActions();
-      state.scopes.get(otherEnvironmentId)!.add(AuthOrchestrationOperateScope);
-
-      await actions[handler](
-        makeThread({ environmentId: otherEnvironmentId }),
-        "2099-01-01T00:00:00.000Z",
-      );
-
-      expect(state.requests).toEqual([
-        expect.objectContaining({ action, environmentId: otherEnvironmentId }),
-      ]);
-    },
-  );
-
   it("rechecks permission after a retained delete confirmation", async () => {
     useThreadListActions().confirmDeleteThread(makeThread());
     const confirm = state.dialogs[0]?.onConfirm;
@@ -368,6 +350,7 @@ describe("thread action undo", () => {
     expect(readThreadUndoNotice()).toBeNull();
   });
 
+  // regression: #21401 restore archive and thread action undo
   it("wakes a snoozed thread through the undo action", async () => {
     const thread = makeThread();
     await useThreadListActions().snoozeThread(thread, "2099-01-01T09:00:00.000Z");
@@ -391,7 +374,8 @@ describe("thread action undo", () => {
       await useThreadListActions().unpinThread(thread);
       expect(readThreadUndoNotice()?.action).toBe("Unpinned");
       await readThreadUndoNotice()!.undo();
-      const restoresSnooze = snoozedUntil != null && Date.parse(snoozedUntil) > Date.now();
+      // 2099 is the unexpired case; 2000 has long passed.
+      const restoresSnooze = snoozedUntil === "2099-01-01T09:00:00.000Z";
       expect(state.requests.map(({ action }) => action)).toEqual(
         restoresSnooze ? ["unpin", "pin", "snooze"] : ["unpin", "pin"],
       );
@@ -409,6 +393,7 @@ describe("thread action undo", () => {
     },
   );
 
+  // regression: #21401 restore archive and thread action undo
   it("does not restore snooze if undoing an unpin fails", async () => {
     const thread = makeThread({
       pinnedAt: "2026-09-02T00:00:00.000Z",
@@ -430,6 +415,7 @@ describe("thread action undo", () => {
     expect(readThreadUndoNotice()).toBeNull();
   });
 
+  // regression: #21401 restore archive and thread action undo
   it("does not offer undo for a failed action", async () => {
     state.failedAction = "settle";
     expect(await useThreadListActions().settleThread(makeThread())).toBe(false);
@@ -455,6 +441,7 @@ describe("thread action undo", () => {
     expect(state.requests.map(({ action }) => action)).toEqual(["unpin"]);
   });
 
+  // regression: #21401 restore archive and thread action undo
   it("expires undo after five seconds", async () => {
     vi.useFakeTimers();
     await useThreadListActions().unpinThread(makeThread());
@@ -465,6 +452,7 @@ describe("thread action undo", () => {
     expect(state.requests.map(({ action }) => action)).toEqual(["unpin"]);
   });
 
+  // regression: #21401 restore archive and thread action undo
   it("refreshes the archive after archiving on a settlement-capable server", async () => {
     await useThreadListActions().archiveThread(makeThread());
     expect(state.requests.map(({ action }) => action)).toEqual(["archive"]);

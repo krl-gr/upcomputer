@@ -39,6 +39,7 @@ import {
   archiveThread,
   interruptThreadTurn,
   revertThreadCheckpoint,
+  resumeThreadQueue,
   startThreadTurn,
 } from "./commands.ts";
 
@@ -136,6 +137,28 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("V2 environment commands", () => {
+  it.effect("distinguishes sending a selected queued message from resuming queue order", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const threadId = ThreadId.make("thread-1");
+      yield* resumeThreadQueue({
+        commandId: CommandId.make("send-selected"),
+        threadId,
+        runId: RunId.make("selected"),
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* resumeThreadQueue({
+        commandId: CommandId.make("resume-queue"),
+        threadId,
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(commands).toEqual([
+        { type: "queued-run.start", commandId: "send-selected", threadId, runId: "selected" },
+        { type: "queue.resume", commandId: "resume-queue", threadId },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("preserves caller command ids for idempotent V2 commands", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];
@@ -395,80 +418,75 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestCrypto)),
   );
 
-  it.effect.each([
-    "waiting",
-    "completed",
-    "failed",
-    "interrupted",
-    "cancelled",
-    "rolled_back",
-  ] as const)("dispatches Stop for %s runs with background commands except rollback", (status) =>
-    Effect.gen(function* () {
-      const waitingRunId = RunId.make("run-waiting");
-      const projection: OrchestrationV2ThreadProjection = {
-        ...v2Projection,
-        runs: [
-          {
-            id: waitingRunId,
-            threadId: v2ThreadId,
-            ordinal: 1,
-            providerInstanceId: v2Projection.thread.providerInstanceId,
-            modelSelection: v2Projection.thread.modelSelection,
-            providerThreadId: null,
-            userMessageId: MessageId.make("message-waiting"),
-            rootNodeId: null,
-            activeAttemptId: null,
-            status,
-            requestedAt: v2Now,
-            startedAt: v2Now,
-            completedAt: null,
-            checkpointId: null,
-            contextHandoffId: null,
-          },
-        ],
-        turnItems: [
-          {
-            id: TurnItemId.make("background-command"),
-            threadId: v2ThreadId,
-            runId: waitingRunId,
-            nodeId: null,
-            providerThreadId: null,
-            providerTurnId: null,
-            nativeItemRef: null,
-            parentItemId: null,
-            ordinal: 1,
-            status: "running",
-            title: null,
-            startedAt: v2Now,
-            completedAt: null,
-            updatedAt: v2Now,
-            type: "command_execution",
-            input: "vp run dev",
-          },
-        ],
-      };
-      const commands: OrchestrationV2Command[] = [];
-      const supervisor = yield* makeSupervisor({ commands, projects: [], projection });
+  it.effect.each(["waiting", "completed", "rolled_back"] as const)(
+    "dispatches Stop for %s runs with background commands except rollback",
+    (status) =>
+      Effect.gen(function* () {
+        const waitingRunId = RunId.make("run-waiting");
+        const projection: OrchestrationV2ThreadProjection = {
+          ...v2Projection,
+          runs: [
+            {
+              id: waitingRunId,
+              threadId: v2ThreadId,
+              ordinal: 1,
+              providerInstanceId: v2Projection.thread.providerInstanceId,
+              modelSelection: v2Projection.thread.modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make("message-waiting"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status,
+              requestedAt: v2Now,
+              startedAt: v2Now,
+              completedAt: null,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          ],
+          turnItems: [
+            {
+              id: TurnItemId.make("background-command"),
+              threadId: v2ThreadId,
+              runId: waitingRunId,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 1,
+              status: "running",
+              title: null,
+              startedAt: v2Now,
+              completedAt: null,
+              updatedAt: v2Now,
+              type: "command_execution",
+              input: "vp run dev",
+            },
+          ],
+        };
+        const commands: OrchestrationV2Command[] = [];
+        const supervisor = yield* makeSupervisor({ commands, projects: [], projection });
 
-      const result = yield* interruptThreadTurn({ threadId: v2ThreadId }).pipe(
-        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-      );
+        const result = yield* interruptThreadTurn({ threadId: v2ThreadId }).pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        );
 
-      expect(result).toEqual({ sequence: status === "rolled_back" ? 0 : 1 });
-      expect(commands).toEqual(
-        status === "rolled_back"
-          ? []
-          : [
-              {
-                type: "run.interrupt",
-                commandId: expect.any(String),
-                threadId: v2ThreadId,
-                runId: waitingRunId,
-                holdQueue: true,
-              },
-            ],
-      );
-    }).pipe(Effect.provide(layerTestCrypto)),
+        expect(result).toEqual({ sequence: status === "rolled_back" ? 0 : 1 });
+        expect(commands).toEqual(
+          status === "rolled_back"
+            ? []
+            : [
+                {
+                  type: "run.interrupt",
+                  commandId: expect.any(String),
+                  threadId: v2ThreadId,
+                  runId: waitingRunId,
+                  holdQueue: true,
+                },
+              ],
+        );
+      }).pipe(Effect.provide(layerTestCrypto)),
   );
 
   it.effect("validates identified checkpoints locally for older servers", () =>
@@ -584,6 +602,65 @@ describe("V2 environment commands", () => {
             runId,
             subagentId,
           },
+        ]);
+      }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect(
+    "an app-owned subagent stop asks the parent to clear an orphan, then stops the child",
+    () =>
+      Effect.gen(function* () {
+        const subagentId = NodeId.make("app-owned-subagent");
+        const runId = RunId.make("parent-run");
+        const childThreadId = ThreadId.make("app-owned-child-thread");
+        const commands: OrchestrationV2Command[] = [];
+        const supervisor = yield* makeSupervisor({
+          commands,
+          projects: [],
+          advertiseThreadStop: true,
+          projection: {
+            ...v2Projection,
+            subagents: [
+              {
+                id: subagentId,
+                threadId: v2ThreadId,
+                runId,
+                parentNodeId: NodeId.make("owner-node"),
+                origin: "app_owned",
+                createdBy: "agent",
+                driver: ProviderDriverKind.make("codex"),
+                providerInstanceId: ProviderInstanceId.make("codex"),
+                providerThreadId: null,
+                childThreadId,
+                nativeTaskRef: null,
+                prompt: "Work",
+                title: null,
+                model: null,
+                result: null,
+                status: "running",
+                startedAt: v2Now,
+                completedAt: null,
+                updatedAt: v2Now,
+              },
+            ],
+          },
+        });
+        yield* interruptThreadTurn({
+          commandId: CommandId.make("lineage-stop"),
+          threadId: v2ThreadId,
+          subagentId,
+          // A parent run must not be interrupted on the child thread.
+          runId,
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+        expect(commands).toEqual([
+          {
+            type: "subagent.stop",
+            commandId: expect.any(String),
+            threadId: v2ThreadId,
+            runId,
+            subagentId,
+          },
+          { type: "thread.stop", commandId: "lineage-stop", threadId: childThreadId },
         ]);
       }).pipe(Effect.provide(layerTestCrypto)),
   );

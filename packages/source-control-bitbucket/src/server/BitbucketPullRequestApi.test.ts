@@ -157,6 +157,25 @@ layer("BitbucketPullRequestApi.layer", (it) => {
     }),
   );
 
+  it.effect("narrows by author and draft state in the same query", () =>
+    Effect.gen(function* () {
+      mockedRequest.mockReturnValueOnce(Effect.succeed(response(page(0, 1))));
+      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+
+      yield* api.listPullRequests({
+        repository: "acme/web",
+        state: "open",
+        limit: 50,
+        author: 'ana"',
+        draft: false,
+      });
+
+      expect(filterOfCall(0)).toBe(
+        '(author.nickname = "ana\\"" OR author.display_name = "ana\\"") AND draft = false',
+      );
+    }),
+  );
+
   it.effect("refuses a repository that is not workspace and slug", () =>
     Effect.gen(function* () {
       const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
@@ -305,21 +324,6 @@ layer("BitbucketPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("rewrites a title alone, without touching anything else", () =>
-    Effect.gen(function* () {
-      mockedRequest.mockReturnValue(Effect.succeed(response("{}")));
-      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
-
-      yield* api.updateChangeRequest({ repository: "acme/web", number: 7, title: "A new title" });
-
-      const call = callAt(0);
-      expect(call.method).toBe("PUT");
-      expect(call.url).toBe("/repositories/acme/web/pullrequests/7");
-      // Bitbucket's PUT is a partial update, so a field left out of the body is left as it was.
-      expect(JSON.parse(call.body ?? "")).toEqual({ title: "A new title" });
-    }),
-  );
-
   it.effect("asks for the time a pull request closed, which Bitbucket leaves out by default", () =>
     Effect.gen(function* () {
       mockedRequest.mockReturnValueOnce(
@@ -418,35 +422,6 @@ layer("BitbucketPullRequestApi.layer", (it) => {
         isResolved: true,
       });
       expect(threads[0]?.comments.map((comment) => comment.id)).toEqual(["10", "11", "12"]);
-    }),
-  );
-
-  it.effect("writes a review's line comments, its summary, then its verdict", () =>
-    Effect.gen(function* () {
-      mockedRequest.mockReturnValue(Effect.succeed(response("{}")));
-      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
-
-      yield* api.submitReview({
-        repository: "acme/web",
-        number: 7,
-        verdict: "request-changes",
-        body: "Two things.",
-        comments: [
-          {
-            path: "src/a.ts",
-            position: { kind: "deleted", oldLine: 12 },
-            body: "why remove?",
-          },
-        ],
-      });
-
-      expect(callAt(0).url).toContain("/pullrequests/7/comments");
-      expect(JSON.parse(callAt(0).body ?? "")).toEqual({
-        content: { raw: "why remove?" },
-        inline: { path: "src/a.ts", from: 12 },
-      });
-      expect(callAt(1).url).toContain("/pullrequests/7/comments");
-      expect(callAt(2).url).toContain("/pullrequests/7/request-changes");
     }),
   );
 

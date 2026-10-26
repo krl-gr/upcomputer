@@ -144,6 +144,12 @@ export interface ProviderChangeRequestPage {
    * may need to count malformed raw rows it consumed too.
    */
   readonly cursorAdvance?: number;
+  /**
+   * Where a host that can only page from the top carries on: an opaque position past the last
+   * row delivered, handed back as the cursor's `resumeAfter`. Unlike a count of rows it survives
+   * rows above it closing between reads.
+   */
+  readonly resumeAfter?: string;
   readonly continues: boolean;
 }
 
@@ -160,6 +166,7 @@ export interface ProviderListCursor {
    * applying their limit so a full page of tied updates does not repeat the same prefix.
    */
   readonly seenAt?: ReadonlyArray<number> | undefined;
+  readonly resumeAfter?: string | undefined;
 }
 
 export interface ProviderBatchedChangeRequest extends ProviderChangeRequest {
@@ -169,6 +176,11 @@ export interface ProviderBatchedChangeRequest extends ProviderChangeRequest {
 export interface ProviderBatchedChangeRequestPage {
   readonly items: ReadonlyArray<ProviderBatchedChangeRequest>;
   readonly truncated: boolean;
+  /**
+   * Repositories asked about that the page cannot vouch for: its silence about them may be an
+   * omission rather than an empty answer, so the caller reads each on its own.
+   */
+  readonly unresolved?: ReadonlyArray<string>;
 }
 
 export interface ProviderChangeRequestStat {
@@ -251,6 +263,11 @@ export interface ProviderFileRevisions {
   readonly complete?: boolean;
 }
 
+export interface ProviderFilterOptionPage<A> {
+  readonly items: ReadonlyArray<A>;
+  readonly truncated: boolean;
+}
+
 export interface ProviderRepositoryRef {
   readonly cwd: string;
   readonly repository: string;
@@ -275,6 +292,14 @@ export interface PullRequestProviderApi {
   >;
   readonly kind: SourceControlProviderKind;
   readonly capabilities: PullRequestCapabilities;
+  /**
+   * What a reader is told when this host cannot be read on the server: `missing` for no tool or
+   * credential, `unauthenticated` for one the host refused. Absent means a generic sentence.
+   */
+  readonly unavailableRequirement?: {
+    readonly missing: string;
+    readonly unauthenticated: string;
+  };
   readonly mergeMessageRewrite?: (message: string) => string;
   /**
    * Absent means `owner/name` on the host identifies it, and any checkout on the host can serve a
@@ -284,6 +309,11 @@ export interface PullRequestProviderApi {
    * organization from the checkout, so only a checkout whose key matches the reference serves it.
    */
   readonly repositoryKey?: (input: { readonly canonicalKey: string }) => string;
+  /**
+   * Names the repository in every request and authenticates by host, so a change request on the
+   * definition's `publicHost` can be read from a project with no checkout of its repository.
+   */
+  readonly readsPublicHostWithoutCheckout?: boolean;
 
   readonly getViewer: (input: {
     readonly cwd: string;
@@ -342,7 +372,7 @@ export interface PullRequestProviderApi {
 
   readonly getChangeRequestChecks?: (
     input: ProviderRepositoryRef & { readonly number: number },
-  ) => Effect.Effect<PullRequestChecks, PullRequestProviderError>;
+  ) => Effect.Effect<Pick<PullRequestChecks, "state" | "checks">, PullRequestProviderError>;
 
   readonly getChangeRequest: (
     input: ProviderRepositoryRef & { readonly number: number },
@@ -521,6 +551,22 @@ export interface PullRequestProviderApi {
   readonly listLabelCandidates?: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<PullRequestLabelCandidateList, PullRequestProviderError>;
+
+  /**
+   * The labels a repository offers, for narrowing a listing by. `query` narrows by name as far as
+   * the host can; the caller still matches the answer against it.
+   */
+  readonly listRepositoryLabels?: (
+    input: ProviderRepositoryRef & { readonly query?: string | undefined },
+  ) => Effect.Effect<ProviderFilterOptionPage<PullRequestLabel>, PullRequestProviderError>;
+
+  /**
+   * People who could have opened a change request in the repository, for narrowing a listing by
+   * author. A host that can only search its whole user base answers from that.
+   */
+  readonly searchRepositoryAuthors?: (
+    input: ProviderRepositoryRef & { readonly query?: string | undefined },
+  ) => Effect.Effect<ProviderFilterOptionPage<PullRequestActor>, PullRequestProviderError>;
 
   readonly setLabels?: (
     input: ProviderRepositoryRef & {

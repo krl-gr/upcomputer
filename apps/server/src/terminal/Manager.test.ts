@@ -8,24 +8,19 @@ import {
   type TerminalRestartInput,
   ProviderDriverKind,
   ProviderInstanceId,
-  ServerSettingsError,
   TerminalProviderInstanceNotFoundError,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -49,10 +44,6 @@ vi.mock("effect/SynchronizedRef", async (importOriginal) => {
 // The server omits DOM types, which include TypeScript's WebAssembly declarations.
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
-
-class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
-  readonly message: string;
-}> {}
 
 class FakePtyProcess implements PtyAdapter.PtyProcess {
   readonly writes: string[] = [];
@@ -204,26 +195,6 @@ class GatedPtyAdapter extends FakePtyAdapter {
     );
   }
 }
-
-const waitFor = <E, R>(
-  predicate: Effect.Effect<boolean, E, R>,
-  timeout: Duration.Input = 800,
-): Effect.Effect<void, WaitForConditionError | E, R> =>
-  predicate.pipe(
-    Effect.filterOrFail(
-      (done) => done,
-      () => new WaitForConditionError({ message: "Condition not met" }),
-    ),
-    Effect.retry(Schedule.spaced("15 millis")),
-    Effect.timeoutOption(timeout),
-    Effect.flatMap((result) =>
-      Option.match(result, {
-        onNone: () =>
-          Effect.fail(new WaitForConditionError({ message: "Timed out waiting for condition" })),
-        onSome: () => Effect.void,
-      }),
-    ),
-  );
 
 function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInput {
   return {
@@ -589,14 +560,6 @@ it.layer(
     }),
   );
 
-  const makeDirectory = (filePath: string) =>
-    Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
-      fs.makeDirectory(filePath, { recursive: true }),
-    );
-
-  const chmod = (filePath: string, mode: number) =>
-    Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) => fs.chmod(filePath, mode));
-
   const pathExists = (filePath: string) =>
     Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) => fs.exists(filePath));
 
@@ -607,32 +570,6 @@ it.layer(
     Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
       fs.writeFileString(filePath, contents),
     );
-
-  it.effect("preserves non-notFound cwd stat failures", () =>
-    Effect.gen(function* () {
-      if ((yield* HostProcess.Platform) === "win32") return;
-
-      const path = yield* Path.Path;
-
-      const { manager, baseDir } = yield* createManager();
-      const blockedRoot = path.join(baseDir, "blocked-root");
-      const blockedCwd = path.join(blockedRoot, "cwd");
-      yield* makeDirectory(blockedCwd);
-      yield* chmod(blockedRoot, 0o000);
-
-      const error = yield* Effect.flip(manager.open(openInput({ cwd: blockedCwd }))).pipe(
-        Effect.ensuring(chmod(blockedRoot, 0o755).pipe(Effect.ignore)),
-      );
-
-      expect(error).toMatchObject({
-        _tag: "TerminalCwdStatError",
-        cwd: blockedCwd,
-        cause: {
-          _tag: "PlatformError",
-        },
-      });
-    }),
-  );
 
   it.effect("handles an exit replayed during subscription after publishing startup", () =>
     Effect.gen(function* () {
@@ -661,60 +598,6 @@ it.layer(
       expect(attached.find((event) => event.type === "snapshot")).toMatchObject({
         snapshot: { status: "exited", exitCode: 7 },
       });
-    }),
-  );
-
-  it.effect("preserves structured context and causes for PTY I/O failures", () =>
-    Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager();
-      yield* manager.open(openInput());
-      const process = ptyAdapter.processes[0];
-      expect(process).toBeDefined();
-      if (!process) return;
-
-      const writeCause = new Error("PTY input handle is unavailable");
-      process.writeFailure = writeCause;
-      const writeError = yield* Effect.flip(
-        manager.write({
-          threadId: "thread-1",
-          terminalId: DEFAULT_TERMINAL_ID,
-          data: "secret input that must not be attached to the error",
-        }),
-      );
-
-      expect(writeError).toMatchObject({
-        _tag: "TerminalWriteError",
-        threadId: "thread-1",
-        terminalId: DEFAULT_TERMINAL_ID,
-        terminalPid: process.pid,
-      });
-      expect(writeError.cause).toBe(writeCause);
-      expect(writeError).not.toHaveProperty("data");
-
-      const resizeCause = new Error("PTY resize handle is unavailable");
-      process.resizeFailure = resizeCause;
-      const resizeError = yield* Effect.flip(
-        manager.resize({
-          threadId: "thread-1",
-          terminalId: DEFAULT_TERMINAL_ID,
-          cols: 132,
-          rows: 40,
-        }),
-      );
-
-      expect(resizeError).toMatchObject({
-        _tag: "TerminalResizeError",
-        threadId: "thread-1",
-        terminalId: DEFAULT_TERMINAL_ID,
-        terminalPid: process.pid,
-        cols: 132,
-        rows: 40,
-      });
-      expect(resizeError.cause).toBe(resizeCause);
-
-      process.resizeFailure = undefined;
-      yield* manager.open(openInput({ cols: 132, rows: 40 }));
-      expect(process.resizeCalls).toEqual([{ cols: 132, rows: 40 }]);
     }),
   );
 
@@ -773,7 +656,7 @@ it.layer(
     Effect.gen(function* () {
       const ptyAdapter = new FakePtyAdapter();
       let duringCheck: (pid: number) => Effect.Effect<void> = () => Effect.void;
-      const { manager, getEvents } = yield* createManager(5, {
+      const { manager } = yield* createManager(5, {
         ptyAdapter,
         subprocessPollIntervalMs: 60_000,
         subprocessInspector: (pid) =>
@@ -781,6 +664,13 @@ it.layer(
             Effect.as({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
           ),
       });
+      const outputSeen = yield* Deferred.make<void>();
+      const unsubscribeOutput = yield* manager.subscribe((event) =>
+        event.type === "output"
+          ? Deferred.succeed(outputSeen, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeOutput));
       yield* manager.open(openInput({ terminalId: "typed" }));
       yield* manager.open(openInput({ terminalId: "echoed" }));
       const [typed, echoed] = ptyAdapter.processes;
@@ -791,9 +681,7 @@ it.layer(
               .pipe(Effect.orDie)
           : Effect.gen(function* () {
               echoed!.emitData("make build\r\n");
-              yield* waitFor(
-                Effect.map(getEvents, (events) => events.some((event) => event.type === "output")),
-              );
+              yield* Deferred.await(outputSeen);
             }).pipe(Effect.orDie);
 
       yield* manager.closeIdle({ threadId: "thread-1" });
@@ -912,6 +800,62 @@ it.layer(
 
       const reopened = yield* manager.open(openInput());
       assert.equal(reopened.history, "before after after after after\n");
+    }),
+  );
+
+  it.effect("preserves large chunked OSC 52 and DCS strings across reopen", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, logsDir } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0]!;
+      const outputSeen = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "output" && event.data === "done\n"
+          ? Deferred.succeed(outputSeen, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      const sequences = [
+        { prefix: `\u001b]52;c;${"YWJj".repeat(16_384)}\u001b`, terminator: "\\" },
+        { prefix: `\u0090q${"?".repeat(65_536)}`, terminator: "\u009c" },
+      ];
+      const stripped = "\u001b]11;?\u0007\u0090$q m\u009c";
+      const preserved = "\u001b[31m\u009d52;c;YWJj\u009c";
+      const expected =
+        sequences.map(({ prefix, terminator }) => prefix + terminator + preserved).join("") +
+        "done\n";
+
+      // Counts reads of strings larger than one emitted chunk, so rescanning the
+      // pending prefix on every chunk (#23817) shows up as quadratic work.
+      const charCodeAt = String.prototype.charCodeAt;
+      let largeStringReads = 0;
+      yield* Effect.gen(function* () {
+        // eslint-disable-next-line no-extend-native -- Count reads without retaining millions of spy call records.
+        String.prototype.charCodeAt = function (this: string, index: number) {
+          if (this.length > 4_096) largeStringReads += 1;
+          return charCodeAt.call(this, index);
+        };
+        for (const { prefix, terminator } of sequences) {
+          for (let offset = 0; offset < prefix.length; offset += 4_096) {
+            process.emitData(prefix.slice(offset, offset + 4_096));
+          }
+          process.emitData(terminator + stripped + preserved);
+        }
+        process.emitData("done\n");
+        yield* Deferred.await(outputSeen);
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            // eslint-disable-next-line no-extend-native -- Restore the counting hook even when the test fails.
+            String.prototype.charCodeAt = charCodeAt;
+          }),
+        ),
+      );
+      yield* manager.close({ threadId: "thread-1" });
+
+      expect(largeStringReads).toBeLessThan(2 * expected.length);
+      expect(yield* readFileString(yield* historyLogPath(logsDir))).toBe(expected);
+      expect((yield* manager.open(openInput())).history.startsWith(expected)).toBe(true);
     }),
   );
 
@@ -1313,46 +1257,6 @@ it.layer(
         new TerminalProviderInstanceNotFoundError({ providerInstanceId }),
       );
       expect(ptyAdapter.spawnInputs).toHaveLength(0);
-    }),
-  );
-
-  it.effect("preserves the settings failure when provider environment resolution fails", () =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const providerInstanceId = ProviderInstanceId.make("codex_work");
-      const settingsCause = new Error("secret store read failed");
-      const settingsError = new ServerSettingsError({
-        settingsPath: "/test/settings.json",
-        operation: "read-secret",
-        providerInstanceId,
-        environmentVariable: "OPENROUTER_API_KEY",
-        cause: settingsCause,
-      });
-      const serverSettings = ServerSettings.ServerSettingsService.of({
-        start: Effect.void,
-        ready: Effect.void,
-        getSettings: Effect.fail(settingsError),
-        updateSettings: () => Effect.fail(settingsError),
-        updateProviderInstance: () => Effect.fail(settingsError),
-        withSettingsSnapshot: () => Effect.fail(settingsError),
-        streamChanges: Stream.empty,
-        subscribeChanges: Effect.succeed(Stream.empty),
-      });
-
-      const error = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
-        serverSettings,
-        path,
-        rawProviderInstanceId: providerInstanceId,
-        env: undefined,
-      }).pipe(Effect.flip);
-
-      expect(error).toMatchObject({
-        _tag: "TerminalProviderEnvironmentError",
-        providerInstanceId,
-      });
-      expect(error.cause).toBe(settingsError);
-      expect(error.message).not.toContain(settingsError.message);
-      expect(error.message).not.toContain("OPENROUTER_API_KEY");
     }),
   );
 

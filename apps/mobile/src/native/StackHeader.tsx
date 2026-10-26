@@ -1,11 +1,17 @@
-import { useNavigation, type ParamListBase } from "@react-navigation/native";
+import {
+  NavigationRouteContext,
+  useNavigation,
+  type ParamListBase,
+} from "@react-navigation/native";
 import type {
-  NativeStackHeaderItemMenu,
   NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
 import { isValidElement, use, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
+import {
+  NativeWorkspaceTabActivityContext,
+  WorkspaceSlotOptionsContext,
+} from "./v5-workspace-context";
 import type { ColorValue } from "react-native";
 
 export {
@@ -20,7 +26,6 @@ export type AppNativeStackNavigationOptions = Omit<
   "headerTintColor" | "unstable_headerLeftItems" | "unstable_headerRightItems"
 > & {
   readonly nativeContentInsetHorizontally?: boolean;
-  readonly nativeSidebarFilter?: NativeStackHeaderItemMenu;
   readonly headerTintColor?: string | ColorValue;
   readonly unstable_headerCenterItems?: unknown;
   readonly unstable_headerLeftItems?: unknown;
@@ -28,6 +33,7 @@ export type AppNativeStackNavigationOptions = Omit<
   readonly unstable_headerSubtitle?: unknown;
   readonly unstable_headerToolbarItems?: unknown;
   readonly unstable_navigationItemStyle?: unknown;
+  readonly unstable_headerMinimizationBehavior?: unknown;
 };
 
 function useNativeStackNavigation(): NativeStackNavigationProp<ParamListBase> | null {
@@ -161,6 +167,23 @@ function stabilizeOptionFunctions(
   return value;
 }
 
+/**
+ * Sets the current screen's options. Inside a workspace tab slot they're kept for that slot, so
+ * slots rendering the same route never overwrite each other's header.
+ */
+export function useScreenOptionsWriter() {
+  const navigation = useNativeStackNavigation();
+  const setSlotOptions = use(WorkspaceSlotOptionsContext)?.set;
+  const routeKey = use(NavigationRouteContext)?.key;
+  return useMemo(() => {
+    if (setSlotOptions && routeKey !== undefined)
+      return (options: NativeStackNavigationOptions) => setSlotOptions(routeKey, options);
+    return navigation
+      ? (options: NativeStackNavigationOptions) => navigation.setOptions(options)
+      : null;
+  }, [navigation, routeKey, setSlotOptions]);
+}
+
 export function NativeStackScreenOptions(props: {
   readonly options?: AppNativeStackNavigationOptions;
   /**
@@ -174,6 +197,7 @@ export function NativeStackScreenOptions(props: {
   readonly name?: string;
 }) {
   const navigation = useNativeStackNavigation();
+  const setOptions = useScreenOptionsWriter();
   const tabActive = use(NativeWorkspaceTabActivityContext)?.active ?? true;
   const lastAppliedOptionsSignatureRef = useRef<string | undefined>(undefined);
   const latestOptionFunctionsRef = useRef(new Map<string, (...args: unknown[]) => unknown>());
@@ -193,7 +217,7 @@ export function NativeStackScreenOptions(props: {
       lastAppliedOptionsSignatureRef.current = undefined;
       return;
     }
-    if (!navigation || !stableOptions) {
+    if (!setOptions || !stableOptions) {
       return;
     }
     const signature = optionsSignature([stableOptions, props.optionsVersion]);
@@ -201,8 +225,19 @@ export function NativeStackScreenOptions(props: {
       return;
     }
     lastAppliedOptionsSignatureRef.current = signature;
-    navigation.setOptions(stableOptions);
-  }, [navigation, props.optionsVersion, stableOptions, tabActive]);
+    // React Navigation keeps a screen's descriptor while its options are shallowly equal. The
+    // stabilized factories keep their identity, so one whose output changed needs a new wrapper
+    // to reach the header.
+    optionFunctionWrappersRef.current = new Map();
+    setOptions(
+      stabilizeOptionFunctions(
+        normalizedOptions,
+        "options",
+        latestOptionFunctionsRef.current,
+        optionFunctionWrappersRef.current,
+      ) as NativeStackNavigationOptions,
+    );
+  }, [setOptions, normalizedOptions, props.optionsVersion, stableOptions, tabActive]);
 
   useEffect(() => {
     if (!navigation || !props.listeners) {

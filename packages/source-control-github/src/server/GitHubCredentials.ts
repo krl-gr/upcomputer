@@ -14,10 +14,16 @@ import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
+import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
 import type { ServerSettings } from "@t3tools/contracts";
 
-import * as GitHubClient from "../client/definition.ts";
+import * as GitHubClient from "../shared/definition.ts";
+
+/**
+ * Every gh run on the server shares this. A burst of them (a status poll across many checkouts)
+ * otherwise starts enough at once to trip GitHub's secondary rate limit.
+ */
+export const GH_PROCESS_CONCURRENCY = { key: "gh", limit: 4 } as const;
 
 const TOKEN_TTL = Duration.minutes(5);
 const MISSING_TTL = Duration.seconds(10);
@@ -146,6 +152,7 @@ export const make = Effect.gen(function* () {
         // Never let gh print the token into a debug log.
         env: { GH_DEBUG: "", GH_PROMPT_DISABLED: "1" },
         timeoutMs: 10_000,
+        concurrency: GH_PROCESS_CONCURRENCY,
       })
       .pipe(
         Effect.mapError((error) =>

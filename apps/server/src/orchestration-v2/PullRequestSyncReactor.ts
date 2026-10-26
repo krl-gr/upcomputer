@@ -1,4 +1,3 @@
-import { siblingPullRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   CommandId,
   type PullRequestSummary,
@@ -14,7 +13,8 @@ import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "../sourceControl/threadPullRequests.ts";
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -39,10 +39,14 @@ import { isTerminalRunStatus } from "./ThreadManagementService.ts";
 const SLOW_SYNC_INTERVAL_MS = 15 * 60 * 1_000;
 // Every server polls every open linked pull request, and most of them sit untouched for days.
 // One nobody has updated for QUIET_AFTER_MS is read on the quiet cadence instead of each sweep;
-// requested refreshes, watches and `gh pr merge` still read it at once.
+// requested refreshes, watches and a host CLI's merge command still read it at once.
 const QUIET_AFTER_MS = 30 * 60 * 1_000;
 const QUIET_SYNC_INTERVAL_MS = 5 * 60 * 1_000;
-const PULL_REQUEST_CLOSE_COMMAND = /\b(?:gh\s+pr|glab\s+mr)\s+(?:merge|close)\b/u;
+
+const isChangeRequestCloseCommand = (command: string) =>
+  sourceControlDefinitions.definitions.some(
+    (definition) => definition.changeRequestCloseCommand?.test(command) === true,
+  );
 
 const isPullRequestProviderError = Schema.is(PullRequestProviderError);
 
@@ -51,6 +55,20 @@ type SnapshotFields = Omit<ThreadPullRequestSnapshot, "syncedAt">;
 interface LinkEntry {
   readonly thread: ProjectionStore.ProjectionThreadPullRequests;
   readonly link: ThreadPullRequestLink;
+}
+
+/** Another layer of the stack `url` belongs to, in its host's canonical shape. */
+function siblingChangeRequestUrl(url: string, number: number): string | null {
+  if (!Number.isSafeInteger(number) || number < 1) return null;
+  const parsed = sourceControlDefinitions.parseChangeRequestUrl(url);
+  if (parsed === null) return null;
+  const { definition, link } = parsed;
+  return definition.changeRequestUrl({
+    host: link.host,
+    repository: link.repository,
+    number,
+    webUrl: link.repositoryUrl,
+  });
 }
 
 function snapshotFieldsOf(summary: PullRequestSummary): SnapshotFields {
@@ -287,7 +305,7 @@ export const make = Effect.gen(function* () {
         ) {
           continue;
         }
-        const url = siblingPullRequestUrl(link.url, layer.number);
+        const url = siblingChangeRequestUrl(link.url, layer.number);
         if (url === null) continue;
         const uuid = yield* crypto.randomUUIDv4();
         yield* engine.dispatch({
@@ -519,14 +537,14 @@ export const make = Effect.gen(function* () {
               requestSync,
               { discard: true },
             );
-          // An agent can merge or close its pull request from a shell (`gh pr merge`), which
+          // An agent can merge or close its pull request from a shell with its host's CLI, which
           // sends no merge notification. When a run that ran such a command ends, read the
           // thread's open links fresh, so settlement does not wait for the next sweep and the
           // cached summary. Other runs add no host reads.
           case "turn-item.updated":
             if (
               event.payload.type === "command_execution" &&
-              PULL_REQUEST_CLOSE_COMMAND.test(event.payload.input)
+              isChangeRequestCloseCommand(event.payload.input)
             ) {
               closeCommandThreads.add(event.threadId);
             }

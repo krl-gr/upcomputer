@@ -4,6 +4,7 @@ import type {
   ThreadUserInputQuestion,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
+import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
@@ -52,7 +53,7 @@ import type {
   ScheduledTaskId,
   TurnItemId,
 } from "@t3tools/contracts";
-import { RunId, ThreadId } from "@t3tools/contracts";
+import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@t3tools/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,
@@ -61,6 +62,7 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
+import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { truncate } from "@t3tools/shared/String";
 import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
@@ -71,6 +73,10 @@ import {
   mcpAppFromToolItem,
 } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
+import {
+  IDLE_COMPACTION_TITLES,
+  IDLE_COMPACTING_LABELS,
+} from "@t3tools/client-runtime/user-message";
 
 export type PendingApproval = ThreadPendingApproval;
 export type PendingUserInput = ThreadPendingUserInput;
@@ -140,11 +146,13 @@ export interface ThreadFeedMessage {
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
+  readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
   readonly sourceThreadId: ThreadId;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly projectedItem?: OrchestrationV2ProjectedTurnItem;
+  readonly checkpointSummary?: ThreadCheckpointSummary;
 }
 
 export interface LocalThreadMessage {
@@ -191,7 +199,10 @@ type RawThreadFeedEntry =
       readonly app: McpAppReference;
     };
 
-export type ThreadFeedEntry = ThreadFeedEntryContent & { readonly continuesWorkLog?: boolean };
+export type ThreadFeedEntry = ThreadFeedEntryContent & {
+  readonly continuesWorkLog?: boolean;
+  readonly checkpointSummary?: ThreadCheckpointSummary;
+};
 
 type ThreadFeedEntryContent =
   | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
@@ -345,6 +356,49 @@ export function isContextCompactionActivityGroup(entry: ThreadFeedActivityGroup)
   return (
     entry.activities.length === 1 && entry.activities[0]?.projectedItem.item.type === "compaction"
   );
+}
+
+export function threadFeedCompactionLabels(feed: ReadonlyArray<ThreadFeedEntry>) {
+  const labelsByRunId = new Map<RunId, { title: string; compacting: string }>();
+  const labelsByEntryId = new Map<string, { title: string; compacting: string }>();
+  const pendingResumeAgeByRunId = new Map<RunId, string>();
+  for (const entry of feed) {
+    const reason = entry.type === "message" ? idleCompactionOf(entry.message) : undefined;
+    if (entry.type === "message" && entry.message.runId !== null && reason !== undefined) {
+      labelsByRunId.set(entry.message.runId, {
+        title: IDLE_COMPACTION_TITLES[reason],
+        compacting: IDLE_COMPACTING_LABELS[reason],
+      });
+    } else if (entry.type === "activity-group" && entry.runId !== null) {
+      if (isContextCompactionActivityGroup(entry)) {
+        const age = pendingResumeAgeByRunId.get(entry.runId);
+        const labels =
+          labelsByRunId.get(entry.runId) ??
+          (age === undefined
+            ? undefined
+            : {
+                title: `Context compacted after ${age} idle`,
+                compacting: `Compacting after ${age} idle…`,
+              });
+        if (labels) labelsByEntryId.set(entry.id, labels);
+        pendingResumeAgeByRunId.delete(entry.runId);
+      }
+      for (const activity of entry.activities) {
+        const age = activity.workEntry.questionAnswer
+          ? claudeResumeCompactionAge(activity.workEntry.questionAnswer)
+          : null;
+        if (age !== null) pendingResumeAgeByRunId.set(entry.runId, age);
+      }
+    }
+  }
+  return labelsByEntryId;
+}
+
+function isResumeCompactionAnswerGroup(entry: ThreadFeedActivityGroup): boolean {
+  return entry.activities.every((activity) => {
+    const answer = activity.workEntry.questionAnswer;
+    return answer !== undefined && claudeResumeCompactionAge(answer) !== null;
+  });
 }
 
 export function isContextHandoffActivityGroup(entry: ThreadFeedActivityGroup): boolean {
@@ -1059,6 +1113,28 @@ export function failedFeedRunIds(
   return failed;
 }
 
+/**
+ * The key a run fold uses for the message `entryId`: its run, or for an
+ * imported message with no run, the runless key of the user message before
+ * it. Null for user messages, which never fold.
+ */
+export function messageFoldRunId(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  entryId: string,
+): RunId | null {
+  let runlessKey: RunId | null = null;
+  for (const entry of feed) {
+    if (entry.type !== "message") continue;
+    if (entry.message.role === "user") {
+      if (entry.id === entryId) return null;
+      runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
+    } else if (entry.id === entryId) {
+      return entry.message.runId ?? runlessKey;
+    }
+  }
+  return null;
+}
+
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
@@ -1156,6 +1232,7 @@ function deriveThreadFeedRunFolds(
             entry.id !== terminalAssistantId &&
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
+            !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
@@ -1369,6 +1446,26 @@ export function deriveThreadFeedPresentation(
   const failedRunIds = failedFeedRunIds(sourceFeed, latestRun);
   const activeTailGroup = sourceFeed.at(-1);
   const activeRunId = unsettledRunId(latestRun);
+  // A bare `/compact` turn is the compaction itself: its compaction row stands in for the prompt
+  // and the live activity row. An answered "compact before continuing?" question folds into the
+  // compaction it asked for.
+  const compactionCommandRunIds = new Set<RunId>();
+  const compactionItemRunIds = new Set<RunId>();
+  for (const entry of feed) {
+    if (
+      entry.type === "message" &&
+      entry.message.runId !== null &&
+      isCompactionCommandMessage(entry.message)
+    ) {
+      compactionCommandRunIds.add(entry.message.runId);
+    } else if (
+      entry.type === "activity-group" &&
+      entry.runId !== null &&
+      isContextCompactionActivityGroup(entry)
+    ) {
+      compactionItemRunIds.add(entry.runId);
+    }
+  }
   const isWorking = activeWorkStartedAt !== null && latestRun?.status !== "preparing";
   const foldsByAnchorId = deriveThreadFeedRunFolds(
     sourceFeed,
@@ -1423,6 +1520,18 @@ export function deriveThreadFeedPresentation(
       }
       result.push(row);
     }
+    if (
+      (entry.type === "message" &&
+        entry.message.runId !== null &&
+        compactionItemRunIds.has(entry.message.runId) &&
+        isCompactionCommandMessage(entry.message)) ||
+      (entry.type === "activity-group" &&
+        entry.runId !== null &&
+        compactionItemRunIds.has(entry.runId) &&
+        isResumeCompactionAnswerGroup(entry))
+    ) {
+      continue;
+    }
     if (!collapsedEntryIds.has(entry.id)) {
       if (
         entry.type === "activity-group" &&
@@ -1460,6 +1569,7 @@ export function deriveThreadFeedPresentation(
     isWorking &&
     activeWorkStartedAt !== null &&
     latestRun?.turnEnded !== true &&
+    (activeRunId === null || !compactionCommandRunIds.has(activeRunId)) &&
     !result.some(
       (row) =>
         row.id === LIVE_ACTIVITY_ROW_ID ||
@@ -1470,6 +1580,39 @@ export function deriveThreadFeedPresentation(
     )
   ) {
     result.push(thinkingRow(activeWorkStartedAt, activeRunId));
+  }
+  const checkpointByRunId = new Map<RunId, ThreadCheckpointSummary>();
+  for (const entry of sourceFeed) {
+    if (entry.type === "message" && entry.message.checkpointSummary) {
+      checkpointByRunId.set(entry.message.checkpointSummary.runId, entry.message.checkpointSummary);
+    }
+  }
+  const workRowByRunId = new Map<RunId, number>();
+  for (let index = tailStart; index < result.length; index += 1) {
+    const row = result[index]!;
+    if (
+      (row.type === "run-fold" || row.type === "work-toggle") &&
+      row.runId !== null &&
+      checkpointByRunId.has(row.runId) &&
+      (row.type === "run-fold" || !workRowByRunId.has(row.runId))
+    ) {
+      workRowByRunId.set(row.runId, index);
+    }
+  }
+  for (const [runId, index] of workRowByRunId) {
+    result[index] = { ...result[index]!, checkpointSummary: checkpointByRunId.get(runId)! };
+  }
+  for (let index = tailStart; index < result.length; index += 1) {
+    const row = result[index]!;
+    if (
+      row.type !== "message" ||
+      !row.message.checkpointSummary ||
+      !workRowByRunId.has(row.message.checkpointSummary.runId)
+    )
+      continue;
+    const message = { ...row.message };
+    delete message.checkpointSummary;
+    result[index] = { ...row, message };
   }
   // Reused rows are final: the user message after them never continues a work log.
   for (let index = tailStart; index < result.length; index += 1) {
@@ -1899,6 +2042,7 @@ interface ThreadFeedBuild {
   readonly rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
   readonly attempts: ReadonlyArray<OrchestrationV2RunAttempt> | undefined;
   readonly nodes: ReadonlyArray<OrchestrationV2ExecutionNode> | undefined;
+  readonly checkpointSummaries: ReadonlyArray<ThreadCheckpointSummary> | undefined;
   readonly foldedAnswerMessageIds: ReadonlySet<string>;
   readonly delegatedChildrenByRun: ReadonlyMap<RunId, ReadonlySet<string>>;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
@@ -1928,6 +2072,30 @@ function setsEqual<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
   return true;
 }
 
+// Summaries are re-derived whenever messages change, including streamed text,
+// so a new array often holds the same checkpoints.
+function checkpointSummariesEqual(
+  left: ReadonlyArray<ThreadCheckpointSummary> | undefined,
+  right: ReadonlyArray<ThreadCheckpointSummary> | undefined,
+): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined || left.length !== right.length) return false;
+  return left.every((summary, index) => {
+    const other = right[index]!;
+    return (
+      summary.checkpointId === other.checkpointId &&
+      summary.scopeId === other.scopeId &&
+      summary.runId === other.runId &&
+      summary.checkpointTurnCount === other.checkpointTurnCount &&
+      summary.checkpointRef === other.checkpointRef &&
+      summary.completedAt === other.completedAt &&
+      summary.status === other.status &&
+      summary.files === other.files &&
+      summary.assistantMessageId === other.assistantMessageId
+    );
+  });
+}
+
 function setMapsEqual<K, V>(
   left: ReadonlyMap<K, ReadonlySet<V>>,
   right: ReadonlyMap<K, ReadonlySet<V>>,
@@ -1954,6 +2122,7 @@ export function buildThreadFeed(
     readonly anchoredMessages?: ReadonlyArray<LocalThreadMessage>;
     readonly attempts?: ReadonlyArray<OrchestrationV2RunAttempt>;
     readonly nodes?: ReadonlyArray<OrchestrationV2ExecutionNode>;
+    readonly checkpointSummaries?: ReadonlyArray<ThreadCheckpointSummary>;
     readonly cache?: ThreadFeedCache;
   },
 ): ThreadFeedEntry[] {
@@ -2000,6 +2169,7 @@ export function buildThreadFeed(
     anchoredMessages.length === 0 &&
     previous.attempts === options?.attempts &&
     previous.nodes === options?.nodes &&
+    checkpointSummariesEqual(previous.checkpointSummaries, options?.checkpointSummaries) &&
     setsEqual(previous.foldedAnswerMessageIds, foldedAnswerMessageIds) &&
     setMapsEqual(previous.delegatedChildrenByRun, delegatedChildrenByRun)
   ) {
@@ -2090,6 +2260,7 @@ export function buildThreadFeed(
                 creationSource: item.creationSource,
                 ...(item.scheduledTaskId ? { scheduledTaskId: item.scheduledTaskId } : {}),
                 ...(item.senderThreadId ? { senderThreadId: item.senderThreadId } : {}),
+                ...(item.idleCompaction ? { idleCompaction: item.idleCompaction } : {}),
               }
             : {}),
           visibility: row.visibility,
@@ -2154,8 +2325,18 @@ export function buildThreadFeed(
     if (insertionIndex === -1) entries.push(entry);
     else entries.splice(insertionIndex, 0, entry);
   }
+  const checkpointByMessageId = new Map(
+    (options?.checkpointSummaries ?? [])
+      .filter((checkpoint) => checkpoint.status === "ready" && checkpoint.files.length > 0)
+      .map((checkpoint) => [checkpoint.assistantMessageId, checkpoint]),
+  );
   const grouped = groupAdjacentActivities(
-    entries,
+    entries.map((entry) => {
+      if (entry.type !== "message" || entry.message.role !== "assistant") return entry;
+      const checkpointSummary = checkpointByMessageId.get(entry.message.id);
+      if (!checkpointSummary || checkpointSummary.runId !== entry.message.runId) return entry;
+      return { ...entry, message: { ...entry.message, checkpointSummary } };
+    }),
     delegatedChildrenByRun,
     // Anchored messages shift entries away from their rows; such a build is not reused.
     anchoredMessages.length > 0
@@ -2175,6 +2356,7 @@ export function buildThreadFeed(
             rows: visibleTurnItems,
             attempts: options?.attempts,
             nodes: options?.nodes,
+            checkpointSummaries: options?.checkpointSummaries,
             foldedAnswerMessageIds,
             delegatedChildrenByRun,
             feed,

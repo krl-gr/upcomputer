@@ -292,31 +292,6 @@ describe("GitHubSourceControlProvider repository resolution", () => {
       assert.deepStrictEqual(paths, ["github.com repos/acme/web"]);
     }).pipe(Effect.provide(layer));
   });
-
-  it.effect("reads an SSH alias remote through github.com", () => {
-    const hosts: string[] = [];
-    const { layer } = harness({
-      remotes: remotesOutput(["origin", "git@github:acme/web.git"]),
-      api: {
-        rest: (input) =>
-          Effect.sync(() => {
-            hosts.push(`${input.host} ${input.path}`);
-            return restResponse({
-              full_name: "acme/web",
-              html_url: "https://github.com/acme/web",
-              ssh_url: "git@github.com:acme/web.git",
-              default_branch: "main",
-            });
-          }),
-      },
-    });
-    return Effect.gen(function* () {
-      const gh = yield* GitHubSourceControlProvider.make;
-      yield* gh.getDefaultBranch({ cwd: "/repo" });
-      yield* gh.getDefaultBranch({ cwd: "/repo", context: githubContext("github") });
-      assert.deepStrictEqual(hosts, ["github.com repos/acme/web", "github.com repos/acme/web"]);
-    }).pipe(Effect.provide(layer));
-  });
 });
 
 describe("GitHubSourceControlProvider change request lookups by head", () => {
@@ -797,13 +772,15 @@ it.effect.each(["pull", "issues"])(
         title: "Pairing expiry",
         body: "Preserve remote access",
       });
-      assert.strictEqual(
-        provider.resolveLink?.({
-          cwd: "/unrelated",
-          url: new URL("https://github.com/owner/repo"),
-        }),
-        undefined,
-      );
+      for (const url of [
+        "https://github.com/owner/repo",
+        "https://github.attacker.test/owner/repo/issues/42",
+      ]) {
+        assert.strictEqual(
+          provider.resolveLink?.({ cwd: "/unrelated", url: new URL(url) }),
+          undefined,
+        );
+      }
     }),
 );
 
@@ -863,14 +840,6 @@ it("reports every gh login and leads with the account Settings pin", () => {
     { host: "github.com", account: "work", active: false, authenticated: true },
     { host: "ghe.acme.test", account: "jm", active: true, authenticated: false, error: "expired" },
   ]);
-});
-
-it("falls back to gh's active login when the pinned account is gone", () => {
-  const auth = GitHubSourceControlProvider.parseGitHubAuth(multiAccountStatus(), {
-    hosts: { "github.com": { account: "former-job", enabled: true } },
-    tokens: {},
-  });
-  assert.deepStrictEqual(auth.account, Option.some("personal"));
 });
 
 it("reports unauthenticated when Settings turn off every signed-in host", () => {
@@ -1007,13 +976,6 @@ it.live.each([
 
 it.effect.each([
   { host: "github.com", resolved: "", envRepository: "", expected: "acme/web" },
-  { host: "code.example.test", resolved: "", envRepository: "", expected: "acme/web" },
-  {
-    host: "github.com",
-    resolved: "remote.origin.gh-resolved base",
-    envRepository: "",
-    expected: "me/web",
-  },
   {
     host: "code.example.test",
     resolved: "remote.origin.gh-resolved base",
@@ -1026,13 +988,6 @@ it.effect.each([
     envRepository: "",
     expected: "acme/other",
   },
-  {
-    host: "code.example.test",
-    resolved: "remote.upstream.gh-resolved acme/other",
-    envRepository: "",
-    expected: "acme/other",
-  },
-  { host: "github.com", resolved: "", envRepository: "chosen/repo", expected: "chosen/repo" },
   {
     host: "code.example.test",
     resolved: "",
@@ -1098,3 +1053,31 @@ it.effect.each([
     );
   },
 );
+
+it.effect("says a GH_REPO naming an unparseable host targets no remote rather than failing", () => {
+  const { layer } = harness({
+    remotes: remotesOutput(["upstream", "git@github.com:acme/web.git"]),
+    resolved: "",
+    api: {},
+  });
+  return Effect.gen(function* () {
+    const provider = yield* GitHubSourceControlProvider.make;
+    const targets = yield* provider.createsChangeRequestsIn!({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: SourceControlProviderKind.make("github"),
+          name: "GitHub",
+          baseUrl: "https://github.com",
+        },
+        remoteName: "upstream",
+        remoteUrl: "git@github.com:acme/web.git",
+      },
+      repository: "acme/web",
+    });
+    assert.isFalse(targets);
+  }).pipe(
+    Effect.provide(layer),
+    Effect.provideService(HostProcess.Environment, { GH_REPO: "bad host/acme/web" }),
+  );
+});

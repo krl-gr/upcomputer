@@ -1,3 +1,7 @@
+import {
+  capitalizeTerm,
+  sourceControlClients,
+} from "@t3tools/client-runtime/source-control-clients";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import type { CodeViewDiffItem, CodeViewHandle } from "@pierre/diffs/react";
 import type {
@@ -59,7 +63,7 @@ import { cn } from "~/lib/utils";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
 import {
   buildDiffReviewComment,
-  resolveDiffReviewPosition,
+  resolveDiffReviewAnchor,
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -231,6 +235,7 @@ interface DraftAnchor {
   readonly path: string;
   readonly oldPath: string | null;
   readonly position: PullRequestReviewPosition;
+  readonly startPosition?: PullRequestReviewPosition;
   readonly range: SelectedLineRange;
 }
 
@@ -431,6 +436,9 @@ function PullRequestCodeTab({
     if (appliedRefreshToken.current === refreshToken) return;
     appliedRefreshToken.current = refreshToken;
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
+    // An equal refetch keeps the answer's identity, so the emptied slices refill only if the
+    // applied page is forgotten too.
+    setAppliedPage(null);
     refreshFirstDiffPage();
     refreshFilesViewed();
   }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
@@ -463,6 +471,7 @@ function PullRequestCodeTab({
     resolve: hostReview.resolve && detail.viewerPermissions.resolve,
   };
   const canCommentOnLines = review.inlineComment && commit === null;
+  const rangeComments = hostReview.rangeComment === true;
   // Agent context is local, so it does not require host comment permission.
   const canSelectLines =
     commit === null && (review.inlineComment || onAddToAgentSelection !== undefined);
@@ -716,23 +725,22 @@ function PullRequestCodeTab({
     if (item.type !== "diff") return;
     const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
     if (!file) return;
-    // A range collapses to its last line: only GitHub carries a multi-line comment, and one
-    // that silently lost its first line on the other hosts would be worse than one line.
+    // On a host without ranged comments a range collapses to its last line: one that silently
+    // lost its first line there would be worse than one line.
     const path = resolveFileDiffPath(file);
     const previousPath = resolveFileDiffPreviousPath(file);
     const sourceFile = parsedSlices
       .flatMap((slice) => (slice?.kind === "files" ? slice.sourceFiles : []))
       .find((candidate) => resolveFileDiffPath(candidate) === path);
-    const side = range.endSide ?? range.side;
-    const position =
-      (sourceFile && resolveDiffReviewPosition(sourceFile, range.end, side)) ??
-      resolveDiffReviewPosition(file, range.end, side);
-    if (position === null) return;
+    const anchor =
+      (sourceFile && resolveDiffReviewAnchor(sourceFile, range, rangeComments)) ??
+      resolveDiffReviewAnchor(file, range, rangeComments);
+    if (anchor === null) return;
     setDraft({
       fileKey: item.id,
       path,
       oldPath: previousPath === path ? null : previousPath,
-      position,
+      ...anchor,
       range,
     });
   };
@@ -967,6 +975,7 @@ function PullRequestCodeTab({
               id: nextPendingReviewCommentId(),
               path: draft.path,
               ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
+              ...(draft.startPosition === undefined ? {} : { startPosition: draft.startPosition }),
               position: draft.position,
               body,
             });
@@ -1108,8 +1117,7 @@ function PullRequestCodeTab({
                 />
               </TooltipTrigger>
               <TooltipPopup side="bottom">
-                The host withheld part of this diff — a binary file, or a change too large to
-                inline.
+                The host withheld part of this diff: a binary file, or a change too large to inline.
               </TooltipPopup>
             </Tooltip>
           ) : null}
@@ -1323,8 +1331,9 @@ function PullRequestCodeTab({
     </div>
   );
 
+  const term = sourceControlClients.get(detail.provider).changeRequest.singular;
   if (diffQuery.isPending && loadedSlices.length === 0) {
-    return withToolbar(<DiffPanelLoadingState label="Loading pull request diff..." />);
+    return withToolbar(<DiffPanelLoadingState label={`Loading ${term} diff...`} />);
   }
 
   if (diffQuery.error && loadedSlices.length === 0) {
@@ -1345,9 +1354,7 @@ function PullRequestCodeTab({
   if (items.length === 0 && nextCursor === null) {
     return withToolbar(
       <p className="px-4 py-5 text-sm text-muted-foreground">
-        {commit === null
-          ? "This pull request has no file changes."
-          : "This commit has no file changes."}
+        {commit === null ? `This ${term} has no file changes.` : "This commit has no file changes."}
       </p>,
     );
   }
@@ -1473,7 +1480,7 @@ function PullRequestCodeTab({
         {fileTreeOpen ? (
           <aside className="flex w-[min(20rem,40%)] min-w-48 shrink-0 border-l border-border/60">
             <DiffFileTree
-              ariaLabel={`Pull request #${detail.number} files`}
+              ariaLabel={`${capitalizeTerm(term)} #${detail.number} files`}
               entries={fileTreeEntries}
               onSelectFile={revealFile}
               footer={

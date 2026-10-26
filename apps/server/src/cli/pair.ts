@@ -2,9 +2,11 @@ import {
   type AuthEnvironmentScope,
   AuthStandardClientScopes,
   ExecutionEnvironmentDescriptor,
+  ORCHESTRATION_PROTOCOL_VERSION,
   PortSchema,
 } from "@t3tools/contracts";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import {
@@ -61,13 +63,29 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   "NoRunningServerError",
   {
     checkedStatePaths: Schema.Array(Schema.String),
+    inLinkedWorktree: Schema.Boolean,
   },
 ) {
   override get message(): string {
     return [
       "No running Up.computer server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
+      ...(this.inLinkedWorktree
+        ? ["In a linked worktree, pass --base-dir to pair with a server outside it."]
+        : []),
       "Start one with `npx t3 serve`, or connect this machine with UpComputer Connect: `npx t3 connect`.",
+    ].join("\n");
+  }
+}
+
+export class IncompatibleServerProtocolError extends Schema.TaggedError<IncompatibleServerProtocolError>()(
+  "IncompatibleServerProtocolError",
+  { serverVersion: Schema.String, serverProtocolVersion: Schema.Number },
+) {
+  override get message(): string {
+    return [
+      `The running Up.computer server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
+      `Pair with the matching CLI instead: \`npx t3@${this.serverVersion} pair\`.`,
     ].join("\n");
   }
 }
@@ -127,7 +145,10 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
 }
 
 const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
-  state.devUrl ?? resolveHeadlessConnectionString(state.host, state.port);
+  state.devUrl ??
+  resolveHeadlessConnectionString(state.host, state.port, {
+    privateNetworkOnly: state.privateNetworkOnly,
+  });
 
 export class DevServerNotProxiableError extends Schema.TaggedError<DevServerNotProxiableError>()(
   "DevServerNotProxiableError",
@@ -228,18 +249,22 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   explicitBaseDir: string | undefined,
 ) {
   const bases: Array<string> = [];
+  let inLinkedWorktree = false;
   if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
   } else {
-    // Same precedence as dev-runner: inside a linked worktree its own `.t3`
-    // outranks the shared home, so `t3 pair` in a worktree pairs with the dev
-    // server under test rather than the daily-driver install.
-    const worktreeHome = yield* resolveWorktreeT3Home(process.cwd());
+    // Same precedence as dev-runner: inside a linked worktree only its own
+    // `.t3` counts. Minting opens the target database with this checkout's
+    // migrations, so falling back to the shared home could migrate the live
+    // install with unreleased schema.
+    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
     if (worktreeHome !== undefined) {
       bases.push(worktreeHome);
+      inLinkedWorktree = true;
+    } else {
+      const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
+      bases.push(yield* resolveBaseDir(Option.getOrUndefined(envHome)));
     }
-    const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
-    bases.push(yield* resolveBaseDir(Option.getOrUndefined(envHome)));
   }
 
   const checkedStatePaths: Array<string> = [];
@@ -274,7 +299,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       } satisfies DiscoveredPairTarget;
     }
   }
-  return yield* new NoRunningServerError({ checkedStatePaths });
+  return yield* new NoRunningServerError({ checkedStatePaths, inLinkedWorktree });
 });
 
 /**
@@ -484,6 +509,16 @@ export const pairCommand = Command.make("pair", {
       const logLevel = Option.getOrElse(cliLogLevel, () => "Warn" as const);
 
       const target = yield* discoverPairTarget(Option.getOrUndefined(flags.baseDir));
+      // Each protocol keeps auth in its own database, so a token minted here
+      // for another protocol's server would never be accepted by it. Refuse
+      // before any local layer opens (and migrates) that database.
+      const serverProtocolVersion = target.descriptor.orchestrationProtocolVersion ?? 1;
+      if (serverProtocolVersion !== ORCHESTRATION_PROTOCOL_VERSION) {
+        return yield* new IncompatibleServerProtocolError({
+          serverVersion: target.descriptor.serverVersion,
+          serverProtocolVersion,
+        });
+      }
 
       const notes: Array<string> = [];
       let pairingBaseUrl: string;
@@ -499,6 +534,10 @@ export const pairCommand = Command.make("pair", {
         if (isLoopbackHost(new URL(pairingBaseUrl).hostname)) {
           notes.push(
             "This URL is only reachable from this machine. Re-run with --tailscale, or restart the server with a reachable --host.",
+          );
+        } else if (target.state.privateNetworkOnly) {
+          notes.push(
+            "This URL works only from this machine's local network. From elsewhere, re-run with --tailscale or use UpComputer Connect.",
           );
         }
         if (target.variant === "dev" && target.state.devUrl === undefined) {

@@ -376,6 +376,64 @@ it.effect("decodes null optional arguments the way it decodes omitted ones", () 
 });
 
 it.effect(
+  "clamps t3_thread_read page sizes above their maximum instead of rejecting the call",
+  () => {
+    const calls: Array<unknown> = [];
+    return Effect.gen(function* () {
+      const thread = { threadId: "thread-clamped-arguments" };
+      // Codex never shows the model these bounds, so an over-large page must still read.
+      yield* callTool("t3_thread_read", {
+        ...thread,
+        limit: 150,
+        runLimit: 80,
+        maxCharsPerItem: 60_000,
+      });
+      yield* callTool("t3_thread_read", {
+        ...thread,
+        limit: 100,
+        runLimit: 50,
+        maxCharsPerItem: 50_000,
+      });
+      yield* callTool("t3_thread_read", { ...thread, limit: 7, runLimit: 1, maxCharsPerItem: 1 });
+
+      expect(calls).toEqual([
+        { ...thread, limit: 100, runLimit: 50, maxCharsPerItem: 50_000 },
+        { ...thread, limit: 100, runLimit: 50, maxCharsPerItem: 50_000 },
+        { ...thread, limit: 7, runLimit: 1, maxCharsPerItem: 1 },
+      ]);
+    }).pipe(Effect.provide(layerRecordingTools(calls)));
+  },
+);
+
+it.effect.each(["limit", "runLimit", "maxCharsPerItem"])(
+  "still rejects a t3_thread_read %s below its minimum",
+  (field) => {
+    const calls: Array<unknown> = [];
+    return Effect.gen(function* () {
+      // Zero is a different request than one item, so it fails rather than answering another question.
+      const rejected = yield* callTool("t3_thread_read", {
+        threadId: "thread-below-minimum",
+        [field]: 0,
+      }).pipe(Effect.flip);
+
+      expect(String(rejected)).toContain("greater than or equal to 1");
+      expect(calls).toEqual([]);
+    }).pipe(Effect.provide(layerRecordingTools(calls)));
+  },
+);
+
+it("routes same-child follow-ups to t3_thread_send and independent reviews to delegate_task", () => {
+  const description = OrchestratorToolkit.tools.delegate_task.description ?? "";
+  expect(description).toContain(
+    "For independent T3 delegated review rounds, call delegate_task again",
+  );
+  expect(description).toContain(
+    "For a follow-up that needs the same child's conversation, use t3_thread_send on its childThreadId.",
+  );
+  expect(description).not.toContain("not the target for starting another");
+});
+
+it.effect(
   "registers the pull request toolkit and surfaces a missing capability as a tool error",
   () =>
     Effect.gen(function* () {
@@ -495,6 +553,7 @@ it.effect("keeps the snapshot text under the agent's output ceiling", () =>
   ).pipe(Effect.provide(layerTest)),
 );
 
+// regression: #10501 keep preview snapshots usable by the agent
 it.effect("bounds the snapshot text even when nothing but logs and the title are large", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -527,6 +586,7 @@ it.effect("bounds the snapshot text even when nothing but logs and the title are
   ).pipe(Effect.provide(layerTest)),
 );
 
+// regression: #13558 preview snapshots overflowed the agent's tool output
 it.effect("bounds page text made of wide characters before dropping locators", () =>
   Effect.scoped(
     Effect.gen(function* () {

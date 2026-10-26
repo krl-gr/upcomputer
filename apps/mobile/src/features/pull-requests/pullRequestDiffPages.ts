@@ -1,3 +1,4 @@
+import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 import type { PullRequestDiffResult } from "@t3tools/contracts";
 import { buildReviewParsedDiff, type ReviewParsedDiff } from "../review/reviewModel";
 
@@ -31,6 +32,7 @@ export function combinePullRequestDiffPages(
   pages: readonly PullRequestDiffPage[],
   cache: WeakMap<PullRequestDiffResult, ReviewParsedDiff>,
   scope: string,
+  terminology: ChangeRequestTerminology,
 ): ReviewParsedDiff {
   const parsed = pages.map((page) => {
     const cached = cache.get(page.result);
@@ -63,8 +65,9 @@ export function combinePullRequestDiffPages(
     additions: files.reduce((total, file) => total + file.additions, 0),
     deletions: files.reduce((total, file) => total + file.deletions, 0),
     notice:
-      pages.some((page) => page.result.truncated) || parsed.some((page) => page.kind === "raw")
-        ? "Some file contents are unavailable. Open the pull request on its provider to see the full changes."
+      pages.some((page) => page.result.truncated) ||
+      parsed.some((page) => page.kind === "raw" || (page.kind === "files" && page.notice !== null))
+        ? `Some file contents are unavailable. Open the ${terminology.singular} on its provider to see the full changes.`
         : null,
   };
 }

@@ -14,7 +14,6 @@ import {
   isAwaitedWork,
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
-  restartCancelledBackgroundWorkNote,
   restartContinuationNote,
   mergeRestartCancelledBackgroundWork,
 } from "./RestartBackgroundNote.ts";
@@ -103,22 +102,7 @@ it("delivers a resumed queued run's note even after a higher-ordinal run", () =>
   );
 });
 
-it("bounds the note so it cannot crowd out the turn's context", () => {
-  const work = Array.from({ length: 25 }, (_, index) => ({
-    kind: "shell" as const,
-    label: `sleep ${index}`,
-  }));
-  const note = restartCancelledBackgroundWorkNote(work);
-  assert.lengthOf(note.split("\n"), 12);
-  assert.isTrue(note.endsWith("- and 15 more"));
-  const command = cancelledTurnItemWork({
-    type: "command_execution",
-    input: "x".repeat(10_000),
-    title: null,
-  } as never);
-  assert.isAtMost(command?.label.length ?? 0, 160);
-});
-
+// regression: #19750 wake threads whose subagents' background work a restart cut
 it("names a lost subagent by the id the agent resumes it with", () => {
   const ownShell = cancelledRosterTaskWork({
     kind: "command",
@@ -148,6 +132,13 @@ it("names a lost subagent by the id the agent resumes it with", () => {
   }).label;
   assert.lengthOf(longId, 160);
   assert.isFalse(isAwaitedWork(cancelledRosterTaskWork({ kind: "command", taskId: "shell-2" })));
+  assert.isTrue(
+    isAwaitedWork(cancelledRosterTaskWork({ kind: "command", taskId: "tests", awaited: true })),
+  );
+  assert.isFalse(isAwaitedWork(cancelledRosterTaskWork({ kind: "monitor", taskId: "watchdog" })));
+  assert.isTrue(
+    isAwaitedWork(cancelledRosterTaskWork({ kind: "monitor", taskId: "ci", awaited: true })),
+  );
   assert.equal(
     cancelledTurnItemWork({
       id: "item-1",

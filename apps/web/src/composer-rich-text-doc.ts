@@ -15,6 +15,7 @@ import { Italic, starInputRegex, starPasteRegex } from "@tiptap/extension-italic
 import {
   type Command,
   type Editor,
+  Extension,
   markInputRule,
   markPasteRule,
   mergeAttributes,
@@ -35,7 +36,7 @@ import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
 import { nextOrderedMarkerText } from "~/composer-list-continuation";
 import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
-import { markdownMathRanges } from "@t3tools/shared/markdownMath";
+import { composerMathRanges } from "@t3tools/shared/composerInlineTokens";
 
 export type SkillMeta = { label: string; description: string | null };
 
@@ -126,9 +127,14 @@ function codePairCaretPlugin(type: MarkType) {
  */
 export const ComposerCodeExtension = Code.extend({
   excludes: "code",
-  // ArrowRight leaves code through the caret stops at styled edges, so the
-  // stock exit (inserting a space at the end of a line) is not needed.
+  // The forward arrow leaves code through the caret stops at styled edges, so
+  // the stock exit (inserting a space at the end of a line) is not needed.
   exitable: false,
+  // Code reads left to right inside an Arabic or Hebrew line, and the isolate
+  // keeps its punctuation from trading places with the text around it.
+  addOptions() {
+    return { ...this.parent!(), HTMLAttributes: { dir: "ltr" } };
+  },
   addProseMirrorPlugins() {
     return [...(this.parent?.() ?? []), codePairCaretPlugin(this.type)];
   },
@@ -145,6 +151,20 @@ export const ComposerItalicExtension = Italic.extend({
   },
   addPasteRules() {
     return [markPasteRule({ find: starPasteRegex, type: this.type })];
+  },
+});
+
+/**
+ * Mod+B bolds selected text only. Without a selection Tiptap would toggle bold
+ * for the next typed text, which users hit by accident when they mean the
+ * sidebar toggle. Runs ahead of the Bold extension and swallows the chord.
+ */
+export const ComposerBoldSelectionOnlyExtension = Extension.create({
+  name: "composerBoldSelectionOnly",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    const ignoreWithoutSelection = () => this.editor.state.selection.empty;
+    return { "Mod-b": ignoreWithoutSelection, "Mod-B": ignoreWithoutSelection };
   },
 });
 
@@ -576,7 +596,7 @@ export function buildTiptapContent(
   const atomSources: string[] = [];
   const literal = value.slice(0, options?.literalLength ?? 0);
   const remainder = value.slice(literal.length);
-  const formulas = markdownMathRanges(remainder);
+  const formulas = composerMathRanges(remainder);
   let offset = 0;
   const chunks: Array<{ text: string } | { source: string }> = [];
   for (const formula of formulas) {

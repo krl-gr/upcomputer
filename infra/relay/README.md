@@ -125,7 +125,9 @@ The relay is versioned separately from client releases. `.github/workflows/deplo
 the shared Alchemy `prod` stage on every push to `main` of `krl-gr/upcomputer`, once the repository
 variable `RELAY_API_ZONE_NAME` (or `RELAY_DOMAIN`) is set. Stable and nightly release builds both
 resolve their static public config from the same
-`production` GitHub environment. Pull requests do not deploy relay stages. Developers can
+`production` GitHub environment. Labeling a same-repository PR `relay:preview` deploys a `pr-<number>`
+stage, and the cleanup workflow tears it down; see
+[`relay-preview.yml`](../../.github/workflows/relay-preview.yml). Developers can
 deploy personal non-production stages locally with any stage name other than `prod`.
 
 The repository must define these Actions variables shared by relay deployments:

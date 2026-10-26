@@ -18,7 +18,6 @@ import {
   createEnvironmentRpcCommand,
 } from "./runtime.ts";
 import {
-  type ThreadCommandInput,
   type ArchiveThreadInput,
   type CancelQueuedRunInput,
   type RetryWorkspacePreparationInput,
@@ -31,6 +30,7 @@ import {
   type MergeThreadBackInput,
   type PromoteQueuedRunInput,
   type ReorderQueuedRunInput,
+  type ResumeThreadQueueInput,
   type LinkThreadPullRequestInput,
   type RespondToThreadApprovalInput,
   type RespondToThreadUserInputInput,
@@ -47,6 +47,8 @@ import {
   type StartThreadTurnInput,
   type StopThreadSessionInput,
   type UnarchiveThreadInput,
+  type CloseGuestShareInput,
+  type ResolveGuestMessageInput,
   type UnlinkThreadPullRequestInput,
   type UnpinThreadInput,
   type WatchThreadPullRequestInput,
@@ -55,6 +57,8 @@ import {
   type UpdateThreadMetadataInput,
   type VisitThreadInput,
   archiveThread,
+  closeGuestShare,
+  resolveGuestMessage,
   cancelQueuedRun,
   createThread,
   deleteThread,
@@ -166,6 +170,28 @@ export function createThreadEnvironmentAtoms<R, E>(
     );
   });
 
+  // Runs whether or not the server accepted the interrupt, so a stale cached item still
+  // settles when Stop had nothing to interrupt; the interrupt's own failure still surfaces.
+  // The repair is detached: its lookups must not hold the thread's serial command key, and
+  // closing the thread cancels the repair, not the Stop that triggered it.
+  const interruptTurn = Effect.fn("ThreadCommands.interruptTurn")(function* (
+    input: InterruptThreadTurnInput,
+  ) {
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const controller = yield* Effect.serviceOption(ThreadHistoryController.ThreadHistoryController);
+    return yield* interruptThreadTurn(input).pipe(
+      Effect.ensuring(
+        Option.match(controller, {
+          onNone: () => Effect.void,
+          onSome: (value) =>
+            value
+              .reconcilePendingWork(supervisor.target.environmentId, input.threadId)
+              .pipe(Effect.forkDetach, Effect.asVoid),
+        }),
+      ),
+    );
+  });
+
   const commands = {
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
@@ -176,6 +202,18 @@ export function createThreadEnvironmentAtoms<R, E>(
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:delete",
       execute: (input: DeleteThreadInput) => deleteThread(input),
+      scheduler,
+      concurrency,
+    }),
+    closeGuestShare: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:close-guest-share",
+      execute: (input: CloseGuestShareInput) => closeGuestShare(input),
+      scheduler,
+      concurrency,
+    }),
+    resolveGuestMessage: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:resolve-guest-message",
+      execute: (input: ResolveGuestMessageInput) => resolveGuestMessage(input),
       scheduler,
       concurrency,
     }),
@@ -301,7 +339,7 @@ export function createThreadEnvironmentAtoms<R, E>(
     }),
     interruptTurn: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:interrupt-turn",
-      execute: (input: InterruptThreadTurnInput) => interruptThreadTurn(input),
+      execute: interruptTurn,
       scheduler,
       concurrency,
     }),
@@ -356,7 +394,7 @@ export function createThreadEnvironmentAtoms<R, E>(
     }),
     resumeThreadQueue: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:resume-queue",
-      execute: (input: ThreadCommandInput) => resumeThreadQueue(input),
+      execute: (input: ResumeThreadQueueInput) => resumeThreadQueue(input),
       scheduler,
       concurrency,
     }),

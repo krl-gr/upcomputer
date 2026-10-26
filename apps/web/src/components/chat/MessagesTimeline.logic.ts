@@ -8,6 +8,12 @@ import {
   collectAssistantCitations,
 } from "@t3tools/shared/assistantCitations";
 import { shallow } from "zustand/vanilla/shallow";
+import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
+import {
+  IDLE_COMPACTING_LABELS,
+  IDLE_COMPACTION_TITLES,
+} from "@t3tools/client-runtime/user-message";
+import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
 import { renderCodexDirectivesForCopy } from "@t3tools/shared/codexMarkdownDirectives";
 import {
   commandDisplayText,
@@ -44,7 +50,10 @@ import {
   type TurnDiffSummary,
 } from "../../types";
 import {
+  idleCompactionOf,
+  isCompactionCommandMessage,
   type MessageId,
+  type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
@@ -539,6 +548,8 @@ type MessagesTimelineRowContent =
       kind: "working";
       id: string;
       createdAt: string | null;
+      /** A running compaction owns the working row, so its divider appears only once it ends. */
+      compacting?: string;
     }
   | {
       kind: "thinking";
@@ -586,6 +597,11 @@ type MessagesTimelineRowContent =
       label: string;
       tokenCounts: ReturnType<typeof contextCompactionTokenCounts>;
       active: boolean;
+      /** Replaces "Context compacted" when T3 Code compacted without being asked. */
+      title?: string;
+      failed?: true;
+      /** The provider's reason, when a failed compaction gave one. */
+      failure?: string;
     }
   | {
       kind: "message";
@@ -731,6 +747,8 @@ interface TurnFold {
   anchorEntryId: string;
   createdAt: string;
   hiddenEntryIds: ReadonlySet<string>;
+  /** Every entry in the segment, including the cards a fold never hides. */
+  entryIds: ReadonlySet<string>;
   label: string;
 }
 
@@ -902,18 +920,32 @@ function timelineEntryFoldRunId(entry: TimelineEntry, runlessKey: RunId | null):
   return null;
 }
 
+function timelineEntryIsSteer(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "message" &&
+    entry.message.role === "user" &&
+    (entry.message.inputIntent === "steer" ||
+      entry.message.inputIntent === "promoted_queued_to_steer")
+  );
+}
+
 /**
  * A steer adds input to its existing turn, without creating a new header. A notification
  * recorded without a run started no turn, so it starts no response either.
  */
 function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   return (
-    (entry.kind === "message" &&
-      entry.message.role === "user" &&
-      entry.message.inputIntent !== "steer" &&
-      entry.message.inputIntent !== "promoted_queued_to_steer") ||
+    (entry.kind === "message" && entry.message.role === "user" && !timelineEntryIsSteer(entry)) ||
     (entry.kind === "work" && entry.entry.itemType === "notification" && entry.entry.runId != null)
   );
+}
+
+function timelineEntryEnd(entry: TimelineEntry): string {
+  return entry.kind === "message" ? entry.message.updatedAt : entry.createdAt;
+}
+
+function timelineEntryIsCompaction(entry: TimelineEntry): boolean {
+  return entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
 }
 
 function responseBoundaryRunId(entry: TimelineEntry): RunId | null {
@@ -1022,6 +1054,11 @@ function deriveTurnFolds(input: {
      */
     startBoundary: string | null;
     anchorEntryId: string;
+    /**
+     * Each steer after the turn has produced output starts a new segment at
+     * this index into `entries`, so the steer sits between the work it split.
+     */
+    steerSegments: Array<{ startIndex: number; steer: TimelineEntry }>;
   }
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
@@ -1041,6 +1078,18 @@ function deriveTurnFolds(input: {
       const boundaryRunId = responseBoundaryRunId(entry);
       runlessKey = boundaryRunId == null ? RunId.make(`runless:${entry.id}`) : null;
       responseKey = boundaryRunId ?? runlessKey;
+      continue;
+    }
+    if (entry.kind === "message" && timelineEntryIsSteer(entry)) {
+      const steerRunId = entry.message.runId ?? responseKey;
+      const group = steerRunId === null ? undefined : groupsByRunId.get(steerRunId);
+      if (group !== undefined && group.entries.length > 0) {
+        // Back-to-back steers split once, after the last of them.
+        if (group.steerSegments.at(-1)?.startIndex === group.entries.length) {
+          group.steerSegments.pop();
+        }
+        group.steerSegments.push({ startIndex: group.entries.length, steer: entry });
+      }
       continue;
     }
     const ownRunId = timelineEntryFoldRunId(entry, runlessKey);
@@ -1065,6 +1114,7 @@ function deriveTurnFolds(input: {
         hasStreamingMessage: false,
         startBoundary: pendingBoundary?.createdAt ?? null,
         anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
+        steerSegments: [],
       };
       pendingBoundary = null;
       groupsByRunId.set(runId, group);
@@ -1101,8 +1151,7 @@ function deriveTurnFolds(input: {
       if (entry.id === group.terminalEntry?.id) {
         continue;
       }
-      const isCompaction =
-        entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+      const isCompaction = timelineEntryIsCompaction(entry);
       const isFoldableTrailingActivity =
         entry.kind === "work" &&
         entry.entry.toolLifecycleStatus !== "inProgress" &&
@@ -1111,6 +1160,7 @@ function deriveTurnFolds(input: {
         continue;
       }
       if (
+        isCompaction ||
         timelineEntryIsPersistentResourceCard(entry) ||
         input.liveSubagentEntryIds.has(entry.id) ||
         input.completeSupersededReplyEntryIds.has(entry.id)
@@ -1125,12 +1175,9 @@ function deriveTurnFolds(input: {
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    const hidesNonCompactionWork = group.entries.some(
-      (entry) =>
-        hiddenEntryIds.has(entry.id) &&
-        !(entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction"),
-    );
-    if (!hidesNonCompactionWork) {
+    const hidesNonCompactionWork = (entries: ReadonlyArray<TimelineEntry>) =>
+      entries.some((entry) => hiddenEntryIds.has(entry.id) && !timelineEntryIsCompaction(entry));
+    if (!hidesNonCompactionWork(group.entries)) {
       continue;
     }
 
@@ -1144,8 +1191,7 @@ function deriveTurnFolds(input: {
       input.latestRun?.runId === runId && input.latestRun.status === "interrupted";
     // A turn cut short by a steer leaves trailing work entries behind its
     // terminal message — take whichever ended last.
-    const lastEntryEnd =
-      lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
+    const lastEntryEnd = timelineEntryEnd(lastEntry);
     const elapsedMs =
       input.latestRun?.runId === runId && input.latestRun.startedAt && input.latestRun.completedAt
         ? computeElapsedMs(input.latestRun.startedAt, input.latestRun.completedAt)
@@ -1163,13 +1209,38 @@ function deriveTurnFolds(input: {
         ? `Worked for ${duration}`
         : "Worked";
 
+    // The top row keeps the whole turn's time, steers included. Work after a
+    // steer folds under its own row below that steer, keyed apart from the run
+    // so each segment opens on its own.
+    const segmentHiddenIds = (entries: ReadonlyArray<TimelineEntry>) =>
+      new Set(entries.flatMap((entry) => (hiddenEntryIds.has(entry.id) ? [entry.id] : [])));
+    const firstSegment = group.entries.slice(0, group.steerSegments[0]?.startIndex);
     foldsByAnchorEntryId.set(group.anchorEntryId, {
       runId,
       anchorEntryId: group.anchorEntryId,
       createdAt: group.startBoundary ?? firstEntry.createdAt,
-      hiddenEntryIds,
+      hiddenEntryIds: segmentHiddenIds(firstSegment),
+      entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
     });
+    for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
+      const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
+      const anchorEntry = entries[0];
+      if (anchorEntry === undefined || !hidesNonCompactionWork(entries)) continue;
+      const segmentMs = computeElapsedMs(
+        steer.createdAt,
+        entries.map(timelineEntryEnd).reduce<string | null>(maxIsoTimestamp, null) ??
+          steer.createdAt,
+      );
+      foldsByAnchorEntryId.set(anchorEntry.id, {
+        runId: RunId.make(`${runId}:steer:${steer.id}`),
+        anchorEntryId: anchorEntry.id,
+        createdAt: steer.createdAt,
+        hiddenEntryIds: segmentHiddenIds(entries),
+        entryIds: new Set(entries.map((entry) => entry.id)),
+        label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+      });
+    }
   }
   return foldsByAnchorEntryId;
 }
@@ -1417,10 +1488,14 @@ export function deriveMessagesTimelineRows(input: {
     completeSupersededReplyEntryIds: completeSupersededReplyIds,
   });
   const collapsedEntryIds = new Set<string>();
+  const collapsedFoldMemberIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedRunIds?.has(fold.runId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
+      }
+      for (const entryId of fold.entryIds) {
+        collapsedFoldMemberIds.add(entryId);
       }
     }
   }
@@ -1517,15 +1592,94 @@ export function deriveMessagesTimelineRows(input: {
   const activeWorkEntryIds = new Set(
     activeWorkRow !== null || latestToolFailed ? activeToolEntries.map((entry) => entry.id) : [],
   );
+  // A bare `/compact` turn is the compaction itself: one compaction row stands in for its prompt
+  // and working indicator, from the moment the turn starts. Likewise an answered "compact before
+  // continuing?" question folds into the compaction it asked for.
+  const compactionRuns = new Map<RunId, OrchestrationV2IdleCompaction | undefined>();
+  const compactedRunIds = new Set<RunId>();
+  const pendingResumeCompactionAgeByRunId = new Map<RunId, string>();
+  const resumeCompactionAgeByEntryId = new Map<string, string>();
+  for (const entry of timelineEntries) {
+    if (
+      entry.kind === "message" &&
+      entry.message.runId !== null &&
+      isCompactionCommandMessage(entry.message)
+    ) {
+      compactionRuns.set(entry.message.runId, idleCompactionOf(entry.message));
+    } else if (entry.kind === "work" && entry.entry.runId) {
+      if (timelineEntryIsCompaction(entry)) {
+        compactedRunIds.add(entry.entry.runId);
+        const age = pendingResumeCompactionAgeByRunId.get(entry.entry.runId);
+        if (age !== undefined) {
+          resumeCompactionAgeByEntryId.set(entry.id, age);
+          pendingResumeCompactionAgeByRunId.delete(entry.entry.runId);
+        }
+      }
+      const age = entry.entry.questionAnswer
+        ? claudeResumeCompactionAge(entry.entry.questionAnswer)
+        : null;
+      if (age !== null) pendingResumeCompactionAgeByRunId.set(entry.entry.runId, age);
+    }
+  }
+  const compactionTitle = (runId: RunId | null | undefined, entryId: string) => {
+    if (runId == null) return undefined;
+    const reason = compactionRuns.get(runId);
+    if (reason !== undefined) return IDLE_COMPACTION_TITLES[reason];
+    const age = resumeCompactionAgeByEntryId.get(entryId);
+    return age ? `Context compacted after ${age} idle` : undefined;
+  };
+  const activeCompactionEntry = timelineEntries.find(
+    (entry): entry is Extract<TimelineEntry, { kind: "work" }> =>
+      timelineEntryIsCompaction(entry) &&
+      entry.kind === "work" &&
+      workEntryIsInActiveRun(entry.entry),
+  );
+  const activeRunIsCompaction =
+    input.isWorking && unsettledRunId !== null && compactionRuns.has(unsettledRunId);
+  // The item can finish before its run settles; only other work should keep activity visible.
+  const compactionRunFinished =
+    activeRunIsCompaction &&
+    compactedRunIds.has(unsettledRunId) &&
+    activeCompactionEntry === undefined;
+  const compactionOnlyRunFinished =
+    compactionRunFinished &&
+    !timelineEntries.some(
+      (entry) =>
+        timelineEntryRunId(entry) === unsettledRunId &&
+        !timelineEntryIsCompaction(entry) &&
+        !(entry.kind === "message" && isCompactionCommandMessage(entry.message)),
+    );
+  const runningCompactionRunId =
+    activeRunIsCompaction && !compactionRunFinished ? unsettledRunId : null;
+  // Compacting on return holds back the message the user just sent, so the working row says why
+  // it is waiting. Any other compaction shows only its live divider, never both.
+  const activeCompactionRunId =
+    runningCompactionRunId !== null && compactionRuns.get(runningCompactionRunId) === "onReturn"
+      ? runningCompactionRunId
+      : activeCompactionEntry?.entry.runId != null &&
+          resumeCompactionAgeByEntryId.has(activeCompactionEntry.id)
+        ? activeCompactionEntry.entry.runId
+        : null;
+  const compactingLabel = (() => {
+    if (activeCompactionRunId === null) return undefined;
+    const age = activeCompactionEntry
+      ? resumeCompactionAgeByEntryId.get(activeCompactionEntry.id)
+      : undefined;
+    return age ? `Compacting after ${age} idle…` : IDLE_COMPACTING_LABELS.onReturn;
+  })();
   const appendWorkingRow = () => {
+    if (compactionOnlyRunFinished) return;
+    if (runningCompactionRunId !== null && activeCompactionRunId === null) return;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt ?? null,
+      ...(compactingLabel ? { compacting: compactingLabel } : {}),
     });
   };
   let hasActivityRow = false;
-  let hasActiveCompaction = false;
+  const hasActiveCompaction =
+    activeCompactionEntry !== undefined || (activeRunIsCompaction && !compactionRunFinished);
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
@@ -1603,17 +1757,40 @@ export function deriveMessagesTimelineRows(input: {
       timelineEntry.entry.sourceActivityKind === "context-compaction"
     ) {
       const active = workEntryIsInActiveRun(timelineEntry.entry);
-      hasActiveCompaction ||= active;
+      if (
+        active &&
+        activeCompactionRunId !== null &&
+        timelineEntry.entry.runId === activeCompactionRunId
+      )
+        continue;
       const compaction = timelineEntry.entry.structuredPayload;
+      const compactionRunId = timelineEntry.entry.runId;
+      const title = compactionTitle(compactionRunId, timelineEntry.id);
+      const reason = compactionRunId == null ? undefined : compactionRuns.get(compactionRunId);
+      const failed = compaction?.type === "compaction" && compaction.status === "failed";
+      const failure = failed ? compaction.summary?.trim() || undefined : undefined;
       nextRows.push({
         kind: "context-compaction",
         id: timelineEntry.id,
+        ...(title ? { title } : {}),
+        ...(failed ? { failed: true } : {}),
+        ...(failure ? { failure } : {}),
         createdAt: timelineEntry.createdAt,
-        label: timelineEntry.entry.label,
+        label: active && reason ? IDLE_COMPACTING_LABELS[reason] : timelineEntry.entry.label,
         tokenCounts:
           compaction?.type === "compaction" ? contextCompactionTokenCounts(compaction) : null,
         active,
       });
+      continue;
+    }
+
+    if (
+      timelineEntry.kind === "work" &&
+      timelineEntry.entry.runId != null &&
+      compactedRunIds.has(timelineEntry.entry.runId) &&
+      timelineEntry.entry.questionAnswer !== undefined &&
+      claudeResumeCompactionAge(timelineEntry.entry.questionAnswer) !== null
+    ) {
       continue;
     }
 
@@ -1827,6 +2004,29 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    const compactionRunId = timelineEntry.message.runId;
+    const compactionRun =
+      compactionRunId !== null && isCompactionCommandMessage(timelineEntry.message);
+    if (compactionRun) {
+      if (!compactedRunIds.has(compactionRunId) && compactionRunId !== activeCompactionRunId) {
+        const pending = compactionRunId === runningCompactionRunId;
+        const reason = compactionRuns.get(compactionRunId);
+        nextRows.push({
+          kind: "context-compaction",
+          id: `compaction:${compactionRunId}`,
+          createdAt: timelineEntry.createdAt,
+          label: pending
+            ? reason
+              ? IDLE_COMPACTING_LABELS[reason]
+              : "Compacting context"
+            : "Context compaction",
+          tokenCounts: null,
+          active: pending,
+        });
+      }
+      continue;
+    }
+
     const assistantResponseStillInProgress =
       timelineEntry.message.role === "assistant" &&
       runIdIsActiveResponse(timelineEntry.message.runId);
@@ -1914,6 +2114,7 @@ export function deriveMessagesTimelineRows(input: {
     input.latestRun?.turnEnded !== true &&
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
+    !compactionOnlyRunFinished &&
     (!hasActivityRow || latestToolFailed)
   ) {
     const failedGroupAnchor = latestToolFailed ? activeWorkAnchor : undefined;
@@ -1946,7 +2147,7 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   const result = attachTrailingToolGroupsToAssistant(
-    attachCreatedThreadSummaries(nextRows, timelineEntries),
+    attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
   return result.map((row, index) =>
     timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])
@@ -1968,15 +2169,14 @@ function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
 function attachCreatedThreadSummaries(
   rows: MessagesTimelineRow[],
   timelineEntries: ReadonlyArray<TimelineEntry>,
+  collapsedFoldMemberIds: ReadonlySet<string>,
 ): MessagesTimelineRow[] {
   const terminalIndexes = new Map<RunId, number>();
-  const collapsedRuns = new Set<RunId>();
   const createdByRun = new Map<RunId, Array<Extract<MessagesTimelineRow, { kind: "event" }>>>();
   for (const [index, row] of rows.entries()) {
     if (row.kind === "message" && row.showAssistantMeta && row.message.runId) {
       terminalIndexes.set(row.message.runId, index);
     }
-    if (row.kind === "turn-fold" && !row.expanded) collapsedRuns.add(row.runId);
   }
   for (const entry of timelineEntries) {
     const projectedItem =
@@ -1996,7 +2196,10 @@ function attachCreatedThreadSummaries(
     if (row.kind === "event" && row.projectedItem.item.type === "thread_created") {
       const runId = row.projectedItem.item.runId;
       const terminalIndex = runId === null ? undefined : terminalIndexes.get(runId);
-      if (terminalIndex !== undefined && (collapsedRuns.has(runId!) || index > terminalIndex))
+      if (
+        terminalIndex !== undefined &&
+        (collapsedFoldMemberIds.has(row.id) || index > terminalIndex)
+      )
         return [];
     }
     if (row.kind === "message" && row.showAssistantMeta && row.message.runId) {
@@ -2015,7 +2218,7 @@ function attachCreatedThreadSummaries(
 
 const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
 
-type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
+export type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 
 export interface MessagesTimelineRowsProjection {
   readonly input: MessagesTimelineRowsInput;
@@ -2023,8 +2226,8 @@ export interface MessagesTimelineRowsProjection {
 }
 
 /**
- * Runless (imported V1) turns fold under a synthetic key, so the entry's own
- * run id is not enough to open them.
+ * Runless (imported V1) turns and work after a steer fold under synthetic
+ * keys, so the entry's own run id is not enough to open them.
  */
 export function timelineEntryTurnFoldRunId(
   input: Pick<
@@ -2100,7 +2303,8 @@ function replaceStreamingMessageRows(
     return null;
   }
   const replacements = new Map<ChatMessage, Extract<TimelineEntry, { kind: "message" }>>();
-  for (const [index, entry] of timelineEntries.entries()) {
+  for (let index = 0; index < timelineEntries.length; index += 1) {
+    const entry = timelineEntries[index]!;
     const previousEntry = previousEntries[index]!;
     if (entry === previousEntry) continue;
     if (
@@ -2179,7 +2383,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
   switch (a.kind) {
     case "working":
-      return a.createdAt === (b as typeof a).createdAt;
+      return (
+        a.createdAt === (b as typeof a).createdAt && a.compacting === (b as typeof a).compacting
+      );
     case "thinking": {
       const bt = b as typeof a;
       return a.createdAt === bt.createdAt && a.groupId === bt.groupId && a.expanded === bt.expanded;
@@ -2210,7 +2416,14 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "context-compaction": {
       const bc = b as typeof a;
-      return a.createdAt === bc.createdAt && a.label === bc.label && a.active === bc.active;
+      return (
+        a.createdAt === bc.createdAt &&
+        a.label === bc.label &&
+        a.active === bc.active &&
+        a.title === bc.title &&
+        a.failed === bc.failed &&
+        a.failure === bc.failure
+      );
     }
 
     case "proposed-plan":
@@ -2317,6 +2530,31 @@ export function shouldCollapseUserMessage(text: string): boolean {
     visible.length > MAX_COLLAPSED_USER_MESSAGE_LENGTH ||
     visible.split("\n").length > MAX_COLLAPSED_USER_MESSAGE_LINES
   );
+}
+
+export function handoffRunsSignature(runs: ReadonlyArray<HandoffTimelineRun>): string {
+  return runs
+    .map(
+      (run) =>
+        `${run.id}\0${run.providerInstanceId}\0${run.ordinal}\0${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
+    )
+    .join("\n");
+}
+
+// Expanded-id sets can be rebuilt during render; comparing them by content keeps
+// the render-time state update in useIncrementalTimelineRows from repeating forever.
+export function sameRowsInput(
+  left: MessagesTimelineRowsInput,
+  right: MessagesTimelineRowsInput,
+): boolean {
+  for (const key of Object.keys(right) as Array<keyof MessagesTimelineRowsInput>) {
+    const previous = left[key];
+    const next = right[key];
+    if (Object.is(previous, next)) continue;
+    if (previous instanceof Set && next instanceof Set && shallow(previous, next)) continue;
+    return false;
+  }
+  return Object.keys(left).length === Object.keys(right).length;
 }
 
 export interface TimelineListMount {

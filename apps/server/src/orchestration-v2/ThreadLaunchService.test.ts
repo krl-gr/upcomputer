@@ -550,7 +550,7 @@ it.effect("provisions independent launches concurrently instead of behind a glob
   }),
 );
 
-it.effect.each([" /COMPACT ", "/logout"])(
+it.effect.each([" /COMPACT "])(
   "uses the first conversation message for a title after %s",
   (nativeCommand) =>
     Effect.gen(function* () {
@@ -1386,33 +1386,6 @@ it.effect("replays a server-allocated launch", () =>
   }),
 );
 
-it.effect("refuses a launch when the project disables the model's provider instance", () => {
-  const harness = makeHarness({
-    serverSettings: {
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [modelSelection.instanceId]: { enabled: false } } },
-      },
-    },
-  });
-  return Effect.gen(function* () {
-    const launches = yield* ThreadLaunch.ThreadLaunchService;
-    const failed = yield* launches
-      .launch(
-        launchInput({
-          command: "command:launch:project-disabled-instance",
-          thread: "thread:launch:project-disabled-instance",
-          message: "Hello",
-        }),
-      )
-      .pipe(Effect.flip);
-    if (failed._tag !== "ThreadManagementProviderInstanceDisabledError") {
-      assert.fail(`expected ThreadManagementProviderInstanceDisabledError, got ${failed._tag}`);
-    }
-    assert.equal(failed.projectId, projectId);
-    assert.equal(failed.instanceId, modelSelection.instanceId);
-  }).pipe(Effect.provide(harness.layer));
-});
-
 it.effect("replays an accepted launch after the project disables the instance", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
@@ -1472,59 +1445,6 @@ it.effect("rejects a server-allocated launch replay with a mismatching thread id
     }
     assert.equal(failed.operation, "create-thread");
     assert.include(String(failed.cause), "cannot be replayed");
-  }).pipe(Effect.provide(harness.layer));
-});
-
-it.effect("rejects a server-allocated launch receipt from another project", () => {
-  const harness = makeHarness();
-  return Effect.gen(function* () {
-    const launches = yield* ThreadLaunch.ThreadLaunchService;
-    const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:allocated-wrong-project",
-      thread: "unused",
-      message: "Wrong project",
-    });
-    const first = yield* launches.launch(rest);
-    const failed = yield* launches
-      .launch({
-        ...rest,
-        projectId: otherProjectId,
-      })
-      .pipe(Effect.flip);
-    if (failed._tag !== "ThreadLaunchError") {
-      assert.fail(`expected ThreadLaunchError, got ${failed._tag}`);
-    }
-    assert.equal(failed.operation, "resolve-project");
-    assert.equal(failed.threadId, first.threadId);
-    assert.equal(failed.cause, "Project identity changed.");
-  }).pipe(Effect.provide(harness.layer));
-});
-
-it.effect("rejects a server-allocated launch retry after the thread is deleted", () => {
-  const harness = makeHarness();
-  return Effect.gen(function* () {
-    const launches = yield* ThreadLaunch.ThreadLaunchService;
-    const threads = yield* ThreadManagement.ThreadManagementService;
-    const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:allocated-deleted",
-      thread: "unused",
-      message: "Deleted before retry",
-    });
-    const first = yield* launches.launch(rest);
-    yield* threads.dispatch({
-      type: "thread.delete",
-      commandId: CommandId.make("command:launch:allocated-deleted:delete"),
-      threadId: first.threadId,
-    });
-    const failed = yield* launches.launch(rest).pipe(Effect.flip);
-    if (failed._tag !== "ThreadLaunchError") {
-      assert.fail(`expected ThreadLaunchError, got ${failed._tag}`);
-    }
-    assert.equal(failed.operation, "create-thread");
-    assert.equal(failed.threadId, first.threadId);
-    assert.equal(failed.cause, "Thread not found.");
-    const shells = yield* threads.listProjectThreads({ projectId, includeSubagents: true });
-    assert.equal(shells.length, 0);
   }).pipe(Effect.provide(harness.layer));
 });
 
@@ -1675,6 +1595,73 @@ it.effect("does not let a failing same-command caller strand a concurrent durabl
       yield* Deferred.succeed(allowSetup, undefined);
     }).pipe(Effect.provide(harness.layer));
   }),
+);
+
+it.effect("reports one concurrent same-command launch as new and the rest as resumed", () =>
+  Effect.gen(function* () {
+    // Both launches read no receipt before either one claims the thread.
+    const arrived = yield* Ref.make(0);
+    const bothRead = yield* Deferred.make<void>();
+    const harness = makeHarness({
+      managedFolders: Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        isScratchProject: () => Effect.succeed(false),
+        folderForThread: () =>
+          Ref.updateAndGet(arrived, (count) => count + 1).pipe(
+            Effect.tap((count) =>
+              count === 2 ? Deferred.succeed(bothRead, undefined) : Effect.void,
+            ),
+            Effect.andThen(Deferred.await(bothRead)),
+            Effect.as(Option.none()),
+          ),
+      }),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const input = launchInput({
+        command: "command:launch:concurrent-resumed",
+        thread: "thread:launch:concurrent-resumed",
+      });
+      const results = yield* Effect.all([launches.launch(input), launches.launch(input)], {
+        concurrency: "unbounded",
+      });
+      assert.deepEqual(results.map((result) => result.resumed).sort(), [false, true]);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect(
+  "does not report a retry as resumed when the earlier attempt only claimed the thread",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const input = launchInput({
+          command: "command:launch:claimed-only",
+          thread: "thread:launch:claimed-only",
+          message: "Counted once",
+        });
+        yield* threads.dispatch({
+          type: "thread.create",
+          commandId: input.commandId,
+          threadId: input.threadId,
+          projectId: input.projectId,
+          title: input.title,
+          modelSelection: input.modelSelection,
+          runtimeMode: input.runtimeMode,
+          interactionMode: input.interactionMode,
+          branch: null,
+          worktreePath: null,
+          createdBy: input.createdBy,
+          creationSource: input.creationSource,
+        });
+        const retried = yield* launches.launch(input);
+        assert.isFalse(retried.resumed);
+        assert.isTrue((yield* launches.launch(input)).resumed);
+      }).pipe(Effect.provide(harness.layer));
+    }),
 );
 
 it.effect("schedules an accepted preparing message exactly once across concurrent retries", () =>

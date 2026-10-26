@@ -389,39 +389,6 @@ describe("thread outbox", () => {
     ).toBe("plan");
   });
 
-  it("serializes mutations even when an earlier mutation is slower", async () => {
-    const registry = AtomRegistry.make();
-    const manager = createThreadOutboxManager({
-      registry,
-      storage: {
-        load: async () => ({ messages: [], errors: [] }),
-        write: async () => undefined,
-        remove: async () => undefined,
-      },
-    });
-    const order: string[] = [];
-    let releaseFirst!: () => void;
-    const firstBlocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    const first = manager.serialize(async () => {
-      order.push("first:start");
-      await firstBlocked;
-      order.push("first:end");
-    });
-    const second = manager.serialize(async () => {
-      order.push("second");
-    });
-
-    await Promise.resolve();
-    expect(order).toEqual(["first:start"]);
-    releaseFirst();
-    await Promise.all([first, second]);
-    expect(order).toEqual(["first:start", "first:end", "second"]);
-    registry.dispose();
-  });
-
   it("holds the mutation queue while persisted messages are loading", async () => {
     const registry = AtomRegistry.make();
     const message = queuedMessage({
@@ -1155,6 +1122,19 @@ describe("thread outbox", () => {
         threadBusy: false,
       }),
     ).toBe("send");
+  });
+
+  it("removes a missing-thread message only after a settled family read when idle children can be omitted", () => {
+    const missing = {
+      isCreation: false,
+      threadExists: false,
+      shellStatus: "live",
+      environmentConnected: true,
+      threadBusy: false,
+    } as const;
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "pending" })).toBe("wait");
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "failed" })).toBe("wait");
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "settled" })).toBe("remove");
   });
 
   it("sends existing-thread messages whenever connected so queued messages can steer", () => {

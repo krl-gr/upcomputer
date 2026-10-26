@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
 
@@ -12,7 +12,7 @@ import {
   type PullRequestProviderApi,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import type { BitbucketPullRequest } from "./bitbucketPullRequestJson.ts";
-import { definition } from "../client/definition.ts";
+import { definition } from "../shared/definition.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
@@ -38,6 +38,12 @@ const CAPABILITIES: PullRequestCapabilities = {
   viewedFiles: "environment",
 };
 
+const UNAVAILABLE_REQUIREMENT = {
+  missing: "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.",
+  unauthenticated:
+    "Bitbucket rejected the configured credentials. Check them in Settings → Source Control.",
+};
+
 /**
  * Bitbucket lets the author of a pull request decline their own with no more than read access,
  * and the permission response says nothing about who opened this one — so withholding the
@@ -60,6 +66,9 @@ export function bitbucketProviderFailure(
 ): PullRequestProviderFailure {
   if (error._tag === "BitbucketResponseError" && error.status === 401) {
     return { reason: "unauthenticated" };
+  }
+  if (error._tag === "SourceControlRateLimitPausedError") {
+    return { reason: "rate-limited", retryAt: error.retryAt };
   }
   if (
     (error._tag === "BitbucketResponseError" || error._tag === "BitbucketResponseBodyReadError") &&
@@ -144,6 +153,8 @@ export const make = Effect.gen(function* () {
   const provider: PullRequestProviderApi = {
     kind: SourceControlProviderKind.make("bitbucket"),
     capabilities: CAPABILITIES,
+    unavailableRequirement: UNAVAILABLE_REQUIREMENT,
+    readsPublicHostWithoutCheckout: true,
 
     getViewer: () => api.getViewer().pipe(Effect.mapError(fail("getViewer"))),
 
@@ -155,6 +166,11 @@ export const make = Effect.gen(function* () {
           limit: input.limit,
           query: input.query,
           cursor: input.cursor,
+          author:
+            input.filters?.author === undefined
+              ? undefined
+              : resolvePullRequestAuthorFilter(input.filters.author, input.viewer),
+          draft: input.filters?.draft === undefined ? undefined : input.filters.draft === "only",
         })
         .pipe(
           Effect.mapError(fail("listChangeRequests")),

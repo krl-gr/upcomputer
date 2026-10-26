@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "effect-tsgo patch && vp config --no-agent",
+    "prepare": "vp config --no-agent",
     "dev": "node scripts/dev-runner.ts dev",
     "dev:share": "node scripts/dev-runner.ts dev --share",
     "dev:server": "node scripts/dev-runner.ts dev:server",
@@ -24,11 +24,12 @@
     "build:marketing": "vp run --filter @upcomputer/marketing build",
     "build:desktop": "vp run --filter @t3tools/desktop --filter t3 build",
     "build:resource-monitor": "cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml",
-    "typecheck": "vp run -r --concurrency-limit 2 typecheck",
-    "tc": "vp run -r --concurrency-limit 2 typecheck",
+    "typecheck": "vp run -r --cache --concurrency-limit 4 typecheck",
+    "tc": "vp run -r --cache --concurrency-limit 4 typecheck",
+    "check:changed": "node scripts/check-changed.ts",
     "lint": "vp lint --report-unused-disable-directives",
     "knip": "knip --preprocessor ./scripts/knip-schemas.ts",
-    "knip:check": "knip --include files,dependencies --no-config-hints && knip --workspace apps/server --workspace apps/desktop --workspace apps/web --workspace packages/client-runtime --workspace packages/contracts --workspace packages/effect-acp --workspace packages/effect-codex-app-server --workspace packages/shared --workspace packages/ssh --workspace packages/tailscale --workspace packages/provider-core --workspace packages/provider-acp --workspace packages/provider-acp-registry --workspace packages/provider-testing --workspace packages/provider-pi --workspace packages/provider-muse --workspace packages/provider-opencode --workspace packages/provider-cursor --workspace packages/provider-grok --workspace packages/source-control-core --workspace packages/source-control-azure-devops --workspace packages/source-control-bitbucket --workspace packages/source-control-forgejo --workspace packages/source-control-gitcafe --workspace packages/source-control-github --workspace packages/source-control-gitlab --workspace packages/source-control-testing --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
+    "knip:check": "knip --include files,dependencies --no-config-hints && knip --workspace apps/server --workspace apps/desktop --workspace apps/web --workspace packages/client-runtime --workspace packages/contracts --workspace packages/effect-acp --workspace packages/effect-codex-app-server --workspace packages/shared --workspace packages/ssh --workspace packages/tailscale --workspace packages/provider-core --workspace packages/provider-acp --workspace packages/provider-acp-registry --workspace packages/provider-testing --workspace packages/provider-pi --workspace packages/provider-muse --workspace packages/provider-opencode --workspace packages/provider-cursor --workspace packages/provider-grok --workspace packages/source-control-core --workspace packages/source-control-definitions --workspace packages/source-control-azure-devops --workspace packages/source-control-bitbucket --workspace packages/source-control-forgejo --workspace packages/source-control-gitcafe --workspace packages/source-control-github --workspace packages/source-control-gitlab --workspace packages/source-control-testing --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
     "knip:production": "knip --production --preprocessor ./scripts/knip-schemas.ts",
     "lint:mobile": "node scripts/mobile-native-static-check.ts",
     "test": "vp run -r test",
@@ -52,16 +53,14 @@
   },
   "devDependencies": {
     "@coderabbitai/config": "1.1.0",
-    "@effect/tsgo": "catalog:",
     "@shadcn/lint": "0.1.5",
     "@types/node": "catalog:",
     "knip": "6.34.0",
-    "tsc-rs": "0.7.0",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },
   "engines": {
-    "node": "^24.13.1"
+    "node": "26.12.1"
   },
-  "packageManager": "pnpm@11.10.0"
+  "packageManager": "pnpm@12.14.0"
 }

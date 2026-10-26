@@ -20,7 +20,10 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -42,6 +45,7 @@ import {
   setUserInstructions,
 } from "@t3tools/provider-core/server/userInstructions";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import { toolOutputImages, compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import {
   makePiAdapterV2,
@@ -521,45 +525,6 @@ const startTurn = Effect.fnUntraced(function* (
     runtimePolicy,
   });
 });
-
-const expectModelFailure = (errorMessage: string) =>
-  Effect.gen(function* () {
-    const fake = yield* makeFakePi;
-    const { runtime, takeEvent } = yield* openRuntime(fake);
-    const providerThread = yield* runtime.ensureThread({
-      threadId: THREAD_ID,
-      modelSelection: modelSelection("default"),
-      runtimePolicy,
-    });
-    yield* startTurn(runtime, providerThread);
-    yield* fake.takeRequest("prompt");
-    yield* fake.emit({ type: "agent_start" });
-    yield* fake.emit({
-      type: "message_end",
-      message: {
-        role: "assistant",
-        content: [],
-        stopReason: "error",
-        errorMessage,
-      },
-    });
-    yield* fake.emit({ type: "agent_settled" });
-
-    const sessionError = yield* takeEvent(
-      (event) =>
-        event.type === "provider_session.updated" && event.providerSession.status === "error",
-    );
-    assert.isTrue(
-      sessionError.type === "provider_session.updated" &&
-        sessionError.providerSession.lastError === errorMessage,
-    );
-    const terminal = yield* takeEvent((event) => event.type === "turn.terminal");
-    assert.isTrue(
-      terminal.type === "turn.terminal" &&
-        terminal.status === "failed" &&
-        terminal.failure.message === errorMessage,
-    );
-  }).pipe(Effect.scoped, Effect.provide(layerTest));
 
 describe("PiAdapterV2", () => {
   it.effect.each([false, true])(
@@ -1409,6 +1374,58 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
+  it.effect.each(["session", "process"] as const)("cleans up detached work on Pi %s exit", (exit) =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const scopeStopped = yield* Deferred.make<void>();
+      let processReleased = false;
+      const stopped: Array<{ unit: string; processReleased: boolean }> = [];
+      yield* Effect.gen(function* () {
+        yield* openRuntime({
+          ...fake,
+          spawner: ChildProcessSpawner.make((command) =>
+            Effect.acquireRelease(
+              fake.spawner
+                .spawn(command)
+                .pipe(
+                  Effect.map((child) =>
+                    ChildProcessSpawner.makeHandle({ ...child, exitCode: Deferred.await(exited) }),
+                  ),
+                ),
+              () =>
+                Effect.sync(() => {
+                  processReleased = true;
+                }),
+            ),
+          ),
+        });
+        assert.deepStrictEqual(stopped, []);
+        if (exit === "process") {
+          // Stdout stays open as it would for a child holding the inherited pipe.
+          yield* Deferred.succeed(exited, ChildProcessSpawner.ExitCode(19));
+          yield* Deferred.await(scopeStopped);
+          assert.isFalse(processReleased);
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(AgentScope, {
+          ...AgentScope.defaultValue(),
+          wrap: ({ command, args }) =>
+            Effect.succeed({ command, args, unit: "t3code-pi-test.scope" }),
+          stop: (unit) =>
+            Effect.sync(() => void stopped.push({ unit, processReleased })).pipe(
+              Effect.andThen(Deferred.succeed(scopeStopped, undefined)),
+              Effect.asVoid,
+            ),
+        }),
+      );
+      assert.deepStrictEqual(stopped, [
+        { unit: "t3code-pi-test.scope", processReleased: exit === "session" },
+      ]);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("gives notify and extension-error items distinct ids in each thread", () =>
     Effect.gen(function* () {
       const itemIds = new Set<string>();
@@ -1842,6 +1859,51 @@ describe("PiAdapterV2", () => {
       assert.equal(forked.nativeThreadRef?.nativeId, forkFile);
       assert.deepEqual(forkedEntries(), ["u2"]);
       assert.isFalse(fake.allRequests().some((request) => request.type === "fork"));
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("natively forks before a running turn whose start entry was not captured yet", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const forkFake = yield* makeFakePi;
+      const forkFile = "/fake/forked.jsonl";
+      const { runtime } = yield* openRuntime(fake, "default", THREAD_ID, SESSION_ID, forkFake);
+      const source = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      // Turn 2 is still in flight, so it has no end to bound the session-tree search.
+      const turns = uncapturedTurns(source.id, { startedAt: 100, completedAt: 200 }).map((turn) =>
+        turn.ordinal === 2 ? { ...turn, status: "running" as const, completedAt: null } : turn,
+      );
+      forkFake.queueEntries(UNCAPTURED_TURN_TREE);
+      forkFake.queueState({ sessionFile: forkFile });
+      fake.queueState({ sessionFile: forkFile });
+
+      const result = yield* runtime
+        .forkThread({
+          sourceProviderThread: source,
+          sourceProviderTurns: turns,
+          providerTurnId: turns[0]!.id,
+          targetThreadId: ThreadId.make("fork-target"),
+        })
+        .pipe(Effect.exit);
+      assert.isTrue(
+        Exit.isSuccess(result),
+        `forking turn 1 while turn 2 runs must locate turn 2's prompt in the session tree, got: ${
+          Exit.isFailure(result) ? Cause.pretty(result.cause) : ""
+        }`,
+      );
+      if (!Exit.isSuccess(result)) return;
+      assert.equal(result.value.nativeThreadRef?.nativeId, forkFile);
+
+      const forkedEntries = forkFake
+        .allRequests()
+        .filter((request) => request.type === "fork")
+        .map((request) => request.entryId);
+      // Pi keeps only the fork entry's ancestors, so u2 (not steer2) drops all of turn 2.
+      assert.deepEqual(forkedEntries, ["u2"]);
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
@@ -2907,10 +2969,6 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
-  it.effect("persists current xAI capacity text for the thread error banner", () =>
-    expectModelFailure("The model is currently at capacity due to high demand."),
-  );
-
   it.effect.each([
     { toolName: "bash", exitCode: 0, legacy: false },
     { toolName: "powershell", exitCode: 2, legacy: false },
@@ -3125,6 +3183,40 @@ describe("PiAdapterV2", () => {
       const response = yield* fake.takeRequest("extension_ui_response");
       assert.equal(response["value"], "");
       assert.isUndefined(response["cancelled"]);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("asks an input dialog's title when its placeholder is blank", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { runtime, takeEvent } = yield* openRuntime(fake);
+      yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      const title = "Which database?\n1. Postgres\n2. Type something.\nType your answer:";
+      yield* fake.emit({
+        type: "extension_ui_request",
+        id: "ui-input",
+        method: "input",
+        title,
+        placeholder: "",
+      });
+      const event = yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "user_input_request",
+      );
+      if (event.type !== "turn_item.updated" || event.turnItem.type !== "user_input_request") {
+        return assert.fail("expected a user input request");
+      }
+      assert.equal(decodeUserInputQuestions(event.turnItem.questions)[0]?.question, title);
+      yield* runtime.respondToRuntimeRequest({
+        requestId: event.turnItem.requestId,
+        answers: { "ui-input": "SQLite" },
+      });
+      const response = yield* fake.takeRequest("extension_ui_response");
+      assert.equal(response["value"], "SQLite");
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 

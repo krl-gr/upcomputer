@@ -14,7 +14,7 @@ import {
 function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   const label = entry.displayName;
   if (!entry.enabled || entry.status === "disabled") {
-    return `${label} — Disabled in settings.`;
+    return `${label}: Disabled in settings.`;
   }
   if (entry.status === "ready" && entry.isAvailable) {
     return label;
@@ -26,7 +26,7 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   const kind =
     entry.status === "error" ? "Unavailable" : entry.status === "warning" ? "Limited" : "Not ready";
   const msg = entry.snapshot.message?.trim();
-  return msg ? `${label} — ${kind}. ${msg}` : `${label} — ${kind}.`;
+  return msg ? `${label}: ${kind}. ${msg}` : `${label}: ${kind}.`;
 }
 
 const SELECTED_INDICATOR_CLASS =
@@ -152,7 +152,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : showNewBadge
-                  ? `${entry.displayName} — New`
+                  ? `${entry.displayName} (New)`
                   : entry.displayName;
 
             const button = (

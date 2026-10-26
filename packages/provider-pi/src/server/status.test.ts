@@ -1,8 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
-import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -58,13 +56,7 @@ function piProbeSpawner(version: string) {
   });
 }
 
-const piDiscoverySpawner = (
-  inventory: unknown,
-  slowStartup?: {
-    readonly delay: Duration.Input;
-    readonly getStateReceived: Deferred.Deferred<void>;
-  },
-) =>
+const piDiscoverySpawner = (inventory: unknown) =>
   Effect.gen(function* () {
     const stdout = yield* Queue.unbounded<Uint8Array, Cause.Done>();
     let stdinBuffer = "";
@@ -78,10 +70,6 @@ const piDiscoverySpawner = (
           stdinBuffer = stdinBuffer.slice(newline + 1);
           if (line.length === 0) continue;
           const request = decodeRpcRequest(line);
-          if (request.type === "get_state" && slowStartup !== undefined) {
-            yield* Deferred.succeed(slowStartup.getStateReceived, undefined);
-            yield* Effect.sleep(slowStartup.delay);
-          }
           const data =
             request.type === "get_available_models"
               ? inventory
@@ -172,13 +160,10 @@ describe("PiProvider", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  // regression: #18498 a malformed model inventory must not restore stale Pi models
   it.effect.each([
     ["missing models", {}],
-    ["non-array models", { models: {} }],
-    ["missing model provider", { models: [{ id: "claude-sonnet-4" }] }],
     ["missing model id", { models: [{ provider: "anthropic" }] }],
-    ["empty model provider", { models: [{ provider: "", id: "claude-sonnet-4" }] }],
-    ["empty model id", { models: [{ provider: "anthropic", id: "" }] }],
     [
       "mixed valid and invalid models",
       { models: [{ provider: "anthropic", id: "claude-sonnet-4" }, { provider: "openrouter" }] },

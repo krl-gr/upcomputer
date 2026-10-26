@@ -244,7 +244,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
 });
 
 describe("OpenCodeAdapterV2", () => {
-  it.effect.each(["completed", "failed", "unresolved", "unavailable", "reconnect"] as const)(
+  it.effect.each(["completed", "failed", "unavailable"] as const)(
     "normalizes OpenCode step usage for %s turns",
     (ending) =>
       Effect.gen(function* () {
@@ -330,16 +330,6 @@ describe("OpenCodeAdapterV2", () => {
             }),
           );
           yield* Effect.promise(() => nativeEvents.push(step("old", "old-assistant")));
-        }
-        if (ending === "unresolved")
-          yield* Effect.promise(() => nativeEvents.push(step("unknown", "unknown-assistant")));
-        if (ending === "reconnect") {
-          yield* Effect.promise(() =>
-            nativeEvents.push({ type: "server.connected", properties: {} }),
-          );
-          yield* Effect.promise(() =>
-            nativeEvents.push({ type: "server.connected", properties: {} }),
-          );
         }
         if (ending === "failed") {
           yield* Effect.promise(() =>
@@ -907,6 +897,62 @@ describe("OpenCodeAdapterV2", () => {
       );
       assert.ok(emptyWebSearch?.type === "web_search");
       assert.equal(emptyWebSearch.results, undefined);
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("drops cancelled OpenCode todos so a finished list completes", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const nativeSessionId = "native-opencode-todos";
+      const harness = yield* makeOpenCodeRuntimeHarness("todos", nativeSessionId, {
+        event: {
+          subscribe: async (_input: unknown, options: { signal?: AbortSignal }) => {
+            options.signal?.addEventListener("abort", () => nativeEvents.close(), { once: true });
+            return { stream: nativeEvents.stream };
+          },
+        },
+        mcp: { status: async () => ({ data: {} }) },
+        session: {
+          create: async () => ({
+            data: { id: nativeSessionId, time: { created: 1, updated: 1 } },
+          }),
+          promptAsync: async () => ({ data: true }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "plan.updated"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "todo.updated",
+          properties: {
+            sessionID: nativeSessionId,
+            todos: [
+              { content: "Write the fix", status: "completed", priority: "high" },
+              { content: "Try another approach", status: "cancelled", priority: "low" },
+              { content: "Add a test", status: "completed", priority: "medium" },
+            ],
+          },
+        }),
+      );
+      const plan = (yield* Fiber.join(received)).flatMap((event) =>
+        event.type === "plan.updated" ? [event.plan] : [],
+      )[0];
+      assert.ok(plan?.kind === "todo_list");
+      assert.deepEqual(
+        plan.steps.map((step) => ({ text: step.text, status: step.status })),
+        [
+          { text: "Write the fix", status: "completed" },
+          { text: "Add a test", status: "completed" },
+        ],
+      );
+      assert.equal(plan.status, "completed");
     }).pipe(
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,

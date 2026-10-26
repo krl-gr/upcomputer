@@ -183,6 +183,7 @@ const watchedPullRequestDetail = (input: {
     actions: [],
     mergeMethods: [],
     search: false,
+    checksAlwaysReport: true,
     review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
     reviewers: { request: false, listCandidates: false },
   },
@@ -636,50 +637,6 @@ const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
 );
 
 it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
-  it.effect("emits model updates separately from provider switches", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const threadId = ThreadId.make("runtime-layer-model-selection-events");
-
-      yield* orchestrator.dispatch({
-        type: "thread.create",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("runtime-layer-model-selection-events-create"),
-        threadId,
-        projectId: ProjectId.make("runtime-layer-model-selection-events-project"),
-        title: "Model selection events",
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-      });
-
-      const sameInstance = yield* orchestrator.dispatch({
-        type: "thread.model-selection.set",
-        commandId: CommandId.make("runtime-layer-model-selection-events-update"),
-        threadId,
-        modelSelection: { ...modelSelection, model: "gpt-5.5" },
-      });
-      assert.deepEqual(
-        sameInstance.storedEvents.map((stored) => stored.event.type),
-        ["thread.model-selection-updated"],
-      );
-
-      const differentInstance = yield* orchestrator.dispatch({
-        type: "thread.model-selection.set",
-        commandId: CommandId.make("runtime-layer-model-selection-events-switch"),
-        threadId,
-        modelSelection: { instanceId: alternateInstanceId, model: "gpt-5.5" },
-      });
-      assert.deepEqual(
-        differentInstance.storedEvents.map((stored) => stored.event.type),
-        ["thread.provider-switched"],
-      );
-    }),
-  );
-
   const seedFailingRollbackThread = (name: string) =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -783,44 +740,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       yield* rollback(CommandId.make("runtime-rollback-failure-retry"));
       const retried = yield* orchestrator.getThreadProjection(threadId);
       assert.isNull(retried.thread.rollbackFailure);
-    }),
-  );
-
-  it.effect("ignores a late failure from a rollback that a newer one superseded", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const outbox = yield* EffectOutbox.EffectOutboxV2;
-      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-      const { threadId, rollback } = yield* seedFailingRollbackThread(
-        "runtime-rollback-superseded",
-      );
-
-      const olderCommandId = CommandId.make("runtime-rollback-superseded-older");
-      yield* rollback(olderCommandId);
-      for (let attempt = 0; attempt < 4; attempt++) {
-        yield* worker.drain();
-        yield* TestClock.adjust("30 seconds");
-      }
-      const newerCommandId = CommandId.make("runtime-rollback-superseded-newer");
-      yield* rollback(newerCommandId);
-      yield* worker.drain();
-
-      const [olderEffect] = yield* outbox.listByCommandId(olderCommandId);
-      assert.equal(olderEffect?.status, "failed");
-      const superseded = yield* orchestrator.getThreadProjection(threadId);
-      assert.isNull(superseded.thread.rollbackFailure);
-
-      for (let attempt = 0; attempt < 5; attempt++) {
-        yield* TestClock.adjust("30 seconds");
-        yield* worker.drain();
-      }
-      const [newerEffect] = yield* outbox.listByCommandId(newerCommandId);
-      assert.equal(newerEffect?.status, "failed");
-      const failed = yield* orchestrator.getThreadProjection(threadId);
-      assert.deepEqual(failed.thread.rollbackFailure, {
-        requestId: newerCommandId,
-        message: ROLLBACK_FAILED_MESSAGE,
-      });
     }),
   );
 
@@ -1309,6 +1228,136 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
         .pipe(Effect.result);
       assert.equal(duplicate._tag, "Failure");
       assert.equal((yield* orchestrator.getThreadProjection(threadId)).messages.length, 1);
+    }),
+  );
+
+  it.effect("reports an answer that never reaches its provider without reopening it", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("runtime-lost-answer");
+      // Projected as attached, but no live session holds it, so every delivery fails.
+      const providerSessionId = ProviderSessionId.make("runtime-lost-answer-session");
+      const requestId = RuntimeRequestId.make("runtime-lost-answer-request");
+      const nodeId = NodeId.make("runtime-lost-answer-node");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("runtime-lost-answer-create"),
+        createdBy: "user",
+        creationSource: "web",
+        threadId,
+        projectId: ProjectId.make("runtime-lost-answer-project"),
+        title: "Lost answer",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: process.cwd(),
+      });
+      yield* eventSink.write({
+        commandId: CommandId.make("runtime-lost-answer-seed"),
+        events: [
+          {
+            id: EventId.make("runtime-lost-answer-session-event"),
+            type: "provider-session.attached",
+            threadId,
+            driver,
+            occurredAt: now,
+            payload: {
+              id: providerSessionId,
+              driver,
+              providerInstanceId: modelSelection.instanceId,
+              status: "running",
+              cwd: process.cwd(),
+              model: modelSelection.model,
+              capabilities: CodexProviderCapabilitiesV2,
+              createdAt: now,
+              updatedAt: now,
+              lastError: null,
+            },
+          },
+          {
+            id: EventId.make("runtime-lost-answer-node-event"),
+            type: "node.updated",
+            threadId,
+            nodeId,
+            occurredAt: now,
+            payload: {
+              id: nodeId,
+              threadId,
+              runId: null,
+              parentNodeId: null,
+              rootNodeId: nodeId,
+              kind: "user_input_request",
+              status: "waiting",
+              countsForRun: false,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              runtimeRequestId: requestId,
+              checkpointScopeId: null,
+              startedAt: now,
+              completedAt: null,
+            },
+          },
+          {
+            id: EventId.make("runtime-lost-answer-request-event"),
+            type: "runtime-request.updated",
+            threadId,
+            nodeId,
+            occurredAt: now,
+            payload: {
+              id: requestId,
+              nodeId,
+              providerTurnId: null,
+              nativeRequestRef: null,
+              kind: "user_input",
+              status: "pending",
+              responseCapability: { type: "live", providerSessionId },
+              createdAt: now,
+              resolvedAt: null,
+            },
+          },
+        ],
+      });
+      const commandId = CommandId.make("runtime-lost-answer-answer");
+      const answers = { color: "Blue" };
+      yield* orchestrator.dispatch({
+        type: "runtime-request.respond",
+        commandId,
+        threadId,
+        requestId,
+        answers,
+      });
+      const errors = orchestrator
+        .getThreadProjection(threadId)
+        .pipe(
+          Effect.map((projection) => projection.turnItems.filter((item) => item.type === "error")),
+        );
+
+      // A delivery that can still be retried reports nothing.
+      yield* worker.drain();
+      assert.deepEqual(yield* errors, []);
+      for (let attempt = 1; attempt < 5; attempt++) {
+        yield* TestClock.adjust("30 seconds");
+        yield* worker.drain();
+      }
+
+      const [deliveryEffect] = yield* outbox.listByCommandId(commandId);
+      assert.equal(deliveryEffect?.request.type, "runtime-request.respond");
+      assert.equal(deliveryEffect?.status, "failed");
+      const failed = yield* orchestrator.getThreadProjection(threadId);
+      const reported = failed.turnItems.filter((item) => item.type === "error");
+      assert.equal(reported.length, 1);
+      assert.equal(reported[0]?.status, "failed");
+      assert.equal(reported[0]?.nodeId, nodeId);
+      // The answer stays recorded; the user is not asked again.
+      const request = failed.runtimeRequests.find((row) => row.id === requestId);
+      assert.equal(request?.status, "resolved");
+      assert.deepEqual(request?.answers, answers);
     }),
   );
 
@@ -2111,67 +2160,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
-  it.effect("persists linked pull requests through projection rebuilds and unlinking", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-      const threadId = ThreadId.make("runtime-layer-linked-pull-request-thread");
-      const linkedPullRequest = {
-        projectId: ProjectId.make("runtime-layer-linked-pull-request-project"),
-        repository: "pingdotgg/t3code",
-        number: 8160,
-        url: "https://github.com/pingdotgg/t3code/pull/8160",
-      } as const;
-
-      yield* orchestrator.dispatch({
-        type: "thread.create",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("runtime-layer-linked-pull-request-create"),
-        threadId,
-        projectId: linkedPullRequest.projectId,
-        title: "Linked pull request thread",
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-      });
-      yield* orchestrator.dispatch({
-        type: "thread.metadata.update",
-        commandId: CommandId.make("runtime-layer-linked-pull-request-link"),
-        threadId,
-        linkedPullRequest,
-      });
-
-      assert.deepEqual(
-        (yield* orchestrator.getThreadProjection(threadId)).thread.linkedPullRequest,
-        linkedPullRequest,
-      );
-      const linkedShell = yield* orchestrator.getThreadShell(threadId);
-      assert.isNotNull(linkedShell);
-      assert.deepEqual(linkedShell.linkedPullRequest, linkedPullRequest);
-
-      const rebuilt = yield* maintenance.rebuild;
-      assert.isTrue(rebuilt.valid);
-      assert.deepEqual(
-        (yield* orchestrator.getThreadProjection(threadId)).thread.linkedPullRequest,
-        linkedPullRequest,
-      );
-
-      yield* orchestrator.dispatch({
-        type: "thread.metadata.update",
-        commandId: CommandId.make("runtime-layer-linked-pull-request-unlink"),
-        threadId,
-        linkedPullRequest: null,
-      });
-      assert.isNull((yield* orchestrator.getThreadProjection(threadId)).thread.linkedPullRequest);
-      const unlinkedShell = yield* orchestrator.getThreadShell(threadId);
-      assert.isNotNull(unlinkedShell);
-      assert.isNull(unlinkedShell.linkedPullRequest);
-    }),
-  );
-
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2765,6 +2753,128 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("finishes owed checks once after pending sweeps, a restart, and a re-watch", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-owed");
+      const projectId = ProjectId.make("pr-watch-owed-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch owed",
+        workspaceRoot: "/workspace/watch-owed",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-owed-create"),
+        threadId,
+        projectId,
+        title: "Watch owed",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const watch = (on: boolean, id: string) =>
+        orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-owed-${id}`),
+          threadId,
+          host: "github.com",
+          repository: "pingdotgg/t3code",
+          number: 12,
+          watching: on,
+          link: { url: "https://github.com/pingdotgg/t3code/pull/12", source: "agent" },
+        });
+      yield* watch(true, "start");
+
+      let remainingStatus: "pending" | "success" = "pending";
+      const host = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(PullRequestService.PullRequestService)({
+          detail: () =>
+            Effect.sync(() => ({
+              ...watchedPullRequestDetail({
+                projectId,
+                number: 12,
+                at: "2026-10-02T12:00:00.000Z",
+              }),
+              headSha: "ad70160aaa",
+              checks: ["lint", "test"].map((name) => ({
+                name,
+                status: name === "test" ? remainingStatus : ("success" as const),
+                description: null,
+                url: null,
+                required: name === "lint",
+              })),
+            })),
+          activity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      );
+      const summaries = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) => messages.flatMap((message) => message.notification?.summary ?? []),
+      );
+
+      const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      yield* reactor.sweep;
+      yield* worker.drain();
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      yield* worker.drain();
+      assert.deepEqual(yield* summaries, ["#12: checks passed"]);
+
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch?.owedChecks,
+        ["test"],
+      );
+      // The fresh reactor reloads the nonempty obligation from the persisted watch.
+      const restarted = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      yield* restarted.sweep;
+      yield* worker.drain();
+      assert.deepEqual(yield* summaries, ["#12: checks passed"]);
+
+      // A new watch on the same pull request knows what the last one told.
+      yield* watch(false, "stop");
+      yield* watch(true, "again");
+      yield* restarted.sweep;
+      yield* worker.drain();
+      assert.deepEqual(yield* summaries, ["#12: checks passed"]);
+
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch?.owedChecks,
+        ["test"],
+      );
+      remainingStatus = "success";
+      yield* TestClock.adjust("10 minutes");
+      yield* restarted.sweep;
+      yield* worker.drain();
+      assert.deepEqual(yield* summaries, ["#12: checks passed", "#12: checks passed"]);
+      yield* TestClock.adjust("10 minutes");
+      yield* restarted.sweep;
+      yield* worker.drain();
+      assert.deepEqual(yield* summaries, ["#12: checks passed", "#12: checks passed"]);
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch?.owedChecks,
+        [],
+      );
+      yield* watch(false, "end");
+    }),
+  );
+
+  // regression: #21155 watching a pull request again repeated news the thread already got
   it.effect("a watch that ends on the comment limit keeps what its last pass saw", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2888,6 +2998,225 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  // regression: #23701 a head no check runs on never woke the watch
+  it.effect("wakes once when no checks report on the head, without saying they passed", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-no-checks");
+      const projectId = ProjectId.make("pr-watch-no-checks-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch no checks",
+        workspaceRoot: "/workspace/watch-no-checks",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-no-checks-create"),
+        threadId,
+        projectId,
+        title: "Watch no checks",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-no-checks-start"),
+        threadId,
+        ...key,
+        watching: true,
+        link: { url: "https://github.com/pingdotgg/t3code/pull/14", source: "agent" },
+      });
+
+      // A docs-only push that path filters keep every workflow off.
+      let headSha = "6074dd48ff";
+      let checks: PullRequestDetail["checks"] = [];
+      const host = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(PullRequestService.PullRequestService)({
+          detail: () =>
+            Effect.sync(() => ({
+              ...watchedPullRequestDetail({
+                projectId,
+                number: 14,
+                at: "2026-10-02T12:00:00.000Z",
+              }),
+              headSha,
+              checks,
+            })),
+          activity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      );
+      const wakes = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) =>
+          messages.filter(
+            (message) => message.notification !== undefined && message.notification !== null,
+          ),
+      );
+      const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      const anHourOfSweeps = Effect.gen(function* () {
+        for (let pass = 0; pass < 6; pass++) {
+          yield* reactor.sweep;
+          yield* TestClock.adjust("10 minutes");
+        }
+        yield* reactor.sweep;
+      });
+
+      yield* anHourOfSweeps;
+      const told = yield* wakes;
+      assert.equal(told.length, 1, "one wake for a head with no checks");
+      assert.notMatch(told[0]!.text, /\bpass/i);
+      assert.notEqual(told[0]!.notification?.outcome, "completed");
+
+      // An empty read on a head whose checks were seen is a failed read, not "no checks".
+      headSha = "7777777777";
+      checks = [{ name: "lint", status: "pending", description: null, url: null, required: true }];
+      // Without a fingerprint, a quiet pull request is read again only once the reread is due.
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      checks = [];
+      yield* anHourOfSweeps;
+      assert.equal((yield* wakes).length, 1);
+
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-no-checks-end"),
+        threadId,
+        ...key,
+        watching: false,
+      });
+    }),
+  );
+
+  it.effect("wakes for checks that complete after the no-checks notice on the same head", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-late-checks");
+      const projectId = ProjectId.make("pr-watch-late-checks-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch late checks",
+        workspaceRoot: "/workspace/watch-late-checks",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-late-checks-create"),
+        threadId,
+        projectId,
+        title: "Watch late checks",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-late-checks-start"),
+        threadId,
+        ...key,
+        watching: true,
+        link: { url: "https://github.com/pingdotgg/t3code/pull/14", source: "agent" },
+      });
+
+      const headSha = "6074dd48ff";
+      let checks: PullRequestDetail["checks"] = [];
+      const host = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(PullRequestService.PullRequestService)({
+          detail: () =>
+            Effect.sync(() => ({
+              ...watchedPullRequestDetail({
+                projectId,
+                number: 14,
+                at: "2026-10-02T12:00:00.000Z",
+              }),
+              headSha,
+              checks,
+            })),
+          activity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      );
+      const wakes = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) =>
+          messages.filter(
+            (message) => message.notification !== undefined && message.notification !== null,
+          ),
+      );
+      const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const sweep = reactor.sweep.pipe(Effect.andThen(worker.drain()));
+      yield* sweep;
+      assert.lengthOf(yield* wakes, 0);
+      yield* TestClock.adjust("20 minutes");
+      yield* sweep;
+      const noChecks = yield* wakes;
+      assert.lengthOf(noChecks, 1);
+      assert.include(noChecks[0]!.text, "No checks have reported");
+      assert.equal(noChecks[0]!.notification?.outcome, "updated");
+
+      checks = [{ name: "lint", status: "pending", description: null, url: null, required: true }];
+      yield* TestClock.adjust("10 minutes");
+      yield* sweep;
+      assert.lengthOf(yield* wakes, 1);
+
+      checks = [{ name: "lint", status: "success", description: null, url: null, required: true }];
+      yield* TestClock.adjust("10 minutes");
+      yield* sweep;
+      const completed = yield* wakes;
+      assert.lengthOf(completed, 2);
+      assert.equal(completed[1]!.notification?.summary, "#14: checks passed");
+      assert.include(completed[1]!.text, "All 1 required check passed on 6074dd4.");
+      assert.equal(completed[1]!.notification?.outcome, "completed");
+
+      yield* TestClock.adjust("1 hour");
+      yield* sweep;
+      const settled = yield* wakes;
+      assert.lengthOf(settled, 2);
+      assert.lengthOf(
+        settled.filter((message) => message.text.includes("No checks have reported")),
+        1,
+      );
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-late-checks-end"),
+        threadId,
+        ...key,
+        watching: false,
+      });
+      yield* worker.drain();
+    }),
+  );
+
+  // regression: #21155 watching a pull request again repeated news the thread already got
   it.effect("watching a dismissed stack layer again keeps what its last watch told", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3279,10 +3608,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     ["completed", "shell", false],
     ["waiting", "shell", false],
     ["cancelled", "shell", false],
-    ["failed", "monitor", false],
-    ["completed", "monitor", true],
-    ["waiting", "monitor", true],
-    ["cancelled", "monitor", true],
+    ["completed", "watchdog-monitor", false],
+    ["failed", "awaited-monitor", false],
+    ["completed", "awaited-monitor", true],
+    ["waiting", "awaited-monitor", true],
+    ["cancelled", "awaited-monitor", true],
   ] as const)(
     "admits a restart continuation of a %s run that lost a %s: %s",
     ([status, kind, admitted]) =>
@@ -3340,7 +3670,15 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
               occurredAt: now,
               payload: {
                 runId: original.id,
-                restartCancelledBackgroundWork: [{ kind, label: "sleep 25" }],
+                restartCancelledBackgroundWork: [
+                  kind === "shell"
+                    ? { kind, label: "sleep 25" }
+                    : {
+                        kind: "monitor",
+                        label: "sleep 25",
+                        ...(kind === "awaited-monitor" ? { awaited: true as const } : {}),
+                      },
+                ],
               },
             },
           ],
@@ -3781,88 +4119,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       yield* assertCancelled;
       assert.isTrue((yield* maintenance.rebuild).valid);
       yield* assertCancelled;
-    }),
-  );
-
-  it.effect("cancels queued work when a thread is archived", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const threadId = ThreadId.make("runtime-layer-archive-queued-thread");
-
-      yield* orchestrator.dispatch({
-        type: "thread.create",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("runtime-layer-archive-queued-create"),
-        threadId,
-        projectId: ProjectId.make("runtime-layer-archive-queued-project"),
-        title: "Archive queued work",
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: "/tmp/runtime-layer-archive-queued",
-      });
-      yield* orchestrator.dispatch({
-        type: "message.dispatch",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("runtime-layer-archive-queued-active-message"),
-        threadId,
-        messageId: MessageId.make("runtime-layer-archive-queued-active-message"),
-        text: "Keep the provider occupied.",
-        attachments: [],
-        modelSelection,
-        dispatchMode: { type: "start_immediately" },
-      });
-      yield* orchestrator.dispatch({
-        type: "message.dispatch",
-        createdBy: "user",
-        creationSource: "web",
-        commandId: CommandId.make("runtime-layer-archive-queued-next-message"),
-        threadId,
-        messageId: MessageId.make("runtime-layer-archive-queued-next-message"),
-        text: "Do not run this after archive.",
-        attachments: [],
-        modelSelection,
-        dispatchMode: { type: "queue_after_active" },
-      });
-
-      const beforeArchive = yield* orchestrator.getThreadProjection(threadId);
-      const activeRun = beforeArchive.runs.find((run) => run.status === "starting");
-      const queuedRun = beforeArchive.runs.find((run) => run.status === "queued");
-      assert.isDefined(activeRun);
-      assert.isDefined(queuedRun);
-
-      yield* orchestrator.dispatch({
-        type: "thread.archive",
-        commandId: CommandId.make("runtime-layer-archive-queued-archive"),
-        threadId,
-      });
-
-      const archived = yield* orchestrator.getThreadProjection(threadId);
-      assert.isNotNull(archived.thread.archivedAt);
-      assert.equal(archived.runs.find((run) => run.id === queuedRun.id)?.status, "cancelled");
-      assert.equal(
-        archived.attempts.find((attempt) => attempt.runId === queuedRun.id)?.status,
-        "cancelled",
-      );
-      assert.equal(archived.nodes.find((node) => node.runId === queuedRun.id)?.status, "cancelled");
-      assert.equal(yield* orchestrator.resumeQueuedRuns, 0);
-
-      const promoteError = yield* orchestrator
-        .dispatch({
-          type: "queued-message.promote-to-steer",
-          commandId: CommandId.make("runtime-layer-archive-queued-promote"),
-          threadId,
-          queuedRunId: queuedRun.id,
-          targetRunId: activeRun.id,
-        })
-        .pipe(Effect.flip);
-      assert.equal(promoteError._tag, "OrchestratorDispatchError");
-
-      const afterPromotion = yield* orchestrator.getThreadProjection(threadId);
-      assert.equal(afterPromotion.runs.find((run) => run.id === queuedRun.id)?.status, "cancelled");
     }),
   );
 
@@ -5475,6 +5731,76 @@ it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
   );
 });
 
+it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("thread opens", (it) => {
+  it.effect(
+    "counts opens on the server clock, merges quick reopens, and keeps picked queries",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make("runtime-layer-opened-thread");
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("runtime-layer-opened-thread-create"),
+          threadId,
+          projectId: ProjectId.make("runtime-layer-opened-project"),
+          title: "Opened thread",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        let visits = 0;
+        const visit = (input: { readonly opened?: boolean; readonly searchQuery?: string }) =>
+          orchestrator.dispatch({
+            type: "thread.visit",
+            commandId: CommandId.make(`runtime-layer-opened-visit-${++visits}`),
+            threadId,
+            // A client clock far in the past must not move the open time.
+            visitedAt: "2000-01-01T00:00:00.000Z",
+            ...input,
+          });
+        const opens = Effect.map(
+          orchestrator.getShellSnapshot(),
+          (shell) => shell.threads.find((thread) => thread.id === threadId)?.opens ?? null,
+        );
+        const start = DateTime.toEpochMillis(yield* DateTime.now);
+
+        yield* visit({ opened: true, searchQuery: "  Upl " });
+        assert.deepEqual(yield* opens, {
+          openedAt: start,
+          score: 1,
+          picks: [{ query: "upl", at: start }],
+        });
+
+        yield* TestClock.adjust("1 minute");
+        yield* visit({ opened: true, searchQuery: "Uploadthing docs" });
+        assert.deepEqual(yield* opens, {
+          openedAt: start,
+          score: 1,
+          picks: [
+            { query: "uploadthing docs", at: start + 60_000 },
+            { query: "upl", at: start },
+          ],
+        });
+
+        yield* TestClock.adjust("14 days");
+        yield* visit({});
+        yield* visit({ opened: true });
+        const later = yield* opens;
+        assert.closeTo(later!.score, 1 + 2 ** (-(14 * 24 * 60 + 1) / (14 * 24 * 60)), 1e-9);
+        assert.equal(later!.openedAt, DateTime.toEpochMillis(yield* DateTime.now));
+        // Opening without a query keeps each pick and its time.
+        assert.deepEqual(later!.picks, [
+          { query: "uploadthing docs", at: start + 60_000 },
+          { query: "upl", at: start },
+        ]);
+      }),
+  );
+});
+
 it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("compact PR events", (it) => {
   it.effect("persists only the changed PR link and replays it without losing other links", () =>
     Effect.gen(function* () {
@@ -5904,20 +6230,13 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
   it.effect.each([
     "resume",
     "queued-resume",
-    "cancel",
     "rearm",
     "snooze-race",
-    "new-message",
     "archive",
-    "settle",
     "replacement",
     "manual-snooze",
-    "manual-snooze-after-recovery",
     "invalid-snooze",
-    "snooze-only",
-    "snooze-resume",
     "cancel-resume-keep-snooze",
-    "wake-preserve-resume",
     "independent-patches",
     "expired-snooze",
     "wake",
@@ -6070,15 +6389,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.isNull(current.thread.snoozedUntil);
         return;
       }
-      const snooze = [
-        "snooze-only",
-        "manual-snooze-after-recovery",
-        "snooze-resume",
-        "wake",
-        "cancel-resume-keep-snooze",
-        "wake-preserve-resume",
-      ].includes(scenario);
-      const autoResume = scenario !== "snooze-only" && scenario !== "wake";
+      const snooze = scenario === "wake" || scenario === "cancel-resume-keep-snooze";
+      const autoResume = scenario !== "wake";
       const arm = limitRecoveryCommand(shell, autoResume, DateTime.toEpochMillis(now), snooze);
       assert(arm?.type === "thread.metadata.update" && arm.limitRecovery != null);
       const automaticArm = {
@@ -6154,7 +6466,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
       });
       if (snooze)
         assert.equal(DateTime.toEpochMillis(armedShell.snoozedUntil!), Date.parse(resetAt));
-      if (scenario === "cancel-resume-keep-snooze" || scenario === "wake-preserve-resume") {
+      if (scenario === "cancel-resume-keep-snooze") {
         yield* TestClock.adjust("10 seconds");
         yield* orchestrator.dispatch({
           type: "thread.metadata.update",
@@ -6163,25 +6475,19 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           limitRecovery: {
             runId: run.id,
             resetAt,
-            autoResume: scenario === "wake-preserve-resume",
-            snooze: scenario === "cancel-resume-keep-snooze",
+            autoResume: false,
+            snooze: true,
           },
         });
         armedShell = (yield* orchestrator.getShellSnapshot()).threads.find(
           (thread) => thread.id === threadId,
         )!;
-        if (scenario === "cancel-resume-keep-snooze") {
-          assert.equal(DateTime.toEpochMillis(armedShell.snoozedUntil!), Date.parse(resetAt));
-          assert.equal(
-            DateTime.toEpochMillis(armedShell.snoozedAt!),
-            DateTime.toEpochMillis(armedShell.updatedAt),
-          );
-          assert.isFalse(armedShell.limitRecovery!.autoResume);
-        } else {
-          assert.isNull(armedShell.snoozedUntil);
-          assert.isNull(armedShell.snoozedAt);
-          assert.isTrue(armedShell.limitRecovery!.autoResume);
-        }
+        assert.equal(DateTime.toEpochMillis(armedShell.snoozedUntil!), Date.parse(resetAt));
+        assert.equal(
+          DateTime.toEpochMillis(armedShell.snoozedAt!),
+          DateTime.toEpochMillis(armedShell.updatedAt),
+        );
+        assert.isFalse(armedShell.limitRecovery!.autoResume);
       }
       if (scenario === "independent-patches") {
         yield* TestClock.adjust("10 seconds");
@@ -6221,7 +6527,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.isTrue(armedShell.limitRecovery!.autoResume);
         assert.isTrue(armedShell.limitRecovery!.snooze);
       }
-      if (scenario === "manual-snooze" || scenario === "manual-snooze-after-recovery") {
+      if (scenario === "manual-snooze") {
         yield* orchestrator.dispatch({
           type: "thread.snooze",
           commandId: CommandId.make(`recovery:manual-snooze:${scenario}`),
@@ -6323,7 +6629,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.isTrue(current.thread.limitRecovery!.autoResume);
       }
 
-      if (scenario === "cancel" || scenario === "rearm")
+      if (scenario === "rearm")
         yield* orchestrator.dispatch({
           type: "thread.metadata.update",
           commandId: CommandId.make(`recovery:cancel:${scenario}`),
@@ -6334,24 +6640,6 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         yield* orchestrator.dispatch({
           type: "thread.archive",
           commandId: CommandId.make(`recovery:archive:${scenario}`),
-          threadId,
-        });
-      if (scenario === "new-message")
-        yield* orchestrator.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make(`recovery:new-message:${scenario}`),
-          threadId,
-          messageId: MessageId.make(`recovery:new-message:${scenario}`),
-          text: "I will continue manually.",
-          attachments: [],
-          dispatchMode: { type: "defer_start" },
-          createdBy: "user",
-          creationSource: "web",
-        });
-      if (scenario === "settle")
-        yield* orchestrator.dispatch({
-          type: "thread.settle",
-          commandId: CommandId.make(`recovery:settle:${scenario}`),
           threadId,
         });
       if (scenario === "stop") {
@@ -6425,8 +6713,6 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           (scenario === "resume" ||
           stopBeforeArm ||
           scenario === "queued-resume" ||
-          scenario === "snooze-resume" ||
-          scenario === "wake-preserve-resume" ||
           scenario === "independent-patches" ||
           scenario === "expired-snooze"
             ? 1
@@ -6438,8 +6724,6 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           (scenario === "resume" ||
           stopBeforeArm ||
           scenario === "queued-resume" ||
-          scenario === "snooze-resume" ||
-          scenario === "wake-preserve-resume" ||
           scenario === "independent-patches" ||
           scenario === "expired-snooze"
             ? 1

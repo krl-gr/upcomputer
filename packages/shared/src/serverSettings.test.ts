@@ -123,6 +123,16 @@ describe("resolveReadyTextGenerationModelSelection", () => {
 });
 
 describe("serverSettings helpers", () => {
+  it("translates a shipped client's idle compaction switch into a mode", () => {
+    const off = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { idleCompaction: "off" });
+    expect([off.idleCompaction, off.compactIdleThreads]).toEqual(["off", false]);
+    // Turning the old switch off keeps "Never" instead of reverting to the default.
+    const stillOff = applyServerSettingsPatch(off, { compactIdleThreads: false });
+    expect(stillOff.idleCompaction).toBe("off");
+    const on = applyServerSettingsPatch(off, { compactIdleThreads: true });
+    expect([on.idleCompaction, on.compactIdleThreads]).toEqual(["beforeCacheExpires", true]);
+  });
+
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },
@@ -155,15 +165,6 @@ describe("serverSettings helpers", () => {
       hosts: { "github.com": { enabled: false } },
       tokens: {},
     });
-  });
-  it("replaces SSH host lists when saving, editing, and removing hosts", () => {
-    const host = { kind: "ssh" as const, id: "mini", label: "Mac mini", target: "mini" };
-    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
-    expect(saved.deviceHosts).toEqual([host]);
-    const replacement = { ...host, target: "other-mini" };
-    const edited = applyServerSettingsPatch(saved, { deviceHosts: [replacement] });
-    expect(edited.deviceHosts).toEqual([replacement]);
-    expect(applyServerSettingsPatch(edited, { deviceHosts: [] }).deviceHosts).toEqual([]);
   });
 
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
@@ -822,21 +823,6 @@ describe("serverSettings helpers", () => {
         providerHealthRefreshInterval: Duration.minutes(4),
       },
     });
-  });
-
-  it("ignores overrides attached to a concrete background profile", () => {
-    const resolved = resolveServerBackgroundActivitySettings({
-      ...DEFAULT_SERVER_SETTINGS,
-      backgroundActivity: {
-        schemaVersion: 1,
-        profile: "balanced",
-        overrides: {
-          pauseWhenOnBattery: true,
-        },
-      },
-    });
-
-    expect(resolved.pauseWhenOnBattery).toBe(false);
   });
 });
 

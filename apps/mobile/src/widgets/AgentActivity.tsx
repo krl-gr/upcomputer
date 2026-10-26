@@ -1,12 +1,15 @@
 import { HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
 import type { ComponentProps } from "react";
 import {
+  accessibilityElement,
+  accessibilityLabel,
   activityBackgroundTint,
   font,
   foregroundStyle,
   frame,
   layoutPriority,
   lineLimit,
+  minimumScaleFactor,
   padding,
   resizable,
   widgetURL,
@@ -149,6 +152,7 @@ export function AgentActivity(
     : environment.isStale
       ? "Out of date"
       : `${props.activeCount} active`;
+  const showCompactGlyph = !attentionRow && !failedRow && !allDone && !environment.isStale;
   const summary = attentionSuffix || activeLabel;
 
   // Any registered scheme variant routes back to this app; taps are delivered
@@ -177,7 +181,8 @@ export function AgentActivity(
         return "clock.arrow.circlepath";
       case "running":
       default:
-        return "arrow.triangle.2.circlepath";
+        // Matches the thread list's Working indicator.
+        return "circle.dashed";
     }
   };
 
@@ -326,11 +331,27 @@ export function AgentActivity(
       </VStack>
     ),
     compactLeading: renderLogo(14, tint, linkModifiers),
-    compactTrailing: (
+    // While agents are only working, stay quiet: the thread list's Working
+    // glyph marks the activity without a count. Labels appear only for
+    // attention or outcomes.
+    compactTrailing: showCompactGlyph ? (
+      <HStack
+        modifiers={[
+          padding({ trailing: 2 }),
+          accessibilityElement("ignore"),
+          accessibilityLabel(agentsLabel),
+          ...linkModifiers,
+        ]}
+      >
+        {renderGlyph(phaseSymbol(heroRow?.phase ?? "running"), 14, tint)}
+      </HStack>
+    ) : (
       <Text
         modifiers={[
           font({ weight: "semibold", size: 11 }),
           foregroundStyle(tint),
+          lineLimit(1),
+          minimumScaleFactor(0.5),
           ...linkModifiers,
         ]}
       >
@@ -338,13 +359,14 @@ export function AgentActivity(
           ? attentionRow.phase === "waiting_for_approval"
             ? "Approval"
             : "Input"
-          : activeLabel}
+          : failedRow
+            ? "Failed"
+            : activeLabel}
       </Text>
     ),
-    minimal:
-      (attentionRow || failedRow || allDone) && heroRow
-        ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase), linkModifiers)
-        : renderLogo(11, tint, linkModifiers),
+    minimal: heroRow
+      ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase), linkModifiers)
+      : renderLogo(11, tint, linkModifiers),
     expandedLeading: (
       <HStack spacing={5} alignment="center" modifiers={[padding({ leading: 4, vertical: 4 })]}>
         {renderLogo(15, tint)}

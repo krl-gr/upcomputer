@@ -4,10 +4,11 @@ import {
   ComposerContextId,
   EnvironmentId,
   MessageId,
+  ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
-import { appendPendingThreadMessages } from "./pending-thread-feed";
+import { appendPendingThreadMessages, isCompactionCommandFeedEntry } from "./pending-thread-feed";
 
 const pending = (id: string): QueuedThreadMessage => ({
   environmentId: EnvironmentId.make("env"),
@@ -20,6 +21,53 @@ const pending = (id: string): QueuedThreadMessage => ({
 });
 
 describe("pending timeline messages", () => {
+  it.each([false, true])(
+    "keeps a queued compact command in the pending message row (attachment: %s)",
+    (withAttachment) => {
+      const queued = {
+        ...pending("compact"),
+        text: "/compact",
+        attachments: withAttachment
+          ? [
+              {
+                id: "image-1",
+                type: "image" as const,
+                name: "photo.png",
+                mimeType: "image/png",
+                sizeBytes: 3,
+                fileUri: "file:///documents/photo.png",
+                previewUri: "file:///documents/photo.png",
+              },
+            ]
+          : [],
+      };
+      const entry = appendPendingThreadMessages([], [], [queued])[0]!;
+      expect(isCompactionCommandFeedEntry(entry)).toBe(false);
+      expect(entry.pendingMessage).toEqual(queued);
+      if (!withAttachment) {
+        expect(isCompactionCommandFeedEntry({ ...entry, pendingMessage: undefined })).toBe(true);
+      }
+    },
+  );
+
+  it("marks the synthetic creation prompt pending without duplicating it", () => {
+    const queued = {
+      ...pending("creation"),
+      creation: {
+        projectId: ProjectId.make("project"),
+        workspaceMode: "local" as const,
+        branch: "main",
+        worktreePath: null,
+      },
+    };
+    const prompt = appendPendingThreadMessages([], [], [queued])[0]!;
+    const synthetic = { ...prompt, pendingMessage: undefined };
+    const result = appendPendingThreadMessages([synthetic], [synthetic], [queued]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.pendingMessage).toEqual(queued);
+    expect(result[0]?.acknowledged).toBe(false);
+  });
+
   it("retains context records while a message is waiting for delivery", () => {
     const record = {
       version: 1 as const,

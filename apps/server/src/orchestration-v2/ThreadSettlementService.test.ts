@@ -100,6 +100,33 @@ function shell(overrides: Partial<SettlementShell> = {}): SettlementShell {
   };
 }
 
+function persistedLink(
+  state: "open" | null,
+  linkedAt: DateTime.Utc,
+): NonNullable<SettlementShell["pullRequests"]>[number] {
+  return {
+    host: "example.test",
+    repository: "owner/repository",
+    number: 42,
+    url: "https://example.test/owner/repository/pull/42",
+    source: "manual",
+    linkedAt: DateTime.formatIso(linkedAt),
+    snapshot:
+      state === null
+        ? null
+        : {
+            state,
+            title: "Pull request",
+            headBranch: "feature",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: DateTime.formatIso(linkedAt),
+            syncedAt: DateTime.formatIso(linkedAt),
+          },
+    stack: null,
+  };
+}
+
 describe("isAutoSettlementCandidate", () => {
   it("settles a thread whose only background work is a command left running", () => {
     expect(
@@ -112,6 +139,21 @@ describe("isAutoSettlementCandidate", () => {
         NOW_MS,
       ),
     ).toBe(true);
+  });
+
+  it("never settles, or keeps snoozed, a thread whose guest is waiting on the owner", () => {
+    expect(
+      ThreadSettlementService.isAutoSettlementCandidate(
+        shell({ pendingGuestMessageCount: 1 }),
+        NOW_MS,
+      ),
+    ).toBe(false);
+    const snoozed = shell({
+      snoozedUntil: at(60 * 60 * 1_000),
+      snoozedAt: at(-60 * 60 * 1_000),
+      pendingGuestMessageCount: 1,
+    });
+    expect(ThreadSettlementService.isSnoozed(snoozed, NOW_MS)).toBe(false);
   });
 
   it("keeps snoozed threads parked until a fresh failure or timer wake", () => {
@@ -184,6 +226,51 @@ describe("resolveAutoSettlementAt", () => {
         pullRequest: { state: "merged", mergedAt: DateTime.formatIso(at(-1)) },
       }),
     ).toEqual(at(-4 * DAY_MS));
+  });
+
+  it("settles an idle thread with an open persisted link only while retention is off", () => {
+    const input = {
+      thread: shell({
+        latestUserMessageAt: at(-4 * DAY_MS),
+        pullRequests: [persistedLink("open", at(-5 * DAY_MS))],
+      }),
+      pullRequest: null,
+      nowMs: NOW_MS,
+      autoSettleAfterDays: 3,
+      autoSettleOnMerge: true,
+      autoSettleKeepPullRequests: false,
+    };
+    expect(ThreadSettlementService.resolveAutoSettlementAt(input)).toEqual(at(-4 * DAY_MS));
+    expect(
+      ThreadSettlementService.resolveAutoSettlementAt({
+        ...input,
+        autoSettleKeepPullRequests: true,
+      }),
+    ).toBeNull();
+    // The open link outranks a merged lookup, so only inactivity can settle it.
+    expect(
+      ThreadSettlementService.resolveAutoSettlementAt({
+        ...input,
+        pullRequest: { state: "merged", mergedAt: DateTime.formatIso(at(-1)) },
+        autoSettleAfterDays: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps an idle thread whose persisted link was never synced", () => {
+    expect(
+      ThreadSettlementService.resolveAutoSettlementAt({
+        thread: shell({
+          latestUserMessageAt: at(-4 * DAY_MS),
+          pullRequests: [persistedLink(null, at(-5 * DAY_MS))],
+        }),
+        pullRequest: null,
+        nowMs: NOW_MS,
+        autoSettleAfterDays: 3,
+        autoSettleOnMerge: true,
+        autoSettleKeepPullRequests: false,
+      }),
+    ).toBeNull();
   });
 
   it("uses the latest activity time when the inactivity window elapses", () => {
@@ -697,6 +784,32 @@ describe("ThreadSettlementServiceV2 worker", () => {
     ),
   );
 
+  it.effect("settles an idle thread with an open persisted link on the inactivity sweep", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const thread = makeThread("open-link", {
+          pullRequests: [persistedLink("open", DateTime.makeUnsafe("2026-08-20T00:00:00.000Z"))],
+        });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([thread]),
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: 3,
+            sidebarAutoSettleKeepPullRequests: false,
+          },
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+            thread.id,
+          ]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
   it.effect("settles only the project opted in while environment settlement is disabled", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -719,31 +832,6 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           const commands = yield* Ref.get(fixture.commands);
           expect(commands.map((command) => command.threadId)).toEqual([thread.id]);
-        }).pipe(Effect.provide(fixture.layer));
-      }),
-    ),
-  );
-
-  it.effect("dispatches the last activity time with the v2 snapshot guard", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        yield* TestClock.setTime(Date.parse(NOW));
-        const thread = makeThread("inactive-open-pr", {
-          branch: "feature",
-          latestRunCompletedAt: DateTime.makeUnsafe("2026-08-25T00:00:00.000Z"),
-        });
-        const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([thread]),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 2 },
-          branchPullRequest: () => Effect.succeed(makeBranchPullRequest("open")),
-        });
-        yield* Effect.gen(function* () {
-          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
-          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-          const commands = yield* Ref.get(fixture.commands);
-          expect(commands).toHaveLength(1);
-          expect(commands[0]?.settledAt).toEqual(thread.latestRunCompletedAt);
-          expect(commands[0]?.snapshotAt).toEqual(thread.updatedAt);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

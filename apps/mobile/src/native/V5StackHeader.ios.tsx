@@ -5,6 +5,7 @@ import type {
 } from "@react-navigation/native-stack";
 import { isValidElement, useEffect, useRef } from "react";
 import { StyleSheet } from "react-native";
+import { isDuoDevice } from "../lib/device-type";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
 import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
 import {
@@ -13,6 +14,7 @@ import {
   type HeaderBarButtonMailSearchToolbarItem,
   type SearchBarCommands,
   type StackHeaderConfigProps,
+  type StackHeaderMinimizationBehaviorIOS,
   type StackHeaderMenuElementIOS,
   type StackHeaderMenuIOS,
   type HeaderBarButtonItemWithMenu,
@@ -26,6 +28,7 @@ type ToolbarItem =
   | HeaderBarButtonSearchBarPlacementItem;
 type Options = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor" | "navigator";
+  readonly unstable_headerMinimizationBehavior?: StackHeaderMinimizationBehaviorIOS;
   readonly headerSubtitle?: string;
   readonly unstable_headerSubtitle?: string;
   readonly headerSubtitleStyle?: { color?: string; fontSize?: number; fontFamily?: string };
@@ -128,6 +131,8 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
           axisBehavior: item.axisBehavior,
           icon: convertIcon(item.icon),
           onPress: item.disabled ? undefined : item.onPress,
+          visibilityPriority:
+            item.visibilityPriority === "default" ? "standard" : item.visibilityPriority,
           variant: item.variant,
           tintColor: item.tintColor,
           hidesSharedBackground: item.hidesSharedBackground,
@@ -139,36 +144,32 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
 export function V5StackHeader(props: {
   readonly options: Options;
   readonly canGoBack: boolean;
-  readonly primary?: boolean;
-  readonly sidebarFilter?: NativeStackHeaderItemMenu;
+  /** Workspace split columns share the vertical bar with the workspace tab bar. */
+  readonly column?: "primary" | "detail";
+  /** The workspace's compose action, shown as its own group in this column's bar. */
+  readonly onCompose?: () => void;
 }) {
   const { options } = props;
   const theme = useMobileNavigationTheme();
   const nativeMetrics = useNativeLayoutMetrics();
   const deviceType = useDeviceType();
   const searchRef = useRef<SearchBarCommands>(null);
-  const usesDuoToolbarRail =
-    deviceType === "duo-unfolded" && (nativeMetrics?.verticalBarEdge ?? "none") !== "none";
   const itemProps = { tintColor: options.headerTintColor, canGoBack: props.canGoBack };
   const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading");
-  const trailingItems = [
-    ...(options.unstable_headerCenterItems?.() ?? []),
-    ...(options.unstable_headerRightItems?.(itemProps) ?? []),
-  ];
-  // Keep the sidebar's filter actions when UIKit moves the menu to the detail rail.
-  if (usesDuoToolbarRail && !props.primary && props.sidebarFilter) {
-    trailingItems.push({
-      ...props.sidebarFilter,
-      identifier: "home-filter",
-      axisBehavior: "verticalPreferred",
-    });
-  }
-  const trailing = convertItems(trailingItems, "trailing");
+  const trailing = convertItems(
+    [
+      ...(options.unstable_headerCenterItems?.() ?? []),
+      ...(options.unstable_headerRightItems?.(itemProps) ?? []),
+    ],
+    "trailing",
+  );
   const toolbar = options.unstable_headerToolbarItems?.() ?? [];
   const mailSearch = toolbar.find(
     (item): item is HeaderBarButtonMailSearchToolbarItem => item.type === "mailSearchToolbar",
   );
   const bottomSearch = Boolean(mailSearch) && deviceType !== "pad";
+  // A vertical bar keeps fixed spaces at full length and separates items itself.
+  const spacesSearch = bottomSearch && (nativeMetrics?.verticalBarEdge ?? "none") === "none";
   const bottom = toolbar.flatMap<HeaderItem>((item, index) => {
     if (item.type === "mailSearchToolbar") return [];
     if (item.type === "searchBarPlacement")
@@ -180,7 +181,6 @@ export function V5StackHeader(props: {
       bottom.push({
         type: "item",
         id: mailSearch.filterButtonId ?? "filter",
-        axisBehavior: bottomSearch ? "horizontalOnly" : undefined,
         icon: {
           type: "sfSymbol",
           name: mailSearch.filterSystemImageName ?? "line.3.horizontal.decrease",
@@ -188,36 +188,48 @@ export function V5StackHeader(props: {
         menu: convertMenu(mailSearch.filterMenu, "filter-menu"),
       });
     if (bottomSearch) {
-      if (bottom.length)
+      if (spacesSearch && bottom.length)
         bottom.push({ type: "spacer", id: "before-search", sizing: "fixed", width: 8 });
-      bottom.push({
-        type: "item",
-        id: "home-search",
-        axisBehavior: "horizontalOnly",
-        searchBarPlacement: true,
-      });
-      if (mailSearch.onComposePress)
+      bottom.push({ type: "item", id: "home-search", searchBarPlacement: true });
+      if (spacesSearch && mailSearch.onComposePress)
         bottom.push({ type: "spacer", id: "after-search", sizing: "fixed", width: 8 });
     }
     if (mailSearch.onComposePress)
       bottom.push({
         type: "item",
         id: mailSearch.composeButtonId ?? "compose",
-        axisBehavior: bottomSearch ? "horizontalOnly" : undefined,
         identifier: "workspace-trailing-action",
         icon: { type: "sfSymbol", name: mailSearch.composeSystemImageName ?? "square.and.pencil" },
         onPress: mailSearch.onComposePress,
       });
   }
-  // Duo keeps compose at the bottom of a visible sidebar. On a single panel,
-  // the primary column owns the rail too; its separate UIToolbar is inaccessible.
+  // UIKit doesn't stack a column's toolbar against the workspace tab bar, which owns the
+  // bottom of the vertical bar and draws over it. Those columns keep the group in their
+  // navigation items. Integrated search stays in the column's horizontal bottom toolbar.
   if (
+    props.column &&
     nativeMetrics &&
     nativeMetrics.verticalBarEdge !== "none" &&
-    (!props.primary || nativeMetrics.horizontalSizeClass === "compact")
+    (props.column === "detail" ||
+      (nativeMetrics.horizontalSizeClass === "compact" &&
+        !toolbar.some((item) => item.type === "searchBarPlacement")))
   ) {
+    if (trailing.length && bottom.length)
+      trailing.push({ type: "spacer", id: "toolbar-group", sizing: "fixed", width: 8 });
     trailing.push(...bottom);
     bottom.length = 0;
+  }
+  if (props.onCompose) {
+    const compose: HeaderItem = {
+      type: "item",
+      id: "workspace-compose",
+      title: "New task",
+      icon: { type: "sfSymbol", name: "square.and.pencil" },
+      onPress: props.onCompose,
+    };
+    if (trailing.length)
+      trailing.push({ type: "spacer", id: "compose-group", sizing: "fixed", width: 8 });
+    trailing.push(compose);
   }
   const left = options.headerLeft?.(itemProps);
   const right = options.headerRight?.(itemProps);
@@ -232,20 +244,9 @@ export function V5StackHeader(props: {
       : undefined;
   const searchOptions = options.headerSearchBarOptions;
   const autofocusRef = searchOptions?.ref ?? searchRef;
-  const searchHasFocus = useRef(false);
   useEffect(() => {
-    searchHasFocus.current = false;
     if (!searchOptions?.autoFocus) return;
-    // UIKit attaches integrated search during the toolbar transition. Native
-    // onFocus acknowledges readiness; a single frame can reach it too early.
-    const deadline = Date.now() + 500;
-    let frame = 0;
-    const focusWhenAttached = () => {
-      if (searchHasFocus.current) return;
-      autofocusRef.current?.focus();
-      if (Date.now() < deadline) frame = requestAnimationFrame(focusWhenAttached);
-    };
-    frame = requestAnimationFrame(focusWhenAttached);
+    const frame = requestAnimationFrame(() => autofocusRef.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [searchOptions?.autoFocus, autofocusRef]);
   const titleStyle = StyleSheet.flatten(options.headerTitleStyle);
@@ -273,6 +274,15 @@ export function V5StackHeader(props: {
       backButtonHidden={options.headerBackVisible === false}
       ios={{
         navigationItemStyle: options.unstable_navigationItemStyle,
+        // Opt-ins apply only where the Duo is short: folded, or held landscape. The Duo
+        // resolves `automatic` to minimize on scroll, so the tall unfolded display opts out.
+        minimizationBehavior: !isDuoDevice(deviceType)
+          ? undefined
+          : deviceType === "duo-unfolded" &&
+              nativeMetrics &&
+              nativeMetrics.height > nativeMetrics.width
+            ? "never"
+            : options.unstable_headerMinimizationBehavior,
         tintColor: options.headerTintColor,
         searchBar:
           mailSearch || searchOptions ? (
@@ -285,7 +295,6 @@ export function V5StackHeader(props: {
               placement={bottomSearch ? "integrated" : (searchOptions?.placement ?? "automatic")}
               placeholder={mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search"}
               onFocus={(event) => {
-                searchHasFocus.current = true;
                 searchOptions?.onFocus?.(event);
               }}
               onChangeText={(event) => {

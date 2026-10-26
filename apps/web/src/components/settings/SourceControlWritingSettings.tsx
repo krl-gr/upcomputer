@@ -399,8 +399,6 @@ export function SourceControlWritingSettingsSection() {
                   instanceId={activeSelection.instanceId}
                   models={writerInstanceEntry.models}
                   model={activeSelection.model}
-                  prompt=""
-                  onPromptChange={() => {}}
                   modelOptions={activeSelection.options ?? []}
                   allowPromptInjectedEffort={false}
                   planModeEnabled={
@@ -508,8 +506,6 @@ export function SourceControlWritingSettingsSection() {
                       instanceId={reviewGuideSelection.instanceId}
                       models={reviewGuideInstanceEntry.models}
                       model={reviewGuideSelection.model}
-                      prompt=""
-                      onPromptChange={() => {}}
                       modelOptions={reviewGuideSelection.options ?? []}
                       allowPromptInjectedEffort={false}
                       planModeEnabled={

@@ -60,6 +60,8 @@ import type {
   PullRequestHeads,
   PullRequestPreview as PullRequestPreviewQuery,
   PullRequestSubject,
+  RepositoryAuthors,
+  RepositoryLabels,
   ReviewerCandidates,
   ViewerPermissions,
 } from "./pullRequestReads.graphql.ts";
@@ -307,6 +309,8 @@ const ReviewSubmissionSchema = Schema.Struct({
   comments: Schema.Array(
     Schema.Struct({
       path: Schema.String,
+      start_line: Schema.optional(Schema.Int),
+      start_side: Schema.optional(Schema.Literals(["LEFT", "RIGHT"])),
       line: Schema.Int,
       side: Schema.Literals(["LEFT", "RIGHT"]),
       body: Schema.String,
@@ -344,11 +348,19 @@ export function buildReviewSubmission(input: {
   return {
     event: REVIEW_EVENTS[input.verdict],
     body: input.body,
-    comments: input.comments.map((comment) => ({
-      path: comment.path,
-      ...gitHubReviewPosition(comment.position),
-      body: comment.body,
-    })),
+    comments: input.comments.map((comment) => {
+      const end = gitHubReviewPosition(comment.position);
+      const start =
+        comment.startPosition === undefined ? null : gitHubReviewPosition(comment.startPosition);
+      // GitHub refuses a start that is the end itself, so a one-line range is sent as one line.
+      const ranged = start !== null && (start.line !== end.line || start.side !== end.side);
+      return {
+        path: comment.path,
+        ...(ranged ? { start_line: start.line, start_side: start.side } : {}),
+        ...end,
+        body: comment.body,
+      };
+    }),
   };
 }
 
@@ -1655,6 +1667,36 @@ export function toLabelCandidates(
       ...candidates.values(),
     ],
     truncated: repository.labels?.pageInfo.hasNextPage === true,
+  };
+}
+
+export function toRepositoryLabels(
+  result: RepositoryLabels.Result,
+): { readonly items: ReadonlyArray<PullRequestLabel>; readonly truncated: boolean } | null {
+  const repository = result.repository;
+  if (repository == null) return null;
+  return {
+    items: nodesOf(repository.labels).flatMap((node) => {
+      const name = trimmed(node.name);
+      return name === null ? [] : [{ name, color: trimmed(node.color) }];
+    }),
+    truncated: repository.labels?.pageInfo.hasNextPage === true,
+  };
+}
+
+export function toRepositoryAuthors(
+  result: RepositoryAuthors.Result,
+): { readonly items: ReadonlyArray<PullRequestActor>; readonly truncated: boolean } | null {
+  const repository = result.repository;
+  if (repository == null) return null;
+  return {
+    items: nodesOf(repository.mentionableUsers).flatMap((node) => {
+      const login = trimmed(node.login);
+      return login === null
+        ? []
+        : [{ login, name: trimmed(node.name), avatarUrl: trimmed(node.avatarUrl) }];
+    }),
+    truncated: repository.mentionableUsers.pageInfo.hasNextPage,
   };
 }
 
