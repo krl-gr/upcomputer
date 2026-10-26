@@ -2,6 +2,8 @@ import * as NodeCrypto from "node:crypto";
 import { CommandId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotAppearance,
+  BotAppearanceStyle,
+  BotPortraitId,
   BotWriteInput,
   defaultBotAppearance,
   BotMemory,
@@ -38,13 +40,22 @@ const now = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeProjects = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(ProjectId)));
 const decodeMemories = Schema.decodeUnknownEffect(Schema.Array(BotMemory));
 const decodeProposals = Schema.decodeUnknownEffect(Schema.Array(BotMemoryProposal));
-// A saved accessory may since have been retired; such bots draw without one.
+// A saved accessory, portrait or style may since have been retired; such bots draw without one.
 const decodeAppearance = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
-    Schema.NullOr(Schema.Struct({ ...BotAppearance.fields, accessory: Schema.String })),
+    Schema.NullOr(
+      Schema.Struct({
+        ...BotAppearance.fields,
+        accessory: Schema.String,
+        portrait: Schema.optional(Schema.String),
+        style: Schema.optional(Schema.String),
+      }),
+    ),
   ),
 );
 const isAccessory = Schema.is(BotAppearance.fields.accessory);
+const isPortrait = Schema.is(BotPortraitId);
+const isStyle = Schema.is(BotAppearanceStyle);
 const decodeBotWrite = Schema.decodeUnknownEffect(BotWriteInput);
 // `seen` holds entries already delivered that share the cursor's millisecond.
 const MemoryMarker = Schema.fromJsonString(
@@ -143,8 +154,11 @@ const make = Effect.gen(function* () {
       return {
         agent: agent.value,
         appearance: appearance && {
-          ...appearance,
+          ...(isStyle(appearance.style) ? { style: appearance.style } : {}),
+          shape: appearance.shape,
+          color: appearance.color,
           accessory: isAccessory(appearance.accessory) ? appearance.accessory : "none",
+          ...(isPortrait(appearance.portrait) ? { portrait: appearance.portrait } : {}),
         },
         threadId: ThreadId.make(row.threadId),
         projectId: ProjectId.make(row.projectId),
@@ -320,8 +334,9 @@ const make = Effect.gen(function* () {
         if (Option.isSome(yield* repository.findLatestAgentRunByThreadId({ threadId })))
           return yield* fail("A task run cannot become a bot chat.");
       }
-      if (existing) {
-        yield* ensureThread(yield* decode(existing), existing.adopted === 1);
+      const previous = existing ? yield* decode(existing) : null;
+      if (existing && previous) {
+        yield* ensureThread(previous, existing.adopted === 1);
         const state = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]);
         const moving = state.thread.projectId !== input.projectId;
         // Other settings apply from the bot's next turn or task run, so they save at
@@ -356,7 +371,12 @@ const make = Effect.gen(function* () {
           ? existing
             ? undefined
             : defaultBotAppearance(input.id)
-          : input.appearance;
+          : input.appearance && {
+              // Older clients send only the shape character; keep the choices they cannot see.
+              ...(previous?.appearance?.style ? { style: previous.appearance.style } : {}),
+              ...(previous?.appearance?.portrait ? { portrait: previous.appearance.portrait } : {}),
+              ...input.appearance,
+            };
       const allowed = JSON.stringify([...new Set(input.allowedProjectIds)]);
       const appearanceJson = appearance == null ? null : JSON.stringify(appearance);
       const at = yield* now;

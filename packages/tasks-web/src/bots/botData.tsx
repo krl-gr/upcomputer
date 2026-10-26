@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
-  defaultBotAppearance,
+  defaultBotPortrait,
   type Bot,
   type BotAppearance,
   type TaskAgentId,
@@ -13,6 +13,7 @@ import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { readTasksWebClient, useTasksWebAccess } from "../environmentApi.ts";
 import { botChatStatus, botStatus, botTaskStatus, type BotCharacterState } from "./botStatus.ts";
+import { BotPortrait } from "./portraits/BotPortrait.tsx";
 
 interface BotList {
   readonly bots: ReadonlyArray<Bot>;
@@ -139,7 +140,10 @@ export function botPage(
   return { to: "/bots", search: { environment: environmentId, ...target } } as never;
 }
 
-/** The saved appearance, or the default look for bots that never chose one. */
+/**
+ * The face the bot's style picks: its shape character, or its picked portrait, or for bots
+ * that never picked one the portrait its id derives.
+ */
 export function BotAvatar({
   id,
   appearance,
@@ -151,12 +155,22 @@ export function BotAvatar({
   readonly state: BotCharacterState;
   readonly size: number;
 }) {
+  if (appearance?.style === "character")
+    return (
+      <ConfigurableBotCharacter
+        appearance={appearance}
+        state={state}
+        // The character leaves more room around its body than a portrait does, so it is
+        // drawn a fifth larger to look the same size.
+        size={Math.round(size * 1.2)}
+        decorative
+      />
+    );
   return (
-    <ConfigurableBotCharacter
-      appearance={appearance ?? defaultBotAppearance(id)}
-      state={state}
+    <BotPortrait
+      portrait={appearance?.portrait ?? defaultBotPortrait(id)}
+      working={state === "working"}
       size={size}
-      decorative
     />
   );
 }
