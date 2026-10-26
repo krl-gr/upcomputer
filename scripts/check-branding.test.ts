@@ -68,6 +68,27 @@ describe("apply-branding rules", () => {
     );
   });
 
+  it("rewrites user docs: names, home, hosted app and the up command", () => {
+    const doc = [
+      "Run `t3 serve` or `npx t3 pair` on a T3 server; T3's data lives in `~/.t3/userdata`.",
+      "Open app.t3.codes, sign in to T3 Connect, and keep `T3CODE_HOME` and `@t3tools/web`.",
+      "t3 thread list",
+      "id=$(t3 thread start .)",
+      "sudo t3 browser setup",
+    ].join("\n");
+    const rebranded = rebrandText(doc, "docs/user/example.md");
+    expect(rebranded).toBe(
+      [
+        "Run `up serve` or `up pair` on an Up.computer server; Up.computer's data lives in `~/.upcomputer/userdata`.",
+        "Open app.up.computer, sign in to UpComputer Connect, and keep `T3CODE_HOME` and `@t3tools/web`.",
+        "up thread list",
+        "id=$(up thread start .)",
+        "sudo up browser setup",
+      ].join("\n"),
+    );
+    expect(rebrandText(rebranded, "docs/user/example.md")).toBe(rebranded);
+  });
+
   it("is idempotent", () => {
     const once = rebrandText('const text = "Read a T3 thread in T3 Code";');
     expect(rebrandText(once)).toBe(once);
