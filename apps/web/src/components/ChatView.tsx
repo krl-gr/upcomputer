@@ -9025,7 +9025,6 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequests={addPullRequestsSurfaceStable}
             onAddDevice={addDeviceSurfaceStable}
             onAddFeatureSurface={addFeatureSurfaceStable}
-            onAddFeatureSurface={addFeatureSurfaceStable}
             browserAvailable={canOperatePreview && browserAvailable}
             terminalAvailable={activeProject !== null && canOperateTerminal}
             diffAvailable={isServerThread && isGitRepo}

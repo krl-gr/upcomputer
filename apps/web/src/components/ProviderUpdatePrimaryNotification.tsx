@@ -119,13 +119,10 @@ export function ProviderUpdatePrimaryNotification() {
   );
   const sessionKnown = useEnvironmentSessionKnown(primaryEnvironment?.environmentId ?? null);
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
-  const settlingEnvironments = useMemo(
-    (): ProviderUpdateSettlingEnvironment[] =>
-      primaryEnvironmentId === null
-        ? []
-        : [{ environmentId: primaryEnvironmentId, connectionState: "ready", providers }],
-    [primaryEnvironmentId, providers],
-  );
+  const settlingEnvironments: ProviderUpdateSettlingEnvironment[] =
+    primaryEnvironmentId === null
+      ? []
+      : [{ environmentId: primaryEnvironmentId, connectionState: "ready", providers }];
   const launchSettling = productSurface("providerUpdateLaunchNotification") === "upcomputer";
   const settledEnvironments = useProviderUpdateLaunchSettling({
     environments: settlingEnvironments,

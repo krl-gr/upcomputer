@@ -10,7 +10,13 @@ import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, BanIcon, InfoIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ThreadId, type ModelSelection } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type ModelSelection,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import {
   BOTS_RPC_METHODS,
   TaskAgentId,
@@ -24,11 +30,13 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import {
   useProjects,
-  useServerConfigs,
   useThreadShell,
   waitForThreadShell,
 } from "../../../../apps/web/src/state/entities.ts";
-import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
+import {
+  useEnvironmentProviders,
+  usePrimaryEnvironmentId,
+} from "../../../../apps/web/src/state/environments.ts";
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
 import {
   deriveProviderInstanceEntries,
@@ -76,6 +84,8 @@ import { useAutosave } from "./botAutosave.ts";
 import { botsChanged, errorText, useBots, useBotStatus } from "./botData.tsx";
 import type { BotCharacterState } from "./botStatus.ts";
 import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
+
+const NO_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
 const readSearchString = (search: Record<string, unknown>, key: string) => {
   const value = search[key];
@@ -185,12 +195,12 @@ function BotForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
-  const configs = useServerConfigs();
+  const providersByEnvironment = useEnvironmentProviders();
   const settings = usePrimarySettings();
-  const serverProviders = configs.get(environmentId)?.providers ?? [];
+  const serverProviders = providersByEnvironment.get(environmentId) ?? NO_SERVER_PROVIDERS;
   const providers = useMemo(
-    () => deriveProviderInstanceEntries(configs.get(environmentId)?.providers ?? []),
-    [configs, environmentId],
+    () => deriveProviderInstanceEntries(serverProviders),
+    [serverProviders],
   );
   const fallbackInstance = providers.find((entry) => entry.enabled)?.instanceId;
   const fallbackModel = fallbackInstance

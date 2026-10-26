@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
-import { useCompleteOnboarding } from "../onboarding/firstRun";
+import { completeOnboarding } from "../onboarding/firstRun";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { environmentThreadShells } from "../state/threads";
@@ -105,7 +105,6 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     (settings) => settings.onboardingCompletedAt !== null,
   );
   const recordClientEvent = useRecordClientEvent();
-  const completeOnboarding = useCompleteOnboarding();
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const install = useEnvironmentQuery(
     serverEnvironment.providerInstallState({
@@ -190,7 +189,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       .catch(() => {
         completed.current = false;
       });
-  }, [completeOnboarding, environmentId, ready, recordClientEvent, setSetup]);
+  }, [environmentId, ready, recordClientEvent, setSetup]);
 
   // Only a window that onboarded a new user starts this, so installs onboarded
   // before never report it, and an app closed sooner reports nothing.

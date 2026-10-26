@@ -713,11 +713,11 @@ function AgentsStep({
 }) {
   const { environments } = useEnvironments();
   const [readyCounts, setReadyCounts] = useState<ReadonlyMap<EnvironmentId, number>>(new Map());
-  const reportReadyCount = useCallback((environmentId: EnvironmentId, count: number) => {
+  const reportReadyCount = (environmentId: EnvironmentId, count: number) => {
     setReadyCounts((current) =>
       current.get(environmentId) === count ? current : new Map(current).set(environmentId, count),
     );
-  }, []);
+  };
   return (
     <StepShell
       title="Connect your agents"
