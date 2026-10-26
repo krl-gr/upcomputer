@@ -153,7 +153,8 @@ it.effect("keeps local test and demo builds off the Alpha bundle id, schemes and
       );
       assert.equal(config.appId, appId);
       assert.equal(config.productName, productName);
-      assert.notProperty(config, "publish");
+      // Null, not absent: electron-builder would infer a GitHub feed from a token otherwise.
+      assert.isNull(config.publish);
       assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, [
         MAC_WEB_BROWSER_PROTOCOL,
       ]);
