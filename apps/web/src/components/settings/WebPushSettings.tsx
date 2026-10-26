@@ -85,9 +85,9 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
           : "Could not turn on notifications on this device. Try again.",
       );
       setEnabled(enabled ? false : await readWebPushEnabled(session.accountId).catch(() => false));
-    } finally {
-      setBusy(false);
     }
+    // Not a finally: the React Compiler skips components with one, and the catch cannot throw.
+    setBusy(false);
   };
 
   return (

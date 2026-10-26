@@ -60,7 +60,8 @@ export function useProviderUpdateLaunchSettling<
   const { lateKeys, admittedKeys } = useSyncExternalStore(subscribe, readState, readState);
   useEffect(() => {
     if (!enabled || state.lateKeys !== null || state.admittedKeys !== null) return;
-    startupWaitEndsAt ??= Date.now() + PROVIDER_UPDATE_STARTUP_WAIT_MS;
+    if (startupWaitEndsAt === null)
+      startupWaitEndsAt = Date.now() + PROVIDER_UPDATE_STARTUP_WAIT_MS;
     const timer = setTimeout(
       () => {
         if (state.lateKeys !== null || state.admittedKeys !== null) return;
