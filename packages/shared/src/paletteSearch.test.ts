@@ -170,21 +170,25 @@ describe("scoreThreadSearch", () => {
   it("ranks a title holding the words above the app's own branch prefix and project name", () => {
     const busy = { activityAt: NOW, opens: { openedAt: NOW, score: 6, picks: [] } };
     expect(
-      rankTitles("t3 connect", [
+      rankTitles("upcomputer connect", [
         thread("Diagnose Connect provisioning failures", {
           ...busy,
-          branch: "t3/diagnose-connect",
-          projectTitle: "t3code",
+          branch: "upcomputer/diagnose-connect",
+          projectTitle: "upcomputer",
         }),
-        thread("UpComputer Connect Tunnel Lifecycle Review", { projectTitle: "t3code" }),
+        thread("UpComputer Connect Tunnel Lifecycle Review", { projectTitle: "upcomputer" }),
       ])[0],
     ).toBe("UpComputer Connect Tunnel Lifecycle Review");
     expect(
-      rankTitles("t3code", [
-        thread("Fix sidebar lag", { ...busy, projectTitle: "t3code", branch: "t3code/sidebar" }),
-        thread("Up.computer vs Gemini Token Volume", { projectTitle: "slophouse" }),
+      rankTitles("upcomputer", [
+        thread("Fix sidebar lag", {
+          ...busy,
+          projectTitle: "upcomputer",
+          branch: "upcomputer/sidebar",
+        }),
+        thread("UpComputer vs Gemini Token Volume", { projectTitle: "slophouse" }),
       ])[0],
-    ).toBe("Up.computer vs Gemini Token Volume");
+    ).toBe("UpComputer vs Gemini Token Volume");
   });
 
   it("matches pull request numbers, branches, and projects with every token somewhere", () => {
@@ -279,7 +283,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
 
   it("says which field matched when the title does not", () => {
     const subject = thread("Trim model lists", {
-      branch: "t3/cleanup-payloads",
+      branch: "upcomputer/cleanup-payloads",
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
     for (const query of ["#22889", "pr 22889", "pr22889", "pull request #22889"]) {
@@ -323,7 +327,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
     // Short words before a mere prefix are a coincidence.
     expect(rankTitles("inth", [thread("Show skill names in thread overview")])).toEqual([]);
     expect(rankTitles("tos", [thread("Move Client State to Server")])).toEqual([]);
-    expect(rankTitles("t3co", [thread("Up.computer vs Gemini")])).toEqual([
+    expect(rankTitles("upco", [thread("Up.computer vs Gemini")])).toEqual([
       "Up.computer vs Gemini",
     ]);
     expect(rankTitles('"sidebar lag"', [thread("Fix sidebar lag")])).toEqual(["Fix sidebar lag"]);

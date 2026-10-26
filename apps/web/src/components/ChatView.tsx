@@ -167,7 +167,7 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
-import { isProductFeatureShown, terminalCommandTarget } from "~/product/productFlags";
+import { isProductFeatureShown } from "~/product/productFlags";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import {

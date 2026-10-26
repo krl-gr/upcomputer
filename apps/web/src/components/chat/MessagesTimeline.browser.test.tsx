@@ -228,7 +228,7 @@ describe("MessagesTimeline automation prompts", () => {
     await using screen = await renderTimeline([
       message(AUTOMATION_PROMPT, { scheduledTaskId: TASK_ID }),
     ]);
-    const row = screen.button(/^Automation/);
+    const row = screen.button(/^Scheduled prompt/);
     expect(row.textContent).toContain("Nightly triage");
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("close duplicates");
@@ -236,7 +236,7 @@ describe("MessagesTimeline automation prompts", () => {
     await click(row);
     expect(screen.text()).toContain("Label every new issue and close duplicates.");
     const link = [...screen.container.querySelectorAll("a")].find(
-      (anchor) => anchor.textContent === "Open automation",
+      (anchor) => anchor.textContent === "Open scheduled prompt",
     );
     expect(link?.getAttribute("href")).toContain(`taskId=${TASK_ID}`);
     expect(screen.buttons(/copy/i)).not.toHaveLength(0);
@@ -247,13 +247,13 @@ describe("MessagesTimeline automation prompts", () => {
     await using screen = await renderTimeline([
       message(AUTOMATION_PROMPT, { scheduledTaskId: TASK_ID }),
     ]);
-    expect(screen.button(/^Automation/).textContent).toContain("Triage the inbox");
+    expect(screen.button(/^Scheduled prompt/).textContent).toContain("Triage the inbox");
   });
 
   it("leaves ordinary user messages as full bubbles", async () => {
     setup();
     await using screen = await renderTimeline([message(AUTOMATION_PROMPT)]);
-    expect(screen.buttons(/^Automation/)).toHaveLength(0);
+    expect(screen.buttons(/^Scheduled prompt/)).toHaveLength(0);
     expect(screen.text()).toContain("Label every new issue and close duplicates.");
   });
 
@@ -266,7 +266,7 @@ describe("MessagesTimeline automation prompts", () => {
       activeFindMatch: { entryId: "entry-message-1", runId: null, occurrence: 0 },
     });
     await vi.waitFor(() =>
-      expect(screen.button(/^Automation/).getAttribute("aria-expanded")).toBe("true"),
+      expect(screen.button(/^Scheduled prompt/).getAttribute("aria-expanded")).toBe("true"),
     );
     const { range } = collectThreadFindRanges(screen.container, "duplicates")[0]!;
     const details = screen.container.querySelector("[data-thread-find-text]")!;
@@ -307,7 +307,7 @@ describe("MessagesTimeline automation prompts", () => {
       },
     );
     expect(screen.buttons("Edit from here")).toHaveLength(0);
-    await click(screen.button(/^Automation/));
+    await click(screen.button(/^Scheduled prompt/));
     expect(screen.buttons("Edit from here")).toHaveLength(1);
   });
 });

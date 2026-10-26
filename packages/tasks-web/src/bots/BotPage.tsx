@@ -433,8 +433,7 @@ function BotForm({
                       models={selectedProvider.models}
                       model={selection.model}
                       modelOptions={selection.options}
-                      prompt={instructions}
-                      onPromptChange={setInstructions}
+                      onPromptEdit={setInstructions}
                       onModelOptionsChange={(options) =>
                         setSelection({
                           instanceId: selection.instanceId,

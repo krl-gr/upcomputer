@@ -143,7 +143,7 @@ describe("hidden upstream features in the web app", () => {
     expect(hidden).toEqual(
       expect.arrayContaining([
         "pull-request-merge-method",
-        "github-routing",
+        "pull-request-routing",
         "auto-settle-inactive-threads",
         "auto-settle-merged-threads",
         "days-before-auto-settle",

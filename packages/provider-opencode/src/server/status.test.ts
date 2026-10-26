@@ -5,6 +5,7 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -291,6 +292,7 @@ const runtimeMock = {
   state: {
     runVersionError: null as Error | null,
     runVersionPending: false,
+    runVersionDelay: null as Duration.Input | null,
     versionStdout: DEFAULT_VERSION_STDOUT,
     inventoryError: null as Error | null,
     connectionError: null as Error | null,
@@ -313,6 +315,7 @@ const runtimeMock = {
   reset() {
     this.state.runVersionError = null;
     this.state.runVersionPending = false;
+    this.state.runVersionDelay = null;
     this.state.versionStdout = DEFAULT_VERSION_STDOUT;
     this.state.inventoryError = null;
     this.state.connectionError = null;

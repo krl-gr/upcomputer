@@ -1835,7 +1835,7 @@ layer("ProviderEventIngestorV2", (it) => {
       Effect.gen(function* () {
         const { worktreePath, command } = yield* makeSharedWorktree;
         const git = yield* GitVcsDriver.GitVcsDriver;
-        const branch = scenario === "explicit" ? "child-feature" : "t3/abcd1234";
+        const branch = scenario === "explicit" ? "child-feature" : "upcomputer/abcd1234";
         if (scenario === "explicit") yield* command(worktreePath, ["branch", "-m", branch]);
         if (scenario === "detached") yield* command(worktreePath, ["checkout", "--detach"]);
         const now = yield* DateTime.now;

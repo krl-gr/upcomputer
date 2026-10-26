@@ -66,7 +66,7 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelTabs } = await import("../components/RightPanelTabs");
-const { AppearanceSettingsPanel } = await import("../components/settings/SettingsPanels");
+const { AppearanceSettingsPanel } = await import("../components/settings/AppearanceSettingsPanel");
 const { TYPOGRAPHY_ADVANCED_STORAGE_KEY } = await import("../appearanceFonts");
 const { filterAvailableSettingsSearchItems } =
   await import("../components/settings/settingsSearch");

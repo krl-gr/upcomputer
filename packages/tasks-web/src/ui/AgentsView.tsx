@@ -885,8 +885,9 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceId={detailModelProvider.instanceId}
                         models={detailModelProvider.models}
                         model={detailModelSlug}
-                        prompt={form.instructions}
-                        onPromptChange={(instructions) => commitForm({ ...form, instructions })}
+                        onPromptEdit={(edit) =>
+                          commitForm({ ...form, instructions: edit(form.instructions) })
+                        }
                         modelOptions={form.modelOptions}
                         allowPromptInjectedEffort={false}
                         onModelOptionsChange={(modelOptions) =>
@@ -1223,9 +1224,11 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceId={detailModelProvider.instanceId}
                         models={detailModelProvider.models}
                         model={detailModelSlug}
-                        prompt={form.instructions}
-                        onPromptChange={(instructions) =>
-                          setForm((current) => ({ ...current, instructions }))
+                        onPromptEdit={(edit) =>
+                          setForm((current) => ({
+                            ...current,
+                            instructions: edit(current.instructions),
+                          }))
                         }
                         modelOptions={form.modelOptions}
                         allowPromptInjectedEffort={false}

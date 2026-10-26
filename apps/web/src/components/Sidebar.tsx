@@ -192,13 +192,6 @@ import {
   SidebarThreadsSectionHeader,
   useSidebarThreadListShown,
 } from "../sidebarProjects/SidebarThreadsSection";
-import { SidebarCompactThreadRow } from "../sidebarThreadRow/SidebarCompactThreadRow";
-import {
-  isThreadListSettingShown,
-  useSidebarThreadRowSurface,
-} from "../sidebarThreadRow/threadListSetting";
-import { resolveThreadStatusLabel, ThreadStatusLabel } from "../sidebarThreadRow/ThreadStatusLabel";
-import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
   createSidebarSortingStrategy,
@@ -230,11 +223,7 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import {
-  ProductSidebarNavigation,
-  ProductSidebarSections,
-  ProductThreadRowAccessory,
-} from "../product/ProductSlots";
+import { ProductSidebarNavigation, ProductSidebarSections } from "../product/ProductSlots";
 import { productThreadActions } from "../product/threadActions";
 import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { useDraftFirstSendPending } from "../draftFirstSend";

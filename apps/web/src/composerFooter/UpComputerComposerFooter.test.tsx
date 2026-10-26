@@ -181,8 +181,8 @@ function footerProps(
     model: OPUS,
     models: claudeModels(descriptors),
     modelOptions: undefined,
-    prompt: "",
-    onPromptChange: () => undefined,
+    promptUltrathink: "none" as const,
+    onPromptEdit: () => undefined,
     planModeEnabled: true,
     isComposerOwned: true,
   };

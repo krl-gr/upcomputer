@@ -17,7 +17,6 @@ import {
   ThreadId,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadProjection,
-  type OrchestratorMcpCapabilitiesResult,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";

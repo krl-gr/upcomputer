@@ -2652,25 +2652,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         </ComposerControl>
       </>
     ) : null;
-  // UpComputer: the footer opens this input from its own attach control.
-  const composerAttachmentInput = (
-    <input
-      ref={attachmentInputRef}
-      type="file"
-      multiple
-      className="hidden"
-      onChange={(event) => {
-        const files = Array.from(event.currentTarget.files ?? []);
-        event.currentTarget.value = "";
-        // Inserting a chip refocuses the editor after the draft renders;
-        // focusing synchronously here would report the editor's stale text
-        // over the prompt that was just written.
-        void addComposerAttachments(files).then((inserted) => {
-          if (!inserted) focusComposer();
-        });
-      }}
-    />
-  );
   const composerControls = (
     <ComposerControlsBar
       environmentId={environmentId}
@@ -3541,6 +3522,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       focusComposer={focusComposer}
     />
   ) : null;
+  // UpComputer: the footer opens this input from its own attach control.
+  const composerAttachmentInput = (
+    <input
+      ref={attachmentInputRef}
+      type="file"
+      multiple
+      className="hidden"
+      onChange={(event) => {
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        // Inserting a chip refocuses the editor after the draft renders;
+        // focusing synchronously here would report the editor's stale text
+        // over the prompt that was just written.
+        void addComposerAttachments(files).then((inserted) => {
+          if (!inserted) focusComposer();
+        });
+      }}
+    />
+  );
+  const openComposerAttachmentInput = useStableCallback(() => attachmentInputRef.current?.click());
   const composerPrimaryActions = (
     <ComposerFooterPrimaryActions
       compact={isComposerResting || isComposerPrimaryActionsCompact}
@@ -4056,7 +4057,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   attach: showComposerAttachAction
                     ? {
                         input: composerAttachmentInput,
-                        open: () => attachmentInputRef.current?.click(),
+                        open: openComposerAttachmentInput,
                       }
                     : null,
                   primaryActions: composerPrimaryActions,

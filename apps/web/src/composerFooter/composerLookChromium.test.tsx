@@ -158,8 +158,8 @@ function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
             },
           ],
           modelOptions: undefined,
-          prompt: "",
-          onPromptChange: () => undefined,
+          promptUltrathink: "none" as const,
+          onPromptEdit: () => undefined,
           planModeEnabled: true,
           isComposerOwned: true,
         }}

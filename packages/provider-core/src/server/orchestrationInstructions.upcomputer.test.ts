@@ -19,9 +19,10 @@ describe("T3 orchestration provider instructions", () => {
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "Never use them merely");
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "cross-provider");
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "call `delegate_task` again");
+    // Upstream now sends same-child follow-ups to the child thread itself.
     assert.include(
       T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-      "Do not use `t3_thread_send` on `childThreadId`",
+      "use `t3_thread_send` on its `childThreadId`",
     );
   });
 

@@ -190,7 +190,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     settingsSearchIds: [
       "pull-request-merge-method",
       "remove-agent-credits-on-merge",
-      "github-routing",
+      "pull-request-routing",
       "auto-settle-merged-threads",
       "review-guides",
       "review-guide-model",
