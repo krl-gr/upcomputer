@@ -23,7 +23,7 @@ export function buildRuntimeInstructions(runtime: {
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
   const userInstructions =
     runtime.omitUserInstructions === true ? undefined : currentUserInstructionsBlock();
-  return `<runtime_info>In case you're asked: you are running in Up.computer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in Up.computer's files viewer.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
+  return `<runtime_info>In case you're asked: you are running in Up.computer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in Up.computer's files viewer.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}${userInstructions === undefined ? "" : `\n\n${userInstructions}`}`;
 }
 
 function toSingleLine(value: string): string {
