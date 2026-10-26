@@ -631,7 +631,9 @@ it.effect("a remember message is the user's entry and shows in the chat", () =>
     yield* Effect.gen(function* () {
       const bots = yield* BotService;
       yield* seedBot;
-      yield* bots.context(turn(botThread, "Remember: the staging host is blue"));
+      const { text } = yield* bots.context(turn(botThread, "Remember: the staging host is blue"));
+      // The model is told, so it does not save the same fact a second time.
+      assert.include(text, "is already saved as memory");
       // The row is recorded off the turn start; the first thread command is that row.
       yield* Deferred.await(entered);
       const [entry] = yield* bots.memory(botId);
