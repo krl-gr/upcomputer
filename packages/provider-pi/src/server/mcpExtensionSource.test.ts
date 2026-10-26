@@ -604,7 +604,7 @@ describe("Pi orchestration guidance", () => {
     const start = bridge.handlers.get("before_agent_start");
     assert.isDefined(start);
     return async () =>
-      (await start!({ systemPrompt: "base" }, { ui: { notify: () => undefined } })).systemPrompt;
+      (await start!({ systemPrompt: "base" }, { ui: { notify: () => undefined } }))?.systemPrompt;
   };
 
   const withInstructionsFile = async (test: (path: string) => Promise<void>) => {

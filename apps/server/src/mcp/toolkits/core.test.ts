@@ -482,6 +482,7 @@ it.effect("records the calling agent and the agent a tool acted on", () => {
                   event,
                   properties: properties ?? {},
                 }).pipe(Effect.asVoid),
+              recordMilestone: () => Effect.void,
               flush: Effect.void,
               recordOwners: () => Effect.void,
             }),

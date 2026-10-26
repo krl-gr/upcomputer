@@ -32,7 +32,12 @@ describe("T3 orchestration provider instructions", () => {
     );
     assert.isAbove(sentences.length, 0);
     for (const sentence of sentences) {
-      assert.match(sentence, /Before delegating|before reporting|acp-mcp-call/, sentence);
+      // Upstream's model-options guidance reads the catalog only while choosing a delegate.
+      assert.match(
+        sentence,
+        /Before delegating|before reporting|acp-mcp-call|use `delegate_task`|selected model's descriptors/,
+        sentence,
+      );
     }
   });
 

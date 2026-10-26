@@ -32,6 +32,7 @@ const TestLayer = RuntimeLayer.layerProjectService.pipe(
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         resolvePath: () => Effect.succeed(null),
+        invalidate: () => Effect.void,
       }),
     ),
   ),

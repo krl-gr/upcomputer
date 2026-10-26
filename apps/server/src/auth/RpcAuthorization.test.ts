@@ -268,7 +268,7 @@ describe("RPC scope middleware", () => {
           Layer.mergeAll(
             group.toLayerHandler(WS_METHODS.serverProbe, () => Effect.succeed({})),
             group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () => Effect.never),
-            RpcAuthorization.layer([AuthOrchestrationReadScope], (method) =>
+            RpcAuthorization.layer([AuthOrchestrationReadScope], undefined, (method) =>
               Effect.sync(() => void observed.push(method)),
             ),
           ),

@@ -974,7 +974,11 @@ describe("OrchestratorMcpService provider resolution", () => {
           const byId = new Map(
             capabilities.providers.map((provider) => [provider.providerInstanceId, provider]),
           );
-          const unusable = new Set([disabledAntigravityInstanceId, forkOnlyInstanceId]);
+          const unusable = new Set([
+            disabledAntigravityInstanceId,
+            disabledWithoutAdapterInstanceId,
+            forkOnlyInstanceId,
+          ]);
           const expectedModelIds = (provider: ServerProvider) =>
             unusable.has(provider.instanceId) ? [] : provider.models.map((model) => model.slug);
           for (const provider of providers) {
@@ -1223,7 +1227,11 @@ describe("OrchestratorMcpService provider resolution", () => {
               Effect.succeed(
                 threadId === parentThreadId
                   ? claudeParent(delegated ? [task] : [])
-                  : childProjection,
+                  : ({
+                      ...childProjection,
+                      // create_threads reads the committed thread's selection back.
+                      thread: { ...childProjection.thread, modelSelection: claudeSelection },
+                    } as OrchestrationV2ThreadProjection),
               ),
             dispatch: (command) =>
               Ref.update(dispatched, (commands) => [...commands, command]).pipe(

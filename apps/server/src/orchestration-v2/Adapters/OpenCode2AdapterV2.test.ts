@@ -46,7 +46,6 @@ import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeI
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   OPENCODE_2_STILL_STOPPING,
   OPENCODE_PROVIDER,
