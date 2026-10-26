@@ -23,11 +23,8 @@ export const makeFeatureProjects = Effect.gen(function* () {
      * The active project rooted at `workspaceRoot`, or a new one with this
      * title. The folder is created when missing.
      */
-    ensureProjectForWorkspaceRoot: (input: {
-      readonly title: string;
-      readonly workspaceRoot: string;
-    }) =>
-      Effect.gen(function* () {
+    ensureProjectForWorkspaceRoot: Effect.fn("FeatureProjects.ensureProjectForWorkspaceRoot")(
+      function* (input: { readonly title: string; readonly workspaceRoot: string }) {
         yield* fileSystem.makeDirectory(input.workspaceRoot, { recursive: true });
         const { project } = yield* projects.bootstrap({
           commandId: CommandId.make(yield* crypto.randomUUIDv4()),
@@ -36,7 +33,8 @@ export const makeFeatureProjects = Effect.gen(function* () {
           workspaceRoot: input.workspaceRoot,
         });
         return project;
-      }),
+      },
+    ),
   };
 });
 

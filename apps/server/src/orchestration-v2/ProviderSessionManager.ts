@@ -2395,8 +2395,8 @@ export const layerWithOptions = (
             ),
         ),
         release: releaseEntry,
-        hasPendingBackgroundWork: (input) =>
-          Effect.gen(function* () {
+        hasPendingBackgroundWork: Effect.fn("ProviderSessionManager.hasPendingBackgroundWork")(
+          function* (input) {
             const entry = (yield* Ref.get(sessions)).get(sessionKey(input.providerSessionId));
             if (entry === undefined || !entry.attachedThreadIds.has(input.threadId)) return false;
             const runtime = entry.runtime;
@@ -2415,11 +2415,11 @@ export const layerWithOptions = (
             return runtime.hasPendingBackgroundWork === undefined
               ? false
               : yield* runtime.hasPendingBackgroundWork;
-          }).pipe(
-            // Unknown counts as pending: the idle timeout still releases the
-            // session once the provider stops reporting work.
-            Effect.catchCause(() => Effect.succeed(true)),
-          ),
+          },
+          // Unknown counts as pending: the idle timeout still releases the
+          // session once the provider stops reporting work.
+          Effect.catchCause(() => Effect.succeed(true)),
+        ),
         detach: Effect.fn("ProviderSessionManager.detach")(
           function* (input) {
             const key = sessionKey(input.providerSessionId);

@@ -57,12 +57,13 @@ export class RelayClock extends Context.Reference<RelayClockShape>("t3/cloud/Rel
   defaultValue: makeRelayClock,
 }) {}
 
-const observe = (relayTime: Option.Option<DateTime.DateTime>) =>
-  Effect.gen(function* () {
-    if (Option.isNone(relayTime)) return;
-    const clock = yield* RelayClock;
-    yield* clock.observe(relayTime.value);
-  });
+const observe = Effect.fn("RelayClock.observe")(function* (
+  relayTime: Option.Option<DateTime.DateTime>,
+) {
+  if (Option.isNone(relayTime)) return;
+  const clock = yield* RelayClock;
+  yield* clock.observe(relayTime.value);
+});
 
 export const observeRelayResponseDate = (response: HttpClientResponse.HttpClientResponse) =>
   observe(Option.flatMap(Option.fromNullishOr(response.headers.date), DateTime.make));

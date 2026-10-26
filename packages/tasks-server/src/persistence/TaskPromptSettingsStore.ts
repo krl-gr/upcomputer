@@ -350,7 +350,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap(decodedChanges("decode task prompt settings history")),
     );
 
-  const newChange = (input: {
+  const newChange = Effect.fn("TaskPromptSettingsStore.newChange")(function* (input: {
     readonly projectId: InstructionsScope;
     readonly revision: number;
     readonly field: InstructionsField;
@@ -359,25 +359,24 @@ const make = Effect.gen(function* () {
     readonly reason: string | null;
     readonly origin: TaskPromptChangeOrigin;
     readonly revertsChangeId: string | null;
-  }) =>
-    Effect.gen(function* () {
-      const change: TaskPromptSettingsChange = {
-        // A failing random source is a defect, not a storage error.
-        id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4())}`,
-        projectId: input.projectId,
-        revision: input.revision,
-        field: input.field,
-        previousText: input.previousText,
-        newText: input.newText,
-        reason: input.reason,
-        source: input.origin.source,
-        threadId: input.origin.threadId,
-        runId: input.origin.runId,
-        revertsChangeId: input.revertsChangeId,
-        createdAt: DateTime.formatIso(yield* DateTime.now),
-      };
-      return change;
-    });
+  }) {
+    const change: TaskPromptSettingsChange = {
+      // A failing random source is a defect, not a storage error.
+      id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4())}`,
+      projectId: input.projectId,
+      revision: input.revision,
+      field: input.field,
+      previousText: input.previousText,
+      newText: input.newText,
+      reason: input.reason,
+      source: input.origin.source,
+      threadId: input.origin.threadId,
+      runId: input.origin.runId,
+      revertsChangeId: input.revertsChangeId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+    };
+    return change;
+  });
 
   // Read, compare and write in one transaction, so a revision check cannot
   // race another writer.
@@ -397,7 +396,7 @@ const make = Effect.gen(function* () {
    * `allChats` is written to core settings last, so a failed write rolls back
    * the recorded change with the transaction.
    */
-  const applyFieldChange = (input: {
+  const applyFieldChange = Effect.fn("TaskPromptSettingsStore.applyFieldChange")(function* (input: {
     readonly projectId: InstructionsScope;
     readonly state: ScopedInstructionsState;
     readonly field: InstructionsField;
@@ -406,35 +405,34 @@ const make = Effect.gen(function* () {
     readonly origin: TaskPromptChangeOrigin;
     readonly revertsChangeId: string | null;
     readonly dryRun: boolean;
-  }) =>
-    Effect.gen(function* () {
-      yield* globalOnly(input.projectId, input.field);
-      const change = yield* newChange({
-        projectId: input.projectId,
-        revision: input.state.revision + 1,
-        field: input.field,
-        previousText: textOf(input.state, input.field),
-        newText: input.text,
-        reason: input.reason,
-        origin: input.origin,
-        revertsChangeId: input.revertsChangeId,
-      });
-      const state: ScopedInstructionsState =
-        input.field === "allChats"
-          ? { ...input.state, allChats: input.text, revision: change.revision }
-          : {
-              ...input.state,
-              settings: { ...input.state.settings, [input.field]: input.text },
-              revision: change.revision,
-            };
-      // A dry run reports the current state with the change it would record.
-      if (input.dryRun) return { state: input.state, change };
-      if (input.projectId === null) yield* writeState(state);
-      else yield* writeProjectState(input.projectId, state);
-      yield* insertChange(change);
-      if (input.field === "allChats") yield* allChatsInstructions.set(input.text);
-      return { state, change };
+  }) {
+    yield* globalOnly(input.projectId, input.field);
+    const change = yield* newChange({
+      projectId: input.projectId,
+      revision: input.state.revision + 1,
+      field: input.field,
+      previousText: textOf(input.state, input.field),
+      newText: input.text,
+      reason: input.reason,
+      origin: input.origin,
+      revertsChangeId: input.revertsChangeId,
     });
+    const state: ScopedInstructionsState =
+      input.field === "allChats"
+        ? { ...input.state, allChats: input.text, revision: change.revision }
+        : {
+            ...input.state,
+            settings: { ...input.state.settings, [input.field]: input.text },
+            revision: change.revision,
+          };
+    // A dry run reports the current state with the change it would record.
+    if (input.dryRun) return { state: input.state, change };
+    if (input.projectId === null) yield* writeState(state);
+    else yield* writeProjectState(input.projectId, state);
+    yield* insertChange(change);
+    if (input.field === "allChats") yield* allChatsInstructions.set(input.text);
+    return { state, change };
+  });
 
   const update: TaskPromptSettingsStoreShape["update"] = (input) =>
     transaction(

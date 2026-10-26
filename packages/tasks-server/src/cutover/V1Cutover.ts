@@ -89,46 +89,48 @@ export interface TaskV1CutoverReport {
   }>;
 }
 
-const interruptRun = (run: TaskAgentRun, now: string) =>
-  Effect.gen(function* () {
-    const repository = yield* TaskRepository;
-    const finalizingStatus = "finalizing:interrupted";
-    if (!(yield* repository.claimAgentRunFinalization({ id: run.id, finalizingStatus }))) {
-      return false;
-    }
-    const task = yield* repository.getById({ id: run.taskId });
-    const note = `Task-agent run ${run.id} interrupted: ${V1_CUTOVER_INTERRUPT_REASON} ${TASK_AGENT_RUN_RECOVERY_HINT}`;
-    const existingOutput = Option.isSome(task) ? (task.value.output?.trim() ?? "") : "";
-    return yield* repository.finalizeAgentRun({
-      id: run.id,
-      finalizingStatus,
-      status: "interrupted",
-      completedAt: now,
-      taskId: run.taskId,
-      ...(Option.isSome(task)
-        ? { taskOutput: existingOutput ? `${existingOutput}\n\n${note}` : note }
-        : {}),
-      releaseAssignment: true,
-      events: Option.isSome(task)
-        ? [
-            {
-              // The id TaskAgentService uses, so a later v2 recovery cannot add a second one.
-              id: TaskEventId.make(`${run.id}:task-agent-interrupted`),
-              taskId: run.taskId,
-              kind: "task.agent-interrupted",
-              payload: {
-                agentId: run.agentId,
-                agentRunId: run.id,
-                threadId: run.threadId,
-                reason: V1_CUTOVER_INTERRUPT_REASON,
-                recovery: TASK_AGENT_RUN_RECOVERY_HINT,
-              },
-              createdAt: now,
+const interruptRun = Effect.fn("V1Cutover.interruptRun")(function* (
+  run: TaskAgentRun,
+  now: string,
+) {
+  const repository = yield* TaskRepository;
+  const finalizingStatus = "finalizing:interrupted";
+  if (!(yield* repository.claimAgentRunFinalization({ id: run.id, finalizingStatus }))) {
+    return false;
+  }
+  const task = yield* repository.getById({ id: run.taskId });
+  const note = `Task-agent run ${run.id} interrupted: ${V1_CUTOVER_INTERRUPT_REASON} ${TASK_AGENT_RUN_RECOVERY_HINT}`;
+  const existingOutput = Option.isSome(task) ? (task.value.output?.trim() ?? "") : "";
+  return yield* repository.finalizeAgentRun({
+    id: run.id,
+    finalizingStatus,
+    status: "interrupted",
+    completedAt: now,
+    taskId: run.taskId,
+    ...(Option.isSome(task)
+      ? { taskOutput: existingOutput ? `${existingOutput}\n\n${note}` : note }
+      : {}),
+    releaseAssignment: true,
+    events: Option.isSome(task)
+      ? [
+          {
+            // The id TaskAgentService uses, so a later v2 recovery cannot add a second one.
+            id: TaskEventId.make(`${run.id}:task-agent-interrupted`),
+            taskId: run.taskId,
+            kind: "task.agent-interrupted",
+            payload: {
+              agentId: run.agentId,
+              agentRunId: run.id,
+              threadId: run.threadId,
+              reason: V1_CUTOVER_INTERRUPT_REASON,
+              recovery: TASK_AGENT_RUN_RECOVERY_HINT,
             },
-          ]
-        : [],
-    });
+            createdAt: now,
+          },
+        ]
+      : [],
   });
+});
 
 /**
  * Interrupts V1's in-flight runs and rewrites V1 tool names in agent
@@ -182,28 +184,27 @@ export const runTaskV1Cutover = Effect.fn("runTaskV1Cutover")(function* (input: 
   const projectIds = yield* sql<{ readonly project_id: string }>`
     SELECT project_id FROM task_project_prompt_settings ORDER BY project_id
   `;
-  const rewriteField = (
+  const rewriteField = Effect.fn("V1Cutover.rewriteField")(function* (
     projectId: string | null,
     field: InstructionsField,
     current: string,
     revision: number,
-  ) =>
-    Effect.gen(function* () {
-      const rewrite = rewriteV1ToolNames(current);
-      if (rewrite.replacements.length === 0) return revision;
-      const result = yield* instructions.updateField({
-        projectId,
-        field,
-        text: rewrite.text,
-        reason: "Cutover to v2: V1 tool names rewritten to the v2 names.",
-        expectedRevision: revision,
-        origin: { source: "unknown", threadId: null, runId: null },
-        dryRun: false,
-      });
-      if (!result.ok) return revision;
-      rewrittenInstructions.push({ projectId, field, replacements: rewrite.replacements });
-      return result.state.revision;
+  ) {
+    const rewrite = rewriteV1ToolNames(current);
+    if (rewrite.replacements.length === 0) return revision;
+    const result = yield* instructions.updateField({
+      projectId,
+      field,
+      text: rewrite.text,
+      reason: "Cutover to v2: V1 tool names rewritten to the v2 names.",
+      expectedRevision: revision,
+      origin: { source: "unknown", threadId: null, runId: null },
+      dryRun: false,
     });
+    if (!result.ok) return revision;
+    rewrittenInstructions.push({ projectId, field, replacements: rewrite.replacements });
+    return result.state.revision;
+  });
   const global = yield* instructions.getState;
   let revision = global.revision;
   for (const field of INSTRUCTIONS_FIELDS) {

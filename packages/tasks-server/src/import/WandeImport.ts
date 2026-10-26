@@ -92,18 +92,20 @@ export const WandeImportServicesLive = InboxProjectLive.pipe(
 const importError = (message: string, cause?: unknown) => new TaskError({ message, cause });
 
 /** The tasks and entries a rerun finds already imported. */
-const existingIds = (table: "tasks" | "entries", ids: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const idsJson = JSON.stringify(ids);
-    const rows = yield* table === "tasks"
-      ? sql<{ readonly id: string }>`
+const existingIds = Effect.fn("WandeImport.existingIds")(function* (
+  table: "tasks" | "entries",
+  ids: ReadonlyArray<string>,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const idsJson = JSON.stringify(ids);
+  const rows = yield* table === "tasks"
+    ? sql<{ readonly id: string }>`
           SELECT id FROM tasks WHERE id IN (SELECT value FROM json_each(${idsJson}))`
-      : sql<{ readonly id: string }>`
+    : sql<{ readonly id: string }>`
           SELECT id FROM task_schedule_entries
           WHERE id IN (SELECT value FROM json_each(${idsJson}))`;
-    return new Set(rows.map(({ id }) => id));
-  });
+  return new Set(rows.map(({ id }) => id));
+});
 
 export const importWande = Effect.fn("importWande")(function* (input: WandeImportInput) {
   const data = yield* Effect.try({

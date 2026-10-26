@@ -82,64 +82,59 @@ export const make = Effect.gen(function* () {
         )
       : Effect.succeed(input);
   return TextGeneration.of({
-    generateCommitMessage: (requested) =>
-      Effect.gen(function* () {
-        const input = yield* withReadySelection(requested);
-        const textGeneration = yield* resolveInstance(
-          registry,
-          "generateCommitMessage",
-          input.modelSelection.instanceId,
-        );
-        return yield* textGeneration.generateCommitMessage(input);
-      }),
-    generatePrContent: (requested) =>
-      Effect.gen(function* () {
-        const input = yield* withReadySelection(requested);
-        const textGeneration = yield* resolveInstance(
-          registry,
-          "generatePrContent",
-          input.modelSelection.instanceId,
-        );
-        return yield* textGeneration.generatePrContent(input);
-      }),
-    generateBranchName: (requested) =>
-      Effect.gen(function* () {
-        const input = yield* withReadySelection(requested);
-        const textGeneration = yield* resolveInstance(
-          registry,
-          "generateBranchName",
-          input.modelSelection.instanceId,
-        );
-        return yield* textGeneration.generateBranchName(input);
-      }),
-    generateReviewGuide: (requested) =>
-      Effect.gen(function* () {
-        const input = yield* withReadySelection(requested);
-        const textGeneration = yield* resolveInstance(
-          registry,
-          "generateReviewGuide",
-          input.modelSelection.instanceId,
-        );
-        return yield* textGeneration.generateReviewGuide(input);
-      }),
-    generateThreadTitle: (requested) =>
-      Effect.gen(function* () {
-        const input = yield* withReadySelection(requested);
-        const textGeneration = yield* resolveInstance(
-          registry,
-          "generateThreadTitle",
-          input.modelSelection.instanceId,
-        );
-        const linkedContext =
-          input.linkedContext ??
-          (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
-            Effect.provideService(
-              SourceControlProviderRegistry.SourceControlProviderRegistry,
-              sourceControl,
-            ),
-          ));
-        return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
-      }),
+    generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function* (requested) {
+      const input = yield* withReadySelection(requested);
+      const textGeneration = yield* resolveInstance(
+        registry,
+        "generateCommitMessage",
+        input.modelSelection.instanceId,
+      );
+      return yield* textGeneration.generateCommitMessage(input);
+    }),
+    generatePrContent: Effect.fn("TextGeneration.generatePrContent")(function* (requested) {
+      const input = yield* withReadySelection(requested);
+      const textGeneration = yield* resolveInstance(
+        registry,
+        "generatePrContent",
+        input.modelSelection.instanceId,
+      );
+      return yield* textGeneration.generatePrContent(input);
+    }),
+    generateBranchName: Effect.fn("TextGeneration.generateBranchName")(function* (requested) {
+      const input = yield* withReadySelection(requested);
+      const textGeneration = yield* resolveInstance(
+        registry,
+        "generateBranchName",
+        input.modelSelection.instanceId,
+      );
+      return yield* textGeneration.generateBranchName(input);
+    }),
+    generateReviewGuide: Effect.fn("TextGeneration.generateReviewGuide")(function* (requested) {
+      const input = yield* withReadySelection(requested);
+      const textGeneration = yield* resolveInstance(
+        registry,
+        "generateReviewGuide",
+        input.modelSelection.instanceId,
+      );
+      return yield* textGeneration.generateReviewGuide(input);
+    }),
+    generateThreadTitle: Effect.fn("TextGeneration.generateThreadTitle")(function* (requested) {
+      const input = yield* withReadySelection(requested);
+      const textGeneration = yield* resolveInstance(
+        registry,
+        "generateThreadTitle",
+        input.modelSelection.instanceId,
+      );
+      const linkedContext =
+        input.linkedContext ??
+        (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
+          Effect.provideService(
+            SourceControlProviderRegistry.SourceControlProviderRegistry,
+            sourceControl,
+          ),
+        ));
+      return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
+    }),
   });
 });
 

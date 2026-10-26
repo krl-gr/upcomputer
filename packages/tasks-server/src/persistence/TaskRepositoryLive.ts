@@ -413,8 +413,10 @@ const makeTaskRepository = Effect.gen(function* () {
         sequence: ++sequence,
       }),
     );
-  const withChangeTransaction: TaskRepositoryShape["withChangeTransaction"] = (effect) =>
-    Effect.gen(function* () {
+  const withChangeTransaction: TaskRepositoryShape["withChangeTransaction"] = Effect.fn(
+    "TaskRepositoryLive.withChangeTransaction",
+  )(
+    function* (effect) {
       const existing = yield* TaskChangeBatch;
       const batch = { owner: events, events: [] as PendingTaskChange[] };
       const result = yield* sql.withTransaction(
@@ -430,14 +432,14 @@ const makeTaskRepository = Effect.gen(function* () {
           ...scheduleDatesOf(batch.events),
         });
       return result;
-    }).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof SqlError
-          ? toTaskPersistenceSqlError("TaskRepository.transaction")(cause)
-          : cause,
-      ),
-      Effect.uninterruptible,
-    );
+    },
+    Effect.mapError((cause) =>
+      cause instanceof SqlError
+        ? toTaskPersistenceSqlError("TaskRepository.transaction")(cause)
+        : cause,
+    ),
+    Effect.uninterruptible,
+  );
 
   // All UI, tool, automation and agent mutations pass this repository boundary.
   // Multi-write batches use withChangeTransaction to defer until the OUTER commit.
@@ -2058,44 +2060,45 @@ const makeTaskRepository = Effect.gen(function* () {
     );
   };
 
-  const decorateTaskRows = (rows: ReadonlyArray<typeof TaskDbRow.Type>) =>
-    Effect.gen(function* () {
-      const ids = JSON.stringify(rows.map(({ id }) => id));
-      const tagRows = yield* sql`SELECT task_id AS "taskId", tag FROM task_tags
+  const decorateTaskRows = Effect.fn("TaskRepositoryLive.decorateTaskRows")(function* (
+    rows: ReadonlyArray<typeof TaskDbRow.Type>,
+  ) {
+    const ids = JSON.stringify(rows.map(({ id }) => id));
+    const tagRows = yield* sql`SELECT task_id AS "taskId", tag FROM task_tags
         WHERE task_id IN (SELECT value FROM json_each(${ids}))`;
-      const counts =
-        yield* sql`SELECT r.task_id AS "taskId", ${countedRunStatus} AS status, COUNT(*) AS count
+    const counts =
+      yield* sql`SELECT r.task_id AS "taskId", ${countedRunStatus} AS status, COUNT(*) AS count
         FROM task_agent_runs r WHERE r.task_id IN (SELECT value FROM json_each(${ids}))
         GROUP BY r.task_id, 2 ORDER BY 2`;
-      // The latest run in the run lists' order (started_at DESC, id ASC).
-      const latest = yield* sql`SELECT t.value AS "taskId", (
+    // The latest run in the run lists' order (started_at DESC, id ASC).
+    const latest = yield* sql`SELECT t.value AS "taskId", (
           SELECT r.status FROM task_agent_runs r WHERE r.task_id = t.value
           ORDER BY r.started_at DESC, r.id ASC LIMIT 1
         ) AS status
         FROM json_each(${ids}) t`;
-      const decodedTags = yield* Schema.decodeUnknownEffect(Schema.Array(TaskTagDbRow))(tagRows);
-      const decodedLatest = yield* decodeLatestRunRows(latest);
-      const latestByTask = new Map(decodedLatest.map(({ taskId, status }) => [taskId, status]));
-      const decodedCounts = yield* Schema.decodeUnknownEffect(
-        Schema.Array(
-          Schema.Struct({
-            taskId: TaskId,
-            ...TaskRunCount.fields,
-          }),
-        ),
-      )(counts);
-      const countsByTask = new Map<TaskId, Array<typeof TaskRunCount.Type>>();
-      for (const { taskId, status, count } of decodedCounts) {
-        const entries = countsByTask.get(taskId) ?? [];
-        entries.push({ status, count });
-        countsByTask.set(taskId, entries);
-      }
-      return attachTags(rows, decodedTags).map((task) => ({
-        ...task,
-        runCounts: countsByTask.get(task.id) ?? [],
-        latestRunStatus: latestByTask.get(task.id) ?? null,
-      }));
-    });
+    const decodedTags = yield* Schema.decodeUnknownEffect(Schema.Array(TaskTagDbRow))(tagRows);
+    const decodedLatest = yield* decodeLatestRunRows(latest);
+    const latestByTask = new Map(decodedLatest.map(({ taskId, status }) => [taskId, status]));
+    const decodedCounts = yield* Schema.decodeUnknownEffect(
+      Schema.Array(
+        Schema.Struct({
+          taskId: TaskId,
+          ...TaskRunCount.fields,
+        }),
+      ),
+    )(counts);
+    const countsByTask = new Map<TaskId, Array<typeof TaskRunCount.Type>>();
+    for (const { taskId, status, count } of decodedCounts) {
+      const entries = countsByTask.get(taskId) ?? [];
+      entries.push({ status, count });
+      countsByTask.set(taskId, entries);
+    }
+    return attachTags(rows, decodedTags).map((task) => ({
+      ...task,
+      runCounts: countsByTask.get(task.id) ?? [],
+      latestRunStatus: latestByTask.get(task.id) ?? null,
+    }));
+  });
 
   const items: TaskRepositoryShape["items"] = (input) =>
     sql
@@ -2184,21 +2187,23 @@ const makeTaskRepository = Effect.gen(function* () {
       Effect.map(([taskRows, tagRows]) => attachTags(taskRows, tagRows)),
     );
 
-  const listTriggerCandidates: TaskRepositoryShape["listTriggerCandidates"] = () =>
-    Effect.gen(function* () {
+  const listTriggerCandidates: TaskRepositoryShape["listTriggerCandidates"] = Effect.fn(
+    "TaskRepositoryLive.listTriggerCandidates",
+  )(
+    function* () {
       const rows = yield* triggerCandidateRows();
       const tagRows = yield* sql`SELECT task_id AS "taskId", tag FROM task_tags
         WHERE task_id IN (SELECT value FROM json_each(${JSON.stringify(rows.map(({ id }) => id))}))
         ORDER BY task_id ASC, tag ASC`;
       return attachTags(rows, yield* decodeTaskTagRows(tagRows));
-    }).pipe(
-      Effect.mapError(
-        toSqlOrDecodeError(
-          "TaskRepository.listTriggerCandidates:query",
-          "TaskRepository.listTriggerCandidates:decodeRows",
-        ),
+    },
+    Effect.mapError(
+      toSqlOrDecodeError(
+        "TaskRepository.listTriggerCandidates:query",
+        "TaskRepository.listTriggerCandidates:decodeRows",
       ),
-    );
+    ),
+  );
 
   const update: TaskRepositoryShape["update"] = (input) =>
     getById({ id: input.id }).pipe(
@@ -2712,62 +2717,62 @@ const makeTaskRepository = Effect.gen(function* () {
    * dates go out with that write's change. Routines are planned day by day
    * and keep their entries.
    */
-  const followTask = (input: {
+  const followTask = Effect.fn("TaskRepositoryLive.followTask")(function* (input: {
     readonly taskId: TaskId;
     readonly kind: TaskKind;
     readonly from: FollowedTaskState;
     readonly to: FollowedTaskState;
     readonly at: string;
-  }) =>
-    Effect.gen(function* () {
-      if (input.kind === "routine" || !movesEntries(input.from, input.to)) return;
-      const entries = yield* schedule.allForTask(input.taskId);
-      if (entries.length === 0) return;
-      const settings = reminderSettingsOf(yield* readScheduleSettings);
-      const now = yield* DateTime.now;
-      // Today as the schedule's zone sees it, as for reminders.
-      const today = Option.match(DateTime.makeZoned(now, { timeZone: settings.timeZone }), {
-        onNone: () => DateTime.formatIsoDateUtc(now),
-        onSome: DateTime.formatIsoDate,
-      });
-      const doneAt = reopensTask(input.from, input.to) ? yield* lastDoneAt(input.taskId) : null;
-      const { updated, deleted } = followTaskState({
-        entries,
-        from: input.from,
-        to: input.to,
-        today,
-        at: input.at,
-        doneAt,
-      });
-      const millis = DateTime.toEpochMillis(now);
-      yield* Effect.forEach(
-        updated,
-        (entry) => schedule.upsert({ ...entry, remindAt: reminderAt(entry, settings, millis) }),
-        { discard: true, concurrency: 1 },
-      );
-      if (deleted.length > 0) yield* schedule.deleteByIds(deleted.map(({ id }) => id));
-      (yield* FollowedScheduleDates)?.push(...[...updated, ...deleted].map(({ date }) => date));
+  }) {
+    if (input.kind === "routine" || !movesEntries(input.from, input.to)) return;
+    const entries = yield* schedule.allForTask(input.taskId);
+    if (entries.length === 0) return;
+    const settings = reminderSettingsOf(yield* readScheduleSettings);
+    const now = yield* DateTime.now;
+    // Today as the schedule's zone sees it, as for reminders.
+    const today = Option.match(DateTime.makeZoned(now, { timeZone: settings.timeZone }), {
+      onNone: () => DateTime.formatIsoDateUtc(now),
+      onSome: DateTime.formatIsoDate,
     });
+    const doneAt = reopensTask(input.from, input.to) ? yield* lastDoneAt(input.taskId) : null;
+    const { updated, deleted } = followTaskState({
+      entries,
+      from: input.from,
+      to: input.to,
+      today,
+      at: input.at,
+      doneAt,
+    });
+    const millis = DateTime.toEpochMillis(now);
+    yield* Effect.forEach(
+      updated,
+      (entry) => schedule.upsert({ ...entry, remindAt: reminderAt(entry, settings, millis) }),
+      { discard: true, concurrency: 1 },
+    );
+    if (deleted.length > 0) yield* schedule.deleteByIds(deleted.map(({ id }) => id));
+    (yield* FollowedScheduleDates)?.push(...[...updated, ...deleted].map(({ date }) => date));
+  });
 
   /**
    * Recomputes the reminder of every entry the settings or the passing time
    * can change. Entries more than a day before today (in any zone) have
    * started and keep what they have.
    */
-  const recomputeRemindersWith = (settings: ReminderSettings) =>
-    Effect.gen(function* () {
-      const now = yield* nowMillis;
-      const fromDate = new Date(now - 2 * 86_400_000).toISOString().slice(0, 10);
-      const rows = yield* schedule.reminderCandidates({ fromDate });
-      yield* Effect.forEach(
-        rows,
-        (row) => {
-          const next = reminderAt(row, settings, now);
-          return next === row.remindAt ? Effect.void : schedule.setRemindAt(row.id, next);
-        },
-        { discard: true, concurrency: 1 },
-      );
-    });
+  const recomputeRemindersWith = Effect.fn("TaskRepositoryLive.recomputeRemindersWith")(function* (
+    settings: ReminderSettings,
+  ) {
+    const now = yield* nowMillis;
+    const fromDate = new Date(now - 2 * 86_400_000).toISOString().slice(0, 10);
+    const rows = yield* schedule.reminderCandidates({ fromDate });
+    yield* Effect.forEach(
+      rows,
+      (row) => {
+        const next = reminderAt(row, settings, now);
+        return next === row.remindAt ? Effect.void : schedule.setRemindAt(row.id, next);
+      },
+      { discard: true, concurrency: 1 },
+    );
+  });
 
   const scheduleSettings: TaskRepositoryShape["scheduleSettings"] = () =>
     readScheduleSettings.pipe(

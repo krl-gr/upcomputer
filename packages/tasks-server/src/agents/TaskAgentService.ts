@@ -405,21 +405,18 @@ const make = Effect.gen(function* () {
    * The global task texts plus the task's project additions. A deleted
    * project's texts are ignored.
    */
-  const runPromptSettings = (task: Task) =>
-    Effect.gen(function* () {
-      const global = yield* promptSettings.get;
-      const project = yield* promptSettings.getProject(task.projectId);
-      if (!project.settings.taskExecution.trim()) return global;
-      const shell = yield* projects
-        .getShell(task.projectId)
-        .pipe(Effect.orElseSucceed(Option.none));
-      return Option.isSome(shell)
-        ? composeTaskPromptSettings(global, {
-            title: shell.value.title,
-            settings: project.settings,
-          })
-        : global;
-    });
+  const runPromptSettings = Effect.fn("TaskAgentService.runPromptSettings")(function* (task: Task) {
+    const global = yield* promptSettings.get;
+    const project = yield* promptSettings.getProject(task.projectId);
+    if (!project.settings.taskExecution.trim()) return global;
+    const shell = yield* projects.getShell(task.projectId).pipe(Effect.orElseSucceed(Option.none));
+    return Option.isSome(shell)
+      ? composeTaskPromptSettings(global, {
+          title: shell.value.title,
+          settings: project.settings,
+        })
+      : global;
+  });
 
   /** The thread's runs; None when the v2 thread does not exist (yet). */
   const readThreadRuns = (threadId: ThreadId) =>
@@ -437,8 +434,8 @@ const make = Effect.gen(function* () {
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   const now = Effect.map(DateTime.now, DateTime.formatIso);
-  const appendEvent = (task: Task, kind: string, payload: unknown) =>
-    Effect.gen(function* () {
+  const appendEvent = Effect.fn("TaskAgentService.appendEvent")(
+    function* (task: Task, kind: string, payload: unknown) {
       yield* repository.appendEvent({
         id: TaskEventId.make(yield* randomId("task-event")),
         taskId: task.id,
@@ -446,15 +443,18 @@ const make = Effect.gen(function* () {
         payload,
         createdAt: yield* now,
       });
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to append task lifecycle event", {
-          taskId: task.id,
-          kind,
-          cause,
-        }),
+    },
+    (effect, task, kind, payload) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Failed to append task lifecycle event", {
+            taskId: task.id,
+            kind,
+            cause,
+          }),
+        ),
       ),
-    );
+  );
   // Finalizing a run and continuing it share its thread: one at a time per
   // thread, so a finalizer cannot touch a continuation that started meanwhile.
   // Not reentrant: never call finalizeRun or messageRun while holding it.
@@ -469,18 +469,20 @@ const make = Effect.gen(function* () {
   };
 
   /** Interrupts the thread's active v2 run, if any. */
-  const interruptThread = (threadId: ThreadId, reason: string) =>
-    Effect.gen(function* () {
-      const records = yield* readThreadRuns(threadId);
-      if (Option.isNone(records)) return;
-      if (!records.value.runs.some(isActiveRun)) return;
-      yield* threads.interruptThread({
-        projectId: records.value.thread.projectId,
-        commandId: CommandId.make(yield* randomId("task-agent-interrupt")),
-        threadId,
-        reason,
-      });
+  const interruptThread = Effect.fn("TaskAgentService.interruptThread")(function* (
+    threadId: ThreadId,
+    reason: string,
+  ) {
+    const records = yield* readThreadRuns(threadId);
+    if (Option.isNone(records)) return;
+    if (!records.value.runs.some(isActiveRun)) return;
+    yield* threads.interruptThread({
+      projectId: records.value.thread.projectId,
+      commandId: CommandId.make(yield* randomId("task-agent-interrupt")),
+      threadId,
+      reason,
     });
+  });
 
   /**
    * Releases the provider sessions of an ended task-agent run's thread now
@@ -489,19 +491,22 @@ const make = Effect.gen(function* () {
    * active, queued or blocked work, and changes nothing else on the thread. A
    * later message (a continuation) attaches a session again.
    */
-  const releaseEndedRunSessions = (threadId: ThreadId) =>
-    Effect.gen(function* () {
+  const releaseEndedRunSessions = Effect.fn("TaskAgentService.releaseEndedRunSessions")(
+    function* (threadId: ThreadId) {
       yield* threads.dispatch({
         type: "thread.provider-sessions.release-idle",
         commandId: CommandId.make(yield* randomId("task-agent-session-release")),
         threadId,
         reason: "Task-agent run ended.",
       });
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logDebug("Task-agent provider sessions not released", { threadId, cause }),
+    },
+    (effect, threadId) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logDebug("Task-agent provider sessions not released", { threadId, cause }),
+        ),
       ),
-    );
+  );
 
   const finalizeRun = (input: {
     readonly run: {
@@ -575,7 +580,7 @@ const make = Effect.gen(function* () {
     );
 
   /** A released run finished its work; every other reason ends it as stopped. */
-  const stopActiveRun = (
+  const stopActiveRun = Effect.fn("TaskAgentService.stopActiveRun")(function* (
     run: {
       readonly id: TaskAgentRunId;
       readonly taskId: Task["id"];
@@ -583,39 +588,38 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
     },
     reason: StopReason | null,
-  ) =>
-    Effect.gen(function* () {
-      const recordEvent = reason !== null && reason !== "released" && reason !== "task-deleted";
-      return yield* finalizeRun({
-        run,
-        finalizingStatus: "finalizing:stopped",
-        status: reason === "released" ? "completed" : "stopped",
-        interrupt: true,
-        events: recordEvent
-          ? [
-              {
-                id: TaskEventId.make(`${run.id}:task-agent-stopped`),
-                taskId: run.taskId,
-                kind: "task.agent-stopped",
-                payload: {
-                  agentId: run.agentId,
-                  agentRunId: run.id,
-                  threadId: run.threadId,
-                  reason,
-                },
-                createdAt: yield* now,
+  ) {
+    const recordEvent = reason !== null && reason !== "released" && reason !== "task-deleted";
+    return yield* finalizeRun({
+      run,
+      finalizingStatus: "finalizing:stopped",
+      status: reason === "released" ? "completed" : "stopped",
+      interrupt: true,
+      events: recordEvent
+        ? [
+            {
+              id: TaskEventId.make(`${run.id}:task-agent-stopped`),
+              taskId: run.taskId,
+              kind: "task.agent-stopped",
+              payload: {
+                agentId: run.agentId,
+                agentRunId: run.id,
+                threadId: run.threadId,
+                reason,
               },
-            ]
-          : [],
-      });
+              createdAt: yield* now,
+            },
+          ]
+        : [],
     });
+  });
 
   /**
    * A run that released its task finished its work. A release to the Blocked
    * status reports a blocker instead: the run ends as blocked with a result
    * event, and agents waiting on blocked runs start.
    */
-  const releaseRun = (
+  const releaseRun = Effect.fn("TaskAgentService.releaseRun")(function* (
     run: {
       readonly id: TaskAgentRunId;
       readonly taskId: Task["id"];
@@ -623,39 +627,38 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
     },
     task: Task,
-  ) =>
-    Effect.gen(function* () {
-      if (!isBlockedTaskStatus(task.status)) return yield* stopActiveRun(run, "released");
-      const summary =
-        task.output?.trim().slice(0, RELEASE_SUMMARY_MAX_LENGTH) ||
-        `Task agent set status "${task.status}".`;
-      const finalized = yield* finalizeRun({
-        run,
-        finalizingStatus: "finalizing:stopped",
-        status: "blocked",
-        interrupt: true,
-        events: [
-          {
-            id: TaskEventId.make(`${run.id}:task-agent-result`),
-            taskId: run.taskId,
-            kind: "task.agent-result",
-            payload: {
-              source: "task_update",
-              agentId: run.agentId,
-              agentRunId: run.id,
-              threadId: run.threadId,
-              status: task.status,
-              blocked: true,
-              summary,
-            },
-            createdAt: yield* now,
+  ) {
+    if (!isBlockedTaskStatus(task.status)) return yield* stopActiveRun(run, "released");
+    const summary =
+      task.output?.trim().slice(0, RELEASE_SUMMARY_MAX_LENGTH) ||
+      `Task agent set status "${task.status}".`;
+    const finalized = yield* finalizeRun({
+      run,
+      finalizingStatus: "finalizing:stopped",
+      status: "blocked",
+      interrupt: true,
+      events: [
+        {
+          id: TaskEventId.make(`${run.id}:task-agent-result`),
+          taskId: run.taskId,
+          kind: "task.agent-result",
+          payload: {
+            source: "task_update",
+            agentId: run.agentId,
+            agentRunId: run.id,
+            threadId: run.threadId,
+            status: task.status,
+            blocked: true,
+            summary,
           },
-        ],
-      });
-      // Agents waiting on blocked runs start as they do for a result block,
-      // within this run's modes (see startAgent).
-      if (finalized) yield* scheduleRunFinished(task.id);
+          createdAt: yield* now,
+        },
+      ],
     });
+    // Agents waiting on blocked runs start as they do for a result block,
+    // within this run's modes (see startAgent).
+    if (finalized) yield* scheduleRunFinished(task.id);
+  });
 
   /** Lets agents waiting on run statuses see a run that just ended. */
   const scheduleRunFinished = (taskId: Task["id"]) =>
@@ -676,19 +679,19 @@ const make = Effect.gen(function* () {
       Effect.asVoid,
     );
 
-  const finishUnrecoverableRun = (input: {
-    readonly run: {
-      readonly id: TaskAgentRunId;
-      readonly taskId: Task["id"];
-      readonly agentId: TaskAgent["id"];
-      readonly threadId: ThreadId;
-    };
-    readonly task: Task | null;
-    readonly status: "failed" | "interrupted";
-    readonly reason: string;
-    readonly interrupt: boolean;
-  }) =>
-    Effect.gen(function* () {
+  const finishUnrecoverableRun = Effect.fn("TaskAgentService.finishUnrecoverableRun")(
+    function* (input: {
+      readonly run: {
+        readonly id: TaskAgentRunId;
+        readonly taskId: Task["id"];
+        readonly agentId: TaskAgent["id"];
+        readonly threadId: ThreadId;
+      };
+      readonly task: Task | null;
+      readonly status: "failed" | "interrupted";
+      readonly reason: string;
+      readonly interrupt: boolean;
+    }) {
       const timestamp = yield* now;
       let taskOutput: string | null | undefined;
       const events = [];
@@ -724,15 +727,16 @@ const make = Effect.gen(function* () {
         events,
       });
       if (finalized && input.task !== null) yield* scheduleRunFinished(input.task.id);
-    });
+    },
+  );
 
   /**
    * Decides one active run from its v2 thread. Unlike V1, an in-flight v2 run
    * survives a restart (provider runtime recovery continues it), so startup no
    * longer interrupts running task agents.
    */
-  const reconcileRun = (run: TaskAgentRun, timestamp: string) =>
-    Effect.gen(function* () {
+  const reconcileRun = Effect.fn("TaskAgentService.reconcileRun")(
+    function* (run: TaskAgentRun, timestamp: string) {
       const taskOption = yield* repository.getById({ id: run.taskId });
       const agentOption = yield* repository.getAgentById({ id: run.agentId });
       const currentTask = Option.getOrNull(taskOption);
@@ -834,14 +838,17 @@ const make = Effect.gen(function* () {
           return;
         }
       }
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to reconcile active task-agent run", {
-          agentRunId: run.id,
-          cause,
-        }),
+    },
+    (effect, run, timestamp) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Failed to reconcile active task-agent run", {
+            agentRunId: run.id,
+            cause,
+          }),
+        ),
       ),
-    );
+  );
 
   const reconcileActiveRuns = Effect.gen(function* () {
     const activeRuns = yield* repository.listAllActiveAgentRuns();
@@ -866,295 +873,292 @@ const make = Effect.gen(function* () {
    * Run-status agents start for an unhandled terminal run of another agent;
    * every other agent starts on task state, subject to `runsAgain`.
    */
-  const startAgent = (
+  const startAgent = Effect.fn("TaskAgentService.startAgent")(function* (
     queuedAgent: TaskAgent,
     queuedTask: Task,
     startCeiling: RunModes | null | undefined,
-  ) =>
-    Effect.gen(function* () {
-      // Jobs carry the state from when they were queued; a later close, disable,
-      // delete or notBefore must win, so decide on the stored state.
-      const currentTask = yield* repository.getById({ id: queuedTask.id });
-      const currentAgent = yield* repository.getAgentById({ id: queuedAgent.id });
-      if (Option.isNone(currentTask) || Option.isNone(currentAgent)) return;
-      const task = currentTask.value;
-      const agent = currentAgent.value;
-      if (!startsForTask(agent, task, Date.parse(yield* now))) return;
-      if (
-        startCeiling !== undefined &&
-        (startCeiling === null ||
-          broaderRunMode(agentRunModes(agent.config), startCeiling) !== null)
-      ) {
-        yield* Effect.logInfo("Task agent not started: broader than the change's caller allows", {
-          taskId: task.id,
-          agentId: agent.id,
-        });
-        return;
-      }
-      if (
-        Option.isSome(
-          yield* repository.findActiveAgentRunForTaskAgent({
-            taskId: task.id,
-            agentId: agent.id,
-          }),
-        )
-      )
-        return;
-
-      const [previousRun] = yield* repository.searchAgentRuns({
+  ) {
+    // Jobs carry the state from when they were queued; a later close, disable,
+    // delete or notBefore must win, so decide on the stored state.
+    const currentTask = yield* repository.getById({ id: queuedTask.id });
+    const currentAgent = yield* repository.getAgentById({ id: queuedAgent.id });
+    if (Option.isNone(currentTask) || Option.isNone(currentAgent)) return;
+    const task = currentTask.value;
+    const agent = currentAgent.value;
+    if (!startsForTask(agent, task, Date.parse(yield* now))) return;
+    if (
+      startCeiling !== undefined &&
+      (startCeiling === null || broaderRunMode(agentRunModes(agent.config), startCeiling) !== null)
+    ) {
+      yield* Effect.logInfo("Task agent not started: broader than the change's caller allows", {
         taskId: task.id,
         agentId: agent.id,
-        limit: 1,
       });
-      let trigger: RunTrigger | null = null;
-      if (agent.startRunStatuses.length > 0) {
-        const triggerRuns = yield* repository.findRunStatusTriggers({
+      return;
+    }
+    if (
+      Option.isSome(
+        yield* repository.findActiveAgentRunForTaskAgent({
           taskId: task.id,
           agentId: agent.id,
-          statuses: agent.startRunStatuses,
-          completedAfter: agent.createdAt,
-        });
-        for (const triggerRun of triggerRuns) {
-          const triggerShell =
-            triggerRun.status === "failed" || triggerRun.status === "blocked"
-              ? yield* threads
-                  .getThreadShell(triggerRun.threadId)
-                  .pipe(Effect.orElseSucceed(() => null))
-              : null;
-          // A blocked run reported its own outcome, by result or release, so an agent
-          // acting on it runs within that run's modes, whichever pass starts it. A
-          // refused run stays unhandled and the agent may take an older one instead.
-          if (
-            triggerRun.status === "blocked" &&
-            (triggerShell === null ||
-              broaderRunMode(agentRunModes(agent.config), {
-                runtimeMode: triggerShell.runtimeMode,
-                interactionMode: triggerShell.interactionMode,
-              }) !== null)
-          ) {
-            yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
-              taskId: task.id,
-              agentId: agent.id,
-              triggerRunId: triggerRun.id,
-            });
-            continue;
-          }
-          const triggerAgent = yield* repository.getAgentById({ id: triggerRun.agentId });
-          trigger = {
-            run: triggerRun,
-            agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
-            // A failed run's provider error is its thread's last error, as V1's session error was.
-            reason: triggerRun.status === "failed" ? triggerShell?.lastError?.trim() || null : null,
-          };
-          break;
+        }),
+      )
+    )
+      return;
+
+    const [previousRun] = yield* repository.searchAgentRuns({
+      taskId: task.id,
+      agentId: agent.id,
+      limit: 1,
+    });
+    let trigger: RunTrigger | null = null;
+    if (agent.startRunStatuses.length > 0) {
+      const triggerRuns = yield* repository.findRunStatusTriggers({
+        taskId: task.id,
+        agentId: agent.id,
+        statuses: agent.startRunStatuses,
+        completedAfter: agent.createdAt,
+      });
+      for (const triggerRun of triggerRuns) {
+        const triggerShell =
+          triggerRun.status === "failed" || triggerRun.status === "blocked"
+            ? yield* threads
+                .getThreadShell(triggerRun.threadId)
+                .pipe(Effect.orElseSucceed(() => null))
+            : null;
+        // A blocked run reported its own outcome, by result or release, so an agent
+        // acting on it runs within that run's modes, whichever pass starts it. A
+        // refused run stays unhandled and the agent may take an older one instead.
+        if (
+          triggerRun.status === "blocked" &&
+          (triggerShell === null ||
+            broaderRunMode(agentRunModes(agent.config), {
+              runtimeMode: triggerShell.runtimeMode,
+              interactionMode: triggerShell.interactionMode,
+            }) !== null)
+        ) {
+          yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
+            taskId: task.id,
+            agentId: agent.id,
+            triggerRunId: triggerRun.id,
+          });
+          continue;
         }
-        if (trigger === null) return;
-      } else if (previousRun !== undefined && !runsAgain(agent, task, previousRun)) {
-        return;
-      }
-
-      const timestamp = yield* now;
-      const settings = yield* runPromptSettings(task);
-      const threadId = ThreadId.make(yield* randomId("task-agent"));
-      const runId = TaskAgentRunId.make(yield* randomId("task-agent-run"));
-      const { runtimeMode, interactionMode } = agentRunModes(agent.config);
-      const modelSelection = agent.config.modelSelection;
-      const title = `${agent.name}: ${task.title}`;
-
-      // Eligibility is re-checked inside the insert, so a close, postponement,
-      // disable or delete committed since the checks above wins.
-      const run = yield* repository
-        .startAgentRun({
-          id: runId,
-          taskId: task.id,
-          agentId: agent.id,
-          threadId,
-          modelSelection,
-          status: "running",
-          startedAt: timestamp,
-          completedAt: null,
-          triggerRunId: trigger?.run.id ?? null,
-          continuesRunId: null,
-          startableAt: timestamp,
-        })
-        .pipe(
-          Effect.map(Option.getOrNull),
-          Effect.catch((cause) =>
-            repository
-              .findActiveAgentRunForTaskAgent({ taskId: task.id, agentId: agent.id })
-              .pipe(
-                Effect.flatMap((active) =>
-                  Option.isSome(active) ? Effect.succeed(null) : Effect.fail(cause),
-                ),
-              ),
-          ),
-        );
-      if (run === null) return;
-
-      yield* Effect.gen(function* () {
-        // The agents' queue: unarchived agent tasks, plus this task when a tag
-        // handed a person task over.
-        const globallyOrderedTasks = (yield* repository.listTriggerCandidates()).filter(
-          ({ id, audience }) => audience === "agent" || id === task.id,
-        );
-        const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
-        // Read after the run started: it carries the run's claim and current output.
-        const startedTask = globallyOrderedTasks[globalIndex] ?? task;
-        const globalPosition = {
-          index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
-          total: globallyOrderedTasks.length,
+        const triggerAgent = yield* repository.getAgentById({ id: triggerRun.agentId });
+        trigger = {
+          run: triggerRun,
+          agentName: Option.isSome(triggerAgent) ? triggerAgent.value.name : null,
+          // A failed run's provider error is its thread's last error, as V1's session error was.
+          reason: triggerRun.status === "failed" ? triggerShell?.lastError?.trim() || null : null,
         };
-        const { events } = yield* repository.events({
-          taskId: task.id,
-          limit: RECENT_EVENTS_READ_LIMIT,
-        });
-        // Task-agent threads run in the project root and stay out of thread
-        // lists; the task UI links to them.
-        yield* threads.dispatch({
-          type: "thread.create",
-          createdBy: "agent",
-          creationSource: "server",
-          commandId: CommandId.make(yield* randomId("task-agent-thread-create")),
+        break;
+      }
+      if (trigger === null) return;
+    } else if (previousRun !== undefined && !runsAgain(agent, task, previousRun)) {
+      return;
+    }
+
+    const timestamp = yield* now;
+    const settings = yield* runPromptSettings(task);
+    const threadId = ThreadId.make(yield* randomId("task-agent"));
+    const runId = TaskAgentRunId.make(yield* randomId("task-agent-run"));
+    const { runtimeMode, interactionMode } = agentRunModes(agent.config);
+    const modelSelection = agent.config.modelSelection;
+    const title = `${agent.name}: ${task.title}`;
+
+    // Eligibility is re-checked inside the insert, so a close, postponement,
+    // disable or delete committed since the checks above wins.
+    const run = yield* repository
+      .startAgentRun({
+        id: runId,
+        taskId: task.id,
+        agentId: agent.id,
+        threadId,
+        modelSelection,
+        status: "running",
+        startedAt: timestamp,
+        completedAt: null,
+        triggerRunId: trigger?.run.id ?? null,
+        continuesRunId: null,
+        startableAt: timestamp,
+      })
+      .pipe(
+        Effect.map(Option.getOrNull),
+        Effect.catch((cause) =>
+          repository
+            .findActiveAgentRunForTaskAgent({ taskId: task.id, agentId: agent.id })
+            .pipe(
+              Effect.flatMap((active) =>
+                Option.isSome(active) ? Effect.succeed(null) : Effect.fail(cause),
+              ),
+            ),
+        ),
+      );
+    if (run === null) return;
+
+    yield* Effect.gen(function* () {
+      // The agents' queue: unarchived agent tasks, plus this task when a tag
+      // handed a person task over.
+      const globallyOrderedTasks = (yield* repository.listTriggerCandidates()).filter(
+        ({ id, audience }) => audience === "agent" || id === task.id,
+      );
+      const globalIndex = globallyOrderedTasks.findIndex(({ id }) => id === task.id);
+      // Read after the run started: it carries the run's claim and current output.
+      const startedTask = globallyOrderedTasks[globalIndex] ?? task;
+      const globalPosition = {
+        index: globalIndex < 0 ? globallyOrderedTasks.length : globalIndex + 1,
+        total: globallyOrderedTasks.length,
+      };
+      const { events } = yield* repository.events({
+        taskId: task.id,
+        limit: RECENT_EVENTS_READ_LIMIT,
+      });
+      // Task-agent threads run in the project root and stay out of thread
+      // lists; the task UI links to them.
+      yield* threads.dispatch({
+        type: "thread.create",
+        createdBy: "agent",
+        creationSource: "server",
+        commandId: CommandId.make(yield* randomId("task-agent-thread-create")),
+        threadId,
+        projectId: task.projectId,
+        title,
+        modelSelection,
+        runtimeMode,
+        interactionMode,
+        branch: null,
+        worktreePath: null,
+        sidebarHidden: true,
+      });
+      yield* threads.sendToThread({
+        projectId: task.projectId,
+        commandId: CommandId.make(yield* randomId("task-agent-turn-start")),
+        threadId,
+        messageId: taskAgentRunMessageId(run.id),
+        text: prompt({
+          agent,
+          task: startedTask,
+          runId: run.id,
           threadId,
-          projectId: task.projectId,
-          title,
-          modelSelection,
-          runtimeMode,
-          interactionMode,
-          branch: null,
-          worktreePath: null,
-          sidebarHidden: true,
-        });
-        yield* threads.sendToThread({
-          projectId: task.projectId,
-          commandId: CommandId.make(yield* randomId("task-agent-turn-start")),
-          threadId,
-          messageId: taskAgentRunMessageId(run.id),
-          text: prompt({
-            agent,
-            task: startedTask,
-            runId: run.id,
-            threadId,
-            settings,
-            globalPosition,
-            trigger,
-            events,
-            previousRun: previousRun ?? null,
-          }),
-          attachments: [],
-          modelSelection,
-          mode: "auto",
-          createdBy: "agent",
-          creationSource: "server",
-        });
-        yield* appendEvent(task, "task.agent-started", {
-          agentId: agent.id,
-          agentRunId: run.id,
-          threadId,
-          role: agent.config.role,
-          ...(trigger !== null ? { triggerRunId: trigger.run.id } : {}),
-        });
-      }).pipe(
-        Effect.onInterrupt(() =>
-          finishUnrecoverableRun({
+          settings,
+          globalPosition,
+          trigger,
+          events,
+          previousRun: previousRun ?? null,
+        }),
+        attachments: [],
+        modelSelection,
+        mode: "auto",
+        createdBy: "agent",
+        creationSource: "server",
+      });
+      yield* appendEvent(task, "task.agent-started", {
+        agentId: agent.id,
+        agentRunId: run.id,
+        threadId,
+        role: agent.config.role,
+        ...(trigger !== null ? { triggerRunId: trigger.run.id } : {}),
+      });
+    }).pipe(
+      Effect.onInterrupt(() =>
+        finishUnrecoverableRun({
+          run,
+          task,
+          status: "failed",
+          reason: "Task-agent startup was interrupted before the provider run became usable.",
+          interrupt: true,
+        }).pipe(Effect.ignore),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.gen(function* () {
+          yield* finishUnrecoverableRun({
             run,
             task,
             status: "failed",
-            reason: "Task-agent startup was interrupted before the provider run became usable.",
+            reason: `Task-agent provider startup failed: ${String(cause)}`,
             interrupt: true,
-          }).pipe(Effect.ignore),
-        ),
-        Effect.catchCause((cause) =>
-          Effect.gen(function* () {
-            yield* finishUnrecoverableRun({
-              run,
-              task,
-              status: "failed",
-              reason: `Task-agent provider startup failed: ${String(cause)}`,
-              interrupt: true,
-            }).pipe(Effect.ignore);
-            yield* Effect.logError("Failed to start task agent", {
-              taskId: task.id,
-              agentId: agent.id,
-              cause,
-            });
-          }),
-        ),
-      );
-    });
+          }).pipe(Effect.ignore);
+          yield* Effect.logError("Failed to start task agent", {
+            taskId: task.id,
+            agentId: agent.id,
+            cause,
+          });
+        }),
+      ),
+    );
+  });
 
-  const startMatchingAgents = (
+  const startMatchingAgents = Effect.fn("TaskAgentService.startMatchingAgents")(function* (
     agents: ReadonlyArray<TaskAgent>,
     task: Task,
     startCeiling?: RunModes | null,
-  ) =>
-    Effect.gen(function* () {
-      const nowMs = Date.parse(yield* now);
-      yield* Effect.forEach(
-        agents.filter((agent) => startsForTask(agent, task, nowMs)),
-        (agent) => startAgent(agent, task, startCeiling),
-        { discard: true, concurrency: 1 },
-      );
-    });
+  ) {
+    const nowMs = Date.parse(yield* now);
+    yield* Effect.forEach(
+      agents.filter((agent) => startsForTask(agent, task, nowMs)),
+      (agent) => startAgent(agent, task, startCeiling),
+      { discard: true, concurrency: 1 },
+    );
+  });
 
-  const reconcileTask = ({
+  const reconcileTask = Effect.fn("TaskAgentService.reconcileTask")(function* ({
     task: queuedTask,
     reason,
     releasedRunId,
     startCeiling,
-  }: TaskChangedInput) =>
-    Effect.gen(function* () {
-      // Archive and unarchive record their own history events in the repository.
-      if (reason !== "run-finished" && reason !== "archived" && reason !== "unarchived") {
-        yield* appendEvent(queuedTask, `task.${reason}`, {
-          status: queuedTask.status,
-          tags: queuedTask.tags,
-        });
-      }
-      const current =
-        reason === "deleted"
-          ? null
-          : Option.getOrNull(yield* repository.getById({ id: queuedTask.id }));
-      const task = current ?? queuedTask;
-      const active = yield* repository.listActiveAgentRunsForTask({ id: task.id });
-      yield* Effect.forEach(
-        active,
-        (run) =>
-          Effect.gen(function* () {
-            const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
-            const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
-            if (stopReason !== null) yield* stopActiveRun(run, stopReason);
-            else if (run.id === releasedRunId) yield* releaseRun(run, queuedTask);
-          }),
-        { discard: true, concurrency: 1 },
-      );
-      if (current === null) return;
-      yield* startMatchingAgents(yield* repository.listAllAgents(), task, startCeiling);
-    });
+  }: TaskChangedInput) {
+    // Archive and unarchive record their own history events in the repository.
+    if (reason !== "run-finished" && reason !== "archived" && reason !== "unarchived") {
+      yield* appendEvent(queuedTask, `task.${reason}`, {
+        status: queuedTask.status,
+        tags: queuedTask.tags,
+      });
+    }
+    const current =
+      reason === "deleted"
+        ? null
+        : Option.getOrNull(yield* repository.getById({ id: queuedTask.id }));
+    const task = current ?? queuedTask;
+    const active = yield* repository.listActiveAgentRunsForTask({ id: task.id });
+    yield* Effect.forEach(
+      active,
+      (run) =>
+        Effect.gen(function* () {
+          const agent = Option.getOrNull(yield* repository.getAgentById({ id: run.agentId }));
+          const stopReason = current === null ? "task-deleted" : endingStopReason(agent, current);
+          if (stopReason !== null) yield* stopActiveRun(run, stopReason);
+          else if (run.id === releasedRunId) yield* releaseRun(run, queuedTask);
+        }),
+      { discard: true, concurrency: 1 },
+    );
+    if (current === null) return;
+    yield* startMatchingAgents(yield* repository.listAllAgents(), task, startCeiling);
+  });
 
-  const reconcileAgent = ({ agent, reason }: TaskAgentChangedInput) =>
-    Effect.gen(function* () {
-      const runs = (yield* repository.listAllActiveAgentRuns()).filter(
-        (run) => run.agentId === agent.id,
-      );
-      yield* Effect.forEach(
-        runs,
-        (run) =>
-          Effect.gen(function* () {
-            const task = Option.getOrNull(yield* repository.getById({ id: run.taskId }));
-            const stopReason =
-              reason === "deleted" ? "agent-deleted" : endingStopReason(agent, task);
-            if (stopReason !== null) yield* stopActiveRun(run, stopReason);
-          }),
-        { discard: true, concurrency: 1 },
-      );
-      if (reason === "deleted" || !agent.enabled) return;
-      yield* Effect.forEach(
-        yield* repository.listTriggerCandidates(),
-        (task) => startMatchingAgents([agent], task),
-        { discard: true, concurrency: 1 },
-      );
-    });
+  const reconcileAgent = Effect.fn("TaskAgentService.reconcileAgent")(function* ({
+    agent,
+    reason,
+  }: TaskAgentChangedInput) {
+    const runs = (yield* repository.listAllActiveAgentRuns()).filter(
+      (run) => run.agentId === agent.id,
+    );
+    yield* Effect.forEach(
+      runs,
+      (run) =>
+        Effect.gen(function* () {
+          const task = Option.getOrNull(yield* repository.getById({ id: run.taskId }));
+          const stopReason = reason === "deleted" ? "agent-deleted" : endingStopReason(agent, task);
+          if (stopReason !== null) yield* stopActiveRun(run, stopReason);
+        }),
+      { discard: true, concurrency: 1 },
+    );
+    if (reason === "deleted" || !agent.enabled) return;
+    yield* Effect.forEach(
+      yield* repository.listTriggerCandidates(),
+      (task) => startMatchingAgents([agent], task),
+      { discard: true, concurrency: 1 },
+    );
+  });
 
   const recover = Effect.gen(function* () {
     yield* reconcileActiveRuns;
@@ -1176,187 +1180,191 @@ const make = Effect.gen(function* () {
     | { readonly type: "send"; readonly text: string }
     | { readonly type: "adopted"; readonly startedAt: string };
 
-  const continueRun = (id: TaskAgentRunId, message: RunMessage) =>
-    Effect.gen(function* () {
-      const refuse = (error: string, activeRunId?: TaskAgentRunId): MessageRunResult => ({
-        ok: false,
-        error,
-        ...(activeRunId !== undefined ? { activeRunId } : {}),
-      });
-      const found = yield* repository.getAgentRunById({ id });
-      if (Option.isNone(found)) return refuse(`Agent run '${id}' was not found.`);
-      // Set while a continuation exists whose first turn has not been sent yet.
-      const pending: {
-        current: { readonly continuation: TaskAgentRun; readonly task: Task } | null;
-      } = { current: null };
-      // Decided and sent under the thread's lock, against the run's current state,
-      // so a finalizer cannot act on this thread in between.
-      const outcome = yield* withThreadLock(
-        found.value.threadId,
-        Effect.gen(function* () {
-          const runOption = yield* repository.getAgentRunById({ id });
-          if (Option.isNone(runOption)) return refuse(`Agent run '${id}' was not found.`);
-          const run = runOption.value;
-          const records = yield* readThreadRuns(run.threadId);
-          if (Option.isNone(records))
-            return refuse(`Thread '${run.threadId}' of agent run '${id}' was not found.`);
-          const thread = records.value.thread;
-          const taskOption = yield* repository.getById({ id: run.taskId });
-          if (Option.isNone(taskOption)) return refuse(`Task '${run.taskId}' was not found.`);
-          const task = taskOption.value;
-          if (task.archivedAt !== null)
-            return refuse(`Task '${task.id}' is archived. Unarchive it before messaging its runs.`);
-          const agentOption = yield* repository.getAgentById({ id: run.agentId });
-          if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
-          const agent = agentOption.value;
-          if (!agent.enabled)
+  const continueRun = Effect.fn("TaskAgentService.continueRun")(function* (
+    id: TaskAgentRunId,
+    message: RunMessage,
+  ) {
+    const refuse = (error: string, activeRunId?: TaskAgentRunId): MessageRunResult => ({
+      ok: false,
+      error,
+      ...(activeRunId !== undefined ? { activeRunId } : {}),
+    });
+    const found = yield* repository.getAgentRunById({ id });
+    if (Option.isNone(found)) return refuse(`Agent run '${id}' was not found.`);
+    // Set while a continuation exists whose first turn has not been sent yet.
+    const pending: {
+      current: { readonly continuation: TaskAgentRun; readonly task: Task } | null;
+    } = { current: null };
+    // Decided and sent under the thread's lock, against the run's current state,
+    // so a finalizer cannot act on this thread in between.
+    const outcome = yield* withThreadLock(
+      found.value.threadId,
+      Effect.gen(function* () {
+        const runOption = yield* repository.getAgentRunById({ id });
+        if (Option.isNone(runOption)) return refuse(`Agent run '${id}' was not found.`);
+        const run = runOption.value;
+        const records = yield* readThreadRuns(run.threadId);
+        if (Option.isNone(records))
+          return refuse(`Thread '${run.threadId}' of agent run '${id}' was not found.`);
+        const thread = records.value.thread;
+        const taskOption = yield* repository.getById({ id: run.taskId });
+        if (Option.isNone(taskOption)) return refuse(`Task '${run.taskId}' was not found.`);
+        const task = taskOption.value;
+        if (task.archivedAt !== null)
+          return refuse(`Task '${task.id}' is archived. Unarchive it before messaging its runs.`);
+        const agentOption = yield* repository.getAgentById({ id: run.agentId });
+        if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
+        const agent = agentOption.value;
+        if (!agent.enabled)
+          return refuse(
+            `Agent '${agent.name}' (${agent.id}) is disabled. Enable it before messaging its runs.`,
+          );
+
+        // The same delivery a person's message gets: v2 steers a running turn
+        // and otherwise starts a new run on the thread.
+        const sendTurn = Effect.fn("TaskAgentService.sendTurn")(function* (
+          messageId: MessageId,
+          messageText: string,
+        ) {
+          yield* threads.sendToThread({
+            projectId: thread.projectId,
+            commandId: CommandId.make(yield* randomId("task-agent-message-turn")),
+            threadId: run.threadId,
+            messageId,
+            text: messageText,
+            attachments: [],
+            mode: "auto",
+            createdBy: "agent",
+            creationSource: "server",
+          });
+        });
+
+        if (run.completedAt === null) {
+          if (run.status.startsWith("finalizing:"))
             return refuse(
-              `Agent '${agent.name}' (${agent.id}) is disabled. Enable it before messaging its runs.`,
+              `Agent run '${id}' is finishing (${run.status}). Message it again once it has ended; it then continues as a new run.`,
             );
+          if (message.type === "send")
+            yield* sendTurn(MessageId.make(yield* randomId("task-agent-message")), message.text);
+          return { ok: true, run, continued: false } satisfies MessageRunResult;
+        }
 
-          // The same delivery a person's message gets: v2 steers a running turn
-          // and otherwise starts a new run on the thread.
-          const sendTurn = (messageId: MessageId, messageText: string) =>
-            Effect.gen(function* () {
-              yield* threads.sendToThread({
-                projectId: thread.projectId,
-                commandId: CommandId.make(yield* randomId("task-agent-message-turn")),
-                threadId: run.threadId,
-                messageId,
-                text: messageText,
-                attachments: [],
-                mode: "auto",
-                createdBy: "agent",
-                creationSource: "server",
-              });
-            });
-
-          if (run.completedAt === null) {
-            if (run.status.startsWith("finalizing:"))
-              return refuse(
-                `Agent run '${id}' is finishing (${run.status}). Message it again once it has ended; it then continues as a new run.`,
-              );
-            if (message.type === "send")
-              yield* sendTurn(MessageId.make(yield* randomId("task-agent-message")), message.text);
-            return { ok: true, run, continued: false } satisfies MessageRunResult;
-          }
-
-          const activeRefusal = (active: TaskAgentRun) =>
-            refuse(
-              `Agent '${agent.name}' already has active run '${active.id}' on task '${task.id}' (thread '${active.threadId}'). Message that run instead.`,
-              active.id,
-            );
-          const findActive = repository.findActiveAgentRunForTaskAgent({
+        const activeRefusal = (active: TaskAgentRun) =>
+          refuse(
+            `Agent '${agent.name}' already has active run '${active.id}' on task '${task.id}' (thread '${active.threadId}'). Message that run instead.`,
+            active.id,
+          );
+        const findActive = repository.findActiveAgentRunForTaskAgent({
+          taskId: task.id,
+          agentId: agent.id,
+        });
+        const active = yield* findActive;
+        if (Option.isSome(active)) return activeRefusal(active.value);
+        const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
+        // Unarchived task and enabled agent are re-checked inside the insert, so a
+        // close, disable or delete committed since the checks above wins.
+        const created = yield* repository
+          .startAgentRun({
+            id: TaskAgentRunId.make(yield* randomId("task-agent-run")),
             taskId: task.id,
             agentId: agent.id,
-          });
-          const active = yield* findActive;
-          if (Option.isSome(active)) return activeRefusal(active.value);
-          const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
-          // Unarchived task and enabled agent are re-checked inside the insert, so a
-          // close, disable or delete committed since the checks above wins.
-          const created = yield* repository
-            .startAgentRun({
-              id: TaskAgentRunId.make(yield* randomId("task-agent-run")),
-              taskId: task.id,
-              agentId: agent.id,
-              threadId: run.threadId,
-              modelSelection: thread.modelSelection,
-              status: "running",
-              startedAt: timestamp,
-              completedAt: null,
-              triggerRunId: null,
-              continuesRunId: run.id,
-              // Explicit messages ignore notBefore.
-              startableAt: null,
-            })
-            .pipe(
-              Effect.map((continuation) => ({
-                continuation: Option.getOrNull(continuation),
-                active: null,
-              })),
-              // The one-active-run index lost a race against another start.
-              Effect.catch((cause) =>
-                findActive.pipe(
-                  Effect.flatMap((raced) =>
-                    Option.isSome(raced)
-                      ? Effect.succeed({ continuation: null, active: raced.value })
-                      : Effect.fail(cause),
-                  ),
+            threadId: run.threadId,
+            modelSelection: thread.modelSelection,
+            status: "running",
+            startedAt: timestamp,
+            completedAt: null,
+            triggerRunId: null,
+            continuesRunId: run.id,
+            // Explicit messages ignore notBefore.
+            startableAt: null,
+          })
+          .pipe(
+            Effect.map((continuation) => ({
+              continuation: Option.getOrNull(continuation),
+              active: null,
+            })),
+            // The one-active-run index lost a race against another start.
+            Effect.catch((cause) =>
+              findActive.pipe(
+                Effect.flatMap((raced) =>
+                  Option.isSome(raced)
+                    ? Effect.succeed({ continuation: null, active: raced.value })
+                    : Effect.fail(cause),
                 ),
               ),
-            );
-          if (created.active !== null) return activeRefusal(created.active);
-          const continuation = created.continuation;
-          if (continuation === null)
-            return refuse(
-              `Task '${task.id}' was archived, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
-            );
+            ),
+          );
+        if (created.active !== null) return activeRefusal(created.active);
+        const continuation = created.continuation;
+        if (continuation === null)
+          return refuse(
+            `Task '${task.id}' was archived, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
+          );
 
-          if (message.type === "send") {
-            pending.current = { continuation, task };
-            const startedTask = Option.getOrElse(
-              yield* repository
-                .getById({ id: task.id })
-                .pipe(Effect.orElseSucceed(() => Option.none<Task>())),
-              () => task,
-            );
-            const sent = yield* Effect.exit(
-              sendTurn(
-                taskAgentRunMessageId(continuation.id),
-                `Task-agent run continued:
+        if (message.type === "send") {
+          pending.current = { continuation, task };
+          const startedTask = Option.getOrElse(
+            yield* repository
+              .getById({ id: task.id })
+              .pipe(Effect.orElseSucceed(() => Option.none<Task>())),
+            () => task,
+          );
+          const sent = yield* Effect.exit(
+            sendTurn(
+              taskAgentRunMessageId(continuation.id),
+              `Task-agent run continued:
 This thread continues ended run ${run.id} (status "${run.status}") as a new run.
 - agentRunId: ${continuation.id}
 ${claimLine(startedTask, continuation.id)}
 Finish as before: release the task in your final task_update, or end with a fenced task_agent_result JSON block.
 
 ${message.text}`,
-              ),
-            );
-            if (sent._tag === "Failure") {
-              return {
-                sendFailure: `Sending the continuation message failed: ${String(sent.cause)}`,
-              } as const;
-            }
-            pending.current = null;
+            ),
+          );
+          if (sent._tag === "Failure") {
+            return {
+              sendFailure: `Sending the continuation message failed: ${String(sent.cause)}`,
+            } as const;
           }
-          yield* appendEvent(task, "task.agent-started", {
-            agentId: agent.id,
-            agentRunId: continuation.id,
-            threadId: run.threadId,
-            role: agent.config.role,
-            continuesRunId: run.id,
-          });
-          return { ok: true, run: continuation, continued: true } satisfies MessageRunResult;
-        }),
-      ).pipe(
-        // Finishing takes the same lock, so it runs only after the lock is released.
-        Effect.onInterrupt(() =>
-          pending.current === null
-            ? Effect.void
-            : finishUnrecoverableRun({
-                run: pending.current.continuation,
-                task: pending.current.task,
-                status: "failed",
-                reason: "Sending the continuation message was interrupted.",
-                interrupt: false,
-              }).pipe(Effect.ignore),
-        ),
-      );
-      if ("sendFailure" in outcome) {
-        if (pending.current !== null) {
-          yield* finishUnrecoverableRun({
-            run: pending.current.continuation,
-            task: pending.current.task,
-            status: "failed",
-            reason: outcome.sendFailure,
-            interrupt: false,
-          }).pipe(Effect.ignore);
+          pending.current = null;
         }
-        return refuse(outcome.sendFailure);
+        yield* appendEvent(task, "task.agent-started", {
+          agentId: agent.id,
+          agentRunId: continuation.id,
+          threadId: run.threadId,
+          role: agent.config.role,
+          continuesRunId: run.id,
+        });
+        return { ok: true, run: continuation, continued: true } satisfies MessageRunResult;
+      }),
+    ).pipe(
+      // Finishing takes the same lock, so it runs only after the lock is released.
+      Effect.onInterrupt(() =>
+        pending.current === null
+          ? Effect.void
+          : finishUnrecoverableRun({
+              run: pending.current.continuation,
+              task: pending.current.task,
+              status: "failed",
+              reason: "Sending the continuation message was interrupted.",
+              interrupt: false,
+            }).pipe(Effect.ignore),
+      ),
+    );
+    if ("sendFailure" in outcome) {
+      if (pending.current !== null) {
+        yield* finishUnrecoverableRun({
+          run: pending.current.continuation,
+          task: pending.current.task,
+          status: "failed",
+          reason: outcome.sendFailure,
+          interrupt: false,
+        }).pipe(Effect.ignore);
       }
-      return outcome;
-    });
+      return refuse(outcome.sendFailure);
+    }
+    return outcome;
+  });
 
   const messageRun: TaskAgentServiceShape["messageRun"] = ({ id, text }) =>
     continueRun(id, { type: "send", text });
@@ -1367,8 +1375,8 @@ ${message.text}`,
    * refuses (archived task, disabled agent, another active run), or the run is
    * still active, the message stays a plain chat turn.
    */
-  const continueFromPersonMessage = (v2Run: OrchestrationV2Run) =>
-    Effect.gen(function* () {
+  const continueFromPersonMessage = Effect.fn("TaskAgentService.continueFromPersonMessage")(
+    function* (v2Run: OrchestrationV2Run) {
       const latest = yield* repository.findLatestAgentRunByThreadId({ threadId: v2Run.threadId });
       if (Option.isNone(latest) || latest.value.completedAt === null) return;
       const { messages } = yield* threads.getThreadRecords(v2Run.threadId, ["messages"], {
@@ -1384,7 +1392,8 @@ ${message.text}`,
           agentRunId: latest.value.id,
           reason: result.error,
         });
-    });
+    },
+  );
 
   /**
    * After a server restart only a thread's active task-agent run may continue,
@@ -1392,8 +1401,8 @@ ${message.text}`,
    * stoppable. An ended run (whose provider may still hold native background
    * work) or one its agent or task now ends gets no turn outside a run.
    */
-  const admitsRestartContinuation = (input: Parameters<RestartContinuationGate>[0]) =>
-    Effect.gen(function* () {
+  const admitsRestartContinuation = Effect.fn("TaskAgentService.admitsRestartContinuation")(
+    function* (input: Parameters<RestartContinuationGate>[0]) {
       const active = yield* repository.findActiveAgentRunByThreadId({ threadId: input.threadId });
       if (Option.isNone(active) || active.value.status.startsWith("finalizing:")) return false;
       const run = active.value;
@@ -1408,14 +1417,17 @@ ${message.text}`,
         source !== undefined &&
         DateTime.toEpochMillis(source.requestedAt) >= Date.parse(run.startedAt)
       );
-    }).pipe(
-      Effect.catch((cause) =>
-        Effect.logWarning("Task-agent restart continuation refused: run state unreadable", {
-          threadId: input.threadId,
-          cause,
-        }).pipe(Effect.as(false)),
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Task-agent restart continuation refused: run state unreadable", {
+            threadId: input.threadId,
+            cause,
+          }).pipe(Effect.as(false)),
+        ),
       ),
-    );
+  );
 
   // Decided and sent under the thread's lock, so a finalizer cannot end the
   // run between the decision and the turn. Threads no run used are not ours.
@@ -1440,13 +1452,14 @@ ${message.text}`,
     }),
   );
 
-  const stopRun: TaskAgentServiceShape["stopRun"] = ({ id }) =>
-    Effect.gen(function* () {
+  const stopRun: TaskAgentServiceShape["stopRun"] = Effect.fn("TaskAgentService.stopRun")(
+    function* ({ id }) {
       const run = yield* repository.getAgentRunById({ id });
       if (Option.isNone(run)) return run;
       if (run.value.completedAt === null) yield* stopActiveRun(run.value, "stop-requested");
       return yield* repository.getAgentRunById({ id });
-    });
+    },
+  );
 
   // A v2 run reaching a terminal status settles the task-agent run on its
   // thread right away; the periodic pass below covers missed events and

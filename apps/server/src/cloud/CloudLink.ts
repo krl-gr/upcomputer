@@ -995,24 +995,23 @@ const make = Effect.gen(function* () {
    * that response's Date has just corrected the relay clock. One retry with a
    * fresh proof keeps a wrong clock from reading as a revoked link.
    */
-  const withRecoveryProof = <A>(
+  const withRecoveryProof = Effect.fn("CloudLink.withRecoveryProof")(function* <A>(
     proofInput: ManagedTunnelRecoveryProofInput,
     request: (proof: string) => Effect.Effect<A, RelayRequestError>,
-  ) =>
-    Effect.gen(function* () {
-      const offsetBefore = yield* relayClock.offsetMillis;
-      const attempt = makeManagedTunnelRecoveryProof(proofInput).pipe(Effect.flatMap(request));
-      return yield* attempt.pipe(
-        Effect.catchTags({
-          RelayRequestError: (error) =>
-            error.rejection === "unauthorized"
-              ? Effect.flatMap(relayClock.offsetMillis, (offsetAfter) =>
-                  offsetAfter === offsetBefore ? Effect.fail(error) : attempt,
-                )
-              : Effect.fail(error),
-        }),
-      );
-    });
+  ) {
+    const offsetBefore = yield* relayClock.offsetMillis;
+    const attempt = makeManagedTunnelRecoveryProof(proofInput).pipe(Effect.flatMap(request));
+    return yield* attempt.pipe(
+      Effect.catchTags({
+        RelayRequestError: (error) =>
+          error.rejection === "unauthorized"
+            ? Effect.flatMap(relayClock.offsetMillis, (offsetAfter) =>
+                offsetAfter === offsetBefore ? Effect.fail(error) : attempt,
+              )
+            : Effect.fail(error),
+      }),
+    );
+  });
 
   /**
    * Nothing stored is removed: the relay also answers 401 for a skewed clock,

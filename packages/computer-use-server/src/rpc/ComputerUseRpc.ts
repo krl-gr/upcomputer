@@ -103,13 +103,13 @@ const rpcError = (cause: unknown) =>
     message: cause instanceof Error ? cause.message : String(cause),
   });
 
-function runtimeAction(action: (services: RuntimeServices) => Promise<unknown>) {
-  return Effect.gen(function* () {
-    const services = yield* runtimeServices;
-    yield* Effect.tryPromise({ try: () => action(services), catch: rpcError });
-    return yield* Effect.tryPromise({ try: () => snapshotFor(services), catch: rpcError });
-  });
-}
+const runtimeAction = Effect.fn("ComputerUseRpc.runtimeAction")(function* (
+  action: (services: RuntimeServices) => Promise<unknown>,
+) {
+  const services = yield* runtimeServices;
+  yield* Effect.tryPromise({ try: () => action(services), catch: rpcError });
+  return yield* Effect.tryPromise({ try: () => snapshotFor(services), catch: rpcError });
+});
 
 export const COMPUTER_USE_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
   id: "computer-use-rpc-v1",
