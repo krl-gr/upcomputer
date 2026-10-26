@@ -141,7 +141,10 @@ export interface SourceControlIconPath {
   readonly strokeWidth?: number;
 }
 
-/** Whether the mark is drawn in the text colour alone, so a client may tint it. */
+/**
+ * Whether the mark is drawn in the text colour alone, so a client may tint it.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
+ */
 export function isMonochromeSourceControlIcon(icon: SourceControlIcon): boolean {
   return icon.paths.every(
     (path) =>

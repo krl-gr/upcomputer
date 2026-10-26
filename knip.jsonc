@@ -116,6 +116,8 @@
     "apps/marketing": {
       // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.
       "ignoreDependencies": ["@astrojs/check"],
+      // Up.computer's site loads these by path from <script> tags, which knip does not trace.
+      "entry": ["src/scripts/*.ts", "public/scripts/*.js"],
     },
     "apps/mobile": {
       // Expo loads plugins and the fingerprint config by string; Metro embeds the browser entry in the native WebView.

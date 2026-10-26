@@ -6,6 +6,7 @@ import {
 import type { ServerSettings } from "@t3tools/contracts";
 
 export {
+  /** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
   isMonochromeSourceControlIcon,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
   type ChangeRequestLink,

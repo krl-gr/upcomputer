@@ -311,6 +311,39 @@ export default defineConfig({
         rules: { "t3code/no-polling-loop-in-tests": "warn" },
       },
       {
+        // UpComputer burn-down list: our tests written before upstream's test-timing
+        // rules arrived in the 2026-10 sync. They stay at "warn" until converted;
+        // remove a file when it passes. Do not add new files to this list.
+        files: [
+          "apps/desktop/src/backend/DesktopBackendQuit.test.ts",
+          "apps/web/src/composerFooter/composerLookChromium.test.tsx",
+          "apps/web/src/product/tasksSurface.test.tsx",
+          "apps/web/src/sidebarMetrics/sidebarAlignment.test.tsx",
+          "apps/web/src/sidebarThreadRow/SidebarCompactThreadRow.test.tsx",
+          "apps/web/src/sidebarThreadRow/SidebarThreadProjectIcons.test.tsx",
+          "apps/web/src/sidebarThreadRow/ThreadStatusLabel.test.tsx",
+          "apps/web/src/sidebarVibrancy/sidebarVibrancy.test.tsx",
+          "packages/computer-use-server/src/computerUse/ComputerUseNativeContract.test.ts",
+          "packages/tasks-server/src/agents/TaskAgentService.v2.integration.test.ts",
+          "packages/tasks-server/src/agents/TaskTriggerSemantics.test.ts",
+          "packages/tasks-server/src/tools/InstructionsTools.test.ts",
+          "packages/tasks-web/src/bots/botAutosave.test.ts",
+          "packages/tasks-web/src/environmentApi.test.ts",
+          "packages/tasks-web/src/planner/data/automationStore.test.ts",
+          "packages/tasks-web/src/planner/data/plannerStore.test.ts",
+          "packages/tasks-web/src/ui/environmentRunCounts.test.ts",
+          "packages/tasks-web/src/ui/taskLiveUpdates.test.ts",
+          "packages/tasks-web/src/ui/tasksPanelCache.test.ts",
+          "packages/tasks-web/src/ui/threadRunCounts.test.ts",
+        ],
+        rules: {
+          "t3code/no-polling-loop-in-tests": "warn",
+          "t3code/no-real-time-wait-in-tests": "warn",
+          "t3code/no-test-timeout-or-unreasoned-skip": "warn",
+          "t3code/no-wall-clock-in-tests": "warn",
+        },
+      },
+      {
         files: ["apps/**/src/**", "packages/**/src/**"],
         excludeFiles: DOM_TEST_ENVIRONMENT_ALLOWLIST,
         rules: { "t3code/no-dom-test-environment": "error" },

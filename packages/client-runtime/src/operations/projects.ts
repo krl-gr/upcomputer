@@ -104,6 +104,7 @@ const REPOSITORY_SHORTHAND = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]
 /**
  * The clone URL of `owner/name` on the public host of the host a repository reads as before it
  * reports one. Null when that host has no public host.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function defaultHostCloneUrl(repository: string): string | null {
   const definition = sourceControlClients.get(undefined);
