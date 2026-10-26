@@ -315,6 +315,9 @@ describe("with the upstream surface", () => {
           <BranchToolbar
             environmentId={ENV}
             threadId={THREAD}
+            projectId={UPCOMPUTER.id as never}
+            worktreePath={null}
+            isServerThread={false}
             showGitControls
             draftId={"draft-4" as never}
             onEnvModeChange={vi.fn()}

@@ -54,7 +54,7 @@ vi.mock("../hooks/useRecordClientEvent", () => ({
   useRecordClientEvent: () => (_environmentId: string, input: Record<string, unknown>) =>
     mocks.events.push(input),
 }));
-vi.mock("../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks.complete }));
+vi.mock("../onboarding/firstRun", () => ({ completeOnboarding: () => mocks.complete() }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({ environments: [{ environmentId: "env", label: "Computer" }] }),
 }));

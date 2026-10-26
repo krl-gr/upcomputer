@@ -312,10 +312,12 @@ describe("welcome agent terminal setup", () => {
   });
 
   it("reports a user who installs Claude but leaves setup with no agent ready", async () => {
+    setup();
     state.refresh.mockResolvedValue(
       AsyncResult.success({ providers: [missingClaude, signedOutCodex] }),
     );
-    await enterRemoteAgents();
+    await using screen = await render(null);
+    await enterRemoteAgents(screen);
     await click("Install");
     await click("Close");
     await click("Continue");

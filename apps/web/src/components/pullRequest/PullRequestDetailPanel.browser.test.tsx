@@ -584,6 +584,7 @@ it("restores the selected PR tab when switching threads and remounting the right
         activeSurfaceId={selected?.id ?? null}
         threadRef={ref}
         environmentId={ref.environmentId}
+        projectId={null}
         visible
         composerDraftTarget={ref}
         keybindings={[]}

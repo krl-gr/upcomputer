@@ -80,23 +80,25 @@ describe("restoring V2 settings", () => {
   });
 
   it("restores waking a chat when tasks complete after it was turned off", async () => {
+    setup();
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, wakeChatOnTaskCompletion: false };
-    hooks.beginRender();
-    const restore = useSettingsRestore();
+    await using screen = await renderRestore();
+    const { restore } = screen;
 
     expect(restore.changedSettingLabels).toEqual(["Wake chat when tasks complete"]);
-    await restore.restoreDefaults();
+    await act(() => restore.restoreDefaults());
 
     expect(state.update.mock.calls[0]?.[0].wakeChatOnTaskCompletion).toBe(true);
   });
 
   it("restores the thread details card after it was turned off", async () => {
+    setup();
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, threadDetailsEnabled: false };
-    hooks.beginRender();
-    const restore = useSettingsRestore();
+    await using screen = await renderRestore();
+    const { restore } = screen;
 
     expect(restore.changedSettingLabels).toEqual(["Thread details"]);
-    await restore.restoreDefaults();
+    await act(() => restore.restoreDefaults());
 
     expect(state.update.mock.calls[0]?.[0].threadDetailsEnabled).toBe(true);
   });

@@ -70,6 +70,10 @@ vi.mock(import("../../hooks/useNavigateBack"), async (original) => ({
   ...(await original()),
   useEscapeToGoBack: () => undefined,
 }));
+vi.mock(import("../../hooks/useShownPathname"), async (original) => ({
+  ...(await original()),
+  useShownPathname: () => state.shownPathname ?? state.pathname,
+}));
 vi.mock(import("./SettingsPanels"), async (original) => ({
   ...(await original()),
   useSettingsRestore: (() => ({ changedSettingLabels: [] })) as never,
@@ -130,16 +134,22 @@ it.each([
 
 it("keeps the previous page out from under the header of a page still loading", async () => {
   // A new scope value each time, so the layout renders again with the new paths.
-  state.pathname = "/settings/general";
-  await render({ ...first });
+  setup("/settings/general", { ...first });
+  state.shownPathname = null;
+  await using screen = await render(<Layout />);
+  const { container } = screen;
+  const retainedValue = () =>
+    container.querySelector('button[aria-label="Retained value"]')?.textContent ?? null;
   expect(retainedValue()).toBe("0");
 
   state.pathname = "/settings/providers";
   state.shownPathname = "/settings/general";
-  await render({ ...first });
+  state.scope = { ...first };
+  await screen.rerender(<Layout />);
   expect(retainedValue()).toBeNull();
 
   state.shownPathname = null;
-  await render({ ...first });
+  state.scope = { ...first };
+  await screen.rerender(<Layout />);
   expect(retainedValue()).toBe("0");
 });

@@ -30,6 +30,13 @@ vi.mock("../state/environments", () => ({
   useEnvironments: () => ({ environments: state.environments }),
   usePrimaryEnvironmentId: () => PRIMARY_ID,
   usePrimaryEnvironment: () => ({ environmentId: PRIMARY_ID }),
+  useEnvironmentProviders: () =>
+    new Map(
+      (state.environments as ReadonlyArray<ReturnType<typeof environment>>).map((entry) => [
+        entry.environmentId,
+        entry.serverConfig.providers,
+      ]),
+    ),
 }));
 vi.mock("../state/session", () => ({
   readEnvironmentScope: () => true,

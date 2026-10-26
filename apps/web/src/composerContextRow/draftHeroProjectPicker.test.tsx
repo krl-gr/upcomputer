@@ -165,7 +165,9 @@ describe("the empty draft's hero", () => {
 
   it("keeps upstream's heading picker in a draft with a project", async () => {
     await renderHero(UPCOMPUTER);
-    expect(container.querySelector("h1")?.textContent).toBe("What should we build in UpComputer?");
+    // Upstream's heading puts the project under the question when it does not fit inline.
+    expect(container.querySelector("h1")?.textContent).toContain("What should we build");
+    expect(container.querySelector("h1")?.textContent).toContain("UpComputer");
     expect(projectPicker()?.textContent).toBe("UpComputer");
     expect(container.textContent).toContain("or start without a project");
   });
