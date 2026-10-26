@@ -415,7 +415,8 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled
       ? ["Render math"]
       : []),
-    ...(settings.redesignEnabled !== DEFAULT_UNIFIED_SETTINGS.redesignEnabled
+    ...(isProductFeatureShown("newDesign") &&
+    settings.redesignEnabled !== DEFAULT_UNIFIED_SETTINGS.redesignEnabled
       ? ["New design"]
       : []),
     ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs

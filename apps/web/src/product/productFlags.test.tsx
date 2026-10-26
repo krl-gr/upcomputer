@@ -14,6 +14,7 @@ import {
   isProductKeybindingShown,
   isProductSettingsSearchItemVisible,
   productSurface,
+  withProductClientSettings,
   withoutHiddenProductKeybindings,
 } from "./productFlags";
 
@@ -160,9 +161,10 @@ describe("hidden upstream features in the web app", () => {
         "review-guide-model",
         "review-guide-instructions",
         "pull-request-links-open-in-app",
+        "new-design",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(15);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(16);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
@@ -222,5 +224,19 @@ describe("replaceable surfaces in the web app", () => {
     expect(html).not.toContain("project-scope-menu");
     expect(html).not.toContain('aria-label="Add project"');
     expect(html).not.toContain('aria-label="New thread"');
+  });
+});
+
+describe("the new design in the UpComputer product", () => {
+  it("keeps the classic look while the flag is hidden, whatever the stored setting", () => {
+    const stored = { redesignEnabled: true, chatWidth: "wide" };
+    expect(withProductClientSettings(stored)).toBe(stored);
+
+    product.hidden = true;
+    const applied = withProductClientSettings(stored);
+    expect(applied).toEqual({ redesignEnabled: false, chatWidth: "wide" });
+    // Settings snapshots feed useSyncExternalStore, so the same input keeps its output.
+    expect(withProductClientSettings(stored)).toBe(applied);
+    expect(isProductSettingsSearchItemVisible({ id: "new-design" })).toBe(false);
   });
 });

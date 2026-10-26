@@ -34,6 +34,24 @@ export function terminalCommandTarget(
   return terminalSurface ? "right-panel" : null;
 }
 
+const classicLookSettings = new WeakMap<object, object>();
+
+/**
+ * Client settings as this build applies them: without `newDesign` the classic
+ * look stays on, whatever the stored setting says. Same input, same object.
+ */
+export function withProductClientSettings<Settings extends { readonly redesignEnabled: boolean }>(
+  settings: Settings,
+): Settings {
+  if (WEB_PRODUCT.flags.newDesign || !settings.redesignEnabled) return settings;
+  let classic = classicLookSettings.get(settings) as Settings | undefined;
+  if (classic === undefined) {
+    classic = { ...settings, redesignEnabled: false };
+    classicLookSettings.set(settings, classic);
+  }
+  return classic;
+}
+
 /** Which version of a replaceable UI surface this build shows. */
 export function productSurface(surface: ProductSurface): ProductSurfaceVariant {
   return WEB_PRODUCT.surfaces[surface];

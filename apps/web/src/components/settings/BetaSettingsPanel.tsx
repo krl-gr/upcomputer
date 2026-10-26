@@ -3,6 +3,7 @@ import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { Link } from "@tanstack/react-router";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { isProductFeatureShown } from "~/product/productFlags";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
@@ -23,27 +24,29 @@ export function BetaSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
-        <SettingsRow
-          {...searchableSetting("new-design")}
-          description="A true black dark mode, dimmer read threads, and simpler composer controls. Turn it off for the classic look."
-          resetAction={
-            settings.redesignEnabled !== DEFAULT_UNIFIED_SETTINGS.redesignEnabled ? (
-              <SettingResetButton
-                label="new design"
-                onClick={() =>
-                  updateSettings({ redesignEnabled: DEFAULT_UNIFIED_SETTINGS.redesignEnabled })
-                }
+        {isProductFeatureShown("newDesign") ? (
+          <SettingsRow
+            {...searchableSetting("new-design")}
+            description="A true black dark mode, dimmer read threads, and simpler composer controls. Turn it off for the classic look."
+            resetAction={
+              settings.redesignEnabled !== DEFAULT_UNIFIED_SETTINGS.redesignEnabled ? (
+                <SettingResetButton
+                  label="new design"
+                  onClick={() =>
+                    updateSettings({ redesignEnabled: DEFAULT_UNIFIED_SETTINGS.redesignEnabled })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.redesignEnabled}
+                onCheckedChange={(checked) => updateSettings({ redesignEnabled: Boolean(checked) })}
+                aria-label="New design"
               />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.redesignEnabled}
-              onCheckedChange={(checked) => updateSettings({ redesignEnabled: Boolean(checked) })}
-              aria-label="New design"
-            />
-          }
-        />
+            }
+          />
+        ) : null}
         <SettingsRow
           {...searchableSetting("working-shelf")}
           description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
