@@ -207,8 +207,6 @@
   "apps/web/src/components/PermissionUpdateNotice.tsx": 1,
   "apps/web/src/components/PersistentThreadTerminals.tsx": 1,
   "apps/web/src/components/ProjectCloneToastCoordinator.tsx": 2,
-  "apps/web/src/components/ProviderUpdateLaunchNotification.tsx": 3,
-  "apps/web/src/components/ProviderUpdatePrimaryNotification.tsx": 3,
   "apps/web/src/components/PullRequestThreadDialog.tsx": 1,
   "apps/web/src/components/QuitHoldOverlay.tsx": 1,
   "apps/web/src/components/ReopenClosedViewShortcut.tsx": 2,
