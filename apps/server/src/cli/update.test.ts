@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { UPCOMPUTER_UPDATE_REPOSITORY } from "@t3tools/shared/upcomputerIdentity";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -18,7 +19,7 @@ it.effect("authenticates each release page until the requested channel is found"
     const httpClient = HttpClient.make((request) => {
       const url = new URL(request.url);
       assert.equal(url.origin, "https://api.github.com");
-      assert.equal(url.pathname, "/repos/pingdotgg/t3code/releases");
+      assert.equal(url.pathname, `/repos/${UPCOMPUTER_UPDATE_REPOSITORY}/releases`);
       assert.equal(request.headers.accept, "application/vnd.github+json");
       assert.equal(request.headers.authorization, "Bearer gh-token");
       const page = url.searchParams.get("page") ?? "";
