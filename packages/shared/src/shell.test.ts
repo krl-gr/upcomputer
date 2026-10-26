@@ -861,6 +861,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       readonly platform?: NodeJS.Platform;
       readonly gitOnPath: string;
       readonly xcrunGit: string | undefined;
+      readonly developerTools?: boolean;
     }) => {
       const files = new Set([options.gitOnPath, ...(options.xcrunGit ? [options.xcrunGit] : [])]);
       const host = { xcrunGit: options.xcrunGit, xcrunCalls: 0 };
@@ -874,6 +875,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
           host.xcrunCalls += 1;
           return host.xcrunGit;
         }),
+        Effect.provideService(MacDeveloperDirectoryProbe, () => options.developerTools ?? true),
       );
       return { files, host, resolve };
     };
@@ -908,6 +910,18 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         const missing = setup({ gitOnPath: "/usr/bin/git", xcrunGit: XCODE_GIT });
         missing.files.delete(XCODE_GIT);
         expect(yield* missing.resolve).toBe("git");
+      }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
+    );
+
+    it.effect("never asks xcrun without the developer tools, which would open Apple's dialog", () =>
+      Effect.gen(function* () {
+        const { host, resolve } = setup({
+          gitOnPath: "/usr/bin/git",
+          xcrunGit: XCODE_GIT,
+          developerTools: false,
+        });
+        expect(yield* resolve).toBe("git");
+        expect(host.xcrunCalls).toBe(0);
       }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
     );
 

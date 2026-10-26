@@ -7,7 +7,11 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { MacDeveloperDirectoryProbe, SpawnExecutableResolution } from "@t3tools/shared/shell";
+import {
+  MacDeveloperDirectoryProbe,
+  SpawnExecutableResolution,
+  XcodeGitLocation,
+} from "@t3tools/shared/shell";
 
 import * as ProcessRunner from "./processRunner.ts";
 
@@ -141,6 +145,8 @@ describe("runProcess", () => {
           Effect.provideService(HostProcess.Environment, { PATH: "/usr/bin:/bin" }),
           Effect.provideService(SpawnExecutableResolution, () => "/usr/bin/git"),
           Effect.provideService(MacDeveloperDirectoryProbe, () => developerTools),
+          // These cases are about the stub; the git behind it is upstream's lookup.
+          Effect.provideService(XcodeGitLocation, () => undefined),
           Effect.result,
         );
 
@@ -210,6 +216,7 @@ describe("runProcess", () => {
             MacDeveloperDirectoryProbe,
             (childEnv) => (childEnv.DEVELOPER_DIR ?? "").trim() !== "",
           ),
+          Effect.provideService(XcodeGitLocation, () => undefined),
           Effect.result,
         );
 

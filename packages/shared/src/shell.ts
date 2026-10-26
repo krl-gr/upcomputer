@@ -868,8 +868,13 @@ const resolveMacosGit = Effect.fnUntraced(function* (
   ) {
     return cached.resolvedPath ?? "git";
   }
+  // UpComputer: without developer tools, xcrun opens Apple's install dialog, so
+  // the shim stays and the caller reports git as not installed.
   const located =
-    resolveExecutable("git", "darwin", env) === MACOS_GIT_SHIM ? locateXcodeGit(env) : undefined;
+    resolveExecutable("git", "darwin", env) === MACOS_GIT_SHIM &&
+    (yield* MacDeveloperDirectoryProbe)(env)
+      ? locateXcodeGit(env)
+      : undefined;
   const realGit =
     located !== undefined && resolveExecutable(located, "darwin", env) !== undefined
       ? located
