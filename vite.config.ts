@@ -2,7 +2,34 @@ import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 
-const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [];
+// Up.computer tests written for jsdom and react-test-renderer before upstream
+// moved web DOM tests to the browser project. Move each to
+// *.browser.test.{ts,tsx} and drop it here.
+const UPCOMPUTER_LEGACY_DOM_TESTS: Array<string> = [
+  "apps/web/src/components/ProviderUpdateLaunchNotification.lifecycle.test.tsx",
+  "apps/web/src/components/settings/CodexSetupSection.test.tsx",
+  "apps/web/src/components/settings/ProviderAuthenticationSection.test.tsx",
+  "apps/web/src/composerContextRow/ThreadHeaderProjects.test.tsx",
+  "apps/web/src/composerContextRow/UpComputerComposerContextRow.test.tsx",
+  "apps/web/src/composerContextRow/chatHeader.test.tsx",
+  "apps/web/src/composerContextRow/draftHeroProjectPicker.test.tsx",
+  "apps/web/src/composerFooter/UpComputerComposerFooter.test.tsx",
+  "apps/web/src/composerFooter/composerLookChromium.test.tsx",
+  "apps/web/src/onboardingSurface/FirstRunAgent.test.tsx",
+  "apps/web/src/onboardingSurface/UpComputerOnboarding.test.tsx",
+  "apps/web/src/product/tasksSurface.test.tsx",
+  "apps/web/src/product/terminalSurface.test.tsx",
+  "apps/web/src/product/terminalSurfaceTab.test.tsx",
+  "apps/web/src/sidebarMetrics/sidebarAlignment.test.tsx",
+  "apps/web/src/sidebarProjects/SidebarProjectsSection.test.tsx",
+  "apps/web/src/sidebarProjects/newThreadShortcut.test.tsx",
+  "apps/web/src/sidebarThreadRow/SidebarCompactThreadRow.test.tsx",
+  "apps/web/src/sidebarThreadRow/SidebarThreadProjectIcons.test.tsx",
+  "apps/web/src/sidebarThreadRow/ThreadStatusLabel.test.tsx",
+  "packages/tasks-web/src/markdown/markdownEditorSession.test.ts",
+];
+
+const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [...UPCOMPUTER_LEGACY_DOM_TESTS];
 
 const RESTRICTED_IMPORT_PATHS = [
   {
@@ -189,6 +216,7 @@ export default defineConfig({
       },
       {
         files: ["apps/web/**/*.test.{ts,tsx}"],
+        excludeFiles: UPCOMPUTER_LEGACY_DOM_TESTS,
         rules: { "t3code/require-disposable-render": "error" },
       },
       {
