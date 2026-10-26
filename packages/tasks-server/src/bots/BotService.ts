@@ -89,15 +89,18 @@ const asError = (cause: unknown) =>
       ? new TaskError({ message: `Invalid bot input: ${cause.message}`, cause })
       : new TaskError({ message: "Bot operation failed.", cause });
 // The permanent chat works like an orchestrator thread: other agents do the work, and their
-// tasks report back here through the chat being their source thread.
-const DELEGATION =
-  "Delegate work that needs more than a quick answer to a suitable task agent: call task_context first and follow the user's task guidance it returns, then task_create. Tasks created from this chat report back here; follow each one and tell the user its result when it finishes. Use bot_assign only for work you should do yourself in the background; its results also return to this chat.\n";
+// tasks report back here through the chat being their source thread. agent_search lists the
+// bot too, so the text names it and keeps "another task agent" apart from its own work.
+const delegation = (bot: Bot) =>
+  `You are the bot ${bot.agent.name}, agent id ${bot.agent.id}. agent_search and task_context list you as an agent too, but you are not "another agent". Work that needs more than a quick answer goes one of two ways:\n- Another task agent: when the user asks for another agent, or another agent suits the work, call task_context first and follow the user's task guidance it returns. Pick a suitable enabled agent other than you and task_create a task with its trigger status and tags. If none fits, create one with agent_create and leave runtimeMode out so it runs with full access, unless the user asked for another mode; then create the task.\n- Your own background work: bot_assign, or a To Do task with your own tag bot:${bot.agent.id}. You do that work yourself in a separate background run. Tell the user plainly that you are doing it yourself, never that another agent does it.\nTasks created from this chat report back here; follow each one and tell the user its result when it finishes.\n`;
 const MEMORY_LIMIT = 200;
+/** A bot's status reads this many of the active runs its chat's tasks have. */
+const ACTIVE_RUNS_SHOWN = 20;
 /** A bot_memory page holds at most this many entries and characters, and at least one entry. */
 const PAGE_ENTRIES = 50;
 const PAGE_CHARACTERS = 12000;
 const LOCKED =
-  "The user wrote this memory, so you cannot change or forget it. Ask the user to change it in the bot's Memory settings, or save a separate memory under a new id.";
+  "The user wrote this memory, so you cannot change or forget it. Tell the user the entry is theirs and ask them to change it in the bot's Memory settings. Do not save another memory that contradicts it.";
 const shortHash = (value: string) =>
   NodeCrypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
 // A memory's own text can be long; its chat row shows the start and the full text below.
@@ -639,7 +642,7 @@ const make = Effect.gen(function* () {
         if (saved.entry)
           savedNote = `\nThe user's "remember:" message in this turn is already saved as memory "${saved.entry.id}". Do not save it again; confirm it to the user.`;
       }
-      const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\n${canonical ? DELEGATION : ""}Use bot_history_search to search this bot's saved chat history.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Memories with owner "user" were written by the user: you cannot change or forget them, so ask the user to. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
+      const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\n${canonical ? delegation(bot) : ""}Use bot_history_search to search this bot's saved chat history.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Memories with owner "user" were written by the user: you cannot change or forget them. When one is out of date, tell the user it is their entry and ask them to change it in the bot's Memory settings; never save a memory that contradicts it. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
       // Settings changes resend everything; the cursor bounds which memory rows changed.
       const fingerprint = NodeCrypto.createHash("sha256").update(header).digest("hex").slice(0, 16);
       const at = yield* now;
@@ -736,8 +739,15 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             const bot = yield* decode(row);
             const [run] = yield* repository.searchAgentRuns({ agentId: bot.agent.id, limit: 1 });
+            const active = yield* sql<{
+              readonly threadId: string;
+            }>`SELECT r.thread_id AS "threadId"
+            FROM task_agent_runs r JOIN tasks t ON t.id = r.task_id
+            WHERE r.completed_at IS NULL AND t.root_thread_id = ${bot.threadId}
+            ORDER BY r.started_at DESC, r.id ASC LIMIT ${ACTIVE_RUNS_SHOWN}`;
             return {
               ...bot,
+              activeTaskRunThreadIds: active.map((row) => ThreadId.make(row.threadId)),
               ...(run === undefined
                 ? {}
                 : {

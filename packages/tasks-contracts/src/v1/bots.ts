@@ -138,6 +138,11 @@ export const Bot = Schema.Struct({
       completedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
     }),
   ),
+  /**
+   * Threads of the active runs of tasks started from the bot's chat, by the bot itself or
+   * by any agent; their approvals and questions show as the bot's. Absent from older servers.
+   */
+  activeTaskRunThreadIds: Schema.optional(Schema.Array(ThreadId)),
 });
 export type Bot = typeof Bot.Type;
 

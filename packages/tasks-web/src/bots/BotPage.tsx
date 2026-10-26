@@ -91,13 +91,15 @@ import {
 } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
+import { ensureLocalApi } from "../../../../apps/web/src/localApi.ts";
+import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
-import { botsChanged, errorText, useBots, useBotStatus } from "./botData.tsx";
-import type { BotCharacterState } from "./botStatus.ts";
+import { botsChanged, errorText, useBots, useBotStatus, useBotTaskRunRequest } from "./botData.tsx";
+import { botStatus, type BotCharacterState } from "./botStatus.ts";
 import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
 
 const readSearchString = (search: Record<string, unknown>, key: string) => {
@@ -968,7 +970,13 @@ function MemorySections({
               void mutate(() => client.remember({ ...entry, text: value }));
             }}
             onDelete={() => {
-              void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
+              const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
+              void ensureLocalApi()
+                .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
+                .then((confirmed) => {
+                  if (confirmed)
+                    void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
+                });
             }}
           />
         ))}
@@ -1274,6 +1282,7 @@ function BackgroundWork({
   readonly environmentId: EnvironmentId;
 }) {
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.assign);
+  const request = botStatus(useBotTaskRunRequest(environmentId, bot));
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1331,7 +1340,15 @@ function BackgroundWork({
       <SettingsRow
         title="Task runs"
         control={
-          <span className="flex items-center text-sm">
+          <span className="flex items-center gap-2 text-sm">
+            {request.label ? (
+              <Tooltip>
+                <TooltipTrigger render={<span className="flex items-center" />}>
+                  <ThreadStatusLabel status={request.label} />
+                </TooltipTrigger>
+                <TooltipPopup side="top">{request.detail}</TooltipPopup>
+              </Tooltip>
+            ) : null}
             <TaskThreadRunCounts
               environmentId={environmentId}
               threadId={bot.threadId}

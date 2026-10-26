@@ -107,12 +107,37 @@ export function botTaskStatus(
   return null;
 }
 
-/** One status for the bot: whichever of its chat and its task comes first for a thread. */
-export function botStatus(
-  chat: BotStatusCandidate | null,
-  task: BotStatusCandidate | null,
-): BotStatus {
-  const winner = [chat, task]
+export type BotTaskRunRequest = "approval" | "input" | null;
+
+/**
+ * Whether a run of a task from the bot's chat, the bot's own or another task agent's, waits
+ * for the user. The run's thread holds the request, so opening the bot chat does not answer it.
+ */
+export function botTaskRunRequest(
+  runThreads: ReadonlyArray<Pick<
+    SidebarThreadSummary,
+    "hasPendingApprovals" | "hasPendingUserInput"
+  > | null>,
+): BotTaskRunRequest {
+  if (runThreads.some((thread) => thread?.hasPendingApprovals)) return "approval";
+  if (runThreads.some((thread) => thread?.hasPendingUserInput)) return "input";
+  return null;
+}
+
+export function botTaskRunRequestStatus(request: BotTaskRunRequest): BotStatusCandidate | null {
+  if (request === "approval")
+    return { kind: "approval", detail: "A task from this chat needs approval" };
+  if (request === "input")
+    return { kind: "input", detail: "A task from this chat asks a question" };
+  return null;
+}
+
+/**
+ * One status for the bot: whichever of its chat and its tasks comes first for a thread. On
+ * a tie the earlier candidate's detail shows.
+ */
+export function botStatus(...candidates: ReadonlyArray<BotStatusCandidate | null>): BotStatus {
+  const winner = candidates
     .filter((candidate) => candidate !== null)
     .toSorted((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))[0];
   if (!winner) return { state: "idle", label: null, detail: null };

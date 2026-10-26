@@ -29,7 +29,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Memories the user wrote (owner "user") cannot be changed; ask the user instead. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
+      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Memories the user wrote (owner "user") cannot be changed: ask the user to change them in the bot\'s Memory settings, and never save a memory that contradicts one. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
     parameters: Schema.Struct({
       id: text,
       text,
@@ -43,7 +43,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_forget", {
     description:
-      'Remove one of this bot\'s current memories by id. Memories the user wrote (owner "user") cannot be removed; ask the user instead. Unavailable in background task runs.',
+      "Remove one of this bot's current memories by id. Memories the user wrote (owner \"user\") cannot be removed: ask the user to change them in the bot's Memory settings. Unavailable in background task runs.",
     parameters: Schema.Struct({ id: text }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -64,7 +64,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_assign", {
     description:
-      "Give this bot itself a background task. Its progress and result return to the same permanent user chat. Delegate work for other agents with task_create instead. Reuse requestId on a retry.",
+      "Your own background work: give this bot itself a background task, which you then do yourself in a separate run. Its progress and result return to the same permanent user chat. For another task agent, use task_create with that agent's triggers instead. Reuse requestId on a retry.",
     parameters: Schema.Struct({
       requestId: text,
       title: text,
