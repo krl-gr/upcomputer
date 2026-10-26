@@ -233,7 +233,6 @@ export const buildInitialPiProviderSnapshot = Effect.fn(
       enabled: false,
       checkedAt,
       models,
-      statusPending: true,
       probe: {
         installed: false,
         version: null,
@@ -248,6 +247,7 @@ export const buildInitialPiProviderSnapshot = Effect.fn(
     enabled: true,
     checkedAt,
     models,
+    statusPending: true,
     probe: {
       installed: true,
       version: null,

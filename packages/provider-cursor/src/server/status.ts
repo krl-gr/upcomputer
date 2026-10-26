@@ -46,7 +46,6 @@ export const buildInitialCursorProviderSnapshot = Effect.fn(
       enabled: false,
       checkedAt,
       models,
-      statusPending: true,
       probe: {
         installed: false,
         version: null,
@@ -62,6 +61,7 @@ export const buildInitialCursorProviderSnapshot = Effect.fn(
     enabled: true,
     checkedAt,
     models,
+    statusPending: true,
     probe: {
       installed: true,
       version: null,

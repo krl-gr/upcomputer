@@ -630,7 +630,6 @@ const makePendingCodexProvider = Effect.fn("CodexProvider.makePendingCodexProvid
       checkedAt,
       models,
       skills: [],
-      statusPending: true,
       probe: {
         installed: false,
         version: null,
@@ -647,6 +646,7 @@ const makePendingCodexProvider = Effect.fn("CodexProvider.makePendingCodexProvid
     checkedAt,
     models,
     skills: [],
+    statusPending: true,
     probe: {
       installed: false,
       version: null,
