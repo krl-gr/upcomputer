@@ -45,6 +45,7 @@ import {
 import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
+import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { BotAvatar, botPage, useBots, useBotStatus } from "./botData.tsx";
 
 function useBotEnvironmentIds() {
@@ -223,7 +224,8 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
  * A bot's sidebar row, built like a Projects row: the row opens the bot's
  * chat, and hover or keyboard focus reveals its settings button in place of
  * the status. The status shows only while the bot is not idle, in the colors
- * thread rows use.
+ * thread rows use. The run counts of the tasks its chat started stay, as on a
+ * thread row, and open the same task list.
  */
 function BotRow({
   environmentId,
@@ -271,12 +273,14 @@ function BotRow({
       ) : (
         <span className="min-w-0 flex-1 truncate">{bot.agent.name}</span>
       )}
+      {/* Keyboard focus only: a click leaves the row focused, and the status must
+          stay while the chat it opened is on screen. */}
       {status.label ? (
-        <span className="flex group-focus-within/sidebar-row:hidden group-any-hover/sidebar-row:hidden">
+        <span className="flex group-focus-visible/sidebar-row:hidden group-has-[:focus-visible]/sidebar-row:hidden group-any-hover/sidebar-row:hidden">
           <ThreadStatusLabel status={status.label} />
         </span>
       ) : null}
-      <span className="hidden items-center group-focus-within/sidebar-row:flex group-any-hover/sidebar-row:flex">
+      <span className="hidden items-center group-focus-visible/sidebar-row:flex group-has-[:focus-visible]/sidebar-row:flex group-any-hover/sidebar-row:flex">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -292,6 +296,14 @@ function BotRow({
           </TooltipTrigger>
           <TooltipPopup side="top">Bot settings</TooltipPopup>
         </Tooltip>
+      </span>
+      {/* Last, so hovering the row does not move the counts under the pointer. */}
+      <span className="flex shrink-0 items-center text-xs">
+        <TaskThreadRunCounts
+          environmentId={environmentId}
+          threadId={bot.threadId}
+          fallback={null}
+        />
       </span>
     </SidebarMenuButton>
   );

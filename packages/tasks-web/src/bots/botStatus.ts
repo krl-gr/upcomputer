@@ -68,18 +68,28 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
 
 /**
  * The bot's latest background task run, whose result returns to the bot chat. How a run
- * ended shows until the chat is opened after it ended, as a thread's own result does.
+ * ended shows until the chat is opened after it ended, as a thread's own result does. A
+ * running task's approval or question shows until it is answered: the run's own thread
+ * holds it, and opening the bot chat does not answer it.
  */
 export function botTaskStatus(
   runStatus: string | undefined,
-  taskThread: Pick<SidebarThreadSummary, "runtime"> | null,
+  taskThread: Pick<
+    SidebarThreadSummary,
+    "runtime" | "hasPendingApprovals" | "hasPendingUserInput"
+  > | null,
   seen: {
     readonly completedAt?: string | null | undefined;
     readonly lastVisitedAt?: string | null | undefined;
   } = {},
 ): BotStatusCandidate | null {
-  if (runStatus === "running" || runStatus?.startsWith("finalizing:"))
+  if (runStatus === "running" || runStatus?.startsWith("finalizing:")) {
+    if (taskThread?.hasPendingApprovals)
+      return { kind: "approval", detail: "Background task needs approval" };
+    if (taskThread?.hasPendingUserInput)
+      return { kind: "input", detail: "Background task asks a question" };
     return { kind: "waiting", detail: "Waiting for its background task" };
+  }
   if (
     seen.completedAt != null &&
     seen.lastVisitedAt != null &&

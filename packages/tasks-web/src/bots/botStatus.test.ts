@@ -43,7 +43,10 @@ const replied: BotChatInput = {
 const chat = (input: BotChatInput) => botStatus(botChatStatus(input), null);
 const task = (
   runStatus: string | undefined,
-  taskThread: Pick<BotChatInput, "runtime"> | null = null,
+  taskThread: Pick<
+    BotChatInput,
+    "runtime" | "hasPendingApprovals" | "hasPendingUserInput"
+  > | null = null,
 ) => botStatus(null, botTaskStatus(runStatus, taskThread));
 
 describe("bot status", () => {
@@ -96,7 +99,28 @@ describe("bot status", () => {
     expect(blocked.detail).toBe("Background task is blocked");
     expect(task("failed").state).toBe("failed");
     expect(task("interrupted").state).toBe("failed");
-    expect(task("failed", { runtime: runtime("failed", "usage_limit") }).state).toBe("limited");
+    expect(task("failed", { ...idleChat, runtime: runtime("failed", "usage_limit") }).state).toBe(
+      "limited",
+    );
+  });
+
+  it("shows a background run's approval or question until it is answered", () => {
+    const waiting = { ...idleChat, runtime: runtime("running") };
+    const approval = task("running", { ...waiting, hasPendingApprovals: true });
+    expect(approval.state).toBe("attention");
+    expect(approval.label?.label).toBe("Pending Approval");
+    expect(approval.detail).toBe("Background task needs approval");
+    expect(task("running", { ...waiting, hasPendingUserInput: true }).label?.label).toBe(
+      "Awaiting Input",
+    );
+    // Opening the chat later than the request does not hide it.
+    expect(
+      botTaskStatus(
+        "running",
+        { ...waiting, hasPendingApprovals: true },
+        { completedAt: null, lastVisitedAt: "2026-10-20T11:00:00.000Z" },
+      )?.kind,
+    ).toBe("approval");
   });
 
   it("stops reporting how the task ended once the chat is opened after it", () => {

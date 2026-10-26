@@ -38,10 +38,11 @@ const taskThread = ThreadId.make("thread-task-run");
 const harness = Effect.gen(function* () {
   const entered = yield* Deferred.make<void>();
   const gate = yield* Deferred.make<void>();
+  const dispatched: Array<{ readonly type: string; readonly runtimeMode?: string }> = [];
   const threads = Layer.mock(ThreadManagementService)({
     hasReceipt: () => Effect.succeed(false),
-    dispatch: () =>
-      Deferred.succeed(entered, undefined).pipe(
+    dispatch: (command) =>
+      Deferred.succeed(entered, void dispatched.push(command)).pipe(
         Effect.andThen(Deferred.await(gate)),
         Effect.as({} as never),
       ),
@@ -62,7 +63,7 @@ const harness = Effect.gen(function* () {
     Layer.provide(
       Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeed(Option.some({} as never)) }),
     ),
-    Layer.provide(Layer.mock(TaskAgentService)({})),
+    Layer.provide(Layer.mock(TaskAgentService)({ scheduleTaskChanged: () => Effect.void })),
     Layer.provide(
       Layer.succeed(
         Crypto.Crypto,
@@ -73,7 +74,7 @@ const harness = Effect.gen(function* () {
       ),
     ),
   );
-  return { entered, gate, services };
+  return { entered, gate, dispatched, services };
 });
 
 const seedBot = Effect.gen(function* () {
@@ -163,6 +164,28 @@ const run = <A, E>(body: Effect.Effect<A, E, BotService | TaskRepository | SqlCl
     return yield* body.pipe(Effect.provide(services));
   });
 
+/** Like `run`, with thread commands going through at once and recorded. */
+const runRecorded = <A, E>(
+  body: (
+    dispatched: ReadonlyArray<{ readonly type: string; readonly runtimeMode?: string }>,
+  ) => Effect.Effect<A, E, BotService | TaskRepository | SqlClient.SqlClient>,
+) =>
+  Effect.gen(function* () {
+    const { gate, dispatched, services } = yield* harness;
+    yield* Deferred.succeed(gate, undefined);
+    return yield* body(dispatched).pipe(Effect.provide(services));
+  });
+
+const newBot = (runtimeMode?: "approval-required" | "full-access") => ({
+  id: TaskAgentId.make("bot:new"),
+  projectId: project,
+  allowedProjectIds: [project],
+  name: "New bot",
+  config: runtimeMode === undefined ? config : { ...config, runtimeMode },
+});
+const runtimeModes = (dispatched: ReadonlyArray<{ readonly runtimeMode?: string }>) =>
+  dispatched.flatMap((command) => (command.runtimeMode === undefined ? [] : [command.runtimeMode]));
+
 it.effect("threads that belong to no bot get no context, also with no bots at all", () =>
   run(
     Effect.gen(function* () {
@@ -250,6 +273,121 @@ it.effect("only a person's message that starts with remember and a colon saves m
       assert.deepStrictEqual(yield* saved, ["user likes tea"]);
       yield* bots.context(turn(botThread, "Запомни : ключ в ящике"));
       assert.sameMembers(yield* saved, ["user likes tea", "ключ в ящике"]);
+    }),
+  ),
+);
+
+it.effect("a new bot and its chat get full access, like a new thread", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const bot = yield* bots.save(newBot());
+      assert.equal(bot.agent.config.runtimeMode, "full-access");
+      assert.deepStrictEqual(runtimeModes(dispatched), ["full-access"]);
+    }),
+  ),
+);
+
+it.effect("a bot saved before permissions were stored recovers its chat with full access", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      yield* bots.recover;
+      assert.deepStrictEqual(
+        dispatched.map((command) => [command.type, command.runtimeMode]),
+        [["thread.create", "full-access"]],
+      );
+    }),
+  ),
+);
+
+it.effect("an explicit Supervised choice is kept, and a changed one moves the chat", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const created = yield* bots.save(newBot("approval-required"));
+      assert.equal(created.agent.config.runtimeMode, "approval-required");
+      // Another settings save sends the stored config back unchanged.
+      const resaved = yield* bots.save({ ...newBot(), config: created.agent.config });
+      assert.equal(resaved.agent.config.runtimeMode, "approval-required");
+      // The mock has no command receipts, so every save sends the chat's create again.
+      const modeChanges = () =>
+        runtimeModes(dispatched.filter((command) => command.type === "thread.runtime-mode.set"));
+      assert.deepStrictEqual(new Set(runtimeModes(dispatched)), new Set(["approval-required"]));
+      assert.deepStrictEqual(modeChanges(), []);
+      yield* bots.save(newBot("full-access"));
+      assert.deepStrictEqual(modeChanges(), ["full-access"]);
+    }),
+  ),
+);
+
+it.effect("the bot chat delegates through task agents; a background run does not", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      const chat = (yield* bots.context(turn(botThread, "Hello"))).text;
+      assert.include(chat, "call task_context first");
+      assert.include(chat, "then task_create");
+      assert.include(chat, "Use bot_assign only for work you should do yourself");
+      const repository = yield* TaskRepository;
+      const task = yield* bots.assign({
+        agentId: botId,
+        requestId: "request-1",
+        title: "Background",
+        description: "",
+      });
+      yield* repository.createAgentRun({
+        id: TaskAgentRunId.make("run-bot"),
+        taskId: task.id,
+        agentId: botId,
+        threadId: taskThread,
+        modelSelection,
+        status: "running",
+        startedAt: timestamp,
+        completedAt: null,
+        triggerRunId: null,
+        continuesRunId: null,
+      });
+      const background = (yield* bots.context(turn(taskThread, "Work"))).text;
+      assert.notInclude(background, "task_create");
+      assert.include(background, "This is a background task run");
+    }),
+  ),
+);
+
+it.effect("bot_assign tasks report to the bot chat and count in its run counts", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const repository = yield* TaskRepository;
+      yield* seedBot;
+      const task = yield* bots.assign({
+        agentId: botId,
+        requestId: "request-1",
+        title: "Background",
+        description: "",
+      });
+      const stored = yield* repository.getById({ id: task.id });
+      assert.isTrue(Option.isSome(stored));
+      if (Option.isNone(stored)) return;
+      assert.equal(stored.value.sourceThreadId, botThread);
+      assert.equal(stored.value.rootThreadId, botThread);
+      yield* repository.createAgentRun({
+        id: TaskAgentRunId.make("run-bot"),
+        taskId: task.id,
+        agentId: botId,
+        threadId: taskThread,
+        modelSelection,
+        status: "running",
+        startedAt: timestamp,
+        completedAt: null,
+        triggerRunId: null,
+        continuesRunId: null,
+      });
+      const counts = yield* repository.threadRunCounts({ threadIds: [botThread] });
+      assert.deepStrictEqual(counts.threads[0]?.runCounts, [{ status: "running", count: 1 }]);
     }),
   ),
 );
