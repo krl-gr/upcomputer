@@ -11,6 +11,8 @@ permissions:
 
 jobs:
   stale:
+    # Up.computer: upstream's issue triage labels do not apply to this repository.
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/stale@v9
