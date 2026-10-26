@@ -1,18 +1,28 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import {
   defaultBotPortrait,
   type Bot,
   type BotAppearance,
+  type TaskAgent,
   type TaskAgentId,
 } from "@t3tools/tasks-contracts/v1";
 import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
+import { environmentThreadShells } from "../../../../apps/web/src/state/threads.ts";
+import { appAtomRegistry } from "../../../../apps/web/src/rpc/atomRegistry.ts";
 import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { readTasksWebClient, useTasksWebAccess } from "../environmentApi.ts";
-import { botChatStatus, botStatus, botTaskStatus, type BotCharacterState } from "./botStatus.ts";
+import {
+  botChatStatus,
+  botStatus,
+  botTaskRunRequest,
+  botTaskRunRequestStatus,
+  botTaskStatus,
+  type BotCharacterState,
+} from "./botStatus.ts";
 import { BotPortrait } from "./portraits/BotPortrait.tsx";
 
 interface BotList {
@@ -140,6 +150,31 @@ export function botPage(
   return { to: "/bots", search: { environment: environmentId, ...target } } as never;
 }
 
+/** A bot's own agent: its one trigger is the tag the bot was saved with. */
+export const isBotAgent = (agent: Pick<TaskAgent, "id" | "startTags">) =>
+  agent.startTags.length === 1 && agent.startTags[0] === `bot:${agent.id}`;
+
+/** A bot agent's name with the bot's face, for lists of agents. */
+export function BotAgentName({
+  environmentId,
+  agentId,
+  name,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly agentId: string;
+  readonly name: string;
+}) {
+  const bot = useBots(environmentId).bots.find((item) => item.agent.id === agentId);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        <BotAvatar id={agentId} appearance={bot?.appearance} state="idle" size={20} />
+      </span>
+      <span className="truncate">{name}</span>
+    </span>
+  );
+}
+
 /**
  * The face the bot's style picks: its shape character, or its picked portrait, or for bots
  * that never picked one the portrait its id derives.
@@ -175,6 +210,39 @@ export function BotAvatar({
   );
 }
 
+const noRequest = () => null;
+
+/**
+ * Whether a run of a task from the bot's chat waits for an approval or an answer. Reads only
+ * the shells of the runs the bot list names, and re-renders only when the answer changes.
+ */
+export function useBotTaskRunRequest(environmentId: EnvironmentId, bot: Bot | undefined) {
+  const key = (bot?.activeTaskRunThreadIds ?? []).join("\n");
+  const atoms = useMemo(
+    () =>
+      (key ? key.split("\n") : []).map((threadId) =>
+        environmentThreadShells.threadShellAtom(
+          scopeThreadRef(environmentId, ThreadId.make(threadId)),
+        ),
+      ),
+    [environmentId, key],
+  );
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const stops = atoms.map((atom) => appAtomRegistry.subscribe(atom, listener));
+      return () => {
+        for (const stop of stops) stop();
+      };
+    },
+    [atoms],
+  );
+  const read = useCallback(
+    () => botTaskRunRequest(atoms.map((atom) => appAtomRegistry.get(atom))),
+    [atoms],
+  );
+  return botTaskRunRequestStatus(useSyncExternalStore(subscribe, read, noRequest));
+}
+
 export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined) {
   const chatRef = bot ? scopeThreadRef(environmentId, bot.threadId) : null;
   const thread = useThreadShell(chatRef);
@@ -184,6 +252,7 @@ export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined)
   const background = useThreadShell(
     bot?.latestTaskRun ? scopeThreadRef(environmentId, bot.latestTaskRun.threadId) : null,
   );
+  const taskRunRequest = useBotTaskRunRequest(environmentId, bot);
   const lastVisitedAt = thread
     ? resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt)
     : undefined;
@@ -193,5 +262,6 @@ export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined)
       completedAt: bot?.latestTaskRun?.completedAt,
       lastVisitedAt,
     }),
+    taskRunRequest,
   );
 }

@@ -343,9 +343,18 @@ it.effect("the bot chat delegates through task agents; a background run does not
       const bots = yield* BotService;
       yield* seedBot;
       const chat = (yield* bots.context(turn(botThread, "Hello"))).text;
+      // agent_search lists the bot too, so the prompt keeps it apart from other agents.
+      assert.include(chat, `You are the bot Seeded bot, agent id ${botId}.`);
+      assert.include(chat, 'but you are not "another agent"');
+      assert.include(chat, "- Another task agent: ");
       assert.include(chat, "call task_context first");
-      assert.include(chat, "then task_create");
-      assert.include(chat, "Use bot_assign only for work you should do yourself");
+      assert.include(chat, "Pick a suitable enabled agent other than you and task_create");
+      assert.include(chat, "leave runtimeMode out so it runs with full access");
+      assert.include(
+        chat,
+        `- Your own background work: bot_assign, or a To Do task with your own tag bot:${botId}.`,
+      );
+      assert.include(chat, "Tell the user plainly that you are doing it yourself");
       const repository = yield* TaskRepository;
       const task = yield* bots.assign({
         agentId: botId,
@@ -403,6 +412,58 @@ it.effect("bot_assign tasks report to the bot chat and count in its run counts",
       });
       const counts = yield* repository.threadRunCounts({ threadIds: [botThread] });
       assert.deepStrictEqual(counts.threads[0]?.runCounts, [{ status: "running", count: 1 }]);
+    }),
+  ),
+);
+
+it.effect("the bot list names the active runs of every task its chat started", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const repository = yield* TaskRepository;
+      yield* seedBot;
+      yield* seedTaskRun;
+      const delegated = (id: string) =>
+        repository.upsert({
+          id: TaskId.make(id),
+          projectId: project,
+          title: id,
+          description: "",
+          output: null,
+          status: "To Do",
+          priority: null,
+          createdBy: "agent",
+          assigneeAgentRunId: null,
+          sourceThreadId: botThread,
+          sourceRunId: null,
+          metadata: null,
+          tags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          archivedAt: null,
+        });
+      const agentRun = (id: string, taskId: string, completedAt: string | null) =>
+        repository.createAgentRun({
+          id: TaskAgentRunId.make(id),
+          taskId: TaskId.make(taskId),
+          agentId: TaskAgentId.make("plain-agent"),
+          threadId: ThreadId.make(`thread-${id}`),
+          modelSelection,
+          status: completedAt === null ? "running" : "completed",
+          startedAt: timestamp,
+          completedAt,
+          triggerRunId: null,
+          continuesRunId: null,
+        });
+      yield* delegated("task-delegated");
+      yield* delegated("task-finished");
+      yield* agentRun("run-delegated", "task-delegated", null);
+      yield* agentRun("run-finished", "task-finished", timestamp);
+      const [listed] = yield* bots.list;
+      // Another agent's run of a task from the bot chat: its approvals show on the bot.
+      assert.deepStrictEqual(listed?.activeTaskRunThreadIds, [
+        ThreadId.make("thread-run-delegated"),
+      ]);
     }),
   ),
 );
@@ -559,10 +620,13 @@ it.effect("the bot cannot change or forget the user's entries; the user can", ()
       const refused = yield* bots
         .remember(write("mine", "Deploys go out on Mondays"), "bot")
         .pipe(Effect.flip);
-      assert.include(refused.message, "Ask the user");
-      assert.include(
+      // The bot points the user to the setting instead of saving a contradicting entry.
+      assert.include(refused.message, "ask them to change it in the bot's Memory settings");
+      assert.include(refused.message, "Do not save another memory that contradicts it.");
+      assert.notInclude(refused.message, "new id");
+      assert.equal(
         (yield* bots.forget(botId, "mine", "bot").pipe(Effect.flip)).message,
-        "Ask the user",
+        refused.message,
       );
       const text = Effect.map(bots.memory(botId), (entries) => entries.map((entry) => entry.text));
       assert.deepStrictEqual(yield* text, ["Deploys go out on Fridays"]);

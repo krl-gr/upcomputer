@@ -437,10 +437,10 @@ const make = Effect.gen(function* () {
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   const now = Effect.map(DateTime.now, DateTime.formatIso);
-  const appendEvent = (task: Task, kind: string, payload: unknown) =>
+  const appendEvent = (task: Task, kind: string, payload: unknown, id?: TaskEventId) =>
     Effect.gen(function* () {
       yield* repository.appendEvent({
-        id: TaskEventId.make(yield* randomId("task-event")),
+        id: id ?? TaskEventId.make(yield* randomId("task-event")),
         taskId: task.id,
         kind,
         payload,
@@ -863,6 +863,27 @@ const make = Effect.gen(function* () {
   });
 
   /**
+   * A matching agent that cannot start leaves a reason in the task's history, once per
+   * trigger change and agent edit, so the task does not wait silently.
+   */
+  const recordNotStarted = (task: Task, agent: TaskAgent, reason: string) =>
+    Effect.gen(function* () {
+      yield* Effect.logInfo("Task agent not started", {
+        taskId: task.id,
+        agentId: agent.id,
+        reason,
+      });
+      yield* appendEvent(
+        task,
+        "task.agent-not-started",
+        { agentId: agent.id, agentName: agent.name, reason },
+        TaskEventId.make(
+          `${task.id}:agent-not-started:${agent.id}:${task.triggerChangedAt}:${agent.updatedAt}`,
+        ),
+      );
+    });
+
+  /**
    * Run-status agents start for an unhandled terminal run of another agent;
    * every other agent starts on task state, subject to `runsAgain`.
    */
@@ -880,17 +901,6 @@ const make = Effect.gen(function* () {
       const task = currentTask.value;
       const agent = currentAgent.value;
       if (!startsForTask(agent, task, Date.parse(yield* now))) return;
-      if (
-        startCeiling !== undefined &&
-        (startCeiling === null ||
-          broaderRunMode(agentRunModes(agent.config), startCeiling) !== null)
-      ) {
-        yield* Effect.logInfo("Task agent not started: broader than the change's caller allows", {
-          taskId: task.id,
-          agentId: agent.id,
-        });
-        return;
-      }
       if (
         Option.isSome(
           yield* repository.findActiveAgentRunForTaskAgent({
@@ -952,6 +962,20 @@ const make = Effect.gen(function* () {
       } else if (previousRun !== undefined && !runsAgain(agent, task, previousRun)) {
         return;
       }
+      if (
+        startCeiling !== undefined &&
+        (startCeiling === null ||
+          broaderRunMode(agentRunModes(agent.config), startCeiling) !== null)
+      ) {
+        yield* recordNotStarted(
+          task,
+          agent,
+          startCeiling === null
+            ? "The change came from a chat or run that may not start agents now."
+            : `The agent runs in broader modes than the ${startCeiling.runtimeMode} chat or run that made the change. A person can start it by changing the task in the Tasks view.`,
+        );
+        return;
+      }
 
       const timestamp = yield* now;
       const settings = yield* runPromptSettings(task);
@@ -989,7 +1013,28 @@ const make = Effect.gen(function* () {
               ),
           ),
         );
-      if (run === null) return;
+      if (run === null) {
+        // A change committed since the checks above wins silently. A task that still
+        // matches was refused for the one rule not checked above: a bot works only in
+        // its own projects.
+        const latest = yield* repository.getById({ id: task.id });
+        if (
+          Option.isSome(latest) &&
+          startsForTask(agent, latest.value, Date.parse(yield* now)) &&
+          Option.isNone(
+            yield* repository.findActiveAgentRunForTaskAgent({
+              taskId: task.id,
+              agentId: agent.id,
+            }),
+          )
+        )
+          yield* recordNotStarted(
+            latest.value,
+            agent,
+            "The agent is a bot, and this task's project is not one of its projects. Add the project in the bot's settings, or create the task in one of its projects.",
+          );
+        return;
+      }
 
       yield* Effect.gen(function* () {
         // The agents' queue: unarchived agent tasks, plus this task when a tag

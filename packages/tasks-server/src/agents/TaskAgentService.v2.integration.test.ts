@@ -2396,6 +2396,122 @@ it.live(
 );
 
 it.live(
+  "a task created for a bot by its tag starts the bot like bot_assign, and one it cannot take says why",
+  () =>
+    runSlice("bots-task-create", ({ repository, started, cwd, sendAsPerson }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const outside = ProjectId.make("bot-task-outside");
+        for (const id of [projectId, outside])
+          yield* projects.apply({
+            sequence: 1,
+            eventId: EventId.make(`bot-task-project:${id}`),
+            aggregateKind: "project",
+            aggregateId: id,
+            occurredAt: timestamp,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            type: "project.created",
+            payload: {
+              projectId: id,
+              title: id,
+              workspaceRoot: cwd,
+              defaultModelSelection: agentModel,
+              scripts: [],
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          });
+        const bot = yield* bots.save({
+          id: TaskAgentId.make("bot:task-create"),
+          projectId,
+          allowedProjectIds: [projectId],
+          name: "Ada",
+          config: agent.config,
+        });
+        const tag = `bot:${bot.agent.id}`;
+        // Task tools write only from a live turn, so the bot chat holds one open.
+        yield* sendAsPerson(bot.threadId, `Have another agent write a poem. ${HOLD}`);
+        yield* eventually(
+          "the bot chat's turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((item) => item.threadId === bot.threadId)),
+            ),
+          ),
+        );
+        // What the bot did on a fresh install: task_create aimed at itself, without bot_assign.
+        const created = yield* callTaskTool(bot.threadId, "task_create", {
+          title: "Write a poem",
+          description: `Four lines about autumn. ${HOLD}`,
+          status: "To Do",
+          audience: "agent",
+          tags: [tag],
+          metadata: { targetAgentId: bot.agent.id },
+        });
+        assert.isFalse(created.isError, created.text);
+        const taskId = TaskId.make(JSON.parse(created.text).task.id);
+        const run = yield* eventually(
+          "the bot's run",
+          repository
+            .searchAgentRuns({ taskId, limit: 1 })
+            .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+        );
+        assert.equal(run.agentId, bot.agent.id);
+        const turn = yield* eventually(
+          "the bot run's turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((item) => item.threadId === run.threadId)),
+            ),
+          ),
+        );
+        assert.include(turn.text, `Bot identity: ${bot.agent.id}`);
+        // Its result reports to the bot chat, as a bot_assign task's does.
+        const stored = Option.getOrThrow(yield* repository.getById({ id: taskId }));
+        assert.equal(stored.sourceThreadId, bot.threadId);
+        assert.equal(stored.rootThreadId, bot.threadId);
+        assert.deepStrictEqual(
+          (yield* bots.list).find((item) => item.agent.id === bot.agent.id)?.activeTaskRunThreadIds,
+          [run.threadId],
+        );
+
+        // Outside the bot's projects nothing starts, and the task's history says why.
+        const outsideTask = yield* callTaskTool(bot.threadId, "task_create", {
+          projectId: outside,
+          title: "Elsewhere",
+          description: HOLD,
+          status: "To Do",
+          audience: "agent",
+          tags: [tag],
+        });
+        assert.isFalse(outsideTask.isError, outsideTask.text);
+        const outsideId = TaskId.make(JSON.parse(outsideTask.text).task.id);
+        const [notStarted] = yield* eventually(
+          "the not-started event",
+          repository
+            .events({ taskId: outsideId, kinds: ["task.agent-not-started"] })
+            .pipe(
+              Effect.map(({ events }) => (events.length > 0 ? Option.some(events) : Option.none())),
+            ),
+        );
+        const payload = notStarted?.payload as
+          | { readonly agentId: string; readonly reason: string }
+          | undefined;
+        assert.equal(payload?.agentId, bot.agent.id);
+        assert.include(payload?.reason, "not one of its projects");
+        assert.deepStrictEqual(
+          yield* repository.searchAgentRuns({ taskId: outsideId, limit: 1 }),
+          [],
+        );
+      }),
+    ),
+);
+
+it.live(
   "bot appearance roundtrips through RPC without changing identity, memory or permissions",
   () =>
     runSlice("bots-appearance", ({ threads, repository, cwd }) =>

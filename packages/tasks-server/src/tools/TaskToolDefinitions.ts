@@ -405,6 +405,8 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         runtimeMode: {
           type: "string",
           enum: ["approval-required", "auto-accept-edits", "full-access"],
+          description:
+            "Leave it out for full-access, the default. A run in another mode waits for the user's approval of tool calls.",
         },
         interactionMode: id,
         tools: tags,

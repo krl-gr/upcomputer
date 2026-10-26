@@ -82,6 +82,7 @@ import {
   subagentThreadTitle,
 } from "@t3tools/provider-core/server/subagentProjection";
 import { openCodeToolTurnItem } from "./toolItems.ts";
+import { openCodePermissionPrompt } from "./permissionPrompt.ts";
 
 export { openCodeToolProjectionKind } from "./toolItems.ts";
 
@@ -284,6 +285,7 @@ interface ActiveOpenCodeTurn {
   readonly parts: Map<string, Exclude<OpenCodePart, ToolPart>>;
   readonly partIdsByMessage: Map<string, Set<string>>;
   readonly toolNamesByCallId: Map<string, string>;
+  readonly toolInputsByCallId: Map<string, unknown>;
   mcpServerNames?: ReadonlyArray<string>;
   readonly providerTurn: OrchestrationV2ProviderTurn;
   nextItemOrdinal: number;
@@ -419,6 +421,8 @@ interface PendingOpenCodeRequest {
   readonly requestKind: OpenCodePermissionRequestKind | "user_input";
   readonly createdAt: DateTime.Utc;
   readonly permission?: PermissionRequest;
+  /** The arguments of the tool call a permission asks about, when OpenCode named it. */
+  readonly toolInput?: unknown;
   readonly question?: QuestionRequest;
 }
 
@@ -1816,10 +1820,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             type: "approval_request",
             requestId: pending.requestId,
             requestKind: pending.requestKind === "user_input" ? "command" : pending.requestKind,
-            prompt:
-              permission.patterns.length === 0
-                ? permission.permission
-                : permission.patterns.join("\n"),
+            prompt: openCodePermissionPrompt(permission, pending.toolInput),
           };
         };
 
@@ -1840,12 +1841,16 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           const nodeId = idAllocator.derive.approvalNode({ requestId });
           const turnItemId = idAllocator.derive.approvalTurnItem({ requestId });
+          const permissionCallId =
+            request.type === "permission" ? request.value.tool?.callID : undefined;
+          const permissionTurn =
+            permissionCallId === undefined
+              ? undefined
+              : threads.get(request.value.sessionID)?.activeTurn;
           const permissionToolName =
-            request.type === "permission" && request.value.tool !== undefined
-              ? threads
-                  .get(request.value.sessionID)
-                  ?.activeTurn?.toolNamesByCallId.get(request.value.tool.callID)
-              : undefined;
+            permissionCallId === undefined
+              ? undefined
+              : permissionTurn?.toolNamesByCallId.get(permissionCallId);
           const permissionRequestKind =
             request.type === "permission"
               ? openCodePermissionRequestKind(request.value.permission, permissionToolName)
@@ -1864,7 +1869,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             requestKind,
             createdAt: now,
             ...(request.type === "permission"
-              ? { permission: request.value }
+              ? {
+                  permission: request.value,
+                  ...(permissionCallId === undefined
+                    ? {}
+                    : { toolInput: permissionTurn?.toolInputsByCallId.get(permissionCallId) }),
+                }
               : { question: request.value }),
           };
           pendingRequests.set(String(requestId), pending);
@@ -1917,6 +1927,28 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             turnItem: runtimeRequestTurnItem(pending, "waiting", null, now),
           });
           yield* updateProviderSession("waiting", null);
+        });
+
+        // OpenCode can ask before the tool part carries its arguments, so a waiting approval
+        // gains them when they arrive.
+        const refreshPermissionPrompt = Effect.fnUntraced(function* (part: ToolPart) {
+          for (const pending of pendingRequests.values()) {
+            if (pending.permission?.tool?.callID !== part.callID) continue;
+            const updated = { ...pending, toolInput: part.state.input };
+            if (
+              openCodePermissionPrompt(pending.permission, pending.toolInput) ===
+              openCodePermissionPrompt(pending.permission, updated.toolInput)
+            )
+              continue;
+            pendingRequests.set(String(pending.requestId), updated);
+            pendingRequestsByNativeId.set(pending.nativeRequestId, updated);
+            const now = yield* DateTime.now;
+            yield* emitProviderEvent({
+              type: "turn_item.updated",
+              driver: OPENCODE_PROVIDER,
+              turnItem: runtimeRequestTurnItem(updated, "waiting", null, now),
+            });
+          }
         });
 
         const resolveRuntimeRequest = Effect.fnUntraced(function* (
@@ -2260,6 +2292,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             parts: new Map(),
             partIdsByMessage: new Map(),
             toolNamesByCallId: new Map(),
+            toolInputsByCallId: new Map(),
             providerTurn,
             nextItemOrdinal: 1,
             nativeUserMessageId: message.id,
@@ -2482,6 +2515,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           }
           if (part.type === "tool") {
             turn.toolNamesByCallId.set(part.callID, part.tool);
+            turn.toolInputsByCallId.set(part.callID, part.state.input);
+            yield* refreshPermissionPrompt(part);
           } else {
             turn.parts.set(part.id, part);
             const ids = turn.partIdsByMessage.get(part.messageID) ?? new Set<string>();
@@ -3187,6 +3222,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 parts: new Map(),
                 partIdsByMessage: new Map(),
                 toolNamesByCallId: new Map(),
+                toolInputsByCallId: new Map(),
                 providerTurn,
                 nextItemOrdinal: turnInput.providerTurnOrdinal * 100 + 1,
                 nativeUserMessageId: null,

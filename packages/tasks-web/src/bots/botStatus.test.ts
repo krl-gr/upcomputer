@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderInstanceId, RunId } from "@t3tools/contracts";
 import { THREAD_STATUS_LABELS } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
-import { botChatStatus, botStatus, botTaskStatus, type BotChatInput } from "./botStatus.ts";
+import {
+  botChatStatus,
+  botStatus,
+  botTaskRunRequest,
+  botTaskRunRequestStatus,
+  botTaskStatus,
+  type BotChatInput,
+} from "./botStatus.ts";
 
 const runtime = (
   status: NonNullable<BotChatInput["runtime"]>["status"],
@@ -155,5 +162,31 @@ describe("bot status", () => {
     ).toBe("attention");
     expect(botStatus(botChatStatus(replied), botTaskStatus("failed", null)).state).toBe("failed");
     expect(botStatus(botChatStatus(replied), botTaskStatus("completed", null)).state).toBe("done");
+  });
+
+  it("shows Pending Approval while another task agent's run from the chat waits on it", () => {
+    const waiting = { hasPendingApprovals: true, hasPendingUserInput: false, runtime: null };
+    const asking = { hasPendingApprovals: false, hasPendingUserInput: true };
+    const working = { hasPendingApprovals: false, hasPendingUserInput: false };
+    expect(botTaskRunRequest([])).toBeNull();
+    expect(botTaskRunRequest([working, null])).toBeNull();
+    expect(botTaskRunRequest([asking, waiting])).toBe("approval");
+    expect(botTaskRunRequest([working, asking])).toBe("input");
+    // The bot chat is busy waiting on the task, as in the QA run; the approval still wins.
+    const status = botStatus(
+      botChatStatus({ ...idleChat, runtime: runtime("running") }),
+      null,
+      botTaskRunRequestStatus(botTaskRunRequest([working, waiting])),
+    );
+    expect(status.label).toEqual({ kind: "approval", ...THREAD_STATUS_LABELS.approval });
+    expect(status.detail).toBe("A task from this chat needs approval");
+    // The bot's own run says it first when both ask.
+    expect(
+      botStatus(
+        null,
+        botTaskStatus("running", waiting),
+        botTaskRunRequestStatus(botTaskRunRequest([waiting])),
+      ).detail,
+    ).toBe("Background task needs approval");
   });
 });

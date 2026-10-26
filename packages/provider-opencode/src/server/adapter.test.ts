@@ -472,6 +472,100 @@ describe("OpenCodeAdapterV2", () => {
       ),
   );
 
+  it.effect("an MCP tool approval names the tool and its arguments, not the wildcard", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const harness = yield* makeOpenCodeRuntimeHarness("mcp-approval", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async () => ({ data: true }),
+          abort: async () => ({ data: true }),
+          children: async () => ({ data: [] }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "approval_request",
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "mcp-part",
+              sessionID: "root",
+              messageID: "assistant",
+              type: "tool",
+              callID: "mcp-call",
+              tool: "t3-code_task_get",
+              state: {
+                status: "pending",
+                input: {},
+                raw: "",
+              },
+            },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "permission.asked",
+          properties: {
+            id: "request",
+            sessionID: "root",
+            permission: "t3-code_task_get",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: {},
+            tool: { messageID: "assistant", callID: "mcp-call" },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "mcp-part",
+              sessionID: "root",
+              messageID: "assistant",
+              type: "tool",
+              callID: "mcp-call",
+              tool: "t3-code_task_get",
+              state: {
+                status: "running",
+                input: { id: "task-1" },
+                title: "task_get",
+                metadata: {},
+                time: { start: 1 },
+              },
+            },
+          },
+        }),
+      );
+      const [asked, refreshed] = yield* Fiber.join(received);
+      const prompt = (event: typeof asked) =>
+        event?.type === "turn_item.updated" && event.turnItem.type === "approval_request"
+          ? event.turnItem.prompt
+          : undefined;
+      // OpenCode asks before the part carries its arguments; the waiting card gains them.
+      assert.strictEqual(prompt(asked), "t3-code_task_get");
+      assert.strictEqual(prompt(refreshed), "t3-code_task_get\nid: task-1");
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
   it.effect.each([true, false])(
     "sends the orchestration block in the system prompt only when wanted (%s)",
     (orchestrationInstructions) =>
