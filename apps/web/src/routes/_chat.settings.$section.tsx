@@ -10,7 +10,7 @@ function ProductSettingsRouteView() {
 }
 
 // Settings sections of the web product's features; core sections match first.
-export const Route = createFileRoute("/settings/$section")({
+export const Route = createFileRoute("/_chat/settings/$section")({
   beforeLoad: ({ location }) => {
     if (findExperimentalWebSettingsPage(WEB_PRODUCT, location.pathname) === undefined) {
       throw notFound();

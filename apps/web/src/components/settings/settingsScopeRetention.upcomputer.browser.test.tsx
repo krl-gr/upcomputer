@@ -1,4 +1,4 @@
-import { act, render } from "../../../test/render";
+import { render } from "../../../test/render";
 import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import type { SettingsScopeSearch } from "./settingsScope";
@@ -50,25 +50,18 @@ vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: (() => ({ environments: [] })) as never,
 }));
-vi.mock(import("../ui/sidebar"), async (original) => ({
+vi.mock(import("../AppRouteModal"), async (original) => ({
   ...(await original()),
-  SidebarInset: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  AppRouteModal: (({ children }: { children?: ReactNode }) => <div>{children}</div>) as never,
+  AppRouteModalClose: (() => null) as never,
 }));
-vi.mock(import("../WorkspacePageHeader"), async (original) => ({
+vi.mock(import("./SettingsSidebarNav"), async (original) => ({
   ...(await original()),
-  WorkspacePageHeader: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsSidebarNav: (() => null) as never,
 }));
 vi.mock(import("./SettingsBreadcrumb"), async (original) => ({
   ...(await original()),
   SettingsBreadcrumb: (() => null) as never,
-}));
-vi.mock(import("../sidebar/mainAppLocation"), async (original) => ({
-  ...(await original()),
-  useNavigateToMainApp: () => vi.fn(),
-}));
-vi.mock(import("../../hooks/useNavigateBack"), async (original) => ({
-  ...(await original()),
-  useEscapeToGoBack: () => undefined,
 }));
 vi.mock(import("../../hooks/useShownPathname"), async (original) => ({
   ...(await original()),
@@ -79,7 +72,7 @@ vi.mock(import("./SettingsPanels"), async (original) => ({
   useSettingsRestore: (() => ({ changedSettingLabels: [] })) as never,
 }));
 
-import { Route } from "../../routes/settings";
+import { Route } from "../../routes/_chat.settings";
 
 function StatefulContent() {
   const [value, setValue] = useState(0);
@@ -99,12 +92,6 @@ function setup(pathname: string, scope: ScopeState) {
 }
 
 const first = { search: { machine: "first", project: "one" }, environmentId: "first" };
-const otherProject = { search: { machine: "first", project: "two" }, environmentId: "first" };
-const otherMachine = { search: { machine: "second", project: "one" }, environmentId: "second" };
-const implicitFirst = { search: { project: "one" }, environmentId: "first" };
-const implicitSecond = { search: { project: "one" }, environmentId: "second" };
-
-const disconnected = { search: first.search, environmentId: null };
 
 it("keeps the previous page out from under the header of a page still loading", async () => {
   // A new scope value each time, so the layout renders again with the new paths.
