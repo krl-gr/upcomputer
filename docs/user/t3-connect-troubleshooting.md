@@ -55,7 +55,7 @@ host and this device are on the same Tailscale network, add the host's
 Tailscale address as a direct route. See
 [Reach one machine several ways](./remote-access.md#reach-one-machine-several-ways).
 
-## The tunnel works, but Up.computer does not answer
+## The tunnel works, but T3 Code does not answer
 
 The host's tunnel is up, but it cannot reach Up.computer on the host. Common causes:
 
@@ -68,7 +68,7 @@ The host's tunnel is up, but it cannot reach Up.computer on the host. Common cau
 Fix: restart Up.computer on the host. For the background service, run
 `up service restart`. Then run `up connect status` on the host.
 
-## The UpComputer Connect address does not resolve or answer
+## The T3 Connect address does not resolve or answer
 
 The host's UpComputer Connect address did not resolve, refused the connection, failed a
 secure (TLS) connection, or did not answer in time.
@@ -79,7 +79,7 @@ Fix:
 2. On the host, run `up connect status`.
 3. If the check fails only on the host, check the host's DNS, VPN, or proxy.
 
-## This device can't reach UpComputer Connect
+## This device can't reach T3 Connect
 
 The problem is on this device's network, not on the host. This device could
 not reach UpComputer Connect, or it reached UpComputer Connect but not the host's tunnel
@@ -120,12 +120,12 @@ UpComputer Connect signs requests with short-lived proofs. When the clock on thi
 device or the host is a few minutes wrong, UpComputer Connect rejects them. Turn on
 automatic date and time on both devices, then retry.
 
-## The host runs an older Up.computer
+## The host runs an older T3 Code
 
 This app needs a newer Up.computer on the host. Update Up.computer on the host. See
 [Updating Up.computer](./updating.md).
 
-## UpComputer Connect returned an error
+## T3 Connect returned an error
 
 | Error                                                     | Fix                                                                                                                                         |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |

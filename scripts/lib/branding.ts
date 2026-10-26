@@ -123,6 +123,9 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/AcpAdapterV2\.test\.ts$/,
     line: /snippet: "T3 Code page"/,
   },
+  // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
+  // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
+  { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
   {
     path: /^packages\/shared\/src\/t3McpToolPresentation\.test\.ts$/,
     line: /^\s*"T3 Code( delegate_task)? ?",$/,
@@ -130,6 +133,7 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
 ];
 
 export function rebrandLine(line: string, path = ""): string {
+  if (KEEP_LINES.some((keep) => keep.path.test(path) && keep.line.test(line))) return line;
   if (isDocFile(path)) {
     return [...DOC_RULES, ...COPY_RULES].reduce(
       (text, rule) => text.replace(rule.pattern, rule.replacement),
