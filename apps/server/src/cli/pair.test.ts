@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises Node HTTP and filesystem boundaries.
+// @effect-diagnostics anyUnknownInErrorContext:off - tsc-rs widens the full CLI's requirements to any in this file only; tsc infers them.
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
