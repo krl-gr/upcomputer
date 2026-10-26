@@ -1,5 +1,11 @@
 import * as NodeCrypto from "node:crypto";
-import { CommandId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  DEFAULT_RUNTIME_MODE,
+  MessageId,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   BotAppearance,
   BotAppearanceStyle,
@@ -75,6 +81,10 @@ const asError = (cause: unknown) =>
     : Schema.isSchemaError(cause)
       ? new TaskError({ message: `Invalid bot input: ${cause.message}`, cause })
       : new TaskError({ message: "Bot operation failed.", cause });
+// The permanent chat works like an orchestrator thread: other agents do the work, and their
+// tasks report back here through the chat being their source thread.
+const DELEGATION =
+  "Delegate work that needs more than a quick answer to a suitable task agent: call task_context first and follow the user's task guidance it returns, then task_create. Tasks created from this chat report back here; follow each one and tell the user its result when it finishes. Use bot_assign only for work you should do yourself in the background; its results also return to this chat.\n";
 const MEMORY_LIMIT = 200;
 const CONTEXT_BUDGET = 11998;
 /** JSON with sorted keys, to compare settings regardless of how a client ordered them. */
@@ -284,7 +294,7 @@ const make = Effect.gen(function* () {
         projectId: bot.projectId,
         title: bot.agent.name,
         modelSelection: bot.agent.config.modelSelection,
-        runtimeMode: bot.agent.config.runtimeMode ?? "approval-required",
+        runtimeMode: bot.agent.config.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         interactionMode: bot.agent.config.interactionMode ?? "default",
         branch: null,
         worktreePath: null,
@@ -363,7 +373,7 @@ const make = Effect.gen(function* () {
           : null;
       const config = {
         ...input.config,
-        runtimeMode: input.config.runtimeMode ?? current?.runtimeMode ?? "approval-required",
+        runtimeMode: input.config.runtimeMode ?? current?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         interactionMode: input.config.interactionMode ?? current?.interactionMode ?? "default",
       };
       const appearance =
@@ -442,6 +452,19 @@ const make = Effect.gen(function* () {
           threadId,
           modelSelection: input.config.modelSelection,
         });
+      // The chat follows a changed permission setting; a mode picked in the chat's own
+      // composer stays until the setting changes again.
+      if (
+        previous !== null &&
+        previous.agent.config.runtimeMode !== config.runtimeMode &&
+        thread.runtimeMode !== config.runtimeMode
+      )
+        yield* threads.dispatch({
+          type: "thread.runtime-mode.set",
+          commandId: CommandId.make(`bot:runtime:${input.id}:${commandSuffix}`),
+          threadId,
+          runtimeMode: config.runtimeMode,
+        });
       return bot;
     });
   const context = (row: BotRow, input: TurnContextInput) =>
@@ -473,7 +496,7 @@ const make = Effect.gen(function* () {
           },
           true,
         );
-      const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\nUse bot_history_search to search this bot's saved chat history. Use bot_assign for background work; its results return to the permanent chat.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
+      const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${projectId}\nPermanent user chat: ${bot.threadId}\n${canonical ? DELEGATION : ""}Use bot_history_search to search this bot's saved chat history.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Default to project scope. Use global only for project-independent facts. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: bot_remember saves a suggestion that the user reviews, and memory stays unchanged until they accept it. Memories cannot be removed from a task run."}`;
       // Settings changes resend everything; the cursor bounds which memory rows changed.
       const fingerprint = NodeCrypto.createHash("sha256").update(header).digest("hex").slice(0, 16);
       const at = yield* now;

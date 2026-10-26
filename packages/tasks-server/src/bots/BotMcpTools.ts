@@ -60,7 +60,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_assign", {
     description:
-      "Give this bot a background task. Its progress and result return to the same permanent user chat. Reuse requestId on a retry.",
+      "Give this bot itself a background task. Its progress and result return to the same permanent user chat. Delegate work for other agents with task_create instead. Reuse requestId on a retry.",
     parameters: Schema.Struct({
       requestId: text,
       title: text,

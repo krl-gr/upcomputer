@@ -1,11 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { TaskAgentId } from "@t3tools/tasks-contracts/v1";
+import { TaskAgentId, TaskAgentRunId } from "@t3tools/tasks-contracts/v1";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   ProjectStoreV2,
@@ -450,5 +451,56 @@ it.effect("agent_update refuses a modelAlias that does not resolve and keeps the
       Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.modelSelection,
       agent.config.modelSelection,
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("a task delegated from a bot's permanent chat reports and counts there", () => {
+  const { layer, create, stored } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    const sql = yield* SqlClient.SqlClient;
+    const botChat = ThreadId.make("bot-chat:bot:helper");
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+    const at = "2026-10-26T00:00:00.000Z";
+    for (const id of [TaskAgentId.make("bot:helper"), TaskAgentId.make("agent-dev")])
+      yield* repository.upsertAgent({
+        id,
+        projectId: null,
+        name: id,
+        enabled: true,
+        startStatuses: ["To Do"],
+        startTags: [],
+        startRunStatuses: [],
+        config: { role: "Agent", modelSelection, instructions: "Work." },
+        createdAt: at,
+        updatedAt: at,
+      });
+    yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+      VALUES ('bot:helper', ${botChat}, ${project}, ${JSON.stringify([project])}, 0)`;
+
+    // To the task tools a bot chat is a chat like any other: no run calls from it.
+    const result = yield* create(
+      item("delegated", "To Do", { metadata: { targetAgentId: "agent-dev" } }),
+      { ...chat, threadId: botChat },
+    );
+    assert.isFalse(result.isError, result.text);
+    const [task] = yield* stored;
+    assert.equal(task?.sourceThreadId, botChat);
+    assert.equal(task?.rootThreadId, botChat);
+    if (!task) return;
+    yield* repository.createAgentRun({
+      id: TaskAgentRunId.make("run-delegated"),
+      taskId: task.id,
+      agentId: TaskAgentId.make("agent-dev"),
+      threadId: ThreadId.make("thread-delegated-run"),
+      modelSelection,
+      status: "running",
+      startedAt: at,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
+    const counts = yield* repository.threadRunCounts({ threadIds: [botChat] });
+    assert.deepStrictEqual(counts.threads[0]?.runCounts, [{ status: "running", count: 1 }]);
   }).pipe(Effect.provide(layer));
 });
