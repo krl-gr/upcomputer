@@ -310,6 +310,9 @@ it.effect.each([
 ])("preserves the invoked name of $kind $name launcher symlinks", ({ kind, name }) =>
   Effect.gen(function* () {
     const h = yield* makeHarness({ local: { version: "0.156.1" } });
+    // UpComputer probes the local CLI in the background at startup; replacing it
+    // mid-probe caches a missing command for the TestClock's frozen lifetime.
+    yield* h.installation.resolve();
     const launcher = `${h.baseDir}/${name}`;
     if (kind === "native") {
       const payload = `${h.baseDir}/codex.js`;
