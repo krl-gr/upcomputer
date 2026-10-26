@@ -245,7 +245,7 @@ export function ProviderUpdateEnvironmentRows({
       inFlightEnvironmentsRef.current.delete(environmentId);
       clearPending(environmentId);
       setErrorByEnvironment((previous) =>
-        new Map(previous).set(environmentId, "Update timed out — try again."),
+        new Map(previous).set(environmentId, "Update timed out. Try again."),
       );
     }, PENDING_EXPIRY_MS);
     const settled = await settlePromise(async () => {
@@ -285,7 +285,7 @@ export function ProviderUpdateEnvironmentRows({
         setErrorByEnvironment((previous) =>
           new Map(previous).set(
             environmentId,
-            "This environment isn’t connected — try again once it reconnects.",
+            "This environment isn’t connected. Try again once it reconnects.",
           ),
         );
         return;

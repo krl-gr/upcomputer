@@ -1084,7 +1084,7 @@ export function TasksView(props: TasksViewProps) {
                       {selectedTaskProject ? (
                         <ProjectFavicon project={selectedTaskProject.favicon} className="size-4" />
                       ) : null}
-                      <span className="truncate">{selectedTask.projectName ?? "—"}</span>
+                      <span className="truncate">{selectedTask.projectName ?? "No project"}</span>
                     </span>
                   </DetailSidebarRow>
                   {/* A person task's tags stay hidden; the planner hands it to an agent. */}
@@ -1110,7 +1110,7 @@ export function TasksView(props: TasksViewProps) {
                       ) : selectedTask.tags.length > 0 ? (
                         selectedTask.tags.join(", ")
                       ) : (
-                        "—"
+                        "None"
                       )}
                     </DetailSidebarRow>
                   )}
