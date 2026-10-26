@@ -8,6 +8,7 @@ import {
   resolveEnvironmentMachineKind,
   ServerProvider,
   ServerProviders,
+  toTelemetryProvider,
 } from "./server.ts";
 import { ServerSettings } from "./settings.ts";
 

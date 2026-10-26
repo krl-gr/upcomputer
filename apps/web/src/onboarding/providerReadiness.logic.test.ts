@@ -10,6 +10,8 @@ import {
   getOnboardingProviderState,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
+  onboardingRecheckPending,
+  providerStreamHasRecheck,
 } from "./providerReadiness.logic";
 
 const readyCodex: ServerProvider = {

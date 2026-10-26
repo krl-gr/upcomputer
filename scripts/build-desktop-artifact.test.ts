@@ -60,6 +60,9 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
+  parseDeveloperIdApplicationIdentity,
+  hasMacPasskeySigningConfiguration,
+  usesLocalMacSigning,
 } from "./build-desktop-artifact.ts";
 import {
   ReleasePackageManifestError,

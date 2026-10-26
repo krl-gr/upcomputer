@@ -255,6 +255,7 @@ export function getCloneDestinationBrowsePath(input: {
     : getCloneDestinationPath(selectedDirectoryPath, input.cloneDirectoryName);
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function resolveAddProjectPath(input: {
   readonly rawPath: string;
   readonly currentProjectCwd?: string | null;
@@ -287,6 +288,7 @@ export function findExistingAddProject(input: {
   );
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function buildProjectCreateCommand(input: {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;

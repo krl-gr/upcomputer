@@ -44,6 +44,7 @@ export function findThreadSearchOccurrences(text: string, query: string): number
   return offsets;
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function splitThreadSearchText(text: string, query: string): ThreadSearchTextPart[] {
   const normalizedQuery = query.trim();
   if (normalizedQuery.length === 0) {

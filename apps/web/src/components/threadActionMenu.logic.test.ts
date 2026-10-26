@@ -25,6 +25,10 @@ const baseState: ThreadActionMenuState = {
   ],
 };
 
+function ids(state: ThreadActionMenuState): string[] {
+  return buildThreadActionMenuItems(state).map((item) => item.id);
+}
+
 describe("buildThreadActionMenuItems", () => {
   it("puts feature entries in their own group before Copy, and needs operate for them", () => {
     const featureActions = [

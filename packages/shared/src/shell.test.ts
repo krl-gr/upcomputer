@@ -32,6 +32,7 @@ import {
   WindowsShellEnvironment,
   withPathDirectoryListings,
   type WindowsShellEnvironmentReader,
+  resolveKnownPosixCliDirs,
 } from "./shell.ts";
 
 const withWindowsEnvironmentMocks = <A, E, R>(

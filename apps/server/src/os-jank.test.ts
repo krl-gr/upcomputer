@@ -21,17 +21,22 @@ import { checkClaudeProviderStatus } from "./provider/ClaudeProvider.ts";
 
 vi.mock("node:child_process", { spy: true });
 
-it.effect("defaults the server home to Up.computer's ~/.upcomputer", () =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    assert.equal(
-      yield* resolveBaseDir(undefined).pipe(
-        Effect.provideService(HostProcess.HomeDirectory, "/home/tester"),
-      ),
-      path.join("/home/tester", ".upcomputer"),
-    );
-  }),
-);
+const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+
+effectIt.layer(NodeServices.layer)((it) => {
+  it.effect("defaults the server home to Up.computer's ~/.upcomputer", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      assert.equal(
+        yield* resolveBaseDir(undefined).pipe(
+          Effect.provideService(HostProcess.HomeDirectory, "/home/tester"),
+        ),
+        path.join("/home/tester", ".upcomputer"),
+      );
+    }),
+  );
+});
+
 it("hydrates HOME independently of a blank process HOME", () => {
   const originalHome = process.env.HOME;
   const env: NodeJS.ProcessEnv = { HOME: " " };

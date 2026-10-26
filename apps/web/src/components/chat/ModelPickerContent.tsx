@@ -97,7 +97,7 @@ export function resolveModelPickerSelectedModel(input: {
   return input.options.find((option) => option.slug === input.model);
 }
 
-function shouldIncludeModelPickerOption(input: {
+export function shouldIncludeModelPickerOption(input: {
   readonly entry: ProviderInstanceEntry;
   readonly option: ModelEsque;
   readonly activeInstanceId: ProviderInstanceId;
@@ -116,7 +116,7 @@ function shouldIncludeModelPickerOption(input: {
   );
 }
 
-function shouldOfferModelPickerSetup(
+export function shouldOfferModelPickerSetup(
   entry: ProviderInstanceEntry,
   options: ReadonlyArray<ModelEsque>,
 ): boolean {
@@ -133,7 +133,7 @@ function shouldOfferModelPickerSetup(
   );
 }
 
-function adjacentModelPickerProvider(input: {
+export function adjacentModelPickerProvider(input: {
   entries: ReadonlyArray<ProviderInstanceEntry>;
   selectedInstanceId: ProviderInstanceId | "favorites";
   direction: 1 | -1;

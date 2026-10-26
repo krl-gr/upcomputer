@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
 
-import { RelayDeviceRegistrationRequest } from "./relay.ts";
+import {
+  RelayDeviceRegistrationRequest,
+  isAllowedWebPushEndpoint,
+  MAX_WEB_PUSH_ENDPOINT_LENGTH,
+} from "./relay.ts";
 
 const decodeDevice = Schema.decodeUnknownExit(RelayDeviceRegistrationRequest);
 const device = {

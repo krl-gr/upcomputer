@@ -29,6 +29,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as PullRequestReviewGuideService from "./PullRequestReviewGuideService.ts";
 import * as PullRequestService from "./PullRequestService.ts";
+import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 
 const projectId = ProjectId.make("project-1");
 const ACME_APP = {

@@ -632,6 +632,62 @@ describe("OpenCodeAdapterV2", () => {
   // Event order from a live OpenCode 1.18.32 run of a `task` call with
   // background=true: the task part completes at launch, the root session
   // settles, and the child session stays busy until its own work ends.
+  it.effect.each([true, false])(
+    "sends the orchestration block in the system prompt only when wanted (%s)",
+    (orchestrationInstructions) =>
+      Effect.gen(function* () {
+        const suffix = `orchestration-${orchestrationInstructions}`;
+        const threadId = ThreadId.make(`thread-opencode-${suffix}`);
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-opencode"),
+          threadId,
+          providerSessionId: `mcp-session-${suffix}`,
+          providerInstanceId: ProviderInstanceId.make(`opencode-${suffix}`),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-opencode-token",
+          browserToolsAvailable: true,
+          orchestrationInstructions,
+        });
+        yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+        const prompted = promiseGate<{ readonly system?: string }>();
+        let mcpAdded = false;
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          suffix,
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: asyncEventStream().stream }) },
+            mcp: {
+              add: async () => {
+                mcpAdded = true;
+                return { data: {} };
+              },
+            },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              promptAsync: async (input: { readonly system?: string }) => {
+                prompted.resolve(input);
+                return { data: true };
+              },
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
+            },
+          },
+          { external: false },
+        );
+        yield* harness.startTurn();
+        const { system } = yield* Effect.promise(() => prompted.promise);
+
+        assert.isTrue(mcpAdded);
+        assert.include(system ?? "", "<runtime_info>");
+        if (orchestrationInstructions) assert.include(system ?? "", "Up.computer orchestration");
+        else assert.notInclude(system ?? "", "Up.computer orchestration");
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
+  );
+
   it.effect("reports a background task child as pending work after the root turn settles", () =>
     Effect.gen(function* () {
       const nativeEvents = asyncEventStream();

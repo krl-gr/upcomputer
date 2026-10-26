@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 
 import { shouldPrepareLegacyImportHandoff } from "./Orchestrator.ts";
+import { type OrchestrationV2ProviderThread } from "@t3tools/contracts";
 
 it("reissues imported context until a V2 run completes", () => {
   assert.isTrue(

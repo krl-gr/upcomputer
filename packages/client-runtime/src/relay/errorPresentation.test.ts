@@ -1,4 +1,9 @@
-import { RelayAuthInvalidError } from "@t3tools/contracts/relay";
+import {
+  RelayAuthInvalidError,
+  RelayEnvironmentLinkProofExpiredError,
+  RelayEnvironmentLinkProofInvalidError,
+} from "@t3tools/contracts/relay";
+import * as Base64Url from "effect/encoding/Base64Url";
 import { describe, expect, it } from "@effect/vitest";
 
 import {

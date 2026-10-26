@@ -1,4 +1,5 @@
 import * as NodeAssert from "node:assert/strict";
+import * as TestClock from "effect/testing/TestClock";
 import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -22,6 +23,7 @@ import {
   loadOpenCode2Workspace,
   type OpenCode2Model,
   type OpenCode2Workspace,
+  makePendingOpenCodeProvider,
 } from "./status.ts";
 import { readOpenCodeGoUsageLimits } from "./usageLimits.ts";
 import { probeOpenCodeRuntime } from "./versionProbe.ts";

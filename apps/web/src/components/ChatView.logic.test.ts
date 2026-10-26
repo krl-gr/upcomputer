@@ -1,4 +1,5 @@
 import { findRecordedWorktreeSetup, mergeDirectPreviewAnnotation } from "./ChatView.logic";
+import * as Schema from "effect/Schema";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { deriveProviderInstanceEntries } from "../providerInstances";
@@ -44,6 +45,7 @@ import {
   resolveDraftPromotionNavigationTarget,
   waitForRevertedMessage,
 } from "./ChatView.logic";
+import { getLocalStorageItem } from "../hooks/useLocalStorage";
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");

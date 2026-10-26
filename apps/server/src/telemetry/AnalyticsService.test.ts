@@ -94,8 +94,6 @@ const LIFECYCLE_EVENTS = new Set(["server.started", "server.stopped"]);
 // The server reports its own start and stop around every run.
 const withoutLifecycle = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) =>
   batches.flat().filter((event) => !LIFECYCLE_EVENTS.has(event.event));
-const recordedBatches = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) =>
-  batches.filter((batch) => batch.some((event) => event.event === "test.retry"));
 
 /**
  * Runs `record` (20 events by default, with server.started), then lets ten minutes of background
@@ -153,6 +151,75 @@ const sendForTenMinutes = (
     }).pipe(Effect.provide(runtimeLayer));
     return batches;
   });
+
+const DesktopEvents = Schema.fromJsonString(
+  Schema.Struct({
+    batch: Schema.Array(
+      Schema.Struct({
+        event: Schema.String,
+        distinct_id: Schema.String,
+        properties: Schema.Record(Schema.String, Schema.Unknown),
+      }),
+    ),
+  }),
+);
+type DesktopEvent = (typeof DesktopEvents.Type)["batch"][number];
+const decodeDesktopEvents = Schema.decodeEffect(DesktopEvents);
+
+const layerAcceptClient = (events: Array<DesktopEvent>) =>
+  Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.gen(function* () {
+        if (request.body._tag === "Uint8Array") {
+          const body = yield* decodeDesktopEvents(new TextDecoder().decode(request.body.body)).pipe(
+            Effect.orDie,
+          );
+          events.push(...body.batch);
+        }
+        return HttpClientResponse.fromWeb(request, new Response("{}"));
+      }),
+    ),
+  );
+
+/** One server run in desktop mode on a fixed state directory, until its scope closes. */
+const runDesktopServer = (
+  baseDir: string,
+  events: Array<DesktopEvent>,
+  use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<void>,
+  desktopEnv: Readonly<Record<string, string>> = {},
+) =>
+  Effect.flatMap(AnalyticsService.AnalyticsService, use).pipe(
+    Effect.provide(
+      AnalyticsService.layer.pipe(
+        Layer.provide(
+          Layer.effect(
+            ServerConfig.ServerConfig,
+            Effect.map(ServerConfig.ServerConfig, (config) =>
+              ServerConfig.ServerConfig.of({ ...config, mode: "desktop" }),
+            ),
+          ).pipe(Layer.provide(ServerConfig.ServerConfig.layerTest(process.cwd(), baseDir))),
+        ),
+        Layer.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              T3CODE_TELEMETRY_ENABLED: true,
+              T3CODE_POSTHOG_KEY: "phc_test_key",
+              T3CODE_POSTHOG_HOST: "http://localhost",
+              ...desktopEnv,
+            }),
+          ),
+        ),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcess.Platform, "darwin"),
+            Layer.succeed(HostProcess.Architecture, "arm64"),
+            layerAcceptClient(events),
+          ),
+        ),
+      ),
+    ),
+  );
 
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
   it.effect("client owner reports cannot use up the server's owner cap", () =>

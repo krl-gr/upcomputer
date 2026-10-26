@@ -188,6 +188,7 @@ function hasPreviewExtension(path: string, extensions: ReadonlyArray<string>): b
   return extensions.some((extension) => literalPath.endsWith(extension));
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function isWorkspaceBrowserPreviewPath(path: string): boolean {
   return hasPreviewExtension(path, WORKSPACE_BROWSER_PREVIEW_EXTENSIONS);
 }

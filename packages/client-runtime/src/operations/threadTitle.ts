@@ -13,7 +13,7 @@ function normalizeTitleSeed(value: string): string {
   return assistantCitationsToPlainText(value).trim().replace(/\s+/gu, " ");
 }
 
-/** @public Used by apps/mobile, which this workspace does not build. */
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function threadTitleTextFromPrompt(value: string): string {
   const imageIds = new Set<string>();
   const prose = replaceComposerContextReferences(value, (reference) => {

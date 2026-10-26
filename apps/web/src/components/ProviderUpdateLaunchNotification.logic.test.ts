@@ -31,6 +31,11 @@ import {
   type ProviderUpdateCandidate,
   type ProviderUpdateSidebarPillView,
   type ProviderUpdateToastView,
+  collectProviderUpdateCandidates,
+  launchPromptEnvironmentUpdateGroups,
+  settleProviderUpdateEnvironments,
+  unresolvedProviderUpdateKeys,
+  type ProviderUpdateSettlingEnvironment,
 } from "./ProviderUpdateLaunchNotification.logic";
 
 const checkedAt = "2026-04-23T10:00:00.000Z";

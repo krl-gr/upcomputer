@@ -24,7 +24,7 @@ export interface OutdatedServerUpdateTarget {
   readonly fromVersion?: string;
 }
 
-/** @public Used by apps/mobile, which this workspace does not build. */
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function createOutdatedServerDescriptionCommand<E>(
   runtime: Atom.AtomRuntime<
     EnvironmentRegistry.EnvironmentRegistry | ConnectionResolver.ConnectionResolver,

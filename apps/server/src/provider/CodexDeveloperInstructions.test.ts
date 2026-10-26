@@ -9,6 +9,7 @@ import { describe, it } from "vite-plus/test";
 import {
   buildCodexAdditionalContext,
   CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
+  CODEX_T3_MCP_SERVER,
 } from "./CodexDeveloperInstructions.ts";
 
 describe("buildCodexAdditionalContext", () => {
