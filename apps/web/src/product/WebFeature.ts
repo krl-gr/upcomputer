@@ -124,6 +124,11 @@ export interface ExperimentalWebFeatureContribution {
   ) => ReadonlyArray<ExperimentalWebThreadAction>;
   readonly sidebarSection?: ComponentType;
   /**
+   * The sidebar section as icons only, for the compact sidebar that shows while
+   * the sidebar is hidden. Build it from `CompactSidebarPill` and `CompactSidebarButton`.
+   */
+  readonly compactSidebarSection?: ComponentType;
+  /**
    * Mounted once in the app shell while the primary environment is signed in,
    * next to core's notification coordinators. It shows nothing of its own;
    * use it for toasts and notifications the feature raises from anywhere.

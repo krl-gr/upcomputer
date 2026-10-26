@@ -33,6 +33,10 @@ import {
   SidebarSectionHeaderAction,
 } from "../../../../apps/web/src/sidebarProjects/SidebarSectionHeader.tsx";
 import {
+  CompactSidebarButton,
+  CompactSidebarPill,
+} from "../../../../apps/web/src/components/sidebar/CompactSidebarPill.tsx";
+import {
   SIDEBAR_ACTION_BUTTON,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
@@ -43,18 +47,14 @@ import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/ex
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { BotAvatar, botPage, useBots, useBotStatus } from "./botData.tsx";
 
-export function SidebarBots() {
+function useBotEnvironmentIds() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
-  return [...new Set([...(primary ? [primary] : []), ...connected])].map((id) => (
-    <EnvironmentBots key={id} environmentId={id} />
-  ));
+  return [...new Set([...(primary ? [primary] : []), ...connected])];
 }
 
-function EnvironmentBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const { bots, error, enabled } = useBots(environmentId);
-  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
-  const navigate = useNavigate();
+/** Whether a bot is the one on screen: its page or its chat. */
+function useIsBotActive(environmentId: EnvironmentId) {
   const params = useParams({ strict: false });
   const pageBot = useLocation({
     select: (location) => {
@@ -65,6 +65,92 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
         : null;
     },
   });
+  return (bot: Bot) =>
+    pageBot === bot.agent.id ||
+    (params.threadId === bot.threadId && params.environmentId === environmentId);
+}
+
+function openBotChat(
+  navigate: ReturnType<typeof useNavigate>,
+  environmentId: EnvironmentId,
+  bot: Bot,
+) {
+  void navigate({
+    to: "/$environmentId/$threadId",
+    params: { environmentId, threadId: bot.threadId },
+  });
+}
+
+export function SidebarBots() {
+  return useBotEnvironmentIds().map((id) => <EnvironmentBots key={id} environmentId={id} />);
+}
+
+/** Each environment's bots as avatars, one pill per environment like its sidebar section. */
+export function CompactSidebarBots() {
+  return useBotEnvironmentIds().map((id) => <CompactEnvironmentBots key={id} environmentId={id} />);
+}
+
+function CompactEnvironmentBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const { bots, enabled } = useBots(environmentId);
+  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
+  const navigate = useNavigate();
+  const isActive = useIsBotActive(environmentId);
+  if (!enabled) return null;
+  return (
+    <CompactSidebarPill label="Bots">
+      {bots.map((bot) => (
+        <CompactBotButton
+          key={bot.agent.id}
+          environmentId={environmentId}
+          bot={bot}
+          active={isActive(bot)}
+          onOpen={() => openBotChat(navigate, environmentId, bot)}
+        />
+      ))}
+      {bots.length === 0 ? (
+        <CompactSidebarButton
+          label="Create your first bot"
+          disabled={!canWrite}
+          onClick={() => void navigate(botPage(environmentId))}
+        >
+          <PlusIcon />
+        </CompactSidebarButton>
+      ) : null}
+    </CompactSidebarPill>
+  );
+}
+
+function CompactBotButton({
+  environmentId,
+  bot,
+  active,
+  onOpen,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly bot: Bot;
+  readonly active: boolean;
+  readonly onOpen: () => void;
+}) {
+  const status = useBotStatus(environmentId, bot);
+  return (
+    <CompactSidebarButton
+      label={bot.agent.name}
+      tooltip={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
+      isActive={active}
+      onClick={onOpen}
+    >
+      <span className="flex size-6 items-center justify-center">
+        <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={24} />
+      </span>
+    </CompactSidebarButton>
+  );
+}
+
+function EnvironmentBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const { bots, error, enabled } = useBots(environmentId);
+  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
+  const navigate = useNavigate();
+  const isActive = useIsBotActive(environmentId);
   const [open, setOpen] = useLocalStorage(
     `upcomputer:bots-open:${environmentId}`,
     true,
@@ -105,16 +191,8 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
                 <BotRow
                   environmentId={environmentId}
                   bot={bot}
-                  active={
-                    pageBot === bot.agent.id ||
-                    (params.threadId === bot.threadId && params.environmentId === environmentId)
-                  }
-                  onOpen={() => {
-                    void navigate({
-                      to: "/$environmentId/$threadId",
-                      params: { environmentId, threadId: bot.threadId },
-                    });
-                  }}
+                  active={isActive(bot)}
+                  onOpen={() => openBotChat(navigate, environmentId, bot)}
                   onSettings={() => {
                     void navigate(botPage(environmentId, { bot: bot.agent.id }));
                   }}
