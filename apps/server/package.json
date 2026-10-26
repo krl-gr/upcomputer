@@ -1,6 +1,6 @@
 {
   "name": "t3",
-  "version": "0.0.36",
+  "version": "0.0.37-rc.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -56,7 +56,7 @@
     "@t3tools/source-control-gitlab": "workspace:*",
     "effect": "catalog:",
     "jose": "catalog:",
-    "node-pty": "^1.2.0-beta.15",
+    "node-pty": "1.2.0-beta.15",
     "open-computer-use": "0.3.5",
     "playwright-core": "1.60.0",
     "proper-lockfile": "4.1.2",
