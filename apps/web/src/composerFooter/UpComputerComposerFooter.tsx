@@ -1,6 +1,6 @@
 import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { LockIcon, LockOpenIcon, PaperclipIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 
 import { CompactComposerControlsMenu } from "../components/chat/CompactComposerControlsMenu";
 import {
@@ -88,29 +88,45 @@ function AttachControl(props: { open: () => void }) {
  * Fit the controls into their row: measure natural widths, then drop trailing
  * labels and move trailing blocks into the overflow menu, as V1's footer did.
  */
+interface ComposerFooterControlsLayout {
+  readonly hiddenCount: number;
+  readonly iconOnlyCount: number;
+}
+
+function measureFooterRow(
+  row: HTMLDivElement,
+  setLayout: (
+    update: (current: ComposerFooterControlsLayout) => ComposerFooterControlsLayout,
+  ) => void,
+) {
+  const measurement = measureComposerFooterControls(row);
+  setLayout((current) => {
+    const next = resolveRestingComposerControlsLayout({
+      ...measurement,
+      hostWidth: row.clientWidth,
+      previous: { ...current, visible: true },
+    });
+    const iconOnlyCount = next.iconOnlyCount ?? 0;
+    return next.hiddenCount === current.hiddenCount && iconOnlyCount === current.iconOnlyCount
+      ? current
+      : { hiddenCount: next.hiddenCount, iconOnlyCount };
+  });
+}
+
 function useComposerFooterControlsLayout() {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const [layout, setLayout] = useState({ hiddenCount: 0, iconOnlyCount: 0 });
+  const [layout, setLayout] = useState<ComposerFooterControlsLayout>({
+    hiddenCount: 0,
+    iconOnlyCount: 0,
+  });
 
-  const measure = useCallback(() => {
-    if (!row) return;
-    const measurement = measureComposerFooterControls(row);
-    setLayout((current) => {
-      const next = resolveRestingComposerControlsLayout({
-        ...measurement,
-        hostWidth: row.clientWidth,
-        previous: { ...current, visible: true },
-      });
-      const iconOnlyCount = next.iconOnlyCount ?? 0;
-      return next.hiddenCount === current.hiddenCount && iconOnlyCount === current.iconOnlyCount
-        ? current
-        : { hiddenCount: next.hiddenCount, iconOnlyCount };
-    });
+  // The fit is measured from the DOM before paint and only changes when the row's widths do.
+  useLayoutEffect(() => {
+    if (row) measureFooterRow(row, setLayout);
   }, [row]);
-
-  useLayoutEffect(measure, [measure]);
   useEffect(() => {
     if (!row) return;
+    const measure = () => measureFooterRow(row, setLayout);
     let stopObserving = () => {};
     const observeControls = () => {
       stopObserving();
@@ -134,7 +150,7 @@ function useComposerFooterControlsLayout() {
       mutations.disconnect();
       document.fonts?.removeEventListener("loadingdone", measure);
     };
-  }, [row, measure]);
+  }, [row]);
 
   return { attachRow: setRow, ...layout };
 }

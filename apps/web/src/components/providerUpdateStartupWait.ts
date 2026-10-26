@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 import {
   admitProviderUpdatePrompt,
@@ -52,7 +52,7 @@ export function useProviderUpdateLaunchSettling<
   readonly presentation: ProviderUpdateLaunchPresentation;
 }): ReadonlyArray<Environment> | null {
   const { environments, sessionKnown, enabled, presentation } = input;
-  const unresolvedKeys = useMemo(() => unresolvedProviderUpdateKeys(environments), [environments]);
+  const unresolvedKeys = unresolvedProviderUpdateKeys(environments);
   const unresolvedKeysRef = useRef(unresolvedKeys);
   useEffect(() => {
     unresolvedKeysRef.current = unresolvedKeys;
@@ -70,13 +70,9 @@ export function useProviderUpdateLaunchSettling<
     );
     return () => clearTimeout(timer);
   }, [enabled]);
-  const settled = useMemo(
-    () =>
-      enabled
-        ? settleProviderUpdateEnvironments({ environments, sessionKnown, lateKeys, admittedKeys })
-        : environments,
-    [admittedKeys, enabled, environments, lateKeys, sessionKnown],
-  );
+  const settled = enabled
+    ? settleProviderUpdateEnvironments({ environments, sessionKnown, lateKeys, admittedKeys })
+    : environments;
   // Before paint, so no later render can show a set other than the admitted one.
   useLayoutEffect(() => {
     if (!enabled || settled === null || state.admittedKeys !== null) return;

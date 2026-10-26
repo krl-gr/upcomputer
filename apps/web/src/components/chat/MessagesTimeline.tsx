@@ -1302,6 +1302,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       cancelAnimationFrame(frame);
       stopObserving();
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Rows and chat width resize the content without resizing the viewport.
   }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth, minimapInsetEnd]);
 
   const sharedState: TimelineRowSharedState = {

@@ -11,6 +11,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type * as RpcClient from "effect/rpc/RpcClient";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 
@@ -40,24 +41,27 @@ let featureRpcRequest: ReturnType<typeof makeFeatureRpcRequest> | undefined;
 function makeFeatureRpcRequest() {
   return createEnvironmentCommand(connectionAtomRuntime, {
     label: "product-feature-rpc",
-    execute: (input: FeatureRpcRequest, registry, environmentId) =>
-      Effect.gen(function* () {
-        if (input.method !== undefined)
-          yield* createCommandPermissions(connectionAtomRuntime, input.method).authorize(
-            registry,
-            environmentId,
-            input.input,
-          );
-        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-        const session = yield* SubscriptionRef.get(supervisor.session);
-        if (Option.isNone(session)) {
-          return yield* new EnvironmentRpcUnavailableError({
-            environmentId: supervisor.target.environmentId,
-            message: `${supervisor.target.label} is not connected.`,
-          });
-        }
-        return yield* input.execute(session.value.client);
-      }),
+    execute: Effect.fn("FeatureRpc.execute")(function* (
+      input: FeatureRpcRequest,
+      registry: AtomRegistry.AtomRegistry,
+      environmentId: EnvironmentId,
+    ) {
+      if (input.method !== undefined)
+        yield* createCommandPermissions(connectionAtomRuntime, input.method).authorize(
+          registry,
+          environmentId,
+          input.input,
+        );
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+      const session = yield* SubscriptionRef.get(supervisor.session);
+      if (Option.isNone(session)) {
+        return yield* new EnvironmentRpcUnavailableError({
+          environmentId: supervisor.target.environmentId,
+          message: `${supervisor.target.label} is not connected.`,
+        });
+      }
+      return yield* input.execute(session.value.client);
+    }),
   });
 }
 

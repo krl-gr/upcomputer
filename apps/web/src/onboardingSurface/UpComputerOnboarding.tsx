@@ -11,15 +11,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, CheckIcon, LoaderIcon, XIcon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { CommandBlock } from "../components/CommandBlock";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
@@ -200,7 +192,7 @@ export function UpComputerOnboarding({
     });
   }, [environmentId, recordClientEvent]);
 
-  const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
+  const byDriver = selectOnboardingProvidersByDriver(providers);
   const codexProvider = byDriver.get("codex");
   const codexInstanceId =
     codexProvider?.instanceId ?? defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
@@ -335,7 +327,7 @@ export function UpComputerOnboarding({
   };
 
   const finishingRef = useRef<Promise<void> | null>(null);
-  const finish = useCallback(() => {
+  const finish = () => {
     if (finishingRef.current !== null) return;
     const completion = completeOnboarding()
       .then(async () => {
@@ -358,7 +350,7 @@ export function UpComputerOnboarding({
         if (finishingRef.current === completion) finishingRef.current = null;
       });
     finishingRef.current = completion;
-  }, [environmentId, onDone, recordClientEvent]);
+  };
 
   const completeAgents = (outcome: "continued" | "skipped") => {
     recordClientEvent(environmentId, {

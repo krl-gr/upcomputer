@@ -65,6 +65,8 @@ function IndexDraftLanding() {
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
+  // The project draft starts once per attempt; Retry asks for a new attempt.
+  const startedAttemptRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
@@ -87,6 +89,7 @@ function IndexDraftLanding() {
     projectsKnown && mostRecentProject === null && startsWithoutProject && !startState.scratchFailed
       ? scratchEnvironmentId(primaryEnvironmentId)
       : null;
+  const attempt = startState.retryRequest;
 
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
@@ -119,11 +122,13 @@ function IndexDraftLanding() {
         });
       return;
     }
+    if (startedAttemptRef.current === attempt) return;
     const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
     if (readProject(projectRef) === null) {
       return;
     }
     startingRef.current = true;
+    startedAttemptRef.current = attempt;
     void handleNewThread(projectRef, { replace: true })
       .then((opened) => {
         if (opened === null) {
@@ -135,13 +140,7 @@ function IndexDraftLanding() {
         startingRef.current = false;
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [
-    handleNewThread,
-    mostRecentProject,
-    openScratchProject,
-    scratchTarget,
-    startState.retryRequest,
-  ]);
+  }, [attempt, handleNewThread, mostRecentProject, openScratchProject, scratchTarget]);
 
   // Upstream renders nothing while it waits.
   const pending = startsWithoutProject ? <BlankWorkspacePage /> : null;

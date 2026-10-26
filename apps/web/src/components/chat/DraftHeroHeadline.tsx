@@ -192,7 +192,7 @@ export function DraftHeroHeadline({
   const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
-  }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
+  }, [activeProjectKey, scratchTargetEnvironmentId, draftId, latestTargetRef]);
   // An empty draft instead opens the chosen project's own draft, like starting a new thread there:
   // moving it would replace that draft and strand whatever it holds, such as the browser tabs of
   // the no-project draft.

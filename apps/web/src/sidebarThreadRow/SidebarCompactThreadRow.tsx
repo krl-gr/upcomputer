@@ -7,7 +7,6 @@ import { EllipsisIcon, PinIcon } from "lucide-react";
 import {
   memo,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -132,10 +131,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     onThreadActivate,
     onThreadClick,
   } = props;
-  const threadRef = useMemo(
-    () => scopeThreadRef(thread.environmentId, thread.id),
-    [thread.environmentId, thread.id],
-  );
+  const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -204,17 +200,13 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   };
 
   const [isFileDragOver, setIsFileDragOver] = useState(false);
-  const fileDropHandlers = useMemo(
-    () =>
-      onFileDropThreads
-        ? makeWorkspaceFileDropHandlers({
-            setDragActive: setIsFileDragOver,
-            addFiles: (files) => onFileDropThreads(threadRef, files),
-            addFolders: () => {},
-          })
-        : null,
-    [onFileDropThreads, threadRef],
-  );
+  const fileDropHandlers = onFileDropThreads
+    ? makeWorkspaceFileDropHandlers({
+        setDragActive: setIsFileDragOver,
+        addFiles: (files) => onFileDropThreads(threadRef, files),
+        addFolders: () => {},
+      })
+    : null;
   useEffect(() => {
     if (!isFileDragOver) return;
     const clearFileDrag = () => setIsFileDragOver(false);
