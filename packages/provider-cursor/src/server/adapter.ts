@@ -47,7 +47,7 @@ import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresen
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { CursorTransportFailure } from "./transportFailure.ts";
-import { cursorRunFailure, cursorSdkErrorReason } from "./runFailure.ts";
+import { cursorRunFailure, cursorTransportFailure } from "./runFailure.ts";
 import { cursorContextWindowTokens, cursorSdkModelSelection } from "./sdkModel.ts";
 import {
   discoverCursorSkills,
@@ -2392,11 +2392,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                       ...(context.interrupted
                         ? {}
                         : {
-                            failure: cursorRunFailure({
-                              reason: cursorSdkErrorReason(cause),
-                              model: turnInput.modelSelection.model,
-                              class: "transport_error",
-                            }),
+                            failure: cursorTransportFailure(cause, turnInput.modelSelection.model),
                           }),
                     });
                   }

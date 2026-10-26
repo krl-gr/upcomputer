@@ -5,7 +5,7 @@ import type {
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as Schema from "effect/Schema";
 
-import { CursorAgentSdkRunnerError } from "./CursorAgentSdk.ts";
+import { CursorAgentSdkRunnerError, cursorSdkFailureMessage } from "./CursorAgentSdk.ts";
 import { CursorSdkError } from "./sdk.ts";
 
 export interface CursorFailureReason {
@@ -60,4 +60,21 @@ export function cursorRunFailure(input: {
     });
   }
   return makeProviderFailure({ class: input.class, message: detail, code: code ?? null });
+}
+
+/**
+ * A run the SDK broke. Our reading of Cursor's own errors, including the usage
+ * limit, comes first; any other runner error keeps upstream's SDK message.
+ */
+export function cursorTransportFailure(
+  cause: unknown,
+  model: string,
+): OrchestrationV2ProviderFailure {
+  const reason = cursorSdkErrorReason(cause);
+  if (reason !== undefined) return cursorRunFailure({ reason, model, class: "transport_error" });
+  return makeProviderFailure({
+    cause,
+    message: isCursorAgentSdkRunnerError(cause) ? cursorSdkFailureMessage(cause) : undefined,
+    class: "transport_error",
+  });
 }
