@@ -6,6 +6,8 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDisabledReason,
+  getDesktopUpdateIdleTooltip,
   getDesktopUpdateInstallConfirmationMessage,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
@@ -206,6 +208,30 @@ describe("desktop update UI helpers", () => {
     );
   });
 
+  it("uses the configured desktop update repository for release URLs", () => {
+    expect(getDesktopUpdateReleaseUrl("1.2.3", "JustYannicc/t3code")).toBe(
+      "https://github.com/JustYannicc/t3code/releases/tag/v1.2.3",
+    );
+    expect(getDesktopUpdateReleaseHistoryUrl("JustYannicc/t3code")).toBe(
+      "https://github.com/JustYannicc/t3code/releases",
+    );
+  });
+
+  it.each([
+    "owner/repo/extra",
+    "owner#notes/repo",
+    "owner/repo#notes",
+    "owner?tab=notes/repo",
+    "owner/repo?tab=notes",
+  ])("falls back to upstream for an invalid configured repository: %s", (repository) => {
+    expect(getDesktopUpdateReleaseHistoryUrl(repository)).toBe(
+      "https://github.com/pingdotgg/t3code/releases",
+    );
+    expect(getDesktopUpdateReleaseUrl("1.2.3", repository)).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v1.2.3",
+    );
+  });
+
   it("builds the nightly release URL without dropping its version suffix", () => {
     expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
       "https://github.com/krl-gr/upcomputer/releases/tag/v0.0.30-nightly.20260728.931",
@@ -365,5 +391,36 @@ describe("getDesktopUpdateButtonTooltip", () => {
     expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "up-to-date" })).toBe(
       "Up to date",
     );
+  });
+});
+
+describe("disabled update reason", () => {
+  const disabledState: DesktopUpdateState = {
+    ...baseState,
+    enabled: false,
+    status: "disabled",
+    message: "Automatic updates are only available in packaged production builds.",
+  };
+
+  it("explains why checking is unavailable", () => {
+    expect(getDesktopUpdateDisabledReason(disabledState)).toBe(
+      "Automatic updates are only available in packaged production builds.",
+    );
+    expect(getDesktopUpdateIdleTooltip(disabledState)).toEqual({
+      title: "Updates unavailable",
+      detail: "Automatic updates are only available in packaged production builds.",
+    });
+    expect(getDesktopUpdateDisabledReason({ ...disabledState, message: null })).toBe(
+      "Automatic updates are not available in this build.",
+    );
+  });
+
+  it("keeps the check prompt when updates are available", () => {
+    expect(getDesktopUpdateDisabledReason(baseState)).toBeNull();
+    expect(getDesktopUpdateDisabledReason(null)).toBeNull();
+    expect(getDesktopUpdateIdleTooltip(baseState)).toEqual({
+      title: "Check for updates",
+      detail: null,
+    });
   });
 });

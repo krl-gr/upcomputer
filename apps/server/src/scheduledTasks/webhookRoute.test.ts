@@ -222,6 +222,7 @@ describe("webhook route", () => {
       [{ _tag: "accepted", deliveryId, outcome: "accepted" }, 202, "accepted"],
       [{ _tag: "accepted", deliveryId, outcome: "duplicate" }, 202, "duplicate"],
       [{ _tag: "accepted", deliveryId, outcome: "prompt_too_long" }, 202, "prompt_too_long"],
+      [{ _tag: "accepted", deliveryId, outcome: "filtered" }, 202, "filtered"],
       [{ _tag: "not_found" }, 404, "not_found"],
       [{ _tag: "rejected_signature" }, 401, "rejected_signature"],
       [{ _tag: "disabled" }, 409, "disabled"],
@@ -235,6 +236,7 @@ describe("webhook route", () => {
         const response = await handler(post("/api/hooks/id/tok", "{}"));
         expect(response.status).toBe(status);
         expect(response.headers.get("x-t3-hook-outcome")).toBe(outcome);
+        if (status === 429) expect(await response.json()).toEqual({ error: outcome });
       } finally {
         await dispose();
       }

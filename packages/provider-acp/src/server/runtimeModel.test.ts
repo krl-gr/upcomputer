@@ -1251,6 +1251,7 @@ describe("AcpRuntimeModel", () => {
       command: "pnpm test",
       cwd: "/workspace",
       output: "first line\nsecond line\n",
+      outputBytes: 23,
       exitStatus: { exitCode: 0 },
     });
   });
@@ -1272,6 +1273,51 @@ describe("AcpRuntimeModel", () => {
     expect(first.pendingOutputBytes).toBeDefined();
     expect(second.output).toBe("A🙂B");
     expect(second.pendingOutputBytes).toBeUndefined();
+  });
+
+  it("keeps the newest 16 MiB of ACP terminal output at a UTF-8 boundary", () => {
+    const cap = 16 * 1024 * 1024;
+    const chunk = (text: string | Uint8Array) => ({
+      sessionUpdate: "terminal_output_chunk" as const,
+      terminalId: "terminal-cap",
+      data: Buffer.from(text).toString("base64"),
+    });
+    const seeded = applyAcpAgentTerminalUpdate(undefined, {
+      sessionUpdate: "terminal_update",
+      terminalId: "terminal-cap",
+      output: { data: Buffer.from(`é${"a".repeat(cap - 3)}`).toString("base64") },
+    });
+    expect(seeded.outputBytes).toBe(cap - 1);
+
+    // One byte over the cap falls inside "é", so the whole character is dropped.
+    const trimmed = applyAcpAgentTerminalUpdate(seeded, chunk("bc"));
+    expect(trimmed.output.length).toBe(cap - 1);
+    expect(trimmed.output.slice(0, 2)).toBe("aa");
+    expect(trimmed.output.slice(-3)).toBe("abc");
+    expect(trimmed.outputBytes).toBe(cap - 1);
+
+    const emoji = applyAcpAgentTerminalUpdate(trimmed, chunk("🙂"));
+    expect(emoji.output.slice(-5)).toBe("abc🙂");
+    expect(emoji.outputBytes).toBe(cap);
+    expect(Buffer.byteLength(emoji.output)).toBe(cap);
+
+    // Exit flushes an incomplete trailing character and trims again.
+    const pending = applyAcpAgentTerminalUpdate(emoji, chunk(Buffer.from("🙂").subarray(0, 2)));
+    const exited = applyAcpAgentTerminalUpdate(pending, {
+      sessionUpdate: "terminal_update",
+      terminalId: "terminal-cap",
+      exitStatus: { exitCode: 1 },
+    });
+    expect(exited.output.slice(-4)).toBe("c🙂\uFFFD");
+    expect(exited.outputBytes).toBe(Buffer.byteLength(exited.output));
+    expect(exited.outputBytes).toBeLessThanOrEqual(cap);
+
+    const cleared = applyAcpAgentTerminalUpdate(exited, {
+      sessionUpdate: "terminal_update",
+      terminalId: "terminal-cap",
+      output: null,
+    });
+    expect(cleared).toMatchObject({ output: "", outputBytes: 0, exitStatus: { exitCode: 1 } });
   });
 
   it("drops malformed and oversized ACP terminal frames without decoding them", () => {
@@ -1505,7 +1551,12 @@ describe("extractMcpToolCallIdentity", () => {
       't3-code__delegate_task: {"mode":"async"}',
       "delegate_task_t3-code",
       "t3-code/delegate_task",
+      "delegate_task",
       'delegate_task: {"mode":"async"}',
+      // Kimi retitles on every streamed args chunk with the raw partial JSON,
+      // and middle-truncates args longer than 50 characters.
+      'delegate_task: {"mode":"async","task":"Ru',
+      'delegate_task: {"mode":"async","task":"Ru...cho child-result-42\'"}',
     ]) {
       const toolCall = toolCallFromUpdate({
         sessionUpdate: "tool_call",
@@ -1519,6 +1570,18 @@ describe("extractMcpToolCallIdentity", () => {
         tool: "delegate_task",
       });
     }
+  });
+
+  it("does not claim an agent's own tool that shares a T3 tool name", () => {
+    // Hermes' built-in delegate_task, titled "<tool>: <description>" like all its calls.
+    const toolCall = toolCallFromUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "own-delegate-1",
+      kind: "execute",
+      title: "delegate_task: 1 tasks: Run the terminal command 'echo child-result-42'",
+      status: "pending",
+    });
+    expect(extractMcpToolCallIdentity(toolCall)).toBeUndefined();
   });
 
   it("recovers T3 identity from goose _meta despite LLM-rewritten titles", () => {

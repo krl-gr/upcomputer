@@ -1,10 +1,17 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   buildInitialPiProviderSnapshot,
@@ -13,6 +20,10 @@ import {
 } from "./status.ts";
 
 const encoder = new TextEncoder();
+const decodeRpcRequest = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Struct({ id: Schema.String, type: Schema.String })),
+);
+const encodeJsonLine = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 function processHandle(input: {
   readonly stdout?: string;
@@ -48,6 +59,61 @@ function piProbeSpawner(version: string) {
     );
   });
 }
+
+const piDiscoverySpawner = (
+  inventory: unknown,
+  slowStartup?: {
+    readonly delay: Duration.Input;
+    readonly getStateReceived: Deferred.Deferred<void>;
+  },
+) =>
+  Effect.gen(function* () {
+    const stdout = yield* Queue.unbounded<Uint8Array, Cause.Done>();
+    let stdinBuffer = "";
+    const stdin = Sink.forEach((chunk: Uint8Array) =>
+      Effect.gen(function* () {
+        stdinBuffer += new TextDecoder().decode(chunk);
+        while (true) {
+          const newline = stdinBuffer.indexOf("\n");
+          if (newline === -1) return;
+          const line = stdinBuffer.slice(0, newline);
+          stdinBuffer = stdinBuffer.slice(newline + 1);
+          if (line.length === 0) continue;
+          const request = decodeRpcRequest(line);
+          if (request.type === "get_state" && slowStartup !== undefined) {
+            yield* Deferred.succeed(slowStartup.getStateReceived, undefined);
+            yield* Effect.sleep(slowStartup.delay);
+          }
+          const data =
+            request.type === "get_available_models"
+              ? inventory
+              : request.type === "get_commands"
+                ? { commands: [] }
+                : {};
+          yield* Queue.offer(
+            stdout,
+            encoder.encode(
+              `${encodeJsonLine({ type: "response", id: request.id, command: request.type, success: true, data })}\n`,
+            ),
+          );
+        }
+      }),
+    );
+    return ChildProcessSpawner.make((command) => {
+      const args = ChildProcess.isStandardCommand(command) ? command.args : [];
+      return Effect.succeed(
+        args.includes("--version")
+          ? processHandle({ stdout: "pi 0.84.3\n" })
+          : ChildProcessSpawner.makeHandle({
+              ...processHandle({}),
+              exitCode: Effect.never,
+              isRunning: Effect.succeed(true),
+              stdin,
+              stdout: Stream.fromQueue(stdout),
+            }),
+      );
+    });
+  });
 
 const settings = {
   enabled: true,
@@ -90,6 +156,90 @@ describe("PiProvider", () => {
         ["default"],
       );
       assert.include(snapshot.message ?? "", "could not refresh its models and commands");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reports discovered models when Pi startup takes 20 seconds", () =>
+    Effect.gen(function* () {
+      const getStateReceived = yield* Deferred.make<void>();
+      const spawner = yield* piDiscoverySpawner(
+        { models: [{ provider: "anthropic", id: "claude-sonnet-4" }] },
+        { delay: "20 seconds", getStateReceived },
+      );
+      const probe = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(getStateReceived);
+      yield* TestClock.adjust("20 seconds");
+      const snapshot = yield* Fiber.join(probe);
+      assert.equal(snapshot.status, "ready");
+      assert.equal(snapshot.auth.status, "authenticated");
+      assert.deepEqual(
+        snapshot.models.map((model) => model.slug),
+        ["default", "anthropic/claude-sonnet-4"],
+      );
+      assert.equal(snapshot.models[1]?.subProvider, "anthropic");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps compatible Pi selectable when startup outlasts the discovery deadline", () =>
+    Effect.gen(function* () {
+      const getStateReceived = yield* Deferred.make<void>();
+      const spawner = yield* piDiscoverySpawner(
+        { models: [{ provider: "anthropic", id: "claude-sonnet-4" }] },
+        { delay: "1 hour", getStateReceived },
+      );
+      const probe = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(getStateReceived);
+      yield* TestClock.adjust("30 seconds");
+      const snapshot = yield* Fiber.join(probe);
+      assert.equal(snapshot.status, "ready");
+      assert.equal(snapshot.auth.status, "unknown");
+      assert.deepEqual(
+        snapshot.models.map((model) => model.slug),
+        ["default"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reports a known unauthenticated inventory when Pi returns no usable models", () =>
+    Effect.gen(function* () {
+      const spawner = yield* piDiscoverySpawner({ models: [] });
+      const snapshot = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      assert.equal(snapshot.status, "warning");
+      assert.equal(snapshot.auth.status, "unauthenticated");
+      assert.deepEqual(
+        snapshot.models.map((model) => model.slug),
+        ["default"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.each([
+    ["missing models", {}],
+    ["non-array models", { models: {} }],
+    ["missing model provider", { models: [{ id: "claude-sonnet-4" }] }],
+    ["missing model id", { models: [{ provider: "anthropic" }] }],
+    ["empty model provider", { models: [{ provider: "", id: "claude-sonnet-4" }] }],
+    ["empty model id", { models: [{ provider: "anthropic", id: "" }] }],
+    [
+      "mixed valid and invalid models",
+      { models: [{ provider: "anthropic", id: "claude-sonnet-4" }, { provider: "openrouter" }] },
+    ],
+  ] as const)("reports unknown authentication when Pi discovery returns %s", (_label, inventory) =>
+    Effect.gen(function* () {
+      const spawner = yield* piDiscoverySpawner(inventory);
+      const snapshot = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      assert.equal(snapshot.status, "ready");
+      assert.equal(snapshot.auth.status, "unknown");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

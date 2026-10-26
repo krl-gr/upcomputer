@@ -19,7 +19,7 @@ import {
   type McpAppReference,
 } from "@t3tools/shared/mcpApp";
 import { Minimize2Icon } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -48,6 +48,8 @@ const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+// Exclude activation left by input elsewhere in T3.
+const PAGE_ACTIVATION_MS = 5_000;
 
 function saveBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -91,17 +93,14 @@ export function McpAppFrame(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Closing and reopening replaces the box.
   }, [closed]);
 
-  const resource = useMemo(
-    () => ({
-      _tag: "attachment" as const,
-      attachmentId: app.attachmentId,
-      fileName: mcpAppFileName(app),
-      mimeType: "text/html",
-      disposition: "inline" as const,
-      renderIntent: "mcp-app" as const,
-    }),
-    [app],
-  );
+  const resource = {
+    _tag: "attachment" as const,
+    attachmentId: app.attachmentId,
+    fileName: mcpAppFileName(app),
+    mimeType: "text/html",
+    disposition: "inline" as const,
+    renderIntent: "mcp-app" as const,
+  };
   const asset = useAssetUrlState(props.environmentId, resource);
   const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
   // The frame keeps its first URL: a re-minted one would reload the app. A
@@ -133,12 +132,16 @@ export function McpAppFrame(props: {
     revision: props.revision,
   });
   const storedItem = detail.data?.item;
-  const toolCall = useMemo(() => {
-    if (storedItem?.type !== "dynamic_tool") return undefined;
-    const output = storedItem.output as { readonly result?: unknown } | undefined;
-    const result = output?.result as McpAppCallToolResult | undefined;
-    return { arguments: storedItem.input, result };
-  }, [storedItem]);
+  // The host gets the tool call pushed by an effect keyed on it, so it must stay cached.
+  const toolCall =
+    storedItem?.type === "dynamic_tool"
+      ? {
+          arguments: storedItem.input,
+          result: (storedItem.output as { readonly result?: unknown } | undefined)?.result as
+            | McpAppCallToolResult
+            | undefined,
+        }
+      : undefined;
 
   const callTool = useAtomCommand(mcpAppEnvironment.callTool, { reportFailure: false });
   const toolInfo = useAtomCommand(mcpAppEnvironment.toolInfo, { reportFailure: false });
@@ -166,6 +169,21 @@ export function McpAppFrame(props: {
   useEffect(() => {
     latest.current = live;
   });
+
+  // Frame input does not bubble here. An app can refocus itself, so focus
+  // alone cannot exclude activation from input elsewhere in T3.
+  const lastPageInputAt = useRef(Number.NEGATIVE_INFINITY);
+  useEffect(() => {
+    const note = () => {
+      lastPageInputAt.current = performance.now();
+    };
+    if (navigator.userActivation?.isActive) note();
+    const types = ["pointerdown", "pointerup", "touchend", "keydown"] as const;
+    for (const type of types) window.addEventListener(type, note, true);
+    return () => {
+      for (const type of types) window.removeEventListener(type, note, true);
+    };
+  }, []);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -342,7 +360,10 @@ export function McpAppFrame(props: {
         const otherFullscreen = document.querySelector("[data-mcp-app-fullscreen]");
         if (
           mode === "fullscreen" &&
-          (latest.current.props.awaitingUser === true ||
+          (document.activeElement !== frameRef.current ||
+            !navigator.userActivation?.isActive ||
+            performance.now() - lastPageInputAt.current < PAGE_ACTIVATION_MS ||
+            latest.current.props.awaitingUser === true ||
             isConfirmDialogActive() ||
             (otherFullscreen !== null && otherFullscreen !== boxRef.current))
         ) {

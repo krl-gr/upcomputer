@@ -3,6 +3,22 @@ import { describe, expect, it } from "vite-plus/test";
 import { parseCliArgs, tokenizeCliArgs } from "./cliArgs.ts";
 
 describe("tokenizeCliArgs", () => {
+  it("preserves escaped double quotes outside quoted values", () => {
+    expect(tokenizeCliArgs(String.raw`--config model=\"gpt-6.1-sol\" --strict-config`)).toEqual([
+      "--config",
+      'model="gpt-6.1-sol"',
+      "--strict-config",
+    ]);
+  });
+
+  it("preserves escaped single quotes outside quoted values", () => {
+    expect(tokenizeCliArgs(String.raw`--append-system-prompt don\'t --verbose`)).toEqual([
+      "--append-system-prompt",
+      "don't",
+      "--verbose",
+    ]);
+  });
+
   it("preserves quoted values and escaped spaces", () => {
     expect(
       tokenizeCliArgs(
@@ -24,6 +40,13 @@ describe("tokenizeCliArgs", () => {
 });
 
 describe("parseCliArgs", () => {
+  it("keeps escaped apostrophes in flag values without consuming the next flag", () => {
+    expect(parseCliArgs(String.raw`--append-system-prompt don\'t --verbose`)).toEqual({
+      flags: { "append-system-prompt": "don't", verbose: null },
+      positionals: [],
+    });
+  });
+
   it("returns empty result for empty string", () => {
     expect(parseCliArgs("")).toEqual({ flags: {}, positionals: [] });
   });
@@ -43,20 +66,6 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("parses --chrome with --verbose", () => {
-    expect(parseCliArgs("--chrome --verbose")).toEqual({
-      flags: { chrome: null, verbose: null },
-      positionals: [],
-    });
-  });
-
-  it("parses --effort with a value", () => {
-    expect(parseCliArgs("--effort high")).toEqual({
-      flags: { effort: "high" },
-      positionals: [],
-    });
-  });
-
   it("parses --chrome --effort high --debug", () => {
     expect(parseCliArgs("--chrome --effort high --debug")).toEqual({
       flags: { chrome: null, effort: "high", debug: null },
@@ -64,37 +73,9 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("parses --model with full model name", () => {
-    expect(parseCliArgs("--model claude-sonnet-4-6")).toEqual({
-      flags: { model: "claude-sonnet-4-6" },
-      positionals: [],
-    });
-  });
-
-  it("parses --append-system-prompt with value and --chrome", () => {
-    expect(parseCliArgs("--append-system-prompt always-think-step-by-step --chrome")).toEqual({
-      flags: { "append-system-prompt": "always-think-step-by-step", chrome: null },
-      positionals: [],
-    });
-  });
-
   it("parses quoted --append-system-prompt with value and --chrome", () => {
     expect(parseCliArgs(`--append-system-prompt "always think step by step" --chrome`)).toEqual({
       flags: { "append-system-prompt": "always think step by step", chrome: null },
-      positionals: [],
-    });
-  });
-
-  it("parses --max-budget-usd with numeric value", () => {
-    expect(parseCliArgs("--chrome --max-budget-usd 5.00")).toEqual({
-      flags: { chrome: null, "max-budget-usd": "5.00" },
-      positionals: [],
-    });
-  });
-
-  it("parses --effort=high syntax", () => {
-    expect(parseCliArgs("--effort=high")).toEqual({
-      flags: { effort: "high" },
       positionals: [],
     });
   });

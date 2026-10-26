@@ -2,7 +2,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { DeviceHostAvailability } from "../device/DeviceHostAvailability";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -10,8 +10,9 @@ import { AppleIcon, AndroidIcon } from "../Icons";
 import { Spinner } from "../ui/spinner";
 import type { EnvironmentId, SshDeviceHostConfig } from "@t3tools/contracts";
 import { randomUUID } from "../../lib/utils";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { deviceEnvironment } from "../../state/device";
+import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
@@ -40,6 +41,7 @@ import { DeviceHostEditor } from "./DeviceHostEditor";
 import { useHostConnectionChecks } from "./useHostConnectionChecks";
 import { deviceHostConnectionKey } from "./deviceHostConnectionChecks";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import { DeviceHostDiagnostics } from "../device/DeviceSetup";
 
 export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null }) {
   const { scope, environments, connectedEnvironments } = useSettingsScope();
@@ -55,59 +57,52 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     connected: environment.connection.phase === "connected",
   }));
   const { checks, testConnection } = useHostConnectionChecks(targets);
-  const hostEnvironments = useMemo(
-    () =>
-      connectedEnvironments.map((environment) => ({
-        environmentId: environment.environmentId,
-        label: environment.label,
-        labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
-        hosts: environment.serverConfig?.settings.deviceHosts ?? [],
-      })),
-    [connectedEnvironments],
-  );
-  const groupedHosts = useMemo(() => groupDeviceHosts(hostEnvironments), [hostEnvironments]);
+  const hostEnvironments = connectedEnvironments.map((environment) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
+    hosts: environment.serverConfig?.settings.deviceHosts ?? [],
+  }));
+  const groupedHosts = groupDeviceHosts(hostEnvironments);
   const save = async (host: SshDeviceHostConfig, remove = false, original = host) => {
     if (!props.environmentId || projectScope) return;
     setBusy(true);
-    try {
-      const results = await Promise.allSettled(
-        environments.map(async (environment) => {
-          if (environment.connection.phase !== "connected" || !environment.serverConfig) {
-            throw new Error("Environment disconnected");
-          }
-          if (!readEnvironmentScope(environment.environmentId, AuthSettingsWriteScope)) {
-            throw new Error("This connection cannot change device settings.");
-          }
-          return update({
-            environmentId: environment.environmentId,
-            input: {
-              patch: {
-                deviceHosts: updateDeviceHosts(
-                  environment.serverConfig.settings.deviceHosts,
-                  host,
-                  remove,
-                  original,
-                ),
-              },
+    const results = await Promise.allSettled(
+      environments.map(async (environment) => {
+        if (environment.connection.phase !== "connected" || !environment.serverConfig) {
+          throw new Error("Environment disconnected");
+        }
+        if (!readEnvironmentScope(environment.environmentId, AuthSettingsWriteScope)) {
+          throw new Error("This connection cannot change device settings.");
+        }
+        return update({
+          environmentId: environment.environmentId,
+          input: {
+            patch: {
+              deviceHosts: updateDeviceHosts(
+                environment.serverConfig.settings.deviceHosts,
+                host,
+                remove,
+                original,
+              ),
             },
-          });
-        }),
-      );
-      const failed = environments.filter((_, index) => {
-        const result = results[index];
-        return result?.status !== "fulfilled" || result.value._tag === "Failure";
-      });
-      if (failed.length === 0) {
-        setEditing(null);
-      } else {
-        toastManager.add({
-          type: "error",
-          title: "Device hosts not saved on all environments",
-          description: `Could not update ${failed.map((environment) => environment.label).join(", ")}.`,
+          },
         });
-      }
-    } finally {
-      setBusy(false);
+      }),
+    );
+    setBusy(false);
+    const failed = environments.filter((_, index) => {
+      const result = results[index];
+      return result?.status !== "fulfilled" || result.value._tag === "Failure";
+    });
+    if (failed.length === 0) {
+      setEditing(null);
+    } else {
+      toastManager.add({
+        type: "error",
+        title: "Device hosts not saved on all environments",
+        description: `Could not update ${failed.map((environment) => environment.label).join(", ")}.`,
+      });
     }
   };
   const listActions = {
@@ -150,7 +145,7 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
           }
           onClick={() => {
             setOriginalHost(null);
-            setEditing({ id: randomUUID(), label: "", target: "" });
+            setEditing({ kind: "ssh", id: randomUUID(), label: "", target: "" });
           }}
         >
           <PlusIcon className="size-3.5" /> Add host
@@ -219,6 +214,10 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
   );
 }
 
+const deviceHostStatesAtom = environmentAtomList("web-device-host-states", (environmentId) =>
+  deviceEnvironment.state({ environmentId, input: {} }),
+);
+
 function DeviceHostList({
   environments,
   groups,
@@ -245,19 +244,12 @@ function DeviceHostList({
       settingsScopeEnvironmentLabels(environment, scopeEnvironments),
     ]),
   );
-  const states = useAtomValue(
-    useMemo(
-      () =>
-        Atom.make(
-          (get) =>
-            new Map(
-              environments.map(({ environmentId }) => {
-                const result = get(deviceEnvironment.state({ environmentId, input: {} }));
-                return [environmentId, Option.getOrUndefined(AsyncResult.value(result))] as const;
-              }),
-            ),
-        ),
-      [environments],
+  const environmentIds = environments.map(({ environmentId }) => environmentId);
+  const results = useAtomValue(deviceHostStatesAtom(environmentIdsKey(environmentIds)));
+  const states = new Map(
+    environmentIds.map(
+      (environmentId, index) =>
+        [environmentId, Option.getOrUndefined(AsyncResult.value(results[index]!))] as const,
     ),
   );
   const retry = useAtomCommand(deviceEnvironment.list);
@@ -440,6 +432,18 @@ function DeviceHostList({
                 ))}
               </div>
               <p className="truncate text-xs text-muted-foreground">{host.target}</p>
+              {results
+                .filter(
+                  (result) =>
+                    result.status?.status === "ready" && result.status.androidDiscoveryIncomplete,
+                )
+                .map((result) => (
+                  <p key={result.environmentId} role="status" className="mt-1 text-xs text-warning">
+                    {compact ? `${result.label}: ` : ""}
+                    {result.status?.detail ??
+                      "The Android device list may be incomplete. Refresh devices to try again."}
+                  </p>
+                ))}
               {compact ? (
                 <Collapsible>
                   <div className="min-w-0 text-xs [--inline-button-white-space:normal]">
@@ -467,6 +471,12 @@ function DeviceHostList({
                             <p role="status" className="text-xs text-destructive">
                               {result.error}
                             </p>
+                          ) : null}
+                          {result.state ? (
+                            <DeviceHostDiagnostics
+                              hosts={[result.host]}
+                              hostStatuses={result.state.hostStatuses}
+                            />
                           ) : null}
                           {result.versions}
                           {result.check?.status === "local" ? (
@@ -501,6 +511,18 @@ function DeviceHostList({
                   </details>
                 </div>
               ) : null}
+              {!compact
+                ? results.map((result) =>
+                    result.state ? (
+                      <DeviceHostDiagnostics
+                        key={result.environmentId}
+                        className="mt-1"
+                        hosts={[result.host]}
+                        hostStatuses={result.state.hostStatuses}
+                      />
+                    ) : null,
+                  )
+                : null}
             </div>
             {!compact && progress ? (
               <span

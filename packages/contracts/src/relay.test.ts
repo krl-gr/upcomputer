@@ -8,7 +8,10 @@ import {
   MAX_WEB_PUSH_ENDPOINT_LENGTH,
   RelayApi,
   RelayDeviceRegistrationRequest,
+  RelayEnvironmentLinkUnavailableError,
 } from "./relay.ts";
+
+const decodeLinkUnavailableError = Schema.decodeUnknownSync(RelayEnvironmentLinkUnavailableError);
 
 const decodeDevice = Schema.decodeUnknownExit(RelayDeviceRegistrationRequest);
 const device = {
@@ -125,6 +128,20 @@ describe("web push devices", () => {
     expect(decodeDevice({ ...web, webPush: { ...web.webPush, [field]: value } })._tag).toBe(
       "Failure",
     );
+  });
+});
+
+describe("relay provisioning error compatibility", () => {
+  it("preserves a stage introduced by a newer relay", () => {
+    const error = {
+      _tag: "RelayEnvironmentLinkUnavailableError",
+      code: "environment_link_unavailable",
+      reason: "managed_endpoint_provisioning_failed",
+      provisioningStage: "future-provisioning-stage",
+      traceId: "trace-1",
+    };
+
+    expect(decodeLinkUnavailableError(error)).toMatchObject(error);
   });
 });
 

@@ -37,8 +37,17 @@ import * as Schema from "effect/Schema";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
 import { DeepMutable } from "effect/Types";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
-import { useMemo } from "react";
+import {
+  createModelSelection,
+  draftModelPickMatchesThread,
+  normalizeModelSlug,
+} from "@t3tools/shared/model";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
+import * as Option from "effect/Option";
+import type {
+  EnvironmentShellState,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
 import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
@@ -75,13 +84,14 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { useShallow } from "zustand/react/shallow";
 import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
-import { productSurface } from "./product/productFlags";
 import {
   replaceComposerContextReferences,
   toComposerContextId,
   toKindScopedComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
+
+const isElementContextDetails = Schema.is(ElementContextDetails);
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -1879,7 +1889,7 @@ function normalizePersistedDraftsByThreadId(
         : [];
     for (const element of legacyElements) {
       if (
-        !Schema.is(ElementContextDetails)(element) ||
+        !isElementContextDetails(element) ||
         !("id" in element) ||
         typeof element.id !== "string" ||
         !("pickedAt" in element) ||
@@ -4244,6 +4254,75 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
 
 export const useComposerDraftStore = composerDraftStore;
 
+export function subscribeComposerDraftModelReconciliation(input: {
+  readonly registry: AtomRegistry.AtomRegistry;
+  readonly threadRefsAtom: Atom.Atom<ReadonlyArray<ScopedThreadRef>>;
+  readonly threadShellAtom: (ref: ScopedThreadRef) => Atom.Atom<EnvironmentThreadShell | null>;
+  readonly shellStateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<EnvironmentShellState, unknown>>;
+}): () => void {
+  const draftsAtom = Atom.make(composerDraftStore.getState());
+  const unsubscribeDrafts = composerDraftStore.subscribe((state) =>
+    input.registry.set(draftsAtom, state),
+  );
+  const threadKeysAtom = Atom.map(
+    input.threadRefsAtom,
+    (refs) => new Set(refs.map(scopedThreadKey)),
+  );
+  const matchesAtom = Atom.make((get) => {
+    const state = get(draftsAtom);
+    const threadKeys = get(threadKeysAtom);
+    const matches: Array<readonly [string, ComposerThreadDraftState]> = [];
+    for (const [key, draft] of Object.entries(state.draftsByThreadKey)) {
+      // Local drafts can materialize a shell before their first turn is submitted.
+      if (state.draftThreadsByThreadKey[key] || draft.activeProvider === null) continue;
+      const ref = parseScopedThreadKey(key);
+      const pick = draft.modelSelectionByProvider[draft.activeProvider];
+      if (!ref || !pick || !threadKeys.has(key)) continue;
+      const thread = get(input.threadShellAtom(ref));
+      if (!thread || !draftModelPickMatchesThread(pick, thread.modelSelection)) continue;
+      // Status and selection must come from the same emission; derived atoms can update apart.
+      const shell = Option.getOrNull(
+        AsyncResult.value(get(input.shellStateAtom(ref.environmentId))),
+      );
+      if (shell?.status !== "live") continue;
+      const authoritativeThread = Option.getOrNull(shell.snapshot)?.threads.find(
+        (candidate) => candidate.id === ref.threadId,
+      );
+      if (
+        authoritativeThread &&
+        draftModelPickMatchesThread(pick, authoritativeThread.modelSelection)
+      ) {
+        matches.push([key, draft]);
+      }
+    }
+    return matches;
+  });
+  const unsubscribeMatches = input.registry.subscribe(
+    matchesAtom,
+    (matches) => {
+      if (matches.length === 0) return;
+      composerDraftStore.setState((state) => {
+        const drafts = { ...state.draftsByThreadKey };
+        for (const [key, matchedDraft] of matches) {
+          if (drafts[key] !== matchedDraft) continue;
+          const { modelSelectionExplicit: _explicit, ...retained } = matchedDraft;
+          const draft = { ...retained, activeProvider: null, modelSelectionByProvider: {} };
+          if (shouldRemoveDraft(draft)) delete drafts[key];
+          else drafts[key] = draft;
+        }
+        return { draftsByThreadKey: drafts };
+      });
+    },
+    { immediate: true },
+  );
+  return () => {
+    unsubscribeMatches();
+    unsubscribeDrafts();
+  };
+}
+
 export function beginBackgroundDraftSubmissionByRef(threadRef: ScopedThreadRef): void {
   const threadKey = scopedThreadKey(threadRef);
   useComposerDraftStore.setState((state) => ({
@@ -4350,7 +4429,9 @@ export function useThreadHasUnsentDraft(threadRef: ScopedThreadRef): boolean {
   );
 }
 
-function useComposerDraftModelState(threadRef: ComposerThreadTarget): ComposerDraftModelState {
+export function useComposerDraftModelState(
+  threadRef: ComposerThreadTarget,
+): ComposerDraftModelState {
   return useComposerDraftStore(
     useShallow((state) => {
       const draft = getComposerDraftState(state, threadRef);
@@ -4364,23 +4445,13 @@ function useComposerDraftModelState(threadRef: ComposerThreadTarget): ComposerDr
   );
 }
 
-export function useEffectiveComposerModelState(input: {
-  threadRef?: ComposerThreadTarget;
-  draftId?: DraftId;
-  /** The environment whose providers `providers` are. */
-  environmentId: EnvironmentId;
-  providers: ReadonlyArray<ServerProvider>;
-  selectedProvider: ProviderDriverKind;
-  selectedInstanceId?: ProviderInstanceId | null | undefined;
-  threadModelSelection: ModelSelection | null | undefined;
-  projectModelSelection: ModelSelection | null | undefined;
-  settings: UnifiedSettings;
-}): EffectiveComposerModelState {
-  const target = input.threadRef ?? input.draftId ?? DraftId.make("");
-  const draft = useComposerDraftModelState(target);
-  // The key the draft lifecycle releases. A composer that renders once more
-  // after its draft was removed gets none, as nothing would release it again.
-  const draftKey = useComposerDraftStore((state) => {
+/**
+ * UpComputer: the draft key the draft lifecycle releases, which scopes the default model a
+ * draft showed first. A composer that renders once more after its draft was removed gets
+ * none, as nothing would release it again.
+ */
+export function useComposerDraftReleaseKey(target: ComposerThreadTarget): string | null {
+  return useComposerDraftStore((state) => {
     const key = resolveComposerDraftKey(state, target);
     return key !== null &&
       (typeof target !== "string" ||
@@ -4389,35 +4460,6 @@ export function useEffectiveComposerModelState(input: {
       ? key
       : null;
   });
-
-  return useMemo(
-    () =>
-      deriveEffectiveComposerModelState({
-        draft,
-        providers: input.providers,
-        selectedProvider: input.selectedProvider,
-        selectedInstanceId: input.selectedInstanceId,
-        threadModelSelection: input.threadModelSelection,
-        projectModelSelection: input.projectModelSelection,
-        settings: input.settings,
-        // Upstream follows the catalog's default as it changes.
-        shownDefaultScope:
-          productSurface("composerContextRow") === "upcomputer" && draftKey !== null
-            ? { draftKey, environmentId: input.environmentId }
-            : null,
-      }),
-    [
-      draft,
-      draftKey,
-      input.environmentId,
-      input.providers,
-      input.settings,
-      input.projectModelSelection,
-      input.selectedInstanceId,
-      input.selectedProvider,
-      input.threadModelSelection,
-    ],
-  );
 }
 
 export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
@@ -4432,7 +4474,7 @@ export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   }
 }
 
-export function restoreFailedBackgroundDraftThread(
+export function restoreFailedDraftThread(
   draftId: DraftId,
   draftThread: DraftThreadState,
   threadId: ThreadId,
@@ -4441,8 +4483,9 @@ export function restoreFailedBackgroundDraftThread(
     draftThreadsByThreadKey: {
       ...state.draftThreadsByThreadKey,
       [draftId]: {
-        ...draftThread,
+        ...(state.draftThreadsByThreadKey[draftId] ?? draftThread),
         threadId,
+        ...(threadId !== draftThread.threadId ? { createdAt: new Date().toISOString() } : {}),
         promotedTo: null,
       },
     },

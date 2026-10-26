@@ -26,11 +26,19 @@ import {
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { useAtomRefresh } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
-import { useTheme } from "~/hooks/useTheme";
+import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
+import { useRenderedAppearance } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment, canResolvePullRequestThread } from "./pullRequestEditing.logic";
@@ -94,6 +102,7 @@ import {
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
+import { PullRequestDiffUnavailableState } from "./PullRequestDiffUnavailableState";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
 import {
   nextPendingReviewCommentId,
@@ -136,6 +145,79 @@ const REPLACE_FILE_COUNTS_CSS = `
 
 const NO_SLICES: ReadonlyArray<DiffSlice> = [];
 
+// Each slice is parsed once per cache key and the parse lives as long as the slice does, so a
+// slice arriving costs one parse rather than one per slice already on screen.
+const sliceParses = new WeakMap<DiffSlice, Map<string, RenderablePatch | null>>();
+
+function parseSlice(slice: DiffSlice, cacheKey: string, ignoreWhitespace: boolean) {
+  let parses = sliceParses.get(slice);
+  if (parses === undefined) {
+    parses = new Map();
+    sliceParses.set(slice, parses);
+  }
+  if (parses.has(cacheKey)) return parses.get(cacheKey) ?? null;
+  const parsed = getRenderablePatch(slice.patch, cacheKey, {
+    compactPartialHunkOffsets: true,
+    ignoreWhitespace,
+  });
+  parses.set(cacheKey, parsed);
+  return parsed;
+}
+
+interface FileViewedToggleState {
+  readonly enabled: boolean;
+  readonly isViewed: (path: string) => boolean;
+  readonly isStale: (path: string) => boolean;
+  readonly setFileViewed: (fileKey: string, path: string, viewed: boolean) => void;
+}
+
+// Header portals are memoized on the render props; the viewed toggle reads its state through
+// context so a press redraws the toggles, not every header on screen.
+const FileViewedToggleContext = createContext<FileViewedToggleState | null>(null);
+
+function FileViewedToggle({
+  fileKey,
+  path,
+  stat,
+}: {
+  readonly fileKey: string;
+  readonly path: string;
+  readonly stat: ReactNode;
+}) {
+  const viewedFiles = use(FileViewedToggleContext);
+  if (viewedFiles === null || !viewedFiles.enabled) return stat;
+  const viewed = viewedFiles.isViewed(path);
+  const stale = viewedFiles.isStale(path);
+  return (
+    <span className="flex items-center gap-3">
+      {stat}
+      <label
+        data-viewed-toggle=""
+        className="flex cursor-pointer select-none items-center gap-1.5 text-2xs text-muted-foreground"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Checkbox
+          aria-label={stale ? "Changed" : "Viewed"}
+          checked={viewed}
+          onCheckedChange={(next) => viewedFiles.setFileViewed(fileKey, path, next === true)}
+        />
+        {stale ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="text-warning-foreground" />}>
+              Changed
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              This file has been pushed to since you marked it viewed.
+            </TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span className="@max-xs:hidden">Viewed</span>
+        )}
+      </label>
+    </span>
+  );
+}
+
 interface MutableAnnotationGroup {
   readonly side: PullRequestDiffSide;
   readonly line: number;
@@ -170,6 +252,7 @@ function PullRequestCodeTab({
   onAddToAgentSelection,
   onRefresh,
   refreshToken = 0,
+  backgroundRefreshToken = 0,
   revealRequest = null,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
@@ -184,17 +267,22 @@ function PullRequestCodeTab({
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
   onRefresh: () => void;
   refreshToken?: number;
+  backgroundRefreshToken?: number;
   revealRequest?: { readonly path: string; readonly nonce: number } | null;
 }) {
-  const { resolvedTheme } = useTheme();
-  const settings = useClientSettings();
+  const resolvedTheme = useRenderedAppearance();
+  const settings = useClientSettings((settings) => ({
+    diffFilesCollapsed: settings.diffFilesCollapsed,
+    diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
+    diffLayout: settings.diffLayout,
+    wordWrap: settings.wordWrap,
+  }));
   const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
   const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
   const effectiveFoldOverride =
     foldOverride ?? (settings.diffFilesCollapsed ? "folded" : "expanded");
   const diffLayout = settings.diffLayout;
-  const updateClientSettings = useUpdateClientSettings();
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
@@ -216,17 +304,18 @@ function PullRequestCodeTab({
     readonly cursor: string | null;
     readonly slices: ReadonlyArray<DiffSlice>;
   }>({ key: "", cursor: null, slices: NO_SLICES });
-  const parseCache = useRef(new Map<string, RenderablePatch>());
   const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup, undefined> | null>(
     null,
   );
 
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
-  const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
+  const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
   // survive the switch and attach its comment to whichever one is on screen when it is sent.
-  useEffect(() => {
+  const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
+  if (stateScopeKey !== scopeKey) {
+    setStateScopeKey(scopeKey);
     setDraft(null);
     setSelectedLines(null);
     setToggledFiles(new Set());
@@ -234,8 +323,7 @@ function PullRequestCodeTab({
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
-    parseCache.current.clear();
-  }, [scopeKey]);
+  }
 
   const loadedSlices = sliceState.key === scopeKey ? sliceState.slices : NO_SLICES;
   const cursor = sliceState.key === scopeKey ? sliceState.cursor : null;
@@ -249,9 +337,21 @@ function PullRequestCodeTab({
       },
     }),
   );
-  useEffect(() => {
-    const data = diffQuery.data;
-    if (data === null) return;
+  // Pages accumulate into slices as each answer arrives, so the slice list is adjusted while
+  // rendering the answer rather than one commit later.
+  const [appliedPage, setAppliedPage] = useState<{
+    readonly data: typeof diffQuery.data;
+    readonly cursor: string | null;
+    readonly scopeKey: string;
+  } | null>(null);
+  const data = diffQuery.data;
+  if (
+    data !== null &&
+    (appliedPage?.data !== data ||
+      appliedPage.cursor !== cursor ||
+      appliedPage.scopeKey !== scopeKey)
+  ) {
+    setAppliedPage({ data, cursor, scopeKey });
     setSliceState((previous) => {
       const slices = previous.key === scopeKey ? previous.slices : NO_SLICES;
       const next = {
@@ -288,7 +388,7 @@ function PullRequestCodeTab({
       // after it go with the replacement: their cursors were positions in the old diff.
       return { key: scopeKey, cursor, slices: [...slices.slice(0, index), next] };
     });
-  }, [cursor, diffQuery.data, scopeKey]);
+  }
   const refreshFirstDiffPage = useAtomRefresh(
     pullRequestEnvironment.diff({
       environmentId,
@@ -312,61 +412,12 @@ function PullRequestCodeTab({
     reportFailure: false,
   });
   const getDiffFileContents = useAtomCommand(pullRequestEnvironment.diffFileContents);
-  const loadDiffFiles = useMemo(
-    () =>
-      createPullRequestDiffFileContentsLoader(getDiffFileContents, {
-        environmentId,
-        reference,
-        commit,
-        cacheKey: `pull-request:${referenceKey}:${detail.updatedAt}:${commit ?? "all"}`,
-      }),
-    [commit, detail.updatedAt, environmentId, getDiffFileContents, reference, referenceKey],
-  );
 
-  const review = useMemo(() => {
-    const hostReview = detail.capabilities.review;
-    const viewer = detail.viewerPermissions;
-    return {
-      inlineComment: hostReview.inlineComment && viewer.comment,
-      reply: hostReview.reply && viewer.comment,
-      resolve: hostReview.resolve && viewer.resolve,
-    };
-  }, [detail.capabilities.review, detail.viewerPermissions]);
-  const canCommentOnLines = review.inlineComment && commit === null;
-  // Every slice is parsed on its own and the result held, so a slice arriving costs one parse
-  // rather than one per slice already on screen. Its cache key carries the theme, which is what
-  // the tokenizer caches against, so a theme change is still a fresh parse.
-  const parsedSlices = useMemo(
-    () =>
-      loadedSlices.map((slice) => {
-        // The patch's own hash is part of the key: a refreshed page reuses its cursor, and a
-        // key of position alone would keep handing back the parse of the patch it replaced.
-        const cacheKey = `pull-request:${scopeKey}:${resolvedTheme}:${ignoreWhitespace}:${slice.cursor ?? "first"}:${fnv1a32(slice.patch)}`;
-        const cached = parseCache.current.get(cacheKey);
-        if (cached) return cached;
-        const parsed = getRenderablePatch(slice.patch, cacheKey, {
-          compactPartialHunkOffsets: true,
-          ignoreWhitespace,
-        });
-        if (parsed) parseCache.current.set(cacheKey, parsed);
-        return parsed;
-      }),
-    [loadedSlices, resolvedTheme, scopeKey, ignoreWhitespace],
-  );
-  const files = useMemo(
-    () =>
-      parsedSlices.flatMap((parsed) =>
-        parsed?.kind === "files" ? orderDiffFiles(parsed.files) : [],
-      ),
-    [parsedSlices],
-  );
-  const filePaths = useMemo(() => files.map((file) => resolveFileDiffPath(file)), [files]);
   const viewedFilesStore = detail.capabilities.viewedFiles;
   const filesViewed = usePullRequestFilesViewed({
     environmentId,
     reference,
     enabled: viewedFilesStore !== undefined,
-    paths: filePaths,
   });
   const {
     setViewed,
@@ -383,15 +434,75 @@ function PullRequestCodeTab({
     refreshFirstDiffPage();
     refreshFilesViewed();
   }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
-  const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
-  const withheldContent =
-    loadedSlices.some((slice) => slice.truncated) ||
-    parsedSlices.some((parsed) => parsed?.kind === "raw");
+  const appliedBackgroundRefreshToken = useRef(backgroundRefreshToken);
+  useEffect(() => {
+    if (appliedBackgroundRefreshToken.current === backgroundRefreshToken) return;
+    appliedBackgroundRefreshToken.current = backgroundRefreshToken;
+    // Keeping slices mounted preserves scroll; the page merge invalidates changed pages.
+    setSliceState((previous) => ({ ...previous, cursor: null }));
+    refreshFirstDiffPage();
+    refreshFilesViewed();
+  }, [backgroundRefreshToken, refreshFirstDiffPage, refreshFilesViewed]);
 
+  // The sentinel is held as state rather than a ref because the viewer mounts its own footer:
+  // an effect reading a ref could run before that node exists and would never arm the observer.
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
+  const requestTreeReveal = useCodeViewFileReveal(viewer, scopeKey);
+  const answeredReveal = useRef<number | null>(null);
+
+  const loadDiffFiles = createPullRequestDiffFileContentsLoader(getDiffFileContents, {
+    environmentId,
+    reference,
+    commit,
+    cacheKey: `pull-request:${referenceKey}:${detail.updatedAt}:${commit ?? "all"}`,
+  });
+  const hostReview = detail.capabilities.review;
+  const review = {
+    inlineComment: hostReview.inlineComment && detail.viewerPermissions.comment,
+    reply: hostReview.reply && detail.viewerPermissions.comment,
+    resolve: hostReview.resolve && detail.viewerPermissions.resolve,
+  };
+  const canCommentOnLines = review.inlineComment && commit === null;
+  // Agent context is local, so it does not require host comment permission.
+  const canSelectLines =
+    commit === null && (review.inlineComment || onAddToAgentSelection !== undefined);
+  // The cache key carries the theme, which is what the tokenizer caches against, so a theme
+  // change is still a fresh parse. The patch's own hash is part of it too: a refreshed page
+  // reuses its cursor, and a key of position alone would hand back the parse it replaced.
+  const parsedSlices = loadedSlices.map((slice) =>
+    parseSlice(
+      slice,
+      `pull-request:${scopeKey}:${resolvedTheme}:${ignoreWhitespace}:${slice.cursor ?? "first"}:${fnv1a32(slice.patch)}`,
+      ignoreWhitespace,
+    ),
+  );
+  const files = parsedSlices.flatMap((parsed) =>
+    parsed?.kind === "files" ? orderDiffFiles(parsed.files) : [],
+  );
+  const filePaths = files.map((file) => resolveFileDiffPath(file));
+  const omittedFileStats = new Map(
+    loadedSlices.flatMap((slice) =>
+      slice.omittedFileStats.map((file) => [file.path, file] as const),
+    ),
+  );
+  const sourceFileStats = new Map(
+    parsedSlices.flatMap((parsed) =>
+      parsed?.kind === "files"
+        ? parsed.files.map(
+            (file, index) =>
+              [
+                buildFileDiffRenderKey(file),
+                getDiffLineStat([parsed.sourceFiles[index] ?? file]),
+              ] as const,
+          )
+        : [],
+    ),
+  );
+  const fileTreeEntries = diffFileTreeEntries(files);
   // Placing a conversation takes more than its file being in the diff: its line has to fall
   // inside a hunk that was rendered. One that does not is drawn nowhere, so it belongs in the
   // off-diff list rather than disappearing between the two.
-  const placedThreadIds = useMemo(() => {
+  const placedThreadIds = (() => {
     const placed = new Set<string>();
     // A commit's diff counts lines within that commit; a review comment is anchored to the
     // pull request's head diff. Pinning one onto the other would put the remark against
@@ -411,149 +522,139 @@ function PullRequestCodeTab({
       }
     }
     return placed;
-  }, [commit, detail.reviewThreads, files]);
+  })();
 
-  const annotatedFiles = useMemo(
-    () =>
-      files.map((fileDiff) => {
-        const fileKey = buildFileDiffRenderKey(fileDiff);
-        const path = resolveFileDiffPath(fileDiff);
-        const groups = new Map<string, MutableAnnotationGroup>();
-        const groupAt = (side: PullRequestDiffSide, line: number) => {
-          const key = `${side}:${line}`;
-          const existing = groups.get(key);
-          if (existing) return existing;
-          const created: MutableAnnotationGroup = {
-            side,
-            line,
-            threads: [],
-            pending: [],
-            draft: false,
-          };
-          groups.set(key, created);
-          return created;
-        };
+  const annotatedFiles = files.map((fileDiff) => {
+    const fileKey = buildFileDiffRenderKey(fileDiff);
+    const path = resolveFileDiffPath(fileDiff);
+    const groups = new Map<string, MutableAnnotationGroup>();
+    const groupAt = (side: PullRequestDiffSide, line: number) => {
+      const key = `${side}:${line}`;
+      const existing = groups.get(key);
+      if (existing) return existing;
+      const created: MutableAnnotationGroup = {
+        side,
+        line,
+        threads: [],
+        pending: [],
+        draft: false,
+      };
+      groups.set(key, created);
+      return created;
+    };
 
-        for (const thread of detail.reviewThreads) {
-          if (thread.path !== path || thread.line === null) continue;
-          if (!placedThreadIds.has(thread.id)) continue;
-          groupAt(thread.side, thread.line).threads.push(thread);
-        }
-        if (commit === null) {
-          for (const comment of pendingComments) {
-            if (comment.path !== path) continue;
-            const anchor = getReviewPositionAnchor(comment.position);
-            groupAt(anchor.side, anchor.line).pending.push(comment);
-          }
-        }
-        if (draft?.fileKey === fileKey) {
-          const anchor = getReviewPositionAnchor(draft.position);
-          groupAt(anchor.side, anchor.line).draft = true;
-        }
+    for (const thread of detail.reviewThreads) {
+      if (thread.path !== path || thread.line === null) continue;
+      if (!placedThreadIds.has(thread.id)) continue;
+      groupAt(thread.side, thread.line).threads.push(thread);
+    }
+    if (commit === null) {
+      for (const comment of pendingComments) {
+        if (comment.path !== path) continue;
+        const anchor = getReviewPositionAnchor(comment.position);
+        groupAt(anchor.side, anchor.line).pending.push(comment);
+      }
+    }
+    if (draft?.fileKey === fileKey) {
+      const anchor = getReviewPositionAnchor(draft.position);
+      groupAt(anchor.side, anchor.line).draft = true;
+    }
 
-        const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
-          side: toViewerSide(group.side),
-          lineNumber: group.line,
-          metadata: { threads: group.threads, pending: group.pending, draft: group.draft },
-        }));
-        return {
-          fileKey,
-          path,
-          fileDiff,
-          annotations,
-          // The viewer re-renders an item only when its version changes, so everything the
-          // annotations show has to be part of it.
-          annotationsVersion: fnv1a32(
-            annotations
-              .map(
-                ({ side, lineNumber, metadata }) =>
-                  `${side}:${lineNumber}:${metadata.draft ? "d" : ""}:${metadata.pending
-                    .map((comment) => `${comment.id}:${comment.body}`)
-                    .join(",")}:${metadata.threads
-                    .map(
-                      (thread) =>
-                        `${thread.id}:${thread.isResolved ? "r" : ""}:${
-                          thread.isOutdated ? "o" : ""
-                        }:${thread.comments
-                          .map(
-                            (comment) =>
-                              `${comment.id}:${comment.author?.login ?? ""}:${comment.createdAt}:${comment.body}:${(
-                                comment.reactions ?? []
-                              )
-                                .map(
-                                  (r) => `${r.content}:${r.count}:${r.viewerHasReacted ? "v" : ""}`,
-                                )
-                                .join(",")}`,
+    const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
+      side: toViewerSide(group.side),
+      lineNumber: group.line,
+      metadata: { threads: group.threads, pending: group.pending, draft: group.draft },
+    }));
+    return {
+      fileKey,
+      path,
+      fileDiff,
+      annotations,
+      // The viewer re-renders an item only when its version changes, so everything the
+      // annotations show has to be part of it.
+      annotationsVersion: fnv1a32(
+        annotations
+          .map(
+            ({ side, lineNumber, metadata }) =>
+              `${side}:${lineNumber}:${metadata.draft ? "d" : ""}:${metadata.pending
+                .map((comment) => `${comment.id}:${comment.body}`)
+                .join(",")}:${metadata.threads
+                .map(
+                  (thread) =>
+                    `${thread.id}:${thread.isResolved ? "r" : ""}:${
+                      thread.isOutdated ? "o" : ""
+                    }:${thread.comments
+                      .map(
+                        (comment) =>
+                          `${comment.id}:${comment.author?.login ?? ""}:${comment.createdAt}:${comment.body}:${(
+                            comment.reactions ?? []
                           )
-                          .join(";")}`,
-                    )
-                    .join(",")}`,
-              )
-              .join("|"),
-          ),
-        };
-      }),
-    [commit, detail.reviewThreads, draft, files, pendingComments, placedThreadIds],
-  );
+                            .map((r) => `${r.content}:${r.count}:${r.viewerHasReacted ? "v" : ""}`)
+                            .join(",")}`,
+                      )
+                      .join(";")}`,
+                )
+                .join(",")}`,
+          )
+          .join("|"),
+      ),
+    };
+  });
 
-  const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
-    () =>
-      annotatedFiles.map(({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
-        const collapsed = isFileDiffCollapsed(fileKey, effectiveFoldOverride, toggledFiles);
-        const viewedMark = filesViewedEnabled
-          ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
-          : "";
-        return {
-          id: fileKey,
-          type: "diff" as const,
-          fileDiff,
-          annotations,
-          collapsed,
-          version: fnv1a32(`${collapsed ? "1" : "0"}:${viewedMark}:${annotationsVersion}`),
-        };
-      }),
-    [
-      annotatedFiles,
-      filesViewedEnabled,
-      effectiveFoldOverride,
-      isFileViewed,
-      isFileViewedStale,
-      toggledFiles,
-    ],
+  const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
+  const withheldContent =
+    loadedSlices.some((slice) => slice.truncated) ||
+    parsedSlices.some((parsed) => parsed?.kind === "raw");
+  // Only once the diff is whole: returning here while a cursor is outstanding would take the
+  // sentinel off screen and end the walk, leaving the rest of the change unasked for.
+  const rawSlices =
+    nextCursor === null
+      ? parsedSlices.flatMap((parsed) => (parsed?.kind === "raw" ? [parsed] : []))
+      : [];
+  const rawSlicesView =
+    files.length === 0 && rawSlices.length > 0 ? (
+      <div className="space-y-4 px-4 py-5">
+        {rawSlices.map((slice) => (
+          <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
+            <p className="text-xs text-muted-foreground">{slice.reason}</p>
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
+          </div>
+        ))}
+      </div>
+    ) : null;
+  const unstructured =
+    rawSlices.length === 0 ? null : (
+      <div className="space-y-4 border-t border-border/60 px-4 py-5">
+        {rawSlices.map((slice) => (
+          <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
+            <p className="text-xs text-muted-foreground">{slice.reason}</p>
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
+          </div>
+        ))}
+      </div>
+    );
+
+  const items: CodeViewDiffItem<ReviewAnnotationGroup>[] = annotatedFiles.map(
+    ({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
+      const collapsed = isFileDiffCollapsed(fileKey, effectiveFoldOverride, toggledFiles);
+      const viewedMark = filesViewedEnabled
+        ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
+        : "";
+      return {
+        id: fileKey,
+        type: "diff" as const,
+        fileDiff,
+        annotations,
+        collapsed,
+        version: fnv1a32(`${collapsed ? "1" : "0"}:${viewedMark}:${annotationsVersion}`),
+      };
+    },
   );
-  const omittedFileStats = useMemo(
-    () =>
-      new Map(
-        loadedSlices.flatMap((slice) =>
-          slice.omittedFileStats.map((file) => [file.path, file] as const),
-        ),
-      ),
-    [loadedSlices],
-  );
-  const sourceFileStats = useMemo(
-    () =>
-      new Map(
-        parsedSlices.flatMap((parsed) =>
-          parsed?.kind === "files"
-            ? parsed.files.map(
-                (file, index) =>
-                  [
-                    buildFileDiffRenderKey(file),
-                    getDiffLineStat([parsed.sourceFiles[index] ?? file]),
-                  ] as const,
-              )
-            : [],
-        ),
-      ),
-    [parsedSlices],
-  );
-  const fileKeys = useMemo(() => items.map((item) => item.id), [items]);
-  const collapsedFileKeys = useMemo(
-    () => new Set(items.filter((item) => item.collapsed === true).map((item) => item.id)),
-    [items],
+  const fileKeys = items.map((item) => item.id);
+  const collapsedFileKeys = new Set(
+    items.filter((item) => item.collapsed === true).map((item) => item.id),
   );
   const allFilesCollapsed = areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys);
-  const fileTreeEntries = useMemo(() => diffFileTreeEntries(files), [files]);
 
   // A failed slice must not be asked for again on its own. The files already loaded keep the
   // sentinel on screen, so re-arming it after a failure would request the same slice forever.
@@ -562,417 +663,319 @@ function PullRequestCodeTab({
     nextCursor !== cursor &&
     !diffQuery.isPending &&
     diffQuery.error === null;
-  const loadNextSlice = useCallback(() => {
+  const loadNextSlice = () => {
     if (nextCursor === null) return;
     setSliceState((previous) => ({ ...previous, cursor: nextCursor }));
-  }, [nextCursor]);
+  };
 
-  // The sentinel is held as state rather than a ref because the viewer mounts its own footer:
-  // an effect reading a ref could run before that node exists and would never arm the observer.
-  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (sentinel === null || !canLoadNextSlice) return;
-    const observer = new IntersectionObserver(
-      (observed) => {
-        if (observed.some((entry) => entry.isIntersecting)) loadNextSlice();
-      },
-      { rootMargin: "240px" },
+  const toggleFile = (fileKey: string) =>
+    setToggledFiles((current) => {
+      const next = new Set(current);
+      if (next.has(fileKey)) next.delete(fileKey);
+      else next.add(fileKey);
+      return next;
+    });
+
+  const setFileViewed = (fileKey: string, path: string, viewed: boolean) => {
+    setViewed(path, viewed);
+    setToggledFiles((current) =>
+      toggleFileDiffFoldForViewed(fileKey, viewed, effectiveFoldOverride, current),
     );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [canLoadNextSlice, loadNextSlice, sentinel]);
+  };
+  const fileViewedToggle = {
+    enabled: filesViewedEnabled,
+    isViewed: isFileViewed,
+    isStale: isFileViewedStale,
+    setFileViewed,
+  };
 
-  const toggleFile = useCallback(
-    (fileKey: string) =>
-      setToggledFiles((current) => {
-        const next = new Set(current);
-        if (next.has(fileKey)) next.delete(fileKey);
-        else next.add(fileKey);
-        return next;
-      }),
-    [],
-  );
-
-  const setFileViewed = useCallback(
-    (fileKey: string, path: string, viewed: boolean) => {
-      setViewed(path, viewed);
-      setToggledFiles((current) =>
-        toggleFileDiffFoldForViewed(fileKey, viewed, effectiveFoldOverride, current),
-      );
-    },
-    [effectiveFoldOverride, setViewed],
-  );
-
-  const requestTreeReveal = useCodeViewFileReveal(viewer, scopeKey);
-  const revealFile = useCallback(
-    (path: string) => {
-      const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
-      if (item === undefined) return;
-      if (item.collapsed === true) toggleFile(item.id);
-      requestTreeReveal(item.id);
-    },
-    [items, requestTreeReveal, toggleFile],
-  );
-  const answeredReveal = useRef<number | null>(null);
-  useEffect(() => {
-    if (revealRequest === null || answeredReveal.current === revealRequest.nonce) return;
-    if (!items.some((item) => resolveFileDiffPath(item.fileDiff) === revealRequest.path)) {
-      if (canLoadNextSlice) loadNextSlice();
-      return;
-    }
-    answeredReveal.current = revealRequest.nonce;
-    revealFile(revealRequest.path);
-  }, [canLoadNextSlice, items, loadNextSlice, revealFile, revealRequest]);
+  const revealFile = (path: string) => {
+    const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
+    if (item === undefined) return;
+    if (item.collapsed === true) toggleFile(item.id);
+    requestTreeReveal(item.id);
+  };
 
   const toggleAllFiles = () => {
     setFoldOverride(areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys) ? "expanded" : "folded");
     setToggledFiles(new Set());
   };
 
-  const orderedCommits = useMemo(
-    () =>
-      // By instant, not by the text: GitLab keeps a commit's own UTC offset, so two commits
-      // from different zones would sort by how they were written rather than when they landed.
-      detail.commits.toSorted(
-        (left, right) => Date.parse(right.committedDate) - Date.parse(left.committedDate),
-      ),
-    [detail.commits],
-  );
+  const orderedCommits = // By instant, not by the text: GitLab keeps a commit's own UTC offset, so two commits
+    // from different zones would sort by how they were written rather than when they landed.
+    detail.commits.toSorted(
+      (left, right) => Date.parse(right.committedDate) - Date.parse(left.committedDate),
+    );
 
-  const beginComment = useCallback(
-    (range: SelectedLineRange | null, context: { item: CodeViewItem<ReviewAnnotationGroup> }) => {
-      if (!range || !canCommentOnLines) return;
-      const item = context.item;
-      if (item.type !== "diff") return;
-      const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
-      if (!file) return;
-      // A range collapses to its last line: only GitHub carries a multi-line comment, and one
-      // that silently lost its first line on the other hosts would be worse than one line.
-      const path = resolveFileDiffPath(file);
-      const previousPath = resolveFileDiffPreviousPath(file);
-      const sourceFile = parsedSlices
-        .flatMap((slice) => (slice?.kind === "files" ? slice.sourceFiles : []))
-        .find((candidate) => resolveFileDiffPath(candidate) === path);
-      const side = range.endSide ?? range.side;
-      const position =
-        (sourceFile && resolveDiffReviewPosition(sourceFile, range.end, side)) ??
-        resolveDiffReviewPosition(file, range.end, side);
-      if (position === null) return;
-      setDraft({
-        fileKey: item.id,
-        path,
-        oldPath: previousPath === path ? null : previousPath,
-        position,
-        range,
-      });
-    },
-    [canCommentOnLines, files, parsedSlices],
-  );
+  const beginComment = (
+    range: SelectedLineRange | null,
+    context: { item: CodeViewItem<ReviewAnnotationGroup> },
+  ) => {
+    if (!range || !canSelectLines) return;
+    const item = context.item;
+    if (item.type !== "diff") return;
+    const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
+    if (!file) return;
+    // A range collapses to its last line: only GitHub carries a multi-line comment, and one
+    // that silently lost its first line on the other hosts would be worse than one line.
+    const path = resolveFileDiffPath(file);
+    const previousPath = resolveFileDiffPreviousPath(file);
+    const sourceFile = parsedSlices
+      .flatMap((slice) => (slice?.kind === "files" ? slice.sourceFiles : []))
+      .find((candidate) => resolveFileDiffPath(candidate) === path);
+    const side = range.endSide ?? range.side;
+    const position =
+      (sourceFile && resolveDiffReviewPosition(sourceFile, range.end, side)) ??
+      resolveDiffReviewPosition(file, range.end, side);
+    if (position === null) return;
+    setDraft({
+      fileKey: item.id,
+      path,
+      oldPath: previousPath === path ? null : previousPath,
+      position,
+      range,
+    });
+  };
 
-  const finishSelection = useCallback(
-    (anchor: DraftAnchor, text: string, onFinish: (comment: ReviewCommentContext) => void) => {
-      const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === anchor.fileKey);
-      const comment =
-        file === undefined
-          ? null
-          : buildDiffReviewComment({
-              id: `pull-request-selection:${anchor.fileKey}:${anchor.range.start}:${anchor.range.end}`,
-              sectionId: `pull-request:${detail.number}`,
-              sectionTitle: `PR #${detail.number} review`,
-              filePath: anchor.path,
-              fileDiff: file,
-              range: anchor.range,
-              text,
-            });
-      setDraft(null);
-      setSelectedLines(null);
-      if (comment !== null) onFinish(comment);
-    },
-    [detail.number, files],
-  );
+  const finishSelection = (
+    anchor: DraftAnchor,
+    text: string,
+    onFinish: (comment: ReviewCommentContext) => void,
+  ) => {
+    const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === anchor.fileKey);
+    const comment =
+      file === undefined
+        ? null
+        : buildDiffReviewComment({
+            id: `pull-request-selection:${anchor.fileKey}:${anchor.range.start}:${anchor.range.end}`,
+            sectionId: `pull-request:${detail.number}`,
+            sectionTitle: `PR #${detail.number} review`,
+            filePath: anchor.path,
+            fileDiff: file,
+            range: anchor.range,
+            text,
+          });
+    setDraft(null);
+    setSelectedLines(null);
+    if (comment !== null) onFinish(comment);
+  };
 
   // The viewer's SlotPortals memoizes each visible file's header/annotation portal on these
   // render props and on `options` below; a fresh identity on any of them — as a plain inline
   // function or object literal would be — invalidates that memo and recreates every portal on
   // screen on any tab re-render (a drag-selection, a keystroke in the draft, a review-store
   // update), which is the jank this file is otherwise clean of.
-  const renderCodeViewFooter = useCallback(
-    () =>
-      nextCursor === null ? null : (
-        <div
-          ref={setSentinel}
-          className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
-        >
-          {diffQuery.error !== null ? (
-            <>
-              <span>The rest of this diff could not be loaded.</span>
-              <Button size="xs" variant="outline" onClick={() => diffQuery.refresh()}>
-                Retry
-              </Button>
-            </>
-          ) : diffQuery.isPending ? (
-            "Loading more files..."
-          ) : null}
-        </div>
-      ),
-    [nextCursor, diffQuery.error, diffQuery.isPending, diffQuery.refresh],
-  );
-
-  const renderHeaderPrefix = useCallback(
-    (item: CodeViewItem<ReviewAnnotationGroup>) => {
-      const collapsed = item.collapsed === true;
-      return (
-        <Button
-          size="icon-micro"
-          variant="ghost-muted"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-          className="mr-1"
-          onClick={(event) => {
-            event.stopPropagation();
-            toggleFile(item.id);
-          }}
-        >
-          <MorphIcon className="size-4" icon={collapsed ? ChevronRight : ChevronDown} />
-        </Button>
-      );
-    },
-    [toggleFile],
-  );
-
-  const filesViewedRef = useRef(filesViewed);
-  filesViewedRef.current = filesViewed;
-  const setFileViewedRef = useRef(setFileViewed);
-  setFileViewedRef.current = setFileViewed;
-
-  const renderHeaderMetadata = useCallback(
-    (item: CodeViewItem<ReviewAnnotationGroup>) => {
-      if (item.type !== "diff") return null;
-      let { additions, deletions } =
-        sourceFileStats.get(item.id) ?? getDiffLineStat([item.fileDiff]);
-      const path = resolveFileDiffPath(item.fileDiff);
-      if (additions === 0 && deletions === 0) {
-        const withheld = omittedFileStats.get(path);
-        if (withheld) ({ additions, deletions } = withheld);
-      }
-      const stat = (
-        <PullRequestDiffStat
-          additions={additions}
-          deletions={deletions}
-          className="font-mono text-2xs"
-        />
-      );
-      const viewedFiles = filesViewedRef.current;
-      if (!viewedFiles.enabled) return stat;
-      const viewed = viewedFiles.isViewed(path);
-      const stale = viewedFiles.isStale(path);
-      return (
-        <span className="flex items-center gap-3">
-          {stat}
-          <label
-            data-viewed-toggle=""
-            className="flex cursor-pointer select-none items-center gap-1.5 text-2xs text-muted-foreground"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Checkbox
-              aria-label={stale ? "Changed" : "Viewed"}
-              checked={viewed}
-              onCheckedChange={(next) => setFileViewedRef.current(item.id, path, next === true)}
-            />
-            {stale ? (
-              <Tooltip>
-                <TooltipTrigger render={<span className="text-warning-foreground" />}>
-                  Changed
-                </TooltipTrigger>
-                <TooltipPopup side="bottom">
-                  This file has been pushed to since you marked it viewed.
-                </TooltipPopup>
-              </Tooltip>
-            ) : (
-              <span className="@max-xs:hidden">Viewed</span>
-            )}
-          </label>
-        </span>
-      );
-    },
-    [omittedFileStats, sourceFileStats],
-  );
-
-  const diffViewOptions = useMemo(
-    () => ({
-      diffStyle: diffLayout === "split" ? ("split" as const) : ("unified" as const),
-      lineDiffType: "none" as const,
-      overflow: wordWrap ? ("wrap" as const) : ("scroll" as const),
-      theme: resolveDiffThemeName(resolvedTheme),
-      preferredHighlighter: PREFERRED_HIGHLIGHTER,
-      themeType: resolvedTheme,
-      stickyHeaders: true,
-      loadDiffFiles,
-      enableGutterUtility: canCommentOnLines && draft === null,
-      enableLineSelection: canCommentOnLines && draft === null,
-      onGutterUtilityClick: beginComment,
-      onLineSelectionEnd: beginComment,
-    }),
-    [diffLayout, wordWrap, resolvedTheme, loadDiffFiles, canCommentOnLines, draft, beginComment],
-  );
-
-  const runThreadCommand = useCallback(
-    async (label: string, run: () => Promise<{ readonly _tag: string }>): Promise<boolean> => {
-      if (threadPending) return false;
-      setThreadPending(true);
-      const result = await run();
-      setThreadPending(false);
-      if (result._tag === "Failure") {
-        toastManager.add({ type: "error", title: label });
-        return false;
-      }
-      onRefresh();
-      return true;
-    },
-    [onRefresh, threadPending],
-  );
-
-  const renderThreadCard = useCallback(
-    (thread: PullRequestReviewThread) => (
-      <ReviewThreadCard
-        // Named with the pull request too: a thread's id is the host's own, and two pull requests
-        // can hand out the same one — which would leave one card's open editor standing over the
-        // other's conversation.
-        key={`${reference.projectId}#${reference.number}:${thread.id}`}
-        thread={thread}
-        workspaceRoot={detail.workspaceRoot}
-        canReply={review.reply}
-        canResolve={review.resolve && canResolvePullRequestThread(detail, thread)}
-        canReact={detail.capabilities.reactions === true}
-        environmentId={environmentId}
-        reference={reference}
-        pending={threadPending}
-        fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
-        fixLabel={fixFindingLabel}
-        {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
-        onLoadMore={async (cursor): Promise<PullRequestThreadCommentsResult | null> => {
-          const result = await loadThreadComments({
-            environmentId,
-            input: { ...reference, threadId: thread.id, cursor },
-          });
-          if (result._tag === "Failure") {
-            toastManager.add({
-              type: "error",
-              title: "More comments could not be loaded",
-            });
-            return null;
-          }
-          return result.value;
-        }}
-        onReply={(body) =>
-          runThreadCommand("Reply could not be posted", () =>
-            replyToThread({
-              environmentId,
-              input: { ...reference, threadId: thread.id, body },
-            }),
-          )
-        }
-        canEditComment={(comment) =>
-          canEditPullRequestComment(detail, {
-            author: comment.author,
-            kind: "review-comment",
-            canEdit: comment.canEdit,
-          })
-        }
-        onEditComment={(commentId, body) =>
-          runThreadCommand("The comment could not be saved", () =>
-            updateComment({
-              environmentId,
-              input: { ...reference, commentId, kind: "review-comment", body },
-            }),
-          )
-        }
-        onToggleResolved={() =>
-          void runThreadCommand("The conversation could not be updated", () =>
-            setThreadResolution({
-              environmentId,
-              input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
-            }),
-          )
-        }
-        onReacted={onRefresh}
-      />
-    ),
-    [
-      detail,
-      environmentId,
-      fixFindingLabel,
-      loadThreadComments,
-      onRefresh,
-      onFixFinding,
-      pendingFinding,
-      reference,
-      replyToThread,
-      review.reply,
-      review.resolve,
-      runThreadCommand,
-      setThreadResolution,
-      threadPending,
-      updateComment,
-    ],
-  );
-
-  const renderAnnotation = useCallback(
-    (annotation: ReviewAnnotation) => (
-      <div className="py-1 font-sans text-foreground">
-        {annotation.metadata.threads.map(renderThreadCard)}
-        {annotation.metadata.pending.map((comment) => (
-          <PendingReviewCommentCard
-            key={comment.id}
-            comment={comment}
-            onRemove={() => removeComment(reviewKey, comment.id)}
-          />
-        ))}
-        {annotation.metadata.draft && draft ? (
-          <DiffCommentAnnotation
-            kind="draft"
-            rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
-            text=""
-            submitLabel="Add to review"
-            {...(onAddToAgentSelection
-              ? {
-                  secondaryAction: {
-                    label: "Add to agent",
-                    onAction: (text: string) =>
-                      finishSelection(draft, text, (comment) =>
-                        onAddToAgentSelection({ comment, request: text }),
-                      ),
-                  },
-                }
-              : {})}
-            onCancel={() => {
-              setDraft(null);
-              setSelectedLines(null);
-            }}
-            onComment={(body) => {
-              addComment(reviewKey, {
-                id: nextPendingReviewCommentId(),
-                path: draft.path,
-                ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
-                position: draft.position,
-                body,
-              });
-              setDraft(null);
-              setSelectedLines(null);
-            }}
-          />
+  const renderCodeViewFooter = () =>
+    nextCursor === null ? null : (
+      <div
+        ref={setSentinel}
+        className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+      >
+        {diffQuery.error !== null ? (
+          <>
+            <span>The rest of this diff could not be loaded.</span>
+            <Button size="xs" variant="outline" onClick={() => diffQuery.refresh()}>
+              Retry
+            </Button>
+          </>
+        ) : diffQuery.isPending ? (
+          "Loading more files..."
         ) : null}
       </div>
-    ),
-    [
-      addComment,
-      draft,
-      finishSelection,
-      onAddToAgentSelection,
-      removeComment,
-      renderThreadCard,
-      reviewKey,
-    ],
+    );
+
+  const renderHeaderPrefix = (item: CodeViewItem<ReviewAnnotationGroup>) => {
+    const collapsed = item.collapsed === true;
+    return (
+      <Button
+        size="icon-micro"
+        variant="ghost-muted"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand diff" : "Collapse diff"}
+        className="mr-1"
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleFile(item.id);
+        }}
+      >
+        <MorphIcon className="size-4" icon={collapsed ? ChevronRight : ChevronDown} />
+      </Button>
+    );
+  };
+
+  const renderHeaderMetadata = (item: CodeViewItem<ReviewAnnotationGroup>) => {
+    if (item.type !== "diff") return null;
+    let { additions, deletions } = sourceFileStats.get(item.id) ?? getDiffLineStat([item.fileDiff]);
+    const path = resolveFileDiffPath(item.fileDiff);
+    if (additions === 0 && deletions === 0) {
+      const withheld = omittedFileStats.get(path);
+      if (withheld) ({ additions, deletions } = withheld);
+    }
+    return (
+      <FileViewedToggle
+        fileKey={item.id}
+        path={path}
+        stat={
+          <PullRequestDiffStat
+            additions={additions}
+            deletions={deletions}
+            className="font-mono text-2xs"
+          />
+        }
+      />
+    );
+  };
+
+  const diffViewOptions = {
+    diffStyle: diffLayout === "split" ? ("split" as const) : ("unified" as const),
+    lineDiffType: "none" as const,
+    overflow: wordWrap ? ("wrap" as const) : ("scroll" as const),
+    theme: resolveDiffThemeName(resolvedTheme),
+    preferredHighlighter: PREFERRED_HIGHLIGHTER,
+    themeType: resolvedTheme,
+    stickyHeaders: true,
+    loadDiffFiles,
+    enableGutterUtility: canSelectLines && draft === null,
+    enableLineSelection: canSelectLines && draft === null,
+    onGutterUtilityClick: beginComment,
+    onLineSelectionEnd: beginComment,
+  };
+
+  const runThreadCommand = async (
+    label: string,
+    run: () => Promise<{ readonly _tag: string }>,
+  ): Promise<boolean> => {
+    if (threadPending) return false;
+    setThreadPending(true);
+    const result = await run();
+    setThreadPending(false);
+    if (result._tag === "Failure") {
+      toastManager.add({ type: "error", title: label });
+      return false;
+    }
+    onRefresh();
+    return true;
+  };
+
+  const renderThreadCard = (thread: PullRequestReviewThread) => (
+    <ReviewThreadCard
+      // Named with the pull request too: a thread's id is the host's own, and two pull requests
+      // can hand out the same one — which would leave one card's open editor standing over the
+      // other's conversation.
+      key={`${reference.projectId}#${reference.number}:${thread.id}`}
+      thread={thread}
+      workspaceRoot={detail.workspaceRoot}
+      canReply={review.reply}
+      canResolve={review.resolve && canResolvePullRequestThread(detail, thread)}
+      canReact={detail.capabilities.reactions === true}
+      environmentId={environmentId}
+      reference={reference}
+      pending={threadPending}
+      fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
+      fixLabel={fixFindingLabel}
+      {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
+      onLoadMore={async (cursor): Promise<PullRequestThreadCommentsResult | null> => {
+        const result = await loadThreadComments({
+          environmentId,
+          input: { ...reference, threadId: thread.id, cursor },
+        });
+        if (result._tag === "Failure") {
+          toastManager.add({
+            type: "error",
+            title: "More comments could not be loaded",
+          });
+          return null;
+        }
+        return result.value;
+      }}
+      onReply={(body) =>
+        runThreadCommand("Reply could not be posted", () =>
+          replyToThread({
+            environmentId,
+            input: { ...reference, threadId: thread.id, body },
+          }),
+        )
+      }
+      canEditComment={(comment) =>
+        canEditPullRequestComment(detail, {
+          author: comment.author,
+          kind: "review-comment",
+          canEdit: comment.canEdit,
+        })
+      }
+      onEditComment={(commentId, body) =>
+        runThreadCommand("The comment could not be saved", () =>
+          updateComment({
+            environmentId,
+            input: { ...reference, commentId, kind: "review-comment", body },
+          }),
+        )
+      }
+      onToggleResolved={() =>
+        void runThreadCommand("The conversation could not be updated", () =>
+          setThreadResolution({
+            environmentId,
+            input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
+          }),
+        )
+      }
+      onReacted={onRefresh}
+    />
+  );
+
+  const renderAnnotation = (annotation: ReviewAnnotation) => (
+    <div className="py-1 font-sans text-foreground">
+      {annotation.metadata.threads.map(renderThreadCard)}
+      {annotation.metadata.pending.map((comment) => (
+        <PendingReviewCommentCard
+          key={comment.id}
+          comment={comment}
+          onRemove={() => removeComment(reviewKey, comment.id)}
+        />
+      ))}
+      {annotation.metadata.draft && draft && canSelectLines ? (
+        <DiffCommentAnnotation
+          kind="draft"
+          rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
+          text=""
+          submitLabel={canCommentOnLines ? "Add to review" : "Add to agent"}
+          {...(canCommentOnLines && onAddToAgentSelection
+            ? {
+                secondaryAction: {
+                  label: "Add to agent",
+                  onAction: (text: string) =>
+                    finishSelection(draft, text, (comment) =>
+                      onAddToAgentSelection({ comment, request: text }),
+                    ),
+                },
+              }
+            : {})}
+          onCancel={() => {
+            setDraft(null);
+            setSelectedLines(null);
+          }}
+          onComment={(body) => {
+            if (!canCommentOnLines) {
+              if (onAddToAgentSelection) {
+                finishSelection(draft, body, (comment) =>
+                  onAddToAgentSelection({ comment, request: body }),
+                );
+              }
+              return;
+            }
+            addComment(reviewKey, {
+              id: nextPendingReviewCommentId(),
+              path: draft.path,
+              ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
+              position: draft.position,
+              body,
+            });
+            setDraft(null);
+            setSelectedLines(null);
+          }}
+        />
+      ) : null}
+    </div>
   );
 
   // A rebase or a force-push can take the scoped commit out of the change. Its diff may still
@@ -982,11 +985,6 @@ function PullRequestCodeTab({
   // to the whole diff and it is not drawn without commits to list, so a scope that outlived them
   // would leave the tab reading one obsolete commit with nothing to press.
   const selectedCommit = orderedCommits.find((entry) => entry.oid === commit);
-  useEffect(() => {
-    if (commit !== null && selectedCommit === undefined) {
-      onSelectedCommitChange(null);
-    }
-  }, [commit, onSelectedCommitChange, selectedCommit]);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
   const changeIgnoreWhitespace = (next: boolean) => {
     setIgnoreWhitespace(next);
@@ -1051,7 +1049,7 @@ function PullRequestCodeTab({
           {filesViewed.enabled && files.length > 0 ? (
             <span className="flex min-w-0 items-center gap-1 tabular-nums">
               <span className="shrink-0">
-                {filesViewed.viewedCount} / {files.length}
+                {filePaths.filter(isFileViewed).length} / {files.length}
               </span>
               <span className="truncate">
                 {viewedFilesStore === "environment" ? `viewed in ${APP_BASE_NAME}` : "viewed"}
@@ -1284,6 +1282,38 @@ function PullRequestCodeTab({
       </div>
     </div>
   );
+  // The effects sit after every derivation: a hook between the diff's derivations and their
+  // later readers (the viewer options, the reveal handler) would leave them uncached.
+  useEffect(() => {
+    if (sentinel === null || !canLoadNextSlice) return;
+    const observer = new IntersectionObserver(
+      (observed) => {
+        if (observed.some((entry) => entry.isIntersecting)) loadNextSlice();
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadNextSlice, loadNextSlice, sentinel]);
+  const answerReveal = useEffectEvent(() => {
+    if (revealRequest === null || answeredReveal.current === revealRequest.nonce) return;
+    if (!items.some((item) => resolveFileDiffPath(item.fileDiff) === revealRequest.path)) {
+      if (canLoadNextSlice) loadNextSlice();
+      return;
+    }
+    answeredReveal.current = revealRequest.nonce;
+    revealFile(revealRequest.path);
+  });
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- A reveal for a file not loaded yet pages forward, which sets the slice cursor.
+    answerReveal();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Re-checked as pages load until the requested file arrives.
+  }, [canLoadNextSlice, items, revealRequest]);
+  useEffect(() => {
+    if (commit !== null && selectedCommit === undefined) {
+      onSelectedCommitChange(null);
+    }
+  }, [commit, onSelectedCommitChange, selectedCommit]);
   const withToolbar = (body: ReactNode) => (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
@@ -1299,27 +1329,17 @@ function PullRequestCodeTab({
 
   if (diffQuery.error && loadedSlices.length === 0) {
     return withToolbar(
-      <p className="px-4 py-5 text-sm text-muted-foreground">{diffQuery.error}</p>,
+      <PullRequestDiffUnavailableState
+        error={diffQuery.error}
+        provider={detail.provider}
+        url={detail.url}
+        onRetry={() => diffQuery.refresh()}
+      />,
     );
   }
 
-  // Only once the diff is whole: returning here while a cursor is outstanding would take the
-  // sentinel off screen and end the walk, leaving the rest of the change unasked for.
-  const rawSlices =
-    nextCursor === null
-      ? parsedSlices.flatMap((parsed) => (parsed?.kind === "raw" ? [parsed] : []))
-      : [];
-  if (files.length === 0 && rawSlices.length > 0) {
-    return withToolbar(
-      <div className="space-y-4 px-4 py-5">
-        {rawSlices.map((slice) => (
-          <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
-            <p className="text-xs text-muted-foreground">{slice.reason}</p>
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
-          </div>
-        ))}
-      </div>,
-    );
+  if (rawSlicesView !== null) {
+    return withToolbar(rawSlicesView);
   }
 
   if (items.length === 0 && nextCursor === null) {
@@ -1339,18 +1359,6 @@ function PullRequestCodeTab({
     if (existing) existing.push(thread);
     else orphanFiles.set(thread.path, [thread]);
   }
-
-  const unstructured =
-    rawSlices.length === 0 ? null : (
-      <div className="space-y-4 border-t border-border/60 px-4 py-5">
-        {rawSlices.map((slice) => (
-          <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
-            <p className="text-xs text-muted-foreground">{slice.reason}</p>
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
-          </div>
-        ))}
-      </div>
-    );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1439,26 +1447,28 @@ function PullRequestCodeTab({
           {/* The viewer virtualizes against the element it is told is scrolling and places its
               rows absolutely, so it has to own that element — the thread diff panel hands it the
               same one. Scrolling from a parent instead leaves it painting over its neighbours. */}
-          <StyledDiffCodeView<ReviewAnnotationGroup>
-            className="@container h-full overflow-auto [scrollbar-gutter:stable]"
-            containerRef={scrollerRef}
-            viewerRef={setViewer}
-            items={items}
-            selectedLines={selectedLines}
-            onSelectedLinesChange={setSelectedLines}
-            options={diffViewOptions}
-            renderCodeViewFooter={renderCodeViewFooter}
-            renderHeaderPrefix={renderHeaderPrefix}
-            renderHeaderMetadata={renderHeaderMetadata}
-            renderAnnotation={renderAnnotation}
-            // Find can ask again before the unfolded file arrives, so this unfolds and never folds.
-            onRevealSearchMatch={(item) =>
-              setToggledFiles((current) =>
-                toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
-              )
-            }
-            unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
-          />
+          <FileViewedToggleContext value={fileViewedToggle}>
+            <StyledDiffCodeView<ReviewAnnotationGroup>
+              className="@container h-full overflow-auto [scrollbar-gutter:stable]"
+              containerRef={scrollerRef}
+              viewerRef={setViewer}
+              items={items}
+              selectedLines={selectedLines}
+              onSelectedLinesChange={setSelectedLines}
+              options={diffViewOptions}
+              renderCodeViewFooter={renderCodeViewFooter}
+              renderHeaderPrefix={renderHeaderPrefix}
+              renderHeaderMetadata={renderHeaderMetadata}
+              renderAnnotation={renderAnnotation}
+              // Find can ask again before the unfolded file arrives, so this unfolds and never folds.
+              onRevealSearchMatch={(item) =>
+                setToggledFiles((current) =>
+                  toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
+                )
+              }
+              unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
+            />
+          </FileViewedToggleContext>
         </div>
         {fileTreeOpen ? (
           <aside className="flex w-[min(20rem,40%)] min-w-48 shrink-0 border-l border-border/60">

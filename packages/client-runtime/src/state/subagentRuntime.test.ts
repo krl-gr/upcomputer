@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationV2Subagent, OrchestrationV2SubagentWorkflow } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type OrchestrationV2Subagent,
+  type OrchestrationV2SubagentWorkflow,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { deriveWorkflowGroups, projectedSubagentsToRuntime } from "./subagentRuntime.ts";
+import {
+  deriveWorkflowGroups,
+  isWorkflowScriptMessage,
+  projectedSubagentsToRuntime,
+  resolveWorkflowOpening,
+  workflowOpeningHeadline,
+  workflowOpeningParentThreadId,
+} from "./subagentRuntime.ts";
 
 const at = (iso: string) => DateTime.makeUnsafe(iso);
 
@@ -74,9 +87,11 @@ describe("projectedSubagentsToRuntime workflow expansion", () => {
     expect(rows[2]?.startedAt).toBeNull();
   });
 
-  it("derives a settled member's end from its reported duration", () => {
+  it("uses a settled member's wall-clock completion separately from its execution duration", () => {
     const [, settled] = projectedSubagentsToRuntime([
       subagent({
+        status: "completed",
+        completedAt: at("2026-08-01T10:00:09.000Z"),
         workflow: {
           phases: [],
           agents: [
@@ -84,6 +99,7 @@ describe("projectedSubagentsToRuntime workflow expansion", () => {
               state: "completed",
               startedAt: Date.UTC(2026, 7, 1, 10, 0, 0),
               durationMs: 1500,
+              completedAt: Date.UTC(2026, 7, 1, 10, 0, 4, 432),
               totalTokens: 71_141,
               toolCalls: 3,
               prompt: "Reply with exactly: A1",
@@ -94,7 +110,7 @@ describe("projectedSubagentsToRuntime workflow expansion", () => {
       }),
     ]);
     expect(settled?.status).toBe("completed");
-    expect(settled?.completedAt).toBe("2026-08-01T10:00:01.500Z");
+    expect(settled?.completedAt).toBe("2026-08-01T10:00:04.432Z");
     expect(settled?.result).toBe("A1");
     expect(settled?.progress).toBe("Reply with exactly: A1");
     expect(settled?.usage).toEqual({ totalTokens: 71_141, toolUses: 3, durationMs: 1500 });
@@ -112,7 +128,12 @@ describe("projectedSubagentsToRuntime workflow expansion", () => {
             agents: [
               member(),
               member({ index: 2, state: "queued" }),
-              member({ index: 3, state: "completed" }),
+              member({
+                index: 3,
+                state: "completed",
+                startedAt: Date.UTC(2026, 7, 1, 10, 0, 0),
+                durationMs: 1500,
+              }),
             ],
           },
         }),
@@ -120,7 +141,11 @@ describe("projectedSubagentsToRuntime workflow expansion", () => {
       expect(groups[0]?.workflow.status).toBe(status);
       const members = groups[0]?.phases.flatMap((phase) => phase.members);
       expect(members?.map((agent) => agent.status)).toEqual([status, status, "completed"]);
-      expect(members?.[0]?.completedAt).toBe("2026-08-01T10:00:09.000Z");
+      expect(members?.map((agent) => agent.completedAt)).toEqual([
+        "2026-08-01T10:00:09.000Z",
+        "2026-08-01T10:00:09.000Z",
+        "2026-08-01T10:00:01.500Z",
+      ]);
     },
   );
 
@@ -212,5 +237,163 @@ describe("deriveWorkflowGroups over a dynamic workflow", () => {
     expect(groups[0]?.unphasedMembers.map((agent) => agent.title)).toEqual(["alpha:one"]);
     expect(groups[1]?.phases).toEqual([]);
     expect(groups[1]?.unphasedMembers).toEqual([]);
+  });
+});
+
+describe("resolveWorkflowOpening", () => {
+  const SCRIPT = '// probe\nexport const meta = { name: "probe-wf" };\nconst GROUPS = [];';
+  const childThread = {
+    id: ThreadId.make("child"),
+    lineage: {
+      parentThreadId: ThreadId.make("parent"),
+      relationshipToParent: "subagent" as const,
+      rootThreadId: ThreadId.make("parent"),
+    },
+    creationSource: "provider" as const,
+  };
+  const coordinator = (workflow?: OrchestrationV2SubagentWorkflow) => ({
+    ...subagent({
+      title: "Run the alpha workflow",
+      childThreadId: "child",
+      ...(workflow === undefined ? {} : { workflow }),
+    }),
+    driver: ProviderDriverKind.make("claudeAgent"),
+    providerInstanceId: ProviderInstanceId.make("claude"),
+  });
+  const brief = (text: string, workflowScript?: boolean) => ({
+    id: "message-1",
+    role: "user",
+    text,
+    ...(workflowScript === undefined ? {} : { workflowScript }),
+  });
+
+  it("opens a marked thread with the coordinator's plan and members", () => {
+    const opening = resolveWorkflowOpening({
+      thread: childThread,
+      messages: [brief(SCRIPT, true)],
+      parentSubagents: [
+        coordinator({
+          name: "probe-wf",
+          phases: [{ index: 1, title: "Alpha" }],
+          agents: [member({ childThreadId: ThreadId.make("member-1") })],
+        }),
+      ],
+    });
+    expect(opening).toMatchObject({
+      messageId: "message-1",
+      script: SCRIPT,
+      name: "probe-wf",
+      description: "Run the alpha workflow",
+    });
+    expect(
+      opening?.group?.phases.map((phase) => ({
+        title: phase.title,
+        members: phase.members.map((agent) => [agent.title, agent.status, agent.childThreadId]),
+      })),
+    ).toEqual([{ title: "Alpha", members: [["alpha:one", "running", "member-1"]] }]);
+  });
+
+  it("recognizes an unmarked script before the parent loads", () => {
+    const opening = resolveWorkflowOpening({
+      thread: childThread,
+      messages: [brief(SCRIPT)],
+      parentSubagents: null,
+    });
+    expect(opening).toMatchObject({ script: SCRIPT, name: null, group: null });
+  });
+
+  it("recognizes an unmarked first message from the parent's workflow row", () => {
+    const opening = resolveWorkflowOpening({
+      thread: childThread,
+      messages: [brief("Run the alpha workflow.")],
+      parentSubagents: [coordinator({ name: "probe-wf", phases: [], agents: [] })],
+    });
+    expect(opening?.name).toBe("probe-wf");
+  });
+
+  it("leaves an ordinary subagent thread and other threads alone", () => {
+    expect(
+      resolveWorkflowOpening({
+        thread: childThread,
+        messages: [brief("Audit the last five commits.")],
+        parentSubagents: [coordinator()],
+      }),
+    ).toBeNull();
+    expect(
+      resolveWorkflowOpening({
+        thread: {
+          ...childThread,
+          lineage: { ...childThread.lineage, relationshipToParent: null, parentThreadId: null },
+        },
+        messages: [brief(SCRIPT)],
+        parentSubagents: null,
+      }),
+    ).toBeNull();
+    expect(isWorkflowScriptMessage({ role: "user", text: "Explain `export const meta`." })).toBe(
+      false,
+    );
+    expect(isWorkflowScriptMessage({ role: "assistant", text: SCRIPT })).toBe(false);
+  });
+
+  it("trusts a brief marked as not a script even when its text looks like one", () => {
+    expect(isWorkflowScriptMessage(brief(SCRIPT, false))).toBe(false);
+    expect(
+      resolveWorkflowOpening({
+        thread: childThread,
+        messages: [brief(SCRIPT, false)],
+        parentSubagents: [coordinator()],
+      }),
+    ).toBeNull();
+    expect(
+      workflowOpeningParentThreadId({ thread: childThread, messages: [brief(SCRIPT, false)] }),
+    ).toBeNull();
+  });
+
+  it("loads the parent only for a thread that opens with a workflow script", () => {
+    expect(
+      workflowOpeningParentThreadId({ thread: childThread, messages: [brief(SCRIPT, true)] }),
+    ).toBe("parent");
+    expect(workflowOpeningParentThreadId({ thread: childThread, messages: [brief(SCRIPT)] })).toBe(
+      "parent",
+    );
+    expect(
+      workflowOpeningParentThreadId({
+        thread: childThread,
+        messages: [brief("Audit the last five commits.")],
+      }),
+    ).toBeNull();
+  });
+
+  it("heads the opening with the workflow name, description, and agent tally", () => {
+    const opening = resolveWorkflowOpening({
+      thread: childThread,
+      messages: [brief(SCRIPT, true)],
+      parentSubagents: [
+        coordinator({
+          name: "probe-wf",
+          phases: [{ index: 1, title: "Alpha" }],
+          agents: [
+            member(),
+            member({ index: 2, label: "alpha:two", state: "completed" }),
+            member({ index: 3, label: "loose", state: "failed", phaseIndex: undefined }),
+          ],
+        }),
+      ],
+    });
+    expect(opening && workflowOpeningHeadline(opening)).toEqual({
+      title: "probe-wf",
+      description: "Run the alpha workflow",
+      agents: "3 agents · 1 working · 1 done · 1 failed",
+    });
+    const unloaded = resolveWorkflowOpening({
+      thread: childThread,
+      messages: [brief(SCRIPT)],
+      parentSubagents: null,
+    });
+    expect(unloaded && workflowOpeningHeadline(unloaded)).toEqual({
+      title: "Workflow",
+      description: null,
+      agents: null,
+    });
   });
 });

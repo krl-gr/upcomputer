@@ -22,7 +22,7 @@ import {
   matchesKeybindingShortcut,
   normalizeEventKey,
 } from "@t3tools/shared/keybindings";
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { ExpandedImageDialog } from "~/components/chat/ExpandedImageDialog";
@@ -33,8 +33,6 @@ import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
-
-const PDF_VIEWER_FRAGMENT = "#toolbar=0&view=FitH";
 
 /**
  * The page reports the keys, and a page script can report any key it likes,
@@ -65,8 +63,7 @@ export const isPdfPreviewFile = (path: string): boolean =>
 
 /**
  * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
- * the app's session or storage. The built-in PDF viewer needs an unsandboxed
- * frame; a PDF runs no scripts.
+ * the app's session or storage. PDFs use the browser's native viewer.
  */
 export function BrowserDocumentFrame(props: {
   readonly src: string;
@@ -74,30 +71,39 @@ export function BrowserDocumentFrame(props: {
   readonly pdf: boolean;
   readonly htmlRender?: boolean;
   readonly threadRef?: ScopedThreadRef | undefined;
+  /** Stable resource identity and revision; defaults to src for callers that reload on URL changes. */
+  readonly documentKey?: string | undefined;
 }) {
-  const className = "min-h-0 flex-1 border-0 bg-white";
+  const key = props.documentKey ?? props.src;
   return props.pdf ? (
-    // oxlint-disable-next-line react/iframe-missing-sandbox -- the built-in PDF viewer needs an unsandboxed frame.
-    <iframe
+    <embed
       key={props.src}
-      src={`${props.src}${PDF_VIEWER_FRAGMENT}`}
+      src={props.src}
+      type="application/pdf"
       title={props.title}
-      className={className}
+      className="min-h-0 w-full flex-1 border-0"
     />
   ) : props.htmlRender ? (
     <HtmlRenderDocument
-      key={props.src}
+      key={key}
       src={props.src}
       title={props.title}
       threadRef={props.threadRef}
       className="min-h-0 flex-1"
     />
   ) : (
+    <FileDocument key={key} src={props.src} title={props.title} />
+  );
+}
+
+// URL renewals must not discard form input or scroll; a new key mounts a fresh document.
+function FileDocument(props: { readonly src: string; readonly title: string }) {
+  const [src] = useState(props.src);
+  return (
     <iframe
-      key={props.src}
-      src={props.src}
+      src={src}
       title={props.title}
-      className={className}
+      className="min-h-0 flex-1 border-0 bg-white"
       sandbox="allow-scripts allow-forms allow-popups allow-downloads"
     />
   );
@@ -115,8 +121,6 @@ export function HtmlRenderDocument(props: {
   readonly onContentHeight?: (height: number) => void;
   /** Reports the image viewer opening and closing, so a virtualized row can stay mounted. */
   readonly onFullscreenChange?: ((fullscreen: boolean) => void) | undefined;
-  /** Called when the page has loaded. */
-  readonly onLoad?: () => void;
 }) {
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -135,29 +139,27 @@ export function HtmlRenderDocument(props: {
   // binding counts whatever its `when`, and a key that any binding gives to
   // another command stays with the page. Only Cmd/Ctrl chords: a printable key
   // would type into the composer instead.
-  const { shortcuts, blocked } = useMemo(() => {
-    const mac = isMacPlatform(navigator.platform);
-    const resolve = (shortcut: KeybindingShortcut): HtmlRenderShortcut => ({
-      key: shortcut.key,
-      metaKey: shortcut.metaKey || (shortcut.modKey && mac),
-      ctrlKey: shortcut.ctrlKey || (shortcut.modKey && !mac),
-      shiftKey: shortcut.shiftKey,
-      altKey: shortcut.altKey,
-    });
-    const blocked = [...keybindings, ...(environmentKeybindings ?? [])]
-      .filter((binding) => !HTML_RENDER_SHORTCUT_COMMANDS.has(binding.command))
-      .map((binding) => resolve(binding.shortcut));
-    const shortcuts = new Map<string, HtmlRenderShortcut>();
-    for (const { command, shortcut } of keybindings) {
-      if (
-        HTML_RENDER_SHORTCUT_COMMANDS.has(command) &&
-        (shortcut.metaKey || shortcut.ctrlKey || shortcut.modKey)
-      ) {
-        shortcuts.set(shortcutConflictKey(shortcut), resolve(shortcut));
-      }
+  const mac = isMacPlatform(navigator.platform);
+  const resolve = (shortcut: KeybindingShortcut): HtmlRenderShortcut => ({
+    key: shortcut.key,
+    metaKey: shortcut.metaKey || (shortcut.modKey && mac),
+    ctrlKey: shortcut.ctrlKey || (shortcut.modKey && !mac),
+    shiftKey: shortcut.shiftKey,
+    altKey: shortcut.altKey,
+  });
+  const blocked = [...keybindings, ...(environmentKeybindings ?? [])]
+    .filter((binding) => !HTML_RENDER_SHORTCUT_COMMANDS.has(binding.command))
+    .map((binding) => resolve(binding.shortcut));
+  const shortcutsByKey = new Map<string, HtmlRenderShortcut>();
+  for (const { command, shortcut } of keybindings) {
+    if (
+      HTML_RENDER_SHORTCUT_COMMANDS.has(command) &&
+      (shortcut.metaKey || shortcut.ctrlKey || shortcut.modKey)
+    ) {
+      shortcutsByKey.set(shortcutConflictKey(shortcut), resolve(shortcut));
     }
-    return { shortcuts: [...shortcuts.values()], blocked };
-  }, [environmentKeybindings, keybindings]);
+  }
+  const shortcuts = [...shortcutsByKey.values()];
   const postShortcuts = () => {
     frameRef.current?.contentWindow?.postMessage(
       htmlRenderShortcutsMessage(shortcuts, blocked),
@@ -302,7 +304,6 @@ export function HtmlRenderDocument(props: {
           // Covers a theme change that landed while the page was loading.
           postTheme();
           postShortcuts();
-          props.onLoad?.();
         }}
         // A frame whose color scheme differs from its document's paints an opaque
         // canvas, so the blank document a frame starts with would flash white in

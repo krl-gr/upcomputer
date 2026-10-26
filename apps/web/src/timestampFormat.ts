@@ -93,6 +93,10 @@ function getTimestampFormatter(
   return formatter;
 }
 
+export function resolveHour12(timestampFormat: TimestampFormat): boolean {
+  return getTimestampFormatter(timestampFormat, false).resolvedOptions().hour12 ?? false;
+}
+
 export function parseTimestampDate(isoDate: string): Date | null {
   const date = new Date(isoDate);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -203,12 +207,45 @@ export type RelativeTimeState =
   | { status: "invalid" }
   | { status: "relative"; value: string; suffix: string | null };
 
-export function formatRelativeTime(isoDate: string): RelativeTimeParts | null {
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+function relativeTimeUnitMs(elapsedMs: number): number {
+  if (elapsedMs < HOUR_MS) return MINUTE_MS;
+  if (elapsedMs < DAY_MS) return HOUR_MS;
+  return DAY_MS;
+}
+
+/**
+ * Elapsed time floored to the precision `formatRelativeTime` shows, so two
+ * instants with the same label return the same number.
+ */
+export function relativeTimeElapsedMs(isoDate: string, nowMs: number = Date.now()): number | null {
   const date = parseTimestampDate(isoDate);
   if (!date) return null;
-  const diffMs = Date.now() - date.getTime();
-  if (diffMs < 0) return { value: "just now", suffix: null };
-  const seconds = Math.floor(diffMs / 1000);
+  const elapsedMs = Math.max(0, nowMs - date.getTime());
+  const unitMs = relativeTimeUnitMs(elapsedMs);
+  return Math.floor(elapsedMs / unitMs) * unitMs;
+}
+
+/** Milliseconds until the `formatRelativeTime` label for `isoDate` next changes. */
+export function msUntilRelativeTimeChange(
+  isoDate: string,
+  nowMs: number = Date.now(),
+): number | null {
+  const date = parseTimestampDate(isoDate);
+  if (!date) return null;
+  const elapsedMs = Math.max(0, nowMs - date.getTime());
+  const unitMs = relativeTimeUnitMs(elapsedMs);
+  const nextChangeMs = date.getTime() + (Math.floor(elapsedMs / unitMs) + 1) * unitMs;
+  // setTimeout fires at once past 2^31-1 ms, which would loop on a far-future
+  // timestamp. Waking early is harmless: the caller re-reads and re-schedules.
+  return Math.min(nextChangeMs - nowMs, DAY_MS);
+}
+
+export function formatRelativeElapsed(elapsedMs: number): RelativeTimeParts {
+  const seconds = Math.floor(elapsedMs / 1000);
   if (seconds < 60) return { value: "just now", suffix: null };
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return { value: `${minutes}m`, suffix: "ago" };
@@ -218,17 +255,18 @@ export function formatRelativeTime(isoDate: string): RelativeTimeParts | null {
   return { value: `${days}d`, suffix: "ago" };
 }
 
-export function formatRelativeTimeLabel(isoDate: string) {
-  const relative = formatRelativeTime(isoDate);
-  if (!relative) return "";
-  return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
+export function formatRelativeTime(
+  isoDate: string,
+  nowMs: number = Date.now(),
+): RelativeTimeParts | null {
+  const elapsedMs = relativeTimeElapsedMs(isoDate, nowMs);
+  return elapsedMs === null ? null : formatRelativeElapsed(elapsedMs);
 }
 
-export function getRelativeTimeState(isoDate: string | null): RelativeTimeState {
-  if (!isoDate) return { status: "missing" };
-  const relative = formatRelativeTime(isoDate);
-  if (!relative) return { status: "invalid" };
-  return { status: "relative", ...relative };
+export function formatRelativeTimeLabel(isoDate: string, nowMs: number = Date.now()) {
+  const relative = formatRelativeTime(isoDate, nowMs);
+  if (!relative) return "";
+  return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
 }
 
 export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date.now()): string {

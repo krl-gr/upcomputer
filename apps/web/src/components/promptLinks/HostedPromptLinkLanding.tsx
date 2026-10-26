@@ -5,12 +5,11 @@ import {
   promptLinkAppPath,
   promptLinkDeepLink,
 } from "@t3tools/shared/promptLinks";
-import { UPCOMPUTER_SITE_URL } from "@t3tools/shared/upcomputerIdentity";
 import { useLocation } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { APP_DISPLAY_NAME } from "~/branding";
+import { APP_DISPLAY_NAME, DESKTOP_DOWNLOAD_URL } from "~/branding";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { isHostedStaticApp } from "~/hostedPairing";
 import { useEnvironments } from "~/state/environments";
@@ -22,7 +21,6 @@ import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 
 const OPENER_STORAGE_KEY = "t3code:prompt-link-opener";
 const Opener = Schema.NullOr(Schema.Literals(["app", "browser"]));
-const DOWNLOAD_URL = `${UPCOMPUTER_SITE_URL}/download/`;
 
 interface LinkSummary {
   readonly prompt: LinkedPrompt | null;
@@ -66,13 +64,10 @@ export function useHostedPromptLinkLanding(enabled: boolean): ReactNode | null {
   const { environments, isReady } = useEnvironments();
   const [opener, setOpener] = useLocalStorage(OPENER_STORAGE_KEY, null, Opener);
   const [continuedHref, setContinuedHref] = useState<string | null>(null);
-  const appPath = useMemo(
-    () =>
-      enabled && isHostedStaticApp()
-        ? promptLinkAppPath(new URL(href, window.location.origin).href, window.location.origin)
-        : null,
-    [enabled, href],
-  );
+  const appPath =
+    enabled && isHostedStaticApp()
+      ? promptLinkAppPath(new URL(href, window.location.origin).href, window.location.origin)
+      : null;
   if (appPath === null || continuedHref === href) return null;
   const canContinue = isReady && environments.length > 0;
   if (opener === "browser") {
@@ -103,7 +98,7 @@ function HostedPromptLinkLanding({
   readonly openInAppRemembered: boolean;
   readonly onChoose: (choice: "app" | "browser", remember: boolean) => void;
 }) {
-  const summary = useMemo(() => summarize(appPath), [appPath]);
+  const summary = summarize(appPath);
   const [remember, setRemember] = useState(false);
   const deepLink = promptLinkDeepLink(appPath);
   const onPhone = /android|iphone|ipad/i.test(navigator.userAgent);
@@ -159,7 +154,7 @@ function HostedPromptLinkLanding({
             Continue here
           </Button>
         ) : null}
-        <Button variant="ghost" render={<a href={DOWNLOAD_URL} />}>
+        <Button variant="ghost" render={<a href={DESKTOP_DOWNLOAD_URL} />}>
           Get Up.computer
         </Button>
       </div>

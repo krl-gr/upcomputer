@@ -15,6 +15,9 @@ export const PROVIDER_STATUS_STYLES = {
   error: {
     dot: "bg-destructive",
   },
+  neutral: {
+    dot: "bg-muted-foreground",
+  },
   ready: {
     dot: "bg-success",
   },
@@ -25,14 +28,29 @@ export const PROVIDER_STATUS_STYLES = {
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
 
+// Antigravity's local health check verifies installation, not Google sign-in.
+// API-key and Agent Platform warnings still need attention.
+function isAntigravitySignInUnchecked(provider: ServerProvider): boolean {
+  return (
+    provider.driver === "antigravity" &&
+    provider.installed &&
+    provider.status === "warning" &&
+    provider.auth.status === "unknown" &&
+    (provider.auth.type === undefined ||
+      provider.auth.type === "oauth-personal" ||
+      provider.auth.type === "oauth-business")
+  );
+}
+
 /** Until a check reports, a provider is neither missing nor in need of attention. */
 export function getProviderStatusKey(
   provider: ServerProvider | undefined,
-  enabled: boolean,
+  enabled: boolean = provider?.enabled ?? true,
 ): ProviderStatusKey {
-  if (!enabled) return "disabled";
+  if (!enabled || provider?.enabled === false) return "disabled";
   // UpComputer: `statusPending` marks the placeholder published before the first check.
   if (provider === undefined || provider.statusPending === true) return "checking";
+  if (isAntigravitySignInUnchecked(provider)) return "neutral";
   return provider.status;
 }
 
@@ -65,6 +83,12 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     const authLabel = provider.auth.label ?? provider.auth.type;
     return {
       headline: authLabel ? `Not authenticated · ${authLabel}` : "Not authenticated",
+      detail: provider.message ?? null,
+    };
+  }
+  if (isAntigravitySignInUnchecked(provider)) {
+    return {
+      headline: "Installed · Sign-in not checked",
       detail: provider.message ?? null,
     };
   }
@@ -134,13 +158,18 @@ export function getProviderVersionAdvisoryPresentation(
   ) {
     const targetVersion = compatibility.recommendedVersion;
     const recommendation = getProviderVersionLabel(targetVersion) ?? compatibility.recommendedRange;
+    // An installed version that is already the package's latest cannot be fixed by
+    // updating it, e.g. when the recommendation needs a different package.
+    const isAlreadyLatest = advisory?.status === "current";
     return {
       title: COMPATIBILITY_TITLES[compatibility.status],
       detail:
         compatibility.message ??
         (recommendation ? `Use ${recommendation} for full support.` : "Update for full support."),
       updateCommand:
-        targetVersion || latestIsIncompatible ? null : (advisory?.updateCommand ?? null),
+        targetVersion || latestIsIncompatible || isAlreadyLatest
+          ? null
+          : (advisory?.updateCommand ?? null),
       emphasis: compatibility.status === "graceful" ? "normal" : "strong",
       targetVersion,
     };

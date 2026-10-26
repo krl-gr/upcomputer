@@ -1,5 +1,4 @@
 import {
-  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   EnvironmentId,
   type AuthEnvironmentScope,
@@ -369,7 +368,10 @@ describe("connection onboarding", () => {
       );
       yield* registry.setCompatibility(PAIRED_ENVIRONMENT_ID, UNSUPPORTED_ERROR);
       const before = yield* SubscriptionRef.get(registry.entries);
-      expect(before.get(PAIRED_ENVIRONMENT_ID)?.enabled).toBe(false);
+      expect(before.get(PAIRED_ENVIRONMENT_ID)).toMatchObject({
+        enabled: true,
+        unsupportedReason: UNSUPPORTED_ERROR.message,
+      });
 
       const environmentId = yield* onboarding.registerPairing(PAIRING_INPUT);
 
@@ -423,7 +425,7 @@ describe("connection onboarding", () => {
   );
   it.effect.each([
     { label: "read-only", scopes: ["orchestration:read"] },
-    { label: "administrative", scopes: AuthAdministrativeScopes },
+    { label: "default", scopes: AuthStandardClientScopes },
   ] as const)("preserves the $label grant when pairing a remote environment", ({ scopes }) =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
@@ -641,6 +643,8 @@ describe("connection onboarding", () => {
           connectionId: 'ssh:environment-ssh:["devbox","devbox.example.test","developer",22]',
           target,
         },
+        // Saved so the first connect reuses this pairing instead of adding another.
+        credential: { token: "bearer-token" },
       });
     }),
   );

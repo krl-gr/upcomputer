@@ -5,7 +5,7 @@ import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/user
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
-  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_SECTIONS,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 import type { ToolCallHint } from "./ToolCallHints.ts";
 
@@ -23,6 +23,13 @@ const toolCallHintInstructions = (hints: ReadonlyArray<ToolCallHint>) =>
   `In Codex code mode, call these Up.computer tools in exec directly, without an ALL_TOOLS lookup: ${hints
     .map(({ name, args }) => `\`${codexCodeModeToolName(name)}(${args})\``)
     .join(", ")}.`;
+
+/**
+ * Codex cuts the middle out of any `additionalContext` value over 1,000 tokens,
+ * which it counts as UTF-8 bytes divided by four. It does this silently, so
+ * every value built here has to fit.
+ */
+export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## Up.computer devices
 
@@ -204,7 +211,7 @@ In Default mode, strongly prefer making reasonable assumptions and executing the
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly modelName?: string | undefined;
-  readonly reasoningEffort: string;
+  readonly reasoningEffort?: string | undefined;
 }
 
 export function buildCodexDeveloperInstructions(interactionMode: ProviderInteractionMode): string {
@@ -229,12 +236,12 @@ export function buildCodexAdditionalContext(
   // Separate keys keep each value under Codex's per-entry token cap.
   return {
     ...(orchestration
-      ? {
-          t3_code_orchestration: {
-            kind: "application",
-            value: T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-          },
-        }
+      ? Object.fromEntries(
+          T3_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [
+            `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
+            { kind: "application" as const, value: section },
+          ]),
+        )
       : {}),
     t3_code_runtime: {
       kind: "application",

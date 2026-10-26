@@ -19,13 +19,16 @@
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. Up.computer's apply-branding
-      // runs by hand after an upstream merge (docs/branding.md).
+      // runs by hand after an upstream merge (docs/branding.md). release-desktop.yml
+      // bundles the Windows verify script with esbuild through a path knip does not trace.
       "entry": [
         "knip-schemas.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "apply-branding.ts",
+        "verify-windows-desktop-artifact.ts",
       ],
+      "ignoreDependencies": ["esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
       "ignore": ["npm-launcher/**"],
     },
@@ -36,6 +39,7 @@
         "src/claude-history-worker.ts!",
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
+        "scripts/fetch-expo-schema.ts",
         "scripts/measure-pr-preview.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
@@ -43,7 +47,11 @@
         "src/provider/testFixtures/*.mjs",
         // Up.computer pro imports the build-time extension API by path.
         "src/extensionApi.ts!",
+        // graphqlgen reads its config.
+        "graphql.config.ts",
       ],
+      // The generated operations export every selection's class.
+      "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
@@ -86,10 +94,15 @@
       // Vitest loads this through the per-file @vitest-environment directive.
       // The Up.computer Tasks plug-in's contracts come with @t3tools/tasks-web.
       "ignoreDependencies": ["jsdom", "@t3tools/tasks-contracts"],
-      // Worktree setup (scripts/setup-worktree.ts) runs this directly.
-      // Up.computer pro imports the build-time extension API by path.
-      // The browser registers the web push service worker by URL (src/cloud/webPush.ts).
-      "entry": ["scripts/warm-dep-cache.ts", "src/extensionApi.ts!", "public/push-sw.js"],
+      // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
+      // fixtures run under node. Up.computer pro imports the build-time extension API
+      // by path. The browser registers the web push service worker by URL (src/cloud/webPush.ts).
+      "entry": [
+        "scripts/warm-dep-cache.ts",
+        "test/fixtures/**/*.mjs",
+        "src/extensionApi.ts!",
+        "public/push-sw.js",
+      ],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.

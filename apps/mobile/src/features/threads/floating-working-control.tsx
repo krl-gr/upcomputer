@@ -58,6 +58,13 @@ const UniwindGlassContainer = withUniwind(GlassContainer, {
 });
 const AnimatedGlassView = Animated.createAnimatedComponent(UniwindGlassView);
 
+// The segment widths feed labelWidth, and labelWidth moves the segments. Pixel
+// rounding then flips a segment's width by one physical pixel per layout, which
+// re-ellipsizes a truncated label every frame. Sub-point changes are ignored.
+function settleWidth(next: number) {
+  return (current: number) => (Math.abs(current - next) < 1 ? current : next);
+}
+
 const CONTROL_OVERLAY_OFFSET = CONTROL_HEIGHT + CONTROL_GAP - COMPOSER_CAPSULE_INSET;
 export const FLOATING_WORKING_CONTROL_COVERAGE = CONTROL_OVERLAY_OFFSET + CONTROL_GAP;
 
@@ -77,6 +84,11 @@ export function FloatingWorkingControl(props: {
   const { width: windowWidth } = useWindowDimensions();
   const [overlayWidth, setOverlayWidth] = useState(windowWidth);
   const [queueWidth, setQueueWidth] = useState(0);
+  const [actionWidth, setActionWidth] = useState(0);
+  const action =
+    props.status?.kind === "background" || props.status?.kind === "lifecycle"
+      ? props.status.action
+      : null;
   const [agentsWidth, setAgentsWidth] = useState(0);
   const hasQueue = props.queuedCount > 0;
   const hasPreview = props.devicePreview !== null || props.browserPreview !== null;
@@ -88,6 +100,7 @@ export function FloatingWorkingControl(props: {
     Math.min(overlayWidth, windowWidth) -
       CONTROL_HEIGHT -
       32 -
+      (action !== null ? actionWidth : 0) -
       (hasQueue ? queueWidth : 0) -
       (hasAgents ? agentsWidth : 0) -
       (hasPreview ? previewWidth : 0),
@@ -149,8 +162,11 @@ export function FloatingWorkingControl(props: {
     hasQueue ||
     (props.devicePreview !== null && props.browserPreview !== null);
   const statusInteractive =
-    props.status?.kind === "connection" || props.status?.kind === "child-input";
-  const capsuleInteractive = statusInteractive || hasQueue || hasAgents || hasPreview;
+    props.status?.kind === "connection" ||
+    props.status?.kind === "child-input" ||
+    props.status?.kind === "background";
+  const capsuleInteractive =
+    statusInteractive || action !== null || hasQueue || hasAgents || hasPreview;
   const statusContent =
     props.status !== null ? (
       <View
@@ -179,10 +195,26 @@ export function FloatingWorkingControl(props: {
   const capsuleContent = (
     <View className="flex-row items-center">
       {statusContent}
+      {action !== null ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.accessibilityLabel}
+          accessibilityState={{ disabled: action.disabled }}
+          disabled={action.disabled}
+          onPress={action.onPress}
+          onLayout={(event) => setActionWidth(settleWidth(event.nativeEvent.layout.width))}
+          className={`h-11 flex-row items-center gap-1.5 px-3 active:opacity-70 ${action.disabled ? "opacity-50" : ""}`}
+        >
+          <View className="mr-1 h-4 w-px bg-border" />
+          <Text className="font-t3-medium text-xs text-foreground" numberOfLines={1}>
+            {action.label}
+          </Text>
+        </Pressable>
+      ) : null}
       {hasPreview ? (
         <View
           className="h-11 flex-row items-center"
-          onLayout={(event) => setPreviewWidth(event.nativeEvent.layout.width)}
+          onLayout={(event) => setPreviewWidth(settleWidth(event.nativeEvent.layout.width))}
         >
           {hasStatus ? <View className="h-4 w-px bg-border" /> : null}
           {props.devicePreview !== null ? (
@@ -199,7 +231,7 @@ export function FloatingWorkingControl(props: {
           accessibilityLabel={`Open agents, ${agents.accessibilityLabel}`}
           accessibilityHint="Opens this turn's subagents"
           onPress={props.onOpenAgents}
-          onLayout={(event) => setAgentsWidth(event.nativeEvent.layout.width)}
+          onLayout={(event) => setAgentsWidth(settleWidth(event.nativeEvent.layout.width))}
           className="h-11 flex-row items-center gap-1.5 px-3 active:opacity-70"
         >
           {hasStatus || hasPreview ? <View className="mr-1 h-4 w-px bg-border" /> : null}
@@ -215,7 +247,7 @@ export function FloatingWorkingControl(props: {
           accessibilityLabel={`Open queue, ${props.queuedCount} messages`}
           accessibilityHint="Opens queued messages for reordering, steering, or removal"
           onPress={props.onOpenQueue}
-          onLayout={(event) => setQueueWidth(event.nativeEvent.layout.width)}
+          onLayout={(event) => setQueueWidth(settleWidth(event.nativeEvent.layout.width))}
           style={{ maxWidth: Math.min(overlayWidth, windowWidth) * 0.45 }}
           className="h-11 flex-row items-center gap-2 px-3 active:opacity-70"
         >
@@ -397,16 +429,38 @@ function FloatingStatusLabel(props: {
       </StatusLabelRow>
     );
   }
+  if (props.status.kind === "lifecycle") {
+    return (
+      <StatusLabelRow
+        key="lifecycle"
+        accessibilityLabel={props.status.label}
+        className="gap-2"
+        onLayout={props.onLayout}
+      >
+        <SymbolView
+          name={props.status.state === "settled" ? "checkmark.circle" : "clock"}
+          size={13}
+          tintColorClassName="foreground"
+          type="monochrome"
+        />
+        <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
+          {props.status.label}
+        </Text>
+      </StatusLabelRow>
+    );
+  }
   if (props.status.kind === "background") {
     return (
       <StatusLabelRow
         key="background"
         accessibilityLabel={props.status.accessibilityLabel}
+        accessibilityRole="button"
+        onPress={props.status.onPress}
         className="gap-2"
         onLayout={props.onLayout}
       >
         <SymbolView
-          name={props.status.waiting ? { ios: "bolt", android: "bolt" } : "terminal"}
+          name={props.status.waiting ? "person.2" : "terminal"}
           size={13}
           tintColorClassName="foreground"
           type="monochrome"

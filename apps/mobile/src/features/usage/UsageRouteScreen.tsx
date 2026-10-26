@@ -1,3 +1,4 @@
+import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -27,7 +28,7 @@ import {
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Platform, Pressable, RefreshControl, View } from "react-native";
 import Animated, {
   FadeIn,
@@ -135,29 +136,19 @@ export function UsageRouteScreen() {
     (environment) => environment.canReadDiagnostics,
   );
 
-  const days = useMemo(
-    () => enumerateDays(window.sinceDay, window.untilDay),
-    [window.sinceDay, window.untilDay],
-  );
-  const chartDays = useMemo(
-    () =>
-      isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
-        ? enumerateHourStarts(window.sinceTime, window.untilTime)
-        : days,
-    [days, isPast24Hours, window.sinceTime, window.untilTime],
-  );
-  const chartTotals = useMemo(
-    (): readonly DailyTotals[] =>
-      isPast24Hours
-        ? merged.hourly.map((hour) => ({
-            day: hour.hourStart,
-            costUsd: hour.costUsd,
-            totalTokens: hour.totalTokens,
-            byProvider: hour.byProvider,
-          }))
-        : merged.daily,
-    [isPast24Hours, merged.daily, merged.hourly],
-  );
+  const days = enumerateDays(window.sinceDay, window.untilDay);
+  const chartDays =
+    isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
+      ? enumerateHourStarts(window.sinceTime, window.untilTime)
+      : days;
+  const chartTotals: readonly DailyTotals[] = isPast24Hours
+    ? merged.hourly.map((hour) => ({
+        day: hour.hourStart,
+        costUsd: hour.costUsd,
+        totalTokens: hour.totalTokens,
+        byProvider: hour.byProvider,
+      }))
+    : merged.daily;
 
   const [refreshingUsage, setRefreshingUsage] = useState(false);
   const refreshingRef = useRef(false);
@@ -196,62 +187,52 @@ export function UsageRouteScreen() {
     selectedEnvironmentIds === null
       ? "line.3.horizontal.decrease"
       : "line.3.horizontal.decrease.circle.fill";
-  const environmentActions = useMemo(
-    () => [
-      {
-        id: "all",
-        title: "All environments",
-        subtitle: undefined,
-        state: selectedEnvironmentIds === null ? ("on" as const) : ("off" as const),
-      },
-      ...environments.map((environment) => ({
-        id: environment.environmentId,
-        title: environment.label,
-        subtitle: usageEnvironmentStatus(environment, refreshingUsage),
-        state:
-          selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId)
-            ? ("on" as const)
-            : ("off" as const),
-      })),
-    ],
-    [environments, refreshingUsage, selectedEnvironmentIds],
-  );
-  const selectEnvironment = useCallback(
-    (value: string) => {
-      if (value === "all") {
-        setSelectedEnvironmentIds(null);
-        return;
-      }
-      const id = EnvironmentId.make(value);
-      setSelectedEnvironmentIds((selected) => toggleUsageEnvironment(selected, environments, id));
+  const environmentActions = [
+    {
+      id: "all",
+      title: "All environments",
+      subtitle: undefined,
+      state: selectedEnvironmentIds === null ? ("on" as const) : ("off" as const),
     },
-    [environments],
-  );
-  const environmentFilter = useMemo(
-    () =>
-      showEnvironmentFilter ? (
-        <Menu
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel="Filter usage environments"
-          title="Environments"
-          actions={environmentActions}
-          onPressAction={({ nativeEvent }) => selectEnvironment(nativeEvent.event)}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Filter usage environments"
-            className={cn(
-              "items-center justify-center rounded-full",
-              Platform.OS === "ios" ? "size-[28px]" : "size-[44px]",
-            )}
-          >
-            <SymbolView name={filterIcon} size={22} tintColorClassName="accent-icon" />
-          </Pressable>
-        </Menu>
-      ) : null,
-    [showEnvironmentFilter, environmentActions, selectEnvironment, filterIcon],
-  );
+    ...environments.map((environment) => ({
+      id: environment.environmentId,
+      title: environment.label,
+      subtitle: usageEnvironmentStatus(environment, refreshingUsage),
+      state:
+        selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId)
+          ? ("on" as const)
+          : ("off" as const),
+    })),
+  ];
+  const selectEnvironment = (value: string) => {
+    if (value === "all") {
+      setSelectedEnvironmentIds(null);
+      return;
+    }
+    const id = EnvironmentId.make(value);
+    setSelectedEnvironmentIds((selected) => toggleUsageEnvironment(selected, environments, id));
+  };
+  const environmentFilter = showEnvironmentFilter ? (
+    <Menu
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel="Filter usage environments"
+      title="Environments"
+      actions={environmentActions}
+      onPressAction={({ nativeEvent }) => selectEnvironment(nativeEvent.event)}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Filter usage environments"
+        className={cn(
+          "items-center justify-center rounded-full",
+          Platform.OS === "ios" ? "size-[28px]" : "size-[44px]",
+        )}
+      >
+        <SymbolView name={filterIcon} size={22} tintColorClassName="accent-icon" />
+      </Pressable>
+    </Menu>
+  ) : null;
 
   useLayoutEffect(() => {
     if (Platform.OS === "ios") {
@@ -440,27 +421,22 @@ function CursorEnableAction({
   const [pending, setPending] = useState(false);
   const enable = async () => {
     setPending(true);
-    try {
-      const result = await updateSettings({
-        environmentId,
-        input: { patch: { cursorKeychainUsageEnabled: true } },
-      });
-      if (result._tag === "Success") onEnabled();
-    } finally {
-      setPending(false);
-    }
+    const result = await updateSettings({
+      environmentId,
+      input: { patch: { cursorKeychainUsageEnabled: true } },
+    }).finally(() => setPending(false));
+    if (result._tag === "Success") onEnabled();
   };
   return (
-    <Pressable
-      accessibilityRole="button"
+    <Button
+      label={buttonText}
+      tone="primary"
       accessibilityLabel={`Enable Cursor usage from ${label}`}
       accessibilityHint={CURSOR_KEYCHAIN_COPY}
       disabled={pending}
       onPress={() => void enable()}
-      className="rounded-full bg-primary px-4 py-2"
-    >
-      <Text className="text-sm font-medium text-primary-foreground">{buttonText}</Text>
-    </Pressable>
+      loading={pending}
+    />
   );
 }
 
@@ -570,13 +546,20 @@ function ChartCard(props: {
         </View>
       )}
 
-      <View className="flex-row items-center justify-between">
-        <Text className="text-xs text-foreground-tertiary">
-          {props.isPast24Hours
-            ? formatHourShort(props.days[0] ?? "", props.timeZone)
-            : formatDayShort(props.sinceDay)}
-        </Text>
-        <View className="flex-row items-center gap-4">
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-xs text-foreground-tertiary">
+            {props.isPast24Hours
+              ? formatHourShort(props.days[0] ?? "", props.timeZone)
+              : formatDayShort(props.sinceDay)}
+          </Text>
+          <Text className="text-xs text-foreground-tertiary">
+            {props.isPast24Hours
+              ? formatHourShort(props.days[props.days.length - 1] ?? "", props.timeZone)
+              : formatDayShort(props.untilDay)}
+          </Text>
+        </View>
+        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
           {merged.providers.map((provider) => (
             <View key={provider.provider} className="flex-row items-center gap-1.5">
               <View
@@ -589,11 +572,6 @@ function ChartCard(props: {
             </View>
           ))}
         </View>
-        <Text className="text-xs text-foreground-tertiary">
-          {props.isPast24Hours
-            ? formatHourShort(props.days[props.days.length - 1] ?? "", props.timeZone)
-            : formatDayShort(props.untilDay)}
-        </Text>
       </View>
     </View>
   );

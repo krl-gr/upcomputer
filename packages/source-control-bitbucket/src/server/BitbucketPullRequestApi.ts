@@ -23,6 +23,7 @@ import type {
 
 import * as BitbucketApi from "./BitbucketApi.ts";
 import { parseDiffFileRevisions } from "@t3tools/source-control-core/server/diffFileRevisions";
+import { sortChecks } from "@t3tools/source-control-core/server/pullRequestChecks";
 import {
   buildReviewThreads,
   decodeCommentsJson,
@@ -561,12 +562,11 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       withRepository(input.repository, (path) => {
         const search = input.query?.trim() ?? "";
-        // The boundary instant is read inclusively — the rows already sent at it come back and
-        // the caller drops them, which is what keeps their neighbours at the same instant from
-        // being skipped.
+        // Exclude already-sent IDs at the inclusive timestamp before applying the page limit.
         const predicates = [
           ...(search.length === 0 ? [] : [searchFilter(search)]),
           ...(input.cursor === undefined ? [] : [`updated_on <= ${input.cursor.updatedBefore}`]),
+          ...(input.cursor?.seenAt ?? []).map((number) => `id != ${number}`),
         ];
         return listPage({
           // Reviewers are not on a listing by default, and `viewerReviewRequested` needs them.
@@ -585,7 +585,9 @@ export const make = Effect.gen(function* () {
       withRepository(input.repository, (path) =>
         readPage({
           operation: "getPullRequest",
-          url: `${path}/pullrequests/${input.number}`,
+          // `closed_on` is left out of the default representation. It is the only merge or
+          // decline time Bitbucket states on the pull request itself, and settlement needs it.
+          url: `${path}/pullrequests/${input.number}?fields=%2Bclosed_on`,
           decode: decodePullRequestJson,
         }),
       ),
@@ -670,7 +672,7 @@ export const make = Effect.gen(function* () {
           decode: decodeStatusesJson,
           items: [],
           prepend: false,
-        }),
+        }).pipe(Effect.map(sortChecks)),
       ),
 
     listReviewerCandidates: (input) =>

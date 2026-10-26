@@ -1,15 +1,41 @@
 # Product analytics
 
-The server owns PostHog delivery, opt-out, and identity for every connected client.
-[Identity selection](../../apps/server/src/telemetry/Identify.ts) hashes an available
-provider account ID, falling back to an installation-scoped ID. The first identity an
-install resolves is pinned in its state directory: a provider login creates the
-account file mid-onboarding, and without the pin the next launch reported as a new
-user. This identity can span several clients; it does not identify a browser
-session. Clients do not load the PostHog browser SDK. UI events go through the
-`server.recordClientEvent` RPC, so they carry the same identity and opt-out as server
-events. Client-use events require an authenticated connection, so visiting the hosted
-app without connecting does not count as product use.
+The server owns analytics delivery, opt-out, and identity for every connected client.
+Up.computer sends events straight to its own PostHog project. Clients do not load the
+PostHog browser SDK. UI events go through the `server.recordClientEvent` RPC, so they
+carry the same identity and opt-out as server events. Client-use events require an
+authenticated connection, so visiting the hosted app without connecting does not
+count as product use.
+
+## Installs and owners
+
+`distinct_id` keeps the rule every build has used: the hashed Codex workspace,
+else the Claude machine id, else the install's anonymous id. It can change when
+someone logs in, and a Codex Team shares one, but keeping it means PostHog charts
+and history never break. Do not change it; add a field instead. Up.computer pins the
+first `distinct_id` an install resolves in its state directory: a provider login
+creates the account file mid-onboarding, and without the pin the next launch
+reported as a new user.
+
+Every event also carries `installId` when the server can save its state: the hash
+of a random id in the state directory, which never changes for the install. If
+that file cannot be written, events still go out under `distinct_id`, as before. Count installs
+with it. Who an install belongs to is a separate fact, sent as
+`install.owner_observed`. Owners are resolved at query time in our own store, so
+a rule can change and apply to all history.
+
+[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first:
+T3 Connect, then the OpenAI and Claude person ids, then the client device. The
+server reports what it can read itself: the linked Connect account and provider
+logins. A connecting client reports its signed-in Connect account and its device,
+which links every environment opened from one phone, browser, or desktop. Use the
+OpenAI `user_id` claim, not the Codex `account_id` (the ChatGPT workspace, which a
+whole Team shares) or the token `sub` (one per login method). Two Connect accounts are never the same person, whatever
+weaker ids they share.
+
+Every id is SHA-256 hashed with [one helper](../../packages/shared/src/telemetryId.ts)
+on both sides, so a Connect account hashes the same on the client and the server.
+The server accepts only hashes from clients.
 
 ## Attribution boundaries
 
@@ -80,13 +106,31 @@ session that would not open, and `app.first_thread_created` and
 `app.first_message_sent` mark first use. Milestones are claimed with marker files in
 the state directory, and only for installs first launched by a build that has them,
 so an upgraded install does not report a second first thread.
+`feature.used` counts WebSocket requests that start a feature, observed in the
+RPC authorization middleware after the request succeeds.
+[Feature mapping](../../apps/server/src/telemetry/FeatureUsage.ts) allowlists
+the methods and commands, and takes variants only from closed contract enums,
+so paths, ids, and text never reach analytics.
+
+Agent tool events report driver kinds, never instance ids: users name
+instances, so an instance id can identify an account or employer.
+[Provider dimensions](../../apps/server/src/telemetry/ProviderDimensions.ts)
+report a model only when it is a non-custom entry in a vendor catalog. OpenCode,
+Pi, and ACP agents list models from user configuration, such as local Ollama
+tags, so their models stay out. Handoff settings come from closed enums and
+booleans in tool arguments; prompts, titles, and ids are never read. Thread ids
+are used only to look up the threads on each side and never leave the server,
+which is also why tool events carry no per-thread sequence.
 
 ## Delivery
 
-A send can fail after PostHog has stored the batch, so every retry is a copy.
+The server sends batches to the ingest endpoint at `ingest.t3.codes`, which archives
+every event and forwards some of them to PostHog. A send can fail after the endpoint
+has stored the batch, so every retry is a copy.
 [Delivery](../../apps/server/src/telemetry/AnalyticsService.ts) gives each event a
-uuid when it is recorded, backs off after a failed send, and drops a batch after a
-few tries. Without these limits, one stuck batch was sent every second for days.
+uuid when it is recorded (the endpoint rejects events without one), backs off after
+a failed send, and drops a batch after a few tries. Without these limits, one stuck
+batch was sent every second for days.
 
 ## Collection boundary
 

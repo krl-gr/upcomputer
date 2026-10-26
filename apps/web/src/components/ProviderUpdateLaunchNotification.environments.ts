@@ -1,8 +1,10 @@
 import type { ConnectionCatalogEntry } from "@t3tools/client-runtime/connection";
-import type { ServerConfig } from "@t3tools/contracts";
-import { useMemo } from "react";
 
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import {
+  useEnvironmentProviders,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useEnvironmentSessionKnown } from "~/state/session";
 import { productSurface } from "~/product/productFlags";
@@ -41,41 +43,37 @@ export function useLocalEnvironmentUpdateGroups(): {
   readonly isAnySettling: boolean;
 } {
   const { environments } = useEnvironments();
+  const providersByEnvironment = useEnvironmentProviders();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const sessionKnown = useEnvironmentSessionKnown(primaryEnvironmentId);
 
-  const inputs = useMemo(() => {
-    const inputs: LocalEnvironmentProvidersInput[] = [];
+  const inputs: LocalEnvironmentProvidersInput[] = [];
 
-    for (const environment of environments) {
-      if (!isLocalConnectionTarget(environment.entry.target)) {
-        continue;
-      }
-
-      const isPrimary = environment.environmentId === primaryEnvironmentId;
-      const serverConfig: ServerConfig | null = environment.serverConfig;
-
-      inputs.push({
-        environmentId: environment.environmentId,
-        label: isPrimary
-          ? deriveEnvironmentDisplayLabel({
-              isWsl: false,
-              wslDistro: null,
-              platformOs: serverConfig?.environment.platform.os,
-              fallbackLabel: environment.label,
-            })
-          : environment.label,
-        isPrimary,
-        connectionState: isPrimary
-          ? "ready"
-          : normalizeConnectionState(environment.connection.phase),
-        providers: serverConfig?.providers ?? [],
-      });
+  for (const environment of environments) {
+    if (!isLocalConnectionTarget(environment.entry.target)) {
+      continue;
     }
 
-    inputs.sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
-    return inputs;
-  }, [environments, primaryEnvironmentId]);
+    const isPrimary = environment.environmentId === primaryEnvironmentId;
+    const serverConfig = environment.serverConfig;
+
+    inputs.push({
+      environmentId: environment.environmentId,
+      label: isPrimary
+        ? deriveEnvironmentDisplayLabel({
+            isWsl: false,
+            wslDistro: null,
+            platformOs: serverConfig?.environment.platform.os,
+            fallbackLabel: environment.label,
+          })
+        : environment.label,
+      isPrimary,
+      connectionState: isPrimary ? "ready" : normalizeConnectionState(environment.connection.phase),
+      providers: providersByEnvironment.get(environment.environmentId) ?? [],
+    });
+  }
+
+  inputs.sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
   const surface = productSurface("providerUpdateLaunchNotification");
   const settled = useProviderUpdateLaunchSettling({
     environments: inputs,
@@ -84,8 +82,5 @@ export function useLocalEnvironmentUpdateGroups(): {
     presentation: "environments",
   });
 
-  return useMemo(
-    () => launchPromptEnvironmentUpdateGroups({ surface, environments: inputs, settled }),
-    [inputs, settled, surface],
-  );
+  return launchPromptEnvironmentUpdateGroups({ surface, environments: inputs, settled });
 }

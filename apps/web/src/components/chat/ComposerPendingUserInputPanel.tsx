@@ -1,5 +1,6 @@
 import { type RuntimeRequestId, type ScopedThreadRef } from "@t3tools/contracts";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { type PendingUserInput } from "../../session-logic";
 import {
   derivePendingUserInputProgress,
@@ -83,41 +84,36 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   // Message-mode requests remain answerable after their provider turn ends.
   const canRespond = prompt.responseCapability !== "not_resumable";
   const responseDisabled = disabled || isResponding || !canRespond;
-  const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
-  const activeQuestion = progress.activeQuestion;
   const autoAdvanceTimerRef = useRef<number | null>(null);
-  const onAdvanceRef = useRef(onAdvance);
+  // The auto-advance timer fires after the render that armed it.
+  const advance = useStableCallback(onAdvance);
   const [optimisticSingleSelect, setOptimisticSingleSelect] = useState<{
     questionId: string;
     optionValue: string;
   } | null>(null);
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
+  // The active question keys the shortcut listener, so it must keep its identity across renders.
+  const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
+  const activeQuestion = progress.activeQuestion;
+  const customAnswerActive = progress.customAnswer.trim().length > 0;
+  // Read here, before the hooks below, so the compiler can keep `activeQuestion` cached.
+  const draftSelectedOptions = activeQuestion?.options.map(
+    (option) =>
+      !customAnswerActive && progress.selectedOptionValues.includes(option.value ?? option.label),
+  );
   const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
 
-  useEffect(() => {
-    onAdvanceRef.current = onAdvance;
-  }, [onAdvance]);
-
-  useEffect(() => {
-    if (!activeQuestion || activeQuestion.multiSelect || !optimisticSingleSelect) {
-      return;
-    }
-    if (optimisticSingleSelect.questionId !== activeQuestion.id) {
-      setOptimisticSingleSelect(null);
-      return;
-    }
-    if (
-      progress.customAnswer.trim().length === 0 &&
-      progress.selectedOptionValues.includes(optimisticSingleSelect.optionValue)
-    ) {
-      setOptimisticSingleSelect(null);
-    }
-  }, [
-    activeQuestion,
-    optimisticSingleSelect,
-    progress.customAnswer,
-    progress.selectedOptionValues,
-  ]);
+  // The optimistic pick is dropped once the draft confirms it or the question moves on.
+  if (
+    optimisticSingleSelect &&
+    activeQuestion &&
+    !activeQuestion.multiSelect &&
+    (optimisticSingleSelect.questionId !== activeQuestion.id ||
+      (!customAnswerActive &&
+        progress.selectedOptionValues.includes(optimisticSingleSelect.optionValue)))
+  ) {
+    setOptimisticSingleSelect(null);
+  }
 
   // A delayed answer only advances its own question, while permission remains granted.
   useEffect(() => {
@@ -131,25 +127,24 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     return clearAutoAdvance;
   }, [activeQuestion?.id, disabled]);
 
-  const handleOptionSelection = useCallback(
-    (questionId: string, optionValue: string) => {
-      if (disabled || isResponding) return;
-      if (activeQuestion?.multiSelect) {
-        onToggleOption(questionId, optionValue);
-        return;
-      }
-      setOptimisticSingleSelect({ questionId, optionValue });
+  const handleOptionSelection = (questionId: string, optionValue: string) => {
+    if (disabled || isResponding) return;
+    if (activeQuestion?.multiSelect) {
       onToggleOption(questionId, optionValue);
-      if (autoAdvanceTimerRef.current !== null) {
-        window.clearTimeout(autoAdvanceTimerRef.current);
-      }
-      autoAdvanceTimerRef.current = window.setTimeout(() => {
-        autoAdvanceTimerRef.current = null;
-        onAdvanceRef.current();
-      }, 200);
-    },
-    [activeQuestion, disabled, isResponding, onToggleOption],
-  );
+      return;
+    }
+    setOptimisticSingleSelect({ questionId, optionValue });
+    onToggleOption(questionId, optionValue);
+    if (autoAdvanceTimerRef.current !== null) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+    }
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      advance();
+    }, 200);
+  };
+
+  const selectOptionFromShortcut = useEffectEvent(handleOptionSelection);
 
   useEffect(() => {
     if (!activeQuestion || responseDisabled || isCollapsed) return;
@@ -172,17 +167,15 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       const option = activeQuestion.options[optionIndex];
       if (!option) return;
       event.preventDefault();
-      handleOptionSelection(activeQuestion.id, option.value ?? option.label);
+      selectOptionFromShortcut(activeQuestion.id, option.value ?? option.label);
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [activeQuestion, handleOptionSelection, isCollapsed, responseDisabled]);
+  }, [activeQuestion, isCollapsed, responseDisabled]);
 
   if (!activeQuestion) {
     return null;
   }
-
-  const customAnswerActive = progress.customAnswer.trim().length > 0;
 
   return (
     <Collapsible
@@ -257,8 +250,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   optimisticSingleSelect?.questionId === activeQuestion.id &&
                   optimisticSingleSelect.optionValue === optionValue;
                 const isSelected =
-                  isOptimisticallySelected ||
-                  (!customAnswerActive && progress.selectedOptionValues.includes(optionValue));
+                  isOptimisticallySelected || draftSelectedOptions?.[index] === true;
                 const shortcutKey = index < 9 ? index + 1 : null;
                 const className = cn(
                   "group flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",

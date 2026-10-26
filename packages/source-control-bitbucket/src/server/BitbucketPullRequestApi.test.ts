@@ -568,18 +568,39 @@ layer("BitbucketPullRequestApi.layer", (it) => {
       const next = "https://api.bitbucket.org/2.0/statuses?page=2";
       mockedRequest
         .mockReturnValueOnce(
-          Effect.succeed(response(valuePage([{ name: "Build", state: "SUCCESSFUL" }], next))),
+          Effect.succeed(
+            response(
+              valuePage(
+                [
+                  { name: "Build", state: "SUCCESSFUL" },
+                  { name: "Tests", state: "STOPPED" },
+                ],
+                next,
+              ),
+            ),
+          ),
         )
         .mockReturnValueOnce(
-          Effect.succeed(response(valuePage([{ name: "Lint", state: "FAILED" }]))),
+          Effect.succeed(
+            response(
+              valuePage([
+                { name: "Lint", state: "FAILED" },
+                { name: "Deploy", state: "INPROGRESS" },
+                { name: "Audit", state: "FAILED" },
+              ]),
+            ),
+          ),
         );
       const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
 
       const checks = yield* api.listChecks({ repository: "acme/web", number: 7 });
 
       expect(checks.map((check) => [check.name, check.status])).toEqual([
-        ["Build", "success"],
+        ["Tests", "cancelled"],
         ["Lint", "failure"],
+        ["Audit", "failure"],
+        ["Build", "success"],
+        ["Deploy", "pending"],
       ]);
       expect(callAt(1).url).toBe(next);
     }),
@@ -708,6 +729,24 @@ layer("BitbucketPullRequestApi.layer", (it) => {
         url: "/repositories/acme/web/pullrequests/7/comments/10",
         body: '{"content":{"raw":"Edited."}}',
       });
+    }),
+  );
+
+  it.effect("asks for the time a pull request closed, which Bitbucket leaves out by default", () =>
+    Effect.gen(function* () {
+      mockedRequest.mockReturnValueOnce(
+        Effect.succeed(
+          response(
+            pullRequestJson({ state: "MERGED", closed_on: "2025-06-16T23:40:46.222238+00:00" }),
+          ),
+        ),
+      );
+      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+
+      const pullRequest = yield* api.getPullRequest({ repository: "acme/web", number: 7 });
+
+      expect(callAt(0).url).toBe("/repositories/acme/web/pullrequests/7?fields=%2Bclosed_on");
+      assert.strictEqual(pullRequest.closedAt, "2025-06-16T23:40:46.222Z");
     }),
   );
 

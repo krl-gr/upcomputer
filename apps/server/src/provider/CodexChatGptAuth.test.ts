@@ -221,6 +221,7 @@ const makeHarnessFor = Effect.fnUntraced(function* (
           }),
     recordMilestone: () => Effect.void,
     flush: Effect.void,
+    recordOwners: () => Effect.void,
   });
   const auth = yield* makeCodexChatGptAuth({
     instanceId,

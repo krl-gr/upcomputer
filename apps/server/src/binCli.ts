@@ -16,7 +16,7 @@ import { browserCommand } from "./cli/browser.ts";
 import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
-import { keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
+import { extendConnectionAttemptTimeout, keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
 import { cutoverV1Command } from "./cli/cutover.ts";
@@ -112,6 +112,7 @@ export function runCli(
 ) {
   // Product entries that call runCli directly get the Up.computer aliases too.
   applyUpcomputerEnvAliases(process.env);
+  extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,

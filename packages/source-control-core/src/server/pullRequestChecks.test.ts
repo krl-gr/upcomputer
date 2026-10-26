@@ -20,6 +20,47 @@ function entry(
 }
 
 describe("dedupeChecks", () => {
+  it.each([
+    ["2026-10-16T12:00:00Z", "2026-10-16T12:00:00.500Z"],
+    ["2026-10-16T12:00:00+02:00", "2026-10-16T10:30:00Z"],
+    ["2026-10-16T12:00:00.0001Z", "2026-10-16T12:00:00.0002Z"],
+    ["2026-10-16T12:00:00.0001z", "2026-10-16T12:00:00.0002z"],
+    ["2026-10-16T12:00:00.00009Z", "2026-10-16T12:00:00.0001Z"],
+    ["2024-02-28T23:59:59Z", "2024-02-29T00:00:00.0001Z"],
+    ["2000-02-28T23:59:59Z", "2000-02-29T00:00:00Z"],
+    ["2024-03-01T01:00:00Z", "2024-02-29T23:30:00-02:00"],
+    ["2026-10-16t12:00:00z", "2026-10-16t12:00:00.0001z"],
+    ["+010000-01-01T00:00:00Z", "+010000-01-01T00:00:00.0001Z"],
+  ])("keeps the newer instant between %s and %s in either listing order", (older, newer) => {
+    const oldRun = entry("build", "success", { at: older });
+    const newRun = entry("build", "failure", { at: newer });
+
+    expect(
+      [
+        [oldRun, newRun],
+        [newRun, oldRun],
+      ].map((runs) => dedupeChecks(runs)[0]?.status),
+    ).toEqual(["failure", "failure"]);
+  });
+
+  it.each([
+    ["2026-10-16T12:00:00Z", "2026-10-16T12:00:00.000Z"],
+    ["2026-10-16T12:00:00Z", "2026-10-16T14:00:00+02:00"],
+    ["2026-10-16T24:00:00.000Z", "2026-10-17T00:00:00Z"],
+    ["2026-10-16T12:00Z", "2026-10-16T12:00:00Z"],
+  ])("takes the last copy for equal instants %s and %s", (first, second) => {
+    const forward = dedupeChecks([
+      entry("build", "success", { at: first }),
+      entry("build", "failure", { at: second }),
+    ]);
+    const reversed = dedupeChecks([
+      entry("build", "success", { at: second }),
+      entry("build", "failure", { at: first }),
+    ]);
+
+    expect([forward[0]?.status, reversed[0]?.status]).toEqual(["failure", "failure"]);
+  });
+
   it("keeps the newest run of a check the host listed twice", () => {
     const checks = dedupeChecks([
       entry("Prepare PR size config", "success", {
@@ -37,6 +78,48 @@ describe("dedupeChecks", () => {
     ]);
   });
 
+  it("preserves text ordering when a host supplies an unparseable timestamp", () => {
+    expect(
+      dedupeChecks([
+        entry("build", "success", { at: "invalid-a" }),
+        entry("build", "failure", { at: "invalid-b" }),
+      ]).map((check) => check.status),
+    ).toEqual(["failure"]);
+  });
+
+  it.each([
+    ["2026-10-16", "2026-10-15T23:00:00-02:00", "success"],
+    ["2026-10-16T00:00:00", "2026-10-15T23:00:00-02:00", "success"],
+    ["2026-10-16T24:00:00.0001Z", "2026-10-17T00:00:00Z", "failure"],
+  ])("uses text fallback for incomplete or invalid timestamp %s", (malformed, valid, expected) => {
+    const malformedRun = entry("build", "success", { at: malformed });
+    const validRun = entry("build", "failure", { at: valid });
+
+    expect(
+      [
+        [malformedRun, validRun],
+        [validRun, malformedRun],
+      ].map((runs) => dedupeChecks(runs)[0]?.status),
+    ).toEqual([expected, expected]);
+  });
+
+  it.each([
+    ["2026-02-30T00:00:00Z", "2026-03-01T00:00:00Z"],
+    ["2026-02-29T00:00:00Z", "2026-03-01T00:00:00Z"],
+    ["1900-02-29T00:00:00Z", "1900-03-01T00:00:00Z"],
+    ["2026-04-31T00:00:00.0001-02:00", "2026-05-01T00:00:00Z"],
+  ])("uses text fallback for impossible date %s", (malformed, valid) => {
+    const malformedRun = entry("build", "success", { at: malformed });
+    const validRun = entry("build", "failure", { at: valid });
+
+    expect(
+      [
+        [malformedRun, validRun],
+        [validRun, malformedRun],
+      ].map((runs) => dedupeChecks(runs)[0]?.status),
+    ).toEqual(["failure", "failure"]);
+  });
+
   it("holds a check at the place it first appeared, so a re-run does not reshuffle the list", () => {
     const checks = dedupeChecks([
       entry("lint", "success", { workflowName: "CI", at: "2026-08-11T16:00:00Z" }),
@@ -47,6 +130,25 @@ describe("dedupeChecks", () => {
     expect(checks.map((check) => [check.name, check.status])).toEqual([
       ["lint", "failure"],
       ["test", "success"],
+    ]);
+  });
+
+  it("puts failed and cancelled checks first, preserving each group's order after reruns", () => {
+    const checks = dedupeChecks([
+      entry("lint", "failure", { at: "2026-08-11T16:00:00Z" }),
+      entry("integration", "cancelled"),
+      entry("types", "pending"),
+      entry("unit", "failure"),
+      entry("format", "success"),
+      entry("lint", "success", { at: "2026-08-11T18:00:00Z" }),
+    ]);
+
+    expect(checks.map((check) => [check.name, check.status])).toEqual([
+      ["integration", "cancelled"],
+      ["unit", "failure"],
+      ["lint", "success"],
+      ["types", "pending"],
+      ["format", "success"],
     ]);
   });
 
@@ -98,8 +200,8 @@ describe("dedupeChecks", () => {
     ]);
 
     expect(checks.map((check) => [check.name, check.status])).toEqual([
-      ["CI / build", "success"],
       ["Release / build", "failure"],
+      ["CI / build", "success"],
     ]);
   });
 
@@ -110,6 +212,6 @@ describe("dedupeChecks", () => {
       entry("build", "failure", { workflowName: "CI", at: "2026-08-11T16:00:00Z" }),
     ]);
 
-    expect(checks.map((check) => check.name)).toEqual(["build", "CI / build"]);
+    expect(checks.map((check) => check.name)).toEqual(["CI / build", "build"]);
   });
 });

@@ -18,10 +18,18 @@ import {
   type ProviderInteractionMode,
   type ProviderOptionSelection,
   type RuntimeMode,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
+import * as Option from "effect/Option";
+import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type {
+  EnvironmentShellState,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
+import { draftModelPickMatchesThread } from "@t3tools/shared/model";
 
 import { writeFileAtomically } from "../lib/atomic-file";
 import { createComposerContextHistory, referencedComposerContext } from "../lib/composerContext";
@@ -171,16 +179,18 @@ function withReferencedContextFiles(
   const retainedIds = new Set(
     context?.records.flatMap((record) => ("attachmentId" in record ? [record.attachmentId] : [])),
   );
+  const attachments = draft.attachments.filter(
+    (attachment) =>
+      attachment.type === "image" ||
+      !previousIds.has(attachment.id) ||
+      retainedIds.has(attachment.id),
+  );
+  // Keep the array identity on plain text edits so attachment readers see no change.
   return {
     ...draft,
     text,
     context,
-    attachments: draft.attachments.filter(
-      (attachment) =>
-        attachment.type === "image" ||
-        !previousIds.has(attachment.id) ||
-        retainedIds.has(attachment.id),
-    ),
+    attachments: attachments.length === draft.attachments.length ? draft.attachments : attachments,
   };
 }
 
@@ -487,7 +497,10 @@ function attachmentContextRecord(
     : { ...common, kind: "file" as const };
 }
 
-function restoreMissingComposerFileReferences(draft: ComposerDraft): ComposerDraft {
+function restoreMissingComposerFileReferences(
+  draft: ComposerDraft,
+  attachments = draft.attachments,
+): ComposerDraft {
   const records = [...(draft.context?.records ?? [])];
   const usedIds = new Set<string>(records.map((record) => record.contextId));
   const referenced = new Set(
@@ -497,7 +510,7 @@ function restoreMissingComposerFileReferences(draft: ComposerDraft): ComposerDra
   );
   let text = draft.text;
   let changed = false;
-  for (const attachment of draft.attachments) {
+  for (const attachment of attachments) {
     if (
       attachment.type === "image" ||
       imageMimeType(attachment) !== null ||
@@ -1455,6 +1468,71 @@ export function updateComposerDraftSettings(
   });
 }
 
+export function subscribeComposerDraftModelReconciliation(input: {
+  readonly registry: AtomRegistry.AtomRegistry;
+  readonly threadRefsAtom: Atom.Atom<ReadonlyArray<ScopedThreadRef>>;
+  readonly threadShellAtom: (ref: ScopedThreadRef) => Atom.Atom<EnvironmentThreadShell | null>;
+  readonly shellStateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<EnvironmentShellState, unknown>>;
+}): () => void {
+  const draftsAtom = Atom.make(appAtomRegistry.get(composerDraftsAtom));
+  const unsubscribeDrafts = appAtomRegistry.subscribe(composerDraftsAtom, (drafts) =>
+    input.registry.set(draftsAtom, drafts),
+  );
+  const threadKeysAtom = Atom.map(
+    input.threadRefsAtom,
+    (refs) => new Set(refs.map(scopedThreadKey)),
+  );
+  const matchesAtom = Atom.make((get) => {
+    const threadKeys = get(threadKeysAtom);
+    const matches: Array<readonly [string, ComposerDraft]> = [];
+    for (const [key, draft] of Object.entries(get(draftsAtom))) {
+      if (!draft.modelSelection || isNewTaskDraftKey(key) || isQueuedEditDraftKey(key)) continue;
+      const ref = parseScopedThreadKey(key);
+      if (!ref || !threadKeys.has(key)) continue;
+      const thread = get(input.threadShellAtom(ref));
+      if (!thread || !draftModelPickMatchesThread(draft.modelSelection, thread.modelSelection))
+        continue;
+      // Status and selection must come from the same emission; derived atoms can update apart.
+      const shell = Option.getOrNull(
+        AsyncResult.value(get(input.shellStateAtom(ref.environmentId))),
+      );
+      if (shell?.status !== "live") continue;
+      const authoritativeThread = Option.getOrNull(shell.snapshot)?.threads.find(
+        (candidate) => candidate.id === ref.threadId,
+      );
+      if (
+        authoritativeThread &&
+        draftModelPickMatchesThread(draft.modelSelection, authoritativeThread.modelSelection)
+      ) {
+        matches.push([key, draft]);
+      }
+    }
+    return matches;
+  });
+  const unsubscribeMatches = input.registry.subscribe(
+    matchesAtom,
+    (matches) => {
+      if (matches.length === 0) return;
+      updateComposerDrafts((current) => {
+        let next = current;
+        for (const [key, matchedDraft] of matches) {
+          if (next[key] !== matchedDraft) continue;
+          const { modelSelection: _modelSelection, ...draft } = matchedDraft;
+          next = withComposerDraft(next, key, draft);
+        }
+        return next;
+      });
+    },
+    { immediate: true },
+  );
+  return () => {
+    unsubscribeMatches();
+    unsubscribeDrafts();
+  };
+}
+
 export function clearComposerDraftContentState(
   current: Record<string, ComposerDraft>,
   draftKey: string,
@@ -1576,13 +1654,20 @@ export function mergeComposerDraftContentState(
   }
   return {
     ...current,
-    [draftKey]: {
-      ...existing,
-      text,
-      attachments,
-      context,
-      ...(importedShareIds ? { importedShareIds } : {}),
-    },
+    // The composer shows non-image files only as inline chips, so a shared file
+    // merged without one would be attached but invisible until sent. Other
+    // merges carry their own text, and appending chips to it would defeat
+    // mergeComposerDraftText's duplicate check on a retried merge.
+    [draftKey]: restoreMissingComposerFileReferences(
+      {
+        ...existing,
+        text,
+        attachments,
+        context,
+        ...(importedShareIds ? { importedShareIds } : {}),
+      },
+      content.sourceShareId ? attachments.slice(existing.attachments.length) : [],
+    ),
   };
 }
 
@@ -1885,12 +1970,102 @@ export async function clearComposerDraftsEnvironment(environmentId: EnvironmentI
   await releaseUnusedComposerAttachmentFiles(removedAttachments);
 }
 
-export function useComposerDraft(draftKey: string | null): ComposerDraft {
-  const drafts = useAtomValue(composerDraftsAtom);
+// One atom per draft key, so typing in one composer only notifies readers of
+// that draft instead of every subscriber to the whole drafts map.
+const composerDraftAtom = Atom.family((draftKey: string) =>
+  Atom.make((get) => get(composerDraftsAtom)[draftKey] ?? EMPTY_DRAFT),
+);
+const EMPTY_DRAFT_ATOM = Atom.make(EMPTY_DRAFT);
+
+type ComposerDraftsByKey = Readonly<Record<string, ComposerDraft>>;
+const EMPTY_DRAFTS: ComposerDraftsByKey = {};
+function sameDrafts(a: ComposerDraftsByKey, b: ComposerDraftsByKey): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+// The question drafts under one key prefix. Equal while only other drafts change
+// (the open thread's composer text, for example), so typing does not notify readers.
+export const questionAttachmentDraftsAtom = Atom.family((prefix: string) =>
+  Atom.make((get): ComposerDraftsByKey => {
+    if (prefix === "") return EMPTY_DRAFTS;
+    const matching = Object.entries(get(composerDraftsAtom)).filter(([key]) =>
+      key.startsWith(prefix),
+    );
+    return matching.length === 0 ? EMPTY_DRAFTS : Object.fromEntries(matching);
+  }).pipe(Atom.withEquality(sameDrafts)),
+);
+
+// New-task drafts only; equal while a thread composer's text changes.
+export const newTaskComposerDraftsAtom = Atom.make((get): ComposerDraftsByKey => {
+  const matching = Object.entries(get(composerDraftsAtom)).filter(([key]) =>
+    isNewTaskDraftKey(key),
+  );
+  return matching.length === 0 ? EMPTY_DRAFTS : Object.fromEntries(matching);
+}).pipe(Atom.withEquality(sameDrafts));
+
+type ComposerDraftUploadSource = Pick<ComposerDraft, "attachments" | "project">;
+// What the upload worker reads: equal while only draft text changes.
+type ComposerDraftUploadSources = Readonly<Record<string, ComposerDraftUploadSource>>;
+export const composerDraftUploadSourcesAtom = Atom.make((get): ComposerDraftUploadSources =>
+  Object.fromEntries(
+    Object.entries(get(composerDraftsAtom)).map(([key, draft]) => [
+      key,
+      { attachments: draft.attachments, project: draft.project },
+    ]),
+  ),
+).pipe(
+  Atom.withEquality((a: ComposerDraftUploadSources, b: ComposerDraftUploadSources) => {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every(
+        (key) => a[key]?.attachments === b[key]?.attachments && a[key]?.project === b[key]?.project,
+      )
+    );
+  }),
+);
+
+type ComposerDraftSettings = Pick<
+  ComposerDraft,
+  "modelSelection" | "runtimeMode" | "interactionMode"
+>;
+const EMPTY_DRAFT_SETTINGS: ComposerDraftSettings = {};
+// Text edits copy the other fields by reference, so this stays equal while typing.
+const composerDraftSettingsAtom = Atom.family((draftKey: string) =>
+  Atom.make((get): ComposerDraftSettings => {
+    const draft = get(composerDraftAtom(draftKey));
+    return {
+      modelSelection: draft.modelSelection,
+      runtimeMode: draft.runtimeMode,
+      interactionMode: draft.interactionMode,
+    };
+  }).pipe(
+    Atom.withEquality(
+      (a: ComposerDraftSettings, b: ComposerDraftSettings) =>
+        a.modelSelection === b.modelSelection &&
+        a.runtimeMode === b.runtimeMode &&
+        a.interactionMode === b.interactionMode,
+    ),
+  ),
+);
+const EMPTY_DRAFT_SETTINGS_ATOM = Atom.make(EMPTY_DRAFT_SETTINGS);
+
+export function useComposerDraftSettings(draftKey: string | null): ComposerDraftSettings {
+  const settings = useAtomValue(
+    draftKey ? composerDraftSettingsAtom(draftKey) : EMPTY_DRAFT_SETTINGS_ATOM,
+  );
   useEffect(() => {
     ensureComposerDraftsLoaded();
   }, []);
-  return draftKey ? normalizeDraft(drafts[draftKey]) : EMPTY_DRAFT;
+  return settings;
+}
+
+export function useComposerDraft(draftKey: string | null): ComposerDraft {
+  const draft = useAtomValue(draftKey ? composerDraftAtom(draftKey) : EMPTY_DRAFT_ATOM);
+  useEffect(() => {
+    ensureComposerDraftsLoaded();
+  }, []);
+  return draft;
 }
 
 export function useStickyComposerModelSelection(): ModelSelection | null {

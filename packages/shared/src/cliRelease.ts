@@ -3,6 +3,7 @@ import { UPCOMPUTER_UPDATE_REPOSITORY } from "./upcomputerIdentity.ts";
 // Up.computer releases. CLI archives are not published there yet, so SSH
 // remotes and self-updates fail closed instead of running upstream builds.
 const CLI_RELEASE_REPOSITORY = UPCOMPUTER_UPDATE_REPOSITORY;
+export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 

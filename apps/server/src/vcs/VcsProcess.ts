@@ -9,6 +9,7 @@ import { ChildProcessSpawner } from "effect/process";
 
 import {
   type VcsError,
+  type VcsProcessErrorContext,
   VcsProcessExitError,
   type VcsProcessExitFailureKind,
   VcsProcessMissingExitCodeError,
@@ -18,6 +19,8 @@ import {
   VcsProcessStdinWriteError,
   VcsProcessTimeoutError,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+
 import * as ProcessRunner from "../processRunner.ts";
 
 export interface VcsProcessInput {
@@ -59,7 +62,59 @@ const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const VCS_PROCESS_CONCURRENCY = 8;
 const GITHUB_PROCESS_CONCURRENCY = 4;
 
+/** Shown to users when a Git command fails because another process holds the index lock. */
+export const GIT_INDEX_LOCKED_DETAIL =
+  "Git's index is locked. Wait for other Git operations to finish, then try again.";
+
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
+
+/**
+ * Appends `key=value` to the `GIT_CONFIG_*` entries git reads as command-line
+ * config, so argv stays the same on every platform and nothing is written to
+ * the user's config. The entry goes after any inherited ones. Windows env names
+ * are case-insensitive (elsewhere git reads only `GIT_CONFIG_COUNT`), so there the
+ * count is found regardless of casing, read from
+ * the last spelling (a per-command value spread over process.env), and updated
+ * under every spelling so the child sees it whichever one Node keeps. A count
+ * git would reject is left alone so git still reports it.
+ */
+export const gitConfigEnv = (
+  env: NodeJS.ProcessEnv,
+  key: string,
+  value: string,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv => {
+  const countKeys = Object.keys(env).filter((name) =>
+    platform === "win32" ? name.toUpperCase() === "GIT_CONFIG_COUNT" : name === "GIT_CONFIG_COUNT",
+  );
+  const countKey = countKeys.at(-1) ?? "GIT_CONFIG_COUNT";
+  const inherited = env[countKey];
+  if (
+    inherited !== undefined &&
+    inherited !== "" &&
+    // Git parses the count with strtoul: leading whitespace, an optional sign
+    // (only -0 is non-negative), digits, and nothing after them.
+    /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/.exec(inherited)?.[0] !== inherited
+  ) {
+    return {};
+  }
+  const count = inherited === undefined || inherited === "" ? 0 : Number.parseInt(inherited, 10);
+  return {
+    ...Object.fromEntries([...countKeys, countKey].map((name) => [name, String(count + 1)])),
+    [`GIT_CONFIG_KEY_${count}`]: key,
+    [`GIT_CONFIG_VALUE_${count}`]: value,
+  };
+};
+
+/**
+ * Git otherwise opens any folder holding `HEAD`, `objects/` and `refs/` as a
+ * bare repository and applies its `config`, including commands such as
+ * `core.fsmonitor`. Files saved in a project or checked out from a clone can
+ * form one, so git started by T3 (or by gh and friends) only opens a bare
+ * repository named with `--git-dir` or `GIT_DIR`. Git before 2.38 ignores it.
+ */
+export const explicitBareRepositoryEnv = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
+  gitConfigEnv(env, "safe.bareRepository", "explicit", platform);
 
 const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
@@ -112,20 +167,25 @@ const isTransientGitExit = (stderr: string) =>
   /unable to create [^\n]*\.lock['"]?: file exists/i.test(stderr) ||
   /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i.test(stderr);
 
+// On macOS, Git's fsync uses F_FULLFSYNC; writeout-only still uses fsync(2).
+// Network mounts can reject F_FULLFSYNC. Ref writes omit errno, so retry their
+// bare write error too; explicit unrelated errors remain failures.
+// Linux writeout-only only starts writeback, so it must not use this fallback.
+const FULL_FSYNC_ARG = "core.fsyncMethod=fsync";
+const BATCH_FSYNC_ARG = "core.fsyncMethod=batch";
+const WRITEOUT_ONLY_FSYNC_ARG = "core.fsyncMethod=writeout-only";
+const canRetryFullFsync = (stderr: string) =>
+  /fsync error on [^\r\n]+: operation not supported\r?$/im.test(stderr) ||
+  /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im.test(stderr);
+
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const hostPlatform = yield* HostProcess.Platform;
   const vcsProcesses = yield* Semaphore.make(VCS_PROCESS_CONCURRENCY);
   const githubProcesses = yield* Semaphore.make(GITHUB_PROCESS_CONCURRENCY);
 
-  const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (input: VcsProcessInput) {
-    const baseError = {
-      operation: input.operation,
-      command: input.command,
-      cwd: input.cwd,
-      argumentCount: input.args.length,
-    };
-
-    const result = yield* processRunner
+  const spawn = (input: VcsProcessInput, baseError: VcsProcessErrorContext) =>
+    processRunner
       .run({
         command: input.command,
         args: input.args,
@@ -133,7 +193,10 @@ export const make = Effect.gen(function* () {
         ...(input.spawnCwd !== undefined ? { spawnCwd: input.spawnCwd } : {}),
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
-        ...(input.env !== undefined ? { env: input.env } : {}),
+        env: {
+          ...input.env,
+          ...explicitBareRepositoryEnv({ ...process.env, ...input.env }, hostPlatform),
+        },
         timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxOutputBytes: input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
         outputMode: input.outputMode ?? "truncate",
@@ -170,13 +233,44 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (input: VcsProcessInput) {
+    const baseError = {
+      operation: input.operation,
+      command: input.command,
+      cwd: input.cwd,
+      argumentCount: input.args.length,
+    };
+
+    let result = yield* spawn(input, baseError);
+
+    if (
+      hostPlatform === "darwin" &&
+      input.operation === CHECKPOINT_CAPTURE_OPERATION &&
+      !input.allowNonZeroExit &&
+      result.code !== null &&
+      result.code !== 0 &&
+      input.command === "git" &&
+      (input.args.includes(FULL_FSYNC_ARG) || input.args.includes(BATCH_FSYNC_ARG)) &&
+      canRetryFullFsync(result.stderr)
+    ) {
+      result = yield* spawn(
+        {
+          ...input,
+          args: input.args.map((arg) =>
+            arg === FULL_FSYNC_ARG || arg === BATCH_FSYNC_ARG ? WRITEOUT_ONLY_FSYNC_ARG : arg,
+          ),
+        },
+        baseError,
+      );
+    }
+
     if (result.code === null) {
       return yield* new VcsProcessMissingExitCodeError(baseError);
     }
 
     if (!input.allowNonZeroExit && result.code !== 0) {
       const failureKind = classifyNonZeroExit(input.command, result.stderr);
-      return yield* VcsProcessExitError.fromProcessExit(
+      const error = VcsProcessExitError.fromProcessExit(
         baseError,
         {
           exitCode: result.code,
@@ -188,6 +282,18 @@ export const make = Effect.gen(function* () {
           failureKind === "command-failed" &&
           isTransientGitExit(result.stderr),
       );
+      if (
+        input.command === "git" &&
+        /^fatal: unable to create ['"][^\r\n]*[/\\]index\.lock['"]: file exists\.?$/im.test(
+          result.stderr,
+        )
+      ) {
+        return yield* new VcsProcessExitError({
+          ...error,
+          detail: GIT_INDEX_LOCKED_DETAIL,
+        });
+      }
+      return yield* error;
     }
 
     return {

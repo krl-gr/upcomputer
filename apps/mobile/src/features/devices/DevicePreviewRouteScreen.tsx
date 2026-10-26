@@ -1,3 +1,5 @@
+import { SheetCloseButton } from "../../components/ui/SheetHeader";
+import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import {
   deviceToolVersionLabels,
@@ -7,7 +9,7 @@ import {
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
 import { Accelerometer } from "expo-sensors";
 import { AppState, BackHandler, Pressable, StatusBar, View } from "react-native";
@@ -47,7 +49,7 @@ type DevicePreviewRouteScreenProps = StaticScreenProps<{
 
 export function DevicePreviewRouteScreen({ route }: DevicePreviewRouteScreenProps) {
   const navigation = useNavigation();
-  const onClose = useCallback(() => navigation.goBack(), [navigation]);
+  const onClose = () => navigation.goBack();
   const { environmentId, threadId } = route.params;
   const isBlankLink = environmentId.trim().length === 0 || threadId.trim().length === 0;
   useEffect(() => {
@@ -85,15 +87,12 @@ function DevicePreviewScreen({
   const shutdown = useAtomCommand(deviceEnvironment.shutdown, { reportFailure: false });
   const streamRef = useRef<DeviceStreamRef>(null);
   const state = useEnvironmentQuery(deviceEnvironment.state({ environmentId, input: {} }));
-  const previews = useMemo(
-    () => threadDevicePreviews(state.data, threadId),
-    [state.data, threadId],
-  );
+  const previews = threadDevicePreviews(state.data, threadId);
   const preview = selectedThreadDevicePreview(previews, selectedKey);
-  const onInputConnected = useCallback(async (connected: boolean) => {
+  const onInputConnected = async (connected: boolean) => {
     setInputConnected(connected);
     if (connected) setControlsVisible(false);
-  }, []);
+  };
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setForeground(state !== "background"),
@@ -126,20 +125,16 @@ function DevicePreviewScreen({
   const shutDownDevice = async () => {
     if (!preview || shuttingDown) return;
     setShuttingDown(true);
-    try {
-      const result = await shutdown({
-        environmentId,
-        input: {
-          hostId: preview.session.hostId,
-          deviceId: preview.session.deviceId,
-          platform: preview.session.platform,
-        },
-      });
-      if (result._tag === "Failure") {
-        Dialog.alert("Could not shut down device", String(Cause.squash(result.cause)));
-      }
-    } finally {
-      setShuttingDown(false);
+    const result = await shutdown({
+      environmentId,
+      input: {
+        hostId: preview.session.hostId,
+        deviceId: preview.session.deviceId,
+        platform: preview.session.platform,
+      },
+    }).finally(() => setShuttingDown(false));
+    if (result._tag === "Failure") {
+      Dialog.alert("Could not shut down device", String(Cause.squash(result.cause)));
     }
   };
 
@@ -277,13 +272,9 @@ function DevicePreviewScreen({
               <AppText selectable className="text-center text-sm text-foreground-muted">
                 {state.error}
               </AppText>
-              <Pressable
-                accessibilityRole="button"
-                className="rounded-full border border-secondary-border bg-secondary px-6 py-3"
-                onPress={state.refresh}
-              >
-                <AppText className="text-secondary-foreground">Retry</AppText>
-              </Pressable>
+              <View className="items-center">
+                <Button label="Retry" tone="secondary" onPress={state.refresh} />
+              </View>
             </>
           ) : focused && foreground ? (
             <AppActivityIndicator color={themeVariables["--color-icon"]} />
@@ -306,11 +297,7 @@ function DevicePreviewScreen({
           ) : null}
           <View className="px-3" style={{ paddingTop: Math.max(insets.top, 12) }}>
             <GlassSurface className="flex-row items-center gap-1 p-1">
-              <ControlPill
-                accessibilityLabel="Close device preview"
-                icon="xmark"
-                onPress={onClose}
-              />
+              <SheetCloseButton accessibilityLabel="Close device preview" onClose={onClose} />
               <AppText numberOfLines={1} className="flex-1 text-center font-t3-medium text-base">
                 {preview?.name ?? "Devices"}
               </AppText>
@@ -377,10 +364,7 @@ function OpenDevicePreview({
   const { session } = preview;
   const { themeVariables } = useAppearancePreferences();
   const { access, error, refresh } = useDeviceHubAccess(environmentId, session.hostId);
-  const onUnauthorized = useCallback(
-    async () => refreshDeviceHubAccess(environmentId),
-    [environmentId],
-  );
+  const onUnauthorized = async () => refreshDeviceHubAccess(environmentId);
   useEffect(() => {
     refreshDeviceHubAccess(environmentId);
     return () => void onInputConnected(false);
@@ -409,13 +393,9 @@ function OpenDevicePreview({
           <AppText selectable className="text-center text-sm text-foreground-muted">
             {error}
           </AppText>
-          <Pressable
-            accessibilityRole="button"
-            className="rounded-full border border-secondary-border bg-secondary px-6 py-3"
-            onPress={refresh}
-          >
-            <AppText className="text-secondary-foreground">Retry</AppText>
-          </Pressable>
+          <View className="items-center">
+            <Button label="Retry" tone="secondary" onPress={refresh} />
+          </View>
         </>
       ) : (
         <>

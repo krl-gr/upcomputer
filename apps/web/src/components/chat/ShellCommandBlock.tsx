@@ -2,9 +2,9 @@ import {
   commandHighlightLanguage,
   withVisibleControlCharacters,
 } from "@t3tools/client-runtime/work-log/command-label";
-import { Suspense, use, useMemo } from "react";
+import { Suspense, use } from "react";
 
-import { useTheme } from "../../hooks/useTheme";
+import { useRenderedAppearance } from "../../hooks/useTheme";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { HighlightedTokens } from "./HighlightedTokens";
 
@@ -36,10 +36,7 @@ function HighlightedCommand({ code, theme }: { code: string; theme: "light" | "d
   const { embeddedScripts } = use(loadEmbeddedScripts());
   const language = commandHighlightLanguage(code);
   // Only shell syntax nests scripts; PowerShell's own grammar colors its strings.
-  const embedded = useMemo(
-    () => (language === "shellscript" ? embeddedScripts(code) : []),
-    [code, embeddedScripts, language],
-  );
+  const embedded = language === "shellscript" ? embeddedScripts(code) : [];
   return (
     <HighlightedTokens
       code={code}
@@ -52,7 +49,7 @@ function HighlightedCommand({ code, theme }: { code: string; theme: "light" | "d
 }
 
 export function ShellCommandBlock({ command }: { command: string }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = useRenderedAppearance();
   const code = withVisibleControlCharacters(command.trim());
   if (!code) return null;
   const plain = <PlainWords code={code} />;

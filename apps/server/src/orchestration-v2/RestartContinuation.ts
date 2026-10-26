@@ -17,11 +17,14 @@ import { isNativeMaintenanceCommand } from "./CommandPolicy.ts";
 import { sendRestartContinuationIfAdmitted } from "./RestartContinuationGate.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
+  awaitingProviderThreadId,
   cancelledRosterTaskWork,
   cancelledTurnItemWork,
   isAwaitedWork,
   isRestartContinuationSource,
+  cancelledBeforeStart,
   isRestartNoteSource,
+  neverStarted,
   restartCancelledBackgroundWorkNote,
   restartContinuationNote,
 } from "./RestartBackgroundNote.ts";
@@ -29,6 +32,7 @@ import {
 const CONTINUE_PROMPT = "Continue where you left off.";
 
 const MAX_CONTINUATION_CHAIN = 3;
+const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
 
 function restartContinuationBlocked(
   projection: Pick<
@@ -92,10 +96,11 @@ function hasOpenAwaitedWork(
     if (item.type === "subagent" && item.origin === "app_owned" && item.childThreadId !== null)
       return false;
     const work = cancelledTurnItemWork(item);
-    const providerThreadId =
-      item.providerThreadId ??
-      projection.runs.find((run) => run.id === item.runId)?.providerThreadId;
-    return work !== undefined && isAwaitedWork(work) && providerThreadId === providerThread.id;
+    return (
+      work !== undefined &&
+      isAwaitedWork(work) &&
+      awaitingProviderThreadId(item, projection.runs) === providerThread.id
+    );
   });
   return (
     openItem ||
@@ -125,7 +130,9 @@ export function restartContinuationRun(
 ): OrchestrationV2Run | undefined {
   const run = projection.runs.reduce<OrchestrationV2Run | undefined>(
     (latest, candidate) =>
-      candidate.status !== "queued" && (!latest || runRanAfter(candidate, latest))
+      candidate.status !== "queued" &&
+      !neverStarted(candidate) &&
+      (!latest || runRanAfter(candidate, latest))
         ? candidate
         : latest,
     undefined,
@@ -212,18 +219,26 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       return;
     if (
       projection.runs.some(
-        (run) => run.id !== source.id && run.status !== "queued" && runRanAfter(run, source),
+        (run) =>
+          run.id !== source.id &&
+          run.status !== "queued" &&
+          !cancelledBeforeStart(run) &&
+          runRanAfter(run, source),
       )
     )
       return;
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
     // A turn that keeps crashing the server would otherwise restart it forever.
     let chainLength = 0;
+    const loopWindowStart =
+      DateTime.toEpochMillis(source.completedAt ?? source.requestedAt) -
+      CONTINUATION_LOOP_WINDOW_MS;
     for (
       let run: OrchestrationV2Run | undefined = source;
       run?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
       run = projection.runs.find((candidate) => candidate.id === run?.restartContinuationOfRunId)
     ) {
+      if (DateTime.toEpochMillis(run.requestedAt) < loopWindowStart) break;
       chainLength += 1;
     }
     if (chainLength >= MAX_CONTINUATION_CHAIN) {

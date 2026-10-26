@@ -6,6 +6,8 @@ import {
   ProviderThreadId,
   ProviderSessionId,
   ProviderDriverKind,
+  ProviderTurnId,
+  RunAttemptId,
   RunId,
   ThreadId,
   type OrchestrationV2ExecutionNode,
@@ -189,6 +191,34 @@ describe("thread execution presentation", () => {
       activeRunId: runningRun.id,
     });
     expect(threadRuntimeHasInterruptibleRun(runtime)).toBe(true);
+  });
+
+  it("marks an open run whose provider turn already ended", () => {
+    const attemptId = RunAttemptId.make("attempt-open");
+    const openRun = { ...run("run-open", 1, "running"), activeAttemptId: attemptId };
+    const providerTurn = (status: "running" | "failed") => ({
+      id: ProviderTurnId.make("provider-turn-open"),
+      providerThreadId: ProviderThreadId.make("provider-thread-open"),
+      nodeId: NodeId.make("node-open"),
+      runAttemptId: attemptId,
+      nativeTurnRef: null,
+      ordinal: 1,
+      status,
+      startedAt: now,
+      completedAt: status === "running" ? null : now,
+    });
+    const projection = (status: "running" | "failed") => ({
+      ...v2Projection,
+      runs: [openRun],
+      providerTurns: [providerTurn(status)],
+      updatedAt: now,
+    });
+
+    expect(deriveThreadActivityRun(projection("running"))?.turnEnded).toBeUndefined();
+    expect(deriveThreadActivityRun(projection("failed"))).toMatchObject({
+      status: "running",
+      turnEnded: true,
+    });
   });
 
   it("presents a held queue as the stopped run instead of queued work", () => {
@@ -411,7 +441,7 @@ describe("formatModelSelectionEffort", () => {
     model: "claude-sonnet-5",
     ...(options === undefined ? {} : { options }),
   });
-  const catalog = (descriptor: { currentValue?: string }) => [
+  const catalog = (descriptor: { id?: string; currentValue?: string }) => [
     {
       slug: "claude-sonnet-5",
       name: "Claude Sonnet 5",
@@ -434,20 +464,42 @@ describe("formatModelSelectionEffort", () => {
     },
   ];
 
-  it("shows the model's default effort when the user never picked one", () => {
-    expect(formatModelSelectionEffort(selection(), catalog({}))).toBe("High");
-  });
+  it.each(["effort", "reasoning_effort"])(
+    "names stored and matching reported %s, preferring the stored choice",
+    (id) => {
+      expect(formatModelSelectionEffort(selection([{ id, value: "xhigh" }]), catalog({ id }))).toBe(
+        "Extra High",
+      );
+      const reported = selection([{ id, value: "xhigh" }]);
+      expect(formatModelSelectionEffort(selection(), catalog({ id }), reported)).toBe("Extra High");
+      expect(
+        formatModelSelectionEffort(selection([{ id, value: "medium" }]), catalog({ id }), reported),
+      ).toBe("Medium");
+      expect(
+        formatModelSelectionEffort(
+          selection([{ id, value: "retired-effort" }]),
+          catalog({ id, currentValue: "medium" }),
+          reported,
+        ),
+      ).toBeNull();
+    },
+  );
 
-  it("names a stored effort the way the catalog does", () => {
+  it("shows nothing when neither the selection nor the provider states an effort", () => {
+    expect(formatModelSelectionEffort(selection(), catalog({}))).toBeNull();
+    expect(formatModelSelectionEffort(selection(), catalog({ currentValue: "medium" }))).toBeNull();
     expect(
-      formatModelSelectionEffort(selection([{ id: "effort", value: "xhigh" }]), catalog({})),
-    ).toBe("Extra High");
-  });
-
-  it("uses the descriptor's current value over the default", () => {
-    expect(formatModelSelectionEffort(selection(), catalog({ currentValue: "medium" }))).toBe(
-      "Medium",
-    );
+      formatModelSelectionEffort(selection(), catalog({}), {
+        ...selection([{ id: "effort", value: "xhigh" }]),
+        model: "claude-opus-5-5",
+      }),
+    ).toBeNull();
+    expect(
+      formatModelSelectionEffort(selection(), catalog({}), {
+        ...selection([{ id: "effort", value: "xhigh" }]),
+        instanceId: ProviderInstanceId.make("claudeAgent-other"),
+      }),
+    ).toBeNull();
   });
 
   it("shows nothing for a model the catalog does not describe", () => {

@@ -1,5 +1,5 @@
 import type { DesktopAppBranding } from "@t3tools/contracts";
-import { UPCOMPUTER_PRODUCT_NAME } from "@t3tools/shared/upcomputerIdentity";
+import { UPCOMPUTER_PRODUCT_NAME, UPCOMPUTER_SITE_URL } from "@t3tools/shared/upcomputerIdentity";
 import { formatAppDisplayName } from "./branding.logic";
 
 function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
@@ -26,3 +26,4 @@ export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
+export const DESKTOP_DOWNLOAD_URL = `${UPCOMPUTER_SITE_URL}/download/`;

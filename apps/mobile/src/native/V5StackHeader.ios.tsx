@@ -4,9 +4,9 @@ import type {
   NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { isValidElement, useEffect, useRef } from "react";
-import { Platform, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
-import { useNativeLayoutMetrics } from "../native/native-layout-metrics";
+import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
 import {
   SearchBar,
   Stack,
@@ -140,25 +140,35 @@ export function V5StackHeader(props: {
   readonly options: Options;
   readonly canGoBack: boolean;
   readonly primary?: boolean;
+  readonly sidebarFilter?: NativeStackHeaderItemMenu;
 }) {
   const { options } = props;
   const theme = useMobileNavigationTheme();
   const nativeMetrics = useNativeLayoutMetrics();
+  const deviceType = useDeviceType();
   const searchRef = useRef<SearchBarCommands>(null);
+  const usesDuoToolbarRail =
+    deviceType === "duo-unfolded" && (nativeMetrics?.verticalBarEdge ?? "none") !== "none";
   const itemProps = { tintColor: options.headerTintColor, canGoBack: props.canGoBack };
   const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading");
-  const trailing = convertItems(
-    [
-      ...(options.unstable_headerCenterItems?.() ?? []),
-      ...(options.unstable_headerRightItems?.(itemProps) ?? []),
-    ],
-    "trailing",
-  );
+  const trailingItems = [
+    ...(options.unstable_headerCenterItems?.() ?? []),
+    ...(options.unstable_headerRightItems?.(itemProps) ?? []),
+  ];
+  // Keep the sidebar's filter actions when UIKit moves the menu to the detail rail.
+  if (usesDuoToolbarRail && !props.primary && props.sidebarFilter) {
+    trailingItems.push({
+      ...props.sidebarFilter,
+      identifier: "home-filter",
+      axisBehavior: "verticalPreferred",
+    });
+  }
+  const trailing = convertItems(trailingItems, "trailing");
   const toolbar = options.unstable_headerToolbarItems?.() ?? [];
   const mailSearch = toolbar.find(
     (item): item is HeaderBarButtonMailSearchToolbarItem => item.type === "mailSearchToolbar",
   );
-  const bottomSearch = Boolean(mailSearch) && Platform.OS === "ios" && !Platform.isPad;
+  const bottomSearch = Boolean(mailSearch) && deviceType !== "pad";
   const bottom = toolbar.flatMap<HeaderItem>((item, index) => {
     if (item.type === "mailSearchToolbar") return [];
     if (item.type === "searchBarPlacement")

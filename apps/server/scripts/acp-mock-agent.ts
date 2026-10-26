@@ -90,6 +90,10 @@ const emitStaleXAiPromptCompleteBeforeSecondHang =
 const emitOverlappingXAiPromptCompleteOutOfOrder =
   process.env.T3_ACP_EMIT_OVERLAPPING_XAI_PROMPT_COMPLETE_OUT_OF_ORDER === "1";
 const failPrompt = process.env.T3_ACP_FAIL_PROMPT === "1";
+const failPromptOrdinal = Number(process.env.T3_ACP_FAIL_PROMPT_ORDINAL);
+const compactionPromptOrdinals = new Set(
+  (process.env.T3_ACP_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
+);
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const failSetModeConfigOption = process.env.T3_ACP_FAIL_SET_MODE_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
@@ -427,10 +431,11 @@ function modeState(): AcpCompat.SessionModeState {
 // "grok-build" product name.
 const grokAcpModels: ReadonlyArray<AcpCompat.ModelInfo> = [
   {
-    modelId: "grok-4.6",
+    modelId: process.env.T3_ACP_GROK_MODEL ?? "grok-4.6",
     name: "Grok 4.6",
     _meta: {
-      totalContextTokens: 500_000,
+      totalContextTokens: Number(process.env.T3_ACP_GROK_CONTEXT_TOKENS ?? 500_000),
+      contextWindows: [256_000, 500_000],
       supportsReasoningEffort: true,
       reasoningEffort: initialGrokReasoningEffort ?? "high",
       reasoningEfforts: [
@@ -449,7 +454,7 @@ function modelState(): AcpCompat.SessionModelState {
   }
   const modelId = grokAcpModels.some((model) => model.modelId === currentModelId)
     ? currentModelId
-    : "grok-4.6";
+    : (process.env.T3_ACP_GROK_MODEL ?? "grok-4.6");
   return {
     currentModelId: modelId,
     availableModels: grokAcpModels,
@@ -1298,7 +1303,20 @@ const program = Effect.gen(function* () {
         yield* Effect.sleep(`${promptDelayMs} millis`);
       }
 
-      if (failPrompt) {
+      if (compactionPromptOrdinals.has(promptCount)) {
+        for (const status of ["in_progress", "completed"] as const) {
+          yield* agent.client.sessionUpdate({
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "compaction_update",
+              compactionId: `compact-${promptCount}`,
+              status,
+            },
+          });
+        }
+      }
+
+      if (failPrompt || promptCount === failPromptOrdinal) {
         return yield* AcpError.AcpRequestError.internalError("Mock prompt failure");
       }
 
@@ -1365,6 +1383,7 @@ const program = Effect.gen(function* () {
         (emitRunningCommandThenHangOnFirstPrompt && promptCount === 1)
       ) {
         const toolCallId = "tool-call-running-1";
+        let runningCommandPublished: Promise<void> = Promise.resolve();
         if (runningCommandPidPath !== undefined) {
           const command = runningCommandIgnoresTerm
             ? 'trap "" TERM; bash -c \'trap "" TERM; while :; do sleep 1; done\' & child=$!; printf "%s %s\n" "$$" "$child" > "$1"; wait "$child"'
@@ -1372,19 +1391,24 @@ const program = Effect.gen(function* () {
           if (runningCommandSeparateSession) {
             const launcher = [
               'const { spawn } = require("node:child_process");',
-              "const child = spawn(process.argv[1], process.argv.slice(2), { stdio: 'ignore' });",
+              "const child = spawn(process.argv[1], process.argv.slice(2), { stdio: ['ignore', 'inherit', 'ignore'] });",
               "child.once('exit', (code, signal) => process.exitCode = code ?? (signal ? 1 : 0));",
             ].join(" ");
             const detachedCommand = runningCommandIgnoresTerm
-              ? 'trap "" TERM; bash -c \'trap "" TERM; while :; do sleep 1; done\' & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; wait "$child"'
-              : 'sleep 120 & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; wait "$child"';
+              ? 'trap "" TERM; bash -c \'trap "" TERM; while :; do sleep 1; done\' & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; echo published; wait "$child"'
+              : 'sleep 120 & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; echo published; wait "$child"';
             // Nested bash publishes "$PPID $$ $child" once it starts. Do not
             // write the launcher PID alone here: that races with bash and can
-            // clobber the triple that interrupt tests wait for.
+            // clobber the triple that interrupt tests wait for. It then prints a
+            // line, so an agent that exits after launch only exits once the
+            // triple exists instead of racing a slow launcher start.
             const detachedLauncher = NodeChildProcess.spawn(
               process.execPath,
               ["-e", launcher, "bash", "-c", detachedCommand, "bash", runningCommandPidPath],
-              { detached: true, stdio: "ignore" },
+              { detached: true, stdio: ["ignore", "pipe", "ignore"] },
+            );
+            runningCommandPublished = new Promise((resolve) =>
+              detachedLauncher.stdout.once("data", () => resolve()),
             );
             detachedLauncher.unref();
           } else {
@@ -1442,6 +1466,7 @@ const program = Effect.gen(function* () {
           },
         });
         if (exitAfterRunningCommandLaunch) {
+          yield* Effect.promise(() => runningCommandPublished);
           yield* Effect.sleep("100 millis");
           return yield* Effect.sync(() => process.exit(0));
         }

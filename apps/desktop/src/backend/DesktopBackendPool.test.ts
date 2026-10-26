@@ -1,5 +1,4 @@
 import { assert, describe, it } from "@effect/vitest";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -19,29 +18,7 @@ import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
-import type { DesktopBackendSnapshot, DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
-
-function makeStubInstance(
-  id: DesktopBackendPool.BackendInstanceId,
-  label: string,
-): DesktopBackendPool.DesktopBackendInstance {
-  const snapshot: DesktopBackendSnapshot = {
-    desiredRunning: false,
-    ready: false,
-    activePid: Option.none(),
-    restartAttempt: 0,
-    restartScheduled: false,
-  };
-  return {
-    id,
-    label: Effect.succeed(label),
-    start: Effect.void,
-    stop: () => Effect.void,
-    currentConfig: Effect.succeed(Option.none<DesktopBackendStartConfig>()),
-    snapshot: Effect.succeed(snapshot),
-    waitForReady: (_timeout: Duration.Duration) => Effect.succeed(false),
-  };
-}
+import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 
 function layerPool(labelRef: Ref.Ref<string>): Layer.Layer<DesktopBackendPool.DesktopBackendPool> {
   return DesktopBackendPool.layer.pipe(
@@ -112,36 +89,6 @@ function layerPool(labelRef: Ref.Ref<string>): Layer.Layer<DesktopBackendPool.De
 }
 
 describe("DesktopBackendPool", () => {
-  it.effect("layerTest exposes registered instances by id", () =>
-    Effect.gen(function* () {
-      const pool = yield* DesktopBackendPool.DesktopBackendPool;
-      const fetchedPrimary = yield* pool.get(DesktopBackendPool.PRIMARY_INSTANCE_ID);
-      const fetchedWsl = yield* pool.get(DesktopBackendPool.BackendInstanceId("wsl:ubuntu"));
-      const fetchedMissing = yield* pool.get(DesktopBackendPool.BackendInstanceId("missing"));
-      const all = yield* pool.list;
-      const resolvedPrimary = yield* pool.primary;
-
-      assert.equal(yield* Option.getOrThrow(fetchedPrimary).label, "Windows");
-      assert.equal(yield* Option.getOrThrow(fetchedWsl).label, "WSL (Ubuntu)");
-      assert.isTrue(Option.isNone(fetchedMissing));
-      assert.lengthOf(all, 2);
-      assert.equal(resolvedPrimary.id, DesktopBackendPool.PRIMARY_INSTANCE_ID);
-    }).pipe(
-      Effect.provide(
-        DesktopBackendPool.layerTest([
-          makeStubInstance(DesktopBackendPool.PRIMARY_INSTANCE_ID, "Windows"),
-          makeStubInstance(DesktopBackendPool.BackendInstanceId("wsl:ubuntu"), "WSL (Ubuntu)"),
-        ]),
-      ),
-    ),
-  );
-
-  it.effect("layerTest dies when no instances are supplied", () =>
-    Effect.exit(
-      DesktopBackendPool.DesktopBackendPool.pipe(Effect.provide(DesktopBackendPool.layerTest([]))),
-    ).pipe(Effect.map((exit) => assert.equal(exit._tag, "Failure"))),
-  );
-
   it.effect("resolves the primary label lazily after pool layer construction", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -155,6 +102,52 @@ describe("DesktopBackendPool", () => {
 
         assert.equal(yield* primary.label, "WSL (Ubuntu)");
       }),
+    ),
+  );
+
+  it.effect("unregister stops the registered instance", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const id = DesktopBackendPool.BackendInstanceId("wsl:Ubuntu");
+        const pool = yield* DesktopBackendPool.DesktopBackendPool;
+        const instance = yield* pool.register({
+          id,
+          label: Effect.succeed("WSL (Ubuntu)"),
+          // A transient preflight failure leaves a restart fiber scheduled
+          // without needing a real child process.
+          configResolve: Effect.succeed({
+            executablePath: "/electron",
+            args: [],
+            entryPath: "/server/bin.mjs",
+            cwd: "/server",
+            env: {},
+            bootstrap: {
+              mode: "desktop",
+              noBrowser: true,
+              port: 3774,
+              t3Home: "/tmp/t3",
+              host: "127.0.0.1",
+              desktopBootstrapToken: "token",
+              tailscaleServeEnabled: false,
+              tailscaleServePort: 443,
+            },
+            bootstrapDelivery: "fd3",
+            extendEnv: true,
+            httpBaseUrl: new URL("http://127.0.0.1:3774"),
+            captureOutput: false,
+            preflightFailure: Option.some({ reason: "WSL starting", fatal: false }),
+          } satisfies DesktopBackendStartConfig),
+        });
+        yield* instance.start;
+        assert.equal((yield* instance.snapshot).restartScheduled, true);
+
+        yield* pool.unregister(id);
+
+        const stopped = yield* instance.snapshot;
+        assert.equal(stopped.desiredRunning, false);
+        assert.equal(stopped.restartScheduled, false);
+        assert.equal(Option.isNone(yield* pool.get(id)), true);
+      }).pipe(Effect.provide(layerPool(Ref.makeUnsafe("Windows")))),
     ),
   );
 });

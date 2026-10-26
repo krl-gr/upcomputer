@@ -28,11 +28,14 @@ import {
   workEntryRowLabel,
   isContextHandoffActivityGroup,
   buildThreadFeed,
+  createThreadFeedCache,
   deriveThreadFeedPresentation,
   threadFeedActivityIsVisible,
   threadFeedRunIsUnsettled,
   type ThreadFeedActivity,
+  type ThreadFeedCache,
   type ThreadFeedEntry,
+  type ThreadFeedLatestRun,
   togglePendingUserInputOptionSelection,
   setPendingUserInputCustomAnswer,
   isPendingUserInputOptionSelected,
@@ -57,7 +60,26 @@ it("keeps historical plan detail accessible from its paged turn item", () => {
     entry.type === "activity-group" ? entry.activities : [],
   )[0];
   expect(activity?.detail).toBe("Full historical plan text");
-  expect(activity?.getFullDetail()).toContain("Full historical plan text");
+  expect(activity?.getFullDetail()).toBe("Full historical plan text");
+  expect(activity?.getCopyText()).toBe("Full historical plan text\n");
+  expect(activity?.prominent).toBe(true);
+  const presented = deriveThreadFeedPresentation(
+    buildThreadFeed([
+      projected(userMessage(), 0),
+      projected(command(), 1),
+      projected(item, 2),
+      projected(assistantMessage(), 3),
+    ]),
+    null,
+    new Set(),
+  );
+  expect(presented.map((entry) => entry.type)).toEqual([
+    "message",
+    "run-fold",
+    "activity-group",
+    "message",
+  ]);
+  expect(presented[2]).toMatchObject({ activities: [{ projectedItem: { item } }] });
 });
 
 it("shows only the structured path in expanded mobile read details", () => {
@@ -241,6 +263,56 @@ describe("buildThreadFeed", () => {
     });
     expect(buildThreadFeed([projected(reply, 0)])[0]?.type).toBe("message");
   });
+
+  it.each([false, true])(
+    "keeps answered questions outside settled work (attachments only: %s)",
+    (attachmentsOnly) => {
+      const requestId = RuntimeRequestId.make("answered-question");
+      const question: OrchestrationV2TurnItem = {
+        ...base("answered-question", "2026-06-20T00:00:02.500Z", 2),
+        type: "user_input_request",
+        requestId,
+        questions: [],
+        questionAnswer: {
+          requestId,
+          questionTextById: { color: "Which color?" },
+          answers: { color: attachmentsOnly ? "" : "Blue" },
+          attachmentsByQuestionId: attachmentsOnly
+            ? {
+                color: [
+                  {
+                    type: "file",
+                    id: "color-file",
+                    name: "color.txt",
+                    mimeType: "text/plain",
+                    sizeBytes: 4,
+                  },
+                ],
+              }
+            : {},
+        },
+      };
+      const feed = buildThreadFeed([
+        projected(userMessage(), 0),
+        projected(command(), 1),
+        projected(question, 2),
+        projected(assistantMessage(), 3),
+      ]);
+      const presented = deriveThreadFeedPresentation(feed, null, new Set());
+      expect(presented.map((entry) => entry.type)).toEqual([
+        "message",
+        "run-fold",
+        "activity-group",
+        "message",
+      ]);
+      expect(presented[2]).toMatchObject({
+        activities: [{ workEntry: { questionAnswer: question.questionAnswer } }],
+      });
+      expect(
+        deriveThreadFeedPresentation(feed, null, new Set([runId])).map((entry) => entry.type),
+      ).toEqual(["message", "run-fold", "activity-group", "activity-group", "message"]);
+    },
+  );
 
   it("does not create a work group for a message and checkpoint", () => {
     const checkpoint: OrchestrationV2TurnItem = {
@@ -841,7 +913,7 @@ describe("buildThreadFeed", () => {
     ).toBe(false);
   });
 
-  it("keeps opening and final assistant messages around the first hidden work", () => {
+  it("folds progress messages while keeping the final assistant answer visible", () => {
     const opening = {
       ...assistantMessage("2026-06-20T00:00:01.500Z"),
       id: TurnItemId.make("item-opening"),
@@ -871,30 +943,40 @@ describe("buildThreadFeed", () => {
     const collapsed = deriveThreadFeedPresentation(feed, latestRun, new Set());
     expect(collapsed.map((entry) => entry.id)).toEqual([
       "message-user",
-      "message-opening",
       "run-fold:run-1",
       "message-assistant",
     ]);
-    expect(collapsed[1]).toMatchObject({ message: { text: opening.text } });
-    expect(collapsed[2]).toMatchObject({
+    expect(collapsed[1]).toMatchObject({
       type: "run-fold",
-      createdAt: "2026-06-20T00:00:02.000Z",
+      createdAt: "2026-06-20T00:00:01.500Z",
       label: "Worked for 2.0s",
     });
 
     const expanded = deriveThreadFeedPresentation(feed, latestRun, new Set([runId]));
     expect(expanded.map((entry) => entry.type)).toEqual([
       "message",
-      "message",
       "run-fold",
-      "work-toggle",
+      "message",
+      "activity-group",
       "message",
       "message",
     ]);
     expect(expanded[4]).toMatchObject({ message: { id: middle.messageId, text: middle.text } });
+
+    const active = deriveThreadFeedPresentation(
+      feed,
+      { ...latestRun, status: "running", completedAt: null },
+      new Set(),
+    );
+    expect(active.filter((entry) => entry.type === "message").map((entry) => entry.id)).toEqual([
+      "message-user",
+      "message-opening",
+      "message-middle",
+      "message-assistant",
+    ]);
   });
 
-  it("does not fold a response that only has opening and final messages", () => {
+  it("folds progress even when a response has no tool calls", () => {
     const feed = buildThreadFeed([
       projected(userMessage(), 0),
       projected(
@@ -912,7 +994,7 @@ describe("buildThreadFeed", () => {
     const presented = deriveThreadFeedPresentation(feed, null, new Set());
     expect(presented.map((entry) => entry.id)).toEqual([
       "message-user",
-      "message-opening",
+      "run-fold:run-1",
       "message-assistant",
     ]);
   });
@@ -1080,7 +1162,7 @@ describe("buildThreadFeed", () => {
     expect(expanded.map((entry) => entry.type)).toEqual([
       "message",
       "run-fold",
-      "work-toggle",
+      "activity-group",
       "message",
     ]);
   });
@@ -1103,11 +1185,8 @@ describe("buildThreadFeed", () => {
     );
 
     expect(presented.some((entry) => entry.type === "run-fold")).toBe(false);
-    expect(presented.find((entry) => entry.type === "work-toggle")).toMatchObject({
-      summary: "vp check",
-      hiddenCount: 1,
-      hasFailure: true,
-      live: false,
+    expect(presented.find((entry) => entry.type === "activity-group")).toMatchObject({
+      activities: [{ status: "failure", live: false, groupStandIn: { label: "vp check" } }],
     });
   });
 
@@ -1169,7 +1248,7 @@ describe("buildThreadFeed", () => {
     ).toEqual([
       "user:launch",
       "fold:Worked for 8.0s",
-      "work-toggle",
+      "activity-group",
       "assistant:launch-answer",
       "user:resume",
       "fold:Worked for 8.0s",
@@ -1192,7 +1271,7 @@ describe("buildThreadFeed", () => {
       "fold:Worked for 8.0s",
       "assistant:launch-answer",
       "user:resume",
-      "work-toggle",
+      "activity-group",
     ]);
   });
 
@@ -1230,7 +1309,7 @@ describe("buildThreadFeed", () => {
         new Set(),
         "2026-06-20T00:01:00.000Z",
       )
-        .slice(0, 4)
+        .slice(0, 3)
         .map((entry) => (entry.type === "message" ? entry.message.role : entry.type));
 
     expect(
@@ -1239,7 +1318,7 @@ describe("buildThreadFeed", () => {
         id: TurnItemId.make("new-prompt"),
         messageId: MessageId.make("new-prompt"),
       }),
-    ).toEqual(["user", "assistant", "run-fold", "assistant"]);
+    ).toEqual(["user", "run-fold", "assistant"]);
     expect(
       presented({
         ...base("wake", "2026-06-20T00:01:00.000Z", 4),
@@ -1248,7 +1327,7 @@ describe("buildThreadFeed", () => {
         outcome: "completed",
         summary: "Background task finished",
       }),
-    ).toEqual(["user", "assistant", "run-fold", "assistant"]);
+    ).toEqual(["user", "run-fold", "assistant"]);
   });
 
   it("keeps a provider-native subagent's runless tool call live while it works", () => {
@@ -1274,10 +1353,9 @@ describe("buildThreadFeed", () => {
       startedAt,
       true,
     );
-    expect(presented.find((entry) => entry.type === "work-toggle")).toMatchObject({
-      summary: "Running vp",
-      live: true,
-      shimmer: true,
+    expect(presented.find((entry) => entry.type === "activity-group")).toMatchObject({
+      id: "live-activity-row",
+      activities: [{ live: true, groupStandIn: { label: "Running vp" } }],
     });
     expect(presented.some((entry) => entry.type === "thinking")).toBe(false);
   });
@@ -1316,6 +1394,20 @@ describe("buildThreadFeed", () => {
         startedAt,
       ),
     ).toEqual([{ type: "thinking", id: "live-activity-row", createdAt: startedAt, runId }]);
+  });
+
+  it("does not show Thinking once the open run's provider turn has ended", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const run = { runId, status: "running" as const, startedAt, completedAt: null };
+    expect(
+      deriveThreadFeedPresentation(
+        [],
+        { ...run, turnEnded: true },
+        new Set(),
+        new Set(),
+        startedAt,
+      ),
+    ).toEqual([]);
   });
 
   it("uses a stable Thinking row while work has started without a projected item", () => {
@@ -1409,6 +1501,112 @@ describe("buildThreadFeed", () => {
         { id: "activity-2", groupedToolDetail: true, live: false },
         { id: "activity-3", groupedToolDetail: true, live: false },
       ],
+    });
+  });
+
+  describe("a lone call", () => {
+    const wait = (overrides: Partial<OrchestrationV2TurnItem> = {}) =>
+      ({
+        ...base("wait", "2026-06-20T00:00:02.000Z", 1),
+        type: "dynamic_tool",
+        toolName: "t3-code.t3_thread_wait",
+        input: { threadId: "thread-child", timeoutMs: 50_000 },
+        output: { threadId: "thread-child", status: "timeout" },
+        ...overrides,
+      }) as OrchestrationV2TurnItem;
+    const read = (overrides: Partial<OrchestrationV2TurnItem> = {}) =>
+      ({
+        ...base("read", "2026-06-20T00:00:03.000Z", 2),
+        type: "dynamic_tool",
+        toolName: "t3-code.t3_thread_read",
+        input: { threadId: "thread-child" },
+        output: { messages: [] },
+        ...overrides,
+      }) as OrchestrationV2TurnItem;
+    const running = { status: "running", completedAt: null, output: null } as const;
+    const startedAt = "2026-06-20T00:00:01.000Z";
+    const liveRows = (items: ReadonlyArray<OrchestrationV2TurnItem>, groupIds: string[] = []) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(items.map((item, position) => projected(item, position))),
+        { runId, status: "running", startedAt, completedAt: null },
+        new Set(),
+        new Set(groupIds),
+        startedAt,
+      );
+    const standIn = (rows: ReadonlyArray<ThreadFeedEntry>) => {
+      const row = rows.find((entry) => entry.type === "activity-group");
+      if (row?.type !== "activity-group") throw new Error("Expected the call's own row");
+      return row.activities[0]?.groupStandIn;
+    };
+
+    it("is its own row, with no group header to open first", () => {
+      // The second call never finished, so only one call is visible.
+      for (const items of [[wait()], [wait(), read(running)]]) {
+        const feed = buildThreadFeed(
+          [userMessage(), ...items, assistantMessage("2026-06-20T00:00:04.000Z")].map(
+            (item, position) => projected(item, position),
+          ),
+        );
+        const rows = deriveThreadFeedPresentation(feed, null, new Set([runId]));
+        expect(rows.map((entry) => entry.type)).toEqual([
+          "message",
+          "run-fold",
+          "activity-group",
+          "message",
+        ]);
+        expect(rows[2]).toMatchObject({
+          activities: [{ canExpand: true, groupStandIn: { label: "Waited for a T3 thread" } }],
+        });
+        expect(rows[2]).not.toMatchObject({ activities: [{ groupedToolDetail: true }] });
+        // The group's own disclosure adds nothing while the call is alone.
+        expect(
+          deriveThreadFeedPresentation(
+            feed,
+            null,
+            new Set([runId]),
+            new Set([standIn(rows)!.groupId]),
+          ).map((entry) => entry.id),
+        ).toEqual(rows.map((entry) => entry.id));
+      }
+    });
+
+    it("offers no disclosure when it has nothing to show", () => {
+      const rows = deriveThreadFeedPresentation(
+        buildThreadFeed([projected(wait({ toolName: "example", input: {}, output: null }), 0)]),
+        null,
+        new Set([runId]),
+      );
+      expect(rows.map((entry) => entry.type)).toEqual(["run-fold", "activity-group"]);
+      expect(rows[1]).toMatchObject({ activities: [{ canExpand: false }] });
+    });
+
+    it("holds the live slot until a second call makes it a group", () => {
+      for (const item of [wait(running), wait()]) {
+        const rows = liveRows([item]);
+        expect(rows.map((entry) => entry.type)).toEqual(["activity-group"]);
+        expect(rows[0]).toMatchObject({
+          id: "live-activity-row",
+          activities: [{ live: true, groupStandIn: { label: "Waiting for a T3 thread" } }],
+        });
+      }
+
+      const groupId = standIn(liveRows([wait()]))!.groupId;
+      const grouped = liveRows([wait(), read(running)], [groupId]);
+      expect(grouped.map((entry) => entry.type)).toEqual(["work-toggle", "activity-group"]);
+      expect(grouped[0]).toMatchObject({
+        id: "live-activity-row",
+        groupId,
+        hiddenCount: 2,
+        expanded: true,
+        summary: "Reading a T3 thread",
+      });
+      expect(grouped[1]).toMatchObject({
+        activities: [
+          { groupedToolDetail: true, live: false },
+          { groupedToolDetail: true, live: true },
+        ],
+      });
+      expect(standIn(grouped)).toBeUndefined();
     });
   });
 
@@ -1624,9 +1822,14 @@ describe("retained v2 feed presentation", () => {
     expect(afterPresentation[1]).toBe(beforePresentation[1]);
   });
 
-  it.each(["running", "completed", "interrupted"] as const)(
-    "uses the compaction row as the live activity only while %s",
-    (status) => {
+  it.each([
+    { status: "running", summary: "Compacting context" },
+    { status: "completed", summary: "Context compacted 899K → 19K tokens" },
+    { status: "failed", summary: "Context compaction failed" },
+    { status: "interrupted", summary: "Context compaction stopped" },
+  ] as const)(
+    "uses the compaction row as the live activity only while $status",
+    ({ status, summary }) => {
       const compact = projected(
         {
           ...base("compacted", "2026-06-20T00:00:02.000Z", 1),
@@ -1653,16 +1856,7 @@ describe("retained v2 feed presentation", () => {
       );
       expect(rows.some((row) => row.type === "thinking")).toBe(status !== "running");
       expect(rows.find((row) => row.type === "activity-group")).toMatchObject({
-        activities: [
-          {
-            summary:
-              status === "running"
-                ? "Compacting context"
-                : status === "completed"
-                  ? "Context compacted 899K → 19K tokens"
-                  : "Context compacted",
-          },
-        ],
+        activities: [{ summary }],
       });
     },
   );
@@ -1818,11 +2012,11 @@ describe("retained v2 feed presentation", () => {
   });
 
   it.each([
-    ["failed", "Failed to click in the preview browser", true],
-    ["cancelled", "Stopped clicking in the preview browser", false],
+    ["failed", "Failed to click in the preview browser", "failure"],
+    ["cancelled", "Stopped clicking in the preview browser", "neutral"],
   ] as const)(
     "keeps %s calls terminal while the parent run remains live",
-    (status, summary, hasFailure) => {
+    (status, label, activityStatus) => {
       const feed = buildThreadFeed([
         projected(
           {
@@ -1843,7 +2037,11 @@ describe("retained v2 feed presentation", () => {
         new Set(),
         "2026-06-20T00:00:01.000Z",
       );
-      expect(rows[0]).toMatchObject({ type: "work-toggle", summary, hasFailure, shimmer: false });
+      expect(rows[0]).toMatchObject({
+        type: "activity-group",
+        activities: [{ status: activityStatus, live: false, groupStandIn: { label } }],
+      });
+      expect(rows.at(-1)?.type).toBe("thinking");
     },
   );
 
@@ -2128,7 +2326,6 @@ describe("subagent continued by a later turn", () => {
       "answer-1",
       "prompt-2",
       `run-fold:${run2}`,
-      "answer-2",
       "closing-2",
     ]);
   });
@@ -2430,6 +2627,22 @@ it("uses a compact reasoning preview and a short expanded heading", () => {
   expect(workEntryRowLabel({ ...entry, toolLifecycleStatus: "completed" }, true)).toBe("Thought");
 });
 
+it("caps one-line work-log labels for multi-kilobyte commands", () => {
+  const command = `cd /repo && python3 - <<'PY'\n${"print('x')\n".repeat(400)}PY`;
+  const entry = {
+    id: "heredoc",
+    label: "Ran command",
+    createdAt: "2026-09-17T12:00:00Z",
+    itemType: "command_execution" as const,
+    tone: "tool" as const,
+    command,
+  };
+  for (const label of [workEntryRowLabel(entry), workEntryRowLabel(entry, true)]) {
+    expect(label.startsWith("cd /repo && python3 - <<'PY' print('x')")).toBe(true);
+    expect(label.length).toBeLessThanOrEqual(203);
+  }
+});
+
 it("keeps search output in expanded details rather than the compact label", () => {
   const entry = {
     id: "search",
@@ -2698,13 +2911,25 @@ describe("html renders", () => {
     expect(expanded.map((entry) => entry.type)).toEqual([
       "message",
       "run-fold",
-      "work-toggle",
+      "activity-group",
       "html-render",
-      "work-toggle",
+      "activity-group",
       "message",
     ]);
     expect(expanded[3]).toMatchObject({ type: "html-render", render: page, runId });
-    expect(expanded[2]?.continuesWorkLog).toBeUndefined();
+    // The render splits the work log, so each command is a lone call with its own group.
+    const callIds = [expanded[2], expanded[4]].map((row) =>
+      row?.type === "activity-group"
+        ? row.activities.map((activity) => activity.projectedItem.item.id)
+        : [],
+    );
+    expect(callIds).toEqual([["item-command"], ["item-command-later"]]);
+    const groupIds = [expanded[2], expanded[4]].map((row) =>
+      row?.type === "activity-group" ? row.activities[0]?.groupStandIn?.groupId : undefined,
+    );
+    expect(groupIds[0]).toBeDefined();
+    expect(groupIds[1]).toBeDefined();
+    expect(groupIds[0]).not.toBe(groupIds[1]);
   });
 
   it("keeps a render visible and in order when its run folds", () => {
@@ -2758,5 +2983,240 @@ describe("MCP apps", () => {
 
   it("keeps a running app call an ordinary work row", () => {
     expect(feed("running").some((candidate) => candidate.type === "mcp-app")).toBe(false);
+  });
+});
+
+describe("streamed feed updates", () => {
+  const runs = [RunId.make("run-1"), RunId.make("run-2"), RunId.make("run-3")] as const;
+  const at = (second: number) => `2026-06-20T00:00:${String(second).padStart(2, "0")}.000Z`;
+  const item = (id: string, second: number, run: RunId) => ({
+    ...base(id, at(second), second),
+    runId: run,
+  });
+  const user = (
+    id: string,
+    second: number,
+    run: RunId,
+  ): Extract<OrchestrationV2TurnItem, { type: "user_message" }> => ({
+    ...item(id, second, run),
+    type: "user_message",
+    messageId: MessageId.make(`message-${id}`),
+    createdBy: "user",
+    creationSource: "mobile",
+    inputIntent: "turn_start",
+    text: `Prompt ${id}`,
+    attachments: [],
+  });
+  const reply = (id: string, second: number, run: RunId, text = "Done", streaming = false) =>
+    ({
+      ...item(id, second, run),
+      ...(streaming ? { status: "running" as const, completedAt: null } : {}),
+      type: "assistant_message",
+      messageId: MessageId.make(`message-${id}`),
+      text,
+      streaming,
+    }) satisfies OrchestrationV2TurnItem;
+  const shell = (id: string, second: number, run: RunId): OrchestrationV2TurnItem => ({
+    ...item(id, second, run),
+    type: "command_execution",
+    input: `echo ${id}`,
+    output: id,
+    exitCode: 0,
+  });
+  const requestId = RuntimeRequestId.make("request-color");
+  const question = (answered: boolean): OrchestrationV2TurnItem => ({
+    ...item("question", 12, runs[1]),
+    type: "user_input_request",
+    requestId,
+    questions: [],
+    ...(answered
+      ? { questionAnswer: { requestId, answers: { color: "Blue" }, attachmentsByQuestionId: {} } }
+      : {}),
+  });
+  const answer: OrchestrationV2TurnItem = {
+    ...user("answer", 40, runs[1]),
+    messageId: MessageId.make(`async-answer:${requestId}`),
+  };
+  const delegation: OrchestrationV2TurnItem = {
+    ...item("delegation", 3, runs[0]),
+    type: "dynamic_tool",
+    toolName: "t3-code.delegate_task",
+    input: { task: "Check" },
+    output: { taskId: "child" },
+  };
+  const lateChild: OrchestrationV2TurnItem = {
+    ...item("late-child", 30, runs[0]),
+    type: "subagent",
+    subagentId: NodeId.make("child"),
+    origin: "app_owned",
+    driver: ProviderDriverKind.make("codex"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    childThreadId: sourceThreadId,
+    prompt: "Check",
+    result: "Fine",
+  };
+  const resumed: OrchestrationV2TurnItem = {
+    ...lateChild,
+    ...item("resumed", 3, runs[2]),
+    subagentId: NodeId.make("resumed"),
+    origin: "provider_native",
+    childThreadId: null,
+  };
+  const history: OrchestrationV2TurnItem[] = [
+    user("u1", 1, runs[0]),
+    shell("s1", 2, runs[0]),
+    delegation,
+    reply("a1", 4, runs[0]),
+    user("u2", 10, runs[1]),
+    shell("s2", 11, runs[1]),
+    question(false),
+    reply("a2", 13, runs[1]),
+    user("u3", 20, runs[2]),
+    shell("s3", 21, runs[2]),
+  ];
+  const running = {
+    runId: runs[2],
+    status: "running" as const,
+    startedAt: at(20),
+    completedAt: null,
+  };
+  const settled = { ...running, status: "completed" as const, completedAt: at(50) };
+  // Each step is what one streamed event leaves behind, including the edits
+  // that reach back into earlier runs.
+  const steps: ReadonlyArray<{
+    readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+    readonly latestRun: ThreadFeedLatestRun;
+  }> = [
+    { items: [...history, reply("a3", 22, runs[2], "W", true)], latestRun: running },
+    { items: [...history, reply("a3", 22, runs[2], "Wor", true)], latestRun: running },
+    {
+      items: [...history, reply("a3", 22, runs[2], "Working", true), shell("s4", 23, runs[2])],
+      latestRun: running,
+    },
+    {
+      items: [
+        ...history,
+        reply("a3", 22, runs[2], "Working", true),
+        shell("s4", 23, runs[2]),
+        lateChild,
+      ],
+      latestRun: running,
+    },
+    {
+      items: [
+        ...history.map((entry) => (entry.id === "question" ? question(true) : entry)),
+        reply("a3", 22, runs[2], "Working", true),
+        shell("s4", 23, runs[2]),
+        lateChild,
+        answer,
+      ],
+      latestRun: running,
+    },
+    {
+      items: [
+        ...history.slice(0, 9),
+        shell("inserted", 20, runs[2]),
+        ...history.slice(9),
+        reply("a3", 22, runs[2], "Working", true),
+        shell("s4", 23, runs[2]),
+      ],
+      latestRun: running,
+    },
+    {
+      items: [...history, reply("a3", 22, runs[2], "Working on it"), shell("s4", 23, runs[2])],
+      latestRun: running,
+    },
+    {
+      items: [...history, reply("a3", 22, runs[2], "Working on it"), shell("s4", 23, runs[2])],
+      latestRun: settled,
+    },
+    {
+      items: [
+        ...history,
+        reply("a3", 22, runs[2], "Working on it"),
+        shell("s4", 23, runs[2]),
+        shell("late-s1", 45, runs[0]),
+      ],
+      latestRun: settled,
+    },
+    // The first run's fold above was timed to the late item; dropping it must reach back too.
+    {
+      items: [...history, reply("a3", 22, runs[2], "Working on it"), shell("s4", 23, runs[2])],
+      latestRun: settled,
+    },
+    // The latest run resumes a subagent from the first run: the item moves to
+    // the latest run but keeps its place, so it folds with the first run.
+    {
+      items: [
+        ...history.slice(0, 3),
+        resumed,
+        ...history.slice(3),
+        reply("a3", 22, runs[2], "Working on it"),
+        shell("s4", 23, runs[2]),
+      ],
+      latestRun: running,
+    },
+    {
+      items: [
+        ...history.slice(0, 3),
+        resumed,
+        ...history.slice(3),
+        reply("a3", 22, runs[2], "Working on it"),
+        shell("s4", 23, runs[2]),
+        reply("a4", 24, runs[2], "Still", true),
+      ],
+      latestRun: running,
+    },
+  ];
+  // Like the projection reducer, an unchanged item at an unchanged position keeps its row.
+  const rowsByItem = new Map<
+    OrchestrationV2TurnItem,
+    Map<number, OrchestrationV2ProjectedTurnItem>
+  >();
+  const row = (entry: OrchestrationV2TurnItem, position: number) => {
+    const byPosition = rowsByItem.get(entry) ?? new Map<number, OrchestrationV2ProjectedTurnItem>();
+    rowsByItem.set(entry, byPosition);
+    const cached = byPosition.get(position) ?? projected(entry, position);
+    byPosition.set(position, cached);
+    return cached;
+  };
+  const present = (
+    step: (typeof steps)[number],
+    expandedRunIds: ReadonlySet<RunId>,
+    cache?: ThreadFeedCache,
+  ) =>
+    deriveThreadFeedPresentation(
+      buildThreadFeed(step.items.map(row), { cache }),
+      step.latestRun,
+      expandedRunIds,
+      new Set(),
+      step.latestRun.status === "running" ? at(20) : null,
+      false,
+      cache,
+    );
+
+  it.each([
+    { folds: "collapsed", expandedRunIds: new Set<RunId>() },
+    { folds: "expanded", expandedRunIds: new Set<RunId>(runs) },
+  ])("matches a fresh build after every update with $folds runs", ({ expandedRunIds }) => {
+    const cache = createThreadFeedCache();
+    const streamed = steps.map((step) => present(step, expandedRunIds, cache));
+    const fresh = steps.map((step) => present(step, expandedRunIds));
+    // Closures on activities are not part of what a row shows.
+    const values = (rows: ReadonlyArray<ThreadFeedEntry>) => JSON.parse(JSON.stringify(rows));
+    for (const [index, rows] of streamed.entries()) {
+      expect(values(rows), `step ${index}`).toEqual(values(fresh[index]!));
+    }
+  });
+
+  it("hides a delegation once its child reaches back into the earlier run", () => {
+    const showsDelegation = (step: (typeof steps)[number]) =>
+      buildThreadFeed(step.items.map(row)).some(
+        (entry) =>
+          entry.type === "activity-group" &&
+          entry.activities.some((activity) => activity.projectedItem.item.id === "delegation"),
+      );
+    expect(showsDelegation(steps[2]!)).toBe(true);
+    expect(showsDelegation(steps[3]!)).toBe(false);
   });
 });

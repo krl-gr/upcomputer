@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
+import { planClaudeSkillDispatch, type ClaudeSkillTarget } from "./ClaudeSkillDispatch.ts";
 
-const SKILLS = new Set(["2spec", "implement", "review", "re-release-version"]);
+const skillPath = (name: string) => `/home/me/.claude/skills/${name}/SKILL.md`;
+
+const skillMap = (names: Iterable<string>) =>
+  new Map<string, ClaudeSkillTarget>([...names].map((name) => [name, { path: skillPath(name) }]));
+
+const SKILLS = skillMap(["2spec", "implement", "review", "re-release-version"]);
 
 describe("planClaudeSkillDispatch", () => {
   it("leaves a prompt without a known skill untouched", () => {
@@ -10,9 +15,9 @@ describe("planClaudeSkillDispatch", () => {
     expect(planClaudeSkillDispatch("echo $HOME then $unknown", SKILLS)).toBeUndefined();
   });
 
-  it("moves a mid-prompt mention into a trailing slash command", () => {
+  it("keeps the whole request ahead of a mid-prompt slash command", () => {
     expect(planClaudeSkillDispatch("ok, now $implement all the tickets", SKILLS)).toEqual({
-      leadingText: "ok, now",
+      leadingText: "ok, now /implement all the tickets",
       commandText: "/implement all the tickets",
       skillName: "implement",
     });
@@ -28,7 +33,7 @@ describe("planClaudeSkillDispatch", () => {
 
   it("dispatches a known skill whose name begins with a digit", () => {
     expect(planClaudeSkillDispatch("use $2spec for this", SKILLS)).toEqual({
-      leadingText: "use",
+      leadingText: "use /2spec for this",
       commandText: "/2spec for this",
       skillName: "2spec",
     });
@@ -36,7 +41,7 @@ describe("planClaudeSkillDispatch", () => {
 
   it("dispatches the last mention and rewrites earlier ones inline", () => {
     expect(planClaudeSkillDispatch("$review the diff, then $implement the fixes", SKILLS)).toEqual({
-      leadingText: "/review the diff, then",
+      leadingText: "/review the diff, then /implement the fixes",
       commandText: "/implement the fixes",
       skillName: "implement",
     });
@@ -50,7 +55,7 @@ describe("planClaudeSkillDispatch", () => {
           SKILLS,
         ),
       ).toEqual({
-        leadingText: "/review the diff, then",
+        leadingText: "/review the diff, then /implement the fixes",
         commandText: "/implement the fixes",
         skillName: "implement",
       });
@@ -68,7 +73,7 @@ describe("planClaudeSkillDispatch", () => {
   });
 
   it("ignores currency amounts and compact monetary expressions", () => {
-    const skillsWithCurrency = new Set([...SKILLS, "20", "20k", "100M", "1e6"]);
+    const skillsWithCurrency = skillMap([...SKILLS.keys(), "20", "20k", "100M", "1e6"]);
     for (const symbol of ["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"]) {
       expect(
         planClaudeSkillDispatch(
@@ -77,5 +82,22 @@ describe("planClaudeSkillDispatch", () => {
         ),
       ).toBeUndefined();
     }
+  });
+
+  it("bounds notes for repeated user-only skills and leaves the native dispatch unannotated", () => {
+    const skills = new Map([
+      ["interrogate", { path: skillPath("interrogate"), userInvocationOnly: true }],
+      ["implement", { path: skillPath("implement"), userInvocationOnly: true }],
+    ]);
+    expect(
+      planClaudeSkillDispatch(
+        "$interrogate then $interrogate then $implement and $implement the fixes",
+        skills,
+      ),
+    ).toEqual({
+      leadingText: `/interrogate [The user invoked this skill. Follow the instructions at: ${skillPath("interrogate")}] then /interrogate then /implement and /implement the fixes`,
+      commandText: "/implement the fixes",
+      skillName: "implement",
+    });
   });
 });

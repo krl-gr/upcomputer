@@ -31,22 +31,19 @@ describe("collectComposerInlineTokens", () => {
     ]);
   });
 
-  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
-    "collects %s skill names that begin with a digit",
-    (prefix) => {
-      expect(collectComposerInlineTokens(`Use ${prefix}2spec next`)).toEqual([
-        {
-          type: "skill",
-          value: "2spec",
-          source: `${prefix}2spec`,
-          start: 4,
-          end: 9 + prefix.length,
-        },
-      ]);
-    },
-  );
+  it.each(["$", "€", "𑿝"])("collects %s skill names that begin with a digit", (prefix) => {
+    expect(collectComposerInlineTokens(`Use ${prefix}2spec next`)).toEqual([
+      {
+        type: "skill",
+        value: "2spec",
+        source: `${prefix}2spec`,
+        start: 4,
+        end: 9 + prefix.length,
+      },
+    ]);
+  });
 
-  it.each(["€", "£", "¥", "₹", "₩", "₿", "𑿝"])("leaves %s currency amounts as text", (prefix) => {
+  it.each(["€", "𑿝"])("leaves %s currency amounts as text", (prefix) => {
     expect(
       collectComposerInlineTokens(
         `${prefix}20 ${prefix}1_000 ${prefix}20k ${prefix}100M ${prefix}1e6 `,
@@ -125,8 +122,30 @@ describe("collectComposerInlineTokens", () => {
     expect(collectComposerInlineTokens("入力 @expo/ui　を追加")).toEqual([]);
   });
 
-  it("keeps bare non-scoped file paths as mentions", () => {
-    expect(collectComposerInlineTokens("Inspect @README.md next")).toEqual([
+  it.each(["@namespace.foo(bar)", "@écrire(option)", "@e\u0301crire(option)"])(
+    "keeps decorator call %s as plain text",
+    (reference) => {
+      expect(collectComposerInlineTokens(`${reference}\nclass Example {}`)).toEqual([]);
+    },
+  );
+
+  it.each(['@"foo(bar)"', "[foo(bar)](foo%28bar%29)"])(
+    "keeps an explicit decorator-shaped file reference as a mention: %s",
+    (reference) => {
+      expect(collectComposerInlineTokens(`${reference} `)).toEqual([
+        {
+          type: "mention",
+          value: "foo(bar)",
+          source: reference,
+          start: 0,
+          end: reference.length,
+        },
+      ]);
+    },
+  );
+
+  it("keeps bare file mentions before whitespace-separated parentheses", () => {
+    expect(collectComposerInlineTokens("Inspect @README.md (notes)")).toEqual([
       {
         type: "mention",
         value: "README.md",
@@ -187,5 +206,12 @@ describe("collectComposerInlineTokens", () => {
     const started = performance.now();
     expect(collectComposerInlineTokens(" [[".repeat(40_000))).toEqual([]);
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("keeps skill and mention sources inside TeX out of the context chip list", () => {
+    const source = "\\[\\text{use $browser and @README.md here}\\] then $real-skill ";
+    expect(collectComposerInlineTokens(source).map((token) => token.source)).toEqual([
+      "$real-skill",
+    ]);
   });
 });

@@ -625,6 +625,20 @@ describe("orchestration V2 contracts", () => {
     expect(event.payload.id).toBe(RunId.make("run-1"));
   });
 
+  it("accepts a thread Stop without a client-resolved run", () => {
+    expect(
+      decodeOrchestrationV2Command({
+        type: "thread.stop",
+        commandId: "stop-thread",
+        threadId: "thread-1",
+      }),
+    ).toEqual({
+      type: "thread.stop",
+      commandId: "stop-thread",
+      threadId: "thread-1",
+    });
+  });
+
   it("decodes app-owned delegated task commands", () => {
     const command = decodeOrchestrationV2Command({
       type: "delegated_task.request",
@@ -1486,6 +1500,7 @@ describe("background work kinds from older or newer servers", () => {
         { taskId: "bg-3", description: "Nightly", kind: "workflow", schedule: "0 3 * * *" },
         { taskId: "bg-4", description: "npm test", kind: "command" },
         { taskId: "bg-5", kind: "subagent", childThreadId: "thread-child" },
+        { taskId: "bg-6", kind: "subagent", providerInstanceId: "claudeAgent" },
       ],
     });
     expect(providerThread.pendingBackgroundTasks).toEqual([
@@ -1494,6 +1509,7 @@ describe("background work kinds from older or newer servers", () => {
       { taskId: "bg-3", description: "Nightly", kind: "background_task" },
       { taskId: "bg-4", description: "npm test", kind: "command" },
       { taskId: "bg-5", kind: "subagent", childThreadId: "thread-child" },
+      { taskId: "bg-6", kind: "subagent", providerInstanceId: "claudeAgent" },
     ]);
     const encoded = encodeOrchestrationV2ProviderThreadJson(providerThread).pendingBackgroundTasks;
     expect(encoded).toEqual(providerThread.pendingBackgroundTasks);
@@ -1512,6 +1528,7 @@ describe("background work kinds from older or newer servers", () => {
       "bg-3",
       "bg-4",
       "bg-5",
+      "bg-6",
     ]);
     expect(() =>
       decodeOrchestrationV2ProviderThreadJson({

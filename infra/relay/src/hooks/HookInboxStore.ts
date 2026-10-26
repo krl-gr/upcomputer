@@ -132,19 +132,21 @@ export const migrate = Effect.gen(function* () {
   `;
 });
 
-const setTarget = (baseUrl: string, options: { readonly resetFailures: boolean }) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* options.resetFailures
-      ? sql`
+const setTarget = Effect.fn("HookInboxStore.setTarget")(function* (
+  baseUrl: string,
+  options: { readonly resetFailures: boolean },
+) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* options.resetFailures
+    ? sql`
           INSERT INTO held_hooks_target (id, base_url) VALUES (1, ${baseUrl})
           ON CONFLICT (id) DO UPDATE SET base_url = excluded.base_url, failures = 0
         `
-      : sql`
+    : sql`
           INSERT INTO held_hooks_target (id, base_url) VALUES (1, ${baseUrl})
           ON CONFLICT (id) DO UPDATE SET base_url = excluded.base_url
         `;
-  });
+});
 
 const readTarget = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -218,18 +220,17 @@ const backlogSize = Effect.gen(function* () {
   return rows[0] ?? { count: 0, bytes: 0 };
 });
 
-const refusalReason = (hook: HeldHook) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const existing = yield* sql<{ readonly id: string }>`
+const refusalReason = Effect.fn("HookInboxStore.refusalReason")(function* (hook: HeldHook) {
+  const sql = yield* SqlClient.SqlClient;
+  const existing = yield* sql<{ readonly id: string }>`
       SELECT id FROM held_hooks WHERE id = ${hook.id}
     `;
-    if (existing.length > 0) return "already_held";
-    const backlog = yield* backlogSize;
-    if (backlog.count >= HOOK_INBOX_MAX_REQUESTS) return "max_requests";
-    if (backlog.bytes + hook.body.byteLength > HOOK_INBOX_MAX_BYTES) return "max_bytes";
-    return "max_per_hook";
-  });
+  if (existing.length > 0) return "already_held";
+  const backlog = yield* backlogSize;
+  if (backlog.count >= HOOK_INBOX_MAX_REQUESTS) return "max_requests";
+  if (backlog.bytes + hook.body.byteLength > HOOK_INBOX_MAX_BYTES) return "max_bytes";
+  return "max_per_hook";
+});
 
 export const wake = Effect.fn("HookInboxStore.wake")(function* (baseUrl: string) {
   if (!(yield* hasPending)) return false;
@@ -277,22 +278,26 @@ export const deliverDue = Effect.fn("HookInboxStore.deliverDue")(function* <R>(
   let longestWaitMs = 0;
   const busyHooks = new Set<string>();
 
-  const annotateRun = (result: string) =>
-    Effect.gen(function* () {
-      const backlog = yield* backlogSize;
-      yield* Effect.annotateCurrentSpan({
-        "relay.inbox.run_result": result,
-        "relay.inbox.sent": sent,
-        "relay.inbox.delivered": delivered,
-        "relay.inbox.busy_hooks": busyHooks.size,
-        "relay.inbox.expired": expired.length,
-        "relay.inbox.unreadable": unreadable,
-        "relay.inbox.consecutive_failures": failures,
-        "relay.inbox.longest_wait_ms": longestWaitMs,
-        "relay.inbox.held_count": backlog.count,
-        "relay.inbox.held_bytes": backlog.bytes,
-      });
+  // Delivery results and counts belong to the enclosing deliverDue span.
+  const annotateRun = Effect.fnUntraced(function* (result: string) {
+    const backlog = yield* backlogSize;
+    yield* Effect.annotateCurrentSpan({
+      "relay.inbox.run_result": result,
+      "relay.inbox.sent": sent,
+      "relay.inbox.delivered": delivered,
+      "relay.inbox.busy_hooks": busyHooks.size,
+      "relay.inbox.expired": expired.length,
+      "relay.inbox.unreadable": unreadable,
+      "relay.inbox.consecutive_failures": failures,
+      "relay.inbox.longest_wait_ms": longestWaitMs,
+      "relay.inbox.held_count": backlog.count,
+      "relay.inbox.held_bytes": backlog.bytes,
     });
+  });
+  const stillHeld = (seq: number) =>
+    sql<{ readonly seq: number }>`SELECT seq FROM held_hooks WHERE seq = ${seq}`.pipe(
+      Effect.map((rows) => rows.length > 0),
+    );
   // Pages run out only once every non-busy request has been tried, so a
   // backlog behind busy hooks never hides another hook's requests.
   pages: while (batch.length > 0) {
@@ -300,6 +305,11 @@ export const deliverDue = Effect.fn("HookInboxStore.deliverDue")(function* <R>(
       if (sent === DELIVERIES_PER_RUN) break pages;
 
       if (busyHooks.has(row.hook_key)) continue;
+      // Clear can discard this prefetched page while an upstream send is in flight.
+      if (!(yield* stillHeld(row.seq))) {
+        yield* annotateRun("cleared");
+        return null;
+      }
       const headers = decodeHeaders(row.headers);
       if (Option.isNone(headers)) {
         // Unreadable: it can never be delivered, and must not block the rest.
@@ -319,6 +329,11 @@ export const deliverDue = Effect.fn("HookInboxStore.deliverDue")(function* <R>(
         headers: headers.value,
         body: row.body,
       });
+      // A cleared request must neither advance this run nor schedule a retry.
+      if (!(yield* stillHeld(row.seq))) {
+        yield* annotateRun("cleared");
+        return null;
+      }
       if (outcome === "unreachable") {
         failures = yield* countFailure;
         yield* annotateRun("unreachable");

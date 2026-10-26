@@ -1,15 +1,15 @@
+import { Button } from "../../components/ui/Button";
 import deviceStreamScript from "@t3tools/mobile-device-stream";
 import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type Ref,
 } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
 import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
 
@@ -17,6 +17,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
 
 import {
+  deviceStreamBaseUrl,
   deviceStreamDocument,
   deviceStreamMessage,
   type DeviceStreamConfiguration,
@@ -52,6 +53,7 @@ export function DeviceStreamWebView({
       key={`${attempt}:${configuration}`}
       ref={ref}
       configuration={configuration}
+      baseUrl={deviceStreamBaseUrl(Platform.OS, props.platform, props.access.httpBase)}
       background={props.colors.background}
       onUnauthorized={props.onUnauthorized}
       onInputConnected={props.onInputConnected}
@@ -77,6 +79,7 @@ export function DeviceStreamWebView({
 function DeviceStreamDocumentView({
   ref,
   configuration,
+  baseUrl,
   background,
   onUnauthorized,
   onInputConnected,
@@ -85,6 +88,7 @@ function DeviceStreamDocumentView({
   onRecoverProcess,
 }: NativeStreamBridge & {
   readonly configuration: string;
+  readonly baseUrl: string;
   readonly background: string;
   readonly onRetry: () => void;
   readonly onStreaming: () => void;
@@ -112,14 +116,10 @@ function DeviceStreamDocumentView({
     const timer = setTimeout(bootstrapTimedOut, 15_000);
     return () => clearTimeout(timer);
   }, [started]);
-  const source = useMemo(
-    () => ({
-      html: deviceStreamDocument(configuration, deviceStreamScript),
-      // Android WebCodecs needs a secure document; streams still use the environment's URLs.
-      baseUrl: Platform.OS === "android" ? "https://localhost/" : "file:///",
-    }),
-    [configuration],
-  );
+  const source = {
+    html: deviceStreamDocument(configuration, deviceStreamScript),
+    baseUrl,
+  };
   const command = (button: keyof DeviceStreamRef) => {
     webView.current?.injectJavaScript(
       `window.T3DeviceStream?.command(${JSON.stringify(button)}); true;`,
@@ -195,13 +195,9 @@ function DeviceStreamDocumentView({
             {status === "error" ? error : "Connecting to device..."}
           </AppText>
           {status === "error" ? (
-            <Pressable
-              accessibilityRole="button"
-              className="rounded-full border border-secondary-border bg-secondary px-6 py-3"
-              onPress={onRetry}
-            >
-              <AppText className="text-secondary-foreground">Reconnect</AppText>
-            </Pressable>
+            <View className="items-center">
+              <Button label="Reconnect" tone="secondary" onPress={onRetry} />
+            </View>
           ) : null}
         </View>
       ) : null}

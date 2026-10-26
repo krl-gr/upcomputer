@@ -1,9 +1,15 @@
 import type { ClientSettings } from "@t3tools/contracts/settings";
-import type { AssistantCitation, ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type {
+  AssistantCitation,
+  EnvironmentId,
+  ResolvedKeybindingsConfig,
+} from "@t3tools/contracts";
+import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,
 } from "@t3tools/shared/assistantCitations";
+import { isPathWord } from "@t3tools/shared/composerTrigger";
 import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
@@ -22,11 +28,25 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+export function isPathSuggestionCurrent(
+  searchTarget: ComposerPathSearchTarget,
+  trigger: ComposerTrigger | null,
+  environmentId: EnvironmentId | null,
+  cwd: string | null,
+) {
+  return (
+    trigger?.kind === "path" &&
+    searchTarget.environmentId === environmentId &&
+    searchTarget.cwd === cwd &&
+    searchTarget.query === trigger.query.trim()
+  );
+}
+
 export function formatAssistantCitationForComposer(citation: AssistantCitation, comment = "") {
   return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-function composerRequiresModifier(
+export function composerRequiresModifier(
   sendShortcut: ClientSettings["sendShortcut"] | undefined,
   prompt: string,
 ) {
@@ -40,14 +60,15 @@ export function composerSubmissionIntentForKey(input: {
   event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
   keybindings: ResolvedKeybindingsConfig;
   platform?: string;
-  isMobileViewport: boolean;
+  isSoftwareKeyboardOpen: boolean;
   isDraftThread: boolean;
   isRunning?: boolean;
   sendShortcut?: ClientSettings["sendShortcut"];
   prompt?: string;
 }): ComposerSubmissionIntent | null {
   const { event } = input;
-  if (input.isMobileViewport || event.isComposing || event.keyCode === 229 || event.repeat)
+  if (event.isComposing || event.keyCode === 229 || event.repeat) return null;
+  if (input.isSoftwareKeyboardOpen && event.key === "Enter" && !event.metaKey && !event.ctrlKey)
     return null;
   const command = resolveShortcutCommand(event, input.keybindings, {
     ...(input.platform === undefined ? {} : { platform: input.platform }),
@@ -55,6 +76,7 @@ export function composerSubmissionIntentForKey(input: {
       composerFocus: true,
       draftThreadRoute: input.isDraftThread,
       turnRunning: input.isRunning === true,
+      composerRequiresModifier: composerRequiresModifier(input.sendShortcut, input.prompt ?? ""),
     },
   });
   if (command === "composer.sendAlternate" && input.isRunning) return "alternate";
@@ -261,6 +283,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
   if (token.startsWith("/")) {
+    if (isPathWord(text, tokenStart, cursor, isWhitespace)) return null;
     return {
       kind: "slash-command",
       query: token.slice(1),

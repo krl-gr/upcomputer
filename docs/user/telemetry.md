@@ -1,18 +1,25 @@
 # Product usage data
 
 The T3 Code server sends product usage events to PostHog, associated with a hashed account or
-installation identifier. Events include the provider, model, reasoning effort, permission mode,
-turn result, duration, and main-agent token totals when available. During setup they also include
-which welcome steps you reached, which agent you tried to install or sign in to, and whether each
-agent CLI is installed (with its version) and signed in.
+installation identifier. To count how many installations one person uses, the server also sends
+hashed account identifiers: your UpComputer Connect account, your OpenAI and Claude accounts when
+you are signed in, and a random identifier for each device that connects. Events include the
+provider, model, reasoning effort, permission mode, turn result, duration, release channel, and
+main-agent token totals when available. During setup they also include which welcome steps you
+reached, which agent you tried to install or sign in to, and whether each agent CLI is installed
+(with its version) and signed in.
 
 Events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
 raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 
-To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
-starting it. This stops product events from being recorded or sent.
+T3 Code also sends relay connection traces to Axiom to diagnose T3 Connect connectivity.
 
-The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+To disable product events and relay tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the server's
+environment before starting it. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
+`OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a browser, including one the
+`t3` CLI opens, does not read these variables.
+
+The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
 ## Export diagnostics to your own receiver

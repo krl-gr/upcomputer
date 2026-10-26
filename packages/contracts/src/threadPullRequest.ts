@@ -101,10 +101,14 @@ export type ThreadPullRequestWatch = typeof ThreadPullRequestWatch.Type;
 export const ThreadPullRequestLink = Schema.Struct({
   ...ThreadPullRequestKey.fields,
   url: TrimmedNonEmptyString,
+  /** An actual browser or clone URL; older agent display URLs may be synthesized. */
+  repositoryWebUrl: Schema.optional(TrimmedNonEmptyString),
   source: ThreadPullRequestLinkSource,
   linkedAt: IsoDateTime,
   snapshot: Schema.NullOr(ThreadPullRequestSnapshot),
   stack: Schema.NullOr(ThreadPullRequestStack),
   watch: Schema.optional(ThreadPullRequestWatch),
+  /** The last watch as it ended. Watching again starts from it, so the thread is not told twice. */
+  endedWatch: Schema.optional(ThreadPullRequestWatch),
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;

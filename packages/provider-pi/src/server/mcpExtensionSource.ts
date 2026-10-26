@@ -368,10 +368,17 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     reconcileOnPrompt?.(ctx);
     const instructions = await userInstructions();
-    const orchestration =
-      endpoint === undefined || token === undefined || env(ORCHESTRATION_INSTRUCTIONS_ENV) === "omit"
-        ? ""
-        : "\\n\\n" + ORCHESTRATION_INSTRUCTIONS;
+    const wantsOrchestration =
+      endpoint !== undefined && token !== undefined && env(ORCHESTRATION_INSTRUCTIONS_ENV) !== "omit";
+    const sections = event.systemPromptOptions?.sections;
+    if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
+      // Keep guidance in Pi's prompt sections; a full prompt override bypasses
+      // Pi's later section rendering, so that case appends to the prompt below.
+      if (wantsOrchestration) sections.t3_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      if (instructions !== "") sections.t3_code_user_instructions = instructions;
+      return undefined;
+    }
+    const orchestration = wantsOrchestration ? "\\n\\n" + ORCHESTRATION_INSTRUCTIONS : "";
     return {
       systemPrompt:
         event.systemPrompt + orchestration + (instructions === "" ? "" : "\\n\\n" + instructions),

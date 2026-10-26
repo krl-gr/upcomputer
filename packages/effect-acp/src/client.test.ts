@@ -268,6 +268,42 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
     }),
   );
 
+  it.effect("keeps the JSON-RPC error of a failed v2 idle", () =>
+    Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const delivered = yield* Deferred.make<AcpCompat.SessionNotification>();
+      const acp = yield* AcpClient.make(stdio);
+      yield* acp.handleSessionUpdate((notification) =>
+        Deferred.succeed(delivered, notification).pipe(Effect.asVoid),
+      );
+      const error = { code: -32000, message: "Please sign in to Claude", data: { retry: false } };
+      const idle = {
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "error",
+        error,
+      } as const;
+
+      yield* Queue.offer(
+        input,
+        yield* encodeJsonl(SessionUpdateNotification, {
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId: "session-1",
+            update: idle,
+          },
+        }),
+      );
+
+      const { update } = yield* Deferred.await(delivered);
+      assert.deepEqual(
+        update.sessionUpdate === "state_update" && update.state === "idle" ? update : undefined,
+        idle,
+      );
+    }),
+  );
+
   it.effect("reports idle child termination and rejects later requests and notifications", () =>
     Effect.gen(function* () {
       const handle = yield* makeHandle();
@@ -753,7 +789,7 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
     }),
   );
 
-  it.effect("uses distinct ids for RPC calls and extension requests", () =>
+  it.effect("keeps RPC ids within int32 and apart from extension ids", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();
       const scope = yield* Scope.make();
@@ -794,6 +830,11 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
         : yield* decodedExt(firstOutbound);
 
       assert.notEqual(initializeRequest.id, extRequest.id);
+      // Keep locally generated ids compatible with SDKs that decode signed int32.
+      assert.typeOf(initializeRequest.id, "number");
+      assert.equal(initializeRequest.id, 2 ** 30);
+      assert.isAtMost(Number(initializeRequest.id), 2 ** 31 - 1);
+      assert.equal(extRequest.id, 1);
 
       yield* Queue.offer(
         input,
@@ -821,6 +862,23 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
 
       yield* Fiber.join(initializeFiber);
       assert.deepEqual(yield* Fiber.join(extFiber), { ok: true });
+
+      const sessionFiber = yield* acp.agent
+        .createSession({ cwd: "/tmp", mcpServers: [] })
+        .pipe(Effect.forkScoped);
+      const sessionRequest = yield* Schema.decodeEffect(
+        Schema.fromJsonString(jsonRpcRequest("session/new", AcpSchema.NewSessionRequest)),
+      )(yield* Queue.take(output));
+      assert.equal(sessionRequest.id, 2 ** 30 + 1);
+      yield* Queue.offer(
+        input,
+        yield* encodeJsonl(jsonRpcResponse(AcpSchema.NewSessionResponse), {
+          jsonrpc: "2.0",
+          id: sessionRequest.id,
+          result: { sessionId: "session-1" },
+        }),
+      );
+      assert.equal((yield* Fiber.join(sessionFiber)).sessionId, "session-1");
       yield* Scope.close(scope, Exit.void);
     }),
   );

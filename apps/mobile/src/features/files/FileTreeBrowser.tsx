@@ -1,8 +1,9 @@
+import { Button } from "../../components/ui/Button";
 import { LegendList } from "@legendapp/list/react-native";
 import type { ProjectEntry } from "@t3tools/contracts";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -39,7 +40,7 @@ function ancestorPaths(path: string): ReadonlyArray<string> {
   return ancestors;
 }
 
-const FileTreeRow = memo(function FileTreeRow(props: {
+const FileTreeRow = function FileTreeRow(props: {
   readonly item: VisibleFileTreeNode;
   readonly selected: boolean;
   readonly expanded: boolean;
@@ -102,7 +103,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
       ) : null}
     </Pressable>
   );
-});
+};
 
 export function FileTreeBrowser(props: {
   readonly entries: ReadonlyArray<ProjectEntry>;
@@ -110,6 +111,7 @@ export function FileTreeBrowser(props: {
   readonly isPending: boolean;
   readonly isRefreshing: boolean;
   readonly searchQuery: string;
+  readonly searchResultPaths: ReadonlySet<string> | null;
   readonly searchTruncated: boolean;
   readonly selectedPath: string | null;
   readonly loadingDirectories: ReadonlySet<string>;
@@ -133,24 +135,18 @@ export function FileTreeBrowser(props: {
     loadingDirectories,
     selectedPath: controlledSelectedPath,
   } = props;
-  const controlledSelectedPathRef = useRef(controlledSelectedPath);
   const pendingSelectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  controlledSelectedPathRef.current = controlledSelectedPath;
 
   const selectedPath =
     pendingSelection?.selectedPathAtPress === controlledSelectedPath
       ? pendingSelection.path
       : controlledSelectedPath;
-  const tree = useMemo(() => cachedFileTree(props.entries), [props.entries]);
-  const visibleNodes = useMemo(
-    () =>
-      flattenFileTree({
-        nodes: tree,
-        expanded: expandedPaths,
-        searchQuery: props.searchQuery,
-      }),
-    [expandedPaths, props.searchQuery, tree],
-  );
+  const tree = cachedFileTree(props.entries);
+  const visibleNodes = flattenFileTree({
+    nodes: tree,
+    expanded: expandedPaths,
+    searchResultPaths: props.searchResultPaths,
+  });
 
   useEffect(() => {
     if (!controlledSelectedPath) {
@@ -182,64 +178,45 @@ export function FileTreeBrowser(props: {
     [],
   );
 
-  const toggleDirectory = useCallback(
-    (path: string, expand: boolean) => {
-      if (expand) onLoadDirectory(path);
-      setExpandedPaths((current) => {
-        const next = new Set(current);
-        if (next.has(path)) {
-          next.delete(path);
-        } else {
-          next.add(path);
-        }
-        return next;
-      });
-    },
-    [onLoadDirectory],
-  );
-  const handleSelectFile = useCallback(
-    (path: string) => {
-      if (pendingSelectionTimeoutRef.current !== null) {
-        clearTimeout(pendingSelectionTimeoutRef.current);
+  const toggleDirectory = (path: string, expand: boolean) => {
+    if (expand) onLoadDirectory(path);
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
       }
-      setPendingSelection({
-        path,
-        selectedPathAtPress: controlledSelectedPathRef.current,
-      });
-      pendingSelectionTimeoutRef.current = setTimeout(() => {
-        pendingSelectionTimeoutRef.current = null;
-        setPendingSelection((current) => (current?.path === path ? null : current));
-      }, OPTIMISTIC_SELECTION_TIMEOUT_MS);
-      onSelectFile(path);
-    },
-    [onSelectFile],
-  );
-  const renderItem = useCallback(
-    ({ item }: { readonly item: VisibleFileTreeNode }) => (
-      <FileTreeRow
-        item={item}
-        selected={item.node.kind === "file" && item.node.path === selectedPath}
-        expanded={expandedPaths.has(item.node.path)}
-        loading={loadingDirectories.has(item.node.path)}
-        onPressDirectory={toggleDirectory}
-        onPreviewFile={onPreviewFile}
-        onPressFile={handleSelectFile}
-      />
-    ),
-    [
-      expandedPaths,
-      handleSelectFile,
-      onPreviewFile,
-      loadingDirectories,
-      selectedPath,
-      toggleDirectory,
-    ],
+      return next;
+    });
+  };
+  const handleSelectFile = (path: string) => {
+    if (pendingSelectionTimeoutRef.current !== null) {
+      clearTimeout(pendingSelectionTimeoutRef.current);
+    }
+    setPendingSelection({
+      path,
+      selectedPathAtPress: controlledSelectedPath,
+    });
+    pendingSelectionTimeoutRef.current = setTimeout(() => {
+      pendingSelectionTimeoutRef.current = null;
+      setPendingSelection((current) => (current?.path === path ? null : current));
+    }, OPTIMISTIC_SELECTION_TIMEOUT_MS);
+    onSelectFile(path);
+  };
+  const renderItem = ({ item }: { readonly item: VisibleFileTreeNode }) => (
+    <FileTreeRow
+      item={item}
+      selected={item.node.kind === "file" && item.node.path === selectedPath}
+      expanded={expandedPaths.has(item.node.path)}
+      loading={loadingDirectories.has(item.node.path)}
+      onPressDirectory={toggleDirectory}
+      onPreviewFile={onPreviewFile}
+      onPressFile={handleSelectFile}
+    />
   );
 
-  const extraData = useMemo(
-    () => ({ expandedPaths, loadingDirectories, selectedPath }),
-    [expandedPaths, loadingDirectories, selectedPath],
-  );
+  const extraData = { expandedPaths, loadingDirectories, selectedPath };
 
   // UIKit owns the header inset on every supported iOS version. Keep the
   // list as direct screen content so automatic inset adjustment can find it.
@@ -288,14 +265,14 @@ export function FileTreeBrowser(props: {
               >
                 {props.error}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={props.onRefresh}
-                disabled={props.isPending}
-                className="mt-3 min-h-11 self-start justify-center rounded-full bg-subtle px-4 active:opacity-70 disabled:opacity-50"
-              >
-                <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
-              </Pressable>
+              <View className="mt-3">
+                <Button
+                  label="Try again"
+                  tone="secondary"
+                  onPress={props.onRefresh}
+                  disabled={props.isPending}
+                />
+              </View>
             </>
           ) : props.isPending ? (
             <AppActivityIndicator size="small" />

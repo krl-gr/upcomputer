@@ -1,16 +1,12 @@
 import { useId, useState } from "react";
 import { Platform, View } from "react-native";
-import { FormSheet, Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
-import { useResolveClassNames, withUniwind } from "uniwind";
+import { FormSheet, ScreenStack } from "react-native-screens";
+import { useResolveClassNames } from "uniwind";
 
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
+import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
-const NativeScreen = withUniwind(Screen);
-const NativeHeader = withUniwind(ScreenStackHeaderConfig, {
-  color: { fromClassName: "tintColorClassName", styleProperty: "accentColor" },
-  titleColor: { fromClassName: "titleColorClassName", styleProperty: "accentColor" },
-});
 
 export type { SheetProps } from "./Sheet.types";
 import type { SheetProps } from "./Sheet.types";
@@ -55,10 +51,9 @@ export function Sheet(props: SheetProps) {
               headerRightBarButtonItems={[
                 {
                   type: "button",
-                  title: "Done",
-                  variant: "done",
+                  icon: { name: "xmark", type: "sfSymbol" },
                   accessibilityLabel: `Close ${props.title}`,
-                  identifier: `app-sheet-done-${screenId}`,
+                  identifier: `app-sheet-close-${screenId}`,
                   onPress: close,
                 },
               ]}

@@ -1,6 +1,6 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -17,7 +18,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
-import { getTelemetryIdentifier } from "./Identify.ts";
+import { getTelemetryIdentity } from "./Identify.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
 interface RecordedBatchRequest {
@@ -55,31 +56,113 @@ interface RecordedBatchBody {
 
 const SentBatch = Schema.fromJsonString(
   Schema.Struct({
-    batch: Schema.Array(Schema.Struct({ uuid: Schema.String, event: Schema.String })),
-  }),
-);
-
-type SentBatchEvent = (typeof SentBatch.Type)["batch"][number];
-
-const layerAcceptThenFailClient = (batches: Array<ReadonlyArray<SentBatchEvent>>) =>
-  Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make((request) =>
-      Effect.gen(function* () {
-        if (request.body._tag === "Uint8Array") {
-          const body = yield* Schema.decodeEffect(SentBatch)(
-            new TextDecoder().decode(request.body.body),
-          ).pipe(Effect.orDie);
-          batches.push(body.batch);
-        }
-        return yield* new HttpClientError.HttpClientError({
-          reason: new HttpClientError.TransportError({ request, cause: "connection reset" }),
-        });
+    batch: Schema.Array(
+      Schema.Struct({
+        uuid: Schema.String,
+        event: Schema.String,
+        distinct_id: Schema.String,
+        properties: Schema.Struct({
+          telemetryChannel: Schema.String,
+          installId: Schema.optionalKey(Schema.String),
+          ownerSource: Schema.optionalKey(Schema.String),
+          observedBy: Schema.optionalKey(Schema.String),
+        }),
       }),
     ),
+  }),
+);
+const decodeSentBatch = Schema.decodeEffect(SentBatch);
+type SentEvent = (typeof SentBatch.Type)["batch"][number];
+type Respond = (
+  request: HttpClientRequest.HttpClientRequest,
+) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
+
+/** The connection drops after the endpoint read the batch, so it may be stored. */
+const connectionReset: Respond = (request) =>
+  Effect.fail(
+    new HttpClientError.HttpClientError({
+      reason: new HttpClientError.TransportError({ request, cause: "connection reset" }),
+    }),
   );
 
-const SentEvents = Schema.fromJsonString(
+const respondWithStatus =
+  (status: number): Respond =>
+  (request) =>
+    Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })));
+
+// With server.started these fill exactly one batch of 20.
+const recordTwentyEvents = Effect.gen(function* () {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  for (let index = 0; index < 19; index += 1) {
+    yield* analytics.record("test.retry", { index });
+  }
+});
+
+const LIFECYCLE_EVENTS = new Set(["server.started", "server.stopped"]);
+// The server reports its own start and stop around every run.
+const withoutLifecycle = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) =>
+  batches.flat().filter((event) => !LIFECYCLE_EVENTS.has(event.event));
+const recordedBatches = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) =>
+  batches.filter((batch) => batch.some((event) => event.event === "test.retry"));
+
+/**
+ * Runs `record` (20 events by default, with server.started), then lets ten minutes of background
+ * flushes run against a client that answers every send with `respond`.
+ * Returns the sent batches.
+ */
+const sendForTenMinutes = (
+  respond: Respond,
+  record: Effect.Effect<
+    void,
+    never,
+    AnalyticsService.AnalyticsService | Effect.Services<typeof getTelemetryIdentity>
+  > = recordTwentyEvents,
+) =>
+  Effect.gen(function* () {
+    const batches: Array<ReadonlyArray<SentEvent>> = [];
+    const client = HttpClient.make((request) =>
+      Effect.gen(function* () {
+        if (request.body._tag === "Uint8Array") {
+          const body = yield* decodeSentBatch(new TextDecoder().decode(request.body.body)).pipe(
+            Effect.orDie,
+          );
+          batches.push(body.batch);
+        }
+        return yield* respond(request);
+      }),
+    );
+    const runtimeLayer = AnalyticsService.layer.pipe(
+      Layer.provideMerge(
+        ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
+      ),
+      Layer.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            T3CODE_TELEMETRY_ENABLED: true,
+            T3CODE_POSTHOG_KEY: "phc_test_key",
+            T3CODE_POSTHOG_HOST: "http://localhost",
+          }),
+        ),
+      ),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, "win32"),
+          Layer.succeed(HostProcess.Architecture, "x64"),
+          Layer.succeed(HttpClient.HttpClient, client),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      yield* record;
+      for (let second = 0; second < 600; second += 1) {
+        yield* TestClock.adjust("1 second");
+      }
+    }).pipe(Effect.provide(runtimeLayer));
+    return batches;
+  });
+
+const DesktopEvents = Schema.fromJsonString(
   Schema.Struct({
     batch: Schema.Array(
       Schema.Struct({
@@ -90,16 +173,16 @@ const SentEvents = Schema.fromJsonString(
     ),
   }),
 );
-type SentEvent = (typeof SentEvents.Type)["batch"][number];
-const decodeSentEvents = Schema.decodeEffect(SentEvents);
+type DesktopEvent = (typeof DesktopEvents.Type)["batch"][number];
+const decodeDesktopEvents = Schema.decodeEffect(DesktopEvents);
 
-const layerAcceptClient = (events: Array<SentEvent>) =>
+const layerAcceptClient = (events: Array<DesktopEvent>) =>
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
       Effect.gen(function* () {
         if (request.body._tag === "Uint8Array") {
-          const body = yield* decodeSentEvents(new TextDecoder().decode(request.body.body)).pipe(
+          const body = yield* decodeDesktopEvents(new TextDecoder().decode(request.body.body)).pipe(
             Effect.orDie,
           );
           events.push(...body.batch);
@@ -112,7 +195,7 @@ const layerAcceptClient = (events: Array<SentEvent>) =>
 /** One server run in desktop mode on a fixed state directory, until its scope closes. */
 const runDesktopServer = (
   baseDir: string,
-  events: Array<SentEvent>,
+  events: Array<DesktopEvent>,
   use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<void>,
   desktopEnv: Readonly<Record<string, string>> = {},
 ) =>
@@ -156,48 +239,108 @@ it("retryDelayMs doubles from 2s and stays under the 5 minute cap", () => {
 });
 
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
-  it.effect("a batch that keeps failing is retried with backoff, then dropped", () =>
+  it.effect("a batch that keeps failing is retried with the same uuids, then dropped", () =>
     Effect.gen(function* () {
-      const sent: Array<ReadonlyArray<SentBatchEvent>> = [];
-      const layerRuntime = AnalyticsService.layer.pipe(
-        Layer.provideMerge(
-          ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
-        ),
-        Layer.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromUnknown({
-              T3CODE_TELEMETRY_ENABLED: true,
-              T3CODE_POSTHOG_KEY: "phc_test_key",
-              T3CODE_POSTHOG_HOST: "http://localhost",
-            }),
-          ),
-        ),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcess.Platform, "win32"),
-            Layer.succeed(HostProcess.Architecture, "x64"),
-            layerAcceptThenFailClient(sent),
-          ),
+      const failures = {
+        "connection reset": connectionReset,
+        "408": respondWithStatus(408),
+        "429": respondWithStatus(429),
+        "503": respondWithStatus(503),
+      };
+      for (const [failure, respond] of Object.entries(failures)) {
+        const batches = recordedBatches(yield* sendForTenMinutes(respond));
+        assert.equal(batches.length, 5, failure);
+        const uuids = batches.map((batch) => batch.map((event) => event.uuid).join(","));
+        assert.equal(new Set(uuids).size, 1, `${failure}: every retry carries the same uuids`);
+        assert.equal(new Set(batches[0]?.map((event) => event.uuid)).size, 20, failure);
+      }
+    }),
+  );
+
+  it.effect("a batch the endpoint rejects is dropped without a retry", () =>
+    Effect.gen(function* () {
+      for (const status of [400, 401, 413]) {
+        const batches = recordedBatches(yield* sendForTenMinutes(respondWithStatus(status)));
+        assert.equal(batches.length, 1, `status ${status}`);
+      }
+    }),
+  );
+
+  it.effect("events carry the build's telemetry channel, or dev when none is set", () =>
+    Effect.gen(function* () {
+      const channels = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) => [
+        ...new Set(batches.flat().map((event) => event.properties.telemetryChannel)),
+      ];
+      assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["dev"]);
+
+      // Stands in for the value the bundler writes in at build time.
+      vi.stubGlobal("__T3CODE_TELEMETRY_CHANNEL__", "nightly");
+      assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["nightly"]);
+    }).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllGlobals()))),
+  );
+
+  it.effect("each owner is sent once per process, and every event carries the install id", () =>
+    Effect.gen(function* () {
+      let identity: Effect.Success<typeof getTelemetryIdentity> | null = null;
+      const batches = yield* sendForTenMinutes(
+        respondWithStatus(204),
+        Effect.gen(function* () {
+          identity = yield* getTelemetryIdentity;
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          const connect = { source: "connect", ownerId: "a".repeat(64) } as const;
+          yield* analytics.recordOwners([connect, connect], "server");
+          yield* analytics.recordOwners(
+            [connect, { source: "device", ownerId: "b".repeat(64) }],
+            "client",
+          );
+        }),
+      );
+      const events = withoutLifecycle(batches);
+
+      assert.deepEqual(
+        events.map((event) => [
+          event.event,
+          event.properties.ownerSource,
+          event.properties.observedBy,
+        ]),
+        [
+          ["install.owner_observed", "connect", "server"],
+          ["install.owner_observed", "connect", "client"],
+          ["install.owner_observed", "device", "client"],
+        ],
+      );
+      const { distinctId, installId } = identity!;
+      assert.isString(installId);
+      assert.isTrue(
+        events.every(
+          (event) => event.distinct_id === distinctId && event.properties.installId === installId,
         ),
       );
+    }),
+  );
 
-      yield* Effect.gen(function* () {
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        // With server.started these fill exactly one batch.
-        for (let index = 0; index < 19; index += 1) {
-          yield* analytics.record("test.retry", { index });
-        }
-        for (let second = 0; second < 600; second += 1) {
-          yield* TestClock.adjust("1 second");
-        }
-      }).pipe(Effect.provide(layerRuntime));
+  it.effect("client owner reports cannot use up the server's owner cap", () =>
+    Effect.gen(function* () {
+      const batches = yield* sendForTenMinutes(
+        respondWithStatus(204),
+        Effect.gen(function* () {
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          yield* analytics.recordOwners(
+            Array.from({ length: 1_001 }, (_, index) => ({
+              source: "device" as const,
+              ownerId: index.toString(16).padStart(64, "0"),
+            })),
+            "client",
+          );
+          // The event buffer also holds 1,000, so send the client events first.
+          yield* analytics.flush;
+          yield* analytics.recordOwners([{ source: "connect", ownerId: "a".repeat(64) }], "server");
+        }),
+      );
+      const owners = withoutLifecycle(batches).map((event) => event.properties.observedBy);
 
-      // The shutdown flush tries server.stopped once more on its own.
-      const batches = sent.filter((batch) => batch.some((event) => event.event === "test.retry"));
-      assert.equal(batches.length, 5);
-      const uuids = batches.map((batch) => batch.map((event) => event.uuid).join(","));
-      assert.equal(new Set(uuids).size, 1, "every retry carries the same uuids");
-      assert.equal(new Set(batches[0]?.map((event) => event.uuid)).size, 20);
+      assert.equal(owners.filter((observedBy) => observedBy === "client").length, 1_000);
+      assert.equal(owners.filter((observedBy) => observedBy === "server").length, 1);
     }),
   );
 
@@ -247,8 +390,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
 
       yield* Effect.gen(function* () {
         yield* Layer.launch(layerBatchServer).pipe(Effect.forkScoped);
-        const telemetryIdentifier = yield* getTelemetryIdentifier;
-        assert.equal(telemetryIdentifier !== null, true);
+        const { distinctId } = yield* getTelemetryIdentity;
+        assert.equal(distinctId !== null, true);
         const analytics = yield* AnalyticsService.AnalyticsService;
 
         for (let index = 0; index < 45; index += 1) {
@@ -311,7 +454,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-telemetry-first-launch-",
       });
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
 
       yield* runDesktopServer(baseDir, events, (analytics) =>
         Effect.gen(function* () {
@@ -345,7 +488,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-telemetry-launch-",
       });
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
       const desktop = {
         T3CODE_DESKTOP_VERSION: "0.0.35",
         T3CODE_DESKTOP_RELEASE_CHANNEL: "latest",
@@ -395,7 +538,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         path.join(baseDir, "userdata", "telemetry-first-launch-v1"),
         "1\n",
       );
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
 
       yield* runDesktopServer(baseDir, events, (analytics) =>
         analytics.recordMilestone("app.first_message_sent"),

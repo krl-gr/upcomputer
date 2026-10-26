@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import {
   AuthStandardClientScopes,
+  EnvironmentAuthenticatedPrincipal,
   type EnvironmentCloudLinkStateResult,
   type EnvironmentCloudPreferencesRequest,
   type EnvironmentCloudRelayConfigResult,
@@ -69,6 +70,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { makeRelayEnvironmentClient } from "../relay/relayEnvironmentClient.ts";
+import { loopbackUrlHostForAddress } from "../startupAccess.ts";
 import {
   type CliDesiredLinkMode,
   readCliDesiredCloudLink,
@@ -94,6 +96,7 @@ import {
   RELAY_URL_SECRET,
 } from "./config.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
+import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
 import { observeRelayResponseDate, observeRelayTokenIssuedAt, RelayClock } from "./RelayClock.ts";
@@ -290,7 +293,9 @@ const isPermanentLinkError = Schema.is(
 );
 
 export const shouldRetryCloudLink = (error: unknown): boolean =>
-  shouldRetryRelayRequest(error) && !isPermanentLinkError(error);
+  shouldRetryRelayRequest(error) &&
+  !isPermanentLinkError(error) &&
+  !(CliTokenManager.isCloudCliCredentialRefreshError(error) && error.requiresLogin);
 
 const rollbackFailed = (cause: unknown) =>
   Effect.logWarning("Could not roll back a UpComputer Connect preference", { cause });
@@ -418,14 +423,18 @@ export class CloudLink extends Context.Service<
   {
     /**
      * Signs the proof the relay asks for to link this environment. The request
-     * must reach this server directly on the loopback origin it names.
+     * must reach this server directly. Desktop bootstrap sessions may use the
+     * WSL IP; all other sessions must use the loopback origin they name.
      */
     readonly linkProof: (
       request: RelayLinkProofRequest,
       httpRequest: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<
       RelayEnvironmentLinkProof,
-      CloudLinkOriginInvalidError | CloudLinkInternalError | EnvironmentAuth.ServerAuthInternalError
+      | CloudLinkOriginInvalidError
+      | CloudLinkInternalError
+      | EnvironmentAuth.ServerAuthInternalError,
+      EnvironmentAuthenticatedPrincipal
     >;
     readonly applyRelayConfig: (
       payload: RelayEnvironmentConfigRequest,
@@ -522,6 +531,7 @@ const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const endpointRuntime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;
+  const reachability = yield* ConnectReachability.ConnectReachability;
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const cliTokenManager = yield* CliTokenManager.CloudCliTokenManager;
   const httpClient = yield* HttpClient.HttpClient;
@@ -582,6 +592,7 @@ const make = Effect.gen(function* () {
   const makeCloudLinkProof = Effect.fn("environment.cloud.makeLinkProof")(function* (
     request: RelayLinkProofRequest,
     requestUrl: string,
+    allowNonLoopbackRequestHost = false,
   ) {
     const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
     if (
@@ -589,6 +600,7 @@ const make = Effect.gen(function* () {
       !isAllowedEndpointOrigin({
         origin: request.origin,
         requestUrl,
+        allowNonLoopbackRequestHost,
       })
     ) {
       return yield* new CloudLinkOriginInvalidError({ origin: "endpoint" });
@@ -635,8 +647,13 @@ const make = Effect.gen(function* () {
       if (requestUrl === null || hasForwardedAuthorityHeaders(httpRequest)) {
         return yield* new CloudLinkOriginInvalidError({ origin: "endpoint" });
       }
-      const proof = yield* makeCloudLinkProof(request, requestUrl);
-      return proof satisfies RelayEnvironmentLinkProof;
+      const principal = yield* EnvironmentAuthenticatedPrincipal;
+      // WSL desktop requests use the distro IP; only the server-issued bootstrap subject qualifies.
+      return yield* makeCloudLinkProof(
+        request,
+        requestUrl,
+        principal.subject === "desktop-bootstrap",
+      );
     },
     Effect.catchIf(ServerSecretStore.isSecretStoreError, internalError("generate-link-proof")),
     Effect.catchTags({ PlatformError: internalError("generate-link-proof") }),
@@ -1218,7 +1235,7 @@ const make = Effect.gen(function* () {
           return yield* new CloudLinkInternalError({ operation: "resolve-server-origin" });
         }
         const registration = yield* registerManagedTunnelRecovery(
-          `http://127.0.0.1:${address.port}`,
+          `http://${loopbackUrlHostForAddress(address)}:${address.port}`,
         ).pipe(
           Effect.retry({
             times: 2,
@@ -1336,6 +1353,7 @@ const make = Effect.gen(function* () {
       publishAgentActivity,
       holdWebhooks,
       revoked,
+      latestReachability,
     ] = yield* Effect.all(
       [
         secrets.get(CLOUD_LINKED_USER_ID),
@@ -1345,8 +1363,9 @@ const make = Effect.gen(function* () {
         secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
         secrets.get(HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET),
         secrets.get(CLOUD_LINK_REVOKED),
+        reachability.latest,
       ],
-      { concurrency: 7 },
+      { concurrency: 8 },
     );
     return {
       linked: Option.isSome(cloudUserId),
@@ -1360,6 +1379,7 @@ const make = Effect.gen(function* () {
         : false,
       holdWebhooksWhileOffline:
         Option.isSome(holdWebhooks) && bytesToString(holdWebhooks.value) === "true",
+      ...(Option.isSome(latestReachability) ? { reachability: latestReachability.value } : {}),
     } satisfies EnvironmentCloudLinkStateResult;
   });
 

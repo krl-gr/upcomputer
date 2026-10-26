@@ -70,11 +70,15 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
   if (
     (catalogState.connectionState === "available" ||
       catalogState.connectionState === "offline" ||
-      catalogState.connectionState === "error") &&
+      catalogState.connectionState === "error" ||
+      catalogState.connectionState === "unsupported") &&
     !catalogState.hasLoadedShellSnapshot
   ) {
     return {
-      title: "Environment unavailable",
+      title:
+        catalogState.connectionState === "unsupported"
+          ? "Client not supported"
+          : "Environment unavailable",
       detail:
         catalogState.connectionError ??
         "The saved environment is offline. Check the URL or start the environment, then retry.",
@@ -237,24 +241,23 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     if (!scratchEnvironment || scratchStartInFlightRef.current) return;
     const environmentId = scratchEnvironment.environmentId;
     scratchStartInFlightRef.current = true;
-    try {
-      const result = await openScratch({ environmentId, input: {} });
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          Dialog.alert(
-            "Could not start without a project",
-            error instanceof Error
-              ? error.message
-              : "The folder for threads without a project could not be created.",
-          );
-        }
-        return;
-      }
-      await selectProject(result.value);
-    } finally {
+    const result = await openScratch({ environmentId, input: {} });
+    if (result._tag === "Failure") {
       scratchStartInFlightRef.current = false;
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        Dialog.alert(
+          "Could not start without a project",
+          error instanceof Error
+            ? error.message
+            : "The folder for threads without a project could not be created.",
+        );
+      }
+      return;
     }
+    // selectProject handles its own failures, so this never throws.
+    await selectProject(result.value);
+    scratchStartInFlightRef.current = false;
   }
 
   useEffect(() => {
@@ -401,33 +404,28 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   ) : null}
                 </>
               ) : !catalogState.hasReadyEnvironment ? (
-                <Pressable
-                  className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                  onPress={() => navigation.navigate("ConnectionsNew")}
-                >
-                  <Text className="text-sm font-t3-bold text-primary-foreground">
-                    Add environment
-                  </Text>
-                </Pressable>
+                <View className="mt-1">
+                  <Button
+                    label="Add environment"
+                    tone="primary"
+                    onPress={() => navigation.navigate("ConnectionsNew")}
+                  />
+                </View>
               ) : (
                 <>
-                  <Pressable
-                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                    onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-                  >
-                    <Text className="text-sm font-t3-bold text-primary-foreground">
-                      Add new project
-                    </Text>
-                  </Pressable>
+                  <View className="mt-1">
+                    <Button
+                      label="Add new project"
+                      tone="primary"
+                      onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+                    />
+                  </View>
                   {canStartScratch ? (
-                    <Pressable
-                      className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
+                    <Button
+                      label="Start without a project"
+                      tone="secondary"
                       onPress={() => void startScratch()}
-                    >
-                      <Text className="text-sm font-t3-bold text-foreground">
-                        Start without a project
-                      </Text>
-                    </Pressable>
+                    />
                   ) : null}
                 </>
               )}

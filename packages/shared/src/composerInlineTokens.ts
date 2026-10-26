@@ -1,3 +1,5 @@
+import { markdownMathRanges } from "./markdownMath.ts";
+
 export type ComposerInlineToken =
   | {
       readonly type: "mention";
@@ -40,6 +42,7 @@ const URI_SCHEME_REGEX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 const SCOPED_PACKAGE_REFERENCE_REGEX =
   /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:\/[^\s@"]+)*$/;
+const DECORATOR_CALL_REFERENCE_REGEX = /^[\p{ID_Start}_$][\p{ID_Continue}.$\u200c\u200d]*\(/u;
 
 function collectMentionTokens(text: string): ComposerInlineToken[] {
   const matches: ComposerInlineToken[] = [];
@@ -75,7 +78,11 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
     const prefix = match[1] ?? "";
     const quotedPath = match[2];
     const path = quotedPath !== undefined ? quotedPath.replace(/\\(.)/g, "$1") : (match[3] ?? "");
-    if (!path || (quotedPath === undefined && SCOPED_PACKAGE_REFERENCE_REGEX.test(path))) {
+    if (
+      !path ||
+      (quotedPath === undefined &&
+        (SCOPED_PACKAGE_REFERENCE_REGEX.test(path) || DECORATOR_CALL_REFERENCE_REGEX.test(path)))
+    ) {
       continue;
     }
     const start = (match.index ?? 0) + prefix.length;
@@ -129,5 +136,12 @@ export function collectComposerInlineTokens(
     }
   }
 
-  return [...matches].sort((left, right) => left.start - right.start);
+  // TeX can contain literal skill and file tokens, especially inside \text{}.
+  // They remain formula source rather than becoming composer context chips.
+  const math = matches.length > 0 ? markdownMathRanges(text) : [];
+  return matches
+    .filter(
+      (match) => !math.some((formula) => match.start < formula.end && match.end > formula.start),
+    )
+    .sort((left, right) => left.start - right.start);
 }

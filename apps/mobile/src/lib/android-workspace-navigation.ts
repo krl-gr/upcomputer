@@ -1,8 +1,31 @@
-import type { NavigationState } from "@react-navigation/native";
+import type { CommonActions, NavigationState } from "@react-navigation/native";
 
 export type AndroidWorkspaceDestination =
   | { readonly name: "Thread"; readonly params: ReactNavigation.RootParamList["Thread"] }
   | { readonly name: "PullRequest"; readonly params: ReactNavigation.RootParamList["PullRequest"] };
+
+export type AndroidWorkspaceResetAction = ReturnType<typeof CommonActions.reset> & {
+  readonly target: string;
+};
+
+interface WorkspaceNavigation {
+  readonly dispatch: (action: AndroidWorkspaceResetAction) => void;
+  readonly getParent: () => WorkspaceNavigation | undefined;
+  readonly getState: () => NavigationState | undefined;
+  /** Only on the navigation container, whose `getState` stays empty until the first action. */
+  readonly getRootState?: () => NavigationState | undefined;
+}
+
+function androidWorkspaceBackReturnsToThread(state: NavigationState) {
+  const current = state.routes[state.index];
+  const params = current?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    current?.name === "Thread" &&
+    state.routes[state.index - 1]?.name === "Thread" &&
+    params !== undefined &&
+    !parentThreadIsBelow(state, params)
+  );
+}
 
 export function androidWorkspaceNavigationState(
   state: NavigationState,
@@ -30,4 +53,58 @@ export function androidWorkspaceNavigationState(
       ...(reviewers ? [{ name: "PullRequestReviewers", params: reviewers }] : []),
     ],
   };
+}
+
+/**
+ * Resets the root stack to a workspace list or detail. Always reads and targets the root
+ * navigator: the sidebar and rail render in the root layout, where `useNavigation()` is the
+ * container, and a container dispatch runs on the deepest focused navigator. With Settings
+ * or New task open, that is their nested stack, which rejects the reset.
+ */
+export function resetAndroidWorkspace(
+  navigation: WorkspaceNavigation,
+  destination?: AndroidWorkspaceDestination,
+  reviewers?: ReactNavigation.RootParamList["PullRequestReviewers"],
+) {
+  let root = navigation;
+  for (let parent = root.getParent(); parent; parent = root.getParent()) root = parent;
+  const state = root.getRootState?.() ?? root.getState();
+  if (!state) return;
+  // Same shape as `CommonActions.reset`, which would pull React Native into node tests.
+  navigation.dispatch({
+    type: "RESET",
+    payload: androidWorkspaceNavigationState(state, destination, reviewers),
+    target: state.key,
+  });
+}
+
+export function parentThreadIsBelow(
+  state: NavigationState,
+  parent: ReactNavigation.RootParamList["Thread"],
+) {
+  const previous = state.routes[state.index - 1];
+  const params = previous?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    previous?.name === "Thread" &&
+    params?.environmentId === parent.environmentId &&
+    params.threadId === parent.threadId
+  );
+}
+
+export function returnToAndroidWorkspaceList(
+  navigation: WorkspaceNavigation & { readonly goBack: () => void },
+  selectTab: () => void,
+) {
+  const state = navigation.getState();
+  if (state && androidWorkspaceBackReturnsToThread(state)) return navigation.goBack();
+  selectTab();
+  resetAndroidWorkspace(navigation);
+}
+
+// In the split view these destinations swap the detail pane beside the sidebar instead of
+// stacking over Home, so the default slide-in would show a layer that is not there.
+export function androidWorkspaceDestinationAnimation(routeName: string, usesSplitView: boolean) {
+  return usesSplitView && (routeName === "Thread" || routeName === "PullRequest")
+    ? ("none" as const)
+    : undefined;
 }

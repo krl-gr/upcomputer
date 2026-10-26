@@ -24,6 +24,7 @@ import {
   sanitizeAgentActivityAggregateState,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
+import { makeAggregateState } from "./agentActivityAggregate.ts";
 import * as Apns from "./ApnsClient.ts";
 import {
   ApnsDeliveryJobLiveActivityAggregateMissing,
@@ -47,7 +48,7 @@ import {
   alertForAttentionTransition,
   alertForNewlyTerminal,
   alertForTerminalAggregate,
-  newlyTerminalRows,
+  rowPhasesChanged,
   shouldAlertForActivity,
 } from "./agentActivityAlerts.ts";
 export {
@@ -175,10 +176,9 @@ function shouldUpdateLiveActivity(input: {
   if (aggregateNeedsAttention(input.nextAggregate)) {
     return true;
   }
-  // A thread finishing must never be throttled away: when a completion and a
-  // new start land in the same window, activeCount is unchanged and the Done
-  // transition (and its alert) would otherwise be suppressed.
-  if (newlyTerminalRows(input.previousAggregate, input.nextAggregate, true).length > 0) {
+  // Phase and row changes may be the last update until the next transition.
+  // Throttling them would leave the card showing a stale state indefinitely.
+  if (rowPhasesChanged(input.previousAggregate, input.nextAggregate)) {
     return true;
   }
   const lastDeliveryAtMs =
@@ -564,6 +564,26 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const userHasContentToShow = Effect.fnUntraced(function* (userId: string) {
+    const now = yield* DateTime.now;
+    return yield* activityRows.listForUser({ userId }).pipe(
+      Effect.map(
+        (activeStates) =>
+          makeAggregateState({
+            activeStates,
+            terminalState: null,
+            nowMs: now.epochMilliseconds,
+          }) !== null,
+      ),
+      // Keep the card on persistence failures; a later sweep can retry.
+      Effect.catch((error) =>
+        Effect.logWarning("Content recheck failed; keeping the card", { error }).pipe(
+          Effect.as(true),
+        ),
+      ),
+    );
+  });
+
   const stateIdentityIsCurrent = Effect.fnUntraced(function* (input: {
     readonly userId: string;
     readonly environmentId: string;
@@ -747,6 +767,20 @@ export const make = Effect.gen(function* () {
         yield* attempts.completeSourceJob({
           sourceJobId: input.sourceJobId,
           apnsReason: "Stale agent activity state skipped.",
+        });
+        return staleJobResult({ deviceId: input.target.device_id, kind: input.kind });
+      }
+      // A contentless end must not retire a card that newer work now owns. An
+      // end for a device that turned Live Activities off still goes out.
+      if (
+        input.kind === "live_activity_end" &&
+        aggregate === null &&
+        parsePreferences(currentTarget.preferences_json)?.liveActivitiesEnabled !== false &&
+        (yield* userHasContentToShow(input.target.user_id))
+      ) {
+        yield* attempts.completeSourceJob({
+          sourceJobId: input.sourceJobId,
+          apnsReason: "Stale APNs end job skipped.",
         });
         return staleJobResult({ deviceId: input.target.device_id, kind: input.kind });
       }

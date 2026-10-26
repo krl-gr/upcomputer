@@ -3,15 +3,9 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
-import { WsRpcGroup, WsSubscribeServerConfigRpc } from "./rpc.ts";
+import { WS_METHODS, WsRpcGroup, WsSubscribeServerConfigRpc } from "./rpc.ts";
 
 describe("subscribeServerConfig payload compatibility", () => {
-  it("is accepted by a server whose schema predates the field", () => {
-    const oldServerPayload = Schema.Struct({});
-    const decoded = Schema.decodeExit(oldServerPayload)({ environmentThemes: true });
-    expect(Exit.isSuccess(decoded)).toBe(true);
-  });
-
   it("is carried by a server that declares it", () => {
     const decoded = Schema.decodeSync(WsSubscribeServerConfigRpc.payloadSchema)({
       environmentThemes: true,
@@ -60,5 +54,15 @@ describe("WebSocket RPC contracts", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("lets the server pick a new worktree's folder", () => {
+    const createWorktree = WsRpcGroup.requests.get(WS_METHODS.vcsCreateWorktree);
+    if (createWorktree === undefined) throw new Error("vcs.createWorktree is not registered");
+    const decode = Schema.decodeUnknownExit(createWorktree.payloadSchema);
+    const request = { cwd: "/repo", refName: "main", newRefName: "feature/x" };
+
+    expect(Exit.isSuccess(decode({ ...request, path: null }))).toBe(true);
+    expect(Exit.isFailure(decode({ ...request, path: "/repo/.git/hooks" }))).toBe(true);
   });
 });

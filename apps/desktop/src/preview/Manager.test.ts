@@ -4,6 +4,8 @@ import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
 import type {
   DesktopPreviewRecordingFrame,
   DesktopPreviewRecordingInputEvent,
+  PreviewAnnotationPayload,
+  PreviewAnnotationRect,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
@@ -506,6 +508,8 @@ const makeFaviconWebContents = (options?: {
     send: webviewSend,
     session: { fetch },
     navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+    isFocused: vi.fn(() => true),
+    focusedFrame: {} as object | null,
     setIgnoreMenuShortcuts: vi.fn(),
     setWindowOpenHandler: vi.fn(),
     executeJavaScriptInIsolatedWorld,
@@ -643,7 +647,6 @@ describe("PreviewManager", () => {
         const hostWebContents = { sendInputEvent, isDestroyed: () => false };
         Object.assign(preview.webContents, { hostWebContents });
         fromId.mockReturnValue(preview.webContents);
-        getFocusedWebContents.mockReturnValue(preview.webContents as never);
         yield* manager.setMainWindow({
           isDestroyed: () => false,
           once: vi.fn(),
@@ -708,7 +711,6 @@ describe("PreviewManager", () => {
             hostWebContents: { isDestroyed: () => false, send },
           });
           fromId.mockReturnValue(preview.webContents);
-          getFocusedWebContents.mockReturnValue(preview.webContents as never);
           yield* manager.createTab("tab_reopen");
           yield* manager.registerWebview("tab_reopen", 42);
           const shortcut = parseKeybindingShortcut(chord)!;
@@ -737,12 +739,12 @@ describe("PreviewManager", () => {
             expect(preventDefault).toHaveBeenCalledTimes("isAutoRepeat" in overrides ? 1 : 0);
             expect(send).toHaveBeenCalledOnce();
           }
-          getFocusedWebContents.mockReturnValue(null);
+          vi.mocked((preview.webContents as Electron.WebContents).isFocused).mockReturnValue(false);
           preventDefault.mockClear();
           beforeInput({ preventDefault } as never, input as never);
           expect(preventDefault).not.toHaveBeenCalled();
           expect(send).toHaveBeenCalledOnce();
-          getFocusedWebContents.mockReturnValue(preview.webContents as never);
+          vi.mocked((preview.webContents as Electron.WebContents).isFocused).mockReturnValue(true);
           yield* manager.setForwardedShortcuts([]);
           beforeInput({ preventDefault } as never, input as never);
           expect(preventDefault).not.toHaveBeenCalled();
@@ -770,7 +772,6 @@ describe("PreviewManager", () => {
               hostWebContents: { isDestroyed: () => false, send },
             });
             fromId.mockReturnValue(preview.webContents);
-            getFocusedWebContents.mockReturnValue(preview.webContents as never);
             yield* manager.createTab("tab_alt_graph");
             yield* manager.registerWebview("tab_alt_graph", 42);
             yield* manager.setForwardedShortcuts([
@@ -812,7 +813,6 @@ describe("PreviewManager", () => {
 
         for (const browser of [preview, popup]) {
           const contents = browser.webContents as Electron.WebContents;
-          getFocusedWebContents.mockReturnValue(browser.webContents as never);
           const beforeInput = browser.listeners.get("before-input-event")!;
           const preventDefault = vi.fn();
           const input = {
@@ -834,11 +834,66 @@ describe("PreviewManager", () => {
           beforeInput({ preventDefault } as never, { ...input, key: "w" } as never);
           expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(true);
 
-          getFocusedWebContents.mockReturnValue(null);
+          vi.mocked(contents.isFocused).mockReturnValue(false);
           beforeInput({ preventDefault } as never, input as never);
           expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(true);
           expect(preventDefault).not.toHaveBeenCalled();
         }
+      }),
+    ),
+  );
+
+  effectIt.effect("keeps editing and forwarded shortcuts in whichever tab holds focus", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const send = vi.fn();
+        const host = { isDestroyed: () => false, send };
+        const older = makeFaviconWebContents({ id: 42 });
+        const newer = makeFaviconWebContents({ id: 43 });
+        for (const tab of [older, newer]) Object.assign(tab.webContents, { hostWebContents: host });
+        // Electron names one arbitrary guest here when several share a focused window.
+        getFocusedWebContents.mockReturnValue(newer.webContents as never);
+        fromId.mockReturnValue(older.webContents);
+        yield* manager.createTab("tab_older");
+        yield* manager.registerWebview("tab_older", 42);
+        fromId.mockReturnValue(newer.webContents);
+        yield* manager.createTab("tab_newer");
+        yield* manager.registerWebview("tab_newer", 43);
+        const shortcut = parseKeybindingShortcut("mod+shift+t")!;
+        yield* manager.setForwardedShortcuts([{ command: "view.reopenClosed", shortcut }]);
+
+        const beforeInput = older.listeners.get("before-input-event")!;
+        const key = { type: "keyDown", meta: true, control: false, alt: false };
+        beforeInput(
+          { preventDefault: vi.fn() } as never,
+          { ...key, key: "v", shift: false } as never,
+        );
+        expect(
+          (older.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+        ).toHaveBeenLastCalledWith(false);
+
+        const preventDefault = vi.fn();
+        beforeInput({ preventDefault } as never, { ...key, key: "T", shift: true } as never);
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(send).toHaveBeenCalledExactlyOnceWith("desktop:menu-action", "view.reopenClosed");
+
+        // The person types in the older tab, so keys reaching the newer one are an agent's.
+        Object.assign(newer.webContents, { focusedFrame: null });
+        const agentInput = newer.listeners.get("before-input-event")!;
+        const agentPreventDefault = vi.fn();
+        agentInput(
+          { preventDefault: agentPreventDefault } as never,
+          { ...key, key: "v", shift: false } as never,
+        );
+        expect(
+          (newer.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+        ).toHaveBeenLastCalledWith(true);
+        agentInput(
+          { preventDefault: agentPreventDefault } as never,
+          { ...key, key: "T", shift: true } as never,
+        );
+        expect(agentPreventDefault).not.toHaveBeenCalled();
+        expect(send).toHaveBeenCalledOnce();
       }),
     ),
   );
@@ -1833,6 +1888,8 @@ describe("PreviewManager", () => {
     const sendCommand = vi.fn<(method: string, params?: unknown) => Promise<unknown>>(
       async () => undefined,
     );
+    const detachListeners = new Set<() => void>();
+    let chromiumDetaches = 0;
     let destroyed = false;
     const wc = {
       id,
@@ -1861,19 +1918,30 @@ describe("PreviewManager", () => {
       setIgnoreMenuShortcuts: vi.fn(),
       setWindowOpenHandler: vi.fn(),
       debugger: {
-        isAttached: () => attach.mock.calls.length > detach.mock.calls.length,
+        isAttached: () => attach.mock.calls.length > detach.mock.calls.length + chromiumDetaches,
         attach,
         detach,
         sendCommand,
-        on: vi.fn(),
-        off: vi.fn(),
+        on: (event: string, listener: () => void) => {
+          if (event === "detach") detachListeners.add(listener);
+        },
+        off: (event: string, listener: () => void) => {
+          if (event === "detach") detachListeners.delete(listener);
+        },
       },
+    };
+    /** Chromium dropping the debugger without a detach() call. */
+    const chromiumDetach = () => {
+      chromiumDetaches += 1;
+      // Snapshot like an EventEmitter, so a listener added during emit waits for the next one.
+      for (const listener of Array.from(detachListeners)) listener();
     };
     return {
       wc: wc as unknown as Electron.WebContents,
       attach,
       detach,
       sendCommand,
+      chromiumDetach,
       destroy: () => {
         destroyed = true;
         listeners.get("destroyed")?.();
@@ -1908,6 +1976,24 @@ describe("PreviewManager", () => {
         yield* Effect.yieldNow;
         expect(unclaimed.detach).toHaveBeenCalledTimes(1);
         expect(claimed.detach).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("reattaches a debugger that Chromium dropped on its own", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const guest = makeAttachingGuest(48);
+        fromId.mockReturnValue(guest.wc);
+        yield* manager.createTab("tab_detached");
+        yield* manager.registerWebview("tab_detached", 48);
+        yield* Effect.yieldNow;
+        expect(guest.attach).toHaveBeenCalledTimes(1);
+
+        guest.chromiumDetach();
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        expect(guest.attach).toHaveBeenCalledTimes(2);
       }),
     ),
   );
@@ -2705,6 +2791,77 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("keeps frame capture closed when a replacement is destroyed during cleanup", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const windowEvents = new Map<string, () => void>();
+        const host = makeTestHostWebContents();
+        const capturePage = vi.fn(async () => ({
+          toJPEG: () => Buffer.from("recording-frame"),
+          getSize: () => ({ width: 1280, height: 720 }),
+        }));
+        const guest = makeTestPreviewWebContents(capturePage, 42, host);
+        fromId.mockReturnValue(guest);
+        yield* manager.createTab("tab_shutdown");
+        yield* manager.registerWebview("tab_shutdown", 42);
+        yield* manager.setMainWindow({
+          isDestroyed: () => false,
+          once: (event: string, listener: () => void) => windowEvents.set(event, listener),
+          webContents: { setBackgroundThrottling: vi.fn() },
+        } as never);
+        yield* manager.startRecording("tab_shutdown");
+        const pip = makeTestPictureInPictureWindow();
+        browserWindowConstructor.mockImplementation(function () {
+          return pip.pictureInPictureWindow;
+        });
+        yield* manager.openPictureInPicture("tab_shutdown");
+        const capturesBeforeClose = capturePage.mock.calls.length;
+        const cleanupStarted = yield* Deferred.make<void>();
+        const releaseCleanup = yield* Deferred.make<void>();
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          state.pictureInPicture
+            ? Effect.void
+            : Deferred.succeed(cleanupStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseCleanup)),
+              ),
+        );
+
+        windowEvents.get("closed")!();
+        yield* Deferred.await(cleanupStarted);
+        let destroyed = false;
+        const replacement = yield* manager
+          .setMainWindow({
+            isDestroyed: () => destroyed,
+            once: vi.fn(),
+            webContents: { setBackgroundThrottling: vi.fn() },
+          } as never)
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        try {
+          expect(replacement.pollUnsafe()).toBeUndefined();
+          destroyed = true;
+        } finally {
+          yield* Deferred.succeed(releaseCleanup, undefined);
+        }
+        yield* Fiber.join(replacement);
+
+        const restart = yield* Effect.exit(manager.startRecording("tab_shutdown"));
+        expect(Exit.isFailure(restart)).toBe(true);
+        if (Exit.isFailure(restart)) {
+          expect(Option.getOrThrow(Cause.findErrorOption(restart.cause))).toMatchObject({
+            _tag: "PreviewMainWindowClosedError",
+            tabId: "tab_shutdown",
+          });
+        }
+        expect(capturePage).toHaveBeenCalledTimes(capturesBeforeClose);
+        expect(pip.pictureInPictureWindow.isDestroyed()).toBe(true);
+        expect(guest.setBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+        const grants: Array<{ video?: unknown }> = [];
+        host.displayMediaHandler()?.({ frame: host.mainFrame }, (value) => grants.push(value));
+        expect(grants).toEqual([{}]);
+      }),
+    ),
+  );
+
   effectIt.effect("ignores close events from replaced main windows", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -3320,6 +3477,85 @@ describe("PreviewManager", () => {
         expect(received).toHaveLength(2);
       }),
     ),
+  );
+
+  effectIt.effect(
+    "releases queued STOP after stalled recording warmups and ignores late completion",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const warmupStarted = Promise.withResolvers<void>();
+          const firstWarmup = Promise.withResolvers<TestCapturedPreviewImage>();
+          const lateWarmup = Promise.withResolvers<TestCapturedPreviewImage>();
+          const capturePage = vi
+            .fn<() => Promise<TestCapturedPreviewImage>>()
+            .mockImplementationOnce(() => {
+              warmupStarted.resolve();
+              return firstWarmup.promise;
+            })
+            .mockImplementation(() => lateWarmup.promise);
+          const host = makeTestHostWebContents();
+          const webContents = makeTestPreviewWebContents(capturePage, 42, host);
+          const windowThrottling = vi.fn();
+          fromId.mockReturnValue(webContents);
+          yield* manager.createTab("tab_recording_stalled_warmup");
+          yield* manager.registerWebview("tab_recording_stalled_warmup", 42);
+          yield* manager.setMainWindow({
+            isDestroyed: () => false,
+            once: vi.fn(),
+            webContents: { setBackgroundThrottling: windowThrottling },
+          } as never);
+
+          const image = {
+            toJPEG: () => Buffer.from("late-recording-frame"),
+            getSize: () => ({ width: 1280, height: 720 }),
+          };
+          try {
+            const start = yield* manager
+              .startRecording("tab_recording_stalled_warmup")
+              .pipe(Effect.forkChild({ startImmediately: true }));
+            yield* Effect.promise(() => warmupStarted.promise);
+            let stopped = false;
+            const stop = yield* manager.stopRecording("tab_recording_stalled_warmup").pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  stopped = true;
+                }),
+              ),
+              Effect.forkChild({ startImmediately: true }),
+            );
+            expect(webContents.setBackgroundThrottling.mock.calls).toEqual([[false]]);
+            expect(windowThrottling.mock.calls).toEqual([[false]]);
+            yield* TestClock.adjust(1_000);
+            expect(stopped).toBe(false);
+            expect(host.executeJavaScript).not.toHaveBeenCalled();
+            yield* TestClock.adjust(1_000);
+            expect(stopped).toBe(true);
+            yield* Fiber.join(start);
+            yield* Fiber.join(stop);
+            expect(capturePage).toHaveBeenCalledTimes(2);
+            expect(host.executeJavaScript).toHaveBeenCalledOnce();
+            expect(webContents.setBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+            expect(windowThrottling.mock.calls).toEqual([[false], [true]]);
+            expect(webviewSend).toHaveBeenLastCalledWith("preview:recording-cursor", false);
+
+            lateWarmup.resolve(image);
+            yield* TestClock.adjust(0);
+            const streams: Array<{ video?: unknown }> = [];
+            host.displayMediaHandler()?.({ frame: host.mainFrame }, (value) => streams.push(value));
+            expect(streams).toEqual([{}]);
+            expect(capturePage).toHaveBeenCalledTimes(2);
+            expect(host.executeJavaScript).toHaveBeenCalledOnce();
+            expect(webContents.setBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+            expect(windowThrottling.mock.calls).toEqual([[false], [true]]);
+            expect(webviewSend).toHaveBeenLastCalledWith("preview:recording-cursor", false);
+          } finally {
+            // Release stalled native calls after a failing assertion against unchanged base.
+            firstWarmup.resolve(image);
+            lateWarmup.resolve(image);
+          }
+        }),
+      ),
   );
 
   effectIt.effect("continues native recording when the source warmup fails", () =>
@@ -4196,68 +4432,208 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("crops the picked area out of a full-page capture at device scale", () =>
-    withManager((manager) =>
-      Effect.gen(function* () {
-        let onPicked: ((event: unknown, ...args: unknown[]) => void) | undefined;
-        const crop = vi.fn((rect: Electron.Rectangle) => ({
-          getSize: () => ({ width: rect.width, height: rect.height }),
-          toDataURL: () => "data:image/png;base64,cropped",
-        }));
-        const capturePage = vi.fn(async () => ({
-          getSize: () => ({ width: 2000, height: 1200 }),
-          crop,
-        }));
-        fromId.mockReturnValue(
-          Object.assign(makeTestPreviewWebContents(capturePage as never), {
-            isFocused: () => true,
-            once: vi.fn(),
-            ipc: {
-              on: vi.fn((channel: string, listener: typeof onPicked) => {
-                if (channel === "preview:element-picked") onPicked = listener;
-              }),
-              off: vi.fn(),
-              removeListener: vi.fn(),
+  describe("annotation screenshots", () => {
+    const captureAnnotation = (
+      cropRect: PreviewAnnotationRect | null,
+      targets: Partial<Pick<PreviewAnnotationPayload, "elements" | "regions" | "strokes">> = {},
+      emptyImage?: "viewport" | "crop",
+    ) =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let onPicked: ((event: unknown, ...args: unknown[]) => void) | undefined;
+          const crop = vi.fn((rect: Electron.Rectangle) => ({
+            isEmpty: () => emptyImage === "crop",
+            getSize: () =>
+              emptyImage === "crop"
+                ? { width: 0, height: 0 }
+                : { width: rect.width, height: rect.height },
+            toDataURL: () => (emptyImage === "crop" ? "data:," : "data:image/png;base64,cropped"),
+          }));
+          const capturePage = vi.fn(async () => ({
+            isEmpty: () => emptyImage === "viewport",
+            getSize: () =>
+              emptyImage === "viewport" ? { width: 0, height: 0 } : { width: 2000, height: 1200 },
+            toJPEG: () => Buffer.from("unused"),
+            toDataURL: () => (emptyImage === "viewport" ? "data:," : "data:image/png;base64,full"),
+            crop,
+          }));
+          fromId.mockReturnValue(
+            Object.assign(makeTestPreviewWebContents(capturePage), {
+              isFocused: () => true,
+              once: vi.fn(),
+              ipc: {
+                on: vi.fn((channel: string, listener: typeof onPicked) => {
+                  if (channel === "preview:element-picked") onPicked = listener;
+                }),
+                off: vi.fn(),
+                removeListener: vi.fn(),
+              },
+            }),
+          );
+
+          yield* manager.createTab("tab_1");
+          yield* manager.registerWebview("tab_1", 42);
+          const pick = yield* manager.pickElement("tab_1").pipe(Effect.forkChild);
+          yield* Effect.yieldNow;
+          onPicked?.(
+            {},
+            {
+              id: "annotation_1",
+              pageUrl: "https://example.com",
+              pageTitle: "Example",
+              comment: "Tighten this spacing",
+              elements: [],
+              regions: [],
+              strokes: [],
+              ...targets,
+              styleChanges: [],
+              screenshot: null,
+              createdAt: "2026-06-11T00:00:00.000Z",
             },
-          }),
-        );
+            cropRect,
+            "attach",
+            2,
+          );
 
-        yield* manager.createTab("tab_1");
-        yield* manager.registerWebview("tab_1", 42);
-        const pick = yield* manager.pickElement("tab_1").pipe(Effect.forkChild);
-        yield* Effect.yieldNow;
-        onPicked?.(
-          {},
-          {
-            id: "annotation_1",
-            pageUrl: "https://example.com",
-            pageTitle: "Example",
-            comment: "Tighten this spacing",
-            elements: [],
-            regions: [{ id: "region_1", rect: { x: 5, y: 6, width: 20, height: 30 } }],
-            strokes: [],
-            styleChanges: [],
-            screenshot: null,
-            createdAt: "2026-06-11T00:00:00.000Z",
-          },
-          { x: 5, y: 6, width: 20, height: 30 },
-          "attach",
-          2,
-        );
+          const result = yield* Fiber.join(pick);
+          expect(capturePage).toHaveBeenCalledExactlyOnceWith();
+          expect(result?.annotation.comment).toBe("Tighten this spacing");
+          expect(result?.submission).toBe("attach");
+          return { result, crop };
+        }),
+      );
 
-        const result = yield* Fiber.join(pick);
-        expect(capturePage).toHaveBeenCalledWith();
-        expect(crop).toHaveBeenCalledWith({ x: 10, y: 12, width: 40, height: 60 });
+    effectIt.effect("crops an on-screen region at device scale", () =>
+      Effect.gen(function* () {
+        const rect = { x: 5, y: 6, width: 20, height: 30 };
+        const { result, crop } = yield* captureAnnotation(rect, {
+          regions: [{ id: "region_1", rect }],
+        });
+        expect(crop).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 12, width: 40, height: 60 });
         expect(result?.screenshotFailed).toBeUndefined();
         expect(result?.annotation.screenshot).toEqual({
           dataUrl: "data:image/png;base64,cropped",
           width: 40,
           height: 60,
-          cropRect: { x: 5, y: 6, width: 20, height: 30 },
+          cropRect: rect,
         });
       }),
-    ),
-  );
+    );
+
+    effectIt.effect("clips a partially visible selection to the captured viewport", () =>
+      Effect.gen(function* () {
+        const { result, crop } = yield* captureAnnotation(
+          { x: -40, y: 570, width: 240, height: 110 },
+          { regions: [{ id: "region_1", rect: { x: -20, y: 590, width: 200, height: 70 } }] },
+        );
+        expect(crop).toHaveBeenCalledExactlyOnceWith({ x: 0, y: 1140, width: 400, height: 60 });
+        expect(result?.screenshotFailed).toBeUndefined();
+        expect(result?.annotation.screenshot).toMatchObject({
+          dataUrl: "data:image/png;base64,cropped",
+          width: 400,
+          height: 60,
+        });
+      }),
+    );
+
+    effectIt.effect.each([
+      {
+        name: "an offscreen crop without individual target bounds",
+        cropRect: { x: 1010, y: 40, width: 100, height: 70 },
+        regions: [],
+      },
+      {
+        name: "padding overlapping the viewport while its target is offscreen",
+        cropRect: { x: 40, y: -100, width: 240, height: 110 },
+        regions: [{ id: "region_1", rect: { x: 60, y: -80, width: 200, height: 70 } }],
+      },
+      {
+        name: "a union spanning the viewport with both targets offscreen",
+        cropRect: { x: -230, y: 40, width: 1460, height: 110 },
+        regions: [
+          { id: "region_1", rect: { x: -210, y: 60, width: 200, height: 70 } },
+          { id: "region_2", rect: { x: 1010, y: 60, width: 200, height: 70 } },
+        ],
+      },
+      {
+        name: "an offscreen target when crop bounds are missing",
+        cropRect: null,
+        regions: [{ id: "region_1", rect: { x: 60, y: -80, width: 200, height: 70 } }],
+      },
+    ])("does not attach $name", ({ cropRect, regions }) =>
+      Effect.gen(function* () {
+        const { result, crop } = yield* captureAnnotation(cropRect, { regions });
+        expect(crop).not.toHaveBeenCalled();
+        expect(result?.annotation.screenshot).toBeNull();
+        expect(result?.screenshotFailed).toBe(true);
+      }),
+    );
+
+    effectIt.effect.each([
+      {
+        name: "zero-width SVG line on the left edge",
+        rect: { x: 0, y: 60, width: 0, height: 70 },
+        cropRect: { x: -20, y: 40, width: 40, height: 110 },
+        expectedCrop: { x: 0, y: 80, width: 40, height: 220 },
+      },
+      {
+        name: "zero-height SVG line on the top edge",
+        rect: { x: 60, y: 0, width: 70, height: 0 },
+        cropRect: { x: 40, y: -20, width: 110, height: 40 },
+        expectedCrop: { x: 80, y: 0, width: 220, height: 40 },
+      },
+    ])("captures a stroked $name", ({ rect, cropRect, expectedCrop }) =>
+      Effect.gen(function* () {
+        const { result, crop } = yield* captureAnnotation(cropRect, {
+          elements: [
+            {
+              id: "element_1",
+              rect,
+              element: {
+                pageUrl: "https://example.com",
+                pageTitle: "Example",
+                tagName: "line",
+                selector: "svg > line",
+                htmlPreview: '<line stroke="black" stroke-width="2" />',
+                componentName: null,
+                source: null,
+                stack: [],
+                styles: "stroke: black; stroke-width: 2px;",
+                pickedAt: "2026-06-11T00:00:00.000Z",
+              },
+            },
+          ],
+        });
+        expect(crop).toHaveBeenCalledExactlyOnceWith(expectedCrop);
+        expect(result?.screenshotFailed).toBeUndefined();
+        expect(result?.annotation.screenshot).toMatchObject({
+          dataUrl: "data:image/png;base64,cropped",
+          width: expectedCrop.width,
+          height: expectedCrop.height,
+        });
+      }),
+    );
+
+    effectIt.effect.each(["viewport", "crop"] as const)(
+      "reports an empty native %s image as a failed screenshot",
+      (emptyImage) =>
+        Effect.gen(function* () {
+          const rect = { x: 5, y: 6, width: 20, height: 30 };
+          const { result, crop } = yield* captureAnnotation(
+            rect,
+            {
+              regions: [{ id: "region_1", rect }],
+            },
+            emptyImage,
+          );
+          if (emptyImage === "viewport") expect(crop).not.toHaveBeenCalled();
+          else
+            expect(crop).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 12, width: 40, height: 60 });
+          expect(result?.annotation.screenshot).toBeNull();
+          expect(result?.screenshotFailed).toBe(true);
+        }),
+    );
+  });
 
   effectIt.effect("a stale capture from a replaced pick never touches the next pick", () =>
     withManager((manager) =>

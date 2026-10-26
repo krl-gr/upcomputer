@@ -263,8 +263,10 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
           });
     });
   });
+  // Each scan visits every message, so a cache smaller than the thread is cycled through and
+  // never hits. Real threads reach a few thousand messages of a few hundred characters.
   const textCache = yield* Cache.make({
-    capacity: 512,
+    capacity: 8192,
     timeToLive: "1 minute",
     lookup: (key: TextKey) => Effect.sync(() => parseText(key)),
   });
@@ -296,6 +298,9 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
         WHERE json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
       )
       SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events
+      -- The planner otherwise walks every V2 event backwards from the newest,
+      -- which takes seconds for a thread that has been idle a long time.
+      INDEXED BY idx_orch_events_stream_sequence
       WHERE application_event_version = 2 AND aggregate_kind = 'thread'
         AND stream_id IN (SELECT thread_id FROM source_threads)
     `;

@@ -25,6 +25,7 @@ import { pullRequestStackMerge, singlePullRequestMergeAllowed } from "./pullRequ
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import type { PullRequestStackState } from "./usePullRequestStack";
+import { PullRequestGlyph } from "./pullRequestGlyphs";
 
 export function PullRequestMergeControls(props: {
   readonly pr: PullRequestDetail;
@@ -97,47 +98,45 @@ export function PullRequestMergeControls(props: {
       return;
     pending.current = true;
     setBusy(true);
-    try {
-      const response = await runAction({
-        ...target,
-        input: {
-          ...target.input,
-          action,
-          ...(action === "merge" && method && stack.stack && scope
+    const response = await runAction({
+      ...target,
+      input: {
+        ...target.input,
+        action,
+        ...(action === "merge" && method && stack.stack && scope
+          ? {
+              stackNumber: stack.stack.number,
+              expectedStackHeads: scope.heads,
+              mergeMethod: method,
+            }
+          : action === "merge" && method
             ? {
-                stackNumber: stack.stack.number,
-                expectedStackHeads: scope.heads,
-                mergeMethod: method,
+                resolveMergeMethod: (fresh) => {
+                  if (
+                    !canPerformPullRequestAction(fresh, "merge") ||
+                    !allowedMergeMethods(fresh).includes(method)
+                  )
+                    throw new Error("The pull request changed. Refresh before merging.");
+                  return method;
+                },
               }
-            : action === "merge" && method
-              ? {
-                  resolveMergeMethod: (fresh) => {
-                    if (
-                      !canPerformPullRequestAction(fresh, "merge") ||
-                      !allowedMergeMethods(fresh).includes(method)
-                    )
-                      throw new Error("The pull request changed. Refresh before merging.");
-                    return method;
-                  },
-                }
-              : action === "enable-auto-merge" && method
-                ? { mergeMethod: method }
-                : {}),
-        },
-      });
-      if (response._tag === "Failure") throw squashAtomCommandFailure(response);
-    } catch (cause) {
+            : action === "enable-auto-merge" && method
+              ? { mergeMethod: method }
+              : {}),
+      },
+    });
+    // A stack can partly merge before the provider reports a failure.
+    refreshDetail();
+    refreshActivity();
+    stack.refresh();
+    pending.current = false;
+    setBusy(false);
+    if (AsyncResult.isFailure(response)) {
+      const cause = squashAtomCommandFailure(response);
       Dialog.alert(
         "Couldn't complete the merge action",
         cause instanceof Error ? cause.message : "Try again.",
       );
-    } finally {
-      // A stack can partly merge before the provider reports a failure.
-      refreshDetail();
-      refreshActivity();
-      stack.refresh();
-      pending.current = false;
-      setBusy(false);
     }
   };
   const confirm = (action: "merge" | "enable-auto-merge" | "disable-auto-merge") => {
@@ -200,7 +199,7 @@ export function PullRequestMergeControls(props: {
               <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
             ) : (
               <SymbolView
-                name="arrow.triangle.merge"
+                name={PullRequestGlyph.merged}
                 size={16}
                 tintColorClassName={
                   canMerge ? "accent-prominent-action-foreground" : "accent-icon-muted"
@@ -281,13 +280,7 @@ export function PullRequestMergeControls(props: {
         </Text>
       ) : null}
       {stack.error && stack.supportsStackActions ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={stack.refresh}
-          className="min-h-11 justify-center px-1"
-        >
-          <Text className="text-sm text-primary-text">Retry stack lookup</Text>
-        </Pressable>
+        <Button label="Retry stack lookup" tone="text" onPress={stack.refresh} />
       ) : null}
     </View>
   );

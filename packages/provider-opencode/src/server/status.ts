@@ -375,39 +375,20 @@ export function openCodeCommandsToServerProviderSlashCommands(
   return commands;
 }
 
-export const makePendingOpenCodeProvider = (
-  openCodeSettings: OpenCodeSettings,
-): Effect.Effect<ServerProviderDraft> =>
-  Effect.gen(function* () {
-    const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
-    const models = providerModelsFromSettings(
-      [],
-      openCodeSettings.customModels,
-      DEFAULT_OPENCODE_MODEL_CAPABILITIES,
-    );
+export const makePendingOpenCodeProvider = Effect.fn(
+  "OpencodeProviderStatus.makePendingOpenCodeProvider",
+)(function* (openCodeSettings: OpenCodeSettings): Effect.fn.Return<ServerProviderDraft> {
+  const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+  const models = providerModelsFromSettings(
+    [],
+    openCodeSettings.customModels,
+    DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+  );
 
-    if (!openCodeSettings.enabled) {
-      return buildServerProvider({
-        presentation: OPENCODE_PRESENTATION,
-        enabled: false,
-        checkedAt,
-        models,
-        probe: {
-          installed: false,
-          version: null,
-          status: "warning",
-          auth: { status: "unknown" },
-          message:
-            openCodeSettings.serverUrl.trim().length > 0
-              ? "OpenCode is disabled in Up.computer settings. A server URL is configured."
-              : "OpenCode is disabled in Up.computer settings.",
-        },
-      });
-    }
-
+  if (!openCodeSettings.enabled) {
     return buildServerProvider({
       presentation: OPENCODE_PRESENTATION,
-      enabled: true,
+      enabled: false,
       checkedAt,
       models,
       statusPending: true,
@@ -416,10 +397,28 @@ export const makePendingOpenCodeProvider = (
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "OpenCode provider status has not been checked in this session yet.",
+        message:
+          openCodeSettings.serverUrl.trim().length > 0
+            ? "OpenCode is disabled in Up.computer settings. A server URL is configured."
+            : "OpenCode is disabled in Up.computer settings.",
       },
     });
+  }
+
+  return buildServerProvider({
+    presentation: OPENCODE_PRESENTATION,
+    enabled: true,
+    checkedAt,
+    models,
+    probe: {
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "OpenCode provider status has not been checked in this session yet.",
+    },
   });
+});
 
 export interface OpenCode2Model {
   readonly providerID: string;
@@ -444,28 +443,50 @@ function subProviderLabelFor(input: {
     : label;
 }
 
-/**
- * A server loads its catalog lazily and lists nothing for its first few
- * hundred milliseconds, and a local instance starts a fresh server for each
- * status check. So an empty list is read again for a while, and the last
- * non-empty list stands in if the catalog still has not loaded.
- */
+const catalogFingerprint = (models: ReadonlyArray<OpenCode2Model>) =>
+  models
+    .map((model) =>
+      JSON.stringify([
+        model.providerID,
+        model.id,
+        model.name,
+        model.providerName,
+        model.variants.map((variant) => variant.id).toSorted(),
+      ]),
+    )
+    .toSorted()
+    .join("\n");
+
+/** A cold server can list a partial catalog; two agreeing reads reduce that startup race. */
 export const makeOpenCode2ModelLoader = <E>(
   list: Effect.Effect<ReadonlyArray<OpenCode2Model>, E>,
 ) =>
   Effect.sync(() => {
     let lastLoaded: ReadonlyArray<OpenCode2Model> = [];
-    return list.pipe(
-      Effect.repeat({
-        until: (models) => models.length > 0,
-        schedule: Schedule.spaced("250 millis"),
-      }),
-      Effect.timeoutOption("5 seconds"),
-      Effect.map((loaded) => {
-        if (loaded._tag === "Some" && loaded.value.length > 0) lastLoaded = loaded.value;
-        return lastLoaded;
-      }),
-    );
+    return Effect.suspend(() => {
+      let previous: string | undefined;
+      let latest: ReadonlyArray<OpenCode2Model> = [];
+      return list.pipe(
+        Effect.repeat({
+          until: (models) => {
+            if (models.length > 0) latest = models;
+            const fingerprint = models.length > 0 ? catalogFingerprint(models) : undefined;
+            const settled = fingerprint !== undefined && fingerprint === previous;
+            previous = fingerprint;
+            return settled;
+          },
+          schedule: Schedule.spaced("250 millis"),
+        }),
+        Effect.catch((error) => (latest.length > 0 ? Effect.succeed(latest) : Effect.fail(error))),
+        Effect.timeoutOption("5 seconds"),
+        Effect.map((loaded) => {
+          // Fresh progress may still be partial, but a warm cache must not freeze slow catalogs.
+          if (loaded._tag === "Some") lastLoaded = loaded.value;
+          else if (latest.length > 0) lastLoaded = latest;
+          return lastLoaded;
+        }),
+      );
+    });
   });
 
 export interface OpenCode2Workspace {
@@ -487,16 +508,14 @@ export interface OpenCode2Workspace {
  * for the directory end the scan. `scanned` must be listening before `read` runs, since
  * the read is what starts the scan.
  */
-export const loadOpenCode2Workspace = <E>(
-  read: Effect.Effect<OpenCode2Workspace, E>,
-  scanned: Effect.Effect<void>,
-) =>
-  Effect.gen(function* () {
+export const loadOpenCode2Workspace = Effect.fn("OpencodeProviderStatus.loadOpenCode2Workspace")(
+  function* <E>(read: Effect.Effect<OpenCode2Workspace, E>, scanned: Effect.Effect<void>) {
     const first = yield* read;
     if (first.commands.length > 0) return first;
     yield* scanned.pipe(Effect.timeoutOption("10 seconds"));
     return yield* read;
-  });
+  },
+);
 
 export function openCode2SkillsToServerProviderSkills(
   skills: OpenCode2Workspace["skills"],
@@ -715,7 +734,6 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   if (probed.generation === "v2") {
     return yield* checkOpenCode2(openCodeSettings, probed.version, checkedAt, loadOpenCode2Models);
   }
-  let version: string | null = probed.version;
   if (compareSemverVersions(probed.version, OpenCodeRuntime.MINIMUM_OPENCODE_VERSION) < 0) {
     return buildServerProvider({
       presentation: OPENCODE_PRESENTATION,
@@ -732,20 +750,23 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     });
   }
 
-  const loadInventory = (server: {
+  const installedVersion = isExternalServer ? {} : { installedVersion: probed.version };
+  let version = probed.version;
+  const loadInventory = Effect.fnUntraced(function* (server: {
     readonly url: string;
     readonly serverPassword?: string;
     readonly version: string;
-  }) =>
-    openCodeRuntime
-      .loadOpenCodeInventory(
-        openCodeRuntime.createOpenCodeSdkClient({
-          baseUrl: server.url,
-          directory: cwd,
-          ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
-        }),
-      )
-      .pipe(Effect.map((inventory) => ({ inventory, version: server.version })));
+  }) {
+    // Preserve the helper's version even when its inventory request fails.
+    version = server.version;
+    return yield* openCodeRuntime.loadOpenCodeInventory(
+      openCodeRuntime.createOpenCodeSdkClient({
+        baseUrl: server.url,
+        directory: cwd,
+        ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
+      }),
+    );
+  });
   // UpComputer: `opencode serve` keeps the models.dev catalog it loaded for its first request:
   // the copy bundled in the binary on a cold cache, else the cached copy, however old. The fresh
   // catalog reaches only servers started after its background refresh, such as each session's.
@@ -785,41 +806,43 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     ),
   );
   if (inventoryExit._tag === "Failure") {
-    return fallback(Cause.squash(inventoryExit.cause), version, "inventory");
+    return {
+      ...fallback(Cause.squash(inventoryExit.cause), version, "inventory"),
+      ...installedVersion,
+    };
   }
 
-  version = inventoryExit.value.version;
-
   const models = providerModelsFromSettings(
-    flattenOpenCodeModels(inventoryExit.value.inventory),
+    flattenOpenCodeModels(inventoryExit.value),
     customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
-  const skills = openCodeSkillsToServerProviderSkills(inventoryExit.value.inventory.skills);
-  const connectedCount = inventoryExit.value.inventory.providerList.connected.length;
-  return buildServerProvider({
-    presentation: OPENCODE_PRESENTATION,
-    enabled: true,
-    checkedAt,
-    models,
-    skills,
-    slashCommands: openCodeCommandsToServerProviderSlashCommands(
-      inventoryExit.value.inventory.commands,
-    ),
-    probe: {
-      installed: true,
-      version,
-      status: connectedCount > 0 ? "ready" : "warning",
-      auth: {
-        status: connectedCount > 0 ? "authenticated" : "unknown",
-        type: "opencode",
+  const skills = openCodeSkillsToServerProviderSkills(inventoryExit.value.skills);
+  const connectedCount = inventoryExit.value.providerList.connected.length;
+  return {
+    ...buildServerProvider({
+      presentation: OPENCODE_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      skills,
+      slashCommands: openCodeCommandsToServerProviderSlashCommands(inventoryExit.value.commands),
+      probe: {
+        installed: true,
+        version,
+        status: connectedCount > 0 ? "ready" : "warning",
+        auth: {
+          status: connectedCount > 0 ? "authenticated" : "unknown",
+          type: "opencode",
+        },
+        message:
+          connectedCount > 0
+            ? `${connectedCount} upstream provider${connectedCount === 1 ? "" : "s"} connected through ${isExternalServer ? "the configured OpenCode server" : "OpenCode"}.`
+            : isExternalServer
+              ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers."
+              : "OpenCode is available, but it did not report any connected upstream providers.",
       },
-      message:
-        connectedCount > 0
-          ? `${connectedCount} upstream provider${connectedCount === 1 ? "" : "s"} connected through ${isExternalServer ? "the configured OpenCode server" : "OpenCode"}.`
-          : isExternalServer
-            ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers."
-            : "OpenCode is available, but it did not report any connected upstream providers.",
-    },
-  });
+    }),
+    ...installedVersion,
+  };
 });

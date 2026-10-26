@@ -56,6 +56,8 @@ function makeProjection() {
         providerThreadId,
         activeAttemptId: attemptId,
         status: "running",
+        requestedAt: now,
+        completedAt: null,
       },
     ],
     providerThreads: [
@@ -415,6 +417,86 @@ it.effect("lets a cut blocking delegate_task wake its parent like an async task"
   }),
 );
 
+it.effect.each(["running", "waiting"])(
+  "wakes a %s run to restart the native subagent it waited on",
+  (status) =>
+    Effect.gen(function* () {
+      const base = makeProjection();
+      const item = (id: string, extra: Record<string, unknown>) => ({
+        id,
+        threadId,
+        runId,
+        nodeId: null,
+        status: "running",
+        ...extra,
+      });
+      const projection = {
+        ...base,
+        runs: [{ ...base.runs[0]!, status }],
+        providerTurns: [
+          { ...base.providerTurns[0]!, status: status === "waiting" ? "completed" : "running" },
+        ],
+        turnItems: [
+          // Codex keeps a native subagent on its own child provider thread.
+          item("item:native", {
+            type: "subagent",
+            origin: "provider_native",
+            providerThreadId: ProviderThreadId.make("provider-thread:child"),
+            nativeItemRef: { driver, nativeId: "agent-1" },
+            title: "Sleeper",
+            childThreadId: ThreadId.make("thread:child"),
+          }),
+          item("item:shell", { type: "command_execution", providerThreadId, input: "ls" }),
+        ],
+      } as unknown as OrchestrationV2ThreadProjection;
+      let committed: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | undefined;
+      const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getRecoveryThreadIds: () => Effect.succeed([threadId]),
+              getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+            }),
+            Layer.mock(EventSink.EventSinkV2)({
+              commitCommand: (input) => {
+                committed = input;
+                return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+              },
+            }),
+            IdAllocator.layer,
+            Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
+            Layer.mock(EffectOutbox.EffectOutboxV2)({
+              listByCommandId: () => Effect.succeed([]),
+              reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+            }),
+          ),
+        ),
+      );
+      yield* recovery.reconcile("startup");
+      const work = (committed?.events ?? []).flatMap((event) =>
+        event.type === "run.background-work-cancelled" ? [event.payload] : [],
+      );
+      // The subagent is reported on the run that awaited it. A running run's
+      // shell died with its turn.
+      assert.deepEqual(work, [
+        {
+          runId,
+          restartCancelledBackgroundWork: [
+            { kind: "subagent", label: "Sleeper (id agent-1)", id: "item:native" },
+            ...(status === "waiting"
+              ? [{ kind: "shell" as const, label: "ls", id: "item:shell" }]
+              : []),
+          ],
+        },
+      ]);
+      assert.deepEqual(
+        committed?.effects.map((effect) => effect.request),
+        [{ type: "provider-runtime.continue", sourceRunId: runId }],
+      );
+    }),
+);
+
 it.effect("does not duplicate delivery and yields to newer user work or opt-out", () =>
   Effect.gen(function* () {
     let projection = makeProjection();
@@ -693,6 +775,79 @@ it("does not wake a settled run for work left by a session that already stopped"
     );
 });
 
+it.effect("wakes a run whose subagent's own shell the restart cut, past a wake it cut first", () =>
+  Effect.gen(function* () {
+    const base = makeProjection();
+    const cutWake = {
+      ...base.runs[0]!,
+      id: RunId.make("run:wake"),
+      ordinal: 2,
+      status: "starting",
+      startedAt: null,
+    };
+    const withShell = (parentTaskId?: string) =>
+      ({
+        ...base,
+        runs: [{ ...base.runs[0]!, status: "waiting", startedAt: now }, cutWake],
+        providerThreads: [
+          {
+            ...base.providerThreads[0]!,
+            status: "idle",
+            pendingBackgroundTasks: [
+              {
+                kind: "command",
+                taskId: "shell:1",
+                description: "sleep 150",
+                ...(parentTaskId === undefined ? {} : { parentTaskId }),
+              },
+            ],
+          },
+        ],
+        providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
+      }) as unknown as OrchestrationV2ThreadProjection;
+    assert.equal(restartContinuationRun(withShell("agent:1"), now)?.id, runId);
+    // A shell the agent started itself still does not wake it.
+    assert.isUndefined(restartContinuationRun(withShell(), now));
+
+    const texts = yield* continuationTexts({
+      ...base,
+      runs: [
+        {
+          ...base.runs[0]!,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+          restartCancelledBackgroundWork: [
+            { kind: "subagent", label: "sleep 150 (subagent agent:1)", id: "agent:1" },
+          ],
+        },
+        { ...cutWake, status: "cancelled", completedAt: now },
+      ],
+      providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
+    } as unknown as OrchestrationV2ThreadProjection);
+    assert.lengthOf(texts, 1);
+    assert.include(texts[0], "- subagent: sleep 150 (subagent agent:1)");
+    // A run the user stopped before it started still takes precedence.
+    const stopped = yield* continuationTexts({
+      ...base,
+      runs: [
+        {
+          ...base.runs[0]!,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+          restartCancelledBackgroundWork: [
+            { kind: "subagent", label: "sleep 150 (subagent agent:1)", id: "agent:1" },
+          ],
+        },
+        { ...cutWake, status: "interrupted", completedAt: now },
+      ],
+      providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
+    } as unknown as OrchestrationV2ThreadProjection);
+    assert.lengthOf(stopped, 0);
+  }),
+);
+
 it.effect("does not cancel or resume a run that completes while shutdown intent commits", () =>
   Effect.gen(function* () {
     let projection = makeProjection();
@@ -792,6 +947,7 @@ const cutMidTurn = (extra: Record<string, unknown> = {}) => {
       {
         ...base.runs[0]!,
         status: "cancelled",
+        completedAt: now,
         userMessageId: MessageId.make("message:user"),
         ...extra,
       },
@@ -989,7 +1145,7 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
   }),
 );
 
-it.effect("stops continuing after three automatic restart continuations in a row", () =>
+it.effect("stops rapid restart loops but allows repeated restarts after normal work", () =>
   Effect.gen(function* () {
     const first = RunId.make("run:first-continuation");
     const second = RunId.make("run:second-continuation");
@@ -1010,7 +1166,24 @@ it.effect("stops continuing after three automatic restart continuations in a row
         run.id === first ? { ...run, restartContinuationOfRunId: RunId.make("run:root") } : run,
       ),
     } as unknown as OrchestrationV2ThreadProjection;
-    assert.lengthOf(yield* continuationTexts(withThreeLinks), 0);
+    for (const { completedAt, oldestRequestAge, expected } of [
+      { completedAt: null, oldestRequestAge: { minutes: 6 }, expected: 0 },
+      { completedAt: null, oldestRequestAge: { minutes: 6, milliseconds: 1 }, expected: 1 },
+      { completedAt: now, oldestRequestAge: { minutes: 6 }, expected: 1 },
+    ]) {
+      const projection = {
+        ...withThreeLinks,
+        runs: withThreeLinks.runs.map((run, index) => ({
+          ...run,
+          completedAt,
+          requestedAt: DateTime.subtract(
+            now,
+            run.id === first ? oldestRequestAge : { minutes: index + 1 },
+          ),
+        })),
+      };
+      assert.lengthOf(yield* continuationTexts(projection), expected);
+    }
   }),
 );
 

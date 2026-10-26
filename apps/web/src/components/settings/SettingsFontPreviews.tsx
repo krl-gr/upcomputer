@@ -1,15 +1,18 @@
+import type { ServerProviderSkill } from "@t3tools/contracts";
 import { preloadPatchFile } from "@pierre/diffs/ssr";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
 import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
-import { useTheme } from "../../hooks/useTheme";
+import { useRenderedAppearance, useTheme } from "../../hooks/useTheme";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { resolveDiffThemeName, type DiffThemeName } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import { GhosttyTerminalSurface } from "~/terminal/ghostty/surface";
 
-const EMPTY_SKILLS: ReadonlyArray<never> = [];
+const PREVIEW_SKILLS: ReadonlyArray<ServerProviderSkill> = [
+  { name: "frontend-design", path: ".agents/skills/frontend-design/SKILL.md", enabled: true },
+];
 
 const PROMPT_PREVIEW_TEXT =
   "Use $frontend-design to fix the flaky test in " +
@@ -22,10 +25,10 @@ export function PromptFontPreview() {
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const [prompt, setPrompt] = useState(PROMPT_PREVIEW_TEXT);
   const [cursor, setCursor] = useState(PROMPT_PREVIEW_TEXT.length);
-  const onChange = useCallback((nextValue: string, nextCursor: number) => {
+  const onChange = (nextValue: string, nextCursor: number) => {
     setPrompt(nextValue);
     setCursor(nextCursor);
-  }, []);
+  };
   return (
     <div className="mt-1 mb-2 rounded-lg border border-border bg-background px-3 py-2">
       <ComposerPromptEditor
@@ -34,7 +37,7 @@ export function PromptFontPreview() {
         value={prompt}
         cursor={cursor}
         contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
-        skills={EMPTY_SKILLS}
+        skills={PREVIEW_SKILLS}
         disabled={false}
         placeholder={DISCONNECTED_COMPOSER_PLACEHOLDER}
         className="max-h-42 min-h-14"
@@ -110,7 +113,7 @@ function StaticDiffHtml({ html }: { html: string }) {
 }
 
 export function CodeFontPreview() {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = useRenderedAppearance();
   const themeName = resolveDiffThemeName(resolvedTheme);
   const [htmlByFile, setHtmlByFile] = useState<readonly string[] | null>(null);
   useEffect(() => {
@@ -173,6 +176,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const surface = surfaceRef.current;
     if (!mount || !surface) return;
     surface.setTheme(terminalThemeFromApp(mount));
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The tokens come from the DOM's computed styles, which a theme change rewrites.
   }, [theme, resolvedTheme]);
 
   useEffect(() => {

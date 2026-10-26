@@ -1,3 +1,5 @@
+import { SearchField } from "../../components/ui/SearchField";
+import { Button } from "../../components/ui/Button";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -13,8 +15,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
@@ -155,7 +157,7 @@ function BranchSelectionRow(props: {
   readonly onSelect: (branch: VcsRef) => void;
   readonly selected: boolean;
 }) {
-  const onPress = useCallback(() => props.onSelect(props.branch), [props.branch, props.onSelect]);
+  const onPress = () => props.onSelect(props.branch);
 
   return (
     <View
@@ -266,6 +268,7 @@ export function NewTaskBranchPickerRouteScreen() {
     AuthSourceControlWriteScope,
   );
   const navigation = useNavigation();
+  const readRefs = useAtomCommand(vcsEnvironment.readRefs, { reportFailure: false });
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const [switchingBranchName, setSwitchingBranchName] = useState<string | null>(null);
   const selectingBranchNameRef = useRef<string | null>(null);
@@ -290,67 +293,59 @@ export function NewTaskBranchPickerRouteScreen() {
     [navigation],
   );
 
-  const selectBranch = useCallback(
-    async (branch: VcsRef) => {
-      const needsCheckout = shouldCheckoutNewTaskBranch({
-        branchIsCurrent: branch.current,
-        branchWorktreePath: branch.worktreePath,
-        workspaceMode: flow.workspaceMode,
-      });
-      if (selectingBranchNameRef.current !== null || (needsCheckout && !canWriteSourceControl)) {
-        return;
-      }
-      selectingBranchNameRef.current = branch.name;
-      void Haptics.selectionAsync();
+  const selectBranch = async (branch: VcsRef) => {
+    const needsCheckout = shouldCheckoutNewTaskBranch({
+      branchIsCurrent: branch.current,
+      branchWorktreePath: branch.worktreePath,
+      workspaceMode: flow.workspaceMode,
+    });
+    if (selectingBranchNameRef.current !== null || (needsCheckout && !canWriteSourceControl)) {
+      return;
+    }
+    selectingBranchNameRef.current = branch.name;
+    void Haptics.selectionAsync();
 
-      try {
-        if (!flow.selectedProject) return;
-        setSwitchingBranchName(branch.name);
-        const result = await checkoutNewTaskBranch({
-          branch,
-          project: flow.selectedProject,
-          workspaceMode: flow.workspaceMode,
-          switchRef,
-        });
-        if (result._tag === "Failure") {
-          if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            Dialog.alert(
-              "Could not switch branch",
-              error instanceof Error ? error.message : "The branch could not be checked out.",
-            );
-          }
-          return;
-        }
-
-        // The checkout has already changed the repository. Persist the matching
-        // draft selection even if the native sheet was dismissed while the
-        // command was in flight; only visible-screen work is focus-gated below.
-        flow.selectBranch(result.value);
-        if (!mountedRef.current || !navigation.isFocused()) {
-          return;
-        }
-        flow.setBranchQuery("");
-        allowSelectionNavigationRef.current = true;
-        navigation.goBack();
-      } finally {
-        selectingBranchNameRef.current = null;
-        allowSelectionNavigationRef.current = false;
-        if (mountedRef.current) {
-          setSwitchingBranchName(null);
-        }
-      }
-    },
-    [
-      canWriteSourceControl,
-      flow.selectBranch,
-      flow.selectedProject,
-      flow.setBranchQuery,
-      flow.workspaceMode,
-      navigation,
+    const project = flow.selectedProject;
+    if (!project) {
+      selectingBranchNameRef.current = null;
+      return;
+    }
+    setSwitchingBranchName(branch.name);
+    const result = await checkoutNewTaskBranch({
+      branch,
+      project,
+      workspaceMode: flow.workspaceMode,
+      readRefs,
       switchRef,
-    ],
-  );
+    });
+    if (mountedRef.current) setSwitchingBranchName(null);
+    if (result._tag === "Failure") {
+      selectingBranchNameRef.current = null;
+      if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        Dialog.alert(
+          "Could not switch branch",
+          error instanceof Error ? error.message : "The branch could not be checked out.",
+        );
+      }
+      return;
+    }
+
+    // The checkout has already changed the repository. Persist the matching
+    // draft selection even if the native sheet was dismissed while the
+    // command was in flight; only visible-screen work is focus-gated below.
+    flow.selectBranch(result.value);
+    if (!mountedRef.current || !navigation.isFocused()) {
+      selectingBranchNameRef.current = null;
+      return;
+    }
+    flow.setBranchQuery("");
+    // beforeRemove blocks dismissal while a switch is in flight; this one is ours.
+    allowSelectionNavigationRef.current = true;
+    navigation.goBack();
+    allowSelectionNavigationRef.current = false;
+    selectingBranchNameRef.current = null;
+  };
 
   return (
     <BranchPickerScreen
@@ -405,6 +400,7 @@ export function BranchPickerScreen(props: {
     readonly onChangeStartFromOrigin: (value: boolean) => void;
   };
 }) {
+  const searchRef = useRef<import("react-native").TextInputInstance>(null);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
@@ -413,38 +409,26 @@ export function BranchPickerScreen(props: {
     props.branches.find((branch) => branch.current)?.name ??
     props.branches.find((branch) => branch.isDefault)?.name ??
     null;
-  const branchListContentStyle = useMemo(
-    () => ({
-      paddingBottom: usesNativeMailSearchToolbar
-        ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 16
-        : Platform.OS === "ios"
-          ? 16
-          : Math.max(insets.bottom, 16) + 16,
-      paddingHorizontal: 16,
-      paddingTop: 16,
-    }),
-    [insets.bottom, usesNativeMailSearchToolbar],
-  );
+  const branchListContentStyle = {
+    paddingBottom: usesNativeMailSearchToolbar
+      ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 16
+      : Platform.OS === "ios"
+        ? 16
+        : Math.max(insets.bottom, 16) + 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  };
 
-  const renderBranch = useCallback(
-    ({ item, index }: { readonly item: VcsRef; readonly index: number }) => (
-      <BranchSelectionRow
-        badge={branchBadgeLabel({ branch: item, project: props.project })}
-        branch={item}
-        disabled={props.selectionDisabled ?? false}
-        isFirst={index === 0}
-        isLast={index === props.branches.length - 1}
-        onSelect={props.onSelect}
-        selected={selectedBranchName === item.name}
-      />
-    ),
-    [
-      props.branches.length,
-      props.project,
-      props.onSelect,
-      selectedBranchName,
-      props.selectionDisabled,
-    ],
+  const renderBranch = ({ item, index }: { readonly item: VcsRef; readonly index: number }) => (
+    <BranchSelectionRow
+      badge={branchBadgeLabel({ branch: item, project: props.project })}
+      branch={item}
+      disabled={props.selectionDisabled ?? false}
+      isFirst={index === 0}
+      isLast={index === props.branches.length - 1}
+      onSelect={props.onSelect}
+      selected={selectedBranchName === item.name}
+    />
   );
 
   const branchListHeader = props.worktree ? (
@@ -456,7 +440,7 @@ export function BranchPickerScreen(props: {
     >
       <ToggleRow
         onValueChange={props.worktree.onChangeStartFromOrigin}
-        title="Start from origin"
+        title="Start from remote"
         value={props.worktree.startFromOrigin}
       />
     </View>
@@ -491,13 +475,9 @@ export function BranchPickerScreen(props: {
                   : "No branches available"}
           </Text>
           {!props.loading && props.error ? (
-            <Pressable
-              accessibilityRole="button"
-              className="rounded-full bg-card px-4 py-2 active:opacity-70"
-              onPress={props.onRefresh}
-            >
-              <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
-            </Pressable>
+            <View className="self-center">
+              <Button label="Try again" tone="secondary" onPress={props.onRefresh} />
+            </View>
           ) : null}
         </View>
       </ScrollView>
@@ -540,17 +520,13 @@ export function BranchPickerScreen(props: {
           onBack={() => navigation.goBack()}
         />
         <View className="bg-header px-4 pb-3 pt-1">
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
+          <SearchField
+            inputRef={searchRef}
+            autoFocus={false}
             accessibilityLabel="Find a branch"
-            className="h-12 rounded-full border border-input-border bg-input px-4 font-sans text-base text-foreground"
-            selectionColorClassName="accent-focus/32"
-            cursorColorClassName="accent-focus"
-            selectionHandleColorClassName="accent-focus"
+            clearAccessibilityLabel="Clear branch search"
             onChangeText={props.onQueryChange}
             placeholder="Find a branch"
-            placeholderTextColorClassName="accent-placeholder"
             value={props.query}
           />
         </View>

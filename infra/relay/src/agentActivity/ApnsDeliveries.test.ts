@@ -1,3 +1,4 @@
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
@@ -221,6 +222,7 @@ function layerFor(input: {
         Layer.succeed(LiveActivities.LiveActivities, {
           register: () => Effect.void,
           listTargets: () => Effect.succeed(input.currentTargets ?? [target]),
+          listIdleArmedTargets: () => Effect.succeed([]),
           markStartQueued: (queued) =>
             Effect.sync(() => {
               input.queuedStarts?.push(queued);
@@ -601,34 +603,89 @@ describe("ApnsDeliveries", () => {
     },
   );
 
-  it.effect(
-    "throttles updates for changed aggregates with stable counts and no pending attention",
-    () => {
-      const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
-      const queuedJobs: Array<SignedApnsDeliveryJob> = [];
-      const changedAggregate: RelayAgentActivityAggregateState = {
-        ...aggregate,
-        updatedAt: "1970-01-01T00:00:04.000Z",
-      };
-      const previousAggregateJson = JSON.stringify(aggregate);
-
-      return Effect.gen(function* () {
-        const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
-        const result = yield* deliveries.sendForTarget({
-          target: {
-            ...target,
-            last_aggregate_json: previousAggregateJson,
-            last_live_activity_delivery_at: "1970-01-01T00:00:04.000Z",
-          },
-          aggregate: changedAggregate,
-          nowMs: 5_000,
-        });
-
-        expect(result).toBeNull();
-        expect(queuedJobs).toEqual([]);
-      }).pipe(Effect.provide(layerFor({ attempts, queuedJobs })));
+  it.effect.each([
+    {
+      label: "connecting becomes working",
+      previousRows: [{ ...aggregate.activities[0]!, phase: "starting", status: "Connecting" }],
     },
-  );
+    {
+      label: "input resumes working",
+      previousRows: [{ ...aggregate.activities[0]!, phase: "waiting_for_input", status: "Input" }],
+    },
+    {
+      label: "a settled terminal row leaves",
+      previousRows: [
+        aggregate.activities[0]!,
+        {
+          ...aggregate.activities[0]!,
+          threadId: ThreadId.make("finished"),
+          phase: "completed",
+          status: "Done",
+        },
+      ],
+    },
+    {
+      label: "the same thread id moves to another environment",
+      previousRows: [
+        { ...aggregate.activities[0]!, environmentId: EnvironmentId.make("other-env") },
+      ],
+    },
+  ] as const)("queues an update inside the throttle window when $label", ({ previousRows }) => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+    const previousAggregate: RelayAgentActivityAggregateState = {
+      ...aggregate,
+      activities: previousRows,
+    };
+
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      const result = yield* deliveries.sendForTarget({
+        target: {
+          ...target,
+          last_aggregate_json: JSON.stringify(previousAggregate),
+          last_live_activity_delivery_at: "1970-01-01T00:00:04.000Z",
+        },
+        aggregate,
+        nowMs: 5_000,
+      });
+
+      expect(result?.kind).toBe("live_activity_update");
+      expect(queuedJobs).toMatchObject([{ payload: { kind: "live_activity_update", aggregate } }]);
+      expect(queuedJobs[0]?.payload.alert ?? null).toBeNull();
+      expect(attempts).toEqual([]);
+    }).pipe(Effect.provide(layerFor({ attempts, queuedJobs })));
+  });
+
+  it.effect.each([
+    { label: "inside", nowMs: 5_000, queued: false },
+    { label: "after", nowMs: 19_000, queued: true },
+  ])("throttles timestamp-only updates $label the window", ({ nowMs, queued }) => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+    const changedAggregate: RelayAgentActivityAggregateState = {
+      ...aggregate,
+      updatedAt: "1970-01-01T00:00:04.000Z",
+      activities: [{ ...aggregate.activities[0]!, updatedAt: "1970-01-01T00:00:04.000Z" }],
+    };
+    const previousAggregateJson = JSON.stringify(aggregate);
+
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      const result = yield* deliveries.sendForTarget({
+        target: {
+          ...target,
+          last_aggregate_json: previousAggregateJson,
+          last_live_activity_delivery_at: "1970-01-01T00:00:04.000Z",
+        },
+        aggregate: changedAggregate,
+        nowMs,
+      });
+
+      expect(result?.kind ?? null).toBe(queued ? "live_activity_update" : null);
+      expect(queuedJobs).toHaveLength(queued ? 1 : 0);
+    }).pipe(Effect.provide(layerFor({ attempts, queuedJobs })));
+  });
 
   it.effect("queues an end for an active Live Activity when Live Activities are disabled", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
@@ -895,6 +952,64 @@ describe("ApnsDeliveries", () => {
       expect(error.cause).toMatchObject({ _tag: "SchemaError" });
     }).pipe(Effect.provide(layerFor({ attempts })));
   });
+
+  it.effect.each([
+    { phase: "running", updatedAt: state.updatedAt, disabled: false, sends: false },
+    { phase: "completed", updatedAt: state.updatedAt, disabled: false, sends: false },
+    { phase: "completed", updatedAt: "1969-12-31T23:44:00.000Z", disabled: false, sends: true },
+    { phase: "running", updatedAt: state.updatedAt, disabled: true, sends: true },
+  ] as const)(
+    "rechecks a queued contentless end: $phase at $updatedAt, disabled=$disabled",
+    ({ phase, updatedAt, disabled, sends }) => {
+      const requests: HttpClientRequest.HttpClientRequest[] = [];
+      const signedEnd = signApnsDeliveryJob({
+        secret: config.apnsDeliveryJobSigningSecret,
+        payload: makeApnsDeliveryJobPayload({
+          kind: "live_activity_end",
+          userId: target.user_id,
+          deviceId: target.device_id,
+          token: "activity-token",
+          aggregate: null,
+          createdAt: state.updatedAt,
+          expiresAt: "1970-01-01T00:10:00.000Z",
+          jobId: "job-end-1",
+        }),
+      });
+      return Effect.gen(function* () {
+        const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+        const result = yield* deliveries.processSignedJob(signedEnd);
+        expect(result.ok).toBe(true);
+        expect(requests).toHaveLength(sends ? 1 : 0);
+        if (sends) {
+          const request = requests[0]!;
+          expect(request.url).toBe("https://api.sandbox.push.apple.com/3/device/activity-token");
+          expect(request.body._tag).toBe("Uint8Array");
+          if (request.body._tag === "Uint8Array") {
+            const { aps } = JSON.parse(new TextDecoder().decode(request.body.body));
+            expect(aps.event).toBe("end");
+            expect(aps.alert).toBeUndefined();
+            expect(aps.sound).toBeUndefined();
+          }
+        }
+      }).pipe(
+        Effect.provide(
+          layerFor({
+            attempts: [],
+            config: signingConfig,
+            currentTargets: [
+              { ...target, preferences_json: disabled ? disabledPreferences : enabledPreferences },
+            ],
+            activityStates: [{ ...state, phase, updatedAt }],
+            execute: (request) =>
+              Effect.sync(() => {
+                requests.push(request);
+                return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+              }),
+          }),
+        ),
+      );
+    },
+  );
 
   it.effect("skips a queued start when the user no longer has live work", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];

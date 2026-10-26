@@ -147,6 +147,8 @@ export class ProcessRunner extends Context.Service<
 >()("t3/processRunner") {}
 
 const DEFAULT_TIMEOUT = "60 seconds";
+// Keep SIGTERM-ignoring helpers from blocking timeouts or graceful shutdown.
+const FORCE_KILL_AFTER = "1 second";
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
@@ -310,6 +312,18 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     });
   }
 
+  const toSpawnError = (cause: unknown) =>
+    new ProcessSpawnError({
+      command: input.command,
+      argumentCount: input.args.length,
+      cwd: input.cwd,
+      spawnCwd: input.spawnCwd,
+      resolvedCommand: spawnCommand.command,
+      resolvedArgumentCount: spawnCommand.args.length,
+      shell: spawnCommand.shell,
+      cause,
+    });
+
   const child = yield* spawner
     .spawn(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -321,22 +335,15 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
             }
           : {}),
         shell: spawnCommand.shell,
+        forceKillAfter: FORCE_KILL_AFTER,
       }),
     )
     .pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProcessSpawnError({
-            command: input.command,
-            argumentCount: input.args.length,
-            cwd: input.cwd,
-            spawnCwd: input.spawnCwd,
-            resolvedCommand: spawnCommand.command,
-            resolvedArgumentCount: spawnCommand.args.length,
-            shell: spawnCommand.shell,
-            cause,
-          }),
-      ),
+      Effect.mapError(toSpawnError),
+      // Node's spawn can also throw synchronously, e.g. ENOTDIR when a PATH
+      // entry is a file. That arrives as a defect, which `mapError` never sees,
+      // so callers that recover from spawn failures would be bypassed.
+      Effect.catchDefect((cause) => Effect.fail(toSpawnError(cause))),
     );
 
   const stdin = input.stdin;

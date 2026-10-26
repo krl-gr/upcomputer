@@ -15,14 +15,16 @@ import {
 import {
   createContext,
   use,
-  useCallback,
+  useDeferredValue,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { Platform, useWindowDimensions, View } from "react-native";
+import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -34,8 +36,11 @@ import { AsyncResult } from "effect/reactivity";
 
 import {
   deriveFileInspectorPaneLayout,
+  alignListPaneToHinge,
   deriveLayout,
+  type VerticalHinge,
   deriveWorkspacePaneLayout,
+  isPrimarySidebarPinned,
   type FileInspectorPaneLayout,
   type Layout,
   type WorkspaceAuxiliaryPaneRole,
@@ -57,7 +62,6 @@ import {
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
 import { AndroidHomeFabLayout } from "../home/AndroidHomeFab";
-import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import {
   AndroidWorkspaceNavigation,
   ANDROID_WORKSPACE_RAIL_WIDTH,
@@ -65,17 +69,24 @@ import {
 import { AndroidWorkspaceSidebar } from "../workspace/AndroidWorkspaceSidebar";
 import { useAndroidWorkspaceSelection } from "../workspace/useAndroidWorkspaceSelection";
 import { HomeListOptionsProvider } from "../home/home-list-options";
+import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
+import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
-import { WorkspaceContentWidthContext } from "./workspace-content-width";
+import {
+  WorkspaceContentWidthContext,
+  WorkspaceSettledContentWidthContext,
+} from "./workspace-content-width";
 import {
   NativeWorkspaceModeContext,
   NativeWorkspaceInspectorContext,
 } from "../../native/v5-workspace-context";
 
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
+import { AndroidHingeObserver } from "../../native/AndroidHingeObserver";
+import { WindowHingeContext } from "../../native/window-hinge-context";
 
 interface AdaptiveWorkspaceContextValue {
   readonly layout: Layout;
@@ -90,6 +101,13 @@ interface AdaptiveWorkspaceContextValue {
   readonly toggleAuxiliaryPane: () => void;
   readonly togglePrimarySidebar: () => void;
   readonly setAuxiliaryPaneWidth: (width: number) => void;
+  /**
+   * Android split view while the thread composer has the soft keyboard: the
+   * sidebar and rail step aside and the thread header drops to one line.
+   */
+  readonly composerKeyboardActive: boolean;
+  /** The thread composer reports its focus so the layout can make room for typing. */
+  readonly setComposerEditing: (editing: boolean) => void;
 }
 
 const compactLayout = deriveLayout({ width: 0, height: 0 });
@@ -116,6 +134,8 @@ const AdaptiveWorkspaceContext = createContext<AdaptiveWorkspaceContextValue>({
   toggleAuxiliaryPane: () => undefined,
   togglePrimarySidebar: () => undefined,
   setAuxiliaryPaneWidth: () => undefined,
+  composerKeyboardActive: false,
+  setComposerEditing: () => undefined,
 });
 
 export function useAdaptiveWorkspaceLayout(): AdaptiveWorkspaceContextValue {
@@ -125,9 +145,7 @@ export function useAdaptiveWorkspaceLayout(): AdaptiveWorkspaceContextValue {
 export function useAdaptiveWorkspacePaneRole(role: WorkspaceAuxiliaryPaneRole) {
   const { activateAuxiliaryPaneRole } = useAdaptiveWorkspaceLayout();
 
-  useFocusEffect(
-    useCallback(() => activateAuxiliaryPaneRole(role), [activateAuxiliaryPaneRole, role]),
-  );
+  useFocusEffect(() => activateAuxiliaryPaneRole(role));
 }
 
 /**
@@ -145,7 +163,7 @@ export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefi
   const navigation = use(NavigationContext);
   const route = use(NavigationRouteContext);
 
-  const wrappedRender = useMemo(() => {
+  const wrappedRender = (() => {
     if (render === undefined) {
       return undefined;
     }
@@ -154,37 +172,35 @@ export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefi
         <NavigationRouteContext.Provider value={route}>{render()}</NavigationRouteContext.Provider>
       </NavigationContext.Provider>
     );
-  }, [navigation, render, route]);
+  })();
 
-  const wrappedRenderRef = useRef(wrappedRender);
-  wrappedRenderRef.current = wrappedRender;
   const focusedRef = useRef(false);
   const deactivateRef = useRef<(() => void) | null>(null);
 
-  const syncRegistration = useCallback(() => {
-    if (!focusedRef.current || wrappedRenderRef.current === undefined) {
+  // An effect event reads this render's pane without making the focus
+  // subscription re-run (and deactivate) every time the pane closure changes.
+  const syncRegistration = useEffectEvent(() => {
+    if (!focusedRef.current || wrappedRender === undefined) {
       deactivateRef.current?.();
       return;
     }
-    deactivateRef.current = registerWorkspaceInspector(wrappedRenderRef.current);
-  }, [registerWorkspaceInspector]);
+    deactivateRef.current = registerWorkspaceInspector(wrappedRender);
+  });
 
-  useFocusEffect(
-    useCallback(() => {
-      focusedRef.current = true;
+  useFocusEffect(() => {
+    focusedRef.current = true;
+    syncRegistration();
+    return () => {
+      focusedRef.current = false;
       syncRegistration();
-      return () => {
-        focusedRef.current = false;
-        syncRegistration();
-      };
-    }, [syncRegistration]),
-  );
+    };
+  });
 
   useEffect(() => {
     if (focusedRef.current) {
       syncRegistration();
     }
-  }, [syncRegistration, wrappedRender]);
+  }, [wrappedRender]);
 
   useEffect(
     () => () => {
@@ -236,12 +252,13 @@ function AdaptiveWorkspaceLayoutContent(
   const windowDimensions = useWindowDimensions();
   const nativeMetrics = useNativeLayoutMetrics();
   const { width: viewportWidth, height } = nativeMetrics ?? windowDimensions;
-  const { scale: androidControlScale } = useAndroidControlSizing();
   const pathname = props.pathname;
+  // Android's Settings tab is a full workspace page: the rail stays, the sidebar and
+  // auxiliary panes hide.
+  const workspacePage = Platform.OS === "android" && pathname.startsWith("/settings");
   const navigation = useNavigation();
   const activeRoleOwner = useRef<symbol | null>(null);
   const [primarySidebarPreferredVisible, setPrimarySidebarPreferredVisible] = useState(true);
-  const showPrimarySidebar = pathname === "/" || primarySidebarPreferredVisible;
   const [supplementaryPanePreferredVisible, setSupplementaryPanePreferredVisible] = useState(true);
   const [supplementaryPanePreferredWidth, setSupplementaryPanePreferredWidth] = useState<
     number | null
@@ -251,19 +268,58 @@ function AdaptiveWorkspaceLayoutContent(
     null,
   );
   const [primarySidebarSearchQuery, setPrimarySidebarSearchQuery] = useState("");
+  const [railOverlay, setRailOverlay] = useState(false);
   const [focusedAuxiliaryPaneRole, setFocusedAuxiliaryPaneRole] =
     useState<WorkspaceAuxiliaryPaneRole | null>(null);
+  // The compiler can't memoize these derivations: they stay live across later hook calls. Fresh
+  // objects here change the workspace context on every render, so every workspace screen
+  // re-renders on any layout state change, and the inspector registration then loops: each
+  // re-register re-renders its screen, which hands over a new inspector renderer.
   const baseLayout = useMemo(
     () => deriveLayout({ width: viewportWidth, height, nativeMetrics }),
     [height, viewportWidth, nativeMetrics],
   );
-  const layout = baseLayout;
-  const shouldRenderNavigationRail = Platform.OS === "android" && layout.usesSplitView;
+  const primarySidebarPinned = isPrimarySidebarPinned({
+    pathname,
+    nativeWorkspace,
+    usesSplitView: baseLayout.usesSplitView,
+  });
+  const [composerEditing, setComposerEditing] = useState(false);
+  const softKeyboardVisible = useKeyboardState((state) => state.isVisible);
+  // Keyed on the soft keyboard, not focus alone: a hardware keyboard leaves room
+  // for the sidebar, and Back closes the keyboard while the editor keeps focus.
+  // Deferred because the thread composer follows the keyboard only once its own render of this
+  // keyboard event commits; re-laying out the workspace in that commit held it behind the
+  // keyboard until the feed had reflowed.
+  const composerKeyboardActive = useDeferredValue(
+    Platform.OS === "android" && baseLayout.usesSplitView && composerEditing && softKeyboardVisible,
+  );
+  const showPrimarySidebar =
+    !workspacePage &&
+    (primarySidebarPinned || (primarySidebarPreferredVisible && !composerKeyboardActive));
+  const shouldRenderNavigationRail = Platform.OS === "android" && baseLayout.usesSplitView;
   const navigationRailWidth =
-    shouldRenderNavigationRail && showPrimarySidebar
-      ? ANDROID_WORKSPACE_RAIL_WIDTH * Math.max(1, androidControlScale)
+    shouldRenderNavigationRail && (showPrimarySidebar || workspacePage)
+      ? ANDROID_WORKSPACE_RAIL_WIDTH
       : 0;
+  const [hinge, setHinge] = useState<VerticalHinge | null>(null);
+  const [windowHinge, setWindowHinge] = useState<VerticalHinge | null>(null);
+  const handleHingeChange = (next: VerticalHinge | null, nextWindow: VerticalHinge | null) => {
+    setHinge(next);
+    setWindowHinge(nextWindow);
+  };
+  const layout = useMemo(
+    () =>
+      alignListPaneToHinge({
+        layout: baseLayout,
+        hinge,
+        viewportWidth,
+        leadingWidth: navigationRailWidth,
+      }),
+    [baseLayout, hinge, navigationRailWidth, viewportWidth],
+  );
   const width = viewportWidth - navigationRailWidth;
+  // The sidebar stays mounted under a workspace page, so its list is ready on the way back.
   const shouldRenderPrimarySidebar = layout.usesSplitView;
   const fileInspector = useMemo(
     () =>
@@ -281,9 +337,10 @@ function AdaptiveWorkspaceLayoutContent(
   const auxiliaryPaneRole: WorkspaceAuxiliaryPaneRole =
     focusedAuxiliaryPaneRole ?? (/\/files(?:\/|$)/.test(pathname) ? "inspector" : "supplementary");
   const auxiliaryPanePreferredVisible =
-    auxiliaryPaneRole === "inspector"
+    !workspacePage &&
+    (auxiliaryPaneRole === "inspector"
       ? fileInspectorPreferredVisible
-      : supplementaryPanePreferredVisible;
+      : supplementaryPanePreferredVisible);
   const auxiliaryPanePreferredWidth =
     auxiliaryPaneRole === "inspector"
       ? fileInspectorPreferredWidth
@@ -310,7 +367,7 @@ function AdaptiveWorkspaceLayoutContent(
   const activeThread = parseActiveThreadPath(pathname);
   const environmentId = activeThread?.environmentId ?? null;
   const threadId = activeThread?.threadId ?? null;
-  const selectedThreadKey = useMemo(() => {
+  const selectedThreadKey = (() => {
     if (environmentId === null || threadId === null) {
       return null;
     }
@@ -319,13 +376,13 @@ function AdaptiveWorkspaceLayoutContent(
     } catch {
       return null;
     }
-  }, [environmentId, threadId]);
+  })();
   const [workspaceInspector, setWorkspaceInspector] = useState<{
     readonly render: () => ReactNode;
     readonly active: boolean;
   } | null>(null);
   const workspaceInspectorOwner = useRef<symbol | null>(null);
-  const registerWorkspaceInspector = useCallback((render: () => ReactNode) => {
+  const registerWorkspaceInspector = (render: () => ReactNode) => {
     const owner = Symbol("workspace-inspector");
     workspaceInspectorOwner.current = owner;
     setWorkspaceInspector({ render, active: true });
@@ -338,11 +395,11 @@ function AdaptiveWorkspaceLayoutContent(
       }
       setWorkspaceInspector((current) => (current === null ? null : { ...current, active: false }));
     };
-  }, []);
-  const handleWorkspaceInspectorClosed = useCallback(() => {
+  };
+  const handleWorkspaceInspectorClosed = () => {
     setWorkspaceInspector((current) => (current !== null && !current.active ? null : current));
-  }, []);
-  const activateAuxiliaryPaneRole = useCallback((role: WorkspaceAuxiliaryPaneRole) => {
+  };
+  const activateAuxiliaryPaneRole = (role: WorkspaceAuxiliaryPaneRole) => {
     const owner = Symbol(role);
     activeRoleOwner.current = owner;
     setFocusedAuxiliaryPaneRole(role);
@@ -354,10 +411,16 @@ function AdaptiveWorkspaceLayoutContent(
       activeRoleOwner.current = null;
       setFocusedAuxiliaryPaneRole(null);
     };
-  }, []);
-  const togglePrimarySidebar = useCallback(() => {
-    if (pathname === "/") {
+  };
+  const togglePrimarySidebar = () => {
+    if (primarySidebarPinned) {
       return;
+    }
+    // A sidebar the keyboard set aside returns with the keyboard; the user's preference stays
+    // intact. One the user had hidden still opens.
+    if (composerKeyboardActive) {
+      void KeyboardController.dismiss();
+      if (primarySidebarPreferredVisible) return;
     }
     if (!panes.primarySidebarVisible && panes.primarySidebarSuppressedByAuxiliary) {
       setFileInspectorPreferredVisible(false);
@@ -365,23 +428,21 @@ function AdaptiveWorkspaceLayoutContent(
       return;
     }
     setPrimarySidebarPreferredVisible((current) => !current);
-  }, [panes.primarySidebarSuppressedByAuxiliary, panes.primarySidebarVisible, pathname]);
-  const revealPrimarySidebar = useCallback(() => {
+  };
+  const revealPrimarySidebar = () => {
+    if (composerKeyboardActive) void KeyboardController.dismiss();
     if (panes.primarySidebarSuppressedByAuxiliary) {
       setFileInspectorPreferredVisible(false);
     }
     setPrimarySidebarPreferredVisible(true);
-  }, [panes.primarySidebarSuppressedByAuxiliary]);
-  const handleToggleSidebarCommand = useCallback(() => {
+  };
+  const handleToggleSidebarCommand = () => {
     togglePrimarySidebar();
     return true;
-  }, [togglePrimarySidebar]);
-  const sidebarCommands = useMemo(
-    () => (pathname === "/" ? [] : (["toggleSidebar"] as const)),
-    [pathname],
-  );
+  };
+  const sidebarCommands = primarySidebarPinned ? [] : (["toggleSidebar"] as const);
   useHardwareKeyboardCommand(sidebarCommands, handleToggleSidebarCommand);
-  const showAuxiliaryPane = useCallback((role: WorkspaceAuxiliaryPaneRole) => {
+  const showAuxiliaryPane = (role: WorkspaceAuxiliaryPaneRole) => {
     if (role === "inspector") {
       setFocusedAuxiliaryPaneRole("inspector");
       setFileInspectorPreferredVisible(true);
@@ -389,8 +450,8 @@ function AdaptiveWorkspaceLayoutContent(
     }
     setFocusedAuxiliaryPaneRole("supplementary");
     setSupplementaryPanePreferredVisible(true);
-  }, []);
-  const handleOpenFilesCommand = useCallback(() => {
+  };
+  const handleOpenFilesCommand = () => {
     const activeThread = parseActiveThreadPath(pathname);
     if (!layout.usesSplitView || !fileInspector.supported || activeThread === null) {
       return false;
@@ -401,73 +462,67 @@ function AdaptiveWorkspaceLayoutContent(
     }
     navigation.navigate("ThreadFiles", activeThread);
     return true;
-  }, [fileInspector.supported, layout.usesSplitView, pathname, navigation, showAuxiliaryPane]);
+  };
   useHardwareKeyboardCommand("files", handleOpenFilesCommand);
-  const toggleAuxiliaryPane = useCallback(() => {
+  const toggleAuxiliaryPane = () => {
     if (auxiliaryPaneRole === "inspector") {
       setFileInspectorPreferredVisible((current) => !current);
       return;
     }
     setSupplementaryPanePreferredVisible((current) => !current);
-  }, [auxiliaryPaneRole]);
-  const setAuxiliaryPaneWidth = useCallback(
-    (nextWidth: number) => {
-      if (auxiliaryPaneRole === "inspector") {
-        setFileInspectorPreferredWidth(nextWidth);
-        return;
-      }
-      setSupplementaryPanePreferredWidth(nextWidth);
-    },
-    [auxiliaryPaneRole],
-  );
-  const handleOpenSettings = useCallback(() => {
+  };
+  const setAuxiliaryPaneWidth = (nextWidth: number) => {
+    if (auxiliaryPaneRole === "inspector") {
+      setFileInspectorPreferredWidth(nextWidth);
+      return;
+    }
+    setSupplementaryPanePreferredWidth(nextWidth);
+  };
+  const handleOpenSettings = () => {
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
       params: { screen: "Settings" },
     });
-  }, [navigation]);
+  };
 
-  const handleStartNewTask = useCallback(() => {
+  const handleStartNewTask = () => {
     navigation.navigate("NewTaskSheet", { screen: "NewTask" });
-  }, [navigation]);
+  };
 
   // Minted here (root stack navigation) so the sidebar pane stays free of
   // navigation hooks — on iOS it renders inside an independent nav tree.
-  const handleOpenEnvironmentSettings = useCallback(() => {
+  const handleOpenEnvironmentSettings = () => {
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
       params: { screen: "SettingsEnvironments" },
     });
-  }, [navigation]);
+  };
 
-  const handleNewThreadOnBranch = useCallback(
-    (thread: EnvironmentThreadShell) => {
-      navigation.navigate("NewTaskSheet", {
-        screen: "NewTaskDraft",
-        params: {
-          environmentId: String(thread.environmentId),
-          projectId: String(thread.projectId),
-          branch: thread.branch,
-          worktreePath: thread.worktreePath,
-        },
-      });
-    },
-    [navigation],
-  );
+  const handleOpenThreadPullRequests = useOpenThreadPullRequests();
+  const { openPendingTask: handleOpenPendingTask } = usePendingTaskListActions();
 
-  const handleNewThreadInProject = useCallback(
-    (project: EnvironmentProject) => {
-      navigation.navigate("NewTaskSheet", {
-        screen: "NewTaskDraft",
-        params: {
-          environmentId: String(project.environmentId),
-          projectId: String(project.id),
-          title: project.title,
-        },
-      });
-    },
-    [navigation],
-  );
+  const handleNewThreadOnBranch = (thread: EnvironmentThreadShell) => {
+    navigation.navigate("NewTaskSheet", {
+      screen: "NewTaskDraft",
+      params: {
+        environmentId: String(thread.environmentId),
+        projectId: String(thread.projectId),
+        branch: thread.branch,
+        worktreePath: thread.worktreePath,
+      },
+    });
+  };
+
+  const handleNewThreadInProject = (project: EnvironmentProject) => {
+    navigation.navigate("NewTaskSheet", {
+      screen: "NewTaskDraft",
+      params: {
+        environmentId: String(project.environmentId),
+        projectId: String(project.id),
+        title: project.title,
+      },
+    });
+  };
 
   const inspectorColumnTargetWidth =
     workspaceInspector !== null && workspaceInspector.active && panes.auxiliaryPaneVisible
@@ -476,59 +531,117 @@ function AdaptiveWorkspaceLayoutContent(
   const contentTargetWidth = layout.usesSplitView
     ? Math.max(0, panes.contentPaneWidth - inspectorColumnTargetWidth)
     : null;
-  const [contentSizing, setContentSizing] = useState({
+  const [listPaneSizing, setListPaneSizing] = useState({
     viewportWidth,
-    target: contentTargetWidth,
+    workspacePage,
     sidebarVisible: panes.primarySidebarVisible,
-    width: contentTargetWidth,
+    listPaneTarget: layout.listPaneWidth,
+    listPaneFloor: layout.listPaneWidth,
+    listPaneCeiling: layout.listPaneWidth,
     revision: 0,
   });
   if (
     Platform.OS === "android" &&
-    (contentSizing.viewportWidth !== viewportWidth ||
-      contentSizing.target !== contentTargetWidth ||
-      contentSizing.sidebarVisible !== panes.primarySidebarVisible)
+    (listPaneSizing.viewportWidth !== viewportWidth ||
+      listPaneSizing.workspacePage !== workspacePage ||
+      listPaneSizing.sidebarVisible !== panes.primarySidebarVisible ||
+      listPaneSizing.listPaneTarget !== layout.listPaneWidth)
   ) {
-    const openingSidebar =
-      Platform.OS === "android" &&
-      contentSizing.viewportWidth === viewportWidth &&
-      !contentSizing.sidebarVisible &&
+    // A book-posture hinge resizes the visible list pane instead of revealing it.
+    const resizingSidebar =
+      listPaneSizing.viewportWidth === viewportWidth &&
+      listPaneSizing.workspacePage === workspacePage &&
+      listPaneSizing.sidebarVisible &&
       panes.primarySidebarVisible &&
-      contentSizing.width !== null &&
-      contentTargetWidth !== null;
-    setContentSizing({
+      listPaneSizing.listPaneTarget !== layout.listPaneWidth;
+    setListPaneSizing({
       viewportWidth,
-      target: contentTargetWidth,
+      workspacePage,
       sidebarVisible: panes.primarySidebarVisible,
-      width: openingSidebar
-        ? Math.max(contentSizing.width ?? 0, contentTargetWidth ?? 0)
-        : contentTargetWidth,
-      revision: contentSizing.revision + 1,
+      listPaneTarget: layout.listPaneWidth,
+      // While a hinge resizes the list, its width follows the pane edge within this span. A
+      // retarget mid-animation widens the span, since the edge is still somewhere inside it.
+      listPaneFloor: resizingSidebar
+        ? Math.min(listPaneSizing.listPaneFloor ?? 0, layout.listPaneWidth ?? 0)
+        : layout.listPaneWidth,
+      listPaneCeiling: resizingSidebar
+        ? Math.max(listPaneSizing.listPaneCeiling ?? 0, layout.listPaneWidth ?? 0)
+        : layout.listPaneWidth,
+      revision: listPaneSizing.revision + 1,
     });
   }
-  const settleContentWidth = useCallback((revision: number) => {
-    setContentSizing((current) =>
-      current.revision !== revision || current.width === current.target
+  const settleListPane = (revision: number) => {
+    setListPaneSizing((current) =>
+      current.revision !== revision ||
+      (current.listPaneFloor === current.listPaneTarget &&
+        current.listPaneCeiling === current.listPaneTarget)
         ? current
-        : { ...current, width: current.target },
+        : {
+            ...current,
+            listPaneFloor: current.listPaneTarget,
+            listPaneCeiling: current.listPaneTarget,
+          },
     );
-  }, []);
-  const contentSettledWidth = Platform.OS === "android" ? contentSizing.width : contentTargetWidth;
-  const contentRevision = contentSizing.revision;
+  };
+  const listPaneFloor = listPaneSizing.listPaneFloor ?? 0;
+  const listPaneCeiling = listPaneSizing.listPaneCeiling ?? 0;
+  const listPaneRevision = listPaneSizing.revision;
+  // Android lays the content out at its new width as soon as a pane toggles, then holds it
+  // against the edge that stays put while the other one slides, so nothing reflows after the
+  // panes land. A sliding sidebar uncovers the strip it is about to fill, or covers the content
+  // until it is gone.
+  const contentLeftTarget =
+    navigationRailWidth +
+    (shouldRenderPrimarySidebar && !workspacePage && panes.primarySidebarVisible
+      ? (layout.listPaneWidth ?? 0) + (layout.listPaneGap ?? 0)
+      : 0);
+  const [contentAnchor, setContentAnchor] = useState({
+    viewportWidth,
+    left: contentLeftTarget,
+    inspector: inspectorColumnTargetWidth,
+    end: false,
+  });
+  if (
+    Platform.OS === "android" &&
+    (contentAnchor.viewportWidth !== viewportWidth ||
+      contentAnchor.left !== contentLeftTarget ||
+      contentAnchor.inspector !== inspectorColumnTargetWidth)
+  ) {
+    setContentAnchor({
+      viewportWidth,
+      left: contentLeftTarget,
+      inspector: inspectorColumnTargetWidth,
+      end:
+        contentAnchor.viewportWidth === viewportWidth &&
+        contentAnchor.inspector === inspectorColumnTargetWidth,
+    });
+  }
 
   const renderedSidebarWidth = useSharedValue(
     panes.primarySidebarVisible ? (layout.listPaneWidth ?? 0) + (layout.listPaneGap ?? 0) : 0,
   );
   const renderedRailWidth = useSharedValue(navigationRailWidth);
+  const leavingWorkspacePage = useRef(false);
   useEffect(() => {
     if (nativeWorkspace) return;
+    renderedRailWidth.set(withTiming(navigationRailWidth, WORKSPACE_PANE_TIMING));
+    // A workspace page hides the sidebar through React instead, in the same commit that mounts
+    // the page. Animating it here would hide it a few frames before the page appears.
+    if (workspacePage) {
+      leavingWorkspacePage.current = true;
+      return;
+    }
+    const snap = leavingWorkspacePage.current;
+    leavingWorkspacePage.current = false;
     const targetWidth = panes.primarySidebarVisible
       ? (layout.listPaneWidth ?? 0) + (layout.listPaneGap ?? 0)
       : 0;
-    renderedSidebarWidth.value = withTiming(targetWidth, WORKSPACE_PANE_TIMING, (finished) => {
-      if (finished && Platform.OS === "android") runOnJS(settleContentWidth)(contentRevision);
-    });
-    renderedRailWidth.set(withTiming(navigationRailWidth, WORKSPACE_PANE_TIMING));
+    // The content beside it already took its final width when the page closed.
+    renderedSidebarWidth.set(
+      withTiming(targetWidth, snap ? { duration: 0 } : WORKSPACE_PANE_TIMING, (finished) => {
+        if (finished && Platform.OS === "android") runOnJS(settleListPane)(listPaneRevision);
+      }),
+    );
   }, [
     nativeWorkspace,
     navigationRailWidth,
@@ -537,10 +650,20 @@ function AdaptiveWorkspaceLayoutContent(
     panes.primarySidebarVisible,
     renderedSidebarWidth,
     renderedRailWidth,
-    settleContentWidth,
-    contentRevision,
+    settleListPane,
+    listPaneRevision,
+    workspacePage,
   ]);
   const railAnimatedStyle = useAnimatedStyle(() => ({ width: renderedRailWidth.value }));
+  // Showing or hiding the sidebar clips a fixed-width list. A hinge resize instead tracks the
+  // animated edge, so the header actions slide with it rather than jumping or being covered.
+  const listPaneGap = layout.listPaneGap ?? 0;
+  const listPaneAnimatedStyle = useAnimatedStyle(() => ({
+    width: Math.min(
+      listPaneCeiling,
+      Math.max(listPaneFloor, renderedSidebarWidth.value - listPaneGap),
+    ),
+  }));
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
     // Fading a UIKit glass ancestor can leave remounted header effects missing.
     opacity: Platform.OS === "ios" ? 1 : Math.min(1, renderedSidebarWidth.value / 80),
@@ -562,88 +685,64 @@ function AdaptiveWorkspaceLayoutContent(
   );
 
   const selectAndroidWorkspace = useAndroidWorkspaceSelection();
-  const handleSelectThread = useCallback(
-    (thread: EnvironmentThreadShell) => {
-      const params = {
-        environmentId: String(thread.environmentId),
-        threadId: String(thread.id),
-      };
-      if (Platform.OS === "android") {
-        setFileInspectorPreferredVisible(false);
-        selectAndroidWorkspace({ name: "Thread", params });
-        return;
-      }
-      const navigationAction = resolveThreadSelectionNavigationAction({
-        usesSplitView: layout.usesSplitView,
-        pathname,
-      });
-      const overlayState = resolveThreadSelectionOverlayState({
-        state: navigation.getState(),
-        workspaceRouteKey: props.workspaceRouteKey,
-        action: navigationAction,
-        params,
-      });
-      if (overlayState !== null) {
-        setFileInspectorPreferredVisible(false);
-        navigation.dispatch(CommonActions.reset(overlayState));
-        return;
-      }
-      if (navigationAction === "set-params") {
-        const nextThreadKey = scopedThreadKey(thread.environmentId, thread.id);
-        if (nextThreadKey === selectedThreadKey) {
-          return;
-        }
-        setFileInspectorPreferredVisible(false);
-        navigation.navigate("Thread", params);
-        return;
-      }
-      if (navigationAction === "replace") {
-        setFileInspectorPreferredVisible(false);
-        navigation.dispatch(StackActions.replace("Thread", params));
-        return;
-      }
-      navigation.navigate("Thread", params);
-    },
-    [
-      layout.usesSplitView,
+  const handleSelectThread = (thread: EnvironmentThreadShell) => {
+    const params = {
+      environmentId: String(thread.environmentId),
+      threadId: String(thread.id),
+    };
+    if (Platform.OS === "android") {
+      setFileInspectorPreferredVisible(false);
+      selectAndroidWorkspace({ name: "Thread", params });
+      return;
+    }
+    const navigationAction = resolveThreadSelectionNavigationAction({
+      usesSplitView: layout.usesSplitView,
       pathname,
-      navigation,
-      selectedThreadKey,
-      props.workspaceRouteKey,
-      selectAndroidWorkspace,
-    ],
-  );
+    });
+    const overlayState = resolveThreadSelectionOverlayState({
+      state: navigation.getState(),
+      workspaceRouteKey: props.workspaceRouteKey,
+      action: navigationAction,
+      params,
+    });
+    if (overlayState !== null) {
+      setFileInspectorPreferredVisible(false);
+      navigation.dispatch(CommonActions.reset(overlayState));
+      return;
+    }
+    if (navigationAction === "set-params") {
+      const nextThreadKey = scopedThreadKey(thread.environmentId, thread.id);
+      if (nextThreadKey === selectedThreadKey) {
+        return;
+      }
+      setFileInspectorPreferredVisible(false);
+      navigation.navigate("Thread", params);
+      return;
+    }
+    if (navigationAction === "replace") {
+      setFileInspectorPreferredVisible(false);
+      navigation.dispatch(StackActions.replace("Thread", params));
+      return;
+    }
+    navigation.navigate("Thread", params);
+  };
 
-  const contextValue = useMemo(
-    () => ({
-      layout,
-      panes,
-      fileInspector,
-      primarySidebarSearchQuery,
-      selectThread: handleSelectThread,
-      activateAuxiliaryPaneRole,
-      registerWorkspaceInspector,
-      setPrimarySidebarSearchQuery,
-      showAuxiliaryPane,
-      toggleAuxiliaryPane,
-      togglePrimarySidebar,
-      setAuxiliaryPaneWidth,
-    }),
-    [
-      activateAuxiliaryPaneRole,
-      fileInspector,
-      handleSelectThread,
-      layout,
-      panes,
-      primarySidebarSearchQuery,
-      registerWorkspaceInspector,
-      showAuxiliaryPane,
-      setPrimarySidebarSearchQuery,
-      setAuxiliaryPaneWidth,
-      toggleAuxiliaryPane,
-      togglePrimarySidebar,
-    ],
-  );
+  const contextValue = {
+    layout,
+    panes,
+    fileInspector,
+    primarySidebarSearchQuery,
+    selectThread: handleSelectThread,
+    activateAuxiliaryPaneRole,
+    registerWorkspaceInspector,
+    setPrimarySidebarSearchQuery,
+    showAuxiliaryPane,
+    toggleAuxiliaryPane,
+    togglePrimarySidebar,
+    setAuxiliaryPaneWidth,
+    composerKeyboardActive,
+    setComposerEditing,
+  };
 
   if (nativeWorkspace) {
     return (
@@ -667,102 +766,129 @@ function AdaptiveWorkspaceLayoutContent(
       savedFilters={props.savedThreadListFilters}
     >
       <AdaptiveWorkspaceContext.Provider value={contextValue}>
-        <View
-          testID="adaptive-workspace-layout"
-          className={Platform.OS === "android" ? "flex-1 flex-row bg-header" : "flex-1 flex-row"}
-        >
-          {shouldRenderNavigationRail ? (
-            <Animated.View
-              className="self-stretch overflow-hidden"
-              accessibilityElementsHidden={navigationRailWidth === 0}
-              importantForAccessibility={navigationRailWidth > 0 ? "auto" : "no-hide-descendants"}
-              pointerEvents={navigationRailWidth > 0 ? "auto" : "none"}
-              style={railAnimatedStyle}
-            >
-              <AndroidWorkspaceNavigation rail onSelect={revealPrimarySidebar} />
-            </Animated.View>
-          ) : null}
-          {shouldRenderPrimarySidebar && layout.listPaneWidth !== null ? (
-            <Animated.View
-              className="self-stretch overflow-hidden"
-              accessibilityElementsHidden={!panes.primarySidebarVisible}
-              collapsable={false}
-              importantForAccessibility={
-                panes.primarySidebarVisible ? "auto" : "no-hide-descendants"
-              }
-              pointerEvents={panes.primarySidebarVisible ? "auto" : "none"}
-              style={sidebarAnimatedStyle}
-            >
-              <View className="flex-1" style={{ width: layout.listPaneWidth }}>
-                <RenderErrorBoundary
-                  renderFallback={(fallback) => (
-                    <RenderFailureView
-                      {...fallback}
-                      title="The sidebar couldn't be displayed"
-                      exit={{ label: "Open settings", onPress: handleOpenSettings }}
-                    />
-                  )}
-                >
-                  <AndroidWorkspaceSidebar
-                    onRequestVisibility={revealPrimarySidebar}
-                    selectedPullRequestKey={props.selectedPullRequestKey ?? null}
-                  >
-                    <AndroidHomeFabLayout sidebar onStartNewTask={handleStartNewTask}>
-                      <ThreadNavigationSidebar
-                        width={layout.listPaneWidth}
-                        visible={panes.primarySidebarVisible}
-                        onRequestVisibility={revealPrimarySidebar}
-                        selectedThreadKey={selectedThreadKey}
-                        onOpenSettings={handleOpenSettings}
-                        onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
-                        onNewThreadInProject={handleNewThreadInProject}
-                        onNewThreadOnBranch={handleNewThreadOnBranch}
-                        onSelectThread={handleSelectThread}
-                        onSearchQueryChange={setPrimarySidebarSearchQuery}
-                        searchQuery={primarySidebarSearchQuery}
-                      />
-                    </AndroidHomeFabLayout>
-                  </AndroidWorkspaceSidebar>
-                </RenderErrorBoundary>
-              </View>
-            </Animated.View>
-          ) : null}
+        <WindowHingeContext value={windowHinge}>
           <View
-            className={
-              Platform.OS === "android"
-                ? "flex-1 overflow-hidden bg-header"
-                : "flex-1 overflow-hidden bg-screen"
-            }
-            collapsable={false}
+            testID="adaptive-workspace-layout"
+            className={Platform.OS === "android" ? "flex-1 flex-row bg-header" : "flex-1 flex-row"}
           >
-            <View
-              collapsable={false}
-              style={
-                contentSettledWidth !== null
-                  ? {
-                      flex: 1,
-                      width: contentSettledWidth,
-                    }
-                  : { flex: 1 }
-              }
-            >
-              <WorkspaceContentWidthContext
-                value={layout.usesSplitView ? renderedContentWidth : null}
+            <AndroidHingeObserver onChange={handleHingeChange} />
+            {shouldRenderNavigationRail ? (
+              <Animated.View className="self-stretch" style={railAnimatedStyle} />
+            ) : null}
+            {shouldRenderPrimarySidebar && layout.listPaneWidth !== null ? (
+              <Animated.View
+                className="self-stretch overflow-hidden"
+                accessibilityElementsHidden={!panes.primarySidebarVisible}
+                collapsable={false}
+                importantForAccessibility={
+                  panes.primarySidebarVisible ? "auto" : "no-hide-descendants"
+                }
+                pointerEvents={panes.primarySidebarVisible ? "auto" : "none"}
+                // Under a workspace page the sidebar leaves the row but keeps its size, so its
+                // lists never lay out at zero size and are ready, unchanged, on the way back. The
+                // content pane, laid out after it, covers it, in the same mount as the page.
+                style={[
+                  workspacePage ? { position: "absolute", top: 0, bottom: 0, left: 0 } : null,
+                  sidebarAnimatedStyle,
+                ]}
               >
-                {props.children}
-              </WorkspaceContentWidthContext>
+                <Animated.View className="flex-1" style={listPaneAnimatedStyle}>
+                  <RenderErrorBoundary
+                    renderFallback={(fallback) => (
+                      <RenderFailureView
+                        {...fallback}
+                        title="The sidebar couldn't be displayed"
+                        exit={{ label: "Open settings", onPress: handleOpenSettings }}
+                      />
+                    )}
+                  >
+                    <AndroidWorkspaceSidebar
+                      onRequestVisibility={revealPrimarySidebar}
+                      selectedPullRequestKey={props.selectedPullRequestKey ?? null}
+                    >
+                      <AndroidHomeFabLayout sidebar onStartNewTask={handleStartNewTask}>
+                        <ThreadNavigationSidebar
+                          width={layout.listPaneWidth}
+                          visible={panes.primarySidebarVisible}
+                          onRequestVisibility={revealPrimarySidebar}
+                          selectedThreadKey={selectedThreadKey}
+                          onOpenSettings={handleOpenSettings}
+                          onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
+                          onNewThreadInProject={handleNewThreadInProject}
+                          onNewThreadOnBranch={handleNewThreadOnBranch}
+                          onOpenPendingTask={handleOpenPendingTask}
+                          onSelectThread={handleSelectThread}
+                          onOpenThreadPullRequests={handleOpenThreadPullRequests}
+                          onSearchQueryChange={setPrimarySidebarSearchQuery}
+                          searchQuery={primarySidebarSearchQuery}
+                        />
+                      </AndroidHomeFabLayout>
+                    </AndroidWorkspaceSidebar>
+                  </RenderErrorBoundary>
+                </Animated.View>
+              </Animated.View>
+            ) : null}
+            <View
+              className={
+                Platform.OS === "android"
+                  ? "flex-1 overflow-hidden bg-header"
+                  : "flex-1 overflow-hidden bg-screen"
+              }
+              collapsable={false}
+            >
+              <View
+                collapsable={false}
+                style={
+                  contentTargetWidth !== null
+                    ? {
+                        flex: 1,
+                        width: contentTargetWidth,
+                        alignSelf: contentAnchor.end ? "flex-end" : "flex-start",
+                      }
+                    : { flex: 1 }
+                }
+              >
+                {/* Android holds the content still, so its floating controls keep its width. */}
+                <WorkspaceContentWidthContext
+                  value={
+                    layout.usesSplitView && Platform.OS !== "android" ? renderedContentWidth : null
+                  }
+                >
+                  <WorkspaceSettledContentWidthContext
+                    value={
+                      Platform.OS === "android" && layout.usesSplitView ? contentTargetWidth : null
+                    }
+                  >
+                    {props.children}
+                  </WorkspaceSettledContentWidthContext>
+                </WorkspaceContentWidthContext>
+              </View>
             </View>
+            <WorkspaceInspectorPane
+              pathname={props.pathname}
+              renderedInspectorWidth={renderedInspectorWidth}
+              active={workspaceInspector?.active ?? false}
+              panes={panes}
+              renderInspector={workspaceInspector?.render}
+              setAuxiliaryPaneWidth={setAuxiliaryPaneWidth}
+              onClosed={handleWorkspaceInspectorClosed}
+            />
+            {shouldRenderNavigationRail && navigationRailWidth > 0 ? (
+              // The rail reserves its slot above and draws over the panes, so it can widen over
+              // the list in place. It takes the whole workspace only while it is open.
+              <View
+                className="absolute inset-y-0 left-0"
+                style={railOverlay ? { right: 0 } : { width: navigationRailWidth }}
+              >
+                <AndroidWorkspaceNavigation
+                  rail
+                  onSelect={revealPrimarySidebar}
+                  onOverlayChange={setRailOverlay}
+                />
+              </View>
+            ) : null}
           </View>
-          <WorkspaceInspectorPane
-            pathname={props.pathname}
-            renderedInspectorWidth={renderedInspectorWidth}
-            active={workspaceInspector?.active ?? false}
-            panes={panes}
-            renderInspector={workspaceInspector?.render}
-            setAuxiliaryPaneWidth={setAuxiliaryPaneWidth}
-            onClosed={handleWorkspaceInspectorClosed}
-          />
-        </View>
+        </WindowHingeContext>
       </AdaptiveWorkspaceContext.Provider>
     </HomeListOptionsProvider>
   );

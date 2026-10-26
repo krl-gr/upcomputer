@@ -1,7 +1,7 @@
 import {
   type GhosttyKeyboardLayoutMap,
   ghosttyConsumedMods,
-  ghosttyKeyForCode,
+  ghosttyKeyForEvent,
   ghosttyUnshiftedCodepoint,
   loadGhosttyKeyboardLayoutMap,
 } from "./keyCodes";
@@ -341,14 +341,30 @@ export class GhosttyTerminalCore {
     this.resize(cols, rows, cellWidth, cellHeight);
   }
 
-  write(data: string | Uint8Array): void {
+  write(data: string | Uint8Array, onSynchronizedOutputEnd?: () => void): void {
     this.ensureActive();
     const bytes = typeof data === "string" ? encoder.encode(data) : data;
     if (bytes.length === 0) return;
     const pointer = this.runtime.alloc(bytes.length);
     this.runtime.bytes(pointer, bytes.length).set(bytes);
-    this.runtime.call("ghostty_terminal_vt_write", this.terminal, pointer, bytes.length);
-    this.runtime.free(pointer, bytes.length);
+    // An existing render deadline belongs to one group. Observe Ghostty before
+    // the next escape can reopen it; Ghostty still parses OSC/DCS and split VT
+    // sequences itself. Once that group ends, the remaining bytes can be batched.
+    let synchronized = onSynchronizedOutputEnd !== undefined && this.isSynchronizedOutput();
+    try {
+      for (let start = 0; start < bytes.length;) {
+        const nextEscape = synchronized ? bytes.indexOf(0x1b, start + 1) : -1;
+        const end = nextEscape === -1 ? bytes.length : nextEscape;
+        this.runtime.call("ghostty_terminal_vt_write", this.terminal, pointer + start, end - start);
+        start = end;
+        if (synchronized && !this.isSynchronizedOutput()) {
+          synchronized = false;
+          onSynchronizedOutputEnd?.();
+        }
+      }
+    } finally {
+      this.runtime.free(pointer, bytes.length);
+    }
   }
 
   resetAndWrite(data: string): void {
@@ -490,6 +506,23 @@ export class GhosttyTerminalCore {
     );
   }
 
+  isSynchronizedOutput(): boolean {
+    this.ensureActive();
+    this.runtime.bytes(this.scratch, 1)[0] = 0;
+    return (
+      this.runtime.call("ghostty_terminal_mode_get", this.terminal, 2026, this.scratch) ===
+        GHOSTTY_SUCCESS && this.runtime.bytes(this.scratch, 1)[0] !== 0
+    );
+  }
+
+  endSynchronizedOutput(): void {
+    this.ensureActive();
+    this.assertSuccess(
+      "ghostty_terminal_mode_set",
+      this.runtime.call("ghostty_terminal_mode_set", this.terminal, 2026, 0),
+    );
+  }
+
   isAlternateScreen(): boolean {
     this.ensureActive();
     this.runtime.bytes(this.scratch, 4).fill(0);
@@ -516,7 +549,7 @@ export class GhosttyTerminalCore {
       this.keyEvent,
       action === "release" ? 0 : event.repeat ? 2 : 1,
     );
-    this.runtime.call("ghostty_key_event_set_key", this.keyEvent, ghosttyKeyForCode(event.code));
+    this.runtime.call("ghostty_key_event_set_key", this.keyEvent, ghosttyKeyForEvent(event));
     const mods =
       (event.shiftKey ? 1 : 0) |
       (event.ctrlKey ? 1 << 1 : 0) |

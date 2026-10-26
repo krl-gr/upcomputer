@@ -2,10 +2,13 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 
 import * as HookInboxStore from "./HookInboxStore.ts";
 
@@ -42,6 +45,70 @@ const withInbox = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   );
 
 describe("HookInboxStore", () => {
+  it.effect.each(["delivered", "unreachable"] as const)(
+    "keeps %s delivery results on the operation span",
+    (outcome) =>
+      withInbox(
+        Effect.gen(function* () {
+          yield* HookInboxStore.hold(yield* hook("traced"), BASE_URL);
+          const spans: Array<Tracer.NativeSpan> = [];
+          const tracer = Tracer.make({
+            span(options) {
+              const span = new Tracer.NativeSpan(options);
+              spans.push(span);
+              return span;
+            },
+          });
+          yield* HookInboxStore.deliverDue(deliverer(() => outcome).send).pipe(
+            Effect.withTracer(tracer),
+          );
+          const run = spans.find((span) => span.name === "HookInboxStore.deliverDue");
+          expect(run?.attributes.get("relay.inbox.run_result")).toBe(
+            outcome === "delivered" ? "drained" : "unreachable",
+          );
+          expect(run?.attributes.get("relay.inbox.sent")).toBe(1);
+          expect(run?.attributes.get("relay.inbox.delivered")).toBe(
+            outcome === "delivered" ? 1 : 0,
+          );
+        }),
+      ),
+  );
+
+  it.effect.each(["delivered", "busy", "unreachable"] as const)(
+    "stops a prefetched batch cleared during a %s send",
+    (outcome) =>
+      withInbox(
+        Effect.gen(function* () {
+          for (const id of ["first", "second", "third"]) {
+            yield* HookInboxStore.hold(yield* hook(id), BASE_URL);
+          }
+          const started = yield* Deferred.make<void>();
+          const released = yield* Deferred.make<void>();
+          const sent: Array<string> = [];
+          const run = yield* HookInboxStore.deliverDue((_baseUrl, held) =>
+            Effect.gen(function* () {
+              sent.push(held.id);
+              if (held.id === "first") {
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(released);
+              }
+              return outcome;
+            }),
+          ).pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* HookInboxStore.clear;
+          yield* Deferred.succeed(released, undefined);
+          const nextAt = yield* Fiber.join(run);
+          expect(sent).toEqual(["first"]);
+          // The alarm must not be rescheduled, even if the in-flight send failed.
+          expect(nextAt).toBeNull();
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id FROM held_hooks`).toEqual([]);
+          expect(yield* sql`SELECT id FROM held_hooks_target`).toEqual([]);
+        }),
+      ),
+  );
+
   it.effect("delivers held requests oldest first, byte for byte", () =>
     withInbox(
       Effect.gen(function* () {

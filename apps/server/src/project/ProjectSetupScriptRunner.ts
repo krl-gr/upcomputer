@@ -2,6 +2,7 @@ import { ProjectId, type ProjectScript } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   projectScriptRuntimeEnv,
+  projectScriptTerminalInput,
   resolveProjectScripts,
   settleProjectScript,
   setupProjectScript,
@@ -190,16 +191,16 @@ export const make = Effect.gen(function* () {
     yield* HostProcess.Environment,
   );
 
-  const observeTerminalCompletion = (input: {
-    readonly threadId: string;
-    readonly terminalId: string;
-    readonly sentinel: string;
-    readonly sentinelPattern: RegExp;
-    /** The shell echoes typed input; lines ending with these are the wrapper, not output. */
-    readonly echoedWrapperLines: ReadonlyArray<string>;
-    readonly onOutputLine: ((line: string) => Effect.Effect<void>) | undefined;
-  }) =>
-    Effect.gen(function* () {
+  const observeTerminalCompletion = Effect.fn("ProjectSetupScriptRunner.observeTerminalCompletion")(
+    function* (input: {
+      readonly threadId: string;
+      readonly terminalId: string;
+      readonly sentinel: string;
+      readonly sentinelPattern: RegExp;
+      /** The shell echoes typed input; lines ending with these are the wrapper, not output. */
+      readonly echoedWrapperLines: ReadonlyArray<string>;
+      readonly onOutputLine: ((line: string) => Effect.Effect<void>) | undefined;
+    }) {
       const startedAtMs = yield* Clock.currentTimeMillis;
       const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
       // The shell redraws its prompt just after the sentinel. Closing before
@@ -277,7 +278,8 @@ export const make = Effect.gen(function* () {
         Effect.ensuring(Effect.sync(() => unsubscribe())),
       );
       return { completion, unsubscribe };
-    });
+    },
+  );
 
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
@@ -410,7 +412,7 @@ export const make = Effect.gen(function* () {
       .write({
         threadId: input.threadId,
         terminalId,
-        data: `${commandLine}\r`,
+        data: projectScriptTerminalInput(commandLine),
       })
       .pipe(
         Effect.mapError(

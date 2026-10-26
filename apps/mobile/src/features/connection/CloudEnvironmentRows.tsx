@@ -1,8 +1,12 @@
+import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import {
+  hasSavedBearerRoute,
+  type EnvironmentConnectionPhase,
+} from "@t3tools/client-runtime/connection";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -20,9 +24,11 @@ import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
+import { environmentPresentations } from "../../state/presentation";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { useConnectionDiagnosis } from "./ConnectionDiagnosisDetails";
 import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
@@ -157,15 +163,13 @@ function CloudEnvironmentRowsContent(
           {controller.relayDiscovery.errorTraceId ? (
             <CopyTraceIdButton traceId={controller.relayDiscovery.errorTraceId} />
           ) : null}
-          <Pressable
-            accessibilityRole="button"
+          <Button
+            label="Try again"
+            tone="secondary"
             onPress={() => {
               void controller.refreshRelayEnvironments();
             }}
-            className="self-start rounded-full bg-subtle px-3.5 py-2 active:opacity-70"
-          >
-            <Text className="text-xs font-t3-bold text-foreground">Try again</Text>
-          </Pressable>
+          />
         </View>
       ) : null}
     </View>
@@ -185,36 +189,39 @@ function ConnectedCloudEnvironmentRow(props: {
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
   const unsupported = props.environment.connectionState === "unsupported";
+  const presentation = useAtomValue(
+    environmentPresentations.presentationAtom(props.environment.environmentId),
+  );
+  const canRetry = presentation !== null && hasSavedBearerRoute(presentation.entry);
   const enabled = props.environment.isEnabled && !unsupported;
+  const { diagnosis } = useConnectionDiagnosis(props.environment.environmentId, presentation);
   const [lastDescriptor, setLastDescriptor] = useState(props.descriptor);
   if (props.descriptor !== undefined && props.descriptor !== lastDescriptor) {
     setLastDescriptor(props.descriptor);
   }
   return (
-    <Pressable
-      accessibilityHint="Long press to remove from this device"
-      accessibilityRole={props.onOpen ? "button" : undefined}
-      accessibilityLabel={props.onOpen ? `Manage ${props.environment.environmentLabel}` : undefined}
-      onPress={props.onOpen}
-      onLongPress={props.onRemove}
-    >
-      <CloudEnvironmentRowShell
-        opensDetails={props.onOpen !== undefined}
-        connectionError={enabled || unsupported ? props.environment.connectionError : null}
-        connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
-        connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
-        errorExpanded={props.errorExpanded}
-        label={props.environment.environmentLabel}
-        machine={resolveEnvironmentMachineKind(
-          serverConfig ?? (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
-        )}
-        onValueChange={props.onSetEnabled}
-        onToggleError={props.onToggleError}
-        disabled={unsupported}
-        {...(enabled || unsupported ? {} : { statusText: "Off" })}
-        value={enabled}
-      />
-    </Pressable>
+    <CloudEnvironmentRowShell
+      opensDetails={props.onOpen !== undefined}
+      onOpen={props.onOpen}
+      onRemove={props.onRemove}
+      connectionError={enabled || unsupported ? props.environment.connectionError : null}
+      connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
+      connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
+      errorExpanded={props.errorExpanded}
+      label={props.environment.environmentLabel}
+      machine={resolveEnvironmentMachineKind(
+        serverConfig ?? (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
+      )}
+      onValueChange={props.onSetEnabled}
+      onToggleError={props.onToggleError}
+      disabled={unsupported && !canRetry}
+      {...(enabled || unsupported
+        ? diagnosis
+          ? { statusText: diagnosis.headline }
+          : {}
+        : { statusText: "Off" })}
+      value={enabled}
+    />
   );
 }
 
@@ -261,6 +268,8 @@ function CloudEnvironmentRow(props: {
 function CloudEnvironmentRowShell(props: {
   readonly showChevron?: boolean;
   readonly opensDetails?: boolean;
+  readonly onOpen?: (() => void) | undefined;
+  readonly onRemove?: (() => void) | undefined;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
@@ -298,6 +307,8 @@ function CloudEnvironmentRowShell(props: {
   const errorCanExpand = props.connectionError !== null && errorLineCount > 1;
   const isErrorExpanded = errorCanExpand && props.errorExpanded;
   const StatusContainer = errorCanExpand ? Pressable : View;
+  const ContentContainer = props.onOpen || props.onRemove ? Pressable : View;
+  const ChevronContainer = props.onOpen || props.onRemove ? Pressable : View;
   const onMeasuredErrorTextLayout = useCallback(
     (event: TextLayoutEvent) => {
       if (!props.connectionError) {
@@ -315,7 +326,20 @@ function CloudEnvironmentRowShell(props: {
   );
   return (
     <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5">
-      <View className="min-w-0 flex-1 gap-0.5">
+      <ContentContainer
+        className="min-w-0 flex-1 gap-0.5"
+        accessibilityHint={props.onRemove ? "Long press to remove from this device" : undefined}
+        accessibilityRole={props.onOpen ? "button" : undefined}
+        accessibilityLabel={
+          props.onOpen
+            ? `Manage ${props.label}`
+            : props.onRemove
+              ? `Remove ${props.label} from this device`
+              : undefined
+        }
+        onPress={props.onOpen}
+        onLongPress={props.onRemove}
+      >
         <View className="min-w-0 flex-row items-center gap-2">
           <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
           <EnvironmentMachineSymbol
@@ -375,17 +399,37 @@ function CloudEnvironmentRowShell(props: {
             />
           ) : null}
         </StatusContainer>
-      </View>
+      </ContentContainer>
       <ThemedSwitch
+        accessibilityLabel={`Enable ${props.label}`}
         style={{ alignSelf: "center" }}
         disabled={props.disabled}
         onValueChange={props.onValueChange}
         value={props.value}
       />
       {props.opensDetails || props.showChevron ? (
-        <View style={{ opacity: props.opensDetails ? 1 : 0.4 }}>
+        <ChevronContainer
+          accessibilityRole={props.onOpen ? "button" : undefined}
+          accessibilityLabel={
+            props.onOpen
+              ? `Manage ${props.label}`
+              : props.onRemove
+                ? `Remove ${props.label} from this device`
+                : undefined
+          }
+          accessibilityHint={props.onRemove ? "Long press to remove from this device" : undefined}
+          onPress={props.onOpen}
+          onLongPress={props.onRemove}
+          style={{
+            opacity: props.opensDetails ? 1 : 0.4,
+            minWidth: 44,
+            minHeight: 44,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
-        </View>
+        </ChevronContainer>
       ) : null}
     </View>
   );
@@ -393,20 +437,13 @@ function CloudEnvironmentRowShell(props: {
 
 function CopyTraceIdButton(props: { readonly traceId: string }) {
   return (
-    <Pressable
-      accessibilityRole="button"
+    <Button
+      label="Copy trace ID"
+      tone="secondary"
       onPress={() => {
         copyTextWithHaptic(props.traceId, { target: "connection-trace-id" });
       }}
-      className="self-start flex-row items-center gap-1.5 rounded-full bg-subtle px-3 py-2 active:opacity-70"
-    >
-      <SymbolView
-        name="doc.on.doc"
-        size={12}
-        tintColorClassName={"accent-icon"}
-        type="monochrome"
-      />
-      <Text className="text-xs font-t3-bold text-foreground">Copy trace ID</Text>
-    </Pressable>
+      icon="doc.on.doc"
+    />
   );
 }

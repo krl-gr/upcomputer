@@ -43,6 +43,7 @@ import {
   RELAY_URL_SECRET,
 } from "./config.ts";
 import * as CloudLink from "./CloudLink.ts";
+import * as ConnectReachability from "./ConnectReachability.ts";
 import { consumeCloudReplayGuards } from "./CloudLink.ts";
 import { pendingServiceUpdateExists } from "./updateHandoff.ts";
 import {
@@ -154,6 +155,13 @@ describe("reconcileDesiredCloudLink", () => {
       expect(error._tag).toBe("CloudLinkAuthorizationMissingError");
     }).pipe(
       Effect.provide(CloudLink.layer),
+      Effect.provideService(
+        ConnectReachability.ConnectReachability,
+        ConnectReachability.ConnectReachability.of({
+          check: Effect.die("unused"),
+          latest: Effect.succeed(Option.none()),
+        }),
+      ),
       Effect.provideService(HttpServer.HttpServer, idleHttpServer),
       Effect.provideService(
         ServerConfigModule.ServerConfig,
@@ -177,6 +185,8 @@ describe("reconcileDesiredCloudLink", () => {
           recoveryRequests: Stream.empty,
           requestRecovery: () => Effect.void,
           tunnelConnected: Stream.empty,
+          inspectConnector: Effect.succeed(null),
+          readinessChanged: Stream.empty,
           withLinkStateLock: (effect) => effect,
         } satisfies ManagedEndpointRuntime.CloudManagedEndpointRuntime["Service"]),
       ),
@@ -240,7 +250,9 @@ describe("releaseManagedTunnelOnShutdown", () => {
     readonly requests: Array<HttpClientRequest.HttpClientRequest>;
     readonly onRequest?: (request: HttpClientRequest.HttpClientRequest) => Effect.Effect<void>;
     readonly respond?: () => Response;
+    readonly address?: HttpServer.HttpServer["Service"]["address"];
     readonly respondEffect?: Effect.Effect<Response>;
+    readonly getExisting?: CliTokenManager.CloudCliTokenManager["Service"]["getExisting"];
   }
 
   const writeLauncherState = (update: ServiceUpdateRecord) =>
@@ -274,7 +286,17 @@ describe("releaseManagedTunnelOnShutdown", () => {
     <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.provide(CloudLink.layer),
-        Effect.provideService(HttpServer.HttpServer, idleHttpServer),
+        Effect.provideService(
+          ConnectReachability.ConnectReachability,
+          ConnectReachability.ConnectReachability.of({
+            check: Effect.die("unused"),
+            latest: Effect.succeed(Option.none()),
+          }),
+        ),
+        Effect.provideService(HttpServer.HttpServer, {
+          ...idleHttpServer,
+          address: harness.address ?? idleHttpServer.address,
+        }),
         Effect.provideService(ServerSecretStore.ServerSecretStore, harness.store),
         Effect.provideService(AgentAwarenessRelay.AgentAwarenessRelay, idleAwarenessRelay),
         Effect.provideService(
@@ -303,6 +325,8 @@ describe("releaseManagedTunnelOnShutdown", () => {
             recoveryRequests: Stream.empty,
             requestRecovery: () => Effect.void,
             tunnelConnected: Stream.empty,
+            inspectConnector: Effect.succeed(null),
+            readinessChanged: Stream.empty,
             withLinkStateLock: (effect) => effect,
           }),
         ),
@@ -314,7 +338,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
           CliTokenManager.CloudCliTokenManager,
           CliTokenManager.CloudCliTokenManager.of({
             get: unusedSecretStoreOperation(),
-            getExisting: Effect.succeedSome(cliToken),
+            getExisting: harness.getExisting ?? Effect.succeedSome(cliToken),
             hasCredential: unusedSecretStoreOperation(),
             store: () => unusedSecretStoreOperation(),
             clear: unusedSecretStoreOperation(),
@@ -663,6 +687,48 @@ describe("releaseManagedTunnelOnShutdown", () => {
         store,
         applyConfigCalls,
         requests,
+        respond: () => Response.json({ status: "ready" }),
+      }),
+    );
+  });
+
+  it.effect("registers and starts a managed tunnel at the bound IPv6 loopback address", () => {
+    const { store } = makeMemorySecretStore();
+    const config = {
+      providerKind: "cloudflare_tunnel" as const,
+      connectorToken: "existing-token",
+      tunnelId: "existing-tunnel",
+    };
+    const applyConfigCalls: Array<unknown> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      expect(
+        yield* link.applyRelayConfig({
+          relayUrl: "https://relay.example.test",
+          cloudUserId: "user-123",
+          environmentCredential: "environment-credential",
+          cloudMintPublicKey:
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqZ2u2LjMoAyG2QTHXmITJ9w6RzZtVUAv394XCcPV0zE=\n-----END PUBLIC KEY-----",
+          endpointRuntime: config,
+        }),
+      ).toMatchObject({ ok: true, endpointRuntimeStatus: { status: "running" } });
+      expect(requests).toHaveLength(1);
+      const body = requests[0]!.body;
+      if (body._tag !== "Uint8Array") throw new Error("Expected a JSON recovery request");
+      expect(
+        yield* decodeManagedTunnelRecoveryRegistration(new TextDecoder().decode(body.body)),
+      ).toMatchObject({
+        origin: { localHttpHost: "[::1]", localHttpPort: 4884 },
+      });
+      expect(applyConfigCalls).toEqual([null, config]);
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls,
+        requests,
+        address: NetAddress.inetAddressFromIpStringUnsafe("::1", 4884),
         respond: () => Response.json({ status: "ready" }),
       }),
     );
@@ -1213,10 +1279,20 @@ describe("releaseManagedTunnelOnShutdown", () => {
   });
 
   it.effect.each([
-    { status: 401, rejection: "unauthorized" },
-    { status: 403, rejection: "forbidden" },
-    { status: 409, rejection: "rejected" },
-  ])("preserves a permanent $status relay recovery failure", ({ status, rejection }) => {
+    { status: 401, body: {}, rejection: "unauthorized" },
+    {
+      status: 401,
+      body: {
+        _tag: "RelayAuthInvalidError",
+        code: "auth_invalid",
+        reason: "invalid_bearer",
+        traceId: "trace-revoked",
+      },
+      rejection: "unauthorized",
+    },
+    { status: 403, body: {}, rejection: "forbidden" },
+    { status: 409, body: {}, rejection: "rejected" },
+  ])("preserves a permanent $status relay recovery failure", ({ status, body, rejection }) => {
     const { store } = makeMemorySecretStore([
       [CLOUD_ENDPOINT_RUNTIME_CONFIG, "old-config"],
       [RELAY_URL_SECRET, "https://relay.example.test"],
@@ -1239,9 +1315,85 @@ describe("releaseManagedTunnelOnShutdown", () => {
         store,
         applyConfigCalls,
         requests,
-        respond: () => Response.json({}, { status }),
+        respond: () => Response.json(body, { status }),
       }),
     );
+  });
+
+  // A proof signed with a skewed boot clock is rejected as expired. The next
+  // attempt mints a new proof, so startup reconcile must keep retrying it.
+  it.effect("retries a relay link proof rejected as expired", () => {
+    const { store } = makeMemorySecretStore([
+      [CLOUD_ENDPOINT_RUNTIME_CONFIG, "old-config"],
+      [RELAY_URL_SECRET, "https://relay.example.test"],
+      [CLOUD_LINKED_USER_ID, "user-123"],
+      [RELAY_ENVIRONMENT_CREDENTIAL_SECRET, "environment-credential"],
+    ]);
+    const applyConfigCalls: Array<unknown> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const error = yield* Effect.flip(link.recoverManagedTunnel("http://127.0.0.1:3773"));
+
+      expect(error).toMatchObject({ _tag: "RelayRequestError", rejection: "unavailable" });
+      expect(error.message).toContain("Trace ID: trace-expired");
+      expect(CloudLink.shouldRetryCloudLink(error)).toBe(true);
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls,
+        requests,
+        respond: () =>
+          Response.json(
+            {
+              _tag: "RelayEnvironmentLinkProofExpiredError",
+              code: "environment_link_proof_expired",
+              traceId: "trace-expired",
+            },
+            { status: 401 },
+          ),
+      }),
+    );
+  });
+
+  it.effect("startup retries transient refresh failures but stops when login is required", () => {
+    const { store } = makeMemorySecretStore(managedLinkSecrets);
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    const applyConfigCalls: Array<unknown> = [];
+    const permanent = new CliTokenManager.CloudCliCredentialRefreshError({
+      cause: new Error("private-oauth-failure"),
+      status: 400,
+      oauthErrorCode: "invalid_grant",
+    });
+    let attempts = 0;
+    const getExisting = Effect.suspend(() => {
+      attempts++;
+      if (attempts > 2) return Effect.die("retried a permanent credential rejection");
+      return Effect.fail(
+        attempts === 2
+          ? permanent
+          : new CliTokenManager.CloudCliCredentialRefreshError({
+              cause: new Error("connection reset"),
+            }),
+      );
+    });
+
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const registration = yield* retryManagedTunnelRegistration(
+        link.reconcileDesiredLinkIfStillDesired("http://127.0.0.1:3773"),
+        CloudLink.shouldRetryCloudLink,
+      ).pipe(Effect.flip, Effect.forkChild);
+      yield* TestClock.adjust("10 seconds");
+      const error = yield* Fiber.join(registration);
+      expect(attempts).toBe(2);
+      expect(error).toBe(permanent);
+      expect(error.message).toContain("t3 connect login");
+      expect(error.message).not.toContain("private");
+      expect(requests).toEqual([]);
+      expect(applyConfigCalls).toEqual([]);
+    }).pipe(provideReleaseHarness({ store, requests, applyConfigCalls, getExisting }));
   });
 
   it.effect("keeps a tunnel configuration replaced during recovery", () => {

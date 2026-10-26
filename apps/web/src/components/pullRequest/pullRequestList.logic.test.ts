@@ -12,6 +12,7 @@ import {
   largestPullRequestReadCount,
   pullRequestQuickActions,
   filterPullRequestsByInvolvement,
+  findProjectForRepository,
   findScopedProject,
   mergePullRequestLists,
   pullRequestEntryKey,
@@ -19,7 +20,6 @@ import {
   groupPullRequestsByInvolvement,
   matchesPullRequestFilters,
   matchesPullRequestQuery,
-  parsePullRequestQuery,
   pullRequestStatsBatches,
   pullRequestStatsKeysToRequest,
   pullRequestStatsRefreshBatches,
@@ -554,84 +554,6 @@ describe("narrowing rows by the filters a host may not have applied", () => {
 
   it("holds on to every row for a filter no row carries the answer to", () => {
     expect(narrow({ checks: "passing" })).toEqual([1, 2, 3, 4]);
-  });
-});
-
-describe("reading qualifiers out of a typed query", () => {
-  it("keeps quoted values whole and separates negation", () => {
-    expect(parsePullRequestQuery('label:"needs design" -label:wip Fix the parser')).toEqual({
-      text: "Fix the parser",
-      filters: { labels: [["needs design"]], excludedLabels: ["wip"] },
-    });
-  });
-
-  it("reads a comma-separated list as one group either name satisfies", () => {
-    expect(parsePullRequestQuery("label:size:S,size:XS").filters.labels).toEqual([
-      ["size:S", "size:XS"],
-    ]);
-  });
-
-  it("keeps the spaces in a quoted name of a list, and drops an empty part", () => {
-    expect(parsePullRequestQuery('label:"needs design","wip"').filters.labels).toEqual([
-      ["needs design", "wip"],
-    ]);
-    expect(parsePullRequestQuery("label:a,,b").filters.labels).toEqual([["a", "b"]]);
-  });
-
-  it("excludes every name of a negated list", () => {
-    expect(parsePullRequestQuery("-label:a,b").filters).toEqual({ excludedLabels: ["a", "b"] });
-  });
-
-  it("makes each label qualifier its own group, so the groups are an AND", () => {
-    expect(parsePullRequestQuery("label:bug label:a,b").filters.labels).toEqual([
-      ["bug"],
-      ["a", "b"],
-    ]);
-  });
-
-  it("reads the scalar qualifiers in GitHub's own spelling", () => {
-    expect(
-      parsePullRequestQuery("author:octocat DRAFT:false review:changes_requested status:failure")
-        .filters,
-    ).toEqual({
-      author: "octocat",
-      draft: "hide",
-      review: "changes-requested",
-      checks: "failing",
-    });
-  });
-
-  it("leaves an unknown value and a stray colon as text, and reads an unknown key as a label", () => {
-    const parsed = parsePullRequestQuery("milestone:v2 draft:maybe status: parser");
-    expect(parsed.filters).toEqual({ labels: [["milestone:v2"]] });
-    expect(parsed.text).toBe("draft:maybe status: parser");
-  });
-
-  it("reads a quoted name holding a comma as the one label it is", () => {
-    expect(parsePullRequestQuery('label:"needs,triage"').filters.labels).toEqual([
-      ["needs,triage"],
-    ]);
-    expect(parsePullRequestQuery('-label:"needs,triage"').filters.excludedLabels).toEqual([
-      "needs,triage",
-    ]);
-  });
-
-  it("cuts a typed query back to what the contract carries", () => {
-    const many = Array.from({ length: 14 }, (_, index) => `l${index}`).join(",");
-    const long = "x".repeat(240);
-    const parsed = parsePullRequestQuery(`label:${many} label:${long} author:${long}`);
-    expect(parsed.filters.labels?.[0]).toHaveLength(10);
-    expect(parsed.filters.labels?.[1]).toEqual(["x".repeat(200)]);
-    expect(parsed.filters.author).toBe("x".repeat(200));
-  });
-
-  it("cuts a namespaced label after its key is prefixed on", () => {
-    const parsed = parsePullRequestQuery(`size:${"x".repeat(240)}`);
-    expect(parsed.filters.labels).toEqual([[`size:${"x".repeat(240)}`.slice(0, 200)]]);
-  });
-
-  it("answers an empty query with an empty everything", () => {
-    expect(parsePullRequestQuery("   ")).toEqual({ text: "", filters: {} });
   });
 });
 
@@ -1508,58 +1430,6 @@ describe("the server a saved selection names", () => {
   });
 });
 
-describe("colon-namespaced labels typed as a search", () => {
-  it("reads an unknown key as the label it almost always is", () => {
-    expect(parsePullRequestQuery("size:XXL").filters.labels).toEqual([["size:XXL"]]);
-    expect(parsePullRequestQuery("vouch:trusted").filters.labels).toEqual([["vouch:trusted"]]);
-    expect(parsePullRequestQuery("size:XXL").text).toBe("");
-  });
-
-  it("reads the key as the namespace of every bare name in its list", () => {
-    expect(parsePullRequestQuery("size:S,XS").filters.labels).toEqual([["size:S", "size:XS"]]);
-  });
-
-  it("leaves a name that already carries its own namespace alone", () => {
-    expect(parsePullRequestQuery("size:S,size:XS").filters.labels).toEqual([["size:S", "size:XS"]]);
-  });
-
-  it("excludes one the same way", () => {
-    expect(parsePullRequestQuery("-size:XXL").filters.excludedLabels).toEqual(["size:XXL"]);
-    expect(parsePullRequestQuery("-size:S,XS").filters.excludedLabels).toEqual([
-      "size:S",
-      "size:XS",
-    ]);
-  });
-
-  it("keeps a quoted token as text, which is the way back to a literal search", () => {
-    const parsed = parsePullRequestQuery('"size:XXL"');
-    expect(parsed.filters.labels).toBeUndefined();
-    expect(parsed.text).toBe('"size:XXL"');
-  });
-
-  it("reads a hyphenated namespace as a label too", () => {
-    expect(parsePullRequestQuery("priority-1:high").filters.labels).toEqual([["priority-1:high"]]);
-    expect(parsePullRequestQuery("priority-1:high").text).toBe("");
-  });
-
-  it("leaves a pasted link alone rather than naming a label after its scheme", () => {
-    const parsed = parsePullRequestQuery("https://github.com/pingdotgg/t3code/pull/1");
-    expect(parsed.filters.labels).toBeUndefined();
-    expect(parsed.text).toBe("https://github.com/pingdotgg/t3code/pull/1");
-  });
-
-  it("mixes with the keys it does know, and with plain words", () => {
-    const parsed = parsePullRequestQuery("area:web draft:true wizard label:bug");
-    expect(parsed.filters).toEqual({ labels: [["area:web"], ["bug"]], draft: "only" });
-    expect(parsed.text).toBe("wizard");
-  });
-
-  it("shares the ceiling with the labels typed as labels", () => {
-    const many = Array.from({ length: 12 }, (_, index) => `area:${index}`).join(" ");
-    expect(parsePullRequestQuery(many).filters.labels).toHaveLength(10);
-  });
-});
-
 describe("the priority groups against a paginated feed", () => {
   const authoredRow = (number: number, updatedAt: string) =>
     entry({ number, updatedAt, author: { login: "Bilal", name: null, avatarUrl: null } });
@@ -1745,4 +1615,112 @@ describe("refresh page size", () => {
   it("asks for the whole host where one search reads every repository", () => {
     expect(largestPullRequestReadCount(twoPagesAcrossFourRepositories("github"))).toBe(792);
   });
+});
+
+describe("findProjectForRepository", () => {
+  it("resolves Azure bare names using matching project and environment scope", () => {
+    const azure = (id: string, environmentId: string, path: string) => ({
+      id,
+      environmentId,
+      repositoryIdentity: {
+        canonicalKey: `dev.azure.com/${path}`,
+        locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "" },
+        provider: "azure-devops",
+        displayName: path,
+        owner: "contoso",
+        name: path.split("/").at(-1)!,
+      },
+    });
+    const payments = azure("p1", ENV_1, "contoso/payments/_git/api");
+    const billing = azure("p2", ENV_1, "contoso/billing/_git/api");
+    const remoteBilling = azure("p2", ENV_2, "contoso/billing/_git/api");
+    const unrelated = azure("p3", ENV_2, "contoso/billing/_git/web");
+    const projects = [payments, billing, remoteBilling, unrelated];
+
+    expect(findProjectForRepository(projects, { repository: "api" })).toBe(payments);
+    expect(
+      findProjectForRepository(projects, {
+        repository: "api",
+        scopedProjectId: "p2",
+        scopedEnvironmentId: ENV_2,
+      }),
+    ).toBe(remoteBilling);
+    expect(
+      findProjectForRepository(projects, {
+        repository: "api",
+        scopedProjectId: "p3",
+        scopedEnvironmentId: ENV_2,
+      }),
+    ).toBe(payments);
+  });
+
+  it("keeps repository matches on the selected environment when project IDs overlap", () => {
+    const project = (id: string, environmentId: string, repository: string) => ({
+      id,
+      environmentId,
+      repositoryIdentity: {
+        canonicalKey: `github.com/${repository}`,
+        locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "" },
+        provider: "github",
+        displayName: repository,
+      },
+    });
+    const unrelated = project("p1", ENV_1, "acme/web");
+    const local = project("p2", ENV_1, "acme/api");
+    const remote = project("p1", ENV_2, "acme/api");
+    const projects = [unrelated, local, remote];
+
+    expect(findProjectForRepository(projects, { repository: "acme/api" })).toBe(local);
+    expect(
+      findProjectForRepository(projects, {
+        repository: "acme/api",
+        selectedEnvironmentId: ENV_2,
+      }),
+    ).toBe(remote);
+    expect(
+      findProjectForRepository(projects, {
+        repository: "acme/web",
+        selectedEnvironmentId: ENV_2,
+      }),
+    ).toBeUndefined();
+    expect(
+      findProjectForRepository(projects, {
+        repository: "acme/api",
+        selectedEnvironmentId: "env-connecting",
+      }),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["gitlab", "t3tools/platform/t3code", "T3Tools/Platform/T3Code"],
+    ["github", "t3tools/t3code", "T3Tools/T3Code"],
+  ] as const)(
+    "selects the %s repository on the requested host despite a scope on another host",
+    (provider, repository, displayName) => {
+      const project = (host: string) => ({
+        id: host,
+        environmentId: ENV_1,
+        repositoryIdentity: {
+          canonicalKey: `${host}/${repository}`,
+          locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "" },
+          provider,
+          displayName,
+          owner: "t3tools",
+          name: "t3code",
+        },
+      });
+      const publicProject = project(`${provider}.com`);
+      const enterpriseProject = project(`${provider}.acme.test`);
+      const projects = [publicProject, enterpriseProject];
+
+      expect(
+        findProjectForRepository(projects, {
+          repository: repository.toUpperCase(),
+          host: `${provider}.ACME.TEST`,
+          scopedProjectId: publicProject.id,
+          scopedEnvironmentId: ENV_1,
+        }),
+      ).toBe(enterpriseProject);
+    },
+  );
 });

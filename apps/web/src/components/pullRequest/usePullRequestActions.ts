@@ -1,6 +1,9 @@
 import { useAtomCommand } from "~/state/use-atom-command";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ProjectId,
@@ -9,7 +12,7 @@ import type {
   PullRequestMergeMethod,
   PullRequestRef,
 } from "@t3tools/contracts";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import {
@@ -28,7 +31,13 @@ import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 
 import { toastManager } from "../ui/toast";
-import { handoffPrompt, handoffReviewComments, readableFailure } from "./pullRequestDetail.logic";
+import { OFF_HEAD_PULL_REQUEST_CHECKOUT_TOAST } from "./pullRequestCheckoutToast";
+import {
+  checkoutFailureDescription,
+  handoffPrompt,
+  handoffReviewComments,
+  readableFailure,
+} from "./pullRequestDetail.logic";
 import { pullRequestEntryKey, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 
 export function usePullRequestDefaultMergeMethodResolver(
@@ -43,7 +52,7 @@ export function usePullRequestDefaultMergeMethodResolver(
   const grouping = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  return useCallback(() => {
+  return () => {
     if (projectDefault != null) return projectDefault;
     if (Object.keys(legacyOverrides).length === 0) return undefined;
     const project = projects.find(
@@ -58,15 +67,7 @@ export function usePullRequestDefaultMergeMethodResolver(
       }).get(derivePhysicalProjectKey(project)) ??
       deriveLogicalProjectKeyFromSettings(project, grouping);
     return legacyOverrides[key];
-  }, [
-    projectDefault,
-    projects,
-    environmentId,
-    projectId,
-    grouping,
-    primaryEnvironmentId,
-    legacyOverrides,
-  ]);
+  };
 }
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
@@ -140,28 +141,29 @@ export function usePullRequestActionRunner({
     if (pendingRef.current || reference === null) return;
     pendingRef.current = true;
     setActionPending(true);
-    try {
-      const result = await runAction({
-        environmentId,
-        input: {
-          ...reference,
-          action,
-          ...(method ? { mergeMethod: method } : resolveMergeMethod ? { resolveMergeMethod } : {}),
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
-      onSuccess?.(action);
-    } catch (failure) {
+    const result = await runAction({
+      environmentId,
+      input: {
+        ...reference,
+        action,
+        ...(method ? { mergeMethod: method } : resolveMergeMethod ? { resolveMergeMethod } : {}),
+      },
+    });
+    pendingRef.current = false;
+    setActionPending(false);
+    if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
         title: ACTION_FAILURE_LABELS[action],
-        description: readableFailure(failure, ACTION_FAILURE_HINTS[action]),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          ACTION_FAILURE_HINTS[action],
+        ),
       });
-    } finally {
-      pendingRef.current = false;
-      setActionPending(false);
+      return;
     }
+    toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
+    onSuccess?.(action);
   };
 
   return { actionPending, perform };
@@ -171,55 +173,50 @@ export function usePullRequestCloseBatch(onClosed: (entry: EnvironmentPullReques
   const runAction = useAtomCommand(pullRequestEnvironment.runAction, { reportFailure: false });
   const pending = useRef(new Set<string>());
   const [closingKeys, setClosingKeys] = useState<ReadonlySet<string>>(() => new Set());
-  const close = useCallback(
-    async (entries: readonly EnvironmentPullRequestEntry[]) => {
-      const batch = entries.filter((entry) => {
-        const key = pullRequestEntryKey(entry);
-        if (entry.state !== "open" || pending.current.has(key)) return false;
-        pending.current.add(key);
+  const close = async (entries: readonly EnvironmentPullRequestEntry[]) => {
+    const batch = entries.filter((entry) => {
+      const key = pullRequestEntryKey(entry);
+      if (entry.state !== "open" || pending.current.has(key)) return false;
+      pending.current.add(key);
+      return true;
+    });
+    if (batch.length === 0) return;
+    setClosingKeys(new Set(pending.current));
+    const failures: string[] = [];
+    const outcomes = await Promise.all(
+      batch.map(async (entry) => {
+        const result = await runAction({
+          environmentId: entry.environmentId,
+          input: {
+            projectId: entry.projectId,
+            host: entry.host,
+            repository: entry.repository,
+            number: entry.number,
+            action: "close",
+          },
+        });
+        pending.current.delete(pullRequestEntryKey(entry));
+        setClosingKeys(new Set(pending.current));
+        if (result._tag === "Failure") {
+          failures.push(
+            `#${entry.number}: ${readableFailure(squashAtomCommandFailure(result), ACTION_FAILURE_HINTS.close)}`,
+          );
+          return;
+        }
+        onClosed(entry);
         return true;
-      });
-      if (batch.length === 0) return;
-      setClosingKeys(new Set(pending.current));
-      let closed = 0;
-      const failures: string[] = [];
-      await Promise.all(
-        batch.map(async (entry) => {
-          try {
-            const result = await runAction({
-              environmentId: entry.environmentId,
-              input: {
-                projectId: entry.projectId,
-                host: entry.host,
-                repository: entry.repository,
-                number: entry.number,
-                action: "close",
-              },
-            });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            closed++;
-            onClosed(entry);
-          } catch (failure) {
-            failures.push(
-              `#${entry.number}: ${readableFailure(failure, ACTION_FAILURE_HINTS.close)}`,
-            );
-          } finally {
-            pending.current.delete(pullRequestEntryKey(entry));
-            setClosingKeys(new Set(pending.current));
-          }
-        }),
-      );
-      toastManager.add({
-        type: failures.length > 0 ? "error" : "success",
-        title:
-          failures.length > 0
-            ? `Closed ${closed} of ${batch.length} pull requests`
-            : `Closed ${closed} pull request${closed === 1 ? "" : "s"}`,
-        ...(failures.length > 0 ? { description: failures.slice(0, 3).join("\n") } : {}),
-      });
-    },
-    [onClosed, runAction],
-  );
+      }),
+    );
+    const closed = outcomes.filter(Boolean).length;
+    toastManager.add({
+      type: failures.length > 0 ? "error" : "success",
+      title:
+        failures.length > 0
+          ? `Closed ${closed} of ${batch.length} pull requests`
+          : `Closed ${closed} pull request${closed === 1 ? "" : "s"}`,
+      ...(failures.length > 0 ? { description: failures.slice(0, 3).join("\n") } : {}),
+    });
+  };
   return { close, closingKeys };
 }
 
@@ -349,12 +346,12 @@ export function usePullRequestHandoffs({
     });
     if (prepared._tag === "Failure") {
       setHandoff(null);
-      const detailMessage =
-        prepareThread.error instanceof Error ? prepareThread.error.message : null;
       toastManager.update(toastId, {
         type: "error",
         title: "Could not prepare the pull request checkout",
-        ...(detailMessage ? { description: detailMessage } : {}),
+        description: checkoutFailureDescription(
+          isAtomCommandInterrupted(prepared) ? undefined : squashAtomCommandFailure(prepared),
+        ),
       });
       return;
     }
@@ -376,12 +373,6 @@ export function usePullRequestHandoffs({
       return;
     }
     setHandoff(null);
-    const staleCheckoutToast = {
-      type: "warning",
-      title: "Checked out, but not on the latest commits",
-      description:
-        "The checkout could not be moved onto the pull request's latest commits, so the code there is older than the pull request. Uncommitted work or local commits keep it where it is.",
-    } as const;
     if (task === null) {
       toastManager.update(
         toastId,
@@ -394,7 +385,7 @@ export function usePullRequestHandoffs({
                   ? "This repository is on the pull request's branch, with a thread open on it."
                   : "The pull request is in its own worktree, with a thread open on it.",
             }
-          : staleCheckoutToast,
+          : OFF_HEAD_PULL_REQUEST_CHECKOUT_TOAST,
       );
       return;
     }
@@ -407,7 +398,7 @@ export function usePullRequestHandoffs({
             title: "Checkout ready",
             description: "The task is in the composer — read it over, then send.",
           }
-        : staleCheckoutToast,
+        : OFF_HEAD_PULL_REQUEST_CHECKOUT_TOAST,
     );
   };
 

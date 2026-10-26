@@ -20,16 +20,16 @@ type ToggleGroupVariant = VariantProps<typeof toggleVariants>["variant"] | "segm
 function ToggleGroup({
   className,
   variant: groupVariant = "segmented",
-  size = groupVariant === "segmented" || groupVariant === "segmented-outline"
-    ? "segmented"
-    : "default",
+  size: sizeProp,
   orientation = "horizontal",
   children,
   ...props
 }: ToggleGroupPrimitive.Props &
   Omit<VariantProps<typeof toggleVariants>, "variant"> & { variant?: ToggleGroupVariant }) {
   const variant = groupVariant === "segmented-outline" ? "segmented" : groupVariant;
-  const value = React.useMemo(() => ({ size, variant }), [size, variant]);
+  const size =
+    sizeProp === undefined ? (variant === "segmented" ? "segmented" : "default") : sizeProp;
+  const value = { size, variant };
   return (
     <ToggleGroupPrimitive
       className={cn(

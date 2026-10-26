@@ -1,3 +1,5 @@
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { TextInputWrapper } from "expo-paste-input";
 import { AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -6,7 +8,7 @@ import { convertPastedImagesToAttachments } from "../../lib/composerImages";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type UserInputQuestion } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { View } from "react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
 import { pickComposerFiles, pickComposerMedia } from "../../lib/composerImages";
@@ -49,6 +51,14 @@ export function QuestionAttachments(props: {
     props.requestId,
     props.question.id,
   ]);
+  // A focused input that unmounts never delivers its onBlur, so release focus here or
+  // the screen would keep treating the keyboard as owned by a removed input.
+  const focusedRef = useRef(false);
+  const onInputFocusChange = props.onInputFocusChange;
+  const releaseFocus = useEffectEvent(() => {
+    if (focusedRef.current) onInputFocusChange?.(false);
+  });
+  useEffect(() => () => releaseFocus(), []);
   const pickerScope = useRef<{ key: string; active: boolean } | null>(null);
   useEffect(() => {
     const scope = { key: scopeKey, active: true };
@@ -126,7 +136,7 @@ export function QuestionAttachments(props: {
   const pick = async (kind: "media" | "files") => {
     const scope = pickerScope.current;
     changeQuestionAttachmentPreparation(key, 1);
-    try {
+    const picked = await settlePromise(async () => {
       const existingCount = appAtomRegistry.get(composerDraftsAtom)[key]?.attachments.length ?? 0;
       const result =
         kind === "files"
@@ -150,10 +160,11 @@ export function QuestionAttachments(props: {
       const rejected = append(key, picked);
       if (result.error || rejected > 0)
         Dialog.alert("Could not attach file", result.error ?? "Too many attachments.");
-    } catch (error) {
+    });
+    changeQuestionAttachmentPreparation(key, -1);
+    if (AsyncResult.isFailure(picked)) {
+      const error = squashAtomCommandFailure(picked);
       Dialog.alert("Could not attach file", error instanceof Error ? error.message : "Try again.");
-    } finally {
-      changeQuestionAttachmentPreparation(key, -1);
     }
   };
   return (
@@ -197,8 +208,14 @@ export function QuestionAttachments(props: {
           submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
           editable={!props.disabled}
           onChangeText={props.onChangeText}
-          onFocus={() => props.onInputFocusChange?.(true)}
-          onBlur={() => props.onInputFocusChange?.(false)}
+          onFocus={() => {
+            focusedRef.current = true;
+            onInputFocusChange?.(true);
+          }}
+          onBlur={() => {
+            focusedRef.current = false;
+            onInputFocusChange?.(false);
+          }}
           placeholder="Or type a custom answer"
           className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
         />

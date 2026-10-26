@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  encodeHtmlRenderOutline,
-  HTML_RENDER_MAX_HEIGHT,
+  HTML_RENDER_MAX_FIT_HEIGHT,
   htmlRenderFrameHeight,
-  htmlRenderOutlineBoxes,
   htmlRenderReferencesEqual,
   htmlRenderTheme,
   htmlRenderThemeFragment,
@@ -269,16 +267,20 @@ describe("htmlRenderFrameHeight", () => {
     const fitted = { ...measured, height: 1403 };
     expect(htmlRenderFrameHeight(fitted, 728, 1415)).toBe(1415);
     expect(htmlRenderFrameHeight(fitted, 1400)).toBe(1660);
-    expect(htmlRenderFrameHeight(fitted, 728, 5000)).toBe(HTML_RENDER_MAX_HEIGHT);
+    expect(htmlRenderFrameHeight(fitted, 728, 5000)).toBe(5000);
+    expect(htmlRenderFrameHeight(fitted, 728, 99_999)).toBe(HTML_RENDER_MAX_FIT_HEIGHT);
   });
 
-  it("keeps the agent's height when it asked for a scrolling frame or the page is unmeasured", () => {
+  it("fits the client's measured content over a shorter agent height", () => {
     const scrolling = { ...measured, height: 600 };
-    expect(htmlRenderFrameHeight(scrolling, 728, 1415)).toBe(600);
-    expect(htmlRenderFrameHeight(scrolling, 1400)).toBe(600);
-    expect(htmlRenderFrameHeight(reference, 728)).toBe(reference.height);
-    expect(htmlRenderFrameHeight(reference, 728, 900)).toBe(reference.height);
+    expect(htmlRenderFrameHeight(scrolling, 728, 1415)).toBe(1415);
+    expect(htmlRenderFrameHeight(reference, 728, 900)).toBe(900);
     expect(htmlRenderFrameHeight(reference, 728, 300)).toBe(300);
+  });
+
+  it("keeps the agent's height without a client measurement", () => {
+    expect(htmlRenderFrameHeight({ ...measured, height: 600 }, 1400)).toBe(600);
+    expect(htmlRenderFrameHeight(reference, 728)).toBe(reference.height);
   });
 
   it("drops a malformed table and compares tables by value", () => {
@@ -288,50 +290,5 @@ describe("htmlRenderFrameHeight", () => {
     const copy = readHtmlRenderReference(JSON.parse(JSON.stringify(measured)))!;
     expect(htmlRenderReferencesEqual(measured, copy)).toBe(true);
     expect(htmlRenderReferencesEqual(measured, { ...copy, heights: [[390, 1290]] })).toBe(false);
-  });
-});
-
-describe("htmlRenderOutlineBoxes", () => {
-  const outline = encodeHtmlRenderOutline([
-    { kind: "text", x: 0, y: 0, width: 300, height: 40, lines: 2 },
-    { kind: "media", x: 0, y: 48, width: 728, height: 300, lines: 1 },
-    { kind: "media", x: 2, y: 2, width: 0, height: 10, lines: 1 },
-  ]);
-  const outlined = readHtmlRenderReference({
-    ...reference,
-    heights: [
-      [364, 1600],
-      [728, 800],
-    ],
-    outline,
-  })!;
-
-  it("round-trips through a tool result and stretches to the client's width and height", () => {
-    expect(outline).toBe("t0,0,75,10,2;m0,12,182,75,1");
-    expect(htmlRenderOutlineBoxes(outlined, 728)).toEqual([
-      { kind: "text", x: 0, y: 0, width: 300, height: 40, lines: 2 },
-      { kind: "media", x: 0, y: 48, width: 728, height: 300, lines: 1 },
-    ]);
-    expect(htmlRenderOutlineBoxes(outlined, 364)[1]).toEqual({
-      kind: "media",
-      x: 0,
-      y: 96,
-      width: 364,
-      height: 600,
-      lines: 1,
-    });
-  });
-
-  it("drops a malformed or unmeasured outline", () => {
-    expect(readHtmlRenderReference({ ...outlined, outline: "x1,2" })?.outline).toBeUndefined();
-    expect(
-      readHtmlRenderReference({ ...outlined, outline: "t0,0,10,10,0" })?.outline,
-    ).toBeUndefined();
-    expect(
-      readHtmlRenderReference({ ...outlined, outline: "m0,0,0,10,1" })?.outline,
-    ).toBeUndefined();
-    expect(readHtmlRenderReference({ ...reference, outline })?.outline).toBeUndefined();
-    expect(htmlRenderOutlineBoxes(reference, 728)).toEqual([]);
-    expect(htmlRenderReferencesEqual(outlined, { ...outlined, outline: "m0,0,1,1,1" })).toBe(false);
   });
 });

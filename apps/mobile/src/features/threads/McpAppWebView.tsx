@@ -1,3 +1,4 @@
+import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
@@ -23,7 +24,7 @@ import * as Predicate from "effect/Predicate";
 import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
@@ -47,6 +48,7 @@ const ROW_BOTTOM_MARGIN = 8;
 // Android exposes `ReactNativeWebView` to every frame, so a frame nested in the
 // app could post to React Native directly. The outer page therefore wraps what
 // it relays with a secret only it holds, and React Native drops anything else.
+// The relay also attests activation; the sandboxed app cannot set that flag.
 function outerDocument(src: string, allow: string, secret: string) {
   const attribute = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -54,7 +56,7 @@ function outerDocument(src: string, allow: string, secret: string) {
 <style>html,body{margin:0;height:100%;background:transparent}iframe{border:0;display:block;width:100%;height:100%}</style></head>
 <body><iframe id="app" sandbox="allow-scripts allow-forms" allow="${attribute(allow)}"></iframe>
 <script>(function(){var frame=document.getElementById("app"),secret=${JSON.stringify(secret)},loads=0,live=true;
-var send=function(m){window.ReactNativeWebView.postMessage(JSON.stringify({secret:secret,message:m}));};
+var send=function(m){var u=navigator.userActivation;window.ReactNativeWebView.postMessage(JSON.stringify({secret:secret,active:!!(u&&u.isActive)&&document.activeElement===frame,message:m}));};
 frame.addEventListener("load",function(){loads+=1;if(loads>1&&live){live=false;send({t3:"navigated"});}});
 window.addEventListener("message",function(e){if(live&&e.source===frame.contentWindow)send(e.data);});
 window.__t3McpAppReceive=function(m){live&&frame.contentWindow&&frame.contentWindow.postMessage(m,"*");};
@@ -248,6 +250,7 @@ export function ThreadMcpApp(props: {
   }, [props.environmentId, props.threadId, props.itemId, app.tool]);
   const webView = useRef<WebView<object>>(null);
   const hostRef = useRef<McpAppHost | null>(null);
+  const userActive = useRef(false);
 
   useEffect(() => {
     if (uri === null) return;
@@ -360,9 +363,12 @@ export function ThreadMcpApp(props: {
       },
       requestDisplayMode: async (mode) => {
         const current = latest.current.props;
+        // receive dispatches synchronously; read activation before awaiting teardown.
         if (
           mode === "fullscreen" &&
-          (latest.current.awaitingUser || !latest.current.navigation.isFocused())
+          (!userActive.current ||
+            latest.current.awaitingUser ||
+            !latest.current.navigation.isFocused())
         ) {
           return current.displayMode ?? "inline";
         }
@@ -485,15 +491,16 @@ export function ThreadMcpApp(props: {
         className="items-center justify-center gap-2 rounded-lg border border-border"
       >
         <Text className="text-sm text-foreground-muted">The {app.server} app was closed</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            setDocumentKey((value) => value + 1);
-            setClosed(false);
-          }}
-        >
-          <Text className="text-sm text-foreground">Show app</Text>
-        </Pressable>
+        <View className="items-center">
+          <Button
+            label="Show app"
+            tone="secondary"
+            onPress={() => {
+              setDocumentKey((value) => value + 1);
+              setClosed(false);
+            }}
+          />
+        </View>
       </View>
     );
   }
@@ -545,7 +552,9 @@ export function ThreadMcpApp(props: {
               setNavigatedAway(true);
               return;
             }
+            userActive.current = envelope.active === true;
             hostRef.current?.receive(message);
+            userActive.current = false;
           }}
         />
       ) : asset._tag === "Failure" || crashed ? (

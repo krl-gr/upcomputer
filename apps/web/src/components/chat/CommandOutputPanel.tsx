@@ -1,6 +1,6 @@
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import { TERMINAL_PALETTES, terminalOutputSpans } from "@t3tools/shared/terminalOutput";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { useTheme } from "../../hooks/useTheme";
 import { useServerConfigs } from "../../state/entities";
@@ -38,10 +38,6 @@ export function CommandOutputPanel(props: {
   const followRef = useRef(true);
   const text = data?.output.text ?? "";
   const { resolvedTheme } = useTheme();
-  const spans = useMemo(
-    () => terminalOutputSpans(text, TERMINAL_PALETTES[resolvedTheme]),
-    [text, resolvedTheme],
-  );
 
   // This panel only re-renders when its output changes, so keep the end in view after each.
   useLayoutEffect(() => {
@@ -54,6 +50,8 @@ export function CommandOutputPanel(props: {
     if (data === null) return <div className="text-muted-foreground italic">Loading output…</div>;
     return data.running ? null : <div className="text-muted-foreground italic">No output.</div>;
   }
+  // Parsed after the layout effect, the last hook, so the compiler caches it on text and theme.
+  const spans = terminalOutputSpans(text, TERMINAL_PALETTES[resolvedTheme]);
   return (
     <div>
       {data?.output.truncated ? (

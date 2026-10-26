@@ -1,6 +1,6 @@
 import type { LegendListRef } from "@legendapp/list/react";
 import type { RunId } from "@t3tools/contracts";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { TimelineEntry } from "../../session-logic";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import type { AssistantCitationRequest, AssistantCitationTarget } from "./AssistantCitationSource";
@@ -20,6 +20,7 @@ export function useAssistantCitationTarget({
   viewport,
   historyLoading,
   loadEarlier,
+  getTurnFoldRunId,
   onExpandTurn,
   onManualNavigation,
 }: {
@@ -30,18 +31,27 @@ export function useAssistantCitationTarget({
   viewport: HTMLElement | null;
   historyLoading: boolean;
   loadEarlier: CitationHistoryPage | null;
+  getTurnFoldRunId: (entryId: string) => RunId | undefined;
   onExpandTurn: (runId: RunId) => void;
   onManualNavigation: () => void;
 }) {
   const [ready, setReady] = useState<AssistantCitationTarget | null>(null);
   const [finishedKey, setFinishedKey] = useState<string | null>(null);
   const [listLoaded, setListLoaded] = useState(false);
-  const onListLoad = useCallback(() => setListLoaded(true), []);
+  const onListLoad = () => setListLoaded(true);
   const navigationRef = useRef<{
     target: AssistantCitationTarget;
     requestedPages: Set<string>;
     done: boolean;
   } | null>(null);
+
+  // A target belongs to one request, so returning to an earlier key never reuses it.
+  if (ready !== null && ready.key !== request?.key) {
+    setReady(null);
+  }
+  if (!request && finishedKey !== null) {
+    setFinishedKey(null);
+  }
 
   useEffect(() => {
     if (navigationRef.current && navigationRef.current.target.key !== request?.key) {
@@ -50,8 +60,6 @@ export function useAssistantCitationTarget({
     }
     if (!request) {
       navigationRef.current = null;
-      setReady(null);
-      setFinishedKey(null);
       return;
     }
     if (navigationRef.current?.target.key !== request.key) {
@@ -71,7 +79,6 @@ export function useAssistantCitationTarget({
         requestedPages: new Set(),
         done: false,
       };
-      setReady(null);
       onManualNavigation();
     }
     if (!viewport || historyLoading) return;
@@ -118,12 +125,14 @@ export function useAssistantCitationTarget({
       (row) => row.kind === "message" && row.message.id === navigation.target.citation.messageId,
     );
     if (index < 0) {
-      if (source.message.runId) onExpandTurn(source.message.runId);
+      const foldRunId = getTurnFoldRunId(source.id);
+      if (foldRunId) onExpandTurn(foldRunId);
       return;
     }
     if (listLoaded && listRef.current) setReady(navigation.target);
   }, [
     entries,
+    getTurnFoldRunId,
     historyLoading,
     listLoaded,
     listRef,

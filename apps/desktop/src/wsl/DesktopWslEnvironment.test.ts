@@ -2,22 +2,30 @@
 import { describe, it } from "@effect/vitest";
 import { afterAll, expect } from "vite-plus/test";
 import * as NodeChildProcess from "node:child_process";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
 
+import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import {
   buildWslRuntimeInstallScript,
   buildWslRuntimeInvalidateScript,
   buildWslRuntimePruneScript,
   buildWslRuntimeProbeScript,
   DesktopWslDistroListError,
+  DesktopWslEnvironment,
   formatMissingToolsReason,
+  layer as wslEnvironmentLayer,
   parseNodePath,
   parseNodeVersion,
   parseResolvedPath,
@@ -158,6 +166,102 @@ describe("probeWslDistros", () => {
   });
 });
 
+describe("WSL command deadlines", () => {
+  const makeControlledEnvironment = Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+    const released = yield* Deferred.make<void>();
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.acquireRelease(
+        Deferred.succeed(started, undefined).pipe(
+          Effect.as(
+            ChildProcessSpawner.makeHandle({
+              pid: ChildProcessSpawner.ProcessId(1),
+              exitCode: Deferred.await(exited),
+              isRunning: Deferred.isDone(exited).pipe(Effect.map((done) => !done)),
+              kill: () => Effect.void,
+              unref: Effect.succeed(Effect.void),
+              stdin: Sink.drain,
+              stdout: Stream.empty,
+              stderr: Stream.empty,
+              all: Stream.empty,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+            }),
+          ),
+        ),
+        () => Deferred.succeed(released, undefined),
+      ),
+    );
+    const environment = yield* DesktopWslEnvironment.pipe(
+      Effect.provide(
+        wslEnvironmentLayer.pipe(
+          Layer.provide([
+            DesktopEnvironment.layer({
+              dirname: "/repo/apps/desktop",
+              homeDirectory: "/home/test",
+              platform: "win32",
+              processArch: "x64",
+              appVersion: "1.2.3",
+              appPath: "/repo",
+              isPackaged: true,
+              resourcesPath: "/repo/resources",
+              runningUnderArm64Translation: false,
+            }).pipe(Layer.provide([Path.layer, DesktopConfig.layerTest({})])),
+            FileSystem.layerNoop({ exists: () => Effect.succeed(true) }),
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ]),
+        ),
+      ),
+    );
+    return { environment, started, exited, released };
+  });
+
+  it.effect("waits for a cold distro to finish starting after 15 seconds", () =>
+    Effect.gen(function* () {
+      const { environment, started, exited, released } = yield* makeControlledEnvironment;
+      const fiber = yield* environment.preWarm("Ubuntu").pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust(Duration.seconds(15));
+      expect(yield* Deferred.isDone(released)).toBe(false);
+
+      yield* Deferred.succeed(exited, ChildProcessSpawner.ExitCode(0));
+      yield* Fiber.join(fiber);
+      expect(yield* Deferred.isDone(released)).toBe(true);
+    }),
+  );
+
+  it.effect("releases a stalled warmup process at the 30-second deadline", () =>
+    Effect.gen(function* () {
+      const { environment, started, released } = yield* makeControlledEnvironment;
+      const fiber = yield* environment.preWarm("Ubuntu").pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust(Duration.seconds(29));
+      expect(yield* Deferred.isDone(released)).toBe(false);
+
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* Fiber.join(fiber);
+      expect(yield* Deferred.isDone(released)).toBe(true);
+    }),
+  );
+
+  it.effect("still gives path conversion only 10 seconds and releases its process", () =>
+    Effect.gen(function* () {
+      const { environment, started, released } = yield* makeControlledEnvironment;
+      const fiber = yield* environment
+        .windowsToWslPath("Ubuntu", "C:\\project")
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust(Duration.seconds(9));
+      expect(yield* Deferred.isDone(released)).toBe(false);
+
+      yield* TestClock.adjust(Duration.seconds(1));
+      expect(yield* Fiber.join(fiber)).toEqual(Option.none());
+      expect(yield* Deferred.isDone(released)).toBe(true);
+    }),
+  );
+});
+
 describe("WSL runtime cache", () => {
   it.each([
     [
@@ -182,7 +286,7 @@ describe("WSL runtime cache", () => {
 
     expect(script).toContain('runtime_parent="$HOME/.t3/wsl-runtime"');
     expect(script).toContain('  [ -f "$ready_marker" ] &&');
-    expect(script).toContain('    runtime_entry_runs "$runtime_root" &&');
+    expect(script).toContain('    runtime_entry_runs "$runtime_root" 2>/dev/null &&');
     expect(script).toContain("if runtime_is_ready; then");
     expect(script).not.toContain("bin.mjs");
     expect(script).not.toContain("node-pty");
@@ -253,23 +357,6 @@ describe("WSL runtime cache", () => {
     const deleted = script.indexOf('rm -rf "$runtime_stale"');
     expect(kept).toBeGreaterThan(moved);
     expect(deleted).toBeGreaterThan(kept);
-  });
-
-  it("treats a runtime whose executable no longer runs as a cache miss", () => {
-    const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/Up.computer/wsl-runtime.tar.gz",
-      "1.2.3-x64",
-      "b".repeat(64),
-    );
-
-    expect(script).toContain('  [ -x "$1/t3" ] && "$1/t3" --version >/dev/null 2>&1');
-
-    const entryCheckDefined = script.indexOf("runtime_entry_runs() {");
-    const readinessDefined = script.indexOf("runtime_is_ready() {");
-    const readyShortCircuit = script.indexOf("if runtime_is_ready; then");
-    expect(entryCheckDefined).toBeGreaterThan(-1);
-    expect(entryCheckDefined).toBeLessThan(readinessDefined);
-    expect(readinessDefined).toBeLessThan(readyShortCircuit);
   });
 
   it("re-hashes the executable against the digest the install recorded", () => {
@@ -374,14 +461,14 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     fixtures.length = 0;
   });
 
-  const createFixture = () => {
+  const createFixture = (serverEntry = SERVER_ENTRY_SOURCE) => {
     const result = runShell(
       [
         "set -eu",
         "work=$(mktemp -d)",
         'stage="$work/stage/t3-0.0.0-linux-x64"',
         'mkdir -p "$stage/node_modules/node-pty/build/Release" "$work/home"',
-        `printf '%s' ${sh(SERVER_ENTRY_SOURCE)} > "$stage/t3"`,
+        `printf '%s' ${sh(serverEntry)} > "$stage/t3"`,
         'chmod +x "$stage/t3"',
         `printf '%s' 'pty-native-payload' > "$stage/node_modules/node-pty/build/Release/pty.node"`,
         `tar -czf "$work/wsl-runtime.tar.gz" -C "$work/stage" t3-0.0.0-linux-x64`,
@@ -495,6 +582,18 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     expect(parseWslRuntimeRoot(warm.stdout)).toBe(fixture.runtimeRoot);
   });
 
+  it("retains the loader error when a bundled executable needs a missing system library", () => {
+    const fixture = createFixture(
+      '#!/bin/sh\nprintf "error while loading shared libraries: libatomic.so.1: cannot open shared object file\\n" >&2\nexit 127\n',
+    );
+
+    const result = fixture.install();
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("libatomic.so.1");
+    expect(parseWslRuntimeRoot(result.stdout)).toBeNull();
+  });
+
   it("reinstalls a cache whose executable was truncated", () => {
     const fixture = createFixture();
     expect(fixture.install().status).toBe(0);
@@ -506,6 +605,28 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     expect(parseWslRuntimeRoot(repaired.stdout)).toBe(fixture.runtimeRoot);
     const restored = runShell(`set -eu\ncat ${sh(fixture.serverEntry)}`);
     expect(restored.stdout).toBe(SERVER_ENTRY_SOURCE);
+  });
+
+  it("reinstalls an executable that fails --version despite a matching recorded digest", () => {
+    const fixture = createFixture();
+    expect(fixture.install().status).toBe(0);
+    const brokenEntry = "#!/bin/sh\nexit 42\n";
+    const corrupt = runShell(
+      [
+        "set -eu",
+        `printf '%s' ${sh(brokenEntry)} > ${sh(fixture.serverEntry)}`,
+        `chmod +x ${sh(fixture.serverEntry)}`,
+        `sha256sum ${sh(fixture.serverEntry)} | cut -d ' ' -f 1 > ${sh(`${fixture.runtimeRoot}/.t3code-wsl-runtime-ready`)}`,
+      ].join("\n"),
+    );
+    expect(corrupt.status, corrupt.stderr).toBe(0);
+    expect(runShell(`${sh(fixture.serverEntry)} --version`).status).toBe(42);
+
+    const repaired = fixture.install();
+    expect(repaired.status, repaired.stderr).toBe(0);
+    expect(parseWslRuntimeRoot(repaired.stdout)).toBe(fixture.runtimeRoot);
+    expect(runShell(`cat ${sh(fixture.serverEntry)}`).stdout).toBe(SERVER_ENTRY_SOURCE);
+    expect(runShell(`${sh(fixture.serverEntry)} --version`).status).toBe(0);
   });
 
   it("falls back instead of launching a corrupted cache it cannot reinstall", () => {

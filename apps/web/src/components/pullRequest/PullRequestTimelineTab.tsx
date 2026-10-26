@@ -9,6 +9,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
+  CircleCheckIcon,
   ExternalLinkIcon,
   FileCode2Icon,
   GitCommitHorizontalIcon,
@@ -19,7 +20,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { pullRequestEnvironment } from "~/state/pullRequests";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { RelativeTime } from "~/components/RelativeTime";
 
 import { Button } from "../ui/button";
 import { PullRequestEditButton } from "./PullRequestEditButton";
@@ -34,9 +35,11 @@ import {
   pullRequestReviewOutcome,
   type PullRequestReviewOutcome,
   type PullRequestTimelineEvent,
+  type PullRequestTimelineThread,
 } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
+import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import {
@@ -178,12 +181,14 @@ function ConversationCard({
   cwd,
   onOpen,
   reactions,
+  showPath = true,
 }: {
   event: PullRequestTimelineEvent;
   editable: PullRequestComment | null;
   cwd: string;
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
+  showPath?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -220,8 +225,10 @@ function ConversationCard({
               {event.reviewState ? <ReviewStateBadge state={event.reviewState} /> : null}
             </div>
             <PullRequestMetaLine className="mt-1 flex-wrap text-2xs text-muted-foreground">
-              <span>{formatRelativeTimeLabel(event.at)}</span>
-              {event.path ? (
+              <span>
+                <RelativeTime timestamp={event.at} />
+              </span>
+              {showPath && event.path ? (
                 <span className="inline-flex min-w-0 items-center gap-1">
                   <FileCode2Icon aria-hidden className="size-3 shrink-0" />
                   <span className="truncate">{event.path}</span>
@@ -327,7 +334,7 @@ function ConversationGroup({
               </span>
               <span className="block truncate text-3xs text-muted-foreground">
                 {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"} ·{" "}
-                {formatRelativeTimeLabel(first.at)}
+                <RelativeTime timestamp={first.at} />
               </span>
             </span>
             <ChevronDownIcon
@@ -363,6 +370,103 @@ function ConversationGroup({
   );
 }
 
+function ReviewThreadEvent({
+  event,
+  thread,
+  editable,
+  cwd,
+  onOpen,
+  reactions,
+}: {
+  event: PullRequestTimelineEvent;
+  thread: PullRequestTimelineThread;
+  editable: ReadonlyMap<string, PullRequestComment>;
+  cwd: string;
+  onOpen: (url: string) => void;
+  reactions: ReactionSurface;
+}) {
+  const dismissed = pullRequestReviewOutcome(event.reviewState) === "dismissed";
+  const [expanded, setExpanded] = useState(!thread.isResolved && !dismissed);
+  const replyCount = thread.replies.length + thread.moreReplies;
+
+  return (
+    <div className="group relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
+      <ActorTimelineMarker
+        actors={event.actor ? [event.actor] : []}
+        className="top-6"
+        fallback={<MessageSquareIcon className="size-3.5" />}
+        muted={!expanded}
+      />
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-center gap-2 px-2 py-2 text-left text-2xs text-muted-foreground hover:text-foreground"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <FileCode2Icon aria-hidden className="size-3 shrink-0" />
+        <span className="min-w-0 truncate font-mono">
+          {thread.line === null ? thread.path : `${thread.path}:${thread.line}`}
+        </span>
+        {thread.isResolved ? (
+          <span className="inline-flex shrink-0 items-center gap-1 font-medium text-success-foreground">
+            <CircleCheckIcon aria-hidden className="size-3" />
+            Resolved
+          </span>
+        ) : null}
+        {dismissed ? <span className="shrink-0 font-medium">Review dismissed</span> : null}
+        {thread.isOutdated ? <span className="shrink-0 font-medium">Outdated</span> : null}
+        {expanded ? null : (
+          <span className="shrink-0">
+            · {event.actor?.login ?? "ghost"}
+            {replyCount > 0 ? (
+              <>
+                {" "}
+                · {replyCount.toLocaleString()} {replyCount === 1 ? "reply" : "replies"}
+              </>
+            ) : null}
+          </span>
+        )}
+        <ChevronDownIcon
+          aria-hidden
+          className={cn("ml-auto size-3.5 shrink-0 transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+      {expanded ? (
+        <>
+          <ConversationCard
+            event={event}
+            editable={editable.get(event.id) ?? null}
+            cwd={cwd}
+            onOpen={onOpen}
+            reactions={reactions}
+            showPath={false}
+          />
+          {thread.replies.length > 0 ? (
+            <div className="ml-2 space-y-1 border-l border-border/60 pl-3">
+              {thread.replies.map((reply) => (
+                <ConversationCard
+                  key={reply.id}
+                  event={reply}
+                  editable={editable.get(reply.id) ?? null}
+                  cwd={cwd}
+                  onOpen={onOpen}
+                  reactions={reactions}
+                  showPath={false}
+                />
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {thread.hasMoreReplies ? (
+        <div className="px-2">
+          <PullRequestMoreReplies {...thread} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CommitEvent({
   event,
   onOpen,
@@ -388,7 +492,9 @@ function CommitEvent({
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-3xs text-muted-foreground">
             <code className="font-mono">{event.id.slice(0, 7)}</code>
-            <span>{formatRelativeTimeLabel(event.at)}</span>
+            <span>
+              <RelativeTime timestamp={event.at} />
+            </span>
           </div>
         </div>
         {event.additions !== null && event.deletions !== null ? (
@@ -429,7 +535,7 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
           <span className="font-semibold text-foreground">{presentation.label}</span>
         </div>
         <div className="mt-0.5 text-2xs text-muted-foreground">
-          {formatRelativeTimeLabel(event.at)}
+          <RelativeTime timestamp={event.at} />
         </div>
       </div>
     </div>
@@ -483,7 +589,9 @@ function ReviewVerdictEvent({
           </div>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <PullRequestMetaLine className="flex-wrap text-2xs text-muted-foreground">
-              <span>{formatRelativeTimeLabel(event.at)}</span>
+              <span>
+                <RelativeTime timestamp={event.at} />
+              </span>
               {event.path ? (
                 <span className="inline-flex min-w-0 items-center gap-1">
                   <FileCode2Icon aria-hidden className="size-3 shrink-0" />
@@ -548,7 +656,9 @@ export function PullRequestTimelineTab({
     onRefresh,
   };
   const editable = new Map(
-    detail.comments
+    events
+      .flatMap((event) => [event, ...(event.thread?.replies ?? [])])
+      .flatMap((event) => (event.comment ? [event.comment] : []))
       .filter((comment) => canEditPullRequestComment(detail, comment))
       .map((comment) => [comment.id, comment] as const),
   );
@@ -577,6 +687,19 @@ export function PullRequestTimelineTab({
               );
             }
             const event = row.event;
+            if (event.thread !== undefined) {
+              return (
+                <ReviewThreadEvent
+                  key={`${reactions.reference.projectId}#${reactions.reference.number}:thread:${event.id}:${event.thread.isResolved}:${pullRequestReviewOutcome(event.reviewState) === "dismissed"}`}
+                  event={event}
+                  thread={event.thread}
+                  editable={editable}
+                  cwd={detail.workspaceRoot}
+                  onOpen={openOnHost}
+                  reactions={reactions}
+                />
+              );
+            }
             if (event.kind === "commit") {
               return <CommitEvent key={event.id} event={event} onOpen={onOpenCommit} />;
             }

@@ -21,6 +21,7 @@ import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { isWindowsRenameLock } from "./atomicWrite.ts";
 import * as HostProcess from "./HostProcess.ts";
 
 export const CLOUDFLARED_VERSION = "2026.10.0";
@@ -135,7 +136,6 @@ const trimmedString = (name: string) =>
 
 const CloudflaredConfig = Config.all({
   executableOverride: trimmedString(CLOUDFLARED_PATH_ENV_NAME),
-  path: trimmedString("PATH"),
 });
 
 export interface CloudflaredRelayClientOptions {
@@ -198,13 +198,6 @@ class VersionProbeKey extends Data.Class<{
 
 function isAlreadyExists(error: PlatformError.PlatformError): boolean {
   return error.reason._tag === "AlreadyExists";
-}
-
-// Windows refuses to rename a file another process briefly holds open, such as a virus
-// scanner reading the binary that just ran. These codes clear once it lets go.
-function isTransientWindowsLock(error: PlatformError.PlatformError): boolean {
-  const code = (error.reason.cause as NodeJS.ErrnoException | undefined)?.code;
-  return code === "EBUSY" || code === "EPERM" || code === "EACCES";
 }
 
 const wrapInstallFailure =
@@ -331,8 +324,10 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
   });
 
   const resolvePathExecutable = Effect.gen(function* () {
-    const config = yield* loadCloudflaredConfig;
-    const pathValue = Option.getOrUndefined(config.path);
+    // The default ConfigProvider is cached the first time any Config is read.
+    // Server startup reads its config before fixPath hydrates the environment,
+    // so reading PATH through Config here can retain the service's stale PATH.
+    const pathValue = (yield* HostProcess.Environment).PATH?.trim();
     if (!pathValue) return null;
     const delimiter = platform === "win32" ? ";" : ":";
     for (const directory of pathValue.split(delimiter)) {
@@ -399,7 +394,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
       Effect.retry({
         times: ACTIVATE_RETRY_COUNT,
         schedule: Schedule.spaced(ACTIVATE_RETRY_DELAY),
-        while: (error) => platform === "win32" && isTransientWindowsLock(error),
+        while: (error) => platform === "win32" && isWindowsRenameLock(error),
       }),
     );
 
