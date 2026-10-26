@@ -31,6 +31,7 @@ const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterS
   waiting: "waiting",
   approval: "attention",
   input: "attention",
+  request: "attention",
   done: "done",
   failed: "failed",
   limited: "limited",
@@ -41,6 +42,7 @@ const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterS
 const PRIORITY: ReadonlyArray<ThreadStatusLabelKind> = [
   "approval",
   "input",
+  "request",
   "working",
   "waiting",
   "failed",
