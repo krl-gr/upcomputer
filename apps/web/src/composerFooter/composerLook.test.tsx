@@ -9,6 +9,8 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
 }));
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentIdentificationMode: () => "none",
+  useClientSettings: (select: (settings: { redesignEnabled: boolean }) => unknown) =>
+    select({ redesignEnabled: false }),
 }));
 
 import { ComposerPrimaryActions } from "../components/chat/ComposerPrimaryActions";

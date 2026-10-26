@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as RelayDb from "../db.ts";
-import { relayLiveActivities, relayMobileDevices } from "../persistence/schema.ts";
+import { relayMobileDevices } from "../persistence/schema.ts";
 import * as Devices from "./Devices.ts";
 
 const registration: RelayDeviceRegistrationRequest = {

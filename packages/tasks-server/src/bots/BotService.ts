@@ -582,26 +582,52 @@ const make = Effect.gen(function* () {
       Effect.asVoid,
       Effect.mapError(asError),
     ),
-    save: (input) => save(input).pipe(lock.withPermits(1), Effect.mapError(asError)),
-    forThread: (threadId) => forThread(threadId).pipe(Effect.mapError(asError)),
-    memory: (id) => memory(id).pipe(Effect.mapError(asError)),
-    remember: (input, onlyIfNew) =>
-      remember(input, onlyIfNew).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
-    forget: (agentId, id) =>
-      now.pipe(
-        Effect.flatMap(
-          (at) =>
-            sql`UPDATE bot_memories SET deleted_at = ${at}
-            WHERE agent_id = ${agentId} AND id = ${id} AND status = 'active'`,
-        ),
-        memoryLock.withPermits(1),
-        Effect.asVoid,
-        Effect.mapError(asError),
-      ),
-    propose: (input) => propose(input).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
-    proposals: (agentId) => proposals(agentId).pipe(Effect.mapError(asError)),
-    acceptProposal: (agentId, id) =>
-      acceptProposal(agentId, id).pipe(memoryLock.withPermits(1), Effect.mapError(asError)),
+    save: Effect.fn("BotService.save")(
+      function* (input) {
+        return yield* save(input);
+      },
+      lock.withPermits(1),
+      Effect.mapError(asError),
+    ),
+    forThread: Effect.fn("BotService.forThread")(function* (threadId) {
+      return yield* forThread(threadId).pipe(Effect.mapError(asError));
+    }),
+    memory: Effect.fn("BotService.memory")(function* (id) {
+      return yield* memory(id).pipe(Effect.mapError(asError));
+    }),
+    remember: Effect.fn("BotService.remember")(
+      function* (input, onlyIfNew) {
+        return yield* remember(input, onlyIfNew);
+      },
+      memoryLock.withPermits(1),
+      Effect.mapError(asError),
+    ),
+    forget: Effect.fn("BotService.forget")(
+      function* (agentId, id) {
+        const at = yield* now;
+        yield* sql`UPDATE bot_memories SET deleted_at = ${at}
+          WHERE agent_id = ${agentId} AND id = ${id} AND status = 'active'`;
+      },
+      memoryLock.withPermits(1),
+      Effect.mapError(asError),
+    ),
+    propose: Effect.fn("BotService.propose")(
+      function* (input) {
+        return yield* propose(input);
+      },
+      memoryLock.withPermits(1),
+      Effect.mapError(asError),
+    ),
+    proposals: Effect.fn("BotService.proposals")(function* (agentId) {
+      return yield* proposals(agentId).pipe(Effect.mapError(asError));
+    }),
+    acceptProposal: Effect.fn("BotService.acceptProposal")(
+      function* (agentId, id) {
+        return yield* acceptProposal(agentId, id);
+      },
+      memoryLock.withPermits(1),
+      Effect.mapError(asError),
+    ),
     rejectProposal: Effect.fn("BotService.rejectProposal")(
       function* (agentId, id) {
         yield* get(agentId);
@@ -630,18 +656,15 @@ const make = Effect.gen(function* () {
     ),
     // A failed lookup cannot tell a bot chat from any other thread, and every thread's turn
     // passes here, so it must not stop the turn. Once the thread is a bot's, failures do.
-    context: (input) =>
-      rowForThread(input.threadId).pipe(
+    context: Effect.fn("BotService.context")(function* (input) {
+      const row = yield* rowForThread(input.threadId).pipe(
         Effect.catch((cause) =>
           Effect.logWarning("Bot lookup for a turn failed", { cause }).pipe(Effect.as(null)),
         ),
-        Effect.flatMap((row) =>
-          row === null
-            ? Effect.succeed({ text: "" })
-            : context(row, input).pipe(memoryLock.withPermits(1)),
-        ),
-        Effect.mapError(asError),
-      ),
+      );
+      if (row === null) return { text: "" };
+      return yield* context(row, input).pipe(memoryLock.withPermits(1), Effect.mapError(asError));
+    }),
     assign,
     extract: Effect.fn("BotService.extract")(
       function* (agentId, requestId) {

@@ -271,6 +271,9 @@ function triggerFieldsChanged(
 const decodeTaskRows = Schema.decodeUnknownEffect(Schema.Array(TaskDbRow));
 const decodeTaskTagRows = Schema.decodeUnknownEffect(Schema.Array(TaskTagDbRow));
 
+const decodeTaskRunCountRows = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ taskId: TaskId, ...TaskRunCount.fields })),
+);
 const decodeLatestRunRows = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ taskId: TaskId, status: Schema.NullOr(Schema.String) })),
 );
@@ -640,8 +643,8 @@ const makeTaskRepository = Effect.gen(function* () {
         parentRunId: null,
       };
     if (parentRun.taskId === task.id)
-      return yield* Effect.fail(
-        toTaskPersistenceSqlError("TaskRepository.origin:self")("A task cannot be its own parent"),
+      return yield* toTaskPersistenceSqlError("TaskRepository.origin:self")(
+        "A task cannot be its own parent",
       );
     // Fresh IDs cannot introduce a cycle. Only reused IDs with existing children
     // need an ancestor check; UNION also terminates on malformed legacy cycles.
@@ -653,10 +656,8 @@ const makeTaskRepository = Effect.gen(function* () {
         SELECT t.id, t.parent_task_id FROM tasks t JOIN ancestors a ON t.id = a.parent_task_id
       ) SELECT 1 FROM ancestors WHERE id = ${task.id} OR parent_task_id = ${task.id} LIMIT 1`;
       if (cycle.length > 0)
-        return yield* Effect.fail(
-          toTaskPersistenceSqlError("TaskRepository.origin:cycle")(
-            "Task ancestry would form a cycle",
-          ),
+        return yield* toTaskPersistenceSqlError("TaskRepository.origin:cycle")(
+          "Task ancestry would form a cycle",
         );
     }
     const parent = yield* sql<{ root: string | null; metadata: string }>`
@@ -2018,13 +2019,11 @@ const makeTaskRepository = Effect.gen(function* () {
           }
           yield* writeTaskTags(task.id, task.tags);
           const saved = yield* getById({ id: task.id });
-          return yield* Option.match(saved, {
-            onNone: () =>
-              Effect.fail(
-                toTaskPersistenceSqlError("TaskRepository.upsert:reload")("Task not found"),
-              ),
-            onSome: Effect.succeed,
-          });
+          return yield* Effect.fromOption(saved).pipe(
+            Effect.mapError(() =>
+              toTaskPersistenceSqlError("TaskRepository.upsert:reload")("Task not found"),
+            ),
+          );
         }),
       )
       .pipe(
@@ -2076,17 +2075,10 @@ const makeTaskRepository = Effect.gen(function* () {
           ORDER BY r.started_at DESC, r.id ASC LIMIT 1
         ) AS status
         FROM json_each(${ids}) t`;
-    const decodedTags = yield* Schema.decodeUnknownEffect(Schema.Array(TaskTagDbRow))(tagRows);
+    const decodedTags = yield* decodeTaskTagRows(tagRows);
     const decodedLatest = yield* decodeLatestRunRows(latest);
     const latestByTask = new Map(decodedLatest.map(({ taskId, status }) => [taskId, status]));
-    const decodedCounts = yield* Schema.decodeUnknownEffect(
-      Schema.Array(
-        Schema.Struct({
-          taskId: TaskId,
-          ...TaskRunCount.fields,
-        }),
-      ),
-    )(counts);
+    const decodedCounts = yield* decodeTaskRunCountRows(counts);
     const countsByTask = new Map<TaskId, Array<typeof TaskRunCount.Type>>();
     for (const { taskId, status, count } of decodedCounts) {
       const entries = countsByTask.get(taskId) ?? [];
@@ -2341,15 +2333,11 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.gen(function* () {
           const current = yield* getById({ id: input.id });
           if (Option.isNone(current)) {
-            return yield* Effect.fail(
-              toTaskPersistenceSqlError("TaskRepository.reorder:get")("Task not found"),
-            );
+            return yield* toTaskPersistenceSqlError("TaskRepository.reorder:get")("Task not found");
           }
           if (input.beforeTaskId === input.id || input.afterTaskId === input.id) {
-            return yield* Effect.fail(
-              toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
-                "A task cannot be its own reorder neighbor",
-              ),
+            return yield* toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
+              "A task cannot be its own reorder neighbor",
             );
           }
 
@@ -2379,10 +2367,8 @@ const makeTaskRepository = Effect.gen(function* () {
           let rows = yield* listAllTasks();
           let insertion = resolveInsertion(rows);
           if (!insertion) {
-            return yield* Effect.fail(
-              toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
-                "Reorder neighbors must exist and appear in after/before order",
-              ),
+            return yield* toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
+              "Reorder neighbors must exist and appear in after/before order",
             );
           }
           let rank = taskRankBetween(insertion.lower, insertion.upper);
@@ -2391,30 +2377,24 @@ const makeTaskRepository = Effect.gen(function* () {
             rows = yield* listAllTasks();
             insertion = resolveInsertion(rows);
             if (!insertion) {
-              return yield* Effect.fail(
-                toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
-                  "Reorder neighbors changed during rebalance",
-                ),
+              return yield* toTaskPersistenceSqlError("TaskRepository.reorder:neighbors")(
+                "Reorder neighbors changed during rebalance",
               );
             }
             rank = taskRankBetween(insertion.lower, insertion.upper);
           }
           if (rank === null) {
-            return yield* Effect.fail(
-              toTaskPersistenceSqlError("TaskRepository.reorder:exhausted")(
-                "Unable to allocate a task rank after rebalance",
-              ),
+            return yield* toTaskPersistenceSqlError("TaskRepository.reorder:exhausted")(
+              "Unable to allocate a task rank after rebalance",
             );
           }
           yield* setTaskRank({ id: input.id, rank });
           const saved = yield* getById({ id: input.id });
-          return yield* Option.match(saved, {
-            onNone: () =>
-              Effect.fail(
-                toTaskPersistenceSqlError("TaskRepository.reorder:reload")("Task not found"),
-              ),
-            onSome: Effect.succeed,
-          });
+          return yield* Effect.fromOption(saved).pipe(
+            Effect.mapError(() =>
+              toTaskPersistenceSqlError("TaskRepository.reorder:reload")("Task not found"),
+            ),
+          );
         }),
       )
       .pipe(
@@ -3321,10 +3301,9 @@ const makeTaskRepository = Effect.gen(function* () {
   /** The automations in order, every one ranked (unranked rows are ranked first). */
   const rankedAutomationRows = () =>
     listAutomationRankRows().pipe(
-      Effect.flatMap((rows) =>
-        rows.some(({ rank }) => rank === null)
-          ? rebalanceAutomationRows(rows).pipe(Effect.andThen(listAutomationRankRows()))
-          : Effect.succeed(rows),
+      Effect.filterOrElse(
+        (rows) => !rows.some(({ rank }) => rank === null),
+        (rows) => rebalanceAutomationRows(rows).pipe(Effect.andThen(listAutomationRankRows())),
       ),
       Effect.map((rows) => rows.map(({ id, rank }) => ({ id, rank: rank ?? "" }))),
     );

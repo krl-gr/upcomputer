@@ -86,9 +86,7 @@ function countingCrypto(): Layer.Layer<Crypto.Crypto> {
 async function harness(options: { readonly allChats?: string } = {}) {
   // One settings service for the whole harness, so core settings persist between calls.
   const serverSettings = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* ServerSettingsService;
-    }).pipe(
+    ServerSettingsService.pipe(
       Effect.provide(ServerSettings.layerTest({ customInstructions: options.allChats ?? "" })),
     ),
   );

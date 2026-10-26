@@ -276,10 +276,7 @@ describe("CodexAdapterV2 runtime policy", () => {
       });
 
       assert.isUndefined(params.additionalContext?.t3_code_orchestration);
-      assert.include(
-        params.additionalContext?.t3_code_tools?.value ?? "",
-        "Up.computer collaborative browser",
-      );
+      assert.include(params.additionalContext?.t3_code_tools?.value ?? "", "Up.computer browser");
       assert.isDefined(params.additionalContext?.t3_code_runtime);
     }),
   );

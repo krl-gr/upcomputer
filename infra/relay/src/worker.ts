@@ -315,10 +315,12 @@ export const layer = Api.make(
           WebPushDeliveries.layer.pipe(
             Layer.provide(
               Layer.succeed(WebPushDeliveryQueueSender.WebPushDeliveryQueueSender, {
-                send: (body) =>
-                  webPushDeliveryQueueSender
-                    .send(body)
-                    .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+                send: Effect.fn("WebPushDeliveryQueueSender.send")(
+                  function* (body) {
+                    return yield* webPushDeliveryQueueSender.send(body);
+                  },
+                  Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
+                ),
               }),
             ),
             Layer.provideMerge(

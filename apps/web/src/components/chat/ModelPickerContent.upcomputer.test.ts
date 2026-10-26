@@ -1,18 +1,8 @@
-import {
-  ANTIGRAVITY_DEFAULT_MODEL,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import {
-  adjacentModelPickerProvider,
-  resolveModelPickerSelectedModel,
-  shouldIncludeModelPickerOption,
-  shouldOfferModelPickerSetup,
-} from "./ModelPickerContent";
+import { shouldOfferModelPickerSetup } from "./ModelPickerContent";
 
 function entry(status: ServerProvider["status"], driver = "opencode") {
   return deriveProviderInstanceEntries([
@@ -33,8 +23,6 @@ function entry(status: ServerProvider["status"], driver = "opencode") {
 }
 
 describe("shouldOfferModelPickerSetup", () => {
-  const availableModel = { slug: "gemini-3.1-pro", name: "Gemini 3.1 Pro" };
-
   it("does not offer setup for a provider whose first check is still running", () => {
     const providerEntry = entry("warning", "antigravity");
     const pending = {

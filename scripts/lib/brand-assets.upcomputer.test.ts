@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  BRAND_ASSET_PATHS,
-  resolveWebAssetBrandForChannel,
-  resolveWebAssetBrandForPackageVersion,
-  resolveWebIconOverrides,
-} from "./brand-assets.ts";
+import { BRAND_ASSET_PATHS } from "./brand-assets.ts";
 
 describe("brand-assets", () => {
   it("points every channel at the Up.computer icon families", () => {

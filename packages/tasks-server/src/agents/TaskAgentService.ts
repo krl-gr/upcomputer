@@ -444,7 +444,7 @@ const make = Effect.gen(function* () {
         createdAt: yield* now,
       });
     },
-    (effect, task, kind, payload) =>
+    (effect, task, kind) =>
       effect.pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to append task lifecycle event", {
@@ -839,7 +839,7 @@ const make = Effect.gen(function* () {
         }
       }
     },
-    (effect, run, timestamp) =>
+    (effect, run) =>
       effect.pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to reconcile active task-agent run", {

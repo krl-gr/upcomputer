@@ -667,10 +667,9 @@ function settingsFileAllChats(settingsPath: string) {
         const text = readJsonObject(settingsPath).customInstructions;
         return typeof text === "string" ? text : "";
       }),
-      set: (text) =>
-        Effect.sync(() => {
-          pending = text;
-        }),
+      set: Effect.fn("AllChatsInstructions.set")(function* (text) {
+        pending = text;
+      }),
     }),
     write: () => {
       if (pending === undefined) return;

@@ -1651,7 +1651,7 @@ const make = Effect.gen(function* () {
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
     },
-    (effect, { name, args, context }) =>
+    (effect, { name }) =>
       effect.pipe(
         Effect.catch((cause) =>
           Effect.succeed({

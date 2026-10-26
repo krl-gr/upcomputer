@@ -127,7 +127,7 @@ describe("ScheduledTasksSettings", () => {
     state.connected = true;
     state.tasksLoaded = false;
     await using screen = await render(<ScheduledTasksSettings taskId={task.id} />);
-    await userEvent.click(page.getByRole("button", { name: "New task" }));
+    await userEvent.click(page.getByRole("button", { name: "New prompt" }));
     const dialog = page.getByRole("dialog");
     const name = dialog.getByRole("textbox", { name: "Name" });
     await userEvent.fill(name, "My draft");
@@ -135,7 +135,7 @@ describe("ScheduledTasksSettings", () => {
     state.tasksLoaded = true;
     await screen.rerender(<ScheduledTasksSettings taskId={task.id} />);
 
-    await expect.element(dialog.getByRole("heading", { name: "New task" })).toBeInTheDocument();
+    await expect.element(dialog.getByRole("heading", { name: "New prompt" })).toBeInTheDocument();
     await expect.element(name).toHaveValue("My draft");
   });
 });

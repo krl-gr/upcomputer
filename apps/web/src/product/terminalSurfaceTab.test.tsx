@@ -173,7 +173,6 @@ describe("the right-panel terminal tab in the UpComputer product", () => {
         activeTerminalId="term-1"
         terminalGroups={[{ id: "terminal:term-1", terminalIds: ["term-1"] }]}
         activeTerminalGroupId="terminal:term-1"
-        focusRequestId={0}
         onSplitTerminal={() => undefined}
         onSplitTerminalVertical={() => undefined}
         onNewTerminal={() => undefined}

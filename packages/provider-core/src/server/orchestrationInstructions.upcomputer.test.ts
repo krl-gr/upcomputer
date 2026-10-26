@@ -14,15 +14,18 @@ import {
 
 describe("T3 orchestration provider instructions", () => {
   it("distinguishes delegated subagents from ordinary top-level threads", () => {
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "Use `delegate_task`");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "ordinary top-level T3 conversations");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "Never use them merely");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "cross-provider");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "call `delegate_task` again");
-    // Upstream now sends same-child follow-ups to the child thread itself.
     assert.include(
       T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-      "use `t3_thread_send` on its `childThreadId`",
+      "Use \`delegate_task\` for another provider's model",
+    );
+    assert.include(
+      T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+      "make new top-level threads, only when the user asks",
+    );
+    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "never mean one");
+    assert.include(
+      T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+      "Every new delegate review or re-check is a new",
     );
   });
 
@@ -36,16 +39,10 @@ describe("T3 orchestration provider instructions", () => {
       // Upstream's model-options guidance reads the catalog only while choosing a delegate.
       assert.match(
         sentence,
-        /Before delegating|before reporting|acp-mcp-call|use `delegate_task`|selected model's descriptors/,
+        /Before `delegate_task`|Before delegating|before reporting|acp-mcp-call|use `delegate_task`|selected model's descriptors/,
         sentence,
       );
     }
-  });
-
-  it("documents structured schedules instead of JSON strings", () => {
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "structured object, never as JSON text");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, '"everyMs":3600000');
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "bindToCurrentThread=false");
   });
 
   it("injects prompt fallback only for an MCP-enabled first run", () => {
@@ -80,7 +77,7 @@ describe("T3 orchestration provider instructions", () => {
     });
 
     assert.include(injected, "Up.computer interaction mode: Default");
-    assert.include(injected, "Up.computer collaborative browser");
+    assert.include(injected, "Up.computer browser");
     assert.include(injected, "Up.computer orchestration");
     assert.include(injected, "<user_request>\nInspect the repository.\n</user_request>");
   });
@@ -106,7 +103,7 @@ describe("T3 orchestration provider instructions", () => {
       state: { interactionMode: "default", hasT3Mcp: false },
     });
     assert.include(withoutMcp, "Up.computer interaction mode: Default");
-    assert.notInclude(withoutMcp, "Up.computer collaborative browser");
+    assert.notInclude(withoutMcp, "Up.computer browser");
     assert.notInclude(withoutMcp, "Up.computer orchestration");
   });
 
@@ -116,7 +113,7 @@ describe("T3 orchestration provider instructions", () => {
     const withoutBlock = { ...withBlock, orchestrationInstructions: false } as const;
 
     const injected = t3AcpPromptWithInstructions({ prompt, state: withoutBlock });
-    assert.include(injected, "Up.computer collaborative browser");
+    assert.include(injected, "Up.computer browser");
     assert.notInclude(injected, "Up.computer orchestration");
     assert.equal(
       t3AcpPromptWithInstructions({ prompt, state: withoutBlock, previousState: withoutBlock }),

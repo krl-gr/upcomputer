@@ -7,7 +7,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import {
@@ -59,9 +58,7 @@ const harness = Effect.gen(function* () {
     Layer.provideMerge(TaskRepositoryLive),
     Layer.provideMerge(database),
     Layer.provide(threads),
-    Layer.provide(
-      Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeed(Option.some({} as never)) }),
-    ),
+    Layer.provide(Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeedSome({} as never) })),
     Layer.provide(Layer.mock(TaskAgentService)({})),
     Layer.provide(
       Layer.succeed(

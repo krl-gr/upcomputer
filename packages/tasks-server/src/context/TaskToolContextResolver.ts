@@ -393,7 +393,7 @@ const make = Effect.gen(function* () {
         errors,
       };
     },
-    (effect, { args, invocationContext }) =>
+    (effect, { invocationContext }) =>
       effect.pipe(
         Effect.catch((cause) =>
           Effect.succeed({

@@ -118,7 +118,7 @@ const makeDependencies = (callerOverrides: Partial<OrchestrationV2ThreadShell> =
     }),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
-      scratchRoot: Effect.succeed(Option.some("/data/scratch")),
+      scratchRoot: Effect.succeedSome("/data/scratch"),
     }),
   );
   return { layer, dispatched };

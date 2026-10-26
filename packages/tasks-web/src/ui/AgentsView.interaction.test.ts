@@ -80,18 +80,18 @@ test("agent row isolates switch activation while preserving row and name navigat
   NodeAssert.equal(opens, 0, "the row guard ignores clicks from the rendered switch");
 
   let propagationStops = 0;
-  (switchCell?.props.onPointerDown as (event: unknown) => void)({
+  (switchCell!.props.onPointerDown as (event: unknown) => void)({
     stopPropagation: () => {
       propagationStops += 1;
     },
   });
-  (switchCell?.props.onClick as (event: unknown) => void)({
+  (switchCell!.props.onClick as (event: unknown) => void)({
     stopPropagation: () => {
       propagationStops += 1;
     },
   });
   for (const key of [" ", "Enter"]) {
-    (switchCell?.props.onKeyDown as (event: unknown) => void)({
+    (switchCell!.props.onKeyDown as (event: unknown) => void)({
       key,
       stopPropagation: () => {
         propagationStops += 1;

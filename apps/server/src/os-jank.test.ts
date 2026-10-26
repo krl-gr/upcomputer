@@ -121,7 +121,7 @@ effectIt.effect("finds a CLI installed into ~/.local/bin or ~/.opencode/bin afte
         );
 
         const settings = decodeClaudeSettings({ binaryPath: "t3-test-claude" });
-        const noCapabilities = () => Effect.succeed(undefined);
+        const noCapabilities = () => Effect.undefined;
         const before = yield* checkClaudeProviderStatus(settings, noCapabilities, env);
         assert.isFalse(before.installed);
 

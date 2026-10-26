@@ -123,7 +123,9 @@ export class AnalyticsService extends Context.Service<
       record: Effect.fn("AnalyticsService.record")(function () {
         return Effect.void;
       }),
-      recordMilestone: () => Effect.void,
+      recordMilestone: Effect.fn("AnalyticsService.recordMilestone")(function () {
+        return Effect.void;
+      }),
       flush: Effect.void,
       recordOwners: Effect.fn("AnalyticsService.recordOwners")(function () {
         return Effect.void;

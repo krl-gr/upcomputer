@@ -40,6 +40,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   createFileRoute: () => (options: unknown) => ({ options }),
   Outlet: () => null,
   useParams: () => null,
+  useMatches: () => false,
 }));
 vi.mock("../components/ThreadRouteView", () => ({ ThreadRouteView: () => null }));
 vi.mock("../commandPaletteBus", () => ({

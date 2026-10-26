@@ -610,7 +610,7 @@ async function withScheduler(
     } as unknown as TaskPromptSettingsStoreShape),
     Layer.succeed(ThreadManagementService, threads.service as never),
     Layer.succeed(ProjectStoreV2, {
-      getShell: () => Effect.succeed(Option.none()),
+      getShell: () => Effect.succeedNone,
     } as never),
     deterministicCrypto(),
   );
@@ -1234,9 +1234,7 @@ test("task_create with a tasks list starts one run per task created in a start s
       const { repository, service, calls } = harness;
       yield* repository.upsertAgent(agentInput("dev"));
       const tools = yield* Effect.provide(
-        Effect.gen(function* () {
-          return yield* TaskToolService;
-        }),
+        TaskToolService,
         TaskToolServiceLive.pipe(
           Layer.provide(
             Layer.mergeAll(
@@ -1304,9 +1302,7 @@ test("an agent made broader just before an agent's unarchive commits keeps the t
             .pipe(Effect.andThen(repository.withChangeTransaction(effect))),
       };
       const tools = yield* Effect.provide(
-        Effect.gen(function* () {
-          return yield* TaskToolService;
-        }),
+        TaskToolService,
         TaskToolServiceLive.pipe(
           Layer.provide(
             Layer.mergeAll(

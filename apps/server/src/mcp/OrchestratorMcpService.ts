@@ -1315,38 +1315,40 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError(threadManagementFailure));
 
-  const resolveTargetRechecking = (input: Parameters<typeof resolveTarget>[0]) => {
-    const instanceId =
-      input.target?.providerInstanceId ??
-      (input.target?.driverKind === undefined
-        ? input.parent.thread.modelSelection.instanceId
-        : undefined);
-    const requestedDriver = input.target?.driverKind;
-    const refreshIds =
-      instanceId !== undefined
-        ? [instanceId]
-        : input.providers
-            .filter(
-              (provider) =>
-                provider.driver === requestedDriver &&
-                providerConstraints(provider, true).length > 0,
-            )
-            .map((provider) => provider.instanceId);
-    const resolved = resolveTarget(input);
-    if (refreshIds.length === 0) return resolved;
-    return resolved.pipe(
-      Effect.catchIf(
-        (error) => error.code === "provider_unavailable",
-        () =>
-          // Sequential, so the last refresh returns a list that holds every re-probed instance.
-          Effect.forEach(refreshIds, (id) => providerRegistry.refreshInstance(id)).pipe(
-            Effect.flatMap((lists) =>
-              resolveTarget({ ...input, providers: lists.at(-1) ?? input.providers }),
+  const resolveTargetRechecking = Effect.fn("OrchestratorMcpService.resolveTargetRechecking")(
+    function* (input: Parameters<typeof resolveTarget>[0]) {
+      const instanceId =
+        input.target?.providerInstanceId ??
+        (input.target?.driverKind === undefined
+          ? input.parent.thread.modelSelection.instanceId
+          : undefined);
+      const requestedDriver = input.target?.driverKind;
+      const refreshIds =
+        instanceId !== undefined
+          ? [instanceId]
+          : input.providers
+              .filter(
+                (provider) =>
+                  provider.driver === requestedDriver &&
+                  providerConstraints(provider, true).length > 0,
+              )
+              .map((provider) => provider.instanceId);
+      const resolved = resolveTarget(input);
+      if (refreshIds.length === 0) return yield* resolved;
+      return yield* resolved.pipe(
+        Effect.catchIf(
+          (error) => error.code === "provider_unavailable",
+          () =>
+            // Sequential, so the last refresh returns a list that holds every re-probed instance.
+            Effect.forEach(refreshIds, (id) => providerRegistry.refreshInstance(id)).pipe(
+              Effect.flatMap((lists) =>
+                resolveTarget({ ...input, providers: lists.at(-1) ?? input.providers }),
+              ),
             ),
-          ),
-      ),
-    );
-  };
+        ),
+      );
+    },
+  );
 
   const resolveTarget = Effect.fn("OrchestratorMcpService.resolveTarget")(function* (input: {
     readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;

@@ -108,7 +108,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const invalid =
                 taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent") ??
                 personTaskStatusError(input.audience ?? "agent", input.status);
-              if (invalid !== null) return yield* Effect.fail(taskError(invalid));
+              if (invalid !== null) return yield* taskError(invalid);
               const projectId = input.projectId ?? (yield* (yield* InboxProject).ensure);
               const timestamp = yield* now;
               const id = input.id ?? TaskId.make(`task-${yield* crypto.randomUUIDv4()}`);
@@ -224,7 +224,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                   (input.status !== undefined
                     ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
                     : null);
-                if (invalid !== null) return yield* Effect.fail(taskError(invalid));
+                if (invalid !== null) return yield* taskError(invalid);
               }
               const task = yield* repository.update({ ...input, actor: { type: "person" } });
               yield* agents.scheduleTaskChanged({
@@ -337,8 +337,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               if (input.projectId !== undefined && input.allChats !== undefined)
-                return yield* Effect.fail(
-                  taskError("All chats is global; a project has no All chats instructions."),
+                return yield* taskError(
+                  "All chats is global; a project has no All chats instructions.",
                 );
               return yield* (yield* TaskPromptSettingsStore).update(input);
             }),
@@ -473,7 +473,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 TaskAutomationId.make(`task-automation-${yield* crypto.randomUUIDv4()}`);
               const existing = yield* repository.getAutomationById({ id });
               const armed = armAutomationSchedule(input.schedule, status, new Date(timestamp));
-              if (Result.isFailure(armed)) return yield* Effect.fail(taskError(armed.failure));
+              if (Result.isFailure(armed)) return yield* taskError(armed.failure);
               return yield* repository.upsertAutomation({
                 id,
                 projectId: input.projectId,
@@ -508,7 +508,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const repository = yield* TaskRepository;
               const existing = yield* repository.getAutomationById({ id: input.id });
               if (Option.isNone(existing)) {
-                return yield* Effect.fail(taskError(`Automation '${input.id}' was not found.`));
+                return yield* taskError(`Automation '${input.id}' was not found.`);
               }
               const timestamp = yield* now;
               const armed = armAutomationSchedule(
@@ -516,7 +516,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 input.status,
                 new Date(timestamp),
               );
-              if (Result.isFailure(armed)) return yield* Effect.fail(taskError(armed.failure));
+              if (Result.isFailure(armed)) return yield* taskError(armed.failure);
               const next: TaskAutomation = {
                 ...existing.value,
                 status: input.status,

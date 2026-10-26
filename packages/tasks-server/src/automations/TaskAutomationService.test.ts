@@ -5,7 +5,6 @@ import { test } from "vite-plus/test";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import type { Task, TaskAutomation } from "@t3tools/tasks-contracts/v1";
 import { TaskAgentService, type TaskAgentServiceShape } from "../agents/TaskAgentService.ts";
@@ -97,7 +96,7 @@ function fakeRepository(options: FakeOptions): {
             calls.tasks.push(task);
             return task;
           }),
-    getById: () => Effect.succeed(Option.none()),
+    getById: () => Effect.succeedNone,
   } as unknown as TaskRepositoryShape;
 
   return {
@@ -130,7 +129,7 @@ function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
 const agentsLayer = Layer.succeed(TaskAgentService, {
   scheduleTaskChanged: () => Effect.void,
   scheduleAgentChanged: () => Effect.void,
-  stopRun: () => Effect.succeed(Option.none()),
+  stopRun: () => Effect.succeedNone,
   messageRun: () => Effect.die("unused messageRun"),
   recover: Effect.void,
 } satisfies TaskAgentServiceShape);
@@ -194,7 +193,7 @@ test("a due slot claims once and creates exactly one task", async () => {
   // The task carries the automation id so `skipIfOpen` can find it later even
   // if the pointer write never happened.
   NodeAssert.equal(
-    (calls.tasks[0]?.metadata as Record<string, unknown>).automationId,
+    (calls.tasks[0]!.metadata as Record<string, unknown>).automationId,
     "automation-1",
   );
   NodeAssert.deepEqual(calls.outcomes, [{ slot: "2020-01-01T09:00:00.000Z", outcome: "created" }]);

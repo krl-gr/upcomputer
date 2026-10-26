@@ -1,17 +1,9 @@
 import { expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 
-import {
-  apnsEnabledConfig,
-  legacyManagedEndpointCleanupModeConfig,
-  legacyTunnelGraceMinutesConfig,
-  managedEndpointCleanupModeConfig,
-  webPushCredentialsConfig,
-  webPushEnabledConfig,
-} from "./Config.ts";
+import { apnsEnabledConfig, webPushCredentialsConfig, webPushEnabledConfig } from "./Config.ts";
 
 it.effect.each([
   { name: "missing", env: {}, expected: false },

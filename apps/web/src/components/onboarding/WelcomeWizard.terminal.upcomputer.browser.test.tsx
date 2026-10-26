@@ -20,7 +20,6 @@ import {
   type TerminalWriteInput,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -202,19 +201,6 @@ const session = (scopes: readonly AuthEnvironmentScope[]): AuthSessionState => (
     sessionCookieName: "t3_session",
   },
 });
-function setAccess(environmentId: EnvironmentId, allowed: boolean) {
-  appAtomRegistry.set(
-    state.sessions.get(environmentId)!,
-    AsyncResult.success(session(allowed ? [AuthTerminalOperateScope] : [])),
-  );
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((complete) => {
-    resolve = complete;
-  });
-  return { promise, resolve };
-}
 
 function pageText() {
   return document.body.textContent ?? "";
@@ -230,9 +216,6 @@ async function click(label: string) {
   const node = button(label);
   expect(node.disabled).toBe(false);
   await act(async () => node.click());
-}
-function hasViewport() {
-  return document.querySelector("[data-terminal-viewport]") !== null;
 }
 async function enterRemoteAgents(screen: Screen) {
   await screen.rerender(
