@@ -45,6 +45,7 @@ import {
   makeTaskAgentResultConsumer,
 } from "./TaskAgentResultFinalization.ts";
 import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
+import { makeAgentRunFinishedRecorder, type AgentRunReasonCode } from "../telemetry/agentRuns.ts";
 
 export type TaskChangedReason =
   | "created"
@@ -224,6 +225,17 @@ type StopReason =
   | "agent-disabled"
   | "agent-deleted";
 
+const STOP_REASON_CODES = {
+  released: "released",
+  "stop-requested": "stop_requested",
+  "session-stopped": "session_stopped",
+  "turn-interrupted": "turn_interrupted",
+  "task-archived": "task_archived",
+  "task-deleted": "task_deleted",
+  "agent-disabled": "agent_disabled",
+  "agent-deleted": "agent_deleted",
+} as const satisfies Record<StopReason, AgentRunReasonCode>;
+
 /** Why an active run must end now, or null while it may continue. */
 function endingStopReason(agent: TaskAgent | null, task: Task | null): StopReason | null {
   if (task === null) return "task-deleted";
@@ -401,6 +413,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const crypto = yield* Crypto.Crypto;
   const recordFirstUse = yield* makeFirstUseRecorder;
+  const recordRunFinished = yield* makeAgentRunFinishedRecorder(repository);
   const jobs = yield* Queue.bounded<ReconciliationJob>(RECONCILIATION_QUEUE_CAPACITY);
 
   /**
@@ -434,7 +447,11 @@ const make = Effect.gen(function* () {
 
   const scheduleTaskChanged = (input: TaskChangedInput) =>
     Queue.offer(jobs, { type: "task", input }).pipe(Effect.asVoid);
-  const consumeResult = makeTaskAgentResultConsumer({ repository, scheduleTaskChanged });
+  const consumeResult = makeTaskAgentResultConsumer({
+    repository,
+    scheduleTaskChanged,
+    recordRunFinished,
+  });
 
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
@@ -513,6 +530,7 @@ const make = Effect.gen(function* () {
     };
     readonly finalizingStatus: string;
     readonly status: string;
+    readonly reasonCode: AgentRunReasonCode;
     /** Interrupt the run's in-flight v2 work before recording the end. */
     readonly interrupt: boolean;
     readonly taskOutput?: string | null;
@@ -572,7 +590,13 @@ const make = Effect.gen(function* () {
     ).pipe(
       // A run stopped mid-turn releases from its v2 run's terminal event instead.
       Effect.tap((finalized) =>
-        finalized ? releaseEndedRunSessions(input.run.threadId) : Effect.void,
+        finalized
+          ? releaseEndedRunSessions(input.run.threadId).pipe(
+              Effect.andThen(
+                recordRunFinished({ runId: input.run.id, reasonCode: input.reasonCode }),
+              ),
+            )
+          : Effect.void,
       ),
     );
 
@@ -592,6 +616,7 @@ const make = Effect.gen(function* () {
         run,
         finalizingStatus: "finalizing:stopped",
         status: reason === "released" ? "completed" : "stopped",
+        reasonCode: reason === null ? "finalization_resumed" : STOP_REASON_CODES[reason],
         interrupt: true,
         events: recordEvent
           ? [
@@ -635,6 +660,7 @@ const make = Effect.gen(function* () {
         run,
         finalizingStatus: "finalizing:stopped",
         status: "blocked",
+        reasonCode: "released_blocked",
         interrupt: true,
         events: [
           {
@@ -688,6 +714,7 @@ const make = Effect.gen(function* () {
     readonly task: Task | null;
     readonly status: "failed" | "interrupted";
     readonly reason: string;
+    readonly reasonCode: AgentRunReasonCode;
     readonly interrupt: boolean;
   }) =>
     Effect.gen(function* () {
@@ -721,6 +748,7 @@ const make = Effect.gen(function* () {
         run: input.run,
         finalizingStatus: `finalizing:${input.status}`,
         status: input.status,
+        reasonCode: input.reasonCode,
         interrupt: input.interrupt,
         ...(taskOutput !== undefined ? { taskOutput } : {}),
         events,
@@ -759,6 +787,7 @@ const make = Effect.gen(function* () {
           task: currentTask,
           status: run.status === "finalizing:interrupted" ? "interrupted" : "failed",
           reason: "The run ended before its finalization completed.",
+          reasonCode: "finalization_incomplete",
           interrupt: true,
         });
         return;
@@ -785,6 +814,7 @@ const make = Effect.gen(function* () {
               state.type === "missing-thread"
                 ? "The task-agent execution thread is missing."
                 : "The provider run did not start before the task-agent timeout.",
+            reasonCode: state.type === "missing-thread" ? "thread_missing" : "start_timeout",
             interrupt: false,
           });
           return;
@@ -816,6 +846,7 @@ const make = Effect.gen(function* () {
               task: currentTask,
               status: "failed",
               reason: "The provider turn ended without a valid task-agent result.",
+              reasonCode: "no_result",
               interrupt: false,
             });
             return;
@@ -826,6 +857,7 @@ const make = Effect.gen(function* () {
               task: currentTask,
               status: "failed",
               reason: `The provider run ${latest.id} failed.`,
+              reasonCode: "provider_failed",
               interrupt: false,
             });
             return;
@@ -1109,6 +1141,7 @@ const make = Effect.gen(function* () {
             task,
             status: "failed",
             reason: "Task-agent startup was interrupted before the provider run became usable.",
+            reasonCode: "startup_interrupted",
             interrupt: true,
           }).pipe(Effect.ignore),
         ),
@@ -1119,6 +1152,7 @@ const make = Effect.gen(function* () {
               task,
               status: "failed",
               reason: `Task-agent provider startup failed: ${String(cause)}`,
+              reasonCode: "startup_failed",
               interrupt: true,
             }).pipe(Effect.ignore);
             yield* Effect.logError("Failed to start task agent", {
@@ -1387,6 +1421,7 @@ ${message.text}`,
                 task: pending.current.task,
                 status: "failed",
                 reason: "Sending the continuation message was interrupted.",
+                reasonCode: "continuation_interrupted",
                 interrupt: false,
               }).pipe(Effect.ignore),
         ),
@@ -1398,6 +1433,7 @@ ${message.text}`,
             task: pending.current.task,
             status: "failed",
             reason: outcome.sendFailure,
+            reasonCode: "continuation_failed",
             interrupt: false,
           }).pipe(Effect.ignore);
         }

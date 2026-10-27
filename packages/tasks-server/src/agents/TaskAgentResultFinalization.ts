@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { TaskRepositoryShape } from "../persistence/TaskRepository.ts";
+import type { AgentRunReasonCode } from "../telemetry/agentRuns.ts";
 import type { TaskChangedInput } from "./TaskAgentService.ts";
 import {
   parseTaskAgentResultMarkdown,
@@ -85,6 +86,10 @@ export const makeTaskAgentResultConsumer =
   (deps: {
     readonly repository: TaskRepositoryShape;
     readonly scheduleTaskChanged: (input: TaskChangedInput) => Effect.Effect<void>;
+    readonly recordRunFinished?: (input: {
+      readonly runId: TaskAgentRunId;
+      readonly reasonCode: AgentRunReasonCode;
+    }) => Effect.Effect<void>;
   }) =>
   (input: { readonly threadId: ThreadId; readonly markdown: string; readonly createdAt: string }) =>
     Effect.gen(function* () {
@@ -103,8 +108,12 @@ export const makeTaskAgentResultConsumer =
       });
       if (!claimed) return true;
       const taskOption = yield* repository.getById({ id: run.taskId });
+      const recordFinished = (finalized: boolean, reasonCode: AgentRunReasonCode) =>
+        finalized && deps.recordRunFinished !== undefined
+          ? deps.recordRunFinished({ runId: run.id, reasonCode })
+          : Effect.void;
       if (Option.isNone(taskOption)) {
-        yield* repository.finalizeAgentRun({
+        const finalized = yield* repository.finalizeAgentRun({
           id: run.id,
           finalizingStatus,
           status: "failed",
@@ -113,6 +122,7 @@ export const makeTaskAgentResultConsumer =
           releaseAssignment: true,
           events: [],
         });
+        yield* recordFinished(finalized, "task_deleted");
         return true;
       }
       const task = taskOption.value;
@@ -172,6 +182,7 @@ export const makeTaskAgentResultConsumer =
         releaseAssignment: true,
         events,
       });
+      yield* recordFinished(finalized, result.blocked ? "result_blocked" : "result");
       // A blocked run can start agents waiting on run statuses even when the
       // task status stays the same.
       if (finalized && (statusChanged || result.blocked)) {

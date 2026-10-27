@@ -15,6 +15,7 @@ import {
   type ModelSelection,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -55,6 +56,7 @@ import * as RpcAuthorization from "../../../../apps/server/src/auth/RpcAuthoriza
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import { ProviderRegistry } from "../../../../apps/server/src/provider/ProviderRegistry.ts";
 import { featureHeartbeatCounts } from "../../../../apps/server/src/telemetry/HeartbeatCounts.ts";
+import { AnalyticsService } from "../../../../apps/server/src/telemetry/AnalyticsService.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import { ProjectService } from "../../../../apps/server/src/project/ProjectService.ts";
@@ -441,10 +443,31 @@ const task: Task = {
 
 const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
 
+/** A product event the server recorded. */
+interface RecordedEvent {
+  readonly event: string;
+  readonly properties: Readonly<Record<string, unknown>> | undefined;
+}
+
 interface SliceOptions {
   readonly perThreadSessions?: boolean;
   readonly providerSessionIdleTimeoutMs?: number;
+  /** Records product events here, with the test instance configured as Codex. */
+  readonly analytics?: Ref.Ref<ReadonlyArray<RecordedEvent>>;
 }
+
+const layerAnalytics = (recorded: Ref.Ref<ReadonlyArray<RecordedEvent>>) =>
+  Layer.mergeAll(
+    Layer.mock(AnalyticsService)({
+      enabled: true,
+      sessionId: undefined,
+      record: (event, properties) => Ref.update(recorded, (all) => [...all, { event, properties }]),
+      recordMilestone: () => Effect.void,
+    }),
+    Layer.mock(ProviderRegistry)({
+      getProviders: Effect.succeed([{ instanceId, driver } as ServerProvider]),
+    }),
+  );
 
 /**
  * Upstream's v2 runtime with a scripted provider, plus the tasks feature
@@ -476,7 +499,11 @@ function makeLayer(
     Layer.provideMerge(CommandReceiptStore.layer),
     Layer.provideMerge(runtime),
     Layer.provideMerge(db),
-    Layer.provideMerge(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
+    Layer.provideMerge(
+      options.analytics === undefined
+        ? Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })
+        : layerAnalytics(options.analytics),
+    ),
     // The tasks Inbox reads these when it is built; these tests never create it.
     Layer.provideMerge(Layer.mock(ProjectService)({})),
     Layer.provideMerge(Layer.succeed(ServerConfig, { baseDir: cwd } as never)),
@@ -668,6 +695,124 @@ it.live("the heartbeat counts open tasks by audience, agents, bots and enabled a
       });
     }),
   ),
+);
+
+const finishedRuns = (recorded: Ref.Ref<ReadonlyArray<RecordedEvent>>, count: number) =>
+  eventually(
+    `${count} agent_run.finished events`,
+    Ref.get(recorded).pipe(
+      Effect.map((all) => {
+        const finished = all.filter(({ event }) => event === "agent_run.finished");
+        return finished.length >= count
+          ? Option.some(finished.map(({ properties }) => properties ?? {}))
+          : Option.none();
+      }),
+    ),
+  );
+
+it.live("each way a run ends reports agent_run.finished with only enums and its duration", () =>
+  Effect.gen(function* () {
+    const recorded = yield* Ref.make<ReadonlyArray<RecordedEvent>>([]);
+    yield* runSlice(
+      "agent-run-finished",
+      ({ createTask, runWithStatus, taskAgents, started, repository }) =>
+        Effect.gen(function* () {
+          // The scripted provider answers with a task_agent_result block.
+          const answered = yield* createTask;
+          yield* eventually("the result", runWithStatus(answered.id, "completed"));
+          const [result] = yield* finishedRuns(recorded, 1);
+          assert.deepStrictEqual(Object.keys(result ?? {}).toSorted(), [
+            "durationMs",
+            "isBot",
+            "outcome",
+            "provider",
+            "reasonCode",
+            "trigger",
+          ]);
+          assert.include(result, {
+            outcome: "completed",
+            reasonCode: "result",
+            provider: "codex",
+            trigger: "status",
+            isBot: false,
+          });
+          assert.isAtLeast(result?.durationMs as number, 0);
+
+          const blockedTask = { ...task, id: TaskId.make("task:finished-blocked") };
+          const heldRun = (description: string, id: Task["id"], rank: string) =>
+            Effect.gen(function* () {
+              const created = yield* repository.upsert({
+                ...blockedTask,
+                id,
+                rank: rank as Task["rank"],
+                description,
+              });
+              yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+              const run = yield* eventually(
+                "the held run",
+                repository
+                  .searchAgentRuns({ taskId: id, limit: 1 })
+                  .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+              );
+              yield* eventually(
+                "its provider turn",
+                Ref.get(started).pipe(
+                  Effect.map((turns) =>
+                    Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
+                  ),
+                ),
+              );
+              return run;
+            });
+          const blocked = yield* heldRun(
+            `Report a blocker. ${HOLD}`,
+            blockedTask.id,
+            "0000000000300001",
+          );
+          const update = yield* callTaskTool(blocked.threadId, "task_update", {
+            id: blockedTask.id,
+            status: "Blocked",
+            output: "Missing credentials for the staging host.",
+            assigneeAgentRunId: null,
+          });
+          assert.isFalse(update.isError, update.text);
+          const stopped = yield* heldRun(
+            `Wait. ${HOLD}`,
+            TaskId.make("task:finished-stop"),
+            "0000000000300002",
+          );
+          yield* taskAgents.stopRun({ id: stopped.id });
+          const [, ...rest] = yield* finishedRuns(recorded, 3);
+          assert.sameDeepMembers(
+            rest.map(({ outcome, reasonCode }) => ({ outcome, reasonCode })),
+            [
+              { outcome: "blocked", reasonCode: "released_blocked" },
+              { outcome: "stopped", reasonCode: "stop_requested" },
+            ],
+          );
+          // The blocker text stays in the task's history.
+          assert.notInclude(JSON.stringify(yield* Ref.get(recorded)), "credentials");
+        }),
+      { analytics: recorded },
+    );
+  }),
+);
+
+it.live("a run whose provider turn fails reports agent_run.finished as provider_failed", () =>
+  Effect.gen(function* () {
+    const recorded = yield* Ref.make<ReadonlyArray<RecordedEvent>>([]);
+    yield* runSlice(
+      "agent-run-finished-failed",
+      ({ createTaskWith, runWithStatus }) =>
+        Effect.gen(function* () {
+          const run = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
+          yield* eventually("the failed run", runWithStatus(run.id, "failed"));
+          const [failed] = yield* finishedRuns(recorded, 1);
+          assert.include(failed, { outcome: "failed", reasonCode: "provider_failed" });
+        }),
+      { analytics: recorded },
+    );
+  }),
 );
 
 it.live(
