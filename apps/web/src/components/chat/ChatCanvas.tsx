@@ -9,7 +9,6 @@ import {
 } from "react";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout, type ChatCanvasPreview } from "./chatCanvasLayout";
-import type { PreviewMiniPlayerObstacles } from "../preview/previewMiniPlayerLayout";
 import { observeResize } from "../../lib/observeResize";
 
 export function ChatCanvas({
@@ -25,16 +24,6 @@ export function ChatCanvas({
   const widthProbeRef = useRef<HTMLDivElement | null>(null);
   const [timelineElement, registerTimeline] = useState<HTMLElement | null>(null);
   const [preview, setPreview] = useState<ChatCanvasPreview | null>(null);
-  const [detailsCard, setDetailsCard] = useState<PreviewMiniPlayerObstacles["detailsCard"]>(null);
-  const reportDetailsCard = useCallback((next: PreviewMiniPlayerObstacles["detailsCard"]) => {
-    setDetailsCard((current) =>
-      current?.left === next?.left &&
-      current?.right === next?.right &&
-      current?.bottom === next?.bottom
-        ? current
-        : next,
-    );
-  }, []);
   const [measurements, setMeasurements] = useState({
     width: 0,
     height: 0,
@@ -120,25 +109,15 @@ export function ChatCanvas({
         ...measurements,
         container,
         preview,
-        detailsCard,
         findBar,
       }),
       previewKey: preview?.key ?? null,
       reportPreview,
       clearPreview,
       registerTimeline,
-      reportDetailsCard,
       detailsCardTopInset: findBar?.bottom ?? 0,
     };
-  }, [
-    measurements,
-    preview,
-    detailsCard,
-    reportPreview,
-    clearPreview,
-    reportDetailsCard,
-    detailsCardTopInset,
-  ]);
+  }, [measurements, preview, reportPreview, clearPreview, detailsCardTopInset]);
   const { layout } = context;
   return (
     <ChatCanvasContext value={context}>
