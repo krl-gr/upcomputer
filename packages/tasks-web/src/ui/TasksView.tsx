@@ -756,6 +756,7 @@ export function TasksView(props: TasksViewProps) {
           ? props.canMutateEnvironment(selectedTask.environmentId)
             ? {
                 ariaLabel: selectedTask.archivedAt ? "Unarchive task" : "Archive task",
+                track: selectedTask.archivedAt ? "tasks.unarchive" : "tasks.archive",
                 disabled: updatingField === "archive",
                 hideIcon: true,
                 label: selectedTask.archivedAt ? "Unarchive" : "Archive",
@@ -767,6 +768,7 @@ export function TasksView(props: TasksViewProps) {
           : createModeOpen
             ? {
                 ariaLabel: "Create task",
+                track: "tasks.create_save",
                 disabled: mutableProjects.length === 0 || saving,
                 hideIcon: true,
                 label: "Create",
@@ -777,6 +779,7 @@ export function TasksView(props: TasksViewProps) {
             : SHOW_MANUAL_CREATE_ACTIONS.tasks
               ? {
                   ariaLabel: "Create task",
+                  track: "tasks.create",
                   disabled: mutableProjects.length === 0 || saving,
                   onClick: openCreate,
                 }
@@ -786,6 +789,7 @@ export function TasksView(props: TasksViewProps) {
         selectedTask || createModeOpen
           ? {
               ariaLabel: selectedTask ? "Back to tasks" : "Cancel task creation",
+              track: selectedTask ? "tasks.back" : "tasks.create_cancel",
               disabled: createModeOpen && saving,
               icon: <ArrowLeftIcon className="size-4" />,
               onClick: selectedTask

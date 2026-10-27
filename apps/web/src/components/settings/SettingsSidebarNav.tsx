@@ -348,6 +348,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton
+                        data-track={`settings.nav.${item.to.slice("/settings/".length)}`}
                         isActive={isActive}
                         onClick={() => handleSectionClick(item.to)}
                       >

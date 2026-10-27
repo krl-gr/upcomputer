@@ -8,6 +8,8 @@ import { SidebarInset } from "../../../../apps/web/src/components/ui/sidebar.tsx
 
 export interface WorkspaceViewAction {
   readonly ariaLabel: string;
+  /** The analytics name for clicks; see apps/web `uiAnalytics.ts`. */
+  readonly track?: string;
   readonly disabled?: boolean;
   readonly icon?: ReactNode;
   readonly hideIcon?: boolean;
@@ -82,6 +84,7 @@ export function WorkspaceViewLayout({
       {leadingAction ? (
         <button
           aria-label={leadingAction.ariaLabel}
+          data-track={leadingAction.track}
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]"
           disabled={leadingAction.disabled}
           onClick={leadingAction.onClick}
@@ -113,6 +116,7 @@ export function WorkspaceViewLayout({
       {action ? (
         <button
           aria-label={action.ariaLabel}
+          data-track={action.track}
           className={`${action.label ? "h-8 gap-1.5 rounded-md px-2 font-medium text-foreground" : "size-8 rounded-full text-muted-foreground"} inline-flex shrink-0 items-center justify-center transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]`}
           disabled={action.disabled}
           onClick={action.onClick}

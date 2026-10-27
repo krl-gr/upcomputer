@@ -104,6 +104,7 @@ import {
 } from "./TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
 import { setTasksArchived } from "../taskArchive.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 
 export { TaskToolService } from "./TaskToolServiceTag.ts";
 export type { TaskToolServiceShape } from "./TaskToolServiceTag.ts";
@@ -498,6 +499,7 @@ const make = Effect.gen(function* () {
   const schedule = yield* TaskScheduleService;
   const bots = yield* BotService;
   const crypto = yield* Crypto.Crypto;
+  const recordFirstUse = yield* makeFirstUseRecorder;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
@@ -680,6 +682,7 @@ const make = Effect.gen(function* () {
         Effect.forEach(tasks, (task) => repository.upsert({ ...task, actor })),
       );
       for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
+      yield* recordFirstUse("app.first_task_created", { via: "agent" });
       // The caller wrote the descriptions; echoing them back would only cost tokens.
       const audiences = [...new Set(saved.map(({ audience }) => audience))];
       return {
@@ -804,6 +807,7 @@ const make = Effect.gen(function* () {
             : null;
           const saved = yield* repository.upsert({ ...task, actor: toolActor(context, callerRun) });
           yield* taskAgents.scheduleTaskChanged({ task: saved, reason: "created" });
+          yield* recordFirstUse("app.first_task_created", { via: "agent" });
           return {
             isError: false,
             text: json({
@@ -1116,6 +1120,7 @@ const make = Effect.gen(function* () {
           if (createRefusal !== null) return { isError: true, text: createRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
+          yield* recordFirstUse("app.first_agent_created", { via: "agent" });
           return {
             isError: false,
             text: json({ agent: saved, resolution: compactTaskToolContext(resolution) }),
@@ -1413,6 +1418,7 @@ const make = Effect.gen(function* () {
           // A plain insert, not an upsert: the tool path must never be able to
           // write over an automation a person has already reviewed.
           const saved = yield* repository.insertAutomation(automation);
+          yield* recordFirstUse("app.first_automation_created", { via: "agent" });
           return {
             isError: false,
             text: json({

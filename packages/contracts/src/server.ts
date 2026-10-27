@@ -937,6 +937,36 @@ export const toTelemetryProvider = (driver: string): typeof TelemetryProvider.Ty
   isShippedTelemetryProvider(driver) ? driver : "other";
 
 /**
+ * The app section a UI event happened in, derived from the route's shape. Never
+ * a route param, so no thread, task or project id reaches analytics.
+ */
+export const AppView = Schema.Literals([
+  "home",
+  "threads",
+  "new_thread",
+  "tasks",
+  "planner",
+  "automations",
+  "agents",
+  "bots",
+  "settings",
+  "usage",
+  "projects",
+  "pull_requests",
+  "onboarding",
+  "other",
+]);
+export type AppView = typeof AppView.Type;
+
+/**
+ * Click targets are `data-track` names written in our code. Button text, labels
+ * and titles carry thread, task and project names, so they are never a target.
+ */
+export const UI_TRACK_TARGET_PATTERN = /^[a-z0-9_.-]{1,64}$/;
+/** A click on an element without a valid `data-track` name. */
+export const UI_UNTRACKED_TARGET = "untracked";
+
+/**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
  */
@@ -985,6 +1015,16 @@ export const ClientTelemetryEvent = Schema.Union([
     /** First-run setup finished in this window, then no turn within `thresholdMs`. */
     event: Schema.Literal("onboarding.first_screen_idle"),
     thresholdMs: PositiveInt,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("app.view.opened"),
+    view: AppView,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("ui.click"),
+    view: AppView,
+    role: Schema.Literals(["button", "tab", "menuitem", "link"]),
+    target: Schema.String.check(Schema.isPattern(UI_TRACK_TARGET_PATTERN)),
   }),
 ]);
 export type ClientTelemetryEvent = typeof ClientTelemetryEvent.Type;

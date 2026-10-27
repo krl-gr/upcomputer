@@ -349,6 +349,7 @@ function BotForm({
       inset={false}
       leadingAction={{
         ariaLabel: "Back",
+        track: "bots.back",
         icon: <ArrowLeftIcon className="size-4" />,
         onClick: onBack,
       }}
@@ -357,6 +358,7 @@ function BotForm({
           ? undefined
           : {
               ariaLabel: "Create bot",
+              track: "bots.create_save",
               label: busy ? "Creating…" : "Create bot",
               hideIcon: true,
               disabled: !editable || draft === null,

@@ -97,6 +97,7 @@ export function ListHeader(props: {
             <div className="ml-auto flex items-center gap-1">
               <IconAction
                 label={kind === "routine" ? "New routine" : "New task"}
+                track={kind === "routine" ? "planner.create_routine" : "planner.create_task"}
                 variant="outline"
                 size="icon-sm"
                 onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}

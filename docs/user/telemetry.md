@@ -4,10 +4,14 @@ The T3 Code server sends product usage events to PostHog, associated with a hash
 installation identifier. Events include the provider, model, reasoning effort, permission mode,
 turn result, duration, and main-agent token totals when available. During setup they also include
 which welcome steps you reached, which agent you tried to install or sign in to, and whether each
-agent CLI is installed (with its version) and signed in.
+agent CLI is installed (with its version) and signed in. In the app they include which sections
+you open (such as Tasks, Agents, or Settings), how long a window stays connected, which buttons
+you click, and when you first create a task, agent, automation, or scheduled task. A button is
+reported by a fixed name from the app's code, never by its text.
 
 Events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
-raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
+names or titles of your threads, tasks, projects, or agents, raw provider events, or child-agent
+output. Child-agent token use is excluded from the totals.
 
 To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
 starting it. This stops product events from being recorded or sent.

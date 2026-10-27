@@ -78,7 +78,15 @@ const TelemetryEnvConfig = Config.all({
   ),
 });
 
-export type TelemetryMilestone = "app.first_thread_created" | "app.first_message_sent";
+export type TelemetryMilestone =
+  | "app.first_thread_created"
+  | "app.first_message_sent"
+  | "app.first_task_created"
+  | "app.first_agent_created"
+  | "app.first_agent_run"
+  | "app.first_automation_created"
+  | "app.first_scheduled_task_created"
+  | "app.first_bot_chat";
 
 // 0.0.32 wrote this marker, so installs upgraded from it never report a second first launch.
 const FIRST_LAUNCH_MARKER_FILE = "telemetry-first-launch-v1";
@@ -95,7 +103,10 @@ export class AnalyticsService extends Context.Service<
     ) => Effect.Effect<void>;
 
     /** Records an install milestone at most once, and only for installs first launched on this build. */
-    readonly recordMilestone: (event: TelemetryMilestone) => Effect.Effect<void>;
+    readonly recordMilestone: (
+      event: TelemetryMilestone,
+      properties?: Readonly<Record<string, unknown>>,
+    ) => Effect.Effect<void>;
 
     readonly flush: Effect.Effect<void>;
   }
@@ -299,10 +310,10 @@ export const make = Effect.gen(function* () {
       Effect.catchCause(() => Effect.succeed(false)),
     );
 
-  const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event) =>
+  const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event, properties) =>
     enabled
       ? claimMarker(path.join(milestonesDir, event)).pipe(
-          Effect.flatMap((claimed) => (claimed ? record(event) : Effect.void)),
+          Effect.flatMap((claimed) => (claimed ? record(event, properties) : Effect.void)),
         )
       : Effect.void;
 

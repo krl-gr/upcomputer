@@ -100,6 +100,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
+  type AppView,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -1167,6 +1168,7 @@ const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
+  viewsOpened: Ref.Ref<ReadonlyArray<AppView>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
@@ -2079,8 +2081,21 @@ const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
-        [WS_METHODS.serverRecordClientEvent]: ({ event, ...properties }) =>
-          analytics.record(event, { ...originProps, ...properties }).pipe(Effect.as({})),
+        [WS_METHODS.serverRecordClientEvent]: (input) => {
+          const { event, ...properties } = input;
+          return analytics
+            .record(event, { ...originProps, ...properties })
+            .pipe(
+              Effect.andThen(
+                input.event === "app.view.opened"
+                  ? Ref.update(viewsOpened, (views) =>
+                      views.includes(input.view) ? views : [...views, input.view],
+                    )
+                  : Effect.void,
+              ),
+              Effect.as({}),
+            );
+        },
         [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig({ usageLimitsCommand: false }),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
@@ -3171,6 +3186,7 @@ export const layer = Layer.unwrap(
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
         const connectedAtMs = yield* Clock.currentTimeMillis;
+        const viewsOpened = yield* Ref.make<ReadonlyArray<AppView>>([]);
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(rpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
@@ -3192,6 +3208,7 @@ export const layer = Layer.unwrap(
                 session,
                 clientOrigin,
                 clientAnalyticsProps,
+                viewsOpened,
                 previewAutomationBroker,
                 serverBrowser,
               ),
@@ -3249,10 +3266,24 @@ export const layer = Layer.unwrap(
               // A closed desktop window or browser tab ends its connection.
               Effect.andThen(Clock.currentTimeMillis),
               Effect.flatMap((now) =>
-                analytics.record("client.disconnected", {
-                  ...clientAnalyticsProps,
-                  connectedMs: now - connectedAtMs,
-                }),
+                analytics
+                  .record("client.disconnected", {
+                    ...clientAnalyticsProps,
+                    connectedMs: now - connectedAtMs,
+                  })
+                  .pipe(
+                    Effect.andThen(Ref.get(viewsOpened)),
+                    // Only clients that report views have a UI session to summarize.
+                    Effect.flatMap((views) =>
+                      views.length === 0
+                        ? Effect.void
+                        : analytics.record("app.session.ended", {
+                            ...clientAnalyticsProps,
+                            durationMs: now - connectedAtMs,
+                            views,
+                          }),
+                    ),
+                  ),
               ),
             ),
         );

@@ -290,6 +290,7 @@ export function ProviderAuthenticationSection({
               <Button
                 size="sm"
                 variant="outline"
+                data-track="settings.providers.sign_in"
                 disabled={disabled || !provider.enabled || !provider.installed || !auth}
                 onClick={() => {
                   openWhenStarted.current = openBrowserOnStart;

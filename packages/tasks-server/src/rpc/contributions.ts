@@ -28,6 +28,7 @@ import * as Result from "effect/Result";
 
 import { defineNamespacedRpcContribution } from "../../../../apps/server/src/extensionApi.ts";
 import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 import {
   armAutomationSchedule,
   normalizeAutomationTemplate,
@@ -158,6 +159,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                       ),
                     );
               yield* agents.scheduleTaskChanged({ task, reason: "created" });
+              yield* (yield* makeFirstUseRecorder)("app.first_task_created", { via: "app" });
               return task;
             }),
           ),
@@ -420,6 +422,8 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               yield* taskAgents.scheduleAgentChanged({ agent, reason: "upserted" });
               if (Option.isSome(existing) && existing.value.name !== agent.name)
                 yield* (yield* BotService).nameChat(agent.id);
+              if (Option.isNone(existing))
+                yield* (yield* makeFirstUseRecorder)("app.first_agent_created", { via: "app" });
               return agent;
             }),
           ),
@@ -486,7 +490,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const existing = yield* repository.getAutomationById({ id });
               const armed = armAutomationSchedule(input.schedule, status, new Date(timestamp));
               if (Result.isFailure(armed)) return yield* Effect.fail(taskError(armed.failure));
-              return yield* repository.upsertAutomation({
+              const automation = yield* repository.upsertAutomation({
                 id,
                 projectId: input.projectId,
                 name: input.name,
@@ -512,6 +516,11 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 createdAt: Option.isSome(existing) ? existing.value.createdAt : timestamp,
                 updatedAt: timestamp,
               });
+              if (Option.isNone(existing))
+                yield* (yield* makeFirstUseRecorder)("app.first_automation_created", {
+                  via: "app",
+                });
+              return automation;
             }),
           ),
         [TASK_AUTOMATIONS_RPC_METHODS.setStatus]: (input) =>

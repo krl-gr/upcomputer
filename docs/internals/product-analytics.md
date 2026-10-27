@@ -77,9 +77,33 @@ whose own agent, or own OpenCode, already worked, so nothing was downloaded. The
 install that did not finish, or a CLI outside the PATH the server searches. `composer.provider_setup.*` records where "Open
 provider settings" sends them. `provider.readiness.failed.errorCategory` explains a
 session that would not open, and `app.first_thread_created` and
-`app.first_message_sent` mark first use. Milestones are claimed with marker files in
+`app.first_message_sent` mark first use. Later first uses are `app.first_task_created`,
+`app.first_agent_created`, `app.first_automation_created`,
+`app.first_scheduled_task_created` (`trigger` is `schedule` or `webhook`),
+`app.first_agent_run` and `app.first_bot_chat`. `via` says whether the person made it in
+the app or asked an agent, which used a task tool; tasks that imports, automations or
+bots create on their own are not first uses. Milestones are claimed with marker files in
 the state directory, and only for installs first launched by a build that has them,
 so an upgraded install does not report a second first thread.
+
+## Views and clicks
+
+`app.view.opened` names the section a window shows, `ui.click` a click on a
+button, link, tab or menu item there, and `app.session.ended` (server-side, when a
+connection that reported views closes) the views it saw and how long it stayed
+connected. A reconnect starts a new session, and the window reports its current view
+again on every connection.
+
+The [click listener](../../apps/web/src/uiAnalytics.ts) reads nothing from the page
+but the control's role and its `data-track` name. Our buttons, links and their
+labels, titles and hrefs carry thread, task and project names and ids, so text-based
+capture, PostHog autocapture or session replay would leak them. A control without a
+valid name counts as `untracked`, which still shows click volume per view; name a
+control by adding `data-track="area.action"` where it is rendered. The view comes from
+the route's shape, never its params; a section the URL does not tell apart names
+itself with `useAnalyticsView`, as `/tasks` does for the planner and automations. Clicks
+are counted only while the primary environment is connected, folded when the same
+control is clicked again within a second, and capped per minute.
 
 ## Delivery
 
