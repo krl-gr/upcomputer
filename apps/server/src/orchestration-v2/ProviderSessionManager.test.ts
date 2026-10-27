@@ -16,6 +16,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderSessionId,
+  ProviderSetupError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -919,7 +920,12 @@ it.effect(
                   new ProviderAdapter.ProviderAdapterOpenSessionError({
                     driver: CODEX_DRIVER,
                     providerSessionId: input.providerSessionId,
-                    cause: new Error("Not logged in. Run `codex login` in /Users/someone/project."),
+                    // The category comes from the typed sign-in failure, never its text.
+                    cause: new ProviderSetupError({
+                      instanceId: modelSelection.instanceId,
+                      operation: "access",
+                      detail: "Not logged in. Run `codex login` in /Users/someone/project.",
+                    }),
                   }),
                 )
               : Effect.void,
@@ -953,7 +959,7 @@ it.effect(
             properties: {
               provider: "codex",
               readinessBoundary: "session-start",
-              errorCategory: "auth",
+              errorCategory: "not_authenticated",
             },
           },
           {

@@ -37,10 +37,7 @@ export function isComposerCompact(input: CompactComposerInput): boolean {
   );
 }
 
-export function isFocusWithinComposer(
-  form: HTMLElement | null,
-  target: EventTarget | null,
-): boolean {
+function isFocusWithinComposer(form: HTMLElement | null, target: EventTarget | null): boolean {
   if (!form || !(target instanceof Node)) return false;
   return form.contains(target) || isInsideRestingComposerControlScope(target);
 }
