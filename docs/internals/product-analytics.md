@@ -131,6 +131,39 @@ interrupted turns. The usage arrives with `provider_turn.updated` and the failur
 `turn.terminal`, in either order, so the ingestor records the turn once it has both, or
 after 30 seconds without a failure class.
 
+## Errors and crashes
+
+`app.error` is our own event, not a third-party tracker, so it carries only what the
+[fingerprint](../../packages/shared/src/errorFingerprint.ts) keeps: a class name from
+`APP_ERROR_CLASSES` in contracts (anything else is `other`), the file name of the first
+frame, and a hash of each frame's function and file name. Messages, stack text, paths and
+line numbers never leave the process that saw the error, so the hash is the same on every
+machine and across builds whose function names do not change. To make a new class
+visible, add it to the whitelist; never send its name unchecked, since dependencies and
+runtime code define classes too. The server deduplicates per `where` and stack hash and
+caps each process; web pages and the desktop main process deduplicate and cap again
+before sending, because a render or retry loop repeats one error thousands of times.
+
+Crash hooks must not change what a crash does. The server observes uncaught errors with
+`uncaughtExceptionMonitor`, so Node still exits, and writes the error to
+`telemetry-pending-errors` for the next start, which sends it under the session that
+crashed. The Cursor SDK's rejection guard exits on its own instead of letting Node do
+it, so it notifies those monitors first, as Node does. Electron's main process only
+warns about unhandled rejections and keeps running after an uncaught error, so the
+desktop app listens to both and sends them live. Defects reach `app.error` through the
+RPC server's error reporter and when one ends the server.
+
+The desktop main process has no identity or opt-out of its own, so `desktop.*` events
+and its errors go to the primary backend over the telemetry pipe. They wait in a small
+queue while no backend runs, which is how a backend's own `desktop.backend.exited`
+reaches the backend that replaces it.
+
+`app.unclean_exit` comes from a marker the server writes at start and removes at a clean
+stop. A desktop backend restart keeps the app's session, so `previousSessionId` equal to
+`sessionId` is a backend that died inside a running app; a different one is an app or
+server that did not stop. A start after ten unclean starts within an hour records
+nothing until it has stayed up for ten minutes, so a crash loop cannot flood PostHog.
+
 ## Views and clicks
 
 `app.view.opened` names the section a window shows, `ui.click` a click on a
@@ -162,5 +195,5 @@ few tries. Without these limits, one stuck batch was sent every second for days.
 Keep analytics payloads to product metadata and normalized measurements. Do not
 send prompts, authentication material, raw provider payloads, user-assigned device
 names, provider instance IDs (users name them), paths, error text, or conversation
-identifiers. Classify errors into a bounded category on the server. Client metadata is best effort; invalid values
+identifiers. Classify errors into a bounded category or a whitelisted class name. Client metadata is best effort; invalid values
 must not reject a connection. PostHog person profiles remain disabled.

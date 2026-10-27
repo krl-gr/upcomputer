@@ -14,6 +14,12 @@ reported by a fixed name from the app's code, never by its text. Every event als
 kind of build sent it (such as a release or a test build) and carries a random ID that is
 new each time the app or server starts, so events from one session can be grouped.
 
+When something goes wrong, events say where an error happened (the server, the app window or
+the desktop app), the kind of error from a fixed list of names, the name of the app file it
+came from and a fingerprint of the code path. They also say when a server stopped
+unexpectedly, when a window crashed, and when the app did not shut down cleanly the last time.
+They never include the error message, file paths or what you were working on.
+
 Events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
 names or titles of your threads, tasks, projects, or agents, raw provider events, or child-agent
 output. Child-agent token use is excluded from the totals.
