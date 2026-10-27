@@ -105,6 +105,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export type TelemetryMilestone =
   | "app.first_thread_created"
   | "app.first_message_sent"
+  | "app.first_turn_completed"
   | "app.first_task_created"
   | "app.first_agent_created"
   | "app.first_agent_run"

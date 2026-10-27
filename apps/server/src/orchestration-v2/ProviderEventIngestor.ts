@@ -8,6 +8,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2TurnItem,
   type ModelSelection,
   type RuntimeMode,
   type ProviderInteractionMode,
@@ -91,7 +92,15 @@ export const layerAnalytics = Layer.effect(
     const analytics = yield* AnalyticsService.AnalyticsService;
     return {
       record: (properties: Readonly<Record<string, unknown>>) =>
-        analytics.record("provider.turn.completed", properties),
+        analytics.record("provider.turn.completed", properties).pipe(
+          Effect.andThen(
+            properties.terminalStatus === "completed"
+              ? analytics.recordMilestone("app.first_turn_completed", {
+                  provider: properties.provider,
+                })
+              : Effect.void,
+          ),
+        ),
     };
   }),
 );
@@ -100,6 +109,7 @@ function providerTurnAnalyticsProperties(input: {
   readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
+  readonly firstOutputAt?: DateTime.Utc;
 }): Readonly<Record<string, unknown>> {
   const usage = input.providerTurn.turnTokenUsage;
   const modelSelection = input.context?.modelSelection;
@@ -135,8 +145,31 @@ function providerTurnAnalyticsProperties(input: {
           ),
         }
       : {}),
+    ...(input.providerTurn.startedAt && input.firstOutputAt
+      ? {
+          ttftMs: Math.max(
+            0,
+            DateTime.toEpochMillis(input.firstOutputAt) -
+              DateTime.toEpochMillis(input.providerTurn.startedAt),
+          ),
+        }
+      : {}),
   };
 }
+
+/** Items the model produced, as opposed to the prompt or the app's own notices. */
+const MODEL_OUTPUT_ITEM_TYPES: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
+  "assistant_message",
+  "reasoning",
+  "proposed_plan",
+  "todo_list",
+  "command_execution",
+  "file_change",
+  "file_search",
+  "web_search",
+  "dynamic_tool",
+  "subagent",
+]);
 
 type ProviderTurnTerminal = Extract<
   ProviderAdapter.ProviderAdapterV2Event,
@@ -345,6 +378,8 @@ export const layer: Layer.Layer<
     const analytics = yield* ProviderTurnAnalytics;
     const agentScope = yield* AgentScope;
     const completedTurnAnalytics = new Set<string>();
+    // When each running turn's first model output arrived, for its time to first token.
+    const turnFirstOutputAt = new Map<string, DateTime.Utc>();
     // `provider_turn.updated` carries the turn's usage and `turn.terminal` its failure, in
     // either order, so a failed or interrupted turn is recorded once both have arrived.
     const turnsAwaitingTerminal = new Map<string, Readonly<Record<string, unknown>>>();
@@ -889,6 +924,15 @@ export const layer: Layer.Layer<
           ),
           Effect.tap((storedEvents) =>
             Effect.gen(function* () {
+              if (input.event.type === "turn_item.updated") {
+                const item = input.event.turnItem;
+                if (item.providerTurnId === null || !MODEL_OUTPUT_ITEM_TYPES.has(item.type)) return;
+                const key = `${input.providerInstanceId}:${item.providerTurnId}`;
+                if (!turnFirstOutputAt.has(key) && !completedTurnAnalytics.has(key)) {
+                  rememberBounded(turnFirstOutputAt, key, item.startedAt ?? item.updatedAt);
+                }
+                return;
+              }
               if (input.event.type === "turn.terminal") {
                 return yield* recordTurnTerminal(
                   `${input.providerInstanceId}:${input.event.providerTurnId}`,
@@ -911,12 +955,15 @@ export const layer: Layer.Layer<
                 const oldest = completedTurnAnalytics.values().next().value;
                 if (oldest !== undefined) completedTurnAnalytics.delete(oldest);
               }
+              const firstOutputAt = turnFirstOutputAt.get(key);
+              turnFirstOutputAt.delete(key);
               const properties = providerTurnAnalyticsProperties({
                 driver: input.event.driver,
                 providerTurn,
                 ...(input.analyticsContext === undefined
                   ? {}
                   : { context: input.analyticsContext }),
+                ...(firstOutputAt === undefined ? {} : { firstOutputAt }),
               });
               yield* providerTurn.status === "failed" || providerTurn.status === "interrupted"
                 ? recordUnfinishedTurn(key, properties)
