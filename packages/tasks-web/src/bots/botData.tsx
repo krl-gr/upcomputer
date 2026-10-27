@@ -154,27 +154,6 @@ export function botPage(
 export const isBotAgent = (agent: Pick<TaskAgent, "id" | "startTags">) =>
   agent.startTags.length === 1 && agent.startTags[0] === `bot:${agent.id}`;
 
-/** A bot agent's name with the bot's face, for lists of agents. */
-export function BotAgentName({
-  environmentId,
-  agentId,
-  name,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly agentId: string;
-  readonly name: string;
-}) {
-  const bot = useBots(environmentId).bots.find((item) => item.agent.id === agentId);
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="flex size-5 shrink-0 items-center justify-center">
-        <BotAvatar id={agentId} appearance={bot?.appearance} state="idle" size={20} />
-      </span>
-      <span className="truncate">{name}</span>
-    </span>
-  );
-}
-
 /**
  * The face the bot's style picks: its shape character, or its picked portrait, or for bots
  * that never picked one the portrait its id derives.
