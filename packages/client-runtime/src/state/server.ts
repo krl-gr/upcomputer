@@ -1335,6 +1335,18 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:check-otlp-endpoint",
       tag: WS_METHODS.serverCheckOtlpEndpoint,
     }),
+    getTelemetryInternalDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:get-telemetry-internal-device",
+      tag: WS_METHODS.serverGetTelemetryInternalDevice,
+    }),
+    setTelemetryInternalDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-telemetry-internal-device",
+      tag: WS_METHODS.serverSetTelemetryInternalDevice,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",
       tag: WS_METHODS.serverRetryResourceTelemetry,

@@ -101,6 +101,7 @@ import {
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
   type AppView,
+  TelemetryInternalDeviceError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -2437,6 +2438,13 @@ const layerWsRpc = (
         [WS_METHODS.serverRefreshUsageRates]: (_input) => usage.refreshRates,
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
+        [WS_METHODS.serverGetTelemetryInternalDevice]: (_input) =>
+          analytics.internalDevice.pipe(Effect.map((enabled) => ({ enabled }))),
+        [WS_METHODS.serverSetTelemetryInternalDevice]: (input) =>
+          analytics.setInternalDevice(input.enabled).pipe(
+            Effect.map((enabled) => ({ enabled })),
+            Effect.mapError((cause) => new TelemetryInternalDeviceError({ cause })),
+          ),
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),
         [WS_METHODS.serverReportClientActivity]: (input, metadata) =>
           Ref.update(rpcClientIds, (clientIds) => {

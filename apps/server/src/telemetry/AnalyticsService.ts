@@ -3,6 +3,10 @@
  * event.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import {
+  resolveUpcomputerBuildKind,
+  type UpcomputerBuildKind,
+} from "@t3tools/shared/upcomputerIdentity";
 import type { ClientOs } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -15,6 +19,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
@@ -32,6 +37,7 @@ interface BufferedAnalyticsEvent {
   readonly event: string;
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly capturedAt: string;
+  readonly isInternal: boolean;
 }
 
 interface DeliveryState {
@@ -76,7 +82,17 @@ const TelemetryEnvConfig = Config.all({
   desktopStartup: Config.Literals(["launch", "restart"], "T3CODE_DESKTOP_STARTUP").pipe(
     Config.option,
   ),
+  desktopBuildKind: Config.Literals(
+    ["dev", "localtest", "rc", "nightly", "stable"],
+    "T3CODE_DESKTOP_BUILD_KIND",
+  ).pipe(Config.option),
+  desktopSessionId: Config.String("T3CODE_DESKTOP_SESSION_ID").pipe(Config.option),
 });
+
+// Only bundles define it, so a server run from source is a dev build.
+declare const __T3CODE_BUILD_CHANNEL__: string | undefined;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TelemetryMilestone =
   | "app.first_thread_created"
@@ -90,6 +106,9 @@ export type TelemetryMilestone =
 
 // 0.0.32 wrote this marker, so installs upgraded from it never report a second first launch.
 const FIRST_LAUNCH_MARKER_FILE = "telemetry-first-launch-v1";
+// Marks a team or test device, so its events can be filtered out. It lives in the
+// state dir, which app updates keep, and env vars do not reach Finder launches.
+const INTERNAL_DEVICE_MARKER_FILE = "telemetry-internal-device";
 // Created together with the first-launch claim. Installs that were first launched by an
 // older build have threads already, so their next thread is not their first one.
 const MILESTONES_DIR = "telemetry-milestones";
@@ -109,6 +128,11 @@ export class AnalyticsService extends Context.Service<
     ) => Effect.Effect<void>;
 
     readonly flush: Effect.Effect<void>;
+
+    readonly internalDevice: Effect.Effect<boolean>;
+    readonly setInternalDevice: (
+      enabled: boolean,
+    ) => Effect.Effect<boolean, PlatformError.PlatformError>;
   }
 >()("t3/telemetry/AnalyticsService") {
   static readonly layerTest = Layer.succeed(
@@ -117,6 +141,8 @@ export class AnalyticsService extends Context.Service<
       record: () => Effect.void,
       recordMilestone: () => Effect.void,
       flush: Effect.void,
+      internalDevice: Effect.succeed(false),
+      setInternalDevice: (enabled) => Effect.succeed(enabled),
     }),
   );
 }
@@ -159,10 +185,36 @@ export const make = Effect.gen(function* () {
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
+  const isDesktopBackend = serverConfig.mode === "desktop";
+  // The desktop app knows whether it is packaged; other servers classify themselves.
+  const buildKind: UpcomputerBuildKind =
+    (isDesktopBackend ? Option.getOrUndefined(telemetryConfig.desktopBuildKind) : undefined) ??
+    resolveUpcomputerBuildKind({
+      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
+      version: packageJson.version,
+    });
+  // Random per app launch (desktop) or per server start; never derived from the install.
+  const desktopSessionId = isDesktopBackend
+    ? Option.filter(telemetryConfig.desktopSessionId, (id) => UUID_PATTERN.test(id))
+    : Option.none<string>();
+  const sessionId = Option.isSome(desktopSessionId)
+    ? desktopSessionId.value
+    : yield* crypto.randomUUIDv4().pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+  const internalDeviceMarker = path.join(serverConfig.stateDir, INTERNAL_DEVICE_MARKER_FILE);
+  // Read for every event, so creating the file by hand takes effect without a restart.
+  const internalDevice = fileSystem
+    .exists(internalDeviceMarker)
+    .pipe(Effect.catchCause(() => Effect.succeed(false)));
+  const setInternalDevice: AnalyticsService["Service"]["setInternalDevice"] = (enabled) =>
+    (enabled
+      ? fileSystem.writeFileString(internalDeviceMarker, "1\n")
+      : fileSystem.remove(internalDeviceMarker, { force: true })
+    ).pipe(Effect.as(enabled));
 
   const enqueueBufferedEvent = (
     uuid: string,
     event: string,
+    isInternal: boolean,
     properties?: Readonly<Record<string, unknown>>,
   ) =>
     Effect.flatMap(DateTime.now, (now) =>
@@ -174,6 +226,7 @@ export const make = Effect.gen(function* () {
             event,
             ...(properties ? { properties } : {}),
             capturedAt: DateTime.formatIso(now),
+            isInternal,
           } satisfies BufferedAnalyticsEvent,
         ];
 
@@ -218,6 +271,9 @@ export const make = Effect.gen(function* () {
           serverMode: serverConfig.mode,
           desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
           releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
+          buildKind,
+          isInternal: event.isInternal,
+          sessionId,
         },
         timestamp: event.capturedAt,
       })),
@@ -287,7 +343,12 @@ export const make = Effect.gen(function* () {
       const uuid = yield* Effect.exit(crypto.randomUUIDv7());
       if (Exit.isFailure(uuid)) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
+      const enqueueResult = yield* enqueueBufferedEvent(
+        uuid.value,
+        event,
+        yield* internalDevice,
+        properties,
+      );
       if (enqueueResult.dropped) {
         yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
           size: enqueueResult.size,
@@ -344,7 +405,13 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  return AnalyticsService.of({ record, recordMilestone, flush });
+  return AnalyticsService.of({
+    record,
+    recordMilestone,
+    flush,
+    internalDevice,
+    setInternalDevice,
+  });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);

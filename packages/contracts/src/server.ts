@@ -334,6 +334,19 @@ export const OtlpEndpointCheckResult = Schema.Union([
 ]);
 export type OtlpEndpointCheckResult = typeof OtlpEndpointCheckResult.Type;
 
+/** Whether this environment's product telemetry is marked as a team or test device. */
+export const TelemetryInternalDevice = Schema.Struct({ enabled: Schema.Boolean });
+export type TelemetryInternalDevice = typeof TelemetryInternalDevice.Type;
+
+export class TelemetryInternalDeviceError extends Schema.TaggedError<TelemetryInternalDeviceError>()(
+  "TelemetryInternalDeviceError",
+  { cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "Could not change the internal device setting.";
+  }
+}
+
 export const ServerTraceDiagnosticsErrorKind = Schema.Literals([
   "trace-file-not-found",
   "trace-file-read-failed",

@@ -13,6 +13,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
+import serverPackageJson from "../../../server/package.json" with { type: "json" };
+
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
@@ -124,6 +126,7 @@ const withHarness = <A, E, R>(
     | DesktopBackendConfiguration.DesktopBackendConfiguration
   >,
   prepared = true,
+  environmentOptions?: Parameters<typeof layerEnvironment>[1],
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -138,7 +141,7 @@ const withHarness = <A, E, R>(
           Layer.provideMerge(DesktopAppSettings.layerTest()),
           Layer.provideMerge(DesktopWslEnvironment.layerTest()),
           Layer.provideMerge(DesktopWslServerTree.layerTest()),
-          Layer.provideMerge(layerEnvironment(baseDir)),
+          Layer.provideMerge(layerEnvironment(baseDir, environmentOptions)),
         ),
       ),
     );
@@ -299,7 +302,55 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(restart.env.T3CODE_DESKTOP_STARTUP, "restart");
         assert.equal(launch.env.T3CODE_DESKTOP_VERSION, "1.2.3");
         assert.equal(launch.env.T3CODE_DESKTOP_RELEASE_CHANNEL, "latest");
+        assert.equal(launch.env.T3CODE_DESKTOP_BUILD_KIND, "stable");
+        assert.match(launch.env.T3CODE_DESKTOP_SESSION_ID ?? "", /^[0-9a-f-]{36}$/);
+        assert.equal(restart.env.T3CODE_DESKTOP_SESSION_ID, launch.env.T3CODE_DESKTOP_SESSION_ID);
       }),
+    ),
+  );
+
+  it.effect("resolvePrimary reports the workspace version and no channel for dev builds", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const { env } = yield* configuration.resolvePrimary;
+
+        assert.equal(env.T3CODE_DESKTOP_VERSION, serverPackageJson.version);
+        assert.equal(env.T3CODE_DESKTOP_BUILD_KIND, "dev");
+        assert.equal(env.T3CODE_DESKTOP_RELEASE_CHANNEL, undefined);
+      }),
+      true,
+      // An unpackaged Electron answers app.getVersion() with its own version.
+      { isPackaged: false, appVersion: "44.4.5" },
+    ),
+  );
+
+  it.effect("resolvePrimary reports local test builds without an update channel", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const { env } = yield* configuration.resolvePrimary;
+
+        assert.equal(env.T3CODE_DESKTOP_VERSION, "1.2.3-localtest.4");
+        assert.equal(env.T3CODE_DESKTOP_BUILD_KIND, "localtest");
+        assert.equal(env.T3CODE_DESKTOP_RELEASE_CHANNEL, undefined);
+      }),
+      true,
+      { appVersion: "1.2.3-localtest.4" },
+    ),
+  );
+
+  it.effect("resolvePrimary reports rc builds on the latest channel", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const { env } = yield* configuration.resolvePrimary;
+
+        assert.equal(env.T3CODE_DESKTOP_BUILD_KIND, "rc");
+        assert.equal(env.T3CODE_DESKTOP_RELEASE_CHANNEL, "latest");
+      }),
+      true,
+      { appVersion: "1.2.3-rc.1" },
     ),
   );
 

@@ -293,6 +293,8 @@ import {
   OtlpEndpointCheckInput,
   OtlpEndpointCheckResult,
   ClientTelemetryEvent,
+  TelemetryInternalDevice,
+  TelemetryInternalDeviceError,
   ServerConfig,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
@@ -497,6 +499,8 @@ export const WS_METHODS = {
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
+  serverGetTelemetryInternalDevice: "server.getTelemetryInternalDevice",
+  serverSetTelemetryInternalDevice: "server.setTelemetryInternalDevice",
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
@@ -891,6 +895,24 @@ const WsServerCheckOtlpEndpointRpc = Rpc.make(WS_METHODS.serverCheckOtlpEndpoint
   success: OtlpEndpointCheckResult,
   error: EnvironmentAuthorizationError,
 });
+
+const WsServerGetTelemetryInternalDeviceRpc = Rpc.make(
+  WS_METHODS.serverGetTelemetryInternalDevice,
+  {
+    payload: Schema.Struct({}),
+    success: TelemetryInternalDevice,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
+const WsServerSetTelemetryInternalDeviceRpc = Rpc.make(
+  WS_METHODS.serverSetTelemetryInternalDevice,
+  {
+    payload: TelemetryInternalDevice,
+    success: TelemetryInternalDevice,
+    error: Schema.Union([EnvironmentAuthorizationError, TelemetryInternalDeviceError]),
+  },
+);
 
 const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
   payload: UsageSummaryInput,
@@ -1907,6 +1929,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerCheckOtlpEndpointRpc,
+  WsServerGetTelemetryInternalDeviceRpc,
+  WsServerSetTelemetryInternalDeviceRpc,
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,

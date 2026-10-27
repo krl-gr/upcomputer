@@ -582,6 +582,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["OTel OTLP telemetry export endpoints logs traces metrics Grafana"],
   },
   {
+    id: "internal-device",
+    title: "Internal device",
+    to: "/settings/diagnostics",
+    targetId: "product-usage-data",
+    scope: "environment",
+    searchTerms: ["product usage data analytics telemetry team test device"],
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     to: "/settings/general",

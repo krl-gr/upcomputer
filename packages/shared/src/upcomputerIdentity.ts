@@ -94,3 +94,22 @@ export function resolveUpcomputerLocalBuildIdentity(
   }
   return undefined;
 }
+
+/** What kind of build reports product telemetry, so test traffic can be told from users. */
+export type UpcomputerBuildKind = "dev" | "localtest" | "rc" | "nightly" | "stable";
+
+/**
+ * Derived from the packaged app version alone. Unpackaged runs are dev builds
+ * whatever version their package.json carries; demo builds count as local
+ * builds, preview builds as nightly ones, and any other prerelease as an rc.
+ */
+export function resolveUpcomputerBuildKind(input: {
+  readonly packaged: boolean;
+  readonly version: string;
+}): UpcomputerBuildKind {
+  if (!input.packaged) return "dev";
+  if (resolveUpcomputerLocalBuildIdentity(input.version)) return "localtest";
+  if (/^[^-+]+-(?:nightly|preview)\.\d{8}\.\d+$/.test(input.version)) return "nightly";
+  if (/^\d+\.\d+\.\d+$/.test(input.version)) return "stable";
+  return "rc";
+}

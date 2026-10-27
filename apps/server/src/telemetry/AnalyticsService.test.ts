@@ -392,6 +392,94 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
+  it.effect("tags events with the desktop build kind and one session per app launch", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-telemetry-session-",
+      });
+      const events: Array<SentEvent> = [];
+      const desktop = {
+        T3CODE_DESKTOP_BUILD_KIND: "localtest",
+        T3CODE_DESKTOP_SESSION_ID: "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+      };
+
+      yield* runDesktopServer(baseDir, events, () => Effect.void, {
+        ...desktop,
+        T3CODE_DESKTOP_STARTUP: "launch",
+      });
+      yield* runDesktopServer(baseDir, events, () => Effect.void, {
+        ...desktop,
+        T3CODE_DESKTOP_STARTUP: "restart",
+      });
+      assert.isTrue(
+        events.every(
+          (event) =>
+            event.properties.buildKind === "localtest" &&
+            event.properties.sessionId === desktop.T3CODE_DESKTOP_SESSION_ID &&
+            event.properties.isInternal === false,
+        ),
+      );
+
+      // Without the desktop app's values the server classifies itself and starts a session.
+      const standalone: Array<SentEvent> = [];
+      yield* runDesktopServer(baseDir, standalone, () => Effect.void);
+      yield* runDesktopServer(baseDir, standalone, () => Effect.void, {
+        T3CODE_DESKTOP_SESSION_ID: "not-a-uuid",
+      });
+      // Tests run the server from source, which is a dev build.
+      assert.isTrue(standalone.every((event) => event.properties.buildKind === "dev"));
+      const sessions = new Set(standalone.map((event) => event.properties.sessionId));
+      assert.equal(sessions.size, 2);
+      assert.isTrue(
+        [...sessions].every(
+          (id) => typeof id === "string" && /^[0-9a-f-]{36}$/.test(id) && id !== "not-a-uuid",
+        ),
+      );
+    }),
+  );
+
+  it.effect("marks events from an internal device while its marker file exists", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-telemetry-internal-",
+      });
+      const marker = path.join(baseDir, "userdata", "telemetry-internal-device");
+      const events: Array<SentEvent> = [];
+
+      yield* runDesktopServer(baseDir, events, (analytics) =>
+        Effect.gen(function* () {
+          assert.isFalse(yield* analytics.internalDevice);
+          yield* analytics.record("before");
+          yield* analytics.flush;
+          assert.isTrue(yield* analytics.setInternalDevice(true).pipe(Effect.orDie));
+          assert.isTrue(yield* fileSystem.exists(marker).pipe(Effect.orDie));
+          yield* analytics.record("internal");
+          yield* analytics.flush;
+        }),
+      );
+      const firstRun = events.splice(0);
+      // The marker outlives the server, as it does an app update.
+      yield* runDesktopServer(baseDir, events, (analytics) =>
+        Effect.gen(function* () {
+          assert.isTrue(yield* analytics.internalDevice);
+          assert.isFalse(yield* analytics.setInternalDevice(false).pipe(Effect.orDie));
+          yield* analytics.record("after");
+        }),
+      );
+
+      const isInternal = (sent: ReadonlyArray<SentEvent>, name: string) =>
+        sent.find((event) => event.event === name)?.properties.isInternal;
+      assert.equal(isInternal(firstRun, "before"), false);
+      assert.equal(isInternal(firstRun, "internal"), true);
+      assert.equal(isInternal(events, "server.started"), true);
+      assert.equal(isInternal(events, "after"), false);
+      assert.isFalse(yield* fileSystem.exists(marker));
+    }),
+  );
+
   it.effect("does not report milestones for an install first launched by an older build", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
