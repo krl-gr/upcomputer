@@ -69,6 +69,8 @@ import {
   TaskRunCountsResult,
   TaskThreadRunCountsInput,
   TaskThreadRunCountsResult,
+  TaskThreadsSeenInput,
+  TaskThreadsSeenResult,
   TaskThreadTasksInput,
   TaskThreadTasksResult,
   TaskSearchInput,
@@ -81,8 +83,9 @@ import {
  * 13: task audience and kind, schedule entries, reorderMany, projectId on
  * update, schedule settings and reminders on the change stream. Version 12
  * shapes still decode in both directions.
+ * 14: markThreadsSeen; threadRunCounts leaves out finished runs already seen.
  */
-export const TASKS_RPC_CONTRACT_VERSION = 13 as const;
+export const TASKS_RPC_CONTRACT_VERSION = 14 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {
@@ -114,6 +117,7 @@ export const TASKS_RPC_METHODS = {
   items: `${TASKS_RPC_NAMESPACE}.items`,
   runCounts: `${TASKS_RPC_NAMESPACE}.runCounts`,
   threadRunCounts: `${TASKS_RPC_NAMESPACE}.threadRunCounts`,
+  markThreadsSeen: `${TASKS_RPC_NAMESPACE}.markThreadsSeen`,
   threadTasks: `${TASKS_RPC_NAMESPACE}.threadTasks`,
   subscribe: `${TASKS_RPC_NAMESPACE}.subscribe`,
   get: `${TASKS_RPC_NAMESPACE}.get`,
@@ -261,6 +265,12 @@ export const TasksThreadRunCountsRpc = Rpc.make(TASKS_RPC_METHODS.threadRunCount
   error: TaskError,
 });
 
+export const TasksMarkThreadsSeenRpc = Rpc.make(TASKS_RPC_METHODS.markThreadsSeen, {
+  payload: TaskThreadsSeenInput,
+  success: TaskThreadsSeenResult,
+  error: TaskError,
+});
+
 export const TasksThreadTasksRpc = Rpc.make(TASKS_RPC_METHODS.threadTasks, {
   payload: TaskThreadTasksInput,
   success: TaskThreadTasksResult,
@@ -327,6 +337,7 @@ export const TasksUpdateScheduleSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updateS
 export const TasksRpcGroup = RpcGroup.make(
   TasksRunCountsRpc,
   TasksThreadRunCountsRpc,
+  TasksMarkThreadsSeenRpc,
   TasksThreadTasksRpc,
   TasksCreateRpc,
   TasksSearchRpc,

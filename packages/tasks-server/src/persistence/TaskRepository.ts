@@ -44,6 +44,7 @@ import {
   TaskRunCountsResult,
   TaskThreadRunCountsInput,
   TaskThreadRunCountsResult,
+  TaskThreadsSeenInput,
   TaskThreadTasksInput,
   TaskThreadTasksResult,
   TaskTag,
@@ -234,6 +235,10 @@ export interface TaskRepositoryShape {
   readonly threadRunCounts: (
     input: TaskThreadRunCountsInput,
   ) => Effect.Effect<TaskThreadRunCountsResult, TaskRepositoryError>;
+  /** Moves the threads' seen watermark to `seenAt`; it never moves back. */
+  readonly markThreadsSeen: (
+    input: TaskThreadsSeenInput & { readonly seenAt: string },
+  ) => Effect.Effect<void, TaskRepositoryError>;
   readonly threadTasks: (
     input: TaskThreadTasksInput,
   ) => Effect.Effect<TaskThreadTasksResult, TaskRepositoryError>;

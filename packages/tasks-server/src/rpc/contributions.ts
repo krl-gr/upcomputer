@@ -69,6 +69,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.items]: read,
     [TASKS_RPC_METHODS.runCounts]: read,
     [TASKS_RPC_METHODS.threadRunCounts]: read,
+    // A read receipt: whoever can see the counts can mark them seen.
+    [TASKS_RPC_METHODS.markThreadsSeen]: read,
     [TASKS_RPC_METHODS.threadTasks]: read,
     [TASKS_RPC_METHODS.subscribe]: read,
     [TASKS_RPC_METHODS.get]: read,
@@ -181,6 +183,13 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               return yield* (yield* TaskRepository).threadRunCounts(input);
+            }),
+          ),
+        [TASKS_RPC_METHODS.markThreadsSeen]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              yield* (yield* TaskRepository).markThreadsSeen({ ...input, seenAt: yield* now });
+              return {};
             }),
           ),
         [TASKS_RPC_METHODS.threadTasks]: (input) =>

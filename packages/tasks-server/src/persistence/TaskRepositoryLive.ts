@@ -558,14 +558,22 @@ const makeTaskRepository = Effect.gen(function* () {
     ON CONFLICT (id) DO NOTHING
   `;
 
+  // Active runs (not completed, or blocked and still awaiting input) always count; a
+  // finished one only after the thread's seen watermark. A thread never marked seen has
+  // none, so all its runs count.
   const threadRunCountRows = SqlSchema.findAll({
     Request: Schema.Struct({ ids: Schema.String }),
     Result: Schema.Struct({ threadId: ThreadId, ...TaskRunCount.fields }),
     execute: ({ ids }) => sql`
-      SELECT t.root_thread_id AS "threadId", ${countedRunStatus} AS status, COUNT(*) AS count
-      FROM tasks t JOIN task_agent_runs r ON r.task_id = t.id
-      WHERE t.root_thread_id IN (SELECT value FROM json_each(${ids})) AND t.archived_at IS NULL
-      GROUP BY t.root_thread_id, 2 ORDER BY t.root_thread_id, 2`,
+      SELECT "threadId", status, COUNT(*) AS count FROM (
+        SELECT t.root_thread_id AS "threadId", ${countedRunStatus} AS status,
+          r.completed_at AS completed_at, s.seen_at AS seen_at
+        FROM tasks t JOIN task_agent_runs r ON r.task_id = t.id
+        LEFT JOIN task_thread_seen s ON s.thread_id = t.root_thread_id
+        WHERE t.root_thread_id IN (SELECT value FROM json_each(${ids})) AND t.archived_at IS NULL
+      )
+      WHERE completed_at IS NULL OR status = 'blocked' OR seen_at IS NULL OR completed_at > seen_at
+      GROUP BY 1, 2 ORDER BY 1, 2`,
   });
   const threadRunCounts: TaskRepositoryShape["threadRunCounts"] = Effect.fn(
     "TaskRepository.threadRunCounts",
@@ -591,6 +599,28 @@ const makeTaskRepository = Effect.gen(function* () {
         "TaskRepository.threadRunCounts:decode",
       ),
     ),
+  );
+
+  const markThreadsSeen: TaskRepositoryShape["markThreadsSeen"] = Effect.fn(
+    "TaskRepository.markThreadsSeen",
+  )(
+    function* ({ threadIds, seenAt }) {
+      const ids = [...new Set(threadIds)];
+      if (ids.length === 0) return;
+      yield* sql`
+        INSERT INTO task_thread_seen (thread_id, seen_at)
+        SELECT value, ${seenAt} FROM json_each(${JSON.stringify(ids)})
+        WHERE true
+        ON CONFLICT (thread_id) DO UPDATE SET seen_at = MAX(seen_at, excluded.seen_at)`;
+      // Thread rows read their counts again on a runs change, on every client.
+      yield* publishChange({
+        taskIds: [],
+        listChanged: false,
+        runsChanged: true,
+        rootThreadIds: ids,
+      });
+    },
+    Effect.mapError(toTaskPersistenceSqlError("TaskRepository.markThreadsSeen")),
   );
 
   const runCountRows = SqlSchema.findAll({
@@ -3630,6 +3660,7 @@ const makeTaskRepository = Effect.gen(function* () {
     changes,
     runCounts,
     threadRunCounts,
+    markThreadsSeen,
     threadTasks,
     listAllTasks,
     listTriggerCandidates,
