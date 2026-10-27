@@ -54,6 +54,7 @@ import * as RpcTest from "effect/rpc/RpcTest";
 import * as RpcAuthorization from "../../../../apps/server/src/auth/RpcAuthorization.ts";
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import { ProviderRegistry } from "../../../../apps/server/src/provider/ProviderRegistry.ts";
+import { featureHeartbeatCounts } from "../../../../apps/server/src/telemetry/HeartbeatCounts.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import { ProjectService } from "../../../../apps/server/src/project/ProjectService.ts";
@@ -621,6 +622,53 @@ const runSlice = <A, E>(
       }).pipe(Effect.provide(makeLayer(name, cwd, started, sessions, background, options)));
     }),
   );
+
+it.live("the heartbeat counts open tasks by audience, agents, bots and enabled automations", () =>
+  runSlice("task-feature-counts", ({ repository }) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // Disabled, so no run starts on the tasks below.
+      yield* repository.upsertAgent({ ...agent, enabled: false });
+      yield* repository.upsertAgent({ ...agent, id: TaskAgentId.make("task-agent:counted") });
+      yield* repository.upsertAgent({ ...agent, id: TaskAgentId.make("task-agent:bot") });
+      yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json)
+        VALUES ('task-agent:bot', 'thread:bot', ${projectId}, '[]')`;
+      for (const [index, [id, audience, archivedAt]] of (
+        [
+          ["task:count-agent-1", "agent", null],
+          ["task:count-agent-2", "agent", null],
+          ["task:count-person", "person", null],
+          ["task:count-archived", "agent", timestamp],
+        ] as const
+      ).entries()) {
+        yield* repository.upsert({
+          ...task,
+          id: TaskId.make(id),
+          rank: `000000000020000${index}` as Task["rank"],
+          status: audience === "person" ? "To Do" : "Backlog",
+          audience,
+          archivedAt,
+        });
+      }
+      for (const [id, status] of [
+        ["automation:on", "enabled"],
+        ["automation:off", "disabled"],
+      ] as const) {
+        yield* sql`INSERT INTO task_automations (id, project_id, name, status, schedule_json,
+          template_json, catch_up_policy, skip_if_open, created_by, created_at, updated_at)
+          VALUES (${id}, ${projectId}, 'Daily', ${status}, '{}', '{}', 'skip', 0, 'user',
+          ${timestamp}, ${timestamp})`;
+      }
+      assert.deepStrictEqual(yield* featureHeartbeatCounts, {
+        agentTaskCount: 2,
+        personTaskCount: 1,
+        enabledAgentCount: 1,
+        botCount: 1,
+        automationCount: 1,
+      });
+    }),
+  ),
+);
 
 it.live(
   "creating a task in an agent's start status starts a run on a new v2 thread with the agent's model and instructions",
