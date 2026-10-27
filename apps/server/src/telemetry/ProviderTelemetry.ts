@@ -3,7 +3,12 @@
  * they are signed in, and whether a provider session opens. Only bounded values
  * leave the server: no paths, messages, account details or instance names.
  */
-import type { ProviderInstallState, ServerProvider } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ProviderMcpStatus,
+  ProviderDriverKind,
+  ProviderInstallState,
+  ServerProvider,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -21,7 +26,7 @@ import * as AnalyticsService from "./AnalyticsService.ts";
 
 export class ProviderReadinessAnalytics extends Context.Reference<{
   readonly record: (
-    event: "provider.readiness.succeeded" | "provider.readiness.failed",
+    event: "provider.readiness.succeeded" | "provider.readiness.failed" | "provider.mcp.attach",
     properties: Readonly<Record<string, unknown>>,
   ) => Effect.Effect<void>;
 }>("t3/telemetry/ProviderReadinessAnalytics", {
@@ -213,6 +218,47 @@ export function readinessErrorCategory(cause: unknown): ReadinessErrorCategory {
     if (category !== undefined) return category;
   }
   return "unknown";
+}
+
+/**
+ * `provider.mcp.attach` properties for a change in a session's MCP status: one
+ * event whenever the t3-code server's outcome changes, and one for the user's
+ * own servers when their failures appear, grow or clear. Their names are only
+ * counted, since users choose them.
+ */
+export function mcpAttachEvents(
+  driver: ProviderDriverKind,
+  previous: OrchestrationV2ProviderMcpStatus | undefined,
+  next: OrchestrationV2ProviderMcpStatus | undefined,
+): ReadonlyArray<Readonly<Record<string, unknown>>> {
+  if (next === undefined) return [];
+  const events: Array<Readonly<Record<string, unknown>>> = [];
+  const { t3, userServerCount } = next;
+  if (
+    t3 !== undefined &&
+    (t3.outcome !== previous?.t3?.outcome || t3.reason !== previous.t3.reason)
+  ) {
+    events.push({
+      provider: driver,
+      server: "t3",
+      outcome: t3.outcome,
+      ...(t3.reason === undefined ? {} : { reason: t3.reason }),
+      failedCount: t3.outcome === "attached" ? 0 : 1,
+      userServerCount,
+    });
+  }
+  const failedCount = next.failedUserServers.length;
+  const previousFailedCount = previous?.failedUserServers.length ?? 0;
+  if (failedCount > previousFailedCount || (failedCount === 0 && previousFailedCount > 0)) {
+    events.push({
+      provider: driver,
+      server: "user",
+      outcome: failedCount === 0 ? "attached" : "failed",
+      failedCount,
+      userServerCount,
+    });
+  }
+  return events;
 }
 
 const VERSION_PATTERN = /^\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.-]{1,32})?$/;

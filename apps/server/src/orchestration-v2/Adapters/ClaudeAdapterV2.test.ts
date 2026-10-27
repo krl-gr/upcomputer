@@ -59,6 +59,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scheduler from "effect/Scheduler";
 import * as Scope from "effect/Scope";
@@ -1270,6 +1271,203 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
     }),
   );
   return { executablePaths, taskToolEnvironment };
+});
+
+const claudeInitWithMcpServers = (
+  mcpServers: ReadonlyArray<{ readonly name: string; readonly status: string }>,
+) =>
+  ({
+    type: "system",
+    subtype: "init",
+    apiKeySource: "none",
+    claude_code_version: "2.1.0",
+    cwd: process.cwd(),
+    tools: [],
+    mcp_servers: [...mcpServers],
+    model: "claude-sonnet-4-6",
+    permissionMode: "default",
+    slash_commands: [],
+    output_style: "default",
+    skills: [],
+    plugins: [],
+    uuid: "00000000-0000-4000-8000-000000000001",
+    session_id: "native-thread-claude-mcp",
+  }) as unknown as SDKMessage;
+
+const claudeMcpSessionUpdates = Effect.fn("claudeMcpSessionUpdates")(function* (input: {
+  readonly registration: ClaudeAdapterV2.ClaudeT3McpRegistration;
+  readonly inits: ReadonlyArray<ReadonlyArray<{ readonly name: string; readonly status: string }>>;
+  readonly updates: number;
+}) {
+  const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
+    {
+      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+      displayName: undefined,
+      environment: [],
+      enabled: true,
+      config: DEFAULT_CLAUDE_SETTINGS,
+    },
+    {},
+  ).pipe(
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-claude-mcp-" })),
+    Effect.provideService(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner, {
+      allocateSessionId: Effect.succeed("native-thread-claude-mcp"),
+      open: () =>
+        Effect.succeed({
+          messages: Stream.concat(
+            Stream.fromIterable(input.inits.map(claudeInitWithMcpServers)),
+            Stream.never,
+          ),
+          offer: () => Effect.void,
+          setModel: () => Effect.void,
+          applyFlagSettings: () => Effect.void,
+          setPermissionMode: () => Effect.void,
+          backgroundTasks: () => Effect.succeed(false),
+          stopTask: () => Effect.void,
+          interrupt: Effect.void,
+          close: Effect.void,
+          t3McpRegistration: input.registration,
+        }),
+      forkSession: () => Effect.die("unused"),
+      subagentLaunchToolUseId: () => Effect.succeed(null),
+      assertComplete: Effect.void,
+    }),
+  );
+  const threadId = ThreadId.make("thread-claude-mcp");
+  const runtime = yield* adapter.openSession({
+    threadId,
+    providerSessionId: ProviderSessionId.make("provider-session-claude-mcp"),
+    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+  });
+  const providerThread = yield* runtime.ensureThread({
+    threadId,
+    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+  });
+  const updates = yield* runtime.events.pipe(
+    Stream.filterMap((event) =>
+      event.type === "provider_session.updated" && event.providerSession.mcp !== undefined
+        ? Result.succeed(event.providerSession.mcp)
+        : Result.failVoid,
+    ),
+    Stream.take(input.updates),
+    Stream.runCollect,
+    Effect.forkScoped,
+  );
+  yield* runtime.startTurn(
+    makeClaudeTestTurnInput({
+      threadId,
+      providerThread,
+      now: yield* DateTime.now,
+      attemptId: RunAttemptId.make("attempt-claude-mcp"),
+      text: "hello",
+      attachments: [],
+    }),
+  );
+  return yield* Fiber.join(updates);
+});
+
+describe("ClaudeAdapterV2 MCP status", () => {
+  it.effect("reports the t3-code server, a failed user server, and a mid-session drop", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* claudeMcpSessionUpdates({
+          registration: { outcome: "attached" },
+          updates: 3,
+          inits: [
+            [
+              { name: "t3-code", status: "connected" },
+              { name: "my-notes", status: "failed" },
+              { name: "linear", status: "connected" },
+            ],
+            [
+              { name: "t3-code", status: "failed" },
+              { name: "my-notes", status: "failed" },
+              { name: "linear", status: "connected" },
+            ],
+          ],
+        });
+        assert.deepEqual(updates, [
+          { t3: { outcome: "attached" }, userServerCount: 0, failedUserServers: [] },
+          { t3: { outcome: "attached" }, userServerCount: 2, failedUserServers: ["my-notes"] },
+          {
+            t3: { outcome: "disconnected", reason: "connection_lost" },
+            userServerCount: 2,
+            failedUserServers: ["my-notes"],
+          },
+        ]);
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect("reports a t3-code server Claude refused", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* claudeMcpSessionUpdates({
+          registration: { outcome: "failed", reason: "rejected" },
+          // Init repeating the failure keeps the registration's reason, so no second update.
+          inits: [
+            [{ name: "t3-code", status: "failed" }],
+            [{ name: "t3-code", status: "connected" }],
+          ],
+          updates: 2,
+        });
+        assert.deepEqual(updates, [
+          {
+            t3: { outcome: "failed", reason: "rejected" },
+            userServerCount: 0,
+            failedUserServers: [],
+          },
+          { t3: { outcome: "attached" }, userServerCount: 0, failedUserServers: [] },
+        ]);
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+});
+
+describe("Claude MCP status", () => {
+  it("attaches again when a reconnected session reports the server connected", () => {
+    const dropped = ClaudeAdapterV2.claudeMcpStatus({
+      previous: { t3: { outcome: "attached" }, userServerCount: 0, failedUserServers: [] },
+      servers: [{ name: "t3-code", status: "failed" }],
+    });
+    assert.deepEqual(dropped.t3, { outcome: "disconnected", reason: "connection_lost" });
+    assert.deepEqual(
+      ClaudeAdapterV2.claudeMcpStatus({
+        previous: dropped,
+        servers: [{ name: "t3-code", status: "connected" }],
+      }).t3,
+      { outcome: "attached" },
+    );
+  });
+
+  it("keeps the last known state while servers are pending", () => {
+    const previous = {
+      t3: { outcome: "attached" as const },
+      userServerCount: 1,
+      failedUserServers: [],
+    };
+    assert.deepEqual(
+      ClaudeAdapterV2.claudeMcpStatus({
+        previous,
+        servers: [
+          { name: "t3-code", status: "pending" },
+          { name: "docs", status: "needs-auth" },
+          { name: "old", status: "disabled" },
+        ],
+      }),
+      { t3: { outcome: "attached" }, userServerCount: 1, failedUserServers: ["docs"] },
+    );
+  });
 });
 
 describe("ClaudeAdapterV2 executable path", () => {

@@ -63,6 +63,9 @@ import {
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderFailure,
   OrchestrationV2ProviderGoal,
+  type OrchestrationV2ProviderMcpFailureReason,
+  type OrchestrationV2ProviderMcpStatus,
+  providerMcpStatusEqual,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2PlanStep,
   type OrchestrationV2PendingBackgroundTask,
@@ -420,6 +423,66 @@ export interface ClaudeAgentSdkQuerySession {
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  /** How Claude took the t3-code server when the query opened; absent when it had none. */
+  readonly t3McpRegistration?: ClaudeT3McpRegistration;
+  /** Absent in replays, which record no status probe. */
+  readonly mcpServerStatus?: Effect.Effect<
+    ReadonlyArray<ClaudeMcpServerState>,
+    ClaudeAgentSdkQueryRunnerError
+  >;
+}
+
+export interface ClaudeT3McpRegistration {
+  readonly outcome: "attached" | "failed" | "timeout";
+  readonly reason?: OrchestrationV2ProviderMcpFailureReason;
+}
+
+/** One entry of init's `mcp_servers` or of `mcpServerStatus()`. */
+export interface ClaudeMcpServerState {
+  readonly name: string;
+  readonly status: string;
+}
+
+const CLAUDE_T3_MCP_SERVER = "t3-code";
+
+/**
+ * The session's MCP status after a registration result or a server list. Init
+ * lists every server at each turn start, so a t3-code server that was attached
+ * and now reads failed has dropped mid-session. Pending and disabled entries
+ * say nothing new.
+ */
+export function claudeMcpStatus(input: {
+  readonly previous: OrchestrationV2ProviderMcpStatus | undefined;
+  readonly registration?: ClaudeT3McpRegistration;
+  readonly servers?: ReadonlyArray<ClaudeMcpServerState>;
+}): OrchestrationV2ProviderMcpStatus {
+  const { previous, registration, servers } = input;
+  let t3 = registration ?? previous?.t3;
+  const t3Status = servers?.find((server) => server.name === CLAUDE_T3_MCP_SERVER)?.status;
+  if (t3Status === "connected") {
+    t3 = { outcome: "attached" };
+  } else if (t3Status === "needs-auth") {
+    t3 = { outcome: "failed", reason: "needs_auth" };
+  } else if (t3Status === "failed" && t3?.outcome !== "failed") {
+    t3 =
+      t3?.outcome === "attached" || t3?.outcome === "disconnected"
+        ? { outcome: "disconnected", reason: "connection_lost" }
+        : { outcome: "failed", reason: "unknown" };
+  }
+  const userServers =
+    servers?.filter(
+      (server) => server.name !== CLAUDE_T3_MCP_SERVER && server.status !== "disabled",
+    ) ?? [];
+  return {
+    ...(t3 === undefined ? {} : { t3 }),
+    userServerCount: servers === undefined ? (previous?.userServerCount ?? 0) : userServers.length,
+    failedUserServers:
+      servers === undefined
+        ? (previous?.failedUserServers ?? [])
+        : userServers
+            .filter((server) => server.status === "failed" || server.status === "needs-auth")
+            .map((server) => server.name),
+  };
 }
 
 type ClaudeQueryStreamExit = Exit.Exit<void, ClaudeAgentSdkQueryRunnerError>;
@@ -765,7 +828,7 @@ export const layerQueryRunner: Layer.Layer<
         const spawnClaudeCodeProcess =
           options.spawnClaudeCodeProcess ??
           (platform === "win32" ? undefined : spawnClaudeProcessGroup);
-        const queryRuntime = yield* Effect.uninterruptibleMask((restore) =>
+        const { queryRuntime, t3McpRegistration } = yield* Effect.uninterruptibleMask((restore) =>
           Effect.try({
             try: () =>
               query({
@@ -777,17 +840,24 @@ export const layerQueryRunner: Layer.Layer<
               }),
             catch: (cause) => queryRunnerError(cause, "query"),
           }).pipe(
-            Effect.tap((queryRuntime) =>
+            Effect.flatMap((queryRuntime) =>
               restore(
                 Effect.gen(function* () {
+                  let t3McpRegistration: ClaudeT3McpRegistration | undefined;
                   if (mcpServers !== undefined) {
                     // Error texts and the CLI's mcp_status response can echo the headers, so
                     // only server names are logged.
-                    const failed = yield* Effect.tryPromise(() =>
+                    const { failed, reason } = yield* Effect.tryPromise(() =>
                       queryRuntime.setMcpServers(mcpServers),
                     ).pipe(
-                      Effect.map((result) => Object.keys(result.errors)),
-                      Effect.orElseSucceed(() => Object.keys(mcpServers)),
+                      Effect.map((result) => ({
+                        failed: Object.keys(result.errors),
+                        reason: "rejected" as const,
+                      })),
+                      Effect.orElseSucceed(() => ({
+                        failed: Object.keys(mcpServers),
+                        reason: "request_failed" as const,
+                      })),
                       Effect.timeoutOrElse({
                         duration: CLAUDE_MCP_REGISTRATION_TIMEOUT,
                         orElse: () =>
@@ -805,6 +875,11 @@ export const layerQueryRunner: Layer.Layer<
                         servers: failed,
                       });
                     }
+                    if (CLAUDE_T3_MCP_SERVER in mcpServers) {
+                      t3McpRegistration = failed.includes(CLAUDE_T3_MCP_SERVER)
+                        ? { outcome: "failed", reason }
+                        : { outcome: "attached" };
+                    }
                   }
                   yield* logProtocolEvent({
                     direction: "outgoing",
@@ -814,6 +889,7 @@ export const layerQueryRunner: Layer.Layer<
                       options: loggedClaudeQueryOptions(input.options),
                     },
                   });
+                  return t3McpRegistration;
                 }),
               ).pipe(
                 Effect.onError(() =>
@@ -822,6 +898,7 @@ export const layerQueryRunner: Layer.Layer<
                     Effect.ignore,
                   ),
                 ),
+                Effect.map((t3McpRegistration) => ({ queryRuntime, t3McpRegistration })),
               ),
             ),
           ),
@@ -953,6 +1030,11 @@ export const layerQueryRunner: Layer.Layer<
               }),
             ),
           ),
+          ...(t3McpRegistration === undefined ? {} : { t3McpRegistration }),
+          mcpServerStatus: Effect.tryPromise({
+            try: () => queryRuntime.mcpServerStatus(),
+            catch: (cause) => queryRunnerError(cause, "mcpServerStatus"),
+          }),
         } satisfies ClaudeAgentSdkQuerySession;
       }),
       forkSession: Effect.fn("ClaudeAgentSdkQueryRunner.forkSession")(function* (
@@ -1236,7 +1318,7 @@ export function claudeMcpQueryOverrides(input: {
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
-      "t3-code": {
+      [CLAUDE_T3_MCP_SERVER]: {
         type: "http",
         url: session.endpoint,
         headers: {
@@ -3665,6 +3747,39 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
+
+        const mcpStatus = yield* Ref.make<OrchestrationV2ProviderMcpStatus | undefined>(undefined);
+        const updateMcpStatus = Effect.fnUntraced(function* (
+          update: Omit<Parameters<typeof claudeMcpStatus>[0], "previous">,
+        ) {
+          const previous = yield* Ref.get(mcpStatus);
+          const next = claudeMcpStatus({ previous, ...update });
+          // Replays and sessions without MCP list no servers; nothing to report.
+          if (previous === undefined && next.t3 === undefined && next.userServerCount === 0) return;
+          if (providerMcpStatusEqual(previous, next)) return;
+          yield* Ref.set(mcpStatus, next);
+          yield* emitProviderEvent({
+            type: "provider_session.updated",
+            driver: CLAUDE_PROVIDER,
+            providerSession: { ...session, mcp: next, updatedAt: yield* DateTime.now },
+          });
+        });
+
+        // A server that drops mid-turn shows in the next init only after the user
+        // has sent another message, so each turn's result asks for the list too.
+        const probeMcpStatus = (querySession: ClaudeAgentSdkQuerySession) =>
+          Effect.gen(function* () {
+            const probe = querySession.mcpServerStatus;
+            if (probe === undefined || (yield* Ref.get(mcpStatus))?.t3 === undefined) return;
+            yield* probe.pipe(
+              Effect.flatMap((servers) =>
+                sdkMessageLock.withPermits(1)(updateMcpStatus({ servers })),
+              ),
+              Effect.timeout("15 seconds"),
+              Effect.ignore,
+              Effect.forkIn(sessionScope),
+            );
+          });
 
         // Claude emits retry progress but no recovered frame; the next
         // assistant message is the first reliable evidence of recovery.
@@ -8150,6 +8265,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               options: queryOptions,
             })
             .pipe(
+              Effect.tapError((error) =>
+                error.method === "setMcpServers"
+                  ? updateMcpStatus({ registration: { outcome: "timeout", reason: "no_response" } })
+                  : Effect.void,
+              ),
               Effect.onError(() =>
                 closedExistingNativeThreadId === nativeThreadId
                   ? Effect.gen(function* () {
@@ -8161,6 +8281,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   : Effect.void,
               ),
             );
+          if (querySession.t3McpRegistration !== undefined) {
+            yield* updateMcpStatus({ registration: querySession.t3McpRegistration });
+          }
           // Marked only after a successful open: a failed create must not
           // leave the runtime believing the native session exists, or the
           // retry would resume a session that was never created.
@@ -8204,6 +8327,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message.permissionMode !== undefined
                   ) {
                     context.permissionMode = message.permissionMode;
+                  }
+                  if (message.type === "system" && message.subtype === "init") {
+                    return updateMcpStatus({ servers: message.mcp_servers }).pipe(
+                      Effect.andThen(handleSdkMessage({ query: querySession, message })),
+                    );
+                  }
+                  if (message.type === "result") {
+                    return probeMcpStatus(querySession).pipe(
+                      Effect.andThen(handleSdkMessage({ query: querySession, message })),
+                    );
                   }
                   return handleSdkMessage({ query: querySession, message });
                 }),

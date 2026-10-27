@@ -30,6 +30,7 @@ import {
   isOrchestrationV2WorkActive,
   OrchestrationV2ProviderGoal,
   ProviderDriverKind,
+  providerMcpStatusEqual,
   type ProviderSetupError,
 } from "@t3tools/contracts";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
@@ -52,6 +53,9 @@ import type {
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderFailure,
   OrchestrationV2ProviderRetry,
+  OrchestrationV2ProviderMcpFailureReason,
+  OrchestrationV2ProviderMcpOutcome,
+  OrchestrationV2ProviderMcpStatus,
   OrchestrationV2ProviderSession,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderTurn,
@@ -1309,6 +1313,78 @@ export const CODEX_THREAD_CONFIG = {
   mcp_optional_startup_grace_ms: 10_000,
 } as const;
 
+/** What Codex last said about one MCP server; `starting` says nothing yet. */
+export type CodexMcpServerState =
+  | { readonly outcome: "starting" }
+  | {
+      readonly outcome: OrchestrationV2ProviderMcpOutcome;
+      readonly reason?: OrchestrationV2ProviderMcpFailureReason;
+    };
+
+/**
+ * Codex reports a startup failure as free text plus an optional reason enum. Only
+ * a timeout is told apart from the text; the text itself never leaves the server.
+ */
+export function codexMcpStartupState(update: {
+  readonly status: "starting" | "ready" | "failed" | "cancelled";
+  readonly error?: string | null;
+  readonly failureReason?: string | null;
+}): CodexMcpServerState {
+  switch (update.status) {
+    case "starting":
+      return { outcome: "starting" };
+    case "ready":
+      return { outcome: "attached" };
+    case "cancelled":
+      return { outcome: "failed", reason: "cancelled" };
+    case "failed":
+      if (update.failureReason === "reauthenticationRequired") {
+        return { outcome: "failed", reason: "needs_auth" };
+      }
+      return /timed? ?out/iu.test(update.error ?? "")
+        ? { outcome: "timeout", reason: "no_response" }
+        : { outcome: "failed", reason: "unknown" };
+  }
+}
+
+/** `runtimeStatus` from `mcpServerStatus/list`, for a t3-code server that had started. */
+export function codexMcpRuntimeState(
+  runtimeStatus: string | null | undefined,
+): CodexMcpServerState | undefined {
+  switch (runtimeStatus) {
+    case "connected":
+      return { outcome: "attached" };
+    case "authenticationRequired":
+      return { outcome: "failed", reason: "needs_auth" };
+    case "failed":
+    case "cancelled":
+    case "notStarted":
+      return { outcome: "disconnected", reason: "connection_lost" };
+    default:
+      return undefined;
+  }
+}
+
+export function codexMcpStatus(
+  servers: ReadonlyMap<string, CodexMcpServerState>,
+): OrchestrationV2ProviderMcpStatus {
+  const t3 = servers.get(CODEX_T3_MCP_SERVER);
+  // Servers still starting are left out until they settle, so startup is one update per server.
+  const userServers = [...servers].filter(
+    ([name, state]) => name !== CODEX_T3_MCP_SERVER && state.outcome !== "starting",
+  );
+  return {
+    ...(t3 === undefined || t3.outcome === "starting"
+      ? {}
+      : { t3: t3.reason === undefined ? { outcome: t3.outcome } : t3 }),
+    userServerCount: userServers.length,
+    failedUserServers: userServers
+      .filter(([, state]) => state.outcome !== "attached")
+      .map(([name]) => name)
+      .toSorted(),
+  };
+}
+
 // T3 wait tools can block for up to an hour. Keep Codex's MCP timeout above
 // that limit so the server's own wait timeout ends a long call.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
@@ -1929,6 +2005,42 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
+
+        // By server name across the session's native threads; the latest report wins.
+        const mcpServers = new Map<string, CodexMcpServerState>();
+        let reportedMcpStatus: OrchestrationV2ProviderMcpStatus | undefined;
+        const updateMcpServer = Effect.fnUntraced(function* (
+          name: string,
+          state: CodexMcpServerState,
+        ) {
+          // A late `starting` from another native thread must not hide a known outcome.
+          if (state.outcome === "starting" && mcpServers.has(name)) return;
+          mcpServers.set(name, state);
+          const next = codexMcpStatus(mcpServers);
+          if (next.t3 === undefined && next.userServerCount === 0) return;
+          if (providerMcpStatusEqual(reportedMcpStatus, next)) return;
+          reportedMcpStatus = next;
+          yield* emitProviderEvent({
+            type: "provider_session.updated",
+            driver: CODEX_PROVIDER,
+            providerSession: { ...session, mcp: next, updatedAt: yield* DateTime.now },
+          });
+        });
+        // Codex reports MCP startup only, so a t3-code server that drops mid-session
+        // shows only in the thread's runtime status, read when each turn ends.
+        const probeT3McpRuntime = (nativeThreadId: string) =>
+          Effect.gen(function* () {
+            if (mcpServers.get(CODEX_T3_MCP_SERVER)?.outcome !== "attached") return;
+            const response = yield* client.request("mcpServerStatus/list", {
+              threadId: nativeThreadId,
+              serverName: CODEX_T3_MCP_SERVER,
+              detail: "toolsAndAuthOnly",
+            });
+            const state = codexMcpRuntimeState(
+              response.data.find((entry) => entry.name === CODEX_T3_MCP_SERVER)?.runtimeStatus,
+            );
+            if (state !== undefined) yield* updateMcpServer(CODEX_T3_MCP_SERVER, state);
+          }).pipe(Effect.timeout("15 seconds"), Effect.ignore, Effect.forkIn(scope), Effect.asVoid);
 
         const emitGoalUpdate = Effect.fnUntraced(function* (nativeThreadId: string) {
           const providerThread = rootProviderThreads.get(nativeThreadId);
@@ -5997,12 +6109,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }),
           );
 
+        yield* client.handleServerNotification("mcpServer/startupStatus/updated", (payload) =>
+          updateMcpServer(payload.name, codexMcpStartupState(payload)),
+        );
+
         yield* client.handleServerNotification("turn/completed", (payload) =>
           Effect.gen(function* () {
             const context = (yield* Ref.get(activeTurns)).get(payload.turn.id);
             if (context === undefined) {
               return;
             }
+            if (context.subagent === null) yield* probeT3McpRuntime(payload.threadId);
             const nativeStatus = mapCodexTurnStatus(payload.turn.status);
             const status =
               nativeStatus === "completed" &&
