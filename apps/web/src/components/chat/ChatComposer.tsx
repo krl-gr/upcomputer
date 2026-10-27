@@ -1136,6 +1136,11 @@ import {
   showsUpComputerComposerFooter,
 } from "../../composerFooter/composerFooterSurface";
 import { UpComputerComposerFooter } from "../../composerFooter/UpComputerComposerFooter";
+import {
+  compactComposerClass,
+  isComposerCompact,
+  useComposerFocusWithin,
+} from "../../composerFooter/compactComposer";
 import { composerShortcutScope } from "../../composerContextRow/composerContextRowSurface";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
@@ -4900,6 +4905,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerSubmissionError !== null ||
     providerInputSubmissionError !== null ||
     hasImageAttachmentAttention;
+  const isComposerFocusWithin = useComposerFocusWithin(composerFormRef);
+  const isComposerCompactRow = isComposerCompact({
+    enabled: settings.composerCompact,
+    isFocusWithin: isComposerFocusWithin,
+    hasMultilinePrompt,
+    hasAttachments: composerContextRecords.size > 0 || pendingSnapShotIds.length > 0,
+    hasPendingRequest: showComposerTopDrawer || showPlanFollowUpPrompt,
+    hasExpandedChrome: composerHasExpandedChrome || isComposerModelPickerOpen,
+  });
   const isComposerResting = shouldUseRestingComposerLayout({
     isExistingThread: routeKind === "server" && activeThreadId !== null,
     isMobileViewport,
@@ -4923,8 +4937,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRestingControlsVisibilityChange(composerControlsVisibleInStrip);
   }, [composerControlsVisibleInStrip, onRestingControlsVisibilityChange]);
   useLayoutEffect(() => {
-    onRestingChange(isComposerResting);
-  }, [isComposerResting, onRestingChange]);
+    onRestingChange(isComposerResting || isComposerCompactRow);
+  }, [isComposerCompactRow, isComposerResting, onRestingChange]);
   const [restingActionsElement, setRestingActionsElement] = useState<HTMLDivElement | null>(null);
   const [restingActionsWidth, setRestingActionsWidth] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -6498,7 +6512,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (isInteractive) return;
 
         setIsComposerScrollCollapsed(false);
-        if (isComposerResting && !target.closest('[data-testid="composer-editor"]')) {
+        if (
+          (isComposerResting || isComposerCompactRow) &&
+          !target.closest('[data-testid="composer-editor"]')
+        ) {
           event.preventDefault();
           setIsComposerFocused(true);
           scheduleComposerFocus();
@@ -6847,6 +6864,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 isComposerApprovalState && "pb-3 sm:pb-4",
                 isComposerCollapsedMobile && "hidden",
                 isComposerResting && "py-2 sm:py-2",
+                compactComposerClass("body", isComposerCompactRow),
               )}
             >
               {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
@@ -7255,7 +7273,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
 
               <div
-                className={cn("relative", isComposerResting && "flex min-w-0 items-center gap-1")}
+                className={cn(
+                  "relative",
+                  isComposerResting && "flex min-w-0 items-center gap-1",
+                  compactComposerClass("prompt", isComposerCompactRow),
+                )}
                 style={
                   isComposerResting && restingActionsWidth !== null
                     ? { paddingRight: `calc(${restingActionsWidth}px + 1rem)` }
@@ -7336,11 +7358,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isComposerResting &&
                         "my-0 max-h-8 min-h-8 overflow-hidden py-0 whitespace-pre! leading-8",
                       isComposerApprovalState && "min-h-10",
+                      compactComposerClass("editor", isComposerCompactRow),
                     )}
                     placeholderClassName={cn(
                       composerLookClass("placeholder"),
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
+                      compactComposerClass("placeholder", isComposerCompactRow),
                     )}
                     onChange={onPromptChangeStable}
                     onVisibleSelectionChange={expandComposerForEditorChangeStable}
@@ -7438,6 +7462,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 runtimeModeOptions={compatibleRuntimeModeOptions}
                 onRuntimeModeChange={handleRuntimeModeChange}
                 primaryActions={composerPrimaryActions}
+                compact={isComposerCompactRow}
                 className={cn(
                   pendingUserInputs.length > 0 && "pt-2",
                   showMobilePendingAnswerActions && "hidden sm:flex",
