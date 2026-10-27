@@ -2,6 +2,7 @@ import type { AppView } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import { useAppErrorTelemetrySender } from "../hooks/useAppErrorTelemetrySender";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../state/environments";
 import {
@@ -15,7 +16,7 @@ import {
 const VIEW_SETTLE_MS = 500;
 
 /**
- * Reports section views and clicks to the primary environment, whose server
+ * Reports section views, clicks and unhandled errors to the primary environment, whose server
  * applies the install's telemetry opt-out. Nothing is queued while it is
  * disconnected; a new connection hears the current view again.
  */
@@ -28,6 +29,7 @@ export function UiAnalyticsCoordinator() {
   const connected = environmentId !== null && connectedEnvironmentIds.includes(environmentId);
   const recordClientEvent = useRecordClientEvent();
   const lastSentView = useRef<AppView | null>(null);
+  useAppErrorTelemetrySender();
 
   useEffect(() => {
     if (!connected) {
