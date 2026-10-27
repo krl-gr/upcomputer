@@ -117,6 +117,8 @@ export const DesktopProductEvent = Schema.Union([
   Schema.Struct({
     /** The backend process ended without the app asking it to. */
     event: Schema.Literal("desktop.backend.exited"),
+    /** The app's own backend, or one it runs elsewhere, such as in WSL. */
+    instance: Schema.Literals(["primary", "other"]),
     /** Null when a signal ended it. */
     code: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))),
     signal: Schema.NullOr(DesktopBackendExitSignal),

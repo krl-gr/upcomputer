@@ -3,6 +3,7 @@ import {
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
   DesktopTelemetryControlMessage,
+  type DesktopProductEvent,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -28,6 +29,7 @@ import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopApp from "../app/DesktopApp.ts";
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
+import * as DesktopProductEvents from "../telemetry/DesktopProductEvents.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
@@ -140,6 +142,7 @@ interface MakeInstanceInput {
     DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]
   >;
   readonly pruneRuntimes?: (distro: string | null, runtimeId: string) => Effect.Effect<void>;
+  readonly productEvents?: (event: DesktopProductEvent) => Effect.Effect<void>;
 }
 
 function makeTestInstance(input: MakeInstanceInput) {
@@ -176,6 +179,12 @@ function makeTestInstance(input: MakeInstanceInput) {
     DesktopWslEnvironment.layerTest(
       input.pruneRuntimes === undefined ? {} : { pruneRuntimes: input.pruneRuntimes },
     ),
+    input.productEvents === undefined
+      ? Layer.empty
+      : Layer.succeed(DesktopProductEvents.DesktopProductEvents, {
+          record: input.productEvents,
+          encoded: Stream.empty,
+        }),
   );
 
   const instance = DesktopBackendManager.makeBackendInstance({
@@ -649,6 +658,57 @@ describe("DesktopBackendManager", () => {
         yield* TestClock.adjust(Duration.seconds(1));
 
         assert.deepEqual(yield* Deferred.await(persistedOutput), ["trailing output\n"]);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("records an unexpected exit with its code or signal, and the restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const recorded = yield* Queue.unbounded<DesktopProductEvent>();
+        const exits = [
+          Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              module: "ChildProcess",
+              method: "exitCode",
+              cause: new Error("Process interrupted due to receipt of signal: 'SIGKILL'"),
+            }),
+          ),
+        ];
+        const spawned = yield* Ref.make(0);
+        const layerSpawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Ref.getAndUpdate(spawned, (count) => count + 1).pipe(
+              Effect.map((count) => makeProcess({ exitCode: exits[count] ?? Effect.never })),
+            ),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          spawnerLayer: layerSpawner,
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          productEvents: (event) => Queue.offer(recorded, event).pipe(Effect.asVoid),
+        });
+
+        yield* instance.start;
+        const first = yield* Queue.take(recorded);
+        // The restart waits for its backoff.
+        yield* TestClock.adjust(Duration.seconds(1));
+        const second = yield* Queue.take(recorded);
+
+        assert.deepEqual(
+          [first, second].map((event) =>
+            event.event === "desktop.backend.exited"
+              ? [event.instance, event.code, event.signal, event.wasReady, event.restarted]
+              : event.event,
+          ),
+          [
+            ["primary", 1, null, false, true],
+            ["primary", null, "SIGKILL", false, true],
+          ],
+        );
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );

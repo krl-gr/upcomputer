@@ -259,6 +259,7 @@ it.layer(NodeServices.layer)("ErrorTelemetry", (it) => {
         Effect.gen(function* () {
           yield* telemetry.reportDesktopEvent({
             event: "desktop.backend.exited",
+            instance: "primary",
             code: null,
             signal: "SIGKILL",
             uptimeMs: 12_000,
