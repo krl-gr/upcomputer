@@ -35,6 +35,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 import {
   ProjectStoreV2,
   ThreadManagementService,
@@ -128,6 +129,16 @@ export class BotService extends Context.Service<
     readonly list: Effect.Effect<ReadonlyArray<Bot>, TaskError>;
     readonly recover: Effect.Effect<void, TaskError>;
     readonly save: (input: BotWriteInput) => Effect.Effect<Bot, TaskError>;
+    /**
+     * After an agent write outside the bot's settings: a bot's chat takes the bot's name. The
+     * agent is saved either way, so a failure is only logged; the next start renames the chat.
+     */
+    readonly nameChat: (agentId: TaskAgentId) => Effect.Effect<void>;
+    /**
+     * Renaming a bot's chat renames the bot. Runs for as long as the server does, from
+     * after `recover`, which gives drifted chats their bot's name.
+     */
+    readonly followChatRenames: Effect.Effect<void, TaskError>;
     readonly remove: (agentId: TaskAgentId) => Effect.Effect<void, TaskError>;
     readonly memory: (agentId: TaskAgentId) => Effect.Effect<ReadonlyArray<BotMemory>, TaskError>;
     /** One bounded page of the memories a turn in `projectId` sees, in selection order. */
@@ -437,6 +448,55 @@ const make = Effect.gen(function* () {
         worktreePath: null,
       });
     });
+  // A bot has one name, its agent's; its chat's title follows it, and renaming the chat renames
+  // the bot. This holds the title each bot chat was last seen with: a metadata event repeats
+  // the whole thread, so only a title that differs from it is a rename. It moves only with the
+  // events, so an event still carrying the old title after a rename of the bot is no rename;
+  // comparing with the bot's or the chat's current name would let such an event undo it.
+  const chatTitles = new Map<string, string>();
+  const trackChat = (threadId: ThreadId, title: string) => {
+    if (!chatTitles.has(threadId)) chatTitles.set(threadId, title);
+  };
+  /** `baseline` sets the title the chat's next events are compared with. */
+  const nameChatOf = (row: BotRow, baseline: boolean) =>
+    Effect.gen(function* () {
+      const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
+      if (Option.isNone(agent)) return;
+      const threadId = ThreadId.make(row.threadId);
+      if (baseline) chatTitles.set(threadId, agent.value.name);
+      else trackChat(threadId, agent.value.name);
+      const { thread } = yield* threads.getThreadRecords(threadId, []);
+      if (thread.deletedAt !== null || thread.title === agent.value.name) return;
+      yield* threads.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.randomUUIDv4()}`),
+        threadId,
+        title: agent.value.name,
+      });
+    });
+  const nameFromChat = (threadId: ThreadId, title: string) =>
+    Effect.gen(function* () {
+      const row = (yield* rows).find((item) => item.threadId === threadId);
+      if (!row) return;
+      const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
+      if (Option.isNone(agent) || agent.value.name === title) return;
+      yield* repository.upsertAgent({ ...agent.value, name: title, updatedAt: yield* now });
+    });
+  const followChatRenames = Stream.suspend(() => threads.streamDomainEvents).pipe(
+    Stream.runForEach((event) => {
+      if (event.type !== "thread.metadata-updated") return Effect.void;
+      const known = chatTitles.get(event.threadId);
+      const title = event.payload.title;
+      if (known === undefined || known === title) return Effect.void;
+      chatTitles.set(event.threadId, title);
+      return nameFromChat(event.threadId, title).pipe(
+        lock.withPermits(1),
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not rename a bot after its chat", { cause }),
+        ),
+      );
+    }),
+  );
   const save = (raw: BotWriteInput) =>
     Effect.gen(function* () {
       const input = yield* decodeBotWrite(raw);
@@ -567,6 +627,7 @@ const make = Effect.gen(function* () {
       yield* ensureThread(bot, existing ? existing.adopted === 1 : input.threadId !== undefined);
       const thread = (yield* threads.getThreadRecords(threadId, [])).thread;
       const commandSuffix = yield* crypto.randomUUIDv4();
+      trackChat(threadId, input.name);
       if (thread.projectId !== input.projectId)
         yield* threads.dispatch({
           type: "thread.project.move",
@@ -764,6 +825,18 @@ const make = Effect.gen(function* () {
       Effect.mapError(asError),
     ),
     recover: rows.pipe(
+      // Chats that drifted while nothing kept them in step take their bot's name. This sets
+      // every bot's baseline for `followChatRenames`, so it runs even when a chat is missing.
+      Effect.tap((items) =>
+        Effect.forEach(
+          items,
+          (row) =>
+            nameChatOf(row, true).pipe(
+              Effect.catch((cause) => Effect.logWarning("Could not name a bot's chat", { cause })),
+            ),
+          { discard: true },
+        ).pipe(lock.withPermits(1)),
+      ),
       Effect.flatMap((items) =>
         Effect.forEach(items, (row) =>
           decode(row).pipe(Effect.flatMap((bot) => ensureThread(bot, row.adopted === 1))),
@@ -773,6 +846,18 @@ const make = Effect.gen(function* () {
       Effect.mapError(asError),
     ),
     save: (input) => save(input).pipe(lock.withPermits(1), Effect.mapError(asError)),
+    nameChat: (agentId) =>
+      rows.pipe(
+        Effect.flatMap((items) => {
+          const row = items.find((item) => item.agentId === agentId);
+          return row ? nameChatOf(row, false) : Effect.void;
+        }),
+        lock.withPermits(1),
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not rename a bot's chat after its agent", { cause }),
+        ),
+      ),
+    followChatRenames: followChatRenames.pipe(Effect.mapError(asError)),
     forThread: (threadId) => forThread(threadId).pipe(Effect.mapError(asError)),
     memory: (id) => memory(id).pipe(Effect.mapError(asError)),
     memoryPage: (agentId, projectId, offset) =>
@@ -802,6 +887,7 @@ const make = Effect.gen(function* () {
             yield* repository.deleteAgent({ id: agentId });
           }),
         );
+        chatTitles.delete(bot.threadId);
         yield* taskAgents.scheduleAgentChanged({ agent: bot.agent, reason: "deleted" });
       }).pipe(memoryLock.withPermits(1), lock.withPermits(1), Effect.mapError(asError)),
     // A failed lookup cannot tell a bot chat from any other thread, and every thread's turn

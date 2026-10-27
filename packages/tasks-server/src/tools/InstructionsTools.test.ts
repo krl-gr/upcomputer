@@ -47,6 +47,7 @@ import { TaskToolService, TaskToolServiceLive } from "./TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
+import { BotService } from "../bots/BotService.ts";
 
 const directories: string[] = [];
 
@@ -126,6 +127,7 @@ async function harness(options: { readonly allChats?: string } = {}) {
         Layer.succeed(ThreadManagementService, {} as never),
         Layer.succeed(InboxProject, {} as never),
         Layer.succeed(TaskScheduleService, {} as never),
+        Layer.succeed(BotService, {} as never),
         Layer.succeed(ProjectStoreV2, {
           getShell: (id: string) =>
             Effect.succeed(

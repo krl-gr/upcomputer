@@ -189,6 +189,13 @@ function BotForm({
     () => bot?.agent.id ?? TaskAgentId.make(threadId ? `bot:${threadId}` : `bot:${randomUUID()}`),
   );
   const [name, setName] = useState(bot?.agent.name ?? source?.title ?? "New bot");
+  // A rename made elsewhere, such as in the chat or by an agent, shows here unless the field
+  // holds typing not saved yet. Left stale, the next save of another field would undo it.
+  const [savedName, setSavedName] = useState(bot?.agent.name);
+  if (bot && bot.agent.name !== savedName) {
+    setSavedName(bot.agent.name);
+    if (name === savedName) setName(bot.agent.name);
+  }
   const [appearance, setAppearance] = useState<BotAppearance>(
     () => bot?.appearance ?? defaultBotAppearance(id),
   );

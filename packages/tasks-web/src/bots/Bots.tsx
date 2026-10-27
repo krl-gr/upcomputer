@@ -1,12 +1,22 @@
 import {
   useEffect,
+  useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
 import {
@@ -51,6 +61,10 @@ import {
   sidebarListRowTitleClassName,
 } from "../../../../apps/web/src/sidebarThreadRow/sidebarListRow.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
+import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
+import { useEnvironmentScope } from "../../../../apps/web/src/state/session.ts";
+import { threadEnvironment } from "../../../../apps/web/src/state/threads.ts";
+import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orchestration-command.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
@@ -233,6 +247,8 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
  * look and behave alike: face, status, name, then the run counts of the tasks
  * its chat started, with the settings button where a thread row has its "…".
  * The row opens the bot's chat. The status shows only while the bot is not idle.
+ * A double-click renames the bot's chat as on a thread row, and the server renames
+ * the bot with it.
  */
 function BotRow({
   environmentId,
@@ -248,8 +264,37 @@ function BotRow({
   readonly onSettings: () => void;
 }) {
   const status = useBotStatus(environmentId, bot);
+  const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const renameDone = useRef(false);
+  const commitRename = (title: string) => {
+    renameDone.current = true;
+    setRenaming(null);
+    const trimmed = title.trim();
+    if (trimmed.length === 0) {
+      toastManager.add({ type: "warning", title: "Bot name cannot be empty" });
+      return;
+    }
+    if (trimmed === bot.agent.name) return;
+    void updateThreadMetadata({
+      environmentId,
+      input: { threadId: bot.threadId, title: trimmed },
+    }).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Failed to rename bot",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    });
+  };
   const isRowEvent = (event: ReactMouseEvent | ReactKeyboardEvent) =>
-    (event.target as Element).closest("button") === null;
+    (event.target as Element).closest("button, input") === null;
   const nameClassName = sidebarListRowTitleClassName(active);
   return (
     <div
@@ -259,6 +304,13 @@ function BotRow({
       className={cn(SIDEBAR_LIST_ROW, active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST)}
       onClick={(event) => {
         if (isRowEvent(event)) onOpen();
+      }}
+      onDoubleClick={(event) => {
+        if (!canRename || renaming !== null || !isRowEvent(event)) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        renameDone.current = false;
+        setRenaming(bot.agent.name);
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -273,7 +325,31 @@ function BotRow({
         <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
       </span>
       <ThreadStatusLabel status={status.label} />
-      {status.detail ? (
+      {renaming !== null ? (
+        <input
+          autoFocus
+          value={renaming}
+          aria-label="Bot name"
+          onChange={(event) => setRenaming(event.target.value)}
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitRename(renaming);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              renameDone.current = true;
+              setRenaming(null);
+            }
+          }}
+          onBlur={() => {
+            if (!renameDone.current) commitRename(renaming);
+          }}
+          className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
+        />
+      ) : status.detail ? (
         <Tooltip>
           <TooltipTrigger render={<span className={nameClassName} />}>
             {bot.agent.name}

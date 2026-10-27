@@ -89,6 +89,7 @@ import {
   TaskToolContextResolver,
 } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { BotService } from "../bots/BotService.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -495,6 +496,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService;
   const inbox = yield* InboxProject;
   const schedule = yield* TaskScheduleService;
+  const bots = yield* BotService;
   const crypto = yield* Crypto.Crypto;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
@@ -1204,6 +1206,7 @@ const make = Effect.gen(function* () {
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
+          if (saved.name !== existing.value.name) yield* bots.nameChat(saved.id);
           return {
             isError: false,
             text: json({

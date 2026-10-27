@@ -106,11 +106,13 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   const store = storeFor(environmentId);
   store.listeners.add(listener);
   if (store.listeners.size === 1) {
-    // Bots change through this client's writes, which refresh on their own; other clients
-    // and background runs reach the list through run changes. Task edits never do.
+    // Bots change through this client's writes, which refresh on their own; other clients,
+    // agents' tools and background runs reach the list through agent and run changes. Task
+    // edits never do.
     store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
       (change) => {
-        if (change.kind === "sync" || change.runsChanged) void refresh(environmentId, store);
+        if (change.kind === "sync" || change.runsChanged || change.agentsChanged)
+          void refresh(environmentId, store);
       },
       (cause) => publish(store, { ...store.list, error: errorText(cause) }),
     );
