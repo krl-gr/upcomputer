@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import type { Task, TaskAutomation } from "@t3tools/tasks-contracts/v1";
+import { AnalyticsService } from "../../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService, type TaskAgentServiceShape } from "../agents/TaskAgentService.ts";
 import { TaskRepository, type TaskRepositoryShape } from "../persistence/TaskRepository.ts";
 import { TaskAutomationService, TaskAutomationServiceLive } from "./TaskAutomationService.ts";
@@ -25,6 +26,8 @@ interface RepositoryCalls {
   readonly tasks: Task[];
   /** Any full-row write, which a scheduler pass must never perform. */
   readonly wideWrites: string[];
+  /** Product events the pass recorded. */
+  readonly events: Array<{ event: string; properties: unknown }>;
 }
 
 interface FakeOptions {
@@ -49,6 +52,7 @@ function fakeRepository(options: FakeOptions): {
     parks: [],
     tasks: [],
     wideWrites: [],
+    events: [],
   };
   const unused = () => Effect.die("unused repository method");
   const recordWideWrite = (method: string) => (input: { id?: string }) =>
@@ -176,7 +180,19 @@ async function runTick(options: FakeOptions): Promise<RepositoryCalls> {
       }).pipe(
         Effect.provide(
           TaskAutomationServiceLive.pipe(
-            Layer.provideMerge(Layer.mergeAll(layer, agentsLayer, deterministicCrypto())),
+            Layer.provideMerge(
+              Layer.mergeAll(
+                layer,
+                agentsLayer,
+                deterministicCrypto(),
+                Layer.mock(AnalyticsService)({
+                  enabled: true,
+                  sessionId: undefined,
+                  record: (event, properties) =>
+                    Effect.sync(() => void calls.events.push({ event, properties })),
+                }),
+              ),
+            ),
           ),
         ),
       ),
@@ -316,4 +332,41 @@ test("a skipped catch-up window claims its slot but creates no task", async () =
   );
   NodeAssert.equal(calls.tasks.length, 0);
   NodeAssert.equal(calls.scheduleWrites.length, 1);
+});
+
+test("each fire reports schedule.fired with its outcome and reason, never the automation", async () => {
+  const fired = async (options: FakeOptions) =>
+    (await runTick(options)).events.map(({ event, properties }) => {
+      NodeAssert.equal(event, "schedule.fired");
+      NodeAssert.doesNotMatch(JSON.stringify(properties), /automation-1|Daily check/);
+      return properties;
+    });
+  const base = { kind: "automation", trigger: "schedule" };
+
+  NodeAssert.deepEqual(await fired({ automations: [automation()] }), [
+    { ...base, outcome: "started", reason: "task_created" },
+  ]);
+  NodeAssert.deepEqual(await fired({ automations: [automation()], openTaskCount: 1 }), [
+    { ...base, outcome: "skipped", reason: "open_task" },
+  ]);
+  NodeAssert.deepEqual(await fired({ automations: [automation({ catchUpPolicy: "skip" })] }), [
+    { ...base, outcome: "skipped", reason: "catch_up_missed" },
+  ]);
+  NodeAssert.deepEqual(await fired({ automations: [automation()], failTaskCreation: true }), [
+    { ...base, outcome: "failed", reason: "create_failed", parked: false },
+  ]);
+  NodeAssert.deepEqual(
+    await fired({
+      automations: [automation({ schedule: { cron: "0 99 * * *", timezone: "UTC" } })],
+    }),
+    [{ ...base, outcome: "failed", reason: "invalid_schedule", parked: true }],
+  );
+  // Another pass already fired this slot.
+  NodeAssert.deepEqual(
+    await fired({
+      automations: [automation()],
+      claimedSlots: new Set(["2020-01-01T09:00:00.000Z"]),
+    }),
+    [],
+  );
 });

@@ -10,8 +10,9 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
-import { forkParked } from "../../../../apps/server/src/extensionApi.ts";
+import { AnalyticsService, forkParked } from "../../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -41,8 +42,23 @@ const make = Effect.gen(function* () {
   const repository = yield* TaskRepository;
   const agents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
+  const analytics = yield* Effect.serviceOption(AnalyticsService);
 
   const now = Effect.map(DateTime.now, DateTime.formatIso);
+  const recordFired = (
+    outcome: "started" | "skipped" | "failed",
+    reason: "task_created" | "open_task" | "catch_up_missed" | "create_failed" | "invalid_schedule",
+    parked = false,
+  ) =>
+    Option.isSome(analytics)
+      ? analytics.value.record("schedule.fired", {
+          kind: "automation",
+          trigger: "schedule",
+          outcome,
+          reason,
+          ...(outcome === "failed" ? { parked } : {}),
+        })
+      : Effect.void;
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
 
@@ -184,12 +200,14 @@ const make = Effect.gen(function* () {
           null,
           "A task from this automation is not archived yet.",
         );
+        yield* recordFired("skipped", "open_task");
         yield* persistSchedule(automation, { nextRunAt });
         return;
       }
 
       const task = yield* createTaskForSlot(automation, slot);
       yield* recordOutcome(automation, slot, "created", task.id, null);
+      yield* recordFired("started", "task_created");
       yield* persistSchedule(automation, {
         nextRunAt,
         fired: { at: claimedAt, slot, taskId: task.id },
@@ -200,6 +218,7 @@ const make = Effect.gen(function* () {
           const failureCount = automation.failureCount + 1;
           const message = `Automation '${automation.name}' failed to fire: ${String(cause)}`;
           yield* recordOutcome(automation, slot, "failed", null, message).pipe(Effect.ignore);
+          yield* recordFired("failed", "create_failed", failureCount >= AUTOMATION_FAILURE_LIMIT);
           // Always advance the schedule, otherwise a permanently broken
           // automation would retry every tick for as long as the server runs.
           if (failureCount >= AUTOMATION_FAILURE_LIMIT) {
@@ -229,6 +248,7 @@ const make = Effect.gen(function* () {
           // A schedule that no longer parses cannot be re-armed, so park it
           // rather than logging the same failure on every tick.
           yield* park(automation, decision.message, automation.failureCount + 1);
+          yield* recordFired("failed", "invalid_schedule", true);
           yield* Effect.logWarning("Disabled a task automation with an invalid schedule", {
             automationId: automation.id,
             schedule: describeSchedule(automation.schedule),
@@ -252,6 +272,7 @@ const make = Effect.gen(function* () {
           });
           yield* persistSchedule(automation, { nextRunAt: decision.nextRunAt });
           if (!claimed) return;
+          yield* recordFired("skipped", "catch_up_missed");
           yield* Effect.logInfo("Skipped a missed task automation slot", {
             automationId: automation.id,
             slot: decision.slot,

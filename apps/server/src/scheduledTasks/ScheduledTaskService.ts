@@ -23,6 +23,7 @@ import {
   type ScheduledTaskUpsertInput,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
@@ -63,6 +64,7 @@ const WEBHOOK_DELIVERY_LOG_PROMPT_LIMIT = 64 * 1024;
 const WEBHOOK_MAX_QUEUED_PER_TASK = 20;
 /** Accepted deliveries per task per minute, enforced here as well as on the relay because the tunnel hostname is public too. */
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
+const REJECTED_WEBHOOK_REPORT_MS = 60_000;
 
 interface WebhookOrigin {
   readonly relayHookBaseUrl: string | null;
@@ -91,7 +93,31 @@ export class ScheduledTaskWebhookOrigin extends Context.Reference<Effect.Effect<
 
 class WebhookDeliverySkipped extends Data.TaggedError("WebhookDeliverySkipped")<{
   readonly reason: string;
+  readonly code: "deleted" | "replaced" | "trigger_changed" | "paused";
 }> {}
+
+/** Why a scheduled task run started or did not, for `schedule.fired`. */
+type ScheduleFiredReason =
+  | "new_thread"
+  | "existing_thread"
+  | "dispatch_failed"
+  | "already_running"
+  | "missed"
+  | WebhookDeliverySkipped["code"];
+
+/** `webhook.received` groups each delivery outcome; the outcome itself is its reason. */
+const WEBHOOK_RECEIVED_OUTCOMES = {
+  accepted: "accepted",
+  duplicate: "accepted",
+  rate_limited: "rejected",
+  queue_full: "rejected",
+  disabled: "rejected",
+  rejected_signature: "rejected",
+  expired: "rejected",
+  not_found: "rejected",
+  prompt_too_long: "failed",
+  error: "failed",
+} as const satisfies Record<WebhookDeliveryOutcome, "accepted" | "rejected" | "failed">;
 
 interface RateWindow {
   readonly accepted: ReadonlyArray<number>;
@@ -366,6 +392,19 @@ export const layer = Layer.effect(
     const secretRequests = yield* SecretRequests.SecretRequests;
     // Absent only where a test builds this service without the server runtime.
     const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
+    const recordFired = (input: {
+      readonly trigger: "scheduled" | "manual" | "webhook";
+      readonly outcome: "started" | "skipped" | "failed";
+      readonly reason: ScheduleFiredReason;
+    }) =>
+      Option.isSome(analytics)
+        ? analytics.value.record("schedule.fired", {
+            kind: "scheduled_task",
+            trigger: input.trigger === "scheduled" ? "schedule" : input.trigger,
+            outcome: input.outcome,
+            reason: input.reason,
+          })
+        : Effect.void;
     const scheduler = yield* Scheduler.Scheduler;
     const readWebhookOrigin = yield* ScheduledTaskWebhookOrigin;
     const webhookPermits = yield* Ref.make<ReadonlyMap<ScheduledTaskId, Semaphore.Semaphore>>(
@@ -678,6 +717,7 @@ export const layer = Layer.effect(
         return [true, next] as const;
       });
       if (!reserved) {
+        yield* recordFired({ trigger, outcome: "skipped", reason: "already_running" });
         if (trigger !== "scheduled") {
           return yield* taskError("Schedule task is already running.", { taskId: task.id });
         }
@@ -696,6 +736,7 @@ export const layer = Layer.effect(
           if (webhook !== undefined) {
             return yield* new WebhookDeliverySkipped({
               reason: "The task was deleted before this delivery ran.",
+              code: "deleted",
             });
           }
           if (trigger !== "scheduled") {
@@ -717,15 +758,24 @@ export const layer = Layer.effect(
         // recreated under the same id, or switched to another trigger while
         // it waited for its turn.
         if (webhook !== undefined) {
-          const reason =
+          const skipped =
             active.createdAt !== task.createdAt
-              ? "The task was replaced before this delivery ran."
+              ? ({
+                  reason: "The task was replaced before this delivery ran.",
+                  code: "replaced",
+                } as const)
               : active.schedule.type !== "webhook"
-                ? "The task's trigger changed before this delivery ran."
+                ? ({
+                    reason: "The task's trigger changed before this delivery ran.",
+                    code: "trigger_changed",
+                  } as const)
                 : !active.enabled
-                  ? "The task was paused before this delivery ran."
+                  ? ({
+                      reason: "The task was paused before this delivery ran.",
+                      code: "paused",
+                    } as const)
                   : null;
-          if (reason !== null) return yield* new WebhookDeliverySkipped({ reason });
+          if (skipped !== null) return yield* new WebhookDeliverySkipped(skipped);
         }
 
         yield* markRunning(active.id, startedAtIso);
@@ -784,6 +834,15 @@ export const layer = Layer.effect(
         const runSucceeded = result._tag === "Success";
         const lastRunStatus = runSucceeded ? ("succeeded" as const) : ("failed" as const);
         const lastRunError = runSucceeded ? null : errorMessage(result.cause);
+        yield* recordFired({
+          trigger,
+          outcome: runSucceeded ? "started" : "failed",
+          reason: !runSucceeded
+            ? "dispatch_failed"
+            : active.threadId === null
+              ? "new_thread"
+              : "existing_thread",
+        });
         const current = yield* findTask(task.id);
         const scheduleSource = current ?? task;
         const completed: ScheduledTask = {
@@ -827,6 +886,7 @@ export const layer = Layer.effect(
       now: DateTime.DateTime,
     ) {
       const next = nextRunAt(task, now);
+      yield* recordFired({ trigger: "scheduled", outcome: "skipped", reason: "missed" });
       yield* Effect.logInfo("Skipping missed schedule task run", {
         taskId: task.id,
         missedRunAt: task.nextRunAt,
@@ -1319,6 +1379,7 @@ export const layer = Layer.effect(
       });
 
     const serviceScope = yield* Effect.scope;
+    const lastRejectedReportMs = new Map<WebhookDeliveryOutcome, number>();
 
     const observeDelivery = (
       request: WebhookTriggerRequest,
@@ -1333,6 +1394,21 @@ export const layer = Layer.effect(
           "scheduled_task.webhook.source": source,
         });
         yield* Metrics.increment(Metrics.webhookDeliveriesTotal, { outcome, source });
+        const group = WEBHOOK_RECEIVED_OUTCOMES[outcome];
+        const nowMs = yield* Clock.currentTimeMillis;
+        // Anyone who knows the hostname can send rejected requests, so those are
+        // reported at most once a minute per reason.
+        const throttled =
+          group === "rejected" &&
+          nowMs - (lastRejectedReportMs.get(outcome) ?? -Infinity) < REJECTED_WEBHOOK_REPORT_MS;
+        if (Option.isSome(analytics) && !throttled) {
+          if (group === "rejected") lastRejectedReportMs.set(outcome, nowMs);
+          yield* analytics.value.record("webhook.received", {
+            outcome: group,
+            reason: outcome,
+            source,
+          });
+        }
         if (request.receivedAt !== undefined && receivedAt !== undefined && now !== undefined) {
           const heldMs = Math.max(
             0,
@@ -1569,6 +1645,9 @@ export const layer = Layer.effect(
               Effect.catchTags({
                 WebhookDeliverySkipped: (skipped) =>
                   runOutcome("skipped").pipe(
+                    Effect.andThen(
+                      recordFired({ trigger: "webhook", outcome: "skipped", reason: skipped.code }),
+                    ),
                     Effect.andThen(markDeliveryFailed(deliveryId, skipped.reason)),
                   ),
               }),
