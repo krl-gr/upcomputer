@@ -10,7 +10,10 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { TaskThreadTasksResult } from "@t3tools/tasks-contracts/v1";
-import type { ExperimentalWebThreadRowAccessoryProps } from "../../../../apps/web/src/extensionApi.ts";
+import type {
+  ExperimentalWebThreadAccessoryProps,
+  ExperimentalWebThreadRowAccessoryProps,
+} from "../../../../apps/web/src/extensionApi.ts";
 import {
   Menu,
   MenuItem,
@@ -113,9 +116,9 @@ function Counts({
         className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
         data-task-run-counts={threadId}
         aria-label={summary}
-        title={[summary, "Runs with recorded origin, including previous attempts"]
-          .filter(Boolean)
-          .join("\n")}
+        title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
+          "\n",
+        )}
         onPointerDown={stopRowEvent}
         onClick={stopRowEvent}
         onKeyDown={stopRowKeyActivation}
@@ -134,6 +137,56 @@ function Counts({
       </MenuPopup>
     </Menu>
   );
+}
+
+/** How long a person must look at a thread before leaving it marks its runs seen. */
+const SEEN_DWELL_MS = 1000;
+
+/**
+ * Marks the open thread's finished runs seen when the person stops looking at it: they leave
+ * the thread, or the window loses focus or is hidden. Only a look of at least `SEEN_DWELL_MS`
+ * counts, so skimming past threads keeps their counts. Runs that finish while the window is in
+ * the background stay unseen until the next look.
+ */
+function ThreadSeen({ store, threadId }: { store: ThreadRunCountsStore; threadId: ThreadId }) {
+  useEffect(() => {
+    // Following the thread keeps its counts in the store until the last check below.
+    const unfollow = store.subscribe(threadId, () => {});
+    let lookingSince: number | null = null;
+    const looking = () => document.visibilityState === "visible" && document.hasFocus();
+    const end = () => {
+      if (lookingSince === null) return;
+      const looked = Date.now() - lookingSince >= SEEN_DWELL_MS;
+      lookingSince = null;
+      if (looked) store.markSeen(threadId);
+    };
+    const update = () => {
+      if (!looking()) end();
+      else lookingSince ??= Date.now();
+    };
+    update();
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    window.addEventListener("pagehide", end);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+      window.removeEventListener("pagehide", end);
+      document.removeEventListener("visibilitychange", update);
+      end();
+      unfollow();
+    };
+  }, [store, threadId]);
+  return null;
+}
+
+/** In the open thread's header: leaving the thread marks its finished runs seen. */
+export function TaskThreadSeen(props: ExperimentalWebThreadAccessoryProps) {
+  useTasksWebAccessRevision();
+  if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
+  const client = readTasksWebClient(props.environmentId);
+  return <ThreadSeen store={threadRunCountsStore(client)} threadId={props.threadId} />;
 }
 
 export function TaskThreadRunCounts(props: ExperimentalWebThreadRowAccessoryProps) {
