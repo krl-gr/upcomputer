@@ -2,12 +2,15 @@
 
 The T3 Code server sends product usage events to PostHog, associated with a hashed account or
 installation identifier. Events include the provider, model, reasoning effort, permission mode,
-turn result, duration, and main-agent token totals when available. During setup they also include
+turn result and, for a failed turn, a category of why (such as a usage limit), duration, and
+main-agent token totals when available. During setup they also include
 which welcome steps you reached, which agent you tried to install or sign in to, and whether each
 agent CLI is installed (with its version) and signed in. In the app they include which sections
 you open (such as Tasks, Agents, or Settings), how long a window stays connected, which buttons
 you click, and when you first create a task, agent, automation, or scheduled task. A button is
-reported by a fixed name from the app's code, never by its text.
+reported by a fixed name from the app's code, never by its text. Every event also says what
+kind of build sent it (such as a release or a test build) and carries a random ID that is
+new each time the app or server starts, so events from one session can be grouped.
 
 Events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
 names or titles of your threads, tasks, projects, or agents, raw provider events, or child-agent
@@ -18,6 +21,13 @@ starting it. This stops product events from being recorded or sent.
 
 The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
+
+## Mark a team or test device
+
+If you work on Up.computer or test it, open **Settings > General > Diagnostics**, select the
+environment, and turn on **Internal device** under **Product usage data**. Its events are then
+marked as internal, so they can be left out of product numbers. The setting is kept across
+updates. Turn it off the same way.
 
 ## Export diagnostics to your own receiver
 

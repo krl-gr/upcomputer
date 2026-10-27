@@ -11,6 +11,26 @@ session. Clients do not load the PostHog browser SDK. UI events go through the
 events. Client-use events require an authenticated connection, so visiting the hosted
 app without connecting does not count as product use.
 
+## Test traffic
+
+Most identities in the project were our own dev, e2e and test-build runs, so every
+event carries `buildKind`, `isInternal` and `sessionId`. Product reports should keep
+`isInternal = false` and the build kinds real users run (`stable`, `rc`, `nightly`).
+
+- `buildKind` comes from build metadata only. The packaged desktop app derives it from
+  its version and passes it to its backend; an unpackaged app is `dev`, and its
+  `desktopVersion` is the workspace version, since Electron then answers
+  `app.getVersion()` with its own. Other servers classify themselves, and a server run
+  from source (no bundle define) is `dev`. Local test and demo builds are `localtest`,
+  preview builds `nightly`. `releaseChannel` is only set by builds with an update feed.
+- `isInternal` is the `telemetry-internal-device` file in the state directory, read for
+  every event. It is a file because env vars do not reach apps started from Finder or
+  the Dock, and the state directory survives updates. Settings > Diagnostics has the
+  switch; creating the file by hand works too.
+- `sessionId` is a random UUID per desktop app launch, kept across backend restarts, or
+  per server start. Client events share the server's session, so one session can span
+  several windows and devices.
+
 ## Attribution boundaries
 
 Client dimensions belong to the event's WebSocket connection. A server-global
@@ -76,7 +96,7 @@ whose own agent, or own OpenCode, already worked, so nothing was downloaded. The
 `onboarding.agent.terminal_closed` with `installed: false` after an install is an
 install that did not finish, or a CLI outside the PATH the server searches. `composer.provider_setup.*` records where "Open
 provider settings" sends them. `provider.readiness.failed.errorCategory` explains a
-session that would not open, and `app.first_thread_created` and
+session that would not open (see Failure categories), and `app.first_thread_created` and
 `app.first_message_sent` mark first use. Later first uses are `app.first_task_created`,
 `app.first_agent_created`, `app.first_automation_created`,
 `app.first_scheduled_task_created` (`trigger` is `schedule` or `webhook`),
@@ -85,6 +105,21 @@ the app or asked an agent, which used a task tool; tasks that imports, automatio
 bots create on their own are not first uses. Milestones are claimed with marker files in
 the state directory, and only for installs first launched by a build that has them,
 so an upgraded install does not report a second first thread.
+
+## Failure categories
+
+`provider.readiness.failed.errorCategory` is read from error tags, JSON-RPC and errno
+codes and structured fields, never from text: matching messages classified every
+failure as `unknown`, and adapter errors nest through wrappers and PlatformError
+reasons. The [classifier](../../apps/server/src/telemetry/ProviderTelemetry.ts) takes
+the outermost decisive error. A new failure that only its message tells apart needs a
+structured field, as `OpenCodeRuntimeError.reason` has. Claude and Cursor open sessions
+lazily, so their missing CLI or sign-in failures show up at the first turn instead.
+
+`provider.turn.completed` carries `failureClass` and `retryable` for failed and
+interrupted turns. The usage arrives with `provider_turn.updated` and the failure with
+`turn.terminal`, in either order, so the ingestor records the turn once it has both, or
+after 30 seconds without a failure class.
 
 ## Views and clicks
 
