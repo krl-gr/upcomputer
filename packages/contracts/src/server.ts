@@ -23,6 +23,7 @@ import {
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
 import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
+import { AppErrorReport } from "./errorTelemetry.ts";
 import { ModelCapabilities } from "./model.ts";
 import { RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
@@ -1032,6 +1033,11 @@ export const ClientTelemetryEvent = Schema.Union([
   Schema.Struct({
     event: Schema.Literal("app.view.opened"),
     view: AppView,
+  }),
+  Schema.Struct({
+    /** An error the client did not handle; see `AppErrorReport`. */
+    event: Schema.Literal("app.error"),
+    ...AppErrorReport.fields,
   }),
   Schema.Struct({
     event: Schema.Literal("ui.click"),

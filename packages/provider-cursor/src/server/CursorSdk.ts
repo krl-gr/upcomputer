@@ -43,6 +43,11 @@ function onUnhandledRejection(reason: unknown): void {
     return;
   }
   console.error(reason);
+  // Node's own crash on an unhandled rejection notifies these observers first;
+  // exiting here instead must too, or crash reporting never sees it.
+  for (const listener of process.listeners("uncaughtExceptionMonitor")) {
+    listener(reason as Error, "unhandledRejection");
+  }
   process.exit(1);
 }
 

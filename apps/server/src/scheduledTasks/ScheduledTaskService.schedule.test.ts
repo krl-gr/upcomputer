@@ -64,6 +64,8 @@ it.effect("reports a created schedule task as a first use, and an edit as nothin
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(AnalyticsService.AnalyticsService)({
+        enabled: true,
+        sessionId: undefined,
         recordMilestone: (event, properties) =>
           Effect.sync(() => void milestones.push({ event, properties })),
       }),

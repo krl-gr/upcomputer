@@ -230,6 +230,7 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as ErrorTelemetry from "./telemetry/ErrorTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1194,6 +1195,7 @@ const layerWsRpc = (
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
+      const errorTelemetry = yield* ErrorTelemetry.ErrorTelemetry;
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         switch (command.type) {
@@ -2083,6 +2085,10 @@ const layerWsRpc = (
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverRecordClientEvent]: (input) => {
+          if (input.event === "app.error") {
+            const { event: _event, ...report } = input;
+            return errorTelemetry.reportError("web", report).pipe(Effect.as({}));
+          }
           const { event, ...properties } = input;
           return analytics
             .record(event, { ...originProps, ...properties })

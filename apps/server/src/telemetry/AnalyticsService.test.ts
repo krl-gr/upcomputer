@@ -480,6 +480,114 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
+  it.effect("reports an unclean exit on the next start, with the session that crashed", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-telemetry-unclean-",
+      });
+      const marker = path.join(baseDir, "userdata", "telemetry-session");
+      const events: Array<SentEvent> = [];
+
+      yield* runDesktopServer(baseDir, events, () =>
+        Effect.gen(function* () {
+          assert.isTrue(yield* fileSystem.exists(marker));
+        }).pipe(Effect.orDie),
+      );
+      // A clean stop removes the marker, so the next start is not unclean.
+      assert.isFalse(yield* fileSystem.exists(marker));
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+      assert.isFalse(events.some((event) => event.event === "app.unclean_exit"));
+
+      // What a process that died leaves behind.
+      const crashedSessionId = "1d2c3b4a-5e6f-4a8b-9c0d-1e2f3a4b5c6d";
+      yield* fileSystem.writeFileString(
+        marker,
+        JSON.stringify({
+          sessionId: crashedSessionId,
+          version: "0.0.36",
+          uncleanStarts: 0,
+          windowStartedAtMs: 0,
+        }),
+      );
+      events.splice(0);
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+      const unclean = events.filter((event) => event.event === "app.unclean_exit");
+      assert.deepEqual(
+        unclean.map(({ properties: { previousSessionId, previousVersion, uncleanStarts } }) => ({
+          previousSessionId,
+          previousVersion,
+          uncleanStarts,
+        })),
+        [{ previousSessionId: crashedSessionId, previousVersion: "0.0.36", uncleanStarts: 1 }],
+      );
+      assert.notEqual(unclean[0]?.properties.sessionId, crashedSessionId);
+
+      // A marker that cannot be read still means the last start did not stop.
+      yield* fileSystem.writeFileString(marker, "{not json");
+      events.splice(0);
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+      assert.deepEqual(
+        events
+          .filter((event) => event.event === "app.unclean_exit")
+          .map(({ properties: { previousSessionId, uncleanStarts } }) => ({
+            previousSessionId,
+            uncleanStarts,
+          })),
+        [{ previousSessionId: undefined, uncleanStarts: 1 }],
+      );
+    }),
+  );
+
+  it.effect("goes quiet while the server is crash looping", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-loop-" });
+      const marker = path.join(baseDir, "userdata", "telemetry-session");
+      const events: Array<SentEvent> = [];
+      const crash = (uncleanStarts: number) =>
+        fileSystem.writeFileString(marker, JSON.stringify({ uncleanStarts, windowStartedAtMs: 0 }));
+
+      yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
+      // The tenth unclean start within the hour still reports.
+      yield* crash(9);
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+      assert.deepEqual(
+        events.find((event) => event.event === "app.unclean_exit")?.properties.uncleanStarts,
+        10,
+      );
+
+      // The eleventh records nothing until it has stayed up for ten minutes.
+      yield* crash(10);
+      events.splice(0);
+      yield* runDesktopServer(baseDir, events, (analytics) =>
+        Effect.gen(function* () {
+          yield* analytics.record("probe.early");
+          yield* TestClock.adjust("10 minutes");
+          yield* analytics.record("probe.late");
+        }),
+      );
+      assert.deepEqual(
+        events.map((event) => event.event),
+        ["probe.late", "server.stopped"],
+      );
+
+      // An hour later the count starts over.
+      yield* fileSystem.writeFileString(
+        marker,
+        JSON.stringify({ uncleanStarts: 40, windowStartedAtMs: -60 * 60 * 1000 }),
+      );
+      events.splice(0);
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+      assert.equal(
+        events.find((event) => event.event === "app.unclean_exit")?.properties.uncleanStarts,
+        1,
+      );
+    }),
+  );
+
   it.effect("does not report milestones for an install first launched by an older build", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
