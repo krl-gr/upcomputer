@@ -718,6 +718,7 @@ export function AgentsView(props: AgentsViewProps) {
           : isCreateMode
             ? {
                 ariaLabel: "Create agent",
+                track: "agents.create_save",
                 disabled: mutableProjects.length === 0 || savingKey !== null,
                 hideIcon: true,
                 label: "Create",
@@ -728,6 +729,7 @@ export function AgentsView(props: AgentsViewProps) {
             : SHOW_MANUAL_CREATE_ACTIONS.agents
               ? {
                   ariaLabel: "Create agent",
+                  track: "agents.create",
                   disabled: mutableProjects.length === 0 || savingKey !== null,
                   onClick: openCreate,
                 }
@@ -737,6 +739,7 @@ export function AgentsView(props: AgentsViewProps) {
         editingAgent || isCreateMode
           ? {
               ariaLabel: editingAgent ? "Back to agents" : "Cancel agent creation",
+              track: editingAgent ? "agents.back" : "agents.create_cancel",
               disabled: isCreateMode && savingKey !== null,
               icon: <ArrowLeftIcon className="size-4" />,
               onClick: editingAgent

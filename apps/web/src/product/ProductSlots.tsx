@@ -64,6 +64,7 @@ export function ProductSidebarNavigation() {
           return (
             <SidebarMenuItem key={item.id}>
               <SidebarMenuButton
+                data-track={`nav.${item.id}`}
                 isActive={isExperimentalWebNavigationActive(item, pathname)}
                 onClick={() => {
                   if (isMobile) setOpenMobile(false);
@@ -98,6 +99,7 @@ export function ProductCompactSidebarNavigation() {
         return (
           <CompactSidebarButton
             key={item.id}
+            data-track={`nav.${item.id}`}
             label={item.label}
             isActive={isExperimentalWebNavigationActive(item, pathname)}
             onClick={() => void navigate({ to: "/$", params: { _splat: item.path.slice(1) } })}
@@ -119,6 +121,7 @@ export function ProductSettingsNavItems(props: { readonly pathname: string }) {
     return (
       <SidebarMenuItem key={page.path}>
         <SidebarMenuButton
+          data-track={`settings.nav.${page.id}`}
           isActive={props.pathname === page.path}
           onClick={() => {
             if (isMobile) setOpenMobile(false);

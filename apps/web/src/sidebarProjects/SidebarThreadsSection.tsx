@@ -81,6 +81,7 @@ export function SidebarThreadsSectionHeader(props: {
           newThreadDisabled && scratchTarget === null ? null : (
             <SidebarSectionHeaderAction
               label="New thread"
+              track="sidebar.new_thread"
               tooltip={
                 newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"
               }

@@ -94,6 +94,7 @@ function CompactSearch() {
       {/* The sidebar's search field needs the sidebar; the command palette searches without it. */}
       <CompactSidebarButton
         label="Search"
+        data-track="sidebar.search"
         tooltip={shortcutLabel ? `Search (${shortcutLabel})` : "Search"}
         onClick={() => openCommandPalette()}
       >
@@ -163,6 +164,7 @@ function CompactProjects() {
       ) : null}
       <CompactSidebarButton
         label="Add project"
+        data-track="sidebar.add_project"
         onClick={() => openCommandPalette({ open: "add-project" })}
       >
         <PlusIcon />
@@ -211,6 +213,7 @@ function CompactThreads() {
     <CompactSidebarPill label="Threads">
       <CompactSidebarButton
         label="New thread"
+        data-track="sidebar.new_thread"
         tooltip={shortcutLabel ? `New thread (${shortcutLabel})` : "New thread"}
         onClick={startNewThread}
       >
@@ -230,6 +233,7 @@ function CompactUtilities() {
     <CompactSidebarPill label="Utilities">
       <CompactSidebarButton
         label="Settings"
+        data-track="sidebar.settings"
         isActive={isOn("/settings")}
         onClick={() => void navigate({ to: "/settings" })}
       >
@@ -238,6 +242,7 @@ function CompactUtilities() {
       {pullRequestsSupported ? (
         <CompactSidebarButton
           label="Pull Requests"
+          data-track="sidebar.pull_requests"
           isActive={isOn("/pull-requests")}
           onClick={() =>
             void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() })
@@ -248,6 +253,7 @@ function CompactUtilities() {
       ) : null}
       <CompactSidebarButton
         label="Usage"
+        data-track="sidebar.usage"
         isActive={isOn("/usage")}
         onClick={() => void navigate({ to: "/usage" })}
       >

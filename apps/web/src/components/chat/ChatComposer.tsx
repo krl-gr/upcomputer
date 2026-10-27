@@ -1273,6 +1273,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
               type="button"
               onClick={props.onToggleInteractionMode}
               aria-label={interactionModeTooltip}
+              data-track="composer.plan_mode"
             />
           }
         >
@@ -1315,6 +1316,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
                 data-composer-shortcut="composer.mode"
                 size={size}
                 aria-label="Runtime mode"
+                data-track="composer.runtime_mode"
               />
             }
           >
@@ -6428,6 +6430,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => attachmentInputRef.current?.click()}
               aria-label="Attach files"
+              data-track="composer.attach"
             />
           }
         >
@@ -6793,6 +6796,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onClick={isChoiceOnlyPendingQuestion ? undefined : expandMobileComposerStable}
                   disabled={isChoiceOnlyPendingQuestion}
                   aria-label="Expand composer"
+                  data-track="composer.expand"
                 >
                   {activePendingProgress
                     ? isChoiceOnlyPendingQuestion
@@ -6811,6 +6815,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-64"
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
+                  data-track="composer.send_collapsed"
                   onPointerDown={(event) => event.preventDefault()}
                   onClick={(event) => {
                     event.stopPropagation();

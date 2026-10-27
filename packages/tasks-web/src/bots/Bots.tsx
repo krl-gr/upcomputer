@@ -178,7 +178,7 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
           open={open}
           onToggle={() => setOpen(!open)}
           action={
-            <SidebarSectionHeaderAction label="Create bot" onClick={create}>
+            <SidebarSectionHeaderAction label="Create bot" track="bots.create" onClick={create}>
               <PlusIcon className="size-3.5" />
             </SidebarSectionHeaderAction>
           }

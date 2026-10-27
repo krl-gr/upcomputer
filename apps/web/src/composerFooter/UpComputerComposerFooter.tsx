@@ -154,6 +154,7 @@ function InteractionModeControl(props: {
             className={COMPOSER_CONTROL_TEXT_TRIGGER_CLASS}
             aria-pressed={plan}
             data-composer-footer-mode={props.interactionMode}
+            data-track="composer.plan_mode"
             onClick={props.onToggle}
           />
         }
@@ -202,6 +203,7 @@ function AccessControl(props: {
               data-composer-shortcut="composer.mode"
               data-composer-footer-access={props.runtimeMode}
               aria-label={`Access: ${label}`}
+              data-track="composer.runtime_mode"
             />
           }
         >
