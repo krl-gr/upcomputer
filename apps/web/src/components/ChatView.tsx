@@ -7512,6 +7512,7 @@ export default function ChatView(props: ChatViewProps) {
         status: threadMcpStatus,
         productName: APP_BASE_NAME,
         canReconnect: canOperateThread,
+        turnRunning: isWorking,
         reconnecting: mcpReconnectingThreadKey === routeThreadKey,
         onReconnect: () => void reconnectMcp(),
         userNoticeDismissed: (key) => dismissedMcpNoticeKeys.has(key),
@@ -7521,6 +7522,7 @@ export default function ChatView(props: ChatViewProps) {
     [
       canOperateThread,
       dismissedMcpNoticeKeys,
+      isWorking,
       mcpReconnectingThreadKey,
       reconnectMcp,
       routeThreadKey,

@@ -10,6 +10,8 @@ export function mcpStatusBannerItems(input: {
   readonly status: OrchestrationV2ProviderMcpStatus | null;
   readonly productName: string;
   readonly canReconnect: boolean;
+  /** Restarting the session would kill the running turn, so Reconnect waits for it. */
+  readonly turnRunning: boolean;
   readonly reconnecting: boolean;
   readonly onReconnect: () => void;
   readonly userNoticeDismissed: (key: string) => boolean;
@@ -26,7 +28,17 @@ export function mcpStatusBannerItems(input: {
       title: notices.t3.title,
       description: notices.t3.description,
       actions: input.canReconnect ? (
-        <Button size="xs" variant="ghost" disabled={input.reconnecting} onClick={input.onReconnect}>
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={input.reconnecting || input.turnRunning}
+          title={
+            input.turnRunning
+              ? "Available when the agent finishes, or press Stop to reconnect now."
+              : undefined
+          }
+          onClick={input.onReconnect}
+        >
           {input.reconnecting ? "Reconnecting..." : "Reconnect"}
         </Button>
       ) : null,
