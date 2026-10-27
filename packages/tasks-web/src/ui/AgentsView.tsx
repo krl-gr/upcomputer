@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeftIcon } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
 import type {
   EnvironmentId,
   ProviderInteractionMode,
@@ -67,7 +66,7 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
 import { StartThreadEmptyState } from "./StartThreadEmptyState.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
-import { BotAgentName, botPage, isBotAgent } from "../bots/botData.tsx";
+import { isBotAgent } from "../bots/botData.tsx";
 
 const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
 const INSTRUCTIONS_EDITOR_CLASS =
@@ -242,10 +241,9 @@ export function AgentTableRow(props: AgentTableRowProps) {
     onToggleEnabled,
   } = props;
 
-  const bot = isBotAgent(agent);
   return (
     <tr
-      aria-label={`Open ${bot ? "bot" : "agent"} ${agent.name}`}
+      aria-label={`Open agent ${agent.name}`}
       className="cursor-pointer border-b border-border transition-colors hover:bg-muted/20"
       onClick={(event) => {
         if (!eventTargetsInteractiveRowDescendant(event)) onOpen();
@@ -267,15 +265,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
             onOpen();
           }}
         >
-          {bot ? (
-            <BotAgentName
-              environmentId={agent.environmentId}
-              agentId={agent.id}
-              name={agent.name}
-            />
-          ) : (
-            agent.name
-          )}
+          {agent.name}
         </button>
       </td>
       <td
@@ -307,7 +297,6 @@ export function AgentTableRow(props: AgentTableRowProps) {
 }
 
 export function AgentsView(props: AgentsViewProps) {
-  const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [viewMode, setViewMode] = useState<AgentViewMode | null>(null);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
@@ -340,9 +329,15 @@ export function AgentsView(props: AgentsViewProps) {
     : null;
   const isCreateMode = viewMode?.kind === "create";
   const projectFilter = props.projectFilter ?? null;
+  // Bots have their own sidebar section and settings page. Deep links still
+  // resolve against `props.agents`.
+  const listedAgents = useMemo(
+    () => props.agents.filter((agent) => !isBotAgent(agent)),
+    [props.agents],
+  );
   const visibleAgents = useMemo(
-    () => filterByProjectFilter(props.agents, projectFilter, { includeGlobal: true }),
-    [projectFilter, props.agents],
+    () => filterByProjectFilter(listedAgents, projectFilter, { includeGlobal: true }),
+    [listedAgents, projectFilter],
   );
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
@@ -428,8 +423,8 @@ export function AgentsView(props: AgentsViewProps) {
     [props.agents],
   );
   const tagOptions = useMemo(
-    () => unique(props.agents.flatMap((agent) => agent.startTags)),
-    [props.agents],
+    () => unique(listedAgents.flatMap((agent) => agent.startTags)),
+    [listedAgents],
   );
   const agentRuns = editingAgent ? detailRuns : [];
   const agentTasks = useMemo(() => {
@@ -1367,7 +1362,7 @@ export function AgentsView(props: AgentsViewProps) {
             // and a loading text would only flash before it.
             props.status === "loading" || props.status === "offline" ? null : (
               <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                {projectFilter && props.agents.length > 0 ? (
+                {projectFilter && listedAgents.length > 0 ? (
                   `No agents for ${projectFilter.label}`
                 ) : (
                   <StartThreadEmptyState
@@ -1395,19 +1390,15 @@ export function AgentsView(props: AgentsViewProps) {
                     const agentProject = agent.projectId
                       ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
                       : null;
-                    // A bot's trigger is its own tag; its page holds its settings.
-                    const bot = isBotAgent(agent);
-                    const triggerLabel = bot
-                      ? "Bot: tasks it assigns itself"
-                      : [
-                          agent.startStatuses.length > 0
-                            ? agent.startStatuses.join(", ")
-                            : "Any status",
-                          agent.startTags.length > 0 ? agent.startTags.join(", ") : "Any tag",
-                          ...(agent.startRunStatuses.length > 0
-                            ? [`after ${agent.startRunStatuses.join(", ")} runs`]
-                            : []),
-                        ].join(" · ");
+                    const triggerLabel = [
+                      agent.startStatuses.length > 0
+                        ? agent.startStatuses.join(", ")
+                        : "Any status",
+                      agent.startTags.length > 0 ? agent.startTags.join(", ") : "Any tag",
+                      ...(agent.startRunStatuses.length > 0
+                        ? [`after ${agent.startRunStatuses.join(", ")} runs`]
+                        : []),
+                    ].join(" · ");
                     return (
                       <AgentTableRow
                         key={`${agent.environmentId}:${agent.id}`}
@@ -1421,11 +1412,7 @@ export function AgentsView(props: AgentsViewProps) {
                           props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
                           agent.config.modelSelection,
                         )}
-                        onOpen={() =>
-                          bot
-                            ? void navigate(botPage(agent.environmentId, { bot: agent.id }))
-                            : openEdit(agent)
-                        }
+                        onOpen={() => openEdit(agent)}
                         onToggleEnabled={() => {
                           void toggleEnabled(agent);
                         }}
