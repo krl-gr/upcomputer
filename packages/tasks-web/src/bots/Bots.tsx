@@ -37,12 +37,20 @@ import {
   CompactSidebarPill,
 } from "../../../../apps/web/src/components/sidebar/CompactSidebarPill.tsx";
 import {
-  SIDEBAR_ACTION_BUTTON,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
 import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
+import {
+  SIDEBAR_LIST_ROW,
+  SIDEBAR_LIST_ROW_ACTIVE,
+  SIDEBAR_LIST_ROW_REST,
+  SidebarListRowEnd,
+  sidebarListRowActionClassName,
+  sidebarListRowTitleClassName,
+} from "../../../../apps/web/src/sidebarThreadRow/sidebarListRow.tsx";
+import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
@@ -221,11 +229,10 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
 }
 
 /**
- * A bot's sidebar row, built like a Projects row: the row opens the bot's
- * chat, and hover or keyboard focus reveals its settings button in place of
- * the status. The status shows only while the bot is not idle, in the colors
- * thread rows use. The run counts of the tasks its chat started stay, as on a
- * thread row, and open the same task list.
+ * A bot's sidebar row, built from the compact thread row's parts so the two
+ * look and behave alike: face, status, name, then the run counts of the tasks
+ * its chat started, with the settings button where a thread row has its "…".
+ * The row opens the bot's chat. The status shows only while the bot is not idle.
  */
 function BotRow({
   environmentId,
@@ -243,11 +250,13 @@ function BotRow({
   const status = useBotStatus(environmentId, bot);
   const isRowEvent = (event: ReactMouseEvent | ReactKeyboardEvent) =>
     (event.target as Element).closest("button") === null;
-  const settingsLabel = `Settings for ${bot.agent.name}`;
+  const nameClassName = sidebarListRowTitleClassName(active);
   return (
-    <SidebarMenuButton
-      isActive={active}
-      render={<div role="button" tabIndex={0} className="group/sidebar-row" />}
+    <div
+      role="button"
+      tabIndex={0}
+      aria-current={active ? "page" : undefined}
+      className={cn(SIDEBAR_LIST_ROW, active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST)}
       onClick={(event) => {
         if (isRowEvent(event)) onOpen();
       }}
@@ -263,49 +272,37 @@ function BotRow({
       <span className="flex size-4 shrink-0 items-center justify-center">
         <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
       </span>
+      <ThreadStatusLabel status={status.label} />
       {status.detail ? (
         <Tooltip>
-          <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" />}>
+          <TooltipTrigger render={<span className={nameClassName} />}>
             {bot.agent.name}
           </TooltipTrigger>
           <TooltipPopup side="top">{status.detail}</TooltipPopup>
         </Tooltip>
       ) : (
-        <span className="min-w-0 flex-1 truncate">{bot.agent.name}</span>
+        <span className={nameClassName}>{bot.agent.name}</span>
       )}
-      {/* Keyboard focus only: a click leaves the row focused, and the status must
-          stay while the chat it opened is on screen. */}
-      {status.label ? (
-        <span className="flex group-focus-visible/sidebar-row:hidden group-has-[:focus-visible]/sidebar-row:hidden group-any-hover/sidebar-row:hidden">
-          <ThreadStatusLabel status={status.label} />
-        </span>
-      ) : null}
-      <span className="hidden items-center group-focus-visible/sidebar-row:flex group-has-[:focus-visible]/sidebar-row:flex group-any-hover/sidebar-row:flex">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={settingsLabel}
-                className={SIDEBAR_ACTION_BUTTON}
-                onClick={onSettings}
-              />
-            }
+      <SidebarListRowEnd
+        pinned={false}
+        action={
+          <button
+            type="button"
+            aria-label={`Settings for ${bot.agent.name}`}
+            className={sidebarListRowActionClassName(false)}
+            onClick={onSettings}
           >
-            <SettingsIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">Bot settings</TooltipPopup>
-        </Tooltip>
-      </span>
-      {/* Last, so hovering the row does not move the counts under the pointer. */}
-      <span className="flex shrink-0 items-center text-xs">
+            <SettingsIcon className="size-4" />
+          </button>
+        }
+      >
         <TaskThreadRunCounts
           environmentId={environmentId}
           threadId={bot.threadId}
           fallback={null}
         />
-      </span>
-    </SidebarMenuButton>
+      </SidebarListRowEnd>
+    </div>
   );
 }
 
