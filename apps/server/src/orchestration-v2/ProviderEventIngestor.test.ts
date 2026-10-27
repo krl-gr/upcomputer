@@ -279,6 +279,137 @@ it.effect("records accepted billed turn usage once without billing the context w
   }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
 });
 
+const unfinishedTurnHarness = (recorded: Array<Readonly<Record<string, unknown>>>) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const threadEvent = yield* threadCreatedEvent(now);
+    yield* eventSink.write({ events: [threadEvent] });
+    const providerSessionId = yield* idAllocator.allocate.providerSession({
+      providerInstanceId: modelSelection.instanceId,
+      threadId: threadEvent.threadId,
+    });
+    const providerThreadId = idAllocator.derive.providerThread({
+      driver: CODEX_DRIVER,
+      nativeThreadId: "unfinished-thread",
+    });
+    const base = {
+      providerSessionId,
+      providerInstanceId: modelSelection.instanceId,
+      threadId: threadEvent.threadId,
+    };
+    const turnId = (name: string) =>
+      idAllocator.derive.providerTurn({ driver: CODEX_DRIVER, nativeTurnId: name });
+    // Each turn of one provider thread has its own ordinal.
+    let nextOrdinal = 1;
+    const turnUpdated = (name: string, status: "failed" | "interrupted") =>
+      ingestor.ingestNormalized({
+        ...base,
+        event: {
+          type: "provider_turn.updated",
+          driver: CODEX_DRIVER,
+          providerTurn: {
+            id: turnId(name),
+            providerThreadId,
+            nodeId: NodeId.make(`node:${name}`),
+            runAttemptId: null,
+            nativeTurnRef: null,
+            ordinal: nextOrdinal++,
+            status,
+            startedAt: now,
+            completedAt: now,
+          },
+        },
+      });
+    const failed = (name: string, ordinal: number) =>
+      ingestor.ingestNormalized({
+        ...base,
+        event: {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId,
+          providerTurnId: turnId(name),
+          runOrdinal: 1,
+          failureItemOrdinal: ordinal,
+          status: "failed",
+          failure: makeProviderFailure({
+            message: "You've hit your usage limit.",
+            class: "usage_limit",
+            retryable: false,
+          }),
+          threadDisposition: "reusable",
+        },
+      });
+    const interrupted = (name: string) =>
+      ingestor.ingestNormalized({
+        ...base,
+        event: {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId,
+          providerTurnId: turnId(name),
+          runOrdinal: 1,
+          status: "interrupted",
+          failure: null,
+          threadDisposition: "reusable",
+        },
+      });
+    return { turnUpdated, failed, interrupted, recorded };
+  });
+
+const layerRecordingAnalytics = (recorded: Array<Readonly<Record<string, unknown>>>) =>
+  Layer.succeed(ProviderEventIngestor.ProviderTurnAnalytics, {
+    record: (properties: Readonly<Record<string, unknown>>) =>
+      Effect.sync(() => {
+        recorded.push(properties);
+      }),
+  });
+
+it.effect("reports why a failed or interrupted turn ended, in either event order", () => {
+  const recorded: Array<Readonly<Record<string, unknown>>> = [];
+  return Effect.gen(function* () {
+    const turns = yield* unfinishedTurnHarness(recorded);
+
+    yield* turns.turnUpdated("failed-turn", "failed");
+    assert.isEmpty(recorded);
+    yield* turns.failed("failed-turn", 201);
+    // The terminal can also come first, as when a run ends before the turn update.
+    yield* turns.interrupted("interrupted-turn");
+    yield* turns.turnUpdated("interrupted-turn", "interrupted");
+
+    assert.deepEqual(
+      recorded.map(({ terminalStatus, failureClass, retryable }) => ({
+        terminalStatus,
+        failureClass,
+        retryable,
+      })),
+      [
+        { terminalStatus: "failed", failureClass: "usage_limit", retryable: false },
+        { terminalStatus: "interrupted", failureClass: "interrupted", retryable: true },
+      ],
+    );
+    // Failure text never leaves the server.
+    assert.isFalse(JSON.stringify(recorded).includes("usage limit."));
+  }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerRecordingAnalytics(recorded)))));
+});
+
+it.effect("still reports a failed turn whose terminal never arrives", () => {
+  const recorded: Array<Readonly<Record<string, unknown>>> = [];
+  return Effect.gen(function* () {
+    const turns = yield* unfinishedTurnHarness(recorded);
+
+    yield* turns.turnUpdated("orphan-turn", "failed");
+    assert.isEmpty(recorded);
+    yield* TestClock.adjust("30 seconds");
+
+    assert.lengthOf(recorded, 1);
+    assert.equal(recorded[0]?.terminalStatus, "failed");
+    assert.notProperty(recorded[0], "failureClass");
+  }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerRecordingAnalytics(recorded)))));
+});
+
 layer("ProviderEventIngestorV2", (it) => {
   it.effect("normalizes provider events through the real event log and projection store", () =>
     Effect.gen(function* () {
