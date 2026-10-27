@@ -1,6 +1,8 @@
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
+import { mcpStatusBannerItems } from "./chat/McpStatusBanner";
+import { APP_BASE_NAME } from "../branding";
 import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
@@ -105,6 +107,7 @@ import {
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveLatestThreadRun,
+  deriveThreadMcpStatus,
   deriveThreadRuntime,
   presentPendingBackgroundWork,
   presentProviderGoal,
@@ -1709,6 +1712,7 @@ export default function ChatView(props: ChatViewProps) {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, "thread session stop");
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const setThreadRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode, {
@@ -7477,6 +7481,52 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const threadMcpStatus = useMemo(
+    () => (serverProjection ? deriveThreadMcpStatus(serverProjection) : null),
+    [serverProjection],
+  );
+  const [mcpReconnectingThreadKey, setMcpReconnectingThreadKey] = useState<string | null>(null);
+  const [dismissedMcpNoticeKeys, setDismissedMcpNoticeKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const reconnectMcp = useStableCallback(async () => {
+    if (!serverProjection) return;
+    const threadKey = routeThreadKey;
+    setMcpReconnectingThreadKey(threadKey);
+    const result = await stopThreadSession({
+      environmentId,
+      input: { threadId: serverProjection.thread.id },
+    });
+    setMcpReconnectingThreadKey((current) => (current === threadKey ? null : current));
+    if (result._tag === "Failure") return;
+    toastManager.add({
+      type: "success",
+      title: "Agent session will restart",
+      description: `Your next message starts a fresh session with ${APP_BASE_NAME} tools.`,
+    });
+  });
+  const mcpBannerItems = useMemo(
+    () =>
+      mcpStatusBannerItems({
+        threadKey: routeThreadKey,
+        status: threadMcpStatus,
+        productName: APP_BASE_NAME,
+        canReconnect: canOperateThread,
+        reconnecting: mcpReconnectingThreadKey === routeThreadKey,
+        onReconnect: () => void reconnectMcp(),
+        userNoticeDismissed: (key) => dismissedMcpNoticeKeys.has(key),
+        onDismissUserNotice: (key) =>
+          setDismissedMcpNoticeKeys((current) => new Set(current).add(key)),
+      }),
+    [
+      canOperateThread,
+      dismissedMcpNoticeKeys,
+      mcpReconnectingThreadKey,
+      reconnectMcp,
+      routeThreadKey,
+      threadMcpStatus,
+    ],
+  );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [
@@ -7490,6 +7540,7 @@ export default function ChatView(props: ChatViewProps) {
       return [
         ...feedbackBannerItems,
         ...limitRecoveryItems,
+        ...mcpBannerItems,
         ...usageLimitsItems,
         ...projectCloneItems,
         ...systemComposerBannerItems,
@@ -7499,6 +7550,7 @@ export default function ChatView(props: ChatViewProps) {
     return [
       ...feedbackBannerItems,
       ...limitRecoveryItems,
+      ...mcpBannerItems,
       ...usageLimitsItems,
       ...projectCloneItems,
       ...systemComposerBannerItems,
@@ -7550,6 +7602,7 @@ export default function ChatView(props: ChatViewProps) {
     canWriteSourceControl,
     feedbackBannerItems,
     limitRecoveryBanner,
+    mcpBannerItems,
     handleRestoreThreadBranchStable,
     isRestoringThreadBranch,
     backgroundWorkBannerItem,

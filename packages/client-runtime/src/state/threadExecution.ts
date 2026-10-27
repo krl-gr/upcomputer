@@ -11,6 +11,7 @@ import {
   type OrchestrationV2NotificationSource,
   type OrchestrationV2PendingBackgroundTask,
   type OrchestrationV2ProviderGoal,
+  type OrchestrationV2ProviderMcpStatus,
   type ServerProviderModel,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ThreadProjection,
@@ -192,6 +193,21 @@ export function formatProviderSubagentStatus(
   if (!Number.isFinite(start) || !Number.isFinite(end)) return label;
   const elapsed = formatDuration(Math.max(1_000, Math.floor((end - start) / 1_000) * 1_000));
   return live ? `${label} ${elapsed}` : `${label} in ${elapsed}`;
+}
+
+/**
+ * MCP status of the thread's live provider session. A stopped session opens
+ * again on the next message and registers its MCP servers afresh, so its last
+ * status no longer applies.
+ */
+export function deriveThreadMcpStatus(
+  projection: OrchestrationV2ThreadProjection,
+): OrchestrationV2ProviderMcpStatus | null {
+  const providerSession = projection.providerSessions.findLast(
+    (session) => session.providerInstanceId === projection.thread.providerInstanceId,
+  );
+  if (providerSession?.status === "stopped" || providerSession?.status === "error") return null;
+  return providerSession?.mcp ?? null;
 }
 
 export function deriveThreadRuntime(

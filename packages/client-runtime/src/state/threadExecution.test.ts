@@ -26,6 +26,7 @@ import {
   formatProviderSubagentStatus,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
+  deriveThreadMcpStatus,
   deriveThreadRuntime,
   threadRuntimeHasInterruptibleRun,
 } from "./threadExecution.ts";
@@ -712,5 +713,31 @@ describe("presentProviderGoal", () => {
     expect(
       presentProviderGoal({ objective: "All tests pass", status: "active" }, false).title,
     ).toBe("Goal set");
+  });
+});
+
+describe("thread MCP status", () => {
+  const mcp = {
+    t3: { outcome: "disconnected" as const, reason: "connection_lost" as const },
+    userServerCount: 1,
+    failedUserServers: ["notes"],
+  };
+  // Only the fields the status reads; capabilities do not matter here.
+  const session = (status: "ready" | "stopped") =>
+    ({
+      id: ProviderSessionId.make("session"),
+      driver: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: v2Projection.thread.providerInstanceId,
+      status,
+      mcp,
+    }) as unknown as (typeof v2Projection.providerSessions)[number];
+
+  it("reads the live session and forgets a stopped one, which reconnects on the next message", () => {
+    expect(deriveThreadMcpStatus({ ...v2Projection, providerSessions: [session("ready")] })).toBe(
+      mcp,
+    );
+    expect(
+      deriveThreadMcpStatus({ ...v2Projection, providerSessions: [session("stopped")] }),
+    ).toBeNull();
   });
 });
