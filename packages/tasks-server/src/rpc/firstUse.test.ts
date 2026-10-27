@@ -49,6 +49,8 @@ const layer = Layer.mergeAll(
   Layer.succeed(TaskScheduleService, {} as never),
   Layer.succeed(TaskPromptSettingsStore, {} as never),
   Layer.mock(AnalyticsService)({
+    enabled: true,
+    sessionId: undefined,
     recordMilestone: (event, properties) =>
       Effect.sync(() => void milestones.push({ event, properties })),
   }),
