@@ -34,6 +34,7 @@ import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLa
 import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythingRun";
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
+import { UiAnalyticsCoordinator } from "../components/UiAnalyticsCoordinator";
 import { ProductCoordinators } from "../product/ProductSlots";
 import { productSurface } from "../product/productFlags";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
@@ -257,6 +258,7 @@ function RootRouteView() {
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
           {primaryEnvironmentAuthenticated ? <ProductCoordinators /> : null}
+          {primaryEnvironmentAuthenticated ? <UiAnalyticsCoordinator /> : null}
           <ReopenClosedViewShortcut />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
