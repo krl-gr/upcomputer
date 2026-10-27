@@ -111,18 +111,25 @@ export function useCompactComposerActionsWidth(
  * Its inner row makes room for the paperclip and actions instead.
  */
 const COMPACT_COMPOSER_CLASSES = {
-  /** 12px above and below one 24px prompt line, centred with the 32px paperclip and send. */
-  body: "pt-3 pb-3 sm:pt-3 sm:pb-3",
   /**
-   * The paperclip ends 10px (16px from `sm`) plus 32px into the card and the
-   * prompt body starts 12px (24px) in, less the editor's 4px negative margin.
-   * The text keeps 4px from the paperclip, whose icon has its own padding, and
-   * 10px from the filled send button.
+   * One 24px prompt line in a 50px row, twice the card's corner radius, so
+   * the row is a pill and the 32px paperclip and send sit 9px from its edge on
+   * every side. The light card's 1px border counts towards the 50px; `!`
+   * outranks the expanded body's `sm:` padding.
    */
-  prompt:
-    "ps-[34px] pe-[calc(var(--composer-compact-actions-width,2rem)+12px)] sm:ps-7 sm:pe-[calc(var(--composer-compact-actions-width,2rem)+6px)]",
+  body: "py-3! dark:py-3.25!",
+  /**
+   * The paperclip ends 9px plus 32px into the card and the prompt body starts
+   * 16px inside it (17px with the light border). The text keeps 4px from the
+   * paperclip, whose icon has its own padding, and 10px from the filled send.
+   */
+  prompt: "ps-7 pe-[calc(var(--composer-compact-actions-width,2rem)+2px)]",
+  /**
+   * One line, fading out at the end: Chrome drops `text-overflow` on an
+   * editable line once it is laid out again, so an ellipsis would come and go.
+   */
   editor:
-    "max-h-8 overflow-hidden whitespace-pre! leading-6 [&_p]:overflow-hidden [&_p]:text-ellipsis",
+    "max-h-8 overflow-hidden whitespace-pre! leading-6 [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]",
   placeholder: "leading-6",
 } as const;
 

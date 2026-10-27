@@ -58,7 +58,7 @@ export interface UpComputerComposerFooterProps {
  * but the paperclip and the actions is hidden and lets clicks reach the prompt.
  */
 const COMPACT_FOOTER_CLASS =
-  "pointer-events-none absolute inset-px z-10 pb-0 sm:pb-0 [&_[data-chat-composer-footer-controls]>*:not([data-composer-footer-attach])]:invisible [&_[data-composer-footer-attach]]:pointer-events-auto [&_[data-chat-composer-actions]]:pointer-events-auto";
+  "pointer-events-none absolute inset-px z-10 px-2.25 pb-0 dark:px-2.25 dark:pb-0 [&_[data-chat-composer-footer-controls]>*:not([data-composer-footer-attach])]:invisible [&_[data-composer-footer-attach]]:pointer-events-auto [&_[data-chat-composer-actions]]:pointer-events-auto";
 
 const ICON_ONLY_BLOCK_CLASS =
   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative";
