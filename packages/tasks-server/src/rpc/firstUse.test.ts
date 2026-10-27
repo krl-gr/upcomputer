@@ -18,6 +18,7 @@ import {
   runExperimentalFeatureMigrations,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
+import { BotService } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
@@ -27,6 +28,10 @@ import { TASK_RPC_CONTRIBUTIONS } from "./contributions.ts";
 
 const project = ProjectId.make("project-1");
 const milestones: Array<{ event: string; properties: unknown }> = [];
+
+const rpcHandlers = TASK_RPC_CONTRIBUTIONS.map((contribution) =>
+  contribution.handlers({ currentSessionId: "test" as never }),
+);
 
 const layer = Layer.mergeAll(
   TaskRepositoryLive.pipe(
@@ -47,6 +52,7 @@ const layer = Layer.mergeAll(
     recordMilestone: (event, properties) =>
       Effect.sync(() => void milestones.push({ event, properties })),
   }),
+  Layer.mock(BotService)({ nameChat: () => Effect.void }),
 );
 
 it.effect("a task or agent made in the app is a first use; editing an agent is not", () =>
@@ -77,13 +83,7 @@ it.effect("a task or agent made in the app is a first use; editing an agent is n
       { event: "app.first_agent_created", properties: { via: "app" } },
     ]);
   }).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        ...TASK_RPC_CONTRIBUTIONS.map((contribution) =>
-          contribution.handlers({ currentSessionId: "test" as never }),
-        ),
-      ),
-    ),
+    Effect.provide(Layer.mergeAll(rpcHandlers[0]!, ...rpcHandlers.slice(1))),
     Effect.provide(layer),
     Effect.scoped,
   ),
