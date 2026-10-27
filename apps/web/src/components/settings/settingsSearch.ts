@@ -439,6 +439,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "composer-compact",
+    title: "Compact composer",
+    to: "/settings/general",
+    searchTerms: ["composer one line single line focus collapse shrink minimize footer model"],
+  },
+  {
     id: "send-shortcut",
     title: "Send shortcut",
     to: "/settings/general",

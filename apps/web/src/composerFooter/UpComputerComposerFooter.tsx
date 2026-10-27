@@ -17,6 +17,7 @@ import { Select, SelectItem, SelectPopup } from "../components/ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
+import { useCompactComposerActionsWidth } from "./compactComposer";
 import { measureComposerFooterControls } from "./composerFooterMeasurement";
 import {
   COMPOSER_CONTROL_ICON_TRIGGER_CLASS,
@@ -46,8 +47,18 @@ export interface UpComputerComposerFooterProps {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   /** Upstream's context ring and send, stop and queue actions. */
   primaryActions: ReactNode;
+  /** The compact row (`isComposerCompact`): only the paperclip and the actions show, over the prompt. */
+  compact?: boolean;
   className?: string | undefined;
 }
+
+/**
+ * The compact row keeps the footer laid out at its full width, so folding is
+ * already measured when it expands, and lays it over the prompt: everything
+ * but the paperclip and the actions is hidden and lets clicks reach the prompt.
+ */
+const COMPACT_FOOTER_CLASS =
+  "pointer-events-none absolute inset-px z-10 px-2.25 pb-0 dark:px-2.25 dark:pb-0 [&_[data-chat-composer-footer-controls]>*:not([data-composer-footer-attach])]:invisible [&_[data-composer-footer-attach]]:pointer-events-auto [&_[data-chat-composer-actions]]:pointer-events-auto";
 
 const ICON_ONLY_BLOCK_CLASS =
   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative";
@@ -70,6 +81,7 @@ function AttachControl(props: { open: () => void }) {
         render={
           <button
             type="button"
+            data-composer-footer-attach=""
             aria-label="Attach files"
             className={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
             onPointerDown={(event) => event.preventDefault()}
@@ -258,6 +270,8 @@ type FooterBlockId = "mode" | "traits" | "access";
  */
 export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
   const { attachRow, hiddenCount, iconOnlyCount } = useComposerFooterControlsLayout();
+  const [actions, setActions] = useState<HTMLDivElement | null>(null);
+  useCompactComposerActionsWidth(actions, props.compact === true);
   const hasTraits = renderProviderTraitsPicker(props.traitsPickerInput) !== null;
   // Priority order, V1's: the last block loses its label and folds first, so
   // access goes to its lock first, then effort and context, then the mode.
@@ -292,10 +306,12 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
     <div
       data-chat-composer-footer="true"
       data-composer-footer-surface="upcomputer"
+      data-composer-footer-compact={props.compact ? "true" : undefined}
       className={cn(
         "flex min-w-0 flex-nowrap items-center justify-between gap-2",
         COMPOSER_FOOTER_PADDING_CLASS,
         props.className,
+        props.compact && COMPACT_FOOTER_CLASS,
       )}
     >
       <div
@@ -377,6 +393,7 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
         )}
       </div>
       <div
+        ref={setActions}
         data-chat-composer-actions="right"
         data-chat-composer-transition-actions="true"
         className="flex shrink-0 flex-nowrap items-center justify-end gap-2"

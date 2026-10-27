@@ -735,6 +735,11 @@ describe("ClientSettings composer collapse", () => {
     ).toBe(false);
   });
 
+  it("compacts the idle composer by default and accepts opting out", () => {
+    expect(decodeClientSettings({}).composerCompact).toBe(true);
+    expect(decodeClientSettingsPatch({ composerCompact: false }).composerCompact).toBe(false);
+  });
+
   it("drops the retired blur trigger key", () => {
     const decoded = decodeClientSettings({ composerCollapseOnBlur: false });
     expect(decoded.composerCollapseOnScroll).toBe(true);

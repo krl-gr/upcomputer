@@ -178,6 +178,12 @@ describe("hidden upstream features in the web app", () => {
     product.hidden = true;
     expect(isProductSettingsSearchItemVisible({ id: "composer-collapse" })).toBe(false);
   });
+
+  it("offers Compact composer only with the UpComputer composer", () => {
+    expect(isProductSettingsSearchItemVisible({ id: "composer-compact" })).toBe(false);
+    product.hidden = true;
+    expect(isProductSettingsSearchItemVisible({ id: "composer-compact" })).toBe(true);
+  });
 });
 
 function renderSidebarHeader() {
