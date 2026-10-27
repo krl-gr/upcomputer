@@ -5,6 +5,7 @@ import {
   taskRunPresentation,
   compareTaskRunStatuses,
   groupTaskRunCounts,
+  isFinishedRunStatus,
   runSearchStatus,
 } from "./taskRunPresentation.ts";
 
@@ -65,4 +66,11 @@ test("row and task-menu counts merge statuses by label in badge order and drop e
     "text-orange-600 dark:text-orange-300",
   );
   NodeAssert.deepEqual(groupTaskRunCounts([]), []);
+});
+
+test("thread rows treat working, finalizing and awaiting-input runs as active", () => {
+  const active = ["running", "blocked", "finalizing:result", "finalizing:failed"];
+  const finished = ["completed", "failed", "interrupted", "stopped", "blocked:superseded"];
+  NodeAssert.deepEqual(active.filter(isFinishedRunStatus), []);
+  NodeAssert.deepEqual(finished.filter(isFinishedRunStatus), finished);
 });

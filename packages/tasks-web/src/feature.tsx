@@ -26,6 +26,11 @@ const LazyThreadRunCounts = lazy(() =>
     default: module.TaskThreadRunCounts,
   })),
 );
+const LazyThreadSeen = lazy(() =>
+  import("./ui/TaskThreadRunCounts.tsx").then((module) => ({
+    default: module.TaskThreadSeen,
+  })),
+);
 // The thread menu asks synchronously, so its bot module loads with the Bots section, which
 // every sidebar shows. Until then the menu simply has no bot entry.
 let botMenu: typeof import("./bots/botMenu.ts") | undefined;
@@ -83,11 +88,15 @@ function TaskReminders() {
   );
 }
 
-/** The open chat's run counts after its title; nothing while it has none. */
+/**
+ * The open chat's run counts after its title; nothing while it has none. Being mounted only
+ * for the open chat, it also marks the chat's finished runs seen when the person leaves.
+ */
 function ChatHeaderRunCounts(props: ExperimentalWebThreadAccessoryProps) {
   return (
     <Suspense fallback={null}>
       <LazyThreadRunCounts {...props} fallback={null} />
+      <LazyThreadSeen {...props} />
       <LazyBotHeader {...props} />
     </Suspense>
   );

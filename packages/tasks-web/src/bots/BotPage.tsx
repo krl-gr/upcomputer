@@ -1352,7 +1352,7 @@ function BackgroundWork({
             <TaskThreadRunCounts
               environmentId={environmentId}
               threadId={bot.threadId}
-              fallback={<span className="text-muted-foreground">None yet</span>}
+              fallback={<span className="text-muted-foreground">Nothing new</span>}
             />
           </span>
         }

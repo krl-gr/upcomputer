@@ -1,6 +1,7 @@
 import type { ThreadId } from "@t3tools/contracts";
 import type { TaskChange, TaskRunCount } from "@t3tools/tasks-contracts/v1";
 import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
+import { isFinishedRunStatus } from "../ui/taskRunPresentation.ts";
 
 const EMPTY: readonly TaskRunCount[] = [];
 /** Shared per environment client, independent of the Tasks route. No polling or per-row requests. */
@@ -52,6 +53,26 @@ export class ThreadRunCountsStore {
         this.failures = 0;
       }
     };
+  };
+
+  /**
+   * Marks the thread's finished runs seen on the server, for every client. Its row drops them
+   * at once; the server's change brings the confirmed counts.
+   */
+  markSeen = (id: ThreadId) => {
+    const counts = this.get(id);
+    // Nothing finished is shown, so there is nothing to mark: no write, no change for others.
+    if (!counts.some((count) => isFinishedRunStatus(count.status))) return;
+    this.snapshots.set(
+      id,
+      counts.filter((count) => !isFinishedRunStatus(count.status)),
+    );
+    for (const callback of this.listeners.get(id) ?? []) callback();
+    this.client.tasks.markThreadsSeen({ threadIds: [id] }).catch(() => {
+      // An older server keeps lifetime counts: show what it has.
+      if (this.listeners.has(id)) this.pending.add(id);
+      this.schedule();
+    });
   };
 
   refresh = () => {

@@ -24,6 +24,8 @@ function harness() {
   let opens = 0;
   let closes = 0;
   let response = async (ids: readonly ThreadId[]) => result(ids);
+  const seen: ThreadId[][] = [];
+  let markSeen = async () => ({});
   const client = {
     tasks: {
       subscribe: (callback: typeof listener) => {
@@ -37,6 +39,10 @@ function harness() {
         calls.push([...threadIds]);
         return response(threadIds);
       },
+      markThreadsSeen: ({ threadIds }: { threadIds: readonly ThreadId[] }) => {
+        seen.push([...threadIds]);
+        return markSeen();
+      },
     },
   } as unknown as TasksWebRpcClient;
   const store = new ThreadRunCountsStore(client, 2);
@@ -49,8 +55,12 @@ function harness() {
     get closes() {
       return closes;
     },
+    seen: seen as readonly ThreadId[][],
     reply: (next: typeof response) => {
       response = next;
+    },
+    replySeen: (next: typeof markSeen) => {
+      markSeen = next;
     },
     change: (ids: string[], runsChanged = true, sync = false) =>
       listener({
@@ -183,4 +193,46 @@ test("the chat header opening a thread its sidebar row follows reads nothing aga
   header();
   other();
   row();
+});
+
+test("marking a thread seen drops its finished counts at once and keeps active ones", async () => {
+  const h = harness();
+  const mixed = [
+    { status: "running", count: 1 },
+    { status: "blocked", count: 2 },
+    { status: "completed", count: 5 },
+    { status: "failed", count: 1 },
+    { status: "blocked:superseded", count: 1 },
+  ];
+  h.reply(async (ids) => ({ threads: ids.map((threadId) => ({ threadId, runCounts: mixed })) }));
+  let notified = 0;
+  const stop = h.store.subscribe(thread("a"), () => notified++);
+  await until(() => h.store.get(thread("a")).length === mixed.length);
+
+  h.store.markSeen(thread("a"));
+  NodeAssert.deepEqual(h.seen, [["a"]]);
+  NodeAssert.deepEqual(h.store.get(thread("a")), [
+    { status: "running", count: 1 },
+    { status: "blocked", count: 2 },
+  ]);
+  NodeAssert.equal(notified, 2);
+
+  // With nothing finished left there is nothing to mark: no write.
+  h.store.markSeen(thread("a"));
+  NodeAssert.equal(h.seen.length, 1);
+  stop();
+});
+
+test("a server without seen marks keeps its counts", async () => {
+  const h = harness();
+  const stop = h.store.subscribe(thread("a"), () => {});
+  await until(() => h.store.get(thread("a")).length > 0);
+  h.replySeen(async () => {
+    throw Error("unknown method");
+  });
+  h.store.markSeen(thread("a"));
+  NodeAssert.equal(h.store.get(thread("a")).length, 0);
+  await until(() => h.store.get(thread("a")).length > 0);
+  NodeAssert.equal(h.queries.length, 2);
+  stop();
 });
