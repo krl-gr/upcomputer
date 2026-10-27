@@ -32,6 +32,7 @@ import {
   armAutomationSchedule,
   normalizeAutomationTemplate,
 } from "../automations/automationWrites.ts";
+import { BotService } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
@@ -408,6 +409,8 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 updatedAt: timestamp,
               });
               yield* taskAgents.scheduleAgentChanged({ agent, reason: "upserted" });
+              if (Option.isSome(existing) && existing.value.name !== agent.name)
+                yield* (yield* BotService).nameChat(agent.id);
               return agent;
             }),
           ),

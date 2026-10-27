@@ -428,6 +428,7 @@ const makeTaskRepository = Effect.gen(function* () {
           listChanged: batch.events.some((event) => event.listChanged),
           runsChanged: batch.events.some((event) => event.runsChanged),
           ...scheduleDatesOf(batch.events),
+          ...(batch.events.some((event) => event.agentsChanged) ? { agentsChanged: true } : {}),
         });
       return result;
     }).pipe(
@@ -2953,6 +2954,20 @@ const makeTaskRepository = Effect.gen(function* () {
       ),
     );
 
+  // Agents change no task, so this change names none; it tells clients to refetch bots.
+  const agentsChanged = Effect.gen(function* () {
+    const event: PendingTaskChange = {
+      taskIds: [],
+      rootThreadIds: [],
+      listChanged: false,
+      runsChanged: false,
+      agentsChanged: true,
+    };
+    const batch = yield* TaskChangeBatch;
+    if (batch?.owner === events) batch.events.push(event);
+    else yield* publishChange(event);
+  });
+
   const upsertAgent: TaskRepositoryShape["upsertAgent"] = (input) =>
     sql
       .withTransaction(
@@ -2976,6 +2991,7 @@ const makeTaskRepository = Effect.gen(function* () {
             "TaskRepository.upsertAgent:decodeRows",
           ),
         ),
+        Effect.tap(() => agentsChanged),
       );
 
   const searchAgents: TaskRepositoryShape["searchAgents"] = (input) => {
@@ -3014,6 +3030,7 @@ const makeTaskRepository = Effect.gen(function* () {
           "TaskRepository.deleteAgent:decodeRows",
         ),
       ),
+      Effect.tap(() => agentsChanged),
     );
 
   const getAgentRunById: TaskRepositoryShape["getAgentRunById"] = (input) =>

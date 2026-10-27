@@ -25,6 +25,7 @@ import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TaskScheduleServiceLive } from "../schedule/TaskScheduleService.ts";
 import { PROMPT_GUIDANCE_SCHEDULING, TASK_TOOL_SPECS } from "./TaskToolDefinitions.ts";
+import { BotService } from "../bots/BotService.ts";
 import { TaskToolService, TaskToolServiceLive } from "./TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
@@ -56,6 +57,7 @@ const layer = TaskToolServiceLive.pipe(
         scheduleTaskChanged: () => Effect.void,
       } as unknown as TaskAgentServiceShape),
       Layer.succeed(ThreadManagementService, {} as never),
+      Layer.succeed(BotService, {} as never),
       Layer.succeed(InboxProject, {} as never),
       Layer.succeed(ProjectStoreV2, {} as never),
     ),

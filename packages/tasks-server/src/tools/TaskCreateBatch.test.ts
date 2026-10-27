@@ -1,12 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { TaskAgentId, TaskAgentRunId } from "@t3tools/tasks-contracts/v1";
+import { TaskAgentId, TaskAgentRunId, type TaskChange } from "@t3tools/tasks-contracts/v1";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 
 import {
   ProjectStoreV2,
@@ -23,6 +25,7 @@ import {
   TaskToolContextResolver,
   type TaskToolContextResolverShape,
 } from "../context/TaskToolContextResolver.ts";
+import { layer as BotServiceLayer } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { AllChatsInstructionsLive } from "../persistence/AllChatsInstructions.ts";
 import { TaskPersistenceSqlError } from "../persistence/Errors.ts";
@@ -55,7 +58,17 @@ function harness(
   const scheduled: TaskChangedInput[] = [];
   const agents = {
     scheduleTaskChanged: (input: TaskChangedInput) => Effect.sync(() => void scheduled.push(input)),
+    scheduleAgentChanged: () => Effect.void,
   } as unknown as TaskAgentServiceShape;
+  // Every chat is titled "Old title"; thread commands are only recorded.
+  const dispatched: Array<{ readonly type: string; readonly threadId?: string; title?: string }> =
+    [];
+  const threads = {
+    getThreadRecords: (threadId: ThreadId) =>
+      Effect.succeed({ thread: { id: threadId, title: "Old title", deletedAt: null } }),
+    dispatch: (command: (typeof dispatched)[number]) =>
+      Effect.sync(() => void dispatched.push(command)),
+  };
   const database = Layer.effectDiscard(
     runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]),
   ).pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })));
@@ -87,14 +100,18 @@ function harness(
   const layer = TaskToolServiceLive.pipe(
     Layer.provide(toolRepository),
     Layer.provideMerge(
-      Layer.mergeAll(
-        storage,
-        Layer.succeed(TaskToolContextResolver, resolver),
-        Layer.succeed(TaskAgentService, agents),
-        Layer.succeed(ThreadManagementService, {} as never),
-        Layer.succeed(ProjectStoreV2, {} as never),
-        Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
-        Layer.succeed(TaskScheduleService, {} as never),
+      BotServiceLayer.pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(
+            storage,
+            Layer.succeed(TaskToolContextResolver, resolver),
+            Layer.succeed(TaskAgentService, agents),
+            Layer.succeed(ThreadManagementService, threads as never),
+            Layer.succeed(ProjectStoreV2, {} as never),
+            Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
+            Layer.succeed(TaskScheduleService, {} as never),
+          ),
+        ),
       ),
     ),
   );
@@ -110,7 +127,7 @@ function harness(
   const stored = Effect.gen(function* () {
     return yield* (yield* TaskRepository).search({ limit: 50, kind: "all", from: "bottom" });
   });
-  return { layer, scheduled, create, update, stored };
+  return { layer, scheduled, dispatched, create, update, stored };
 }
 
 const item = (title: string, status: string, extra: Record<string, unknown> = {}) => ({
@@ -502,5 +519,75 @@ it.effect("a task delegated from a bot's permanent chat reports and counts there
     });
     const counts = yield* repository.threadRunCounts({ threadIds: [botChat] });
     assert.deepStrictEqual(counts.threads[0]?.runCounts, [{ status: "running", count: 1 }]);
+  }).pipe(Effect.provide(layer));
+});
+
+/** A bot and a task agent, each with its own chat, as the bot settings save them. */
+const seedBotAndAgent = Effect.gen(function* () {
+  const repository = yield* TaskRepository;
+  const sql = yield* SqlClient.SqlClient;
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+  const at = "2026-10-27T00:00:00.000Z";
+  for (const id of [TaskAgentId.make("bot:named"), TaskAgentId.make("agent-dev")])
+    yield* repository.upsertAgent({
+      id,
+      projectId: null,
+      name: "Old title",
+      enabled: false,
+      startStatuses: ["To Do"],
+      startTags: [],
+      startRunStatuses: [],
+      config: { role: "Agent", modelSelection, instructions: "Work." },
+      createdAt: at,
+      updatedAt: at,
+    });
+  yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+    VALUES ('bot:named', 'bot-chat:named', ${project}, ${JSON.stringify([project])}, 0)`;
+});
+
+it.effect("agent_update renaming a bot renames its chat and tells clients", () => {
+  const { layer, dispatched } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    // The stream opens with a sync; once it arrives, later writes reach this subscriber.
+    const subscribed = yield* Deferred.make<void>();
+    const agentsChanged = yield* Deferred.make<TaskChange>();
+    yield* (yield* TaskRepository).changes.pipe(
+      Stream.runForEach((change) =>
+        change.kind === "sync"
+          ? Deferred.succeed(subscribed, undefined)
+          : change.agentsChanged
+            ? Deferred.succeed(agentsChanged, change)
+            : Effect.void,
+      ),
+      Effect.forkScoped,
+    );
+    yield* Deferred.await(subscribed);
+    const result = yield* (yield* TaskToolService).call({
+      name: "agent_update",
+      args: { id: "bot:named", name: "Up Growth Analyst" },
+      context: chat,
+    });
+    assert.isFalse(result.isError, result.text);
+    assert.deepStrictEqual(
+      dispatched.map(({ type, threadId, title }) => ({ type, threadId, title })),
+      [{ type: "thread.metadata.update", threadId: "bot-chat:named", title: "Up Growth Analyst" }],
+    );
+    // Open bot lists refetch on this; before, an agent write reached no client.
+    assert.deepStrictEqual((yield* Deferred.await(agentsChanged)).taskIds, []);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("agent_update renaming a task agent leaves every chat alone", () => {
+  const { layer, dispatched } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    const result = yield* (yield* TaskToolService).call({
+      name: "agent_update",
+      args: { id: "agent-dev", name: "Developer" },
+      context: chat,
+    });
+    assert.isFalse(result.isError, result.text);
+    assert.deepStrictEqual(dispatched, []);
   }).pipe(Effect.provide(layer));
 });

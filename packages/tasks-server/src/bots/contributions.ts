@@ -12,6 +12,7 @@ import {
   forkParked,
   registerTurnContextResolver,
 } from "../../../../apps/server/src/extensionApi.ts";
+import { retryOperational } from "../retryOperational.ts";
 import { BotService } from "./BotService.ts";
 
 export const BotContextLive = Layer.effectDiscard(
@@ -21,6 +22,7 @@ export const BotContextLive = Layer.effectDiscard(
     yield* forkParked(
       bots.recover.pipe(
         Effect.catch((cause) => Effect.logError("Bot chat recovery failed", { cause })),
+        Effect.andThen(retryOperational(bots.followChatRenames, { operation: "bot-chat-renames" })),
       ),
     );
   }),

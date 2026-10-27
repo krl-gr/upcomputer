@@ -1,5 +1,11 @@
 import { assert, it } from "@effect/vitest";
-import { MessageId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  type OrchestrationV2DomainEvent,
+} from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   BOT_MEMORY_CONTEXT_BUDGET,
@@ -7,6 +13,7 @@ import {
   TaskAgentId,
   TaskAgentRunId,
   TaskId,
+  type TaskChange,
 } from "@t3tools/tasks-contracts/v1";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -14,7 +21,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import {
@@ -32,6 +41,7 @@ import { BotService, layer as BotServiceLayer, type MemoryPage } from "./BotServ
 const timestamp = "2026-10-23T10:00:00.000Z";
 interface Dispatched {
   readonly type: string;
+  readonly title?: string | undefined;
   readonly runtimeMode?: string | undefined;
   readonly threadId?: string | undefined;
   readonly notification?:
@@ -54,7 +64,9 @@ const harness = Effect.gen(function* () {
   const entered = yield* Deferred.make<void>();
   const gate = yield* Deferred.make<void>();
   const dispatched: Array<Dispatched> = [];
+  const domainEvents = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
   const threads = Layer.mock(ThreadManagementService)({
+    streamDomainEvents: Stream.fromQueue(domainEvents),
     hasReceipt: () => Effect.succeed(false),
     dispatch: (command) =>
       Deferred.succeed(entered, void dispatched.push(command)).pipe(
@@ -63,7 +75,13 @@ const harness = Effect.gen(function* () {
       ),
     getThreadRecords: (threadId: ThreadId) =>
       Effect.succeed({
-        thread: { id: threadId, title: "Saved bot", projectId: project, modelSelection },
+        thread: {
+          id: threadId,
+          title: "Saved bot",
+          projectId: project,
+          modelSelection,
+          deletedAt: null,
+        },
         runs: [],
         runtimeRequests: [],
       } as never),
@@ -89,7 +107,7 @@ const harness = Effect.gen(function* () {
       ),
     ),
   );
-  return { entered, gate, dispatched, services };
+  return { entered, gate, dispatched, domainEvents, services };
 });
 
 const seedBot = Effect.gen(function* () {
@@ -310,7 +328,9 @@ it.effect("a bot saved before permissions were stored recovers its chat with ful
       yield* seedBot;
       yield* bots.recover;
       assert.deepStrictEqual(
-        dispatched.map((command) => [command.type, command.runtimeMode]),
+        dispatched.flatMap((command) =>
+          command.type === "thread.create" ? [[command.type, command.runtimeMode]] : [],
+        ),
         [["thread.create", "full-access"]],
       );
     }),
@@ -702,6 +722,91 @@ it.effect("a remember message is the user's entry and shows in the chat", () =>
       yield* Deferred.await(entered);
       const [entry] = yield* bots.memory(botId);
       assert.equal(entry?.owner, "user");
+    }).pipe(Effect.provide(services));
+  }),
+);
+
+/** A metadata event as the orchestrator records a chat's rename. */
+const titled = (threadId: ThreadId, title: string) =>
+  ({
+    type: "thread.metadata-updated",
+    threadId,
+    payload: { id: threadId, title },
+  }) as unknown as OrchestrationV2DomainEvent;
+
+/** Resolves with the next change that saved or deleted an agent. */
+const nextAgentChange = Effect.gen(function* () {
+  const subscribed = yield* Deferred.make<void>();
+  const changed = yield* Deferred.make<TaskChange>();
+  yield* (yield* TaskRepository).changes.pipe(
+    Stream.runForEach((change) =>
+      change.kind === "sync"
+        ? Deferred.succeed(subscribed, undefined)
+        : change.agentsChanged
+          ? Deferred.succeed(changed, change)
+          : Effect.void,
+    ),
+    Effect.forkScoped,
+  );
+  yield* Deferred.await(subscribed);
+  return Deferred.await(changed);
+});
+
+const agentName = (id: TaskAgentId) =>
+  Effect.map(
+    Effect.flatMap(TaskRepository, (repository) => repository.getAgentById({ id })),
+    (agent) => Option.getOrThrow(agent).name,
+  );
+
+it.effect("renaming a bot's chat renames the bot; other threads touch no agent", () =>
+  Effect.gen(function* () {
+    const { gate, dispatched, domainEvents, services } = yield* harness;
+    yield* Deferred.succeed(gate, undefined);
+    yield* Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      yield* seedTaskRun;
+      yield* bots.recover;
+      const changed = yield* nextAgentChange;
+      yield* bots.followChatRenames.pipe(Effect.forkScoped);
+      // A run's metadata event repeats the bot chat's title: no rename.
+      yield* Queue.offer(domainEvents, titled(botThread, "Seeded bot"));
+      yield* Queue.offer(domainEvents, titled(taskThread, "Renamed run"));
+      yield* Queue.offer(domainEvents, titled(plainThread, "Renamed chat"));
+      yield* Queue.offer(domainEvents, titled(botThread, "Career Coach"));
+      yield* changed;
+      assert.equal(yield* agentName(botId), "Career Coach");
+      assert.equal(yield* agentName(TaskAgentId.make("plain-agent")), "Plain agent");
+      // Its chat had drifted to "Saved bot", so it took the bot's name at the start.
+      assert.deepStrictEqual(
+        dispatched.flatMap(({ type, threadId, title }) =>
+          type === "thread.metadata.update" ? [{ threadId, title }] : [],
+        ),
+        [{ threadId: botThread, title: "Seeded bot" }],
+      );
+    }).pipe(Effect.provide(services));
+  }),
+);
+
+it.effect("an event still carrying a bot's old name does not undo its rename", () =>
+  Effect.gen(function* () {
+    const { gate, domainEvents, services } = yield* harness;
+    yield* Deferred.succeed(gate, undefined);
+    yield* Effect.gen(function* () {
+      const bots = yield* BotService;
+      const renamed = TaskAgentId.make("bot:new");
+      yield* seedBot;
+      yield* bots.save(newBot());
+      yield* bots.recover;
+      yield* bots.followChatRenames.pipe(Effect.forkScoped);
+      yield* bots.save({ ...newBot(), name: "Renamed bot" });
+      const changed = yield* nextAgentChange;
+      // Emitted by a turn before the rename, then the seeded bot's chat is renamed.
+      yield* Queue.offer(domainEvents, titled(ThreadId.make("bot-chat:bot:new"), "New bot"));
+      yield* Queue.offer(domainEvents, titled(botThread, "Career Coach"));
+      yield* changed;
+      assert.equal(yield* agentName(renamed), "Renamed bot");
+      assert.equal(yield* agentName(botId), "Career Coach");
     }).pipe(Effect.provide(services));
   }),
 );

@@ -373,6 +373,8 @@ export const TaskChange = Schema.Struct({
   scheduleDates: Schema.optional(Schema.Array(Schema.String)),
   /** Reminders due now; absent when none are. */
   reminders: Schema.optional(Schema.Array(TaskReminder)),
+  /** An agent was saved or deleted, so bot lists are stale; absent when none was. */
+  agentsChanged: Schema.optional(Schema.Boolean),
 });
 export type TaskChange = typeof TaskChange.Type;
 
