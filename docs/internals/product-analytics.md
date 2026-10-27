@@ -100,7 +100,8 @@ session that would not open (see Failure categories), and `app.first_thread_crea
 `app.first_message_sent` mark first use. Later first uses are `app.first_task_created`,
 `app.first_agent_created`, `app.first_automation_created`,
 `app.first_scheduled_task_created` (`trigger` is `schedule` or `webhook`),
-`app.first_agent_run` and `app.first_bot_chat`. `via` says whether the person made it in
+`app.first_agent_run`, `app.first_bot_chat` and `app.first_turn_completed` (the first
+turn that completed, with its `provider`). `via` says whether the person made it in
 the app or asked an agent, which used a task tool; tasks that imports, automations or
 bots create on their own are not first uses. Milestones are claimed with marker files in
 the state directory, and only for installs first launched by a build that has them,
@@ -127,9 +128,32 @@ Codex gives a startup failure only as text plus a reauthentication flag; the ada
 reads a timeout from that text and sends only the enum.
 
 `provider.turn.completed` carries `failureClass` and `retryable` for failed and
-interrupted turns. The usage arrives with `provider_turn.updated` and the failure with
+interrupted turns, and `ttftMs`, the time from the turn's start to the first item the model
+produced (an answer, reasoning, a plan or a tool call), not to the first assistant text. The usage arrives with `provider_turn.updated` and the failure with
 `turn.terminal`, in either order, so the ingestor records the turn once it has both, or
 after 30 seconds without a failure class.
+
+## Tasks, agents and schedules
+
+`agent_run.finished` is recorded where a run is finalized, and its `reasonCode` is chosen
+there: the blocker, provider error and recovery note stay in the task's history, and
+classifying them later would mean sending or parsing that text. A new way for a run to end
+needs its own code in [agentRuns.ts](../../packages/tasks-server/src/telemetry/agentRuns.ts).
+`trigger` has no `webhook`: scheduled tasks and webhooks start chat turns, not runs, so their
+work shows up as `schedule.fired` and `webhook.received`, and a run on a task an automation
+created reports `schedule`. `provider` is the driver behind the run's instance, since users
+name instances.
+
+`schedule.fired` covers automations (`kind: "automation"`, which create tasks) and scheduled
+tasks (`kind: "scheduled_task"`, which send a prompt). Fires another pass already claimed and
+stale polls send nothing. Anyone who knows a tunnel hostname can call the webhook route, so
+rejected deliveries are reported at most once a minute per reason.
+
+`server.boot.heartbeat` sends what an install set up as buckets (`0`, `1`, `2-4`, `5-9`,
+`10-24`, `25-99`, `100-499`, `500+`); `threadCount` and `projectCount` stay exact, as before.
+Feature packages add counts with `registerHeartbeatCounts`. The heartbeat waits up to 30
+seconds for provider probes, which otherwise report every CLI as missing on a fresh start, so
+it runs apart from the startup output.
 
 ## Errors and crashes
 
