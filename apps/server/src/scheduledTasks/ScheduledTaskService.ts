@@ -45,6 +45,7 @@ import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { isProductFeatureShown } from "../product/ServerProduct.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
@@ -363,6 +364,8 @@ export const layer = Layer.effect(
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const secretRequests = yield* SecretRequests.SecretRequests;
+    // Absent only where a test builds this service without the server runtime.
+    const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
     const scheduler = yield* Scheduler.Scheduler;
     const readWebhookOrigin = yield* ScheduledTaskWebhookOrigin;
     const webhookPermits = yield* Ref.make<ReadonlyMap<ScheduledTaskId, Semaphore.Semaphore>>(
@@ -1046,6 +1049,11 @@ export const layer = Layer.effect(
         };
         yield* saveTask(task, input.requireExisting === true, webhook);
         yield* notifyChanged;
+        if (existingTask === null && Option.isSome(analytics))
+          yield* analytics.value.recordMilestone("app.first_scheduled_task_created", {
+            trigger: schedule.type === "webhook" ? "webhook" : "schedule",
+            via: task.creationSource === "mcp" ? "agent" : "app",
+          });
         return { task: (yield* findTask(id)) ?? task };
       });
 

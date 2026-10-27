@@ -317,6 +317,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         Effect.gen(function* () {
           yield* analytics.recordMilestone("app.first_thread_created");
           yield* analytics.recordMilestone("app.first_thread_created");
+          yield* analytics.recordMilestone("app.first_task_created", { via: "agent" });
+          yield* analytics.recordMilestone("app.first_task_created", { via: "app" });
           yield* TestClock.adjust("90 seconds");
         }),
       );
@@ -327,8 +329,15 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
 
       assert.deepEqual(
         firstRun.map((event) => event.event),
-        ["server.started", "app.first_launch", "app.first_thread_created", "server.stopped"],
+        [
+          "server.started",
+          "app.first_launch",
+          "app.first_thread_created",
+          "app.first_task_created",
+          "server.stopped",
+        ],
       );
+      assert.equal(firstRun[3]?.properties.via, "agent");
       assert.equal(firstRun.at(-1)?.properties.uptimeMs, 90_000);
       assert.equal(new Set(firstRun.map((event) => event.distinct_id)).size, 1);
       assert.deepEqual(

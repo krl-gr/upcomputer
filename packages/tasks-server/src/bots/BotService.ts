@@ -45,6 +45,7 @@ import type {
   TurnContext,
   TurnContextInput,
 } from "../../../../apps/server/src/orchestration-v2/TurnContext.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 
 const now = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeProjects = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(ProjectId)));
@@ -189,6 +190,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const taskAgents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
+  const recordFirstUse = yield* makeFirstUseRecorder;
   // `lock` orders bot identity writes; `memoryLock` memory writes and a bot turn's memory
   // reads, so a write cannot land between a turn's marker time and its snapshot, and a bot
   // turn start never waits on a bot save. Take `lock` first when both are needed.
@@ -613,6 +615,7 @@ const make = Effect.gen(function* () {
         return yield* fail("Bot project settings need to be saved again before starting a turn.");
       if (!bot.allowedProjectIds.includes(projectId))
         return yield* fail("This project is not available to the bot.");
+      if (input.createdBy === "user") yield* recordFirstUse("app.first_bot_chat");
       // Explicit requests are saved without a second model call. A stable message id
       // also stops a retried start from resurrecting a deleted or edited memory. Only the
       // person's own message counts: an agent posting into the chat must go through the model.

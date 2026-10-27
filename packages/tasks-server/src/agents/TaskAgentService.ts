@@ -44,6 +44,7 @@ import {
   latestFinalizedAssistantMessage,
   makeTaskAgentResultConsumer,
 } from "./TaskAgentResultFinalization.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 
 export type TaskChangedReason =
   | "created"
@@ -399,6 +400,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService;
   const projects = yield* ProjectStoreV2;
   const crypto = yield* Crypto.Crypto;
+  const recordFirstUse = yield* makeFirstUseRecorder;
   const jobs = yield* Queue.bounded<ReconciliationJob>(RECONCILIATION_QUEUE_CAPACITY);
 
   /**
@@ -1099,6 +1101,7 @@ const make = Effect.gen(function* () {
           role: agent.config.role,
           ...(trigger !== null ? { triggerRunId: trigger.run.id } : {}),
         });
+        yield* recordFirstUse("app.first_agent_run");
       }).pipe(
         Effect.onInterrupt(() =>
           finishUnrecoverableRun({
