@@ -3,7 +3,9 @@
 The T3 Code server sends product usage events to PostHog, associated with a hashed account or
 installation identifier. Events include the provider, model, reasoning effort, permission mode,
 turn result and, for a failed turn, a category of why (such as a usage limit), duration, and
-main-agent token totals when available. During setup they also include
+main-agent token totals when available. They also say whether the agent could connect to
+Up.computer's tools and how many of your own MCP servers failed, without their names or
+addresses. During setup they also include
 which welcome steps you reached, which agent you tried to install or sign in to, and whether each
 agent CLI is installed (with its version) and signed in. In the app they include which sections
 you open (such as Tasks, Agents, or Settings), how long a window stays connected, which buttons

@@ -116,6 +116,16 @@ the outermost decisive error. A new failure that only its message tells apart ne
 structured field, as `OpenCodeRuntimeError.reason` has. Claude and Cursor open sessions
 lazily, so their missing CLI or sign-in failures show up at the first turn instead.
 
+`provider.mcp.attach` is sent when a session's MCP status changes: `server: "t3"` for
+our own server, with `outcome` `attached`, `failed`, `timeout` or `disconnected` and a
+bounded `reason`, and `server: "user"` when the user's own servers start failing, fail
+more, or recover. `userServerCount` and `failedCount` are counts; the names stay in the
+thread's provider session, where the composer notice reads them. Claude reports
+`disconnected` from a turn's init or the status probe after each result, Codex from the
+t3-code `runtimeStatus` read after each root turn, so a drop shows one turn late at most.
+Codex gives a startup failure only as text plus a reauthentication flag; the adapter
+reads a timeout from that text and sends only the enum.
+
 `provider.turn.completed` carries `failureClass` and `retryable` for failed and
 interrupted turns. The usage arrives with `provider_turn.updated` and the failure with
 `turn.terminal`, in either order, so the ingestor records the turn once it has both, or
