@@ -355,6 +355,8 @@ interface TimelineRowSharedState {
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
   onProviderFailureAction: ((action: ProviderFailureAction, runId: RunId | null) => void) | null;
+  /** Only the latest turn's failure offers Retry; an older one was overtaken. */
+  retryableFailedRunId: RunId | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
@@ -443,6 +445,7 @@ interface MessagesTimelineProps {
   retryableWorkspacePreparationRunIds?: ReadonlySet<RunId>;
   onRetryWorkspacePreparation?: (runId: RunId) => void;
   onProviderFailureAction?: (action: ProviderFailureAction, runId: RunId | null) => void;
+  retryableFailedRunId?: RunId | null;
   onWorktreeSetupWorkLocally?: () => void;
   onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
   isPreparingWorktree?: boolean;
@@ -546,6 +549,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
   onProviderFailureAction,
+  retryableFailedRunId = null,
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
   isPreparingWorktree = false,
@@ -1341,6 +1345,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       retryableWorkspacePreparationRunIds,
       onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
       onProviderFailureAction: onProviderFailureAction ?? null,
+      retryableFailedRunId,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
       workGroupViewState,
@@ -1380,6 +1385,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       retryableWorkspacePreparationRunIds,
       onRetryWorkspacePreparation,
       onProviderFailureAction,
+      retryableFailedRunId,
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
       workGroupViewState,
@@ -5447,7 +5453,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         : null;
     const actions =
       retryRunId === null && ctx.onProviderFailureAction !== null
-        ? providerFailureActions(failureItem.failure)
+        ? providerFailureActions(failureItem.failure).filter(
+            (action) => action !== "retry" || failureItem.runId === ctx.retryableFailedRunId,
+          )
         : [];
     return (
       <WorkLogRow
@@ -5517,9 +5525,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   ? "Switch provider or model"
                   : action === "open_settings" || action === "open_bot_settings"
                     ? "Open settings"
-                    : warning && resetTime
-                      ? `Retry at ${resetTime}`
-                      : "Retry"}
+                    : // Retry sends now; the label already says when the limit resets.
+                      "Retry"}
               </Button>
             ))}
           </div>

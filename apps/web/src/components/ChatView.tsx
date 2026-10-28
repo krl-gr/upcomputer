@@ -7165,8 +7165,13 @@ export default function ChatView(props: ChatViewProps) {
     onOpenRelatedThreadStable,
   ]);
 
-  const sendStandaloneCommand = async (text: string, action: string) => {
+  const sendStandaloneCommand = async (
+    text: string,
+    action: string,
+    resent?: Pick<ChatMessage, "attachments" | "context">,
+  ) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
+    const attachments = resent?.attachments ?? [];
     const context = composerRef.current?.getSendContext();
     if (!context?.providerAvailable) return;
 
@@ -7182,6 +7187,8 @@ export default function ChatView(props: ChatViewProps) {
         id: messageId,
         role: "user",
         text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(resent?.context ? { context: resent.context } : {}),
         runId: null,
         createdAt,
         updatedAt: createdAt,
@@ -7206,7 +7213,13 @@ export default function ChatView(props: ChatViewProps) {
               environmentId,
               input: {
                 threadId,
-                message: { messageId, role: "user", text, attachments: [] },
+                message: {
+                  messageId,
+                  role: "user",
+                  text,
+                  attachments,
+                  ...(resent?.context ? { context: resent.context } : {}),
+                },
                 modelSelection: context.selectedModelSelection,
                 runtimeMode,
                 interactionMode: context.interactionMode,
@@ -9876,25 +9889,22 @@ export default function ChatView(props: ChatViewProps) {
         : serverProjection?.messages.find(
             (message) => message.runId === runId && message.role === "user",
           );
-    if (failedMessage === undefined || failedMessage.text.trim().length === 0) {
+    if (
+      failedMessage === undefined ||
+      (failedMessage.text.trim().length === 0 && failedMessage.attachments.length === 0)
+    ) {
       scheduleComposerFocus();
       return;
     }
-    // Never overwrite a draft the person is writing; they send it themselves.
-    if (promptRef.current.trim().length > 0 || composerHasNonPromptContent) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "info",
-          title: "Your draft is still in the composer",
-          description: "Send or clear it, then press Retry to send the failed message again.",
-        }),
-      );
-      scheduleComposerFocus();
-      return;
-    }
-    promptRef.current = failedMessage.text;
-    setComposerDraftPrompt(composerDraftTarget, failedMessage.text);
-    window.requestAnimationFrame(() => void onSend());
+    // Sends the stored message itself, so the draft in the composer stays put.
+    void sendStandaloneCommand(
+      failedMessage.text.trim().length > 0 ? failedMessage.text : ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      "send the message again",
+      {
+        attachments: failedMessage.attachments,
+        ...(failedMessage.context ? { context: failedMessage.context } : {}),
+      },
+    );
   };
   const onProviderFailureActionStable = useStableCallback(onProviderFailureAction);
 
@@ -11165,6 +11175,7 @@ export default function ChatView(props: ChatViewProps) {
                       retryableWorkspacePreparationRunIds,
                       onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
                       onProviderFailureAction: onProviderFailureActionStable,
+                      retryableFailedRunId: serverLatestRun?.runId ?? null,
                     })}
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
