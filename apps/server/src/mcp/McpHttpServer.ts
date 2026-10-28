@@ -552,6 +552,16 @@ interface ImageToolResult {
   readonly [key: string]: unknown;
 }
 
+/** A plain category from an error tag; the tag itself stays in structuredContent. */
+function imageToolFailureCategory(errorTag: string): string | undefined {
+  if (/timeout|timedout/iu.test(errorTag)) return "it took too long";
+  if (/notfound|missing|nodevice|noview|closed/iu.test(errorTag))
+    return "the preview or device isn't open";
+  if (/unavailable|offline|disconnect|notconnected/iu.test(errorTag)) return "it isn't connected";
+  if (/permission|denied|forbidden|scope/iu.test(errorTag)) return "this chat isn't allowed to";
+  return undefined;
+}
+
 /**
  * Failures surface only their tag unless the tool describes them: the remote
  * message may carry renderer or device output the agent should not see, and the
@@ -590,7 +600,14 @@ const imageToolFailure =
       content: [
         {
           type: "text",
-          text: typeof failureText === "string" ? failureText : (message ?? `${toolName} failed.`),
+          text:
+            typeof failureText === "string"
+              ? `${failureText.replace(/\.$/u, "")}${
+                  imageToolFailureCategory(errorTag) === undefined
+                    ? ""
+                    : `: ${imageToolFailureCategory(errorTag)}`
+                }. Try again.`
+              : (message ?? `${toolName} didn't work. Try again.`),
         },
       ],
     });
@@ -701,7 +718,7 @@ const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreensh
         Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
       ),
     "screenshot",
-    "Device screenshot failed.",
+    "Couldn't take the screenshot",
   );
 });
 
@@ -727,7 +744,7 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
     (error) =>
       isOrchestratorMcpFailure(error) || AiError.isAiError(error)
         ? error.message
-        : "HTML preview failed.",
+        : "Couldn't render the HTML preview. Try again.",
   );
 });
 

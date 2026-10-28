@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import {
   defaultBotPortrait,
@@ -14,7 +15,12 @@ import { appAtomRegistry } from "../../../../apps/web/src/rpc/atomRegistry.ts";
 import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
-import { readTasksWebClient, useTasksWebAccess } from "../environmentApi.ts";
+import {
+  readTasksWebAccess,
+  readTasksWebClient,
+  subscribeTasksWebAccess,
+  useTasksWebAccess,
+} from "../environmentApi.ts";
 import {
   botChatStatus,
   botStatus,
@@ -29,6 +35,8 @@ interface BotList {
   readonly bots: ReadonlyArray<Bot>;
   readonly loaded: boolean;
   readonly error: string;
+  /** The environment's server predates bots: it has no Bots section and no error. */
+  readonly unsupported: boolean;
 }
 
 /**
@@ -44,11 +52,33 @@ interface BotListStore {
   stopChanges: (() => void) | undefined;
 }
 
-const EMPTY: BotList = { bots: [], loaded: false, error: "" };
+const EMPTY: BotList = { bots: [], loaded: false, error: "", unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
-export const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "Bot operation failed.";
+/** A failed bot action in plain words; the raw text goes behind Details. */
+export const errorText = (error: unknown) => {
+  const { reason } = describeError(error);
+  return reason === undefined
+    ? "Something went wrong. Try again."
+    : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
+};
+
+/** The reason inside a sentence, such as "Couldn't save Nova's settings: <reason>." */
+export const errorReason = (error: unknown) =>
+  describeError(error).reason ?? "something went wrong";
+
+/**
+ * A server without the bots methods, such as another computer on an older version, rejects
+ * the list as a defect naming the request tag it does not know.
+ */
+const isUnknownMethodError = (error: unknown) =>
+  describeError(error).detail?.includes("Unknown request tag") === true;
+
+/** The server's code for a failed bot action, which picks its title and action. */
+export const errorCode = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
 
 function storeFor(environmentId: EnvironmentId) {
   let store = stores.get(environmentId);
@@ -78,9 +108,14 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
-    publish(store, { bots, loaded: true, error: "" });
+    publish(store, { bots, loaded: true, error: "", unsupported: false });
   } catch (cause) {
-    publish(store, { ...store.list, error: errorText(cause) });
+    publish(
+      store,
+      isUnknownMethodError(cause)
+        ? { ...EMPTY, loaded: true, unsupported: true }
+        : { ...store.list, error: errorText(cause) },
+    );
   } finally {
     store.fetching = false;
   }
@@ -106,11 +141,17 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   const store = storeFor(environmentId);
   store.listeners.add(listener);
   if (store.listeners.size === 1) {
-    // Bots change through this client's writes, which refresh on their own; other clients
-    // and background runs reach the list through run changes. Task edits never do.
+    // Bots change through this client's writes, which refresh on their own; other clients,
+    // agents' tools and background runs reach the list through agent and run changes. Task
+    // edits never do. A server without bots is asked again only on a resync, which follows a
+    // reconnect, such as after that computer updates.
     store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
       (change) => {
-        if (change.kind === "sync" || change.runsChanged) void refresh(environmentId, store);
+        if (
+          change.kind === "sync" ||
+          (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
+        )
+          void refresh(environmentId, store);
       },
       (cause) => publish(store, { ...store.list, error: errorText(cause) }),
     );
@@ -139,8 +180,60 @@ export function useBots(environmentId: EnvironmentId) {
     () => (enabled ? storeFor(environmentId).list : EMPTY),
     () => EMPTY,
   );
-  return { ...list, enabled };
+  return { ...list, enabled: enabled && !list.unsupported };
 }
+
+/**
+ * The environments, in the given order, whose Bots section shows: their list answered, or
+ * failed in a way worth showing. One still loading or whose server predates bots has none.
+ */
+export function useBotSectionEnvironmentIds(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<EnvironmentId> {
+  const key = environmentIds.join("\n");
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const ids = key ? (key.split("\n") as Array<EnvironmentId>) : [];
+      // Lists are read only where Tasks access allows it, which can change while subscribed.
+      const stops = new Map<EnvironmentId, () => void>();
+      const follow = () => {
+        for (const environmentId of ids) {
+          const readable = readTasksWebAccess(environmentId).canReadAgents;
+          const stop = stops.get(environmentId);
+          if (readable && !stop) stops.set(environmentId, subscribeBots(environmentId, listener));
+          if (!readable && stop) {
+            stop();
+            stops.delete(environmentId);
+          }
+        }
+      };
+      follow();
+      const stopAccess = subscribeTasksWebAccess(() => {
+        follow();
+        listener();
+      });
+      return () => {
+        stopAccess();
+        for (const stop of stops.values()) stop();
+      };
+    },
+    [key],
+  );
+  const read = () =>
+    environmentIds
+      .filter((environmentId) => {
+        if (!readTasksWebAccess(environmentId).canReadAgents) return false;
+        const list = storeFor(environmentId).list;
+        return !list.unsupported && (list.loaded || list.error !== "");
+      })
+      .join("\n");
+  const shown = useSyncExternalStore(subscribe, read, read);
+  return useMemo(() => (shown ? (shown.split("\n") as Array<EnvironmentId>) : []), [shown]);
+}
+
+/** With several computers showing bots, each section names its computer. */
+export const botSectionTitle = (computerName: string | null | undefined, several: boolean) =>
+  several && computerName ? `Bots · ${computerName}` : "Bots";
 
 /** Navigation to a bot's page: an existing bot, a chat to turn into one, or a new bot. */
 export function botPage(
@@ -153,27 +246,6 @@ export function botPage(
 /** A bot's own agent: its one trigger is the tag the bot was saved with. */
 export const isBotAgent = (agent: Pick<TaskAgent, "id" | "startTags">) =>
   agent.startTags.length === 1 && agent.startTags[0] === `bot:${agent.id}`;
-
-/** A bot agent's name with the bot's face, for lists of agents. */
-export function BotAgentName({
-  environmentId,
-  agentId,
-  name,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly agentId: string;
-  readonly name: string;
-}) {
-  const bot = useBots(environmentId).bots.find((item) => item.agent.id === agentId);
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="flex size-5 shrink-0 items-center justify-center">
-        <BotAvatar id={agentId} appearance={bot?.appearance} state="idle" size={20} />
-      </span>
-      <span className="truncate">{name}</span>
-    </span>
-  );
-}
 
 /**
  * The face the bot's style picks: its shape character, or its picked portrait, or for bots
@@ -204,7 +276,7 @@ export function BotAvatar({
   return (
     <BotPortrait
       portrait={appearance?.portrait ?? defaultBotPortrait(id)}
-      working={state === "working"}
+      state={state}
       size={size}
     />
   );

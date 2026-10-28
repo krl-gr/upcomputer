@@ -526,8 +526,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         status: "error",
         auth: { status: "unknown" },
         message: isCommandMissingCause(error)
-          ? "Claude Agent CLI (`claude`) was not found on PATH."
-          : "Failed to execute Claude Agent CLI health check.",
+          ? "Claude Code isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings."
+          : "Claude Code is installed but couldn't be started. Reinstall or update it, then refresh.",
       },
     });
   }
@@ -544,7 +544,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         status: "error",
         auth: { status: "unknown" },
         message:
-          "Claude Agent CLI is installed but failed to run. Timed out while running command.",
+          "Claude Code is installed but didn't respond in time. Open a terminal and run `claude --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -567,7 +567,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unknown" },
-        message: "Claude Agent CLI is installed but failed to run.",
+        message:
+          "Claude Code is installed but didn't respond. Open a terminal and run `claude --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -601,7 +602,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message: "Couldn't check whether Claude Code is signed in. It may still work.",
       },
     });
   }
@@ -619,7 +620,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unauthenticated" },
-        message: "Claude Code is not authenticated. Run `claude auth login` and try again.",
+        message:
+          "Claude Code isn't signed in. Run `claude auth login` in a terminal, then refresh.",
       },
     });
   }

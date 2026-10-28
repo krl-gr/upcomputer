@@ -25,6 +25,7 @@ import { TASK_RPC_CONTRIBUTIONS } from "./rpc/contributions.ts";
 import { TaskReminderSweeperLive } from "./schedule/TaskReminderSweeper.ts";
 import { TaskScheduleServiceLive } from "./schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
+import { TaskFeatureCountsLive } from "./telemetry/featureCounts.ts";
 import * as Bots from "./bots/BotService.ts";
 import { BotContextLive, BOTS_RPC_CONTRIBUTION } from "./bots/contributions.ts";
 import { BotMcpToolsLive } from "./bots/BotMcpTools.ts";
@@ -75,6 +76,7 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
           TaskAgentOrchestrationInstructionsLive,
           TaskChatToolHintsLive,
           BotContextLive,
+          TaskFeatureCountsLive,
         ).pipe(Layer.provideMerge(TaskServicesLive)),
       ),
     },

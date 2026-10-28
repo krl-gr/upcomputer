@@ -47,7 +47,7 @@ export function SidebarSectionHeader(props: {
           SIDEBAR_ROW_INSET,
         )}
       >
-        <span className="shrink-0">{title}</span>
+        <span className="min-w-0 truncate">{title}</span>
         <ChevronRightIcon
           aria-hidden
           data-testid="sidebar-section-chevron"
@@ -70,12 +70,14 @@ export function SidebarSectionHeader(props: {
  */
 export function SidebarSectionHeaderAction(props: {
   readonly label: string;
+  /** The analytics name for clicks; see `uiAnalytics.ts`. */
+  readonly track: string;
   /** Defaults to `label`. */
   readonly tooltip?: string;
   readonly onClick: (event: ReactMouseEvent) => void;
   readonly children: ReactNode;
 }) {
-  const { label, tooltip = label, onClick, children } = props;
+  const { label, tooltip = label, track, onClick, children } = props;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -83,6 +85,7 @@ export function SidebarSectionHeaderAction(props: {
           <button
             type="button"
             aria-label={label}
+            data-track={track}
             onClick={onClick}
             className={cn(
               SIDEBAR_ACTION_BUTTON,

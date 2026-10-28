@@ -1,5 +1,6 @@
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as RelayClient from "@t3tools/shared/relayClient";
+import * as BackgroundNotices from "../background/BackgroundNotices.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -211,6 +212,7 @@ export const make = Effect.gen(function* () {
         ];
       });
       if (restartDelayMillis > 0) {
+        yield* reportTunnelNotice;
         yield* Effect.logWarning("Relay client is crash-looping; delaying restart", {
           pid: Number(connector.child.pid),
           uptimeMillis,
@@ -386,6 +388,27 @@ export const make = Effect.gen(function* () {
       return false;
     }).pipe(Effect.repeat({ until: (connected) => connected }));
 
+  const TUNNEL_NOTICE_ID = "remote-access:tunnel-down";
+  const reportTunnelNotice = Effect.serviceOption(BackgroundNotices.BackgroundNotices).pipe(
+    Effect.flatMap((notices) =>
+      Option.isNone(notices)
+        ? Effect.void
+        : notices.value.report({
+            id: TUNNEL_NOTICE_ID,
+            area: "remote-access",
+            severity: "warning",
+            title: "Remote access isn't working",
+            message:
+              "UpComputer Connect is on but can't reach the internet from this computer, so other devices can't connect. Check your network or firewall. Up.computer keeps retrying.",
+          }),
+    ),
+  );
+  const resolveTunnelNotice = Effect.serviceOption(BackgroundNotices.BackgroundNotices).pipe(
+    Effect.flatMap((notices) =>
+      Option.isNone(notices) ? Effect.void : notices.value.resolve(TUNNEL_NOTICE_ID),
+    ),
+  );
+
   // Only an explicit 503 counts: a failed request says nothing about the
   const watchConnectorReadiness = (connector: ActiveConnector) =>
     Effect.gen(function* () {
@@ -402,6 +425,7 @@ export const make = Effect.gen(function* () {
         );
         if (Option.isNone(status)) continue;
         if (status.value === 200) {
+          if (notReadyChecks > 0) yield* resolveTunnelNotice;
           notReadyChecks = 0;
           yield* Ref.set(notReadyChecksBeforeRestartRef, CONNECTOR_NOT_READY_CHECKS_BEFORE_RESTART);
           continue;
@@ -415,6 +439,7 @@ export const make = Effect.gen(function* () {
           notReadyChecksBeforeRestartRef,
           Math.min(threshold * 2, CONNECTOR_NOT_READY_CHECKS_MAX),
         );
+        yield* reportTunnelNotice;
         yield* Effect.logWarning("Relay client has no tunnel connection; restarting it", {
           pid: Number(connector.child.pid),
           notReadyChecks: threshold,

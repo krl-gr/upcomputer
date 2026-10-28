@@ -410,7 +410,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .pipe(Effect.flip);
 
         expect(error).toBeInstanceOf(TextGenerationError);
-        expect(error.message).toContain("OpenCode session.create request failed.");
+        expect(error.detail).toContain("OpenCode session.create request failed.");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationSessionRequestError",
           operation: "generateCommitMessage",
@@ -431,7 +431,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("OpenCode session.create returned no session payload.");
+        expect(error.detail).toContain("OpenCode session.create returned no session payload.");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationSessionPayloadError",
           operation: "generateCommitMessage",
@@ -452,7 +452,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("OpenCode session.prompt request failed.");
+        expect(error.detail).toContain("OpenCode session.prompt request failed.");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationPromptRequestError",
           operation: "generateCommitMessage",
@@ -480,7 +480,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("OpenCode returned empty output.");
+        expect(error.detail).toContain("OpenCode returned empty output.");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationEmptyOutputError",
           operation: "generateCommitMessage",
@@ -547,7 +547,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("Model did not produce structured output");
+        expect(error.detail).toContain("Model did not produce structured output");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationPromptResponseError",
           operation: "generateCommitMessage",
@@ -591,7 +591,7 @@ it.layer(layerOpenCodeTextGenerationExistingServerTest)(
             .pipe(Effect.flip);
 
           expect(error).toBeInstanceOf(TextGenerationError);
-          expect(error.message).toContain("v1.14.18 is too old");
+          expect(error.detail).toContain("v1.14.18 is too old");
           expect(runtimeMock.state.sessionCreateCalls).toBe(0);
         }),
       ),

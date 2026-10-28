@@ -42,6 +42,7 @@ import { ProductChatHeaderAccessory } from "~/product/ProductSlots";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { ThreadHeaderProjects } from "~/composerContextRow/ThreadHeaderProjects";
 import { useClientSettings } from "../../hooks/useSettings";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -184,7 +185,7 @@ export const ChatHeader = memo(function ChatHeader({
           toastManager.add({
             type: "error",
             title: "Failed to rename thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           });
         }
       });

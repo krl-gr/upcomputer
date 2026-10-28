@@ -183,7 +183,9 @@ export class SourceControlProviderError extends Schema.TaggedError<SourceControl
   },
 ) {
   override get message(): string {
-    return `Source control provider ${this.provider} failed in ${this.operation}: ${this.detail}`;
+    // The provider's own reason (for example GitHub's) is kept; the operation
+    // and folder are for logs.
+    return this.detail;
   }
 }
 

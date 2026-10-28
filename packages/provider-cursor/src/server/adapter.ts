@@ -2036,7 +2036,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                     `terminal-failure:${input.context.providerTurnId}`,
                   ),
                   status: input.status,
-                  failure: input.failure ?? makeProviderFailure({ class: "provider_error" }),
+                  failure:
+                    input.failure ??
+                    makeProviderFailure({ class: "provider_error", driver: CURSOR_DRIVER_KIND }),
                   threadDisposition,
                 }
               : {
@@ -2338,6 +2340,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                               reason: cursorSdkErrorReason(cause),
                               model: turnInput.modelSelection.model,
                               class: "transport_error",
+                              cause,
                             }),
                           }),
                     });

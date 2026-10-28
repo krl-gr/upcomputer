@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as ErrorTelemetry from "../../telemetry/ErrorTelemetry.ts";
 import * as DesktopTelemetryReceiver from "../DesktopTelemetryReceiver.ts";
 
 Effect.gen(function* () {
@@ -22,6 +23,7 @@ Effect.gen(function* () {
   yield* Layer.build(
     DesktopTelemetryReceiver.layer.pipe(
       Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(ErrorTelemetry.ErrorTelemetry.layerTest),
       Layer.provide(Layer.succeed(ServerConfig.ServerConfig, { ...base, desktopTelemetryFd: 4 })),
     ),
   );

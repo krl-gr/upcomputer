@@ -37,6 +37,7 @@ const layerProvidedClientConnection = layerSnapshotLoader.pipe(
       environmentThemes: true,
       usageLimitSources: true,
       usageLimitsCommand: true,
+      backgroundNotices: true,
       // Read at connect time: feature modules import this runtime.
       makeClient: Effect.suspend(() => WEB_PRODUCT.makeRpcClient),
     }),

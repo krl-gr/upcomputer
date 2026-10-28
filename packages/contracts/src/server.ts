@@ -23,6 +23,7 @@ import {
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
 import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
+import { AppErrorReport } from "./errorTelemetry.ts";
 import { ModelCapabilities } from "./model.ts";
 import { RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
@@ -334,6 +335,19 @@ export const OtlpEndpointCheckResult = Schema.Union([
 ]);
 export type OtlpEndpointCheckResult = typeof OtlpEndpointCheckResult.Type;
 
+/** Whether this environment's product telemetry is marked as a team or test device. */
+export const TelemetryInternalDevice = Schema.Struct({ enabled: Schema.Boolean });
+export type TelemetryInternalDevice = typeof TelemetryInternalDevice.Type;
+
+export class TelemetryInternalDeviceError extends Schema.TaggedError<TelemetryInternalDeviceError>()(
+  "TelemetryInternalDeviceError",
+  { cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "Could not change the internal device setting.";
+  }
+}
+
 export const ServerTraceDiagnosticsErrorKind = Schema.Literals([
   "trace-file-not-found",
   "trace-file-read-failed",
@@ -597,6 +611,38 @@ export const ServerDirectEndpoint = Schema.Struct({
 });
 export type ServerDirectEndpoint = typeof ServerDirectEndpoint.Type;
 
+/**
+ * A failure in background work that belongs to no thread: reminders,
+ * automations, scheduled runs, worktree cleanup, remote access. Clients list
+ * them in one notifications place instead of separate banners.
+ */
+export const BackgroundNotice = Schema.Struct({
+  /** Stable per problem, so a repeat updates the notice instead of adding one. */
+  id: TrimmedNonEmptyString,
+  area: Schema.Literals([
+    "reminders",
+    "automations",
+    "scheduled-tasks",
+    "worktrees",
+    "remote-access",
+    "updates",
+    "settings",
+    "tasks",
+    "bots",
+    "app",
+  ]),
+  severity: Schema.Literals(["info", "warning", "error"]),
+  title: TrimmedNonEmptyString,
+  message: TrimmedNonEmptyString,
+  detail: Schema.optionalKey(Schema.String),
+  /** An in-app path that fixes the problem; clients add the notice's environment. */
+  link: Schema.optionalKey(
+    Schema.Struct({ label: TrimmedNonEmptyString, path: TrimmedNonEmptyString }),
+  ),
+  occurredAt: IsoDateTime,
+});
+export type BackgroundNotice = typeof BackgroundNotice.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
@@ -605,6 +651,8 @@ export const ServerConfig = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
   providers: ServerProviders,
+  /** Only for subscribers that asked for background notices. */
+  backgroundNotices: Schema.optionalKey(ForwardCompatibleArray(BackgroundNotice)),
   availableEditors: ForwardCompatibleArray(EditorId),
   remoteOpenTargets: Schema.optionalKey(ForwardCompatibleArray(RemoteOpenTarget)),
   /**
@@ -759,6 +807,14 @@ export const ServerConfigStreamUsageLimitSourcesUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamUsageLimitSourcesUpdatedEvent =
   typeof ServerConfigStreamUsageLimitSourcesUpdatedEvent.Type;
 
+export const ServerConfigStreamBackgroundNoticesUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("backgroundNoticesUpdated"),
+  payload: Schema.Struct({ notices: ForwardCompatibleArray(BackgroundNotice) }),
+});
+export type ServerConfigStreamBackgroundNoticesUpdatedEvent =
+  typeof ServerConfigStreamBackgroundNoticesUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
@@ -766,6 +822,7 @@ export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSettingsUpdatedEvent,
   ServerConfigStreamEnvironmentThemesUpdatedEvent,
   ServerConfigStreamUsageLimitSourcesUpdatedEvent,
+  ServerConfigStreamBackgroundNoticesUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 
@@ -937,6 +994,36 @@ export const toTelemetryProvider = (driver: string): typeof TelemetryProvider.Ty
   isShippedTelemetryProvider(driver) ? driver : "other";
 
 /**
+ * The app section a UI event happened in, derived from the route's shape. Never
+ * a route param, so no thread, task or project id reaches analytics.
+ */
+export const AppView = Schema.Literals([
+  "home",
+  "threads",
+  "new_thread",
+  "tasks",
+  "planner",
+  "automations",
+  "agents",
+  "bots",
+  "settings",
+  "usage",
+  "projects",
+  "pull_requests",
+  "onboarding",
+  "other",
+]);
+export type AppView = typeof AppView.Type;
+
+/**
+ * Click targets are `data-track` names written in our code. Button text, labels
+ * and titles carry thread, task and project names, so they are never a target.
+ */
+export const UI_TRACK_TARGET_PATTERN = /^[a-z0-9_.-]{1,64}$/;
+/** A click on an element without a valid `data-track` name. */
+export const UI_UNTRACKED_TARGET = "untracked";
+
+/**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
  */
@@ -985,6 +1072,21 @@ export const ClientTelemetryEvent = Schema.Union([
     /** First-run setup finished in this window, then no turn within `thresholdMs`. */
     event: Schema.Literal("onboarding.first_screen_idle"),
     thresholdMs: PositiveInt,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("app.view.opened"),
+    view: AppView,
+  }),
+  Schema.Struct({
+    /** An error the client did not handle; see `AppErrorReport`. */
+    event: Schema.Literal("app.error"),
+    ...AppErrorReport.fields,
+  }),
+  Schema.Struct({
+    event: Schema.Literal("ui.click"),
+    view: AppView,
+    role: Schema.Literals(["button", "tab", "menuitem", "link"]),
+    target: Schema.String.check(Schema.isPattern(UI_TRACK_TARGET_PATTERN)),
   }),
 ]);
 export type ClientTelemetryEvent = typeof ClientTelemetryEvent.Type;

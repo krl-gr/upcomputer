@@ -14,6 +14,8 @@ import {
 /** An icon button with its name in a tooltip (wande used native titles). */
 export function IconAction(props: {
   readonly label: string;
+  /** The analytics name for clicks; see apps/web `uiAnalytics.ts`. */
+  readonly track?: string;
   readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   readonly children: ReactNode;
   readonly variant?: ButtonVariant;
@@ -29,6 +31,7 @@ export function IconAction(props: {
           <Button
             aria-label={props.label}
             aria-pressed={props.pressed}
+            data-track={props.track}
             className={props.className}
             disabled={props.disabled}
             size={props.size ?? "icon-xs"}

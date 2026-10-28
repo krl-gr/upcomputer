@@ -442,7 +442,7 @@ describe("createManagedRelayQueryManager", () => {
     registry.get(atom);
     await vi.waitFor(() => {
       expect(readManagedRelaySnapshotState(registry.get(atom)).error).toBe(
-        `Relay rejected the DPoP proof. ${DPOP_UNKNOWN_HINT}`,
+        `UpComputer Connect didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
       );
     });
   });

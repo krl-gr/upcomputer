@@ -239,6 +239,10 @@
       "types": "./src/upcomputerEnv.ts",
       "import": "./src/upcomputerEnv.ts"
     },
+    "./errorFingerprint": {
+      "types": "./src/errorFingerprint.ts",
+      "import": "./src/errorFingerprint.ts"
+    },
     "./upcomputerIdentity": {
       "types": "./src/upcomputerIdentity.ts",
       "import": "./src/upcomputerIdentity.ts"

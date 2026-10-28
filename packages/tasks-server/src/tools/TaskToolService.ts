@@ -79,7 +79,12 @@ import {
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
 import { agentRunModes, broaderRunMode, type RunModes } from "../agents/runModes.ts";
-import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAgentService.ts";
+import {
+  noMatchingAgentReason,
+  releasedRunId,
+  startsForTask,
+  TaskAgentService,
+} from "../agents/TaskAgentService.ts";
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
@@ -89,6 +94,7 @@ import {
   TaskToolContextResolver,
 } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { BotService } from "../bots/BotService.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -103,6 +109,7 @@ import {
 } from "./TaskToolDefinitions.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
 import { setTasksArchived } from "../taskArchive.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 
 export { TaskToolService } from "./TaskToolServiceTag.ts";
 export type { TaskToolServiceShape } from "./TaskToolServiceTag.ts";
@@ -148,6 +155,29 @@ const decoders = {
 
 function json(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+/**
+ * A dry run looks like success to a model, which then tells the person the
+ * task exists. Say plainly that nothing was saved, and why.
+ */
+function withDryRunNotice(
+  result: { readonly isError: boolean; readonly text: string },
+  context: TaskToolInvocationContext,
+): { readonly isError: boolean; readonly text: string } {
+  if (result.isError) return result;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.text);
+  } catch {
+    return result;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("dryRun" in parsed)) return result;
+  const notice =
+    context.interactionMode === "plan"
+      ? "Plan mode: nothing was saved. Switch the chat out of Plan mode to create or change tasks."
+      : "Nothing was saved: this caller can only read tasks. Ask in an Up.computer chat to make changes.";
+  return { ...result, text: json({ notice, ...parsed }) };
 }
 
 const TRANSCRIPT_ENTRY_MAX_CHARS = 4_000;
@@ -216,7 +246,13 @@ function buildAgentRunTranscript(
   return {
     run,
     failureReason: thread.runs.some((v2Run) => v2Run.status === "failed")
-      ? "A provider run on this thread failed; see the transcript entries."
+      ? (thread.turnItems
+          .flatMap((item) =>
+            item.type === "error" && item.status === "failed" && item.parentItemId === null
+              ? [item.failure.message]
+              : [],
+          )
+          .at(-1) ?? "A run on this thread failed; see the transcript entries.")
       : null,
     olderEntriesOmitted: kept.length < entries.length,
     entries: kept,
@@ -318,9 +354,9 @@ function runStartRefusal(
   }
   switch (broaderRunMode(target, ceiling)) {
     case "runtimeMode":
-      return `${action} would run in ${target.runtimeMode} mode, broader than this thread's ${ceiling.runtimeMode} mode. ${byPerson}`;
+      return `${action} would need more permissions (${target.runtimeMode}) than this chat has (${ceiling.runtimeMode}). ${byPerson}`;
     case "interactionMode":
-      return `${action} would run in ${target.interactionMode} interaction mode, broader than this thread's ${ceiling.interactionMode} mode. ${byPerson}`;
+      return `${action} would run in a broader mode (${target.interactionMode}) than this chat's (${ceiling.interactionMode}). ${byPerson}`;
     case null:
       return null;
   }
@@ -495,7 +531,9 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService;
   const inbox = yield* InboxProject;
   const schedule = yield* TaskScheduleService;
+  const bots = yield* BotService;
   const crypto = yield* Crypto.Crypto;
+  const recordFirstUse = yield* makeFirstUseRecorder;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
@@ -645,7 +683,11 @@ const make = Effect.gen(function* () {
       if (!resolution.resolvedProject && items.some((item) => item.audience !== "person"))
         return {
           isError: true,
-          text: json({ error: "Unable to resolve project. No task was created.", resolution }),
+          text: json({
+            error:
+              "Couldn't tell which project this belongs to, so no task was created. Name the project, or start from a chat inside it.",
+            resolution,
+          }),
         };
       if (!resolution.resolvedProject && dryRun(context))
         return { isError: false, text: json({ dryRun: true, project: "Inbox", tasks: items }) };
@@ -678,6 +720,7 @@ const make = Effect.gen(function* () {
         Effect.forEach(tasks, (task) => repository.upsert({ ...task, actor })),
       );
       for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
+      yield* recordFirstUse("app.first_task_created", { via: "agent" });
       // The caller wrote the descriptions; echoing them back would only cost tokens.
       const audiences = [...new Set(saved.map(({ audience }) => audience))];
       return {
@@ -776,7 +819,11 @@ const make = Effect.gen(function* () {
             if (input.audience !== "person")
               return {
                 isError: true,
-                text: json({ error: "Unable to resolve project.", resolution }),
+                text: json({
+                  error:
+                    "Couldn't tell which project this belongs to. Name the project, or start from a chat inside it.",
+                  resolution,
+                }),
               };
             if (isDryRun)
               return { isError: false, text: json({ dryRun: true, project: "Inbox", input }) };
@@ -802,11 +849,18 @@ const make = Effect.gen(function* () {
             : null;
           const saved = yield* repository.upsert({ ...task, actor: toolActor(context, callerRun) });
           yield* taskAgents.scheduleTaskChanged({ task: saved, reason: "created" });
+          yield* recordFirstUse("app.first_task_created", { via: "agent" });
+          const waiting = noMatchingAgentReason(
+            yield* repository.listAllAgents(),
+            saved,
+            Date.parse(yield* now),
+          );
           return {
             isError: false,
             text: json({
               audience: saved.audience,
               shownIn: SHOWN_IN[saved.audience],
+              ...(waiting === null ? {} : { warning: waiting }),
               task: saved,
             }),
           };
@@ -1085,7 +1139,11 @@ const make = Effect.gen(function* () {
           if (projectId === undefined) {
             return {
               isError: true,
-              text: json({ error: "Unable to resolve agent project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this agent belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           }
           const model = modelDecision.modelSelection;
@@ -1114,6 +1172,7 @@ const make = Effect.gen(function* () {
           if (createRefusal !== null) return { isError: true, text: createRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
+          yield* recordFirstUse("app.first_agent_created", { via: "agent" });
           return {
             isError: false,
             text: json({ agent: saved, resolution: compactTaskToolContext(resolution) }),
@@ -1149,7 +1208,11 @@ const make = Effect.gen(function* () {
           if (projectId === undefined)
             return {
               isError: true,
-              text: json({ error: "Unable to resolve agent project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this agent belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           const name = input.name ?? existing.value.name;
           const model = resolveAgentUpdateModelSelection(
@@ -1204,6 +1267,7 @@ const make = Effect.gen(function* () {
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
+          if (saved.name !== existing.value.name) yield* bots.nameChat(saved.id);
           return {
             isError: false,
             text: json({
@@ -1217,6 +1281,13 @@ const make = Effect.gen(function* () {
           const existing = yield* repository.getAgentById(input);
           if (Option.isNone(existing))
             return { isError: true, text: `Agent '${input.id}' was not found.` };
+          // Deleting a bot's agent would silently take its memory too; the person decides.
+          const bot = yield* bots.removal(existing.value.id);
+          if (bot !== null)
+            return {
+              isError: true,
+              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.`,
+            };
           if (isDryRun)
             return {
               isError: false,
@@ -1361,7 +1432,11 @@ const make = Effect.gen(function* () {
           if (!resolution.resolvedProject)
             return {
               isError: true,
-              text: json({ error: "Unable to resolve project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           const projectId = resolution.resolvedProject.project.id;
           const schedule = {
@@ -1410,6 +1485,7 @@ const make = Effect.gen(function* () {
           // A plain insert, not an upsert: the tool path must never be able to
           // write over an automation a person has already reviewed.
           const saved = yield* repository.insertAutomation(automation);
+          yield* recordFirstUse("app.first_automation_created", { via: "agent" });
           return {
             isError: false,
             text: json({
@@ -1645,10 +1721,16 @@ const make = Effect.gen(function* () {
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
     }).pipe(
+      Effect.map((result) => (dryRun(context) ? withDryRunNotice(result, context) : result)),
       Effect.catch((cause) =>
         Effect.succeed({
           isError: true,
-          text: cause instanceof Error ? cause.message : `Task tool '${name}' failed.`,
+          // The person reads the first line; the agent also gets the exact reason.
+          text: `Couldn't run ${name}, so nothing was changed.${
+            cause instanceof Error && cause.message.trim().length > 0
+              ? `\n\nDetails: ${cause.message}`
+              : ""
+          }`,
         }),
       ),
     );

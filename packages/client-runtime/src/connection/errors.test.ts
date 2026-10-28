@@ -31,7 +31,8 @@ describe("mapManagedRelayError", () => {
     );
     expect(mapped).toMatchObject({
       reason: "timeout",
-      detail: "Relay timed out while contacting the environment endpoint.",
+      detail:
+        "That computer didn't answer in time. Make sure it's on, awake and running Up.computer, then try again.",
       traceId: "trace-server-timeout",
     });
   });
@@ -55,7 +56,8 @@ describe("mapManagedRelayError", () => {
     expect(mapConnectRefusal("managed_endpoint_allocation_not_ready")).toMatchObject({
       _tag: "ConnectionTransientError",
       reason: "endpoint-unavailable",
-      detail: "The environment's UpComputer Connect tunnel is still being set up.",
+      detail:
+        "That computer's UpComputer Connect access is still being set up. Try again in a minute.",
       traceId: "trace-connect-refused",
     });
     expect(mapConnectRefusal("endpoint_provider_not_managed")).toMatchObject({
@@ -86,7 +88,7 @@ describe("mapManagedRelayError", () => {
     expect(mapped).toMatchObject({
       _tag: "ConnectionBlockedError",
       reason: "authentication",
-      detail: `Relay rejected the DPoP proof. ${DPOP_UNKNOWN_HINT}`,
+      detail: `UpComputer Connect didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
       traceId: "trace-1",
     });
   });
@@ -105,7 +107,9 @@ describe("mapManagedRelayError", () => {
       }),
     );
 
-    expect(mapped.message).toBe(`Relay rejected the DPoP proof. ${DPOP_RETRY_HINT}`);
+    expect(mapped.message).toBe(
+      `UpComputer Connect didn't accept this device's sign-in. ${DPOP_RETRY_HINT}`,
+    );
   });
 });
 
@@ -117,10 +121,10 @@ describe("mapRemoteDpopEnvironmentError", () => {
       traceId: "trace-descriptor",
     });
     expect(mapRemoteEnvironmentError(error, "relay").message).toBe(
-      "The environment credential is invalid.",
+      "this device's access to it was removed or has expired. Pair this device again in Settings, Connections",
     );
     expect(mapRemoteDpopEnvironmentError(error).message).toBe(
-      `The environment credential is invalid. ${DPOP_UNKNOWN_HINT}`,
+      `That computer didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
     );
   });
 
@@ -147,7 +151,9 @@ describe("mapRemoteDpopEnvironmentError", () => {
       }),
     );
 
-    expect(mapped.message).toBe(`The environment credential is invalid. ${DPOP_UNKNOWN_HINT}`);
+    expect(mapped.message).toBe(
+      `That computer didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
+    );
   });
 
   it("uses a neutral hint for a non-clock DPoP error from a new server", () => {
@@ -160,6 +166,8 @@ describe("mapRemoteDpopEnvironmentError", () => {
       }),
     );
 
-    expect(mapped.message).toBe(`The environment credential is invalid. ${DPOP_RETRY_HINT}`);
+    expect(mapped.message).toBe(
+      `That computer didn't accept this device's sign-in. ${DPOP_RETRY_HINT}`,
+    );
   });
 });

@@ -749,6 +749,55 @@ export const OrchestrationV2CheckpointScope = Schema.Struct({
 });
 export type OrchestrationV2CheckpointScope = typeof OrchestrationV2CheckpointScope.Type;
 
+export const OrchestrationV2ProviderMcpOutcome = Schema.Literals([
+  "attached",
+  "failed",
+  "timeout",
+  "disconnected",
+]);
+export type OrchestrationV2ProviderMcpOutcome = typeof OrchestrationV2ProviderMcpOutcome.Type;
+
+export const OrchestrationV2ProviderMcpFailureReason = Schema.Literals([
+  "rejected",
+  "needs_auth",
+  "request_failed",
+  "no_response",
+  "connection_lost",
+  "cancelled",
+  "unknown",
+]);
+export type OrchestrationV2ProviderMcpFailureReason =
+  typeof OrchestrationV2ProviderMcpFailureReason.Type;
+
+/** MCP servers as the provider reports them for one session. */
+export const OrchestrationV2ProviderMcpStatus = Schema.Struct({
+  /** The t3-code server; absent until the provider reports it, or when the session has none. */
+  t3: Schema.optional(
+    Schema.Struct({
+      outcome: OrchestrationV2ProviderMcpOutcome,
+      reason: Schema.optional(OrchestrationV2ProviderMcpFailureReason),
+    }),
+  ),
+  userServerCount: NonNegativeInt,
+  /** The user's own server names, for the thread notice. Telemetry sends counts only. */
+  failedUserServers: Schema.Array(Schema.String),
+});
+export type OrchestrationV2ProviderMcpStatus = typeof OrchestrationV2ProviderMcpStatus.Type;
+
+export function providerMcpStatusEqual(
+  left: OrchestrationV2ProviderMcpStatus | undefined,
+  right: OrchestrationV2ProviderMcpStatus | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return (
+    left.t3?.outcome === right.t3?.outcome &&
+    left.t3?.reason === right.t3?.reason &&
+    left.userServerCount === right.userServerCount &&
+    left.failedUserServers.length === right.failedUserServers.length &&
+    left.failedUserServers.every((name, index) => right.failedUserServers[index] === name)
+  );
+}
+
 export const OrchestrationV2ProviderSession = Schema.Struct({
   id: ProviderSessionId,
   driver: ProviderDriverKind,
@@ -760,6 +809,7 @@ export const OrchestrationV2ProviderSession = Schema.Struct({
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
   lastError: Schema.NullOr(Schema.String),
+  mcp: Schema.optional(OrchestrationV2ProviderMcpStatus),
 });
 export type OrchestrationV2ProviderSession = typeof OrchestrationV2ProviderSession.Type;
 
@@ -1274,6 +1324,8 @@ export const OrchestrationV2ProviderFailure = Schema.Struct({
   code: Schema.NullOr(OrchestrationV2ProviderFailureCode),
   retryable: Schema.NullOr(Schema.Boolean),
   resetAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  /** Technical text for a Details disclosure. `message` is what the user reads. */
+  detail: Schema.optional(OrchestrationV2ProviderFailureMessage),
 });
 export type OrchestrationV2ProviderFailure = typeof OrchestrationV2ProviderFailure.Type;
 

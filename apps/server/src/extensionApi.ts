@@ -36,10 +36,13 @@ export {
   type RestartContinuationGate,
 } from "./orchestration-v2/RestartContinuationGate.ts";
 export { ServerSettingsService } from "./serverSettings.ts";
-export { registerTurnContextResolver } from "./orchestration-v2/TurnContext.ts";
+export { AnalyticsService, type TelemetryMilestone } from "./telemetry/AnalyticsService.ts";
+export { registerHeartbeatCounts } from "./telemetry/HeartbeatCounts.ts";
+export { registerTurnContextResolver, TurnContextRefusal } from "./orchestration-v2/TurnContext.ts";
 export { forkParked } from "./serverActivation.ts";
 export {
   UPCOMPUTER_PRODUCT_FLAGS,
   UPSTREAM_PRODUCT_FLAGS,
   type ProductFlags,
 } from "@t3tools/shared/productFlags";
+export { BackgroundNotices } from "./background/BackgroundNotices.ts";

@@ -238,7 +238,7 @@ function InstructionsEditor({
     setError(undefined);
     if (!api) {
       setLoading(false);
-      setError("Connect to an environment with Tasks to edit instructions.");
+      setError("The computer with your tasks isn't connected. Reconnect it to edit instructions.");
       return () => {
         cancelled = true;
       };

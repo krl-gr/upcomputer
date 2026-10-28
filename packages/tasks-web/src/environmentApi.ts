@@ -113,7 +113,8 @@ export function readTasksWebClient(environmentId: EnvironmentId): TasksWebRpcCli
   return client;
 }
 
-function subscribe(listener: () => void) {
+/** Calls the listener whenever an environment's Tasks access, or the planner's, is decided. */
+export function subscribeTasksWebAccess(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -129,13 +130,13 @@ export function usePlannerAvailability(
   environmentId: EnvironmentId | null,
 ): TasksWebAvailability | null {
   const read = () => (environmentId ? readPlannerAvailability(environmentId) : null);
-  return useSyncExternalStore(subscribe, read, read);
+  return useSyncExternalStore(subscribeTasksWebAccess, read, read);
 }
 
 /** Changes whenever an environment's Tasks access is decided; use it as a memo dependency. */
 export function useTasksWebAccessRevision(): number {
   return useSyncExternalStore(
-    subscribe,
+    subscribeTasksWebAccess,
     () => revision,
     () => revision,
   );
@@ -144,6 +145,6 @@ export function useTasksWebAccessRevision(): number {
 /** Subscribe to availability itself so render-time access reads cannot stay cached. */
 export function useTasksWebAccess(environmentId: EnvironmentId): TasksWebAccess {
   const read = () => readTasksWebAccess(environmentId).availability;
-  const availability = useSyncExternalStore(subscribe, read, read);
+  const availability = useSyncExternalStore(subscribeTasksWebAccess, read, read);
   return resolveTasksWebAccess({ availability });
 }

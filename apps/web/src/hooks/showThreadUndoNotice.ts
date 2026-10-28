@@ -7,6 +7,7 @@ import { create } from "zustand";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import * as ThreadUndo from "./threadUndo";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 type UndoOptions = {
   action: "Settled" | "Snoozed" | "Unpinned" | "Archived" | "Discarded";
@@ -63,7 +64,7 @@ function refreshNotice() {
                 stackedThreadToast({
                   type: "error",
                   title: failureTitle,
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
             };

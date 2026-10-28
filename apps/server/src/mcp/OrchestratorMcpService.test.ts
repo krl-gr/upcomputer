@@ -1004,13 +1004,13 @@ describe("OrchestratorMcpService provider resolution", () => {
           const disabled = byId.get(disabledAntigravityInstanceId);
           assert.isDefined(disabled);
           assert.isFalse(disabled!.canRunChildTask);
-          assert.deepEqual(disabled!.constraints, ["Provider instance is disabled."]);
+          assert.deepEqual(disabled!.constraints, ["it's turned off"]);
 
           const fork = byId.get(forkOnlyInstanceId);
           assert.isDefined(fork);
           assert.isFalse(fork!.canRunChildTask);
           assert.isTrue(
-            fork!.constraints.includes("No V2 provider adapter is registered."),
+            fork!.constraints.includes("it can't run as a helper in this version"),
             `expected missing-adapter constraint, got ${fork!.constraints.join(" | ")}`,
           );
           assert.isTrue(
@@ -1083,7 +1083,7 @@ describe("OrchestratorMcpService provider resolution", () => {
         assert.deepEqual(
           initial.providers.find((provider) => provider.providerInstanceId === codexInstanceId)
             ?.constraints,
-          ["Provider status is error.", "Provider is not authenticated."],
+          ["it isn't working right now", "it's signed out"],
         );
 
         providers = providers.map((provider) =>
@@ -1579,7 +1579,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           })
           .pipe(Effect.flip);
         assert.equal(byInstance.code, "provider_unavailable");
-        assert.isTrue(byInstance.message.includes("No V2 provider adapter is registered."));
+        assert.isTrue(byInstance.message.includes("it can't run as a helper in this version"));
 
         const byDriver = yield* service
           .delegateTask(scope, {
@@ -1591,7 +1591,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           .pipe(Effect.flip);
         assert.equal(byDriver.code, "provider_unavailable");
         assert.isTrue(
-          byDriver.message.includes("No V2 provider adapter is registered for driver forkOnly."),
+          byDriver.message.includes("Can't hand this to forkOnly: it can't run as a helper"),
         );
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
@@ -2134,7 +2134,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                 .pipe(Effect.flip);
               assert.equal(error.code, "provider_unavailable", testCase.name);
               if (testCase.name === "cross-driver-no-available-candidate") {
-                assert.isTrue(error.message.includes("driver claudeAgent"), testCase.name);
+                assert.isTrue(error.message.includes("hand this to claudeAgent"), testCase.name);
                 const threadError = yield* service
                   .createThreads(scope, {
                     threads: [{ prompt: "Summarize the diff.", target }],
@@ -2147,7 +2147,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                   `${testCase.name}-createThreads`,
                 );
                 assert.isTrue(
-                  threadError.message.includes("driver claudeAgent"),
+                  threadError.message.includes("hand this to claudeAgent"),
                   `${testCase.name}-createThreads`,
                 );
               }

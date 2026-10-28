@@ -496,7 +496,7 @@ it.layer(
         assert.strictEqual(status.auth.status, "unauthenticated");
         assert.strictEqual(
           status.message,
-          "Codex CLI is not authenticated. Run `codex login` and try again.",
+          "Codex isn't signed in. Sign in with ChatGPT in Settings, or run `codex login` in a terminal.",
         );
       }),
     );
@@ -620,7 +620,7 @@ it.layer(
         assert.strictEqual(status.status, "error");
         assert.strictEqual(
           status.message,
-          "Timed out while checking Codex app-server provider status.",
+          "Codex didn't respond in time while starting. Check your Codex install, then refresh.",
         );
         assert.strictEqual(yield* Ref.get(killCalls), 1);
       }),
@@ -1068,7 +1068,8 @@ it.layer(
         checkedAt: "2026-07-17T00:03:00.000Z",
         version: null,
         models: [],
-        message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+        message:
+          "OpenCode isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings.",
       } satisfies ServerProvider;
       const authoritativeProvider = {
         ...previousProvider,
@@ -3526,7 +3527,10 @@ it.layer(
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, false);
         assert.strictEqual(status.auth.status, "unknown");
-        assert.strictEqual(status.message, "Claude Agent CLI (`claude`) was not found on PATH.");
+        assert.strictEqual(
+          status.message,
+          "Claude Code isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings.",
+        );
       }).pipe(Effect.provide(layerFailingSpawner("spawn claude ENOENT"))),
     );
 
@@ -3539,7 +3543,10 @@ it.layer(
         );
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, true);
-        assert.strictEqual(status.message, "Claude Agent CLI is installed but failed to run.");
+        assert.strictEqual(
+          status.message,
+          "Claude Code is installed but didn't respond. Open a terminal and run `claude --version` to see what's wrong, then refresh.",
+        );
         assert.ok(!(status.message ?? "").includes(secretStderr));
       }).pipe(
         Effect.provide(
@@ -3568,7 +3575,7 @@ it.layer(
         assert.strictEqual(status.auth.status, "unknown");
         assert.strictEqual(
           status.message,
-          "Could not verify Claude authentication status from initialization result.",
+          "Couldn't check whether Claude Code is signed in. It may still work.",
         );
       }).pipe(
         Effect.provide(

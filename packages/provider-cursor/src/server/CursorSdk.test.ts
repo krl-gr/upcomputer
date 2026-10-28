@@ -70,6 +70,18 @@ if (mode === "cursor-shell") {
   );
   setTimeout(() => process.exit(0), 500);
 } else if (mode === "other-rejection") {
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    console.log("monitor " + origin + " " + error.message);
+  });
+  Promise.reject(new Error("boom"));
+  setTimeout(() => process.exit(0), 500);
+} else if (mode === "throwing-monitor") {
+  process.on("uncaughtExceptionMonitor", () => {
+    throw new Error("monitor broke");
+  });
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    console.log("monitor " + origin + " " + error.message);
+  });
   Promise.reject(new Error("boom"));
   setTimeout(() => process.exit(0), 500);
 } else if (mode === "spawn-without-listener") {
@@ -161,10 +173,17 @@ describe("Cursor shell spawn guard", () => {
     expect(result.stderr).not.toContain("The server will keep running.");
   });
 
-  it("still exits on unrelated unhandled rejections", async () => {
+  it("still exits on unrelated unhandled rejections, telling crash observers first", async () => {
     const result = await runProbe("other-rejection");
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("boom");
+    expect(result.stdout).toContain("monitor unhandledRejection boom");
+  });
+
+  it("still exits when a crash observer throws", async () => {
+    const result = await runProbe("throwing-monitor");
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("monitor unhandledRejection boom");
   });
 
   it("removes the guard when the layer is released", async () => {

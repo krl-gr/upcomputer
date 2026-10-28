@@ -768,7 +768,8 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           expect(Result.isFailure(result)).toBe(true);
           if (Result.isFailure(result)) {
             expect(result.failure).toBeInstanceOf(TextGenerationError);
-            expect(result.failure.message).toContain("missing --image input");
+            expect(result.failure.message).toContain("Couldn't write the branch name with AI");
+            expect(result.failure.detail).toContain("missing --image input");
           }
         }),
     ),
@@ -796,7 +797,8 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
             expect(Result.isFailure(result)).toBe(true);
             if (Result.isFailure(result)) {
               expect(result.failure).toBeInstanceOf(TextGenerationError);
-              expect(result.failure.message).toContain("Codex returned invalid structured output");
+              expect(result.failure.message).toContain("Couldn't write the branch name with AI");
+              expect(result.failure.detail).toContain("Codex returned invalid structured output");
             }
           }),
       ),
@@ -824,7 +826,8 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           expect(Result.isFailure(result)).toBe(true);
           if (Result.isFailure(result)) {
             expect(result.failure).toBeInstanceOf(TextGenerationError);
-            expect(result.failure.message).toContain(
+            expect(result.failure.message).toContain("Couldn't write the commit message with AI");
+            expect(result.failure.detail).toContain(
               "Codex CLI command failed: codex execution failed",
             );
           }

@@ -297,6 +297,22 @@ describe("ClientTelemetryEvent", () => {
     expect(decode(idle)._tag).toBe("Failure");
   });
 
+  it("takes click targets only from code-shaped names and drops other properties", () => {
+    const click = { event: "ui.click", view: "tasks", role: "button" };
+    expect(decode({ ...click, target: "tasks.create" })._tag).toBe("Success");
+    expect(decode({ ...click, target: "untracked" })._tag).toBe("Success");
+    expect(decode({ ...click, target: "Fix login bug" })._tag).toBe("Failure");
+    expect(decode({ ...click, target: "a".repeat(65) })._tag).toBe("Failure");
+    expect(decode({ ...click, target: "tasks.create", view: "/tasks/task-1" })._tag).toBe(
+      "Failure",
+    );
+    const decoded = decode({ ...click, target: "tasks.create", text: "Fix login bug" });
+    expect(decoded._tag === "Success" ? decoded.value : null).toEqual({
+      ...click,
+      target: "tasks.create",
+    });
+  });
+
   it("maps a driver this app does not ship to other", () => {
     expect(toTelemetryProvider("claudeAgent")).toBe("claudeAgent");
     expect(toTelemetryProvider("private-customer-alice-123")).toBe("other");

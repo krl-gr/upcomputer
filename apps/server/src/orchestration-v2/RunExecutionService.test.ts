@@ -1307,7 +1307,7 @@ it.effect.each(["failure", "interruption", "stale-attempt", "start-guard"] as co
       );
       assert.isDefined(errorItem);
       if (errorItem?.type === "turn-item.updated" && errorItem.payload.type === "error") {
-        assert.equal(errorItem.payload.failure.message, "Run preparation failed.");
+        assert.include(errorItem.payload.failure.message, "couldn't prepare this message");
       }
     }),
 );
@@ -3733,7 +3733,7 @@ it.effect("refreshes pull requests after a provider stream exits with an error",
       ["error"],
     );
     const error = written.find((item) => item.type === "error");
-    assert.include(error?.failure.message ?? "", "provider event stream closed unexpectedly");
+    assert.include(error?.failure.message ?? "", "dropped while it was working");
   }),
 );
 
@@ -3815,7 +3815,7 @@ it.effect("refreshes pull requests only once when startup failure closes its eve
     assert.equal(observed.filter((item) => item === "pull-requests-refreshed").length, 1);
     assert.equal(observed[0], "run:failed");
     const error = written.find((item) => item.type === "error");
-    assert.include(error?.failure.message ?? "", "provider could not start this turn");
+    assert.include(error?.failure.message ?? "", "couldn't start this reply");
   }),
 );
 

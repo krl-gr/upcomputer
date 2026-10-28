@@ -39,3 +39,26 @@ test("history names the agent of a run and keeps only readable history events", 
     ],
   );
 });
+
+test("history explains why an agent did not start", () => {
+  const entries = taskHistoryEntries(
+    [
+      event("e2", "task.no-matching-agent", {
+        reason: 'No enabled agent starts on "To Do" with these tags, so this task will wait.',
+      }),
+      event("e1", "task.agent-not-started", {
+        agentId: "agent-1",
+        agentName: "Developer",
+        reason: "Developer didn't start: the chat that changed this task has fewer permissions.",
+      }),
+    ],
+    () => null,
+  );
+  NodeAssert.deepEqual(
+    entries.map(({ title, actor }) => ({ title, actor })),
+    [
+      { title: "No agent will pick this up", actor: "Server" },
+      { title: "Agent didn't start", actor: "Developer" },
+    ],
+  );
+});

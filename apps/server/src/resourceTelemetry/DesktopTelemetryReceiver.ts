@@ -28,6 +28,7 @@ import * as Ndjson from "effect/encoding/Ndjson";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ErrorTelemetry from "../telemetry/ErrorTelemetry.ts";
 import { subscribeBeforeSnapshotWithoutMutex } from "../utils/subscribeBeforeSnapshot.ts";
 
 const INITIAL_SAMPLE_DEADLINE_MS = 90_000;
@@ -326,6 +327,7 @@ export function requireDesktopTelemetryWriteProgress(
 export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const errorTelemetry = yield* ErrorTelemetry.ErrorTelemetry;
   const latest = yield* Ref.make(Option.none<DesktopHostTelemetrySnapshot>());
   const receiverStartedAt = yield* DateTime.now;
   const lastContactAtMs = yield* Ref.make(
@@ -518,6 +520,12 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
                 lastError: Option.none(),
               })),
             ),
+          );
+        }
+
+        if (message.type === "desktopProductEvent") {
+          return recordContact.pipe(
+            Effect.andThen(errorTelemetry.reportDesktopEvent(message.event)),
           );
         }
 

@@ -70,7 +70,7 @@ describe("connection presentation", () => {
     );
     expect(connection.phase).toBe("unsupported");
     expect(connection.error).toBe("Update your app.");
-    expect(connectionStatusText(connection)).toBe("Client not supported");
+    expect(connectionStatusText(connection)).toBe("Update needed");
   });
 
   it("preserves profile display information without exposing credentials", () => {
@@ -204,9 +204,9 @@ describe("connection presentation", () => {
       traceId: "trace-retry",
     } as const;
     expect(connectionStatusText(connection)).toBe(
-      "Failed to connect. Reconnecting... Reason: Relay request timed out.",
+      "Up.computer can't reach this computer right now (Relay request timed out). It keeps trying.",
     );
-    expect(connectionStatusTitle(connection)).toBe("Failed to connect. Reconnecting...");
+    expect(connectionStatusTitle(connection)).toBe("Can't reach this computer. Reconnecting...");
   });
 
   it("presents the supervisor's offline state without consulting shell state", () => {

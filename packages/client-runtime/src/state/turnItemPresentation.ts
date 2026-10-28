@@ -38,3 +38,37 @@ export function workspacePreparationRetryRunIds(
   }
   return retryable;
 }
+
+/** Codes that a person fixes in Settings rather than by sending again. */
+const SETTINGS_FAILURE_CODES = new Set([
+  "session_open_failed",
+  "authentication_failed",
+  "provider_instance_missing",
+  "workspace_missing",
+  "model_unavailable",
+]);
+
+/** `open_bot_settings` opens the settings of the bot whose chat this is. */
+export type ProviderFailureAction =
+  | "retry"
+  | "switch_model"
+  | "open_settings"
+  | "open_bot_settings";
+
+/**
+ * The buttons under a failed turn, most useful first. Usage limits lead with
+ * switching provider or model; retrying is second because it waits for the reset.
+ */
+export function providerFailureActions(
+  failure: Extract<OrchestrationV2TurnItem, { readonly type: "error" }>["failure"],
+): ReadonlyArray<ProviderFailureAction> {
+  if (failure.class === "usage_limit") return ["switch_model", "retry"];
+  if (failure.code === "bot_project_changed") return ["open_bot_settings"];
+  if (
+    failure.class === "permission_error" ||
+    (failure.code !== null && SETTINGS_FAILURE_CODES.has(failure.code))
+  ) {
+    return failure.retryable === false ? ["open_settings"] : ["open_settings", "retry"];
+  }
+  return failure.retryable === false ? [] : ["retry"];
+}

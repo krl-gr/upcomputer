@@ -48,6 +48,7 @@ import {
   ProjectRowIcon,
   useSidebarProjectsRows,
 } from "./sidebarProjectIcons";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
 
@@ -109,7 +110,7 @@ export function SidebarProjectsSection(props: {
         stackedThreadToast({
           type: "error",
           title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -137,7 +138,11 @@ export function SidebarProjectsSection(props: {
             ) : null
           }
           action={
-            <SidebarSectionHeaderAction label="Add project" onClick={onAddProject}>
+            <SidebarSectionHeaderAction
+              label="Add project"
+              track="sidebar.add_project"
+              onClick={onAddProject}
+            >
               <PlusIcon className="size-3.5" />
             </SidebarSectionHeaderAction>
           }

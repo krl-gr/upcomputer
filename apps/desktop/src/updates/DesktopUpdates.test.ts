@@ -51,12 +51,15 @@ describe("DesktopUpdates", () => {
     assert.equal(eventError.message, "Failed to handle desktop update download-progress event.");
     assert.strictEqual(reportedError.cause, cause);
     assert.equal(reportedError.operation, "download");
-    assert.equal(reportedError.message, "Desktop updater download operation reported an error.");
+    assert.equal(
+      reportedError.message,
+      "Up.computer couldn't download the update. You're still on this version, so try again.",
+    );
     assert.strictEqual(unexpectedActionError.cause, cause);
     assert.equal(unexpectedActionError.action, "install");
     assert.equal(
       unexpectedActionError.message,
-      "Desktop update install action failed unexpectedly.",
+      "Up.computer couldn't install the update. You're still on this version, so try again.",
     );
   });
 
@@ -400,7 +403,10 @@ describe("DesktopUpdates", () => {
 
         const state = yield* updates.getState;
         assert.equal(state.status, "error");
-        assert.equal(state.message, "Desktop updater background operation reported an error.");
+        assert.equal(
+          state.message,
+          "Up.computer couldn't check for updates. You're still on this version, so try again.",
+        );
         assert.notInclude(state.message ?? "", "secret");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -513,7 +519,10 @@ describe("DesktopUpdates", () => {
         );
         assert.notInclude(JSON.stringify(loggedAnnotations), "secret");
         const state = yield* updates.getState;
-        assert.equal(state.message, "Desktop updater background operation reported an error.");
+        assert.equal(
+          state.message,
+          "Up.computer couldn't check for updates. You're still on this version, so try again.",
+        );
       }),
     ).pipe(
       Effect.provide(
@@ -551,7 +560,10 @@ describe("DesktopUpdates", () => {
         const failedState = yield* updates.getState;
         assert.equal(failedState.status, "available");
         assert.equal(failedState.errorContext, "download");
-        assert.equal(failedState.message, "Desktop update download action failed unexpectedly.");
+        assert.equal(
+          failedState.message,
+          "Up.computer couldn't download the update. You're still on this version, so try again.",
+        );
 
         const changedState = yield* updates.setChannel("nightly");
         assert.equal(changedState.channel, "nightly");
@@ -620,7 +632,10 @@ describe("DesktopUpdates", () => {
         const failedState = yield* updates.getState;
         assert.equal(failedState.status, "downloaded");
         assert.equal(failedState.errorContext, "install");
-        assert.equal(failedState.message, "Desktop update install action failed unexpectedly.");
+        assert.equal(
+          failedState.message,
+          "Up.computer couldn't install the update. You're still on this version, so try again.",
+        );
 
         const changedState = yield* updates.setChannel("nightly");
         assert.equal(changedState.channel, "nightly");

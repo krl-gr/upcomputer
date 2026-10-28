@@ -129,7 +129,7 @@ describe("getProviderStatusMessage", () => {
         auth: { status: "unauthenticated" },
         message: "",
       }),
-    ).toBe("Open provider setup to install Antigravity on this environment.");
+    ).toBe("Antigravity isn't installed on this computer. Open provider setup to install it.");
   });
 
   it("keeps CLI sign-in advice for a provider without integrated setup", () => {
@@ -140,6 +140,8 @@ describe("getProviderStatusMessage", () => {
         auth: { status: "unauthenticated" },
         message: "",
       }),
-    ).toBe("Sign in via the CLI to authenticate again.");
+    ).toBe(
+      "Codex isn't signed in on this computer, so it can't run. Sign in again from a terminal on this computer.",
+    );
   });
 });

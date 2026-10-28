@@ -131,6 +131,27 @@ describe("command permissions", () => {
     ),
   );
 
+  it.effect("requires the destination settings grant to mark an internal device", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const mark = createCommandPermissions(runtime, WS_METHODS.serverSetTelemetryInternalDevice);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(mark.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSettingsWriteScope],
+            permissions: [AuthSettingsWriteScope],
+          }),
+        );
+        expect(registry.get(mark.permissionAtom(env))).toBe(true);
+        yield* mark.authorize(registry, env);
+      }),
+    ),
+  );
+
   it.effect("uses the target grant for both availability and execution", () =>
     Effect.scoped(
       Effect.gen(function* () {

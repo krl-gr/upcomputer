@@ -1,4 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { toastManager } from "~/components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
@@ -143,7 +144,14 @@ export function FirstRunGate({
     if (decision === "wizard" || !hydrated) return;
 
     if (persistCompletion && onboardingCompletedAt === null) {
-      void completeOnboarding().catch(() => undefined);
+      void completeOnboarding().catch(() =>
+        toastManager.add({
+          type: "warning",
+          title: "Setup wasn't saved",
+          description:
+            "Up.computer couldn't save that setup is finished, so you might see it again. Your projects are not affected.",
+        }),
+      );
     }
 
     setGateState((state) =>
@@ -210,12 +218,14 @@ function FirstRunRecovery({
     <main className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground">
       <div className="flex max-w-sm flex-col items-center text-center">
         <h1 className="text-lg font-semibold">
-          {settingsReadFailed ? "Could not read settings" : "Still connecting"}
+          {settingsReadFailed
+            ? "Couldn't read your settings"
+            : "Up.computer is taking too long to start"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {settingsReadFailed
-            ? "Your saved settings could not be loaded."
-            : "Up.computer could not confirm this workspace."}
+            ? "Your saved settings couldn't be loaded. Try again, and restart the app if it keeps happening."
+            : "Up.computer on this computer hasn't answered yet. Reload, and if it keeps happening, restart the app."}
         </p>
         <Button
           className="mt-5"

@@ -105,14 +105,16 @@ describe("AcpRegistryAdapterV2", () => {
     });
     assert.deepEqual(acpRegistryPromptFailure("mistral-vibe", limit), {
       class: "usage_limit",
-      message: limit.errorMessage,
+      message:
+        "Mistral Vibe usage limit reached (rate limit exceeded for mistral (model: mistral-vibe-cli-latest)). Switch to another model or provider to keep working now.",
       code: "-31001",
       retryable: null,
+      detail: `${limit.errorMessage} (code -31001)`,
     });
     assert.equal(acpRegistryPromptFailure("other-agent", limit).class, "provider_error");
     assert.equal(
       acpRegistryPromptFailure("mistral-vibe", new Error("private defect")).message,
-      "Provider turn failed.",
+      "Mistral Vibe stopped with an error it didn't explain. Send the message again; if it repeats, check Mistral Vibe in Settings.",
     );
     const rejected = acpRegistryPromptFailure(
       "any-agent",
@@ -121,7 +123,7 @@ describe("AcpRegistryAdapterV2", () => {
         errorMessage: "Request rejected. api_key=private-key https://example.test/?token=secret",
       }),
     );
-    assert.include(rejected.message, "Request rejected.");
+    assert.include(rejected.message, "Any Agent reported an error: Request rejected");
     assert.notInclude(rejected.message, "private-key");
     assert.notInclude(rejected.message, "token=secret");
   });

@@ -1,4 +1,5 @@
 import { SessionPermissions } from "./SessionPermissions";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
   ChevronRightIcon,
@@ -370,7 +371,7 @@ function parseRemotePairingFields(input: { readonly host: string; readonly pairi
   const host = input.host.trim();
   const pairingCode = input.pairingCode.trim();
   if (!host) {
-    throw new Error("Enter a backend host.");
+    throw new Error("Enter the address of the computer.");
   }
   if (!pairingCode) {
     throw new Error("Enter a pairing code.");
@@ -1058,11 +1059,11 @@ const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderActio
       );
       setDialogOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create pairing URL.";
+      const message = plainErrorSentence(error, "create a pairing link");
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not create pairing URL",
+          title: "Couldn't create a pairing link",
           description: message,
         }),
       );
@@ -2308,8 +2309,7 @@ export function ConnectionsSettings() {
         setIsDesktopServerExposureDialogOpen(false);
         setIsUpdatingDesktopServerExposure(false);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to update network exposure.";
+        const message = plainErrorSentence(error, "change network access");
         setIsDesktopServerExposureDialogOpen(false);
         setDesktopServerExposureMutationError(message);
         toastManager.add(
@@ -2349,8 +2349,7 @@ export function ConnectionsSettings() {
       refreshDesktopNetworkAccessState();
       setPendingTailscaleServeEndpoint(null);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to configure Tailscale HTTPS.";
+      const message = plainErrorSentence(error, "turn on Tailscale HTTPS");
       setDesktopServerExposureMutationError(message);
       toastManager.add(
         stackedThreadToast({
@@ -2391,7 +2390,7 @@ export function ConnectionsSettings() {
       refreshDesktopNetworkAccessState();
       setDisableTailscaleServeDialogOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to disable Tailscale HTTPS.";
+      const message = plainErrorSentence(error, "turn off Tailscale HTTPS");
       setDesktopServerExposureMutationError(message);
       toastManager.add(
         stackedThreadToast({
@@ -2421,7 +2420,7 @@ export function ConnectionsSettings() {
       try {
         await revokeServerPairingLink(id);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to revoke pairing link.";
+        const message = plainErrorSentence(error, "revoke the pairing link");
         setDesktopAccessManagementMutationError(message);
         toastManager.add(
           stackedThreadToast({
@@ -2449,7 +2448,7 @@ export function ConnectionsSettings() {
       try {
         await revokeServerClientSession(sessionId);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to revoke client access.";
+        const message = plainErrorSentence(error, "revoke that device's access");
         setDesktopAccessManagementMutationError(message);
         toastManager.add(
           stackedThreadToast({
@@ -2481,7 +2480,7 @@ export function ConnectionsSettings() {
         description: "Other paired clients will need a new pairing link before reconnecting.",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to revoke other clients.";
+      const message = plainErrorSentence(error, "revoke the other devices");
       setDesktopAccessManagementMutationError(message);
       toastManager.add(
         stackedThreadToast({
@@ -2557,12 +2556,12 @@ export function ConnectionsSettings() {
         pairingCode: savedBackendPairingCode,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add backend.";
+      const message = plainErrorSentence(error, "add this computer");
       setSavedBackendError(message);
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not add backend",
+          title: "Couldn't add the computer",
           description: message,
         }),
       );
@@ -2577,12 +2576,12 @@ export function ConnectionsSettings() {
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to add backend.";
+        const message = plainErrorSentence(error, "add this computer");
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not add backend",
+            title: "Couldn't add the computer",
             description: message,
           }),
         );
@@ -2712,15 +2711,12 @@ export function ConnectionsSettings() {
       const result = await setEnvironmentEnabled({ environmentId, enabled });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message =
-          error instanceof Error
-            ? error.message
-            : `Failed to switch the backend ${enabled ? "on" : "off"}.`;
+        const message = plainErrorSentence(error, `turn the computer ${enabled ? "on" : "off"}`);
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: `Could not switch backend ${enabled ? "on" : "off"}`,
+            title: `Couldn't turn the computer ${enabled ? "on" : "off"}`,
             description: message,
           }),
         );
@@ -2738,12 +2734,12 @@ export function ConnectionsSettings() {
       setRemovingSavedEnvironmentId(null);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to remove backend.";
+        const message = plainErrorSentence(error, "remove the computer");
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not remove backend",
+            title: "Couldn't remove the computer",
             description: message,
           }),
         );
@@ -3123,12 +3119,12 @@ export function ConnectionsSettings() {
         await apply();
         refreshDesktopWslState();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update WSL backend.";
+        const message = plainErrorSentence(error, "change the WSL setting");
         setDesktopWslMutationError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not change WSL backend",
+            title: "Couldn't change the WSL setting",
             description: message,
           }),
         );
@@ -3244,7 +3240,7 @@ export function ConnectionsSettings() {
         return (
           <SettingsRow
             {...searchableSetting("wsl-backend")}
-            description="Couldn't load the WSL backend state."
+            description="Couldn't load the WSL setting."
             status={<span className="block text-destructive">{desktopWslError}</span>}
             control={
               <Button

@@ -3,6 +3,10 @@
  * event.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import {
+  resolveUpcomputerBuildKind,
+  type UpcomputerBuildKind,
+} from "@t3tools/shared/upcomputerIdentity";
 import type { ClientOs } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -15,9 +19,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -32,6 +38,14 @@ interface BufferedAnalyticsEvent {
   readonly event: string;
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly capturedAt: string;
+  readonly isInternal: boolean;
+  /** Set for an event that belongs to an earlier session, such as a crash it could not send. */
+  readonly sessionId?: string;
+}
+
+export interface RecordOptions {
+  readonly sessionId?: string;
+  readonly capturedAtMs?: number;
 }
 
 interface DeliveryState {
@@ -76,15 +90,57 @@ const TelemetryEnvConfig = Config.all({
   desktopStartup: Config.Literals(["launch", "restart"], "T3CODE_DESKTOP_STARTUP").pipe(
     Config.option,
   ),
+  desktopBuildKind: Config.Literals(
+    ["dev", "localtest", "rc", "nightly", "stable"],
+    "T3CODE_DESKTOP_BUILD_KIND",
+  ).pipe(Config.option),
+  desktopSessionId: Config.String("T3CODE_DESKTOP_SESSION_ID").pipe(Config.option),
 });
 
-export type TelemetryMilestone = "app.first_thread_created" | "app.first_message_sent";
+// Only bundles define it, so a server run from source is a dev build.
+declare const __T3CODE_BUILD_CHANNEL__: string | undefined;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type TelemetryMilestone =
+  | "app.first_thread_created"
+  | "app.first_message_sent"
+  | "app.first_turn_completed"
+  | "app.first_task_created"
+  | "app.first_agent_created"
+  | "app.first_agent_run"
+  | "app.first_automation_created"
+  | "app.first_scheduled_task_created"
+  | "app.first_bot_chat";
 
 // 0.0.32 wrote this marker, so installs upgraded from it never report a second first launch.
 const FIRST_LAUNCH_MARKER_FILE = "telemetry-first-launch-v1";
+// Marks a team or test device, so its events can be filtered out. It lives in the
+// state dir, which app updates keep, and env vars do not reach Finder launches.
+const INTERNAL_DEVICE_MARKER_FILE = "telemetry-internal-device";
 // Created together with the first-launch claim. Installs that were first launched by an
 // older build have threads already, so their next thread is not their first one.
 const MILESTONES_DIR = "telemetry-milestones";
+// Written at start and removed at a clean stop, so the next start can tell the
+// previous one ended without stopping.
+const SESSION_MARKER_FILE = "telemetry-session";
+// A process that keeps dying would send its start-up events every few seconds.
+// After this many unclean starts within the window, a start records nothing
+// until it has stayed up for the quiet period, which a crash loop never does.
+const CRASH_LOOP_WINDOW_MS = 60 * 60 * 1000;
+const CRASH_LOOP_UNCLEAN_STARTS = 10;
+const CRASH_LOOP_QUIET_MS = 10 * 60 * 1000;
+
+const SessionMarker = Schema.Struct({
+  sessionId: Schema.optionalKey(Schema.String),
+  version: Schema.optionalKey(Schema.String),
+  uncleanStarts: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  windowStartedAtMs: Schema.Number,
+});
+const decodeSessionMarker = Schema.decodeUnknownOption(Schema.fromJsonString(SessionMarker));
+const encodeSessionMarker = Schema.encodeSync(Schema.fromJsonString(SessionMarker));
+// Only versions a build writes, so a hand-edited marker cannot put text into an event.
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]{1,40})?$/;
 
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
@@ -92,12 +148,25 @@ export class AnalyticsService extends Context.Service<
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,
+      options?: RecordOptions,
     ) => Effect.Effect<void>;
 
     /** Records an install milestone at most once, and only for installs first launched on this build. */
-    readonly recordMilestone: (event: TelemetryMilestone) => Effect.Effect<void>;
+    readonly recordMilestone: (
+      event: TelemetryMilestone,
+      properties?: Readonly<Record<string, unknown>>,
+    ) => Effect.Effect<void>;
 
     readonly flush: Effect.Effect<void>;
+
+    /** False when the install opted out; nothing is recorded or written then. */
+    readonly enabled: boolean;
+    readonly sessionId: string | undefined;
+
+    readonly internalDevice: Effect.Effect<boolean>;
+    readonly setInternalDevice: (
+      enabled: boolean,
+    ) => Effect.Effect<boolean, PlatformError.PlatformError>;
   }
 >()("t3/telemetry/AnalyticsService") {
   static readonly layerTest = Layer.succeed(
@@ -106,6 +175,10 @@ export class AnalyticsService extends Context.Service<
       record: () => Effect.void,
       recordMilestone: () => Effect.void,
       flush: Effect.void,
+      enabled: false,
+      sessionId: undefined,
+      internalDevice: Effect.succeed(false),
+      setInternalDevice: (enabled) => Effect.succeed(enabled),
     }),
   );
 }
@@ -148,21 +221,58 @@ export const make = Effect.gen(function* () {
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
+  const isDesktopBackend = serverConfig.mode === "desktop";
+  // The desktop app knows whether it is packaged; other servers classify themselves.
+  const buildKind: UpcomputerBuildKind =
+    (isDesktopBackend ? Option.getOrUndefined(telemetryConfig.desktopBuildKind) : undefined) ??
+    resolveUpcomputerBuildKind({
+      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
+      version: packageJson.version,
+    });
+  // Random per app launch (desktop) or per server start; never derived from the install.
+  const desktopSessionId = isDesktopBackend
+    ? Option.filter(telemetryConfig.desktopSessionId, (id) => UUID_PATTERN.test(id))
+    : Option.none<string>();
+  const sessionId = Option.isSome(desktopSessionId)
+    ? desktopSessionId.value
+    : yield* crypto.randomUUIDv4().pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+  const internalDeviceMarker = path.join(serverConfig.stateDir, INTERNAL_DEVICE_MARKER_FILE);
+  // Read for every event, so creating the file by hand takes effect without a restart.
+  const internalDevice = fileSystem
+    .exists(internalDeviceMarker)
+    .pipe(Effect.catchCause(() => Effect.succeed(false)));
+  const setInternalDevice: AnalyticsService["Service"]["setInternalDevice"] = (enabled) =>
+    (enabled
+      ? fileSystem.writeFileString(internalDeviceMarker, "1\n")
+      : fileSystem.remove(internalDeviceMarker, { force: true })
+    ).pipe(Effect.as(enabled));
 
   const enqueueBufferedEvent = (
     uuid: string,
     event: string,
+    isInternal: boolean,
     properties?: Readonly<Record<string, unknown>>,
+    options?: RecordOptions,
   ) =>
     Effect.flatMap(DateTime.now, (now) =>
       Ref.modify(bufferRef, (current) => {
+        const capturedAt =
+          options?.capturedAtMs === undefined
+            ? undefined
+            : DateTime.make(options.capturedAtMs).pipe(Option.getOrUndefined);
+        const earlierSessionId =
+          options?.sessionId !== undefined && UUID_PATTERN.test(options.sessionId)
+            ? options.sessionId
+            : undefined;
         const appended = [
           ...current,
           {
             uuid,
             event,
             ...(properties ? { properties } : {}),
-            capturedAt: DateTime.formatIso(now),
+            capturedAt: DateTime.formatIso(capturedAt ?? now),
+            isInternal,
+            ...(earlierSessionId === undefined ? {} : { sessionId: earlierSessionId }),
           } satisfies BufferedAnalyticsEvent,
         ];
 
@@ -207,6 +317,9 @@ export const make = Effect.gen(function* () {
           serverMode: serverConfig.mode,
           desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
           releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
+          buildKind,
+          isInternal: event.isInternal,
+          sessionId: event.sessionId ?? sessionId,
         },
         timestamp: event.capturedAt,
       })),
@@ -267,16 +380,60 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  const startedAtMs = yield* Clock.currentTimeMillis;
+  const enabled = telemetryConfig.enabled && identifier !== null;
+  const sessionMarkerPath = path.join(serverConfig.stateDir, SESSION_MARKER_FILE);
+  const previousStart = enabled
+    ? yield* fileSystem.readFileString(sessionMarkerPath).pipe(
+        Effect.map((text) => Option.some(decodeSessionMarker(text))),
+        Effect.catchCause(() => Effect.succeed(Option.none())),
+      )
+    : Option.none();
+  // An unreadable marker still means the previous start did not stop cleanly.
+  const previousMarker = Option.flatten(previousStart);
+  const windowContinues = Option.exists(
+    previousMarker,
+    (marker) => startedAtMs - marker.windowStartedAtMs < CRASH_LOOP_WINDOW_MS,
+  );
+  const uncleanStarts = Option.isNone(previousStart)
+    ? 0
+    : (windowContinues ? Option.getOrThrow(previousMarker).uncleanStarts : 0) + 1;
+  const windowStartedAtMs = windowContinues
+    ? Option.getOrThrow(previousMarker).windowStartedAtMs
+    : startedAtMs;
+  const quietUntilMs =
+    uncleanStarts > CRASH_LOOP_UNCLEAN_STARTS ? startedAtMs + CRASH_LOOP_QUIET_MS : 0;
+  if (enabled) {
+    yield* fileSystem
+      .writeFileString(
+        sessionMarkerPath,
+        encodeSessionMarker({
+          ...(sessionId === undefined ? {} : { sessionId }),
+          version: packageJson.version,
+          uncleanStarts,
+          windowStartedAtMs,
+        }),
+      )
+      .pipe(Effect.ignoreCause);
+  }
+
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
-    function* (event, properties) {
+    function* (event, properties, options) {
       if (!telemetryConfig.enabled || !identifier) return;
+      if (quietUntilMs > 0 && (yield* Clock.currentTimeMillis) < quietUntilMs) return;
 
       // Telemetry is best effort: an event without a uuid is not sent. The
       // Node implementation throws (a defect) rather than failing, so catch both.
       const uuid = yield* Effect.exit(crypto.randomUUIDv7());
       if (Exit.isFailure(uuid)) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
+      const enqueueResult = yield* enqueueBufferedEvent(
+        uuid.value,
+        event,
+        yield* internalDevice,
+        properties,
+        options,
+      );
       if (enqueueResult.dropped) {
         yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
           size: enqueueResult.size,
@@ -290,7 +447,6 @@ export const make = Effect.gen(function* () {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
-  const enabled = telemetryConfig.enabled && identifier !== null;
   const milestonesDir = path.join(serverConfig.stateDir, MILESTONES_DIR);
   // "wx" fails when the marker exists, so concurrent claims report one event.
   const claimMarker = (markerPath: string) =>
@@ -299,16 +455,29 @@ export const make = Effect.gen(function* () {
       Effect.catchCause(() => Effect.succeed(false)),
     );
 
-  const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event) =>
+  const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event, properties) =>
     enabled
       ? claimMarker(path.join(milestonesDir, event)).pipe(
-          Effect.flatMap((claimed) => (claimed ? record(event) : Effect.void)),
+          Effect.flatMap((claimed) => (claimed ? record(event, properties) : Effect.void)),
         )
       : Effect.void;
 
-  const startedAtMs = yield* Clock.currentTimeMillis;
   const startupContext = Option.getOrUndefined(telemetryConfig.desktopStartup);
   yield* record("server.started", startupContext === undefined ? undefined : { startupContext });
+  if (Option.isSome(previousStart)) {
+    // A desktop backend restart keeps the app's session, so the previous
+    // session can be this one; compare the ids to tell a backend crash apart.
+    const previous = Option.getOrUndefined(previousMarker);
+    yield* record("app.unclean_exit", {
+      ...(previous?.sessionId !== undefined && UUID_PATTERN.test(previous.sessionId)
+        ? { previousSessionId: previous.sessionId }
+        : {}),
+      ...(previous?.version !== undefined && VERSION_PATTERN.test(previous.version)
+        ? { previousVersion: previous.version }
+        : {}),
+      uncleanStarts,
+    });
+  }
   // Opted-out launches never write the marker: enabling telemetry later makes the
   // next desktop launch the first measured one.
   if (enabled && serverConfig.mode === "desktop") {
@@ -326,14 +495,25 @@ export const make = Effect.gen(function* () {
   }
 
   // Desktop quit stops the server, so this is the app session length there.
+  // The marker goes before the flush: a stop killed during a slow send was still clean.
   yield* Effect.addFinalizer(() =>
     Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => record("server.stopped", { uptimeMs: now - startedAtMs })),
+      Effect.andThen(enabled ? fileSystem.remove(sessionMarkerPath, { force: true }) : Effect.void),
+      Effect.ignoreCause,
       Effect.andThen(flush),
     ),
   );
 
-  return AnalyticsService.of({ record, recordMilestone, flush });
+  return AnalyticsService.of({
+    record,
+    recordMilestone,
+    flush,
+    enabled,
+    sessionId,
+    internalDevice,
+    setInternalDevice,
+  });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);

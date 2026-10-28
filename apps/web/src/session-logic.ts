@@ -386,27 +386,25 @@ function projectedWorkEntryTone(item: OrchestrationV2TurnItem): WorkLogEntry["to
 export function providerErrorPresentation(
   item: Extract<OrchestrationV2TurnItem, { readonly type: "error" }>,
 ): { readonly label: string; readonly detail: string } {
+  // The server titles failures after the provider ("Codex usage limit reached").
+  const title =
+    item.title?.trim() ||
+    (item.failure.class === "usage_limit" ? "Usage limit reached" : "Agent stopped with an error");
   if (item.retry === undefined) {
-    return {
-      label:
-        item.failure.class === "usage_limit"
-          ? "Usage limit reached"
-          : item.title?.trim() || "Provider error",
-      detail: item.failure.message,
-    };
+    return { label: title, detail: item.failure.message };
   }
   const progress =
     item.retry.maxAttempts === null
-      ? `${item.retry.attempt}`
-      : `${item.retry.attempt}/${item.retry.maxAttempts}`;
+      ? `attempt ${item.retry.attempt}`
+      : `attempt ${item.retry.attempt} of ${item.retry.maxAttempts}`;
   const label =
     item.status === "running"
-      ? `Retrying provider (${progress})`
+      ? `Retrying (${progress})`
       : item.status === "completed"
-        ? `Provider recovered (${progress} retries)`
+        ? `Recovered after retrying (${progress})`
         : item.status === "failed"
-          ? `${item.failure.class === "usage_limit" ? "Usage limit reached" : "Provider error"} after ${progress} retries`
-          : `Provider retry stopped (${progress})`;
+          ? `${title} after retrying (${progress})`
+          : `Stopped retrying (${progress})`;
   const retryDelay =
     item.status === "running" && item.retry.retryDelayMs !== null && item.retry.retryDelayMs > 0
       ? item.retry.retryDelayMs < 1_000

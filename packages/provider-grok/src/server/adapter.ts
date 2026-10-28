@@ -1,4 +1,4 @@
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { makeProviderFailure, usageLimitMessage } from "@t3tools/provider-core/server/failure";
 import {
   XAiPromptFailureText,
   isXAiTaskCompletedWakeNotification,
@@ -224,6 +224,26 @@ export function grokLaunchRuntimeMode(
     : "approval-required";
 }
 
+function grokPromptFailure(cause: unknown) {
+  if (!isAcpRequestError(cause)) {
+    return makeProviderFailure({ cause, class: "provider_error", driver: GROK_PROVIDER });
+  }
+  const usageLimit = cause.code === xAiRateLimitedErrorCode;
+  const native =
+    cause.cause instanceof XAiPromptFailureText ? cause.cause.message : cause.errorMessage;
+  const reason = native.trim().replace(/[.\s]+$/u, "");
+  return makeProviderFailure({
+    cause,
+    driver: GROK_PROVIDER,
+    code: String(cause.code),
+    class: usageLimit ? "usage_limit" : "provider_error",
+    message: usageLimit
+      ? usageLimitMessage("Grok", native)
+      : `Grok reported an error: ${reason}. Send the message again.`,
+    detail: native,
+  });
+}
+
 export function makeGrokAcpAdapterFlavor(
   options: GrokAdapterV2Options,
   homeDirectory: string,
@@ -282,20 +302,7 @@ export function makeGrokAcpAdapterFlavor(
     permissionDisposition: (policy, request) =>
       grokLaunchRuntimeMode(policy) === "auto" ? "ask" : acpPermissionDisposition(policy, request),
     approvalOptions: grokApprovalOptions,
-    promptFailure: (cause) =>
-      makeProviderFailure({
-        cause,
-        ...(isAcpRequestError(cause)
-          ? {
-              message:
-                cause.cause instanceof XAiPromptFailureText
-                  ? cause.cause.message
-                  : cause.errorMessage,
-              code: String(cause.code),
-              class: cause.code === xAiRateLimitedErrorCode ? "usage_limit" : "provider_error",
-            }
-          : { class: "provider_error" }),
-      }),
+    promptFailure: (cause) => grokPromptFailure(cause),
     registerExtensions: registerGrokAcpExtensions,
     extractSubagentUpdate: extractXAiAcpSubagentUpdate,
     extractSubagentEndNotice: extractXAiAcpSubagentEndNotice,

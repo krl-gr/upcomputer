@@ -174,6 +174,7 @@ import { composerCollapsesOnScroll } from "../../composerFooter/composerFooterSu
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { isProductFeatureShown } from "../../product/productFlags";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -623,6 +624,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
+      ...(settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact
+        ? ["Compact composer"]
+        : []),
       ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
         ? ["Rich text composer"]
         : []),
@@ -696,6 +700,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
+      settings.composerCompact,
       settings.composerRichTextEnabled,
       settings.sendShortcut,
       settings.followUpBehavior,
@@ -817,6 +822,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      composerCompact: DEFAULT_UNIFIED_SETTINGS.composerCompact,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
@@ -2814,7 +2820,29 @@ export function GeneralSettingsPanel() {
               />
             }
           />
-        ) : null}
+        ) : (
+          <SettingsRow
+            {...searchableSetting("composer-compact")}
+            description="Show the composer as one line while you are not typing in it. Click it or start typing to see the model and other controls."
+            resetAction={
+              settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact ? (
+                <SettingResetButton
+                  label="compact composer"
+                  onClick={() =>
+                    updateSettings({ composerCompact: DEFAULT_UNIFIED_SETTINGS.composerCompact })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.composerCompact}
+                onCheckedChange={(checked) => updateSettings({ composerCompact: Boolean(checked) })}
+                aria-label="Compact composer"
+              />
+            }
+          />
+        )}
 
         <SettingsRow
           {...searchableSetting("send-shortcut")}
@@ -3584,7 +3612,7 @@ export function ArchivedThreadsPanel() {
             stackedThreadToast({
               type: "error",
               title: "Failed to unarchive thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3601,7 +3629,7 @@ export function ArchivedThreadsPanel() {
             stackedThreadToast({
               type: "error",
               title: "Failed to delete thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3668,8 +3696,7 @@ export function ArchivedThreadsPanel() {
                         stackedThreadToast({
                           type: "error",
                           title: "Archived thread action failed",
-                          description:
-                            error instanceof Error ? error.message : "An error occurred.",
+                          description: errorToastDescription(error),
                         }),
                       );
                     }
@@ -3705,8 +3732,7 @@ export function ArchivedThreadsPanel() {
                             stackedThreadToast({
                               type: "error",
                               title: "Failed to unarchive thread",
-                              description:
-                                error instanceof Error ? error.message : "An error occurred.",
+                              description: errorToastDescription(error),
                             }),
                           );
                         }

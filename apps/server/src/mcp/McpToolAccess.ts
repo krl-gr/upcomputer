@@ -79,7 +79,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
           new OrchestratorMcpFailure({
             code: "capability_denied",
             message:
-              "This tool changes the environment, and this MCP client was approved for read-only access.",
+              "This client was approved for reading only, so it can't make changes. Approve it for changes in Settings, Connections.",
           }),
         )
       : Effect.void,
@@ -163,7 +163,7 @@ const escalationDenied = (refusal: DispatchModeRefusal) =>
       refusal.mode === "runtime"
         ? "runtime_mode_escalation_denied"
         : "interaction_mode_escalation_denied",
-    message: `Thread ${refusal.threadId} now runs in ${refusal.runtimeMode}/${refusal.interactionMode} mode, above this caller's. Its user changed it while this call ran.`,
+    message: `The person raised that chat's permissions (${refusal.runtimeMode}, ${refusal.interactionMode}) while this ran, so this agent can't change it anymore. Ask them to do it.`,
   });
 
 export interface StartedModes {

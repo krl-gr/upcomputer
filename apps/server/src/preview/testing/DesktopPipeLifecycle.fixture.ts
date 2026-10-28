@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import * as ServerSettings from "../../serverSettings.ts";
+import * as ErrorTelemetry from "../../telemetry/ErrorTelemetry.ts";
 
 import * as ServerConfig from "../../config.ts";
 import * as DesktopTelemetryReceiver from "../../resourceTelemetry/DesktopTelemetryReceiver.ts";
@@ -24,6 +25,7 @@ Effect.gen(function* () {
   const context = yield* Layer.build(
     Layer.merge(DesktopBrowserChannel.layer, DesktopTelemetryReceiver.layer).pipe(
       Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(ErrorTelemetry.ErrorTelemetry.layerTest),
       Layer.provide(
         Layer.succeed(ServerConfig.ServerConfig, {
           ...base,

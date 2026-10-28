@@ -59,6 +59,7 @@ import {
   type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
+import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -222,8 +223,19 @@ function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   }
 }
 
+/** A short readable reason, or a fixed phrase: dispatch causes can quote ids and internals. */
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const reason = userFacingDispatchErrorMessage(error);
+  const line = reason
+    ?.split("\n")[0]
+    ?.trim()
+    .replace(/[.\s]+$/u, "");
+  return line !== undefined &&
+    line.length > 0 &&
+    line.length <= 200 &&
+    !/[{}[\]<>`]|\b[A-Za-z]+Error\b|\bprojection\b/u.test(line)
+    ? line.charAt(0).toLowerCase() + line.slice(1)
+    : "something went wrong in Up.computer";
 }
 
 function scheduledTaskWorkspaceStrategy(
@@ -258,21 +270,21 @@ function providerConstraints(
 ): ReadonlyArray<string> {
   const constraints: Array<string> = [];
   if (!supportsOrchestrationV2) {
-    constraints.push("No V2 provider adapter is registered.");
+    constraints.push("it can't run as a helper in this version");
   }
   if (provider === undefined) return constraints;
-  if (!provider.enabled) constraints.push("Provider instance is disabled.");
-  if (!provider.installed) constraints.push("Provider executable is not installed.");
+  if (!provider.enabled) constraints.push("it's turned off");
+  if (!provider.installed) constraints.push("it isn't installed");
   if (!isProviderAvailable(provider)) {
-    constraints.push(provider.unavailableReason ?? "Provider driver is unavailable.");
+    constraints.push(provider.unavailableReason ?? "it isn't available on this computer");
   }
   // `warning` (not yet checked, unverified sign-in) stays delegatable: a parent running on that
   // very instance proves it works. Readiness only decides what the listings offer.
   if (provider.status === "error" || provider.status === "disabled") {
-    constraints.push(provider.message ?? `Provider status is ${provider.status}.`);
+    constraints.push("it isn't working right now");
   }
   if (provider.auth.status === "unauthenticated") {
-    constraints.push("Provider is not authenticated.");
+    constraints.push("it's signed out");
   }
   return constraints;
 }
@@ -534,7 +546,7 @@ export function resolveRuntimeMode(
     return Effect.fail(
       failure(
         "runtime_mode_escalation_denied",
-        `Child runtime mode ${resolved} is broader than parent mode ${parentMode}.`,
+        `This chat can't start work with more permissions than it has (${parentMode}, the helper asked for ${resolved}). Raise this chat's permissions, or start it yourself.`,
       ),
     );
   }
@@ -567,7 +579,7 @@ export function resolveInteractionMode(
     ? Effect.fail(
         failure(
           "interaction_mode_escalation_denied",
-          `Child interaction mode ${resolved} is broader than parent mode ${parentMode}.`,
+          `This chat can't start work in a broader mode than its own (${parentMode}, the helper asked for ${resolved}). Change this chat's mode, or start it yourself.`,
         ),
       )
     : Effect.succeed(resolved);
@@ -921,7 +933,7 @@ const make = Effect.gen(function* () {
       : Effect.fail(
           failure(
             "capability_denied",
-            "This MCP credential does not grant orchestration capabilities.",
+            "This agent can't use Up.computer tools right now (tasks, delegation). Allow them for this client in Settings, Connections, then retry.",
           ),
         );
 
@@ -1012,7 +1024,7 @@ const make = Effect.gen(function* () {
         : Effect.fail(
             failure(
               "target_required",
-              "Pass projectId: this MCP client is not running inside an Up.computer thread.",
+              "This client isn't running inside an Up.computer chat, so name the project: pass projectId.",
             ),
           );
 
@@ -1068,7 +1080,10 @@ const make = Effect.gen(function* () {
       activeRun === undefined ||
       activeRun.providerInstanceId !== scope.thread?.providerInstanceId
       ? Effect.fail(
-          failure("parent_not_active", "The calling provider no longer owns an active thread run."),
+          failure(
+            "parent_not_active",
+            "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
+          ),
         )
       : Effect.void;
   };
@@ -1176,7 +1191,7 @@ const make = Effect.gen(function* () {
         if (candidates.length === 0) {
           return yield* failure(
             "provider_unavailable",
-            `No V2 provider adapter is registered for driver ${requestedDriver}.`,
+            `Can't hand this to ${requestedDriver}: it can't run as a helper in this version. Pick another provider.`,
           );
         }
         const healthyCandidates = candidates.filter(
@@ -1205,8 +1220,8 @@ const make = Effect.gen(function* () {
           return yield* failure(
             "provider_unavailable",
             healthyCandidates.length === 0
-              ? `No available V2 provider instance for driver ${requestedDriver}.`
-              : `No instance of driver ${requestedDriver} is enabled for this project.`,
+              ? `Can't hand this to ${requestedDriver}: it isn't available on this computer. Pick another provider.`
+              : `Can't hand this to ${requestedDriver}: it's off for this project. Turn it on in Settings, or pick another provider.`,
           );
         }
       }
@@ -1216,13 +1231,13 @@ const make = Effect.gen(function* () {
       if (provider === undefined) {
         return yield* failure(
           "provider_unavailable",
-          `Provider instance ${instanceId} is not registered.`,
+          `Can't hand this to ${instanceId}: there is no provider by that name here. Pick another provider.`,
         );
       }
       if (requestedDriver !== undefined && provider.driver !== requestedDriver) {
         return yield* failure(
           "invalid_request",
-          `Provider instance ${instanceId} uses driver ${provider.driver}, not ${requestedDriver}.`,
+          `${instanceId} is a ${provider.driver} provider, not ${requestedDriver}. Pick a matching provider.`,
         );
       }
       const constraints = providerConstraints(
@@ -1232,7 +1247,7 @@ const make = Effect.gen(function* () {
       if (constraints.length > 0) {
         return yield* failure(
           "provider_unavailable",
-          `Provider ${instanceId} cannot run a child task: ${constraints.join(" ")}`,
+          `Can't hand this to ${instanceId}: ${constraints.join(", ")}. Fix it in Settings, or pick another provider.`,
         );
       }
 
@@ -1246,7 +1261,7 @@ const make = Effect.gen(function* () {
       if (model === undefined) {
         return yield* failure(
           "model_unavailable",
-          `Provider ${instanceId} has no model available for inheritance.`,
+          `Can't hand this to ${instanceId}: it has no model to use. Pass a model, or pick another provider.`,
         );
       }
       if (
@@ -1257,7 +1272,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "model_unavailable",
-          `Model ${requestedModel} is not advertised by provider ${instanceId}.`,
+          `Can't hand this to ${instanceId}: it has no model ${requestedModel}. Pick one of its models, or another provider.`,
         );
       }
 
@@ -1604,7 +1619,7 @@ const make = Effect.gen(function* () {
           return yield* failure(
             "invalid_request",
             parent === undefined
-              ? "bindToCurrentThread needs an agent running inside an Up.computer thread."
+              ? "Only an agent inside an Up.computer chat can bind this to its chat (bindToCurrentThread). Leave it off here."
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
           );
         }
@@ -1677,7 +1692,7 @@ const make = Effect.gen(function* () {
           return yield* failure(
             "invalid_request",
             parent === undefined
-              ? "bindToCurrentThread needs an agent running inside an Up.computer thread."
+              ? "Only an agent inside an Up.computer chat can bind this to its chat (bindToCurrentThread). Leave it off here."
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
           );
         }
@@ -1744,7 +1759,7 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Asking for a secret requires an active run owned by this MCP provider session.",
+            "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
           );
         }
         const runId = run.id;
@@ -1851,7 +1866,7 @@ const make = Effect.gen(function* () {
         if (Option.isNone(secretRef)) {
           return yield* failure(
             "orchestration_error",
-            "The user saved the secret, but it could not be read. Ask again with a new clientRequestId.",
+            "The person saved the secret, but it couldn't be read back. Ask for it again with a new clientRequestId, and tell them to enter it once more.",
           );
         }
         return { status, secretRef: secretRef.value };
@@ -1864,7 +1879,9 @@ const make = Effect.gen(function* () {
         const orchestrationCapableInstanceIds = yield* loadOrchestrationCapableInstanceIds();
         const modelPreferences = yield* serverSettings.getSettings.pipe(
           Effect.map((settings) => settings.providerModelPreferences ?? {}),
-          Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+          Effect.mapError(() =>
+            failure("orchestration_error", "Couldn't read Up.computer's settings. Try again."),
+          ),
         );
         return {
           parentThreadId: parent?.thread.id ?? null,
@@ -1938,7 +1955,7 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Delegated tasks require an active run owned by this MCP provider session.",
+            "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
           );
         }
         const providers = yield* loadProviders;
@@ -1974,7 +1991,10 @@ const make = Effect.gen(function* () {
             })
             .pipe(
               Effect.mapError(() =>
-                failure("invalid_request", "Unable to resolve the parent checkout commit."),
+                failure(
+                  "invalid_request",
+                  "Couldn't start the helper in its own copy of the project: this project isn't a git repository, or it has no commits yet. Run it without isolation, or commit first.",
+                ),
               ),
             );
           workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
@@ -2008,7 +2028,7 @@ const make = Effect.gen(function* () {
                 ? threadManagementFailure(error)
                 : failure(
                     "orchestration_error",
-                    `Unable to create delegated task: ${errorMessage(error)}`,
+                    `Couldn't start the helper: ${errorMessage(error)}. Try again.`,
                   ),
             ),
           );
@@ -2017,10 +2037,7 @@ const make = Effect.gen(function* () {
             stored.event.type === "subagent.updated" && stored.event.payload.origin === "app_owned",
         );
         if (taskEvent?.event.type !== "subagent.updated") {
-          return yield* failure(
-            "orchestration_error",
-            "Delegated task command did not produce a task projection.",
-          );
+          return yield* failure("orchestration_error", "Couldn't start the helper. Try again.");
         }
         const taskId = taskEvent.event.payload.id;
         const childThreadId = taskEvent.event.payload.childThreadId;
@@ -2053,7 +2070,7 @@ const make = Effect.gen(function* () {
         }
         // An incomplete wait gives up delivery: upgrade so a later terminal
         // wakes the parent even mid-turn.
-        yield* threadManagement
+        const wakeArmed = yield* threadManagement
           .dispatch({
             type: "delegated_task.wake-policy",
             commandId: stableCommandId({
@@ -2066,6 +2083,7 @@ const make = Effect.gen(function* () {
             completionWake: "always",
           })
           .pipe(
+            Effect.as(true),
             Effect.catch((error) =>
               Effect.logWarning("orchestrator-mcp.delegate-task.wake-policy-failed", {
                 taskId,
@@ -2074,17 +2092,26 @@ const make = Effect.gen(function* () {
                     ? "previously_rejected"
                     : "dispatch_failed",
                 error,
-              }),
+              }).pipe(Effect.as(false)),
             ),
             Effect.catchCause((cause) =>
               Effect.logWarning("orchestrator-mcp.delegate-task.wake-policy-failed", {
                 taskId,
                 outcome: "defect",
                 cause,
-              }),
+              }).pipe(Effect.as(false)),
             ),
           );
-        return yield* readTask(scope, taskId, Option.isNone(waited), true);
+        const waitedTask = yield* readTask(scope, taskId, Option.isNone(waited), true);
+        // Without the wake the parent never hears the result; the agent must
+        // poll instead, and the person should know why it does.
+        return wakeArmed
+          ? waitedTask
+          : {
+              ...waitedTask,
+              notice:
+                "The helper task is running, but this chat won't be told when it finishes. Check it with task_status, look at it in Tasks, or open the helper's chat.",
+            };
       }),
     taskStatus: (callerScope, taskId) =>
       Effect.gen(function* () {
@@ -2144,7 +2171,7 @@ const make = Effect.gen(function* () {
                   Effect.mapError((error) =>
                     failure(
                       "orchestration_error",
-                      `Unable to dispose delegated task ${input.taskId} completion delivery: ${errorMessage(error)}`,
+                      `Couldn't stop the helper's report to this chat: ${errorMessage(error)}. Try again.`,
                     ),
                   ),
                 );
@@ -2195,7 +2222,7 @@ const make = Effect.gen(function* () {
                       refusal.mode === "runtime"
                         ? "runtime_mode_escalation_denied"
                         : "interaction_mode_escalation_denied",
-                      `Thread ${refusal.threadId} now runs in ${refusal.runtimeMode}/${refusal.interactionMode} mode, above this thread's; its user changed it while the task was being cancelled.`,
+                      `The person raised that chat's permissions (${refusal.runtimeMode}, ${refusal.interactionMode}) while this ran, so this chat can't stop it anymore. Ask them to stop it.`,
                     ),
               ),
             ),
@@ -2244,7 +2271,7 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Thread creation requires an active run owned by this MCP provider session.",
+            "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
           );
         }
         const parentNodeId = parentRun.rootNodeId;
@@ -2340,7 +2367,7 @@ const make = Effect.gen(function* () {
                     Effect.mapError((error) =>
                       failure(
                         "orchestration_error",
-                        `Unable to start thread ${index + 1}: ${errorMessage(error)}`,
+                        `Couldn't start chat ${index + 1}: ${errorMessage(error)}. Try again.`,
                       ),
                     ),
                   );
@@ -2563,7 +2590,7 @@ const make = Effect.gen(function* () {
                 ? threadManagementFailure(error)
                 : failure(
                     "orchestration_error",
-                    `Unable to send to thread ${input.threadId}: ${errorMessage(error)}`,
+                    `Couldn't send the message to that chat: ${errorMessage(error)}. Try again.`,
                   ),
             ),
           );

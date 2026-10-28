@@ -1,4 +1,9 @@
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
+import {
+  providerFailureActions,
+  type ProviderFailureAction,
+} from "@t3tools/client-runtime/state/turn-item-presentation";
+import { ErrorDetails } from "~/components/errors/ErrorDetails";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
@@ -349,6 +354,9 @@ interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
+  onProviderFailureAction: ((action: ProviderFailureAction, runId: RunId | null) => void) | null;
+  /** Only the latest turn's failure offers Retry; an older one was overtaken. */
+  retryableFailedRunId: RunId | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
@@ -436,6 +444,8 @@ interface MessagesTimelineProps {
   onCancelWorktreeSetup?: () => void;
   retryableWorkspacePreparationRunIds?: ReadonlySet<RunId>;
   onRetryWorkspacePreparation?: (runId: RunId) => void;
+  onProviderFailureAction?: (action: ProviderFailureAction, runId: RunId | null) => void;
+  retryableFailedRunId?: RunId | null;
   onWorktreeSetupWorkLocally?: () => void;
   onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
   isPreparingWorktree?: boolean;
@@ -538,6 +548,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCancelWorktreeSetup,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
+  onProviderFailureAction,
+  retryableFailedRunId = null,
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
   isPreparingWorktree = false,
@@ -1332,6 +1344,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
       retryableWorkspacePreparationRunIds,
       onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
+      onProviderFailureAction: onProviderFailureAction ?? null,
+      retryableFailedRunId,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
       workGroupViewState,
@@ -1370,6 +1384,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onCancelWorktreeSetup,
       retryableWorkspacePreparationRunIds,
       onRetryWorkspacePreparation,
+      onProviderFailureAction,
+      retryableFailedRunId,
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
       workGroupViewState,
@@ -5427,15 +5443,20 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     const warning = failureItem.failure.class === "usage_limit";
     const resetAt = failureItem.failure.resetAt;
     const resetTime = resetAt ? formatUpcomingTimestamp(resetAt, timestampFormat) : null;
-    const label = warning
-      ? `Usage limit reached.${resetTime ? ` Retry after ${resetTime}.` : ""}`
-      : workEntry.label;
+    const label =
+      warning && resetTime ? `${workEntry.label}. Resets at ${resetTime}` : workEntry.label;
     const retryRunId =
       failureItem.runId !== null &&
       retryableWorkspacePreparationRunIds.has(failureItem.runId) &&
       failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE
         ? failureItem.runId
         : null;
+    const actions =
+      retryRunId === null && ctx.onProviderFailureAction !== null
+        ? providerFailureActions(failureItem.failure).filter(
+            (action) => action !== "retry" || failureItem.runId === ctx.retryableFailedRunId,
+          )
+        : [];
     return (
       <WorkLogRow
         data-v2-item-type="error"
@@ -5461,10 +5482,20 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           />
         }
       >
-        {!warning ? (
-          <p className="ms-7 whitespace-pre-wrap break-words py-1 text-sm leading-relaxed text-foreground/80">
-            {failureItem.failure.message}
-          </p>
+        <p className="ms-7 whitespace-pre-wrap break-words py-1 text-sm leading-relaxed text-foreground/80">
+          {failureItem.failure.message}
+        </p>
+        {failureItem.failure.detail || failureItem.failure.code ? (
+          <div className="ms-7 pb-1">
+            <ErrorDetails
+              detail={[
+                failureItem.failure.detail,
+                failureItem.failure.code ? `Code: ${failureItem.failure.code}` : null,
+              ]
+                .filter(Boolean)
+                .join("\n")}
+            />
+          </div>
         ) : null}
         {retryRunId !== null && onRetryWorkspacePreparation ? (
           <div className="ms-7 pb-1">
@@ -5477,6 +5508,27 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               <RotateCcwIcon aria-hidden />
               Retry
             </Button>
+          </div>
+        ) : null}
+        {actions.length > 0 ? (
+          <div className="ms-7 flex flex-wrap gap-1.5 pb-1">
+            {actions.map((action, index) => (
+              <Button
+                key={action}
+                type="button"
+                size="xs"
+                variant={index === 0 ? "outline" : "ghost"}
+                onClick={() => ctx.onProviderFailureAction?.(action, failureItem.runId)}
+              >
+                {action === "retry" ? <RotateCcwIcon aria-hidden /> : null}
+                {action === "switch_model"
+                  ? "Switch provider or model"
+                  : action === "open_settings" || action === "open_bot_settings"
+                    ? "Open settings"
+                    : // Retry sends now; the label already says when the limit resets.
+                      "Retry"}
+              </Button>
+            ))}
           </div>
         ) : null}
       </WorkLogRow>

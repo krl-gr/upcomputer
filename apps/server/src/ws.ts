@@ -100,6 +100,8 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
+  type AppView,
+  TelemetryInternalDeviceError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -114,6 +116,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
+import * as BackgroundNotices from "./background/BackgroundNotices.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -228,6 +231,7 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as ErrorTelemetry from "./telemetry/ErrorTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1167,6 +1171,7 @@ const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
+  viewsOpened: Ref.Ref<ReadonlyArray<AppView>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
@@ -1191,6 +1196,7 @@ const layerWsRpc = (
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
+      const errorTelemetry = yield* ErrorTelemetry.ErrorTelemetry;
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         switch (command.type) {
@@ -1244,6 +1250,7 @@ const layerWsRpc = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
+      const backgroundNotices = yield* BackgroundNotices.BackgroundNotices;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
@@ -2079,8 +2086,25 @@ const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
-        [WS_METHODS.serverRecordClientEvent]: ({ event, ...properties }) =>
-          analytics.record(event, { ...originProps, ...properties }).pipe(Effect.as({})),
+        [WS_METHODS.serverRecordClientEvent]: (input) => {
+          if (input.event === "app.error") {
+            const { event: _event, ...report } = input;
+            return errorTelemetry.reportError("web", report).pipe(Effect.as({}));
+          }
+          const { event, ...properties } = input;
+          return analytics
+            .record(event, { ...originProps, ...properties })
+            .pipe(
+              Effect.andThen(
+                input.event === "app.view.opened"
+                  ? Ref.update(viewsOpened, (views) =>
+                      views.includes(input.view) ? views : [...views, input.view],
+                    )
+                  : Effect.void,
+              ),
+              Effect.as({}),
+            );
+        },
         [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig({ usageLimitsCommand: false }),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
@@ -2422,6 +2446,13 @@ const layerWsRpc = (
         [WS_METHODS.serverRefreshUsageRates]: (_input) => usage.refreshRates,
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
+        [WS_METHODS.serverGetTelemetryInternalDevice]: (_input) =>
+          analytics.internalDevice.pipe(Effect.map((enabled) => ({ enabled }))),
+        [WS_METHODS.serverSetTelemetryInternalDevice]: (input) =>
+          analytics.setInternalDevice(input.enabled).pipe(
+            Effect.map((enabled) => ({ enabled })),
+            Effect.mapError((cause) => new TelemetryInternalDeviceError({ cause })),
+          ),
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),
         [WS_METHODS.serverReportClientActivity]: (input, metadata) =>
           Ref.update(rpcClientIds, (clientIds) => {
@@ -2956,7 +2987,22 @@ const layerWsRpc = (
           Stream.unwrap(
             Effect.gen(function* () {
               const usageLimitsCommand = input.usageLimitsCommand === true;
-              const config = yield* loadServerConfig({ usageLimitsCommand });
+              const loadedConfig = yield* loadServerConfig({ usageLimitsCommand });
+              const config =
+                input.backgroundNotices === true
+                  ? { ...loadedConfig, backgroundNotices: yield* backgroundNotices.list }
+                  : loadedConfig;
+              const backgroundNoticeUpdates =
+                input.backgroundNotices === true
+                  ? backgroundNotices.changes.pipe(
+                      Stream.drop(1),
+                      Stream.map((notices) => ({
+                        version: 1 as const,
+                        type: "backgroundNoticesUpdated" as const,
+                        payload: { notices },
+                      })),
+                    )
+                  : Stream.empty;
               const keybindingsUpdates = keybindings.streamChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
@@ -3038,7 +3084,10 @@ const layerWsRpc = (
                   providerStatuses,
                   Stream.merge(
                     settingsUpdates,
-                    Stream.merge(environmentThemeUpdates, usageLimitSourceUpdates),
+                    Stream.merge(
+                      Stream.merge(environmentThemeUpdates, usageLimitSourceUpdates),
+                      backgroundNoticeUpdates,
+                    ),
                   ),
                 ),
               );
@@ -3171,6 +3220,7 @@ export const layer = Layer.unwrap(
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
         const connectedAtMs = yield* Clock.currentTimeMillis;
+        const viewsOpened = yield* Ref.make<ReadonlyArray<AppView>>([]);
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(rpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
@@ -3192,6 +3242,7 @@ export const layer = Layer.unwrap(
                 session,
                 clientOrigin,
                 clientAnalyticsProps,
+                viewsOpened,
                 previewAutomationBroker,
                 serverBrowser,
               ),
@@ -3249,10 +3300,24 @@ export const layer = Layer.unwrap(
               // A closed desktop window or browser tab ends its connection.
               Effect.andThen(Clock.currentTimeMillis),
               Effect.flatMap((now) =>
-                analytics.record("client.disconnected", {
-                  ...clientAnalyticsProps,
-                  connectedMs: now - connectedAtMs,
-                }),
+                analytics
+                  .record("client.disconnected", {
+                    ...clientAnalyticsProps,
+                    connectedMs: now - connectedAtMs,
+                  })
+                  .pipe(
+                    Effect.andThen(Ref.get(viewsOpened)),
+                    // Only clients that report views have a UI session to summarize.
+                    Effect.flatMap((views) =>
+                      views.length === 0
+                        ? Effect.void
+                        : analytics.record("app.session.ended", {
+                            ...clientAnalyticsProps,
+                            durationMs: now - connectedAtMs,
+                            views,
+                          }),
+                    ),
+                  ),
               ),
             ),
         );

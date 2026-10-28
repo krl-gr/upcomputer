@@ -12,6 +12,7 @@ import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
@@ -50,6 +51,50 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
 
       expect((yield* service.upsert(input)).task.id).toBe(created.task.id);
     }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("reports a created schedule task as a first use, and an edit as nothing", () =>
+  Effect.gen(function* () {
+    const milestones: Array<{ event: string; properties: unknown }> = [];
+    const layerDependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Scheduler.layer,
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+      Layer.mock(SecretRequests.SecretRequests)({}),
+      Layer.mock(AnalyticsService.AnalyticsService)({
+        enabled: true,
+        sessionId: undefined,
+        recordMilestone: (event, properties) =>
+          Effect.sync(() => void milestones.push({ event, properties })),
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const input = yield* decodeUpsertInput({
+        title: "Review",
+        prompt: "Review the open pull requests.",
+        enabled: true,
+        schedule: { type: "interval", everyMs: 60_000 },
+        projectId: "project-first-use",
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        creationSource: "mcp",
+      });
+      const created = yield* service.upsert(input);
+      yield* service.upsert(
+        yield* decodeUpsertInput({ ...input, id: created.task.id, title: "Edited" }),
+      );
+    }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
+    expect(milestones).toEqual([
+      {
+        event: "app.first_scheduled_task_created",
+        properties: { trigger: "schedule", via: "agent" },
+      },
+    ]);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 

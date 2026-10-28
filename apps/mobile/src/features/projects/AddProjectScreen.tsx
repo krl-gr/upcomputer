@@ -1,4 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
@@ -120,9 +121,7 @@ function platformFromOs(os: string | null | undefined): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message.trim().length > 0
-    ? error.message
-    : "An error occurred.";
+  return plainErrorSentence(error);
 }
 
 function stringParam(value: string | string[] | undefined): string | null {

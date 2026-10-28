@@ -84,6 +84,12 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
+    case "backgroundNoticesUpdated":
+      return Option.map(current, (projection) => ({
+        config: { ...projection.config, backgroundNotices: event.payload.notices },
+        latestEvent: event,
+        source: "live",
+      }));
     case "usageLimitSourcesUpdated":
       return Option.map(current, (projection) => ({
         config: {

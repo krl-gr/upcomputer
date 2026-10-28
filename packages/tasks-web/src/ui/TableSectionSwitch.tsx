@@ -23,8 +23,12 @@ export function TableSectionSwitch(props: {
         if (next === "tasks" || next === "automations") props.onChange(next);
       }}
     >
-      <ToggleGroupItem value="tasks">Tasks</ToggleGroupItem>
-      <ToggleGroupItem value="automations">Automations</ToggleGroupItem>
+      <ToggleGroupItem value="tasks" data-track="tasks.section.tasks">
+        Tasks
+      </ToggleGroupItem>
+      <ToggleGroupItem value="automations" data-track="tasks.section.automations">
+        Automations
+      </ToggleGroupItem>
     </ToggleGroup>
   );
 }

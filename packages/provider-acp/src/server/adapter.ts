@@ -106,6 +106,7 @@ import {
 import {
   makeProviderFailure,
   makeProviderRetryTurnItem,
+  providerFailureName,
 } from "@t3tools/provider-core/server/failure";
 import { acpSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
@@ -496,6 +497,20 @@ export const AcpProviderCapabilitiesV2 = {
     enforcement: "client-boundary",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
+
+/** Stop reasons that end a turn without a full answer and would otherwise read as success. */
+function acpEarlyStopReason(stopReason: string): string | undefined {
+  switch (stopReason) {
+    case "refusal":
+      return "it declined the request";
+    case "max_tokens":
+      return "it reached its output limit";
+    case "max_turn_requests":
+      return "it reached its step limit";
+    default:
+      return undefined;
+  }
+}
 
 function negotiatedCapabilities(
   base: OrchestrationV2ProviderCapabilities,
@@ -6224,7 +6239,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     `terminal-failure:${context.providerTurnId}`,
                   ),
                   status: settledStatus,
-                  failure: failure ?? makeProviderFailure({ class: "provider_error" }),
+                  failure: failure ?? makeProviderFailure({ class: "provider_error", driver }),
                   ...(context.providerRetry === undefined
                     ? {}
                     : {
@@ -6683,6 +6698,34 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   promptGeneration,
                   Effect.gen(function* () {
                     if (context.finalized) return;
+                    const earlyStop = acpEarlyStopReason(result.stopReason);
+                    if (earlyStop !== undefined) {
+                      const nativeItemId = `${context.nativeTurnId}:stop-reason`;
+                      const now = yield* DateTime.now;
+                      const provider = providerFailureName(driver);
+                      yield* emitProviderEvent({
+                        type: "turn_item.updated",
+                        driver,
+                        turnItem: {
+                          id: idAllocator.derive.turnItemFromProviderItem({ driver, nativeItemId }),
+                          threadId: context.input.threadId,
+                          runId: context.input.runId,
+                          nodeId: context.input.rootNodeId,
+                          providerThreadId: context.input.providerThread.id,
+                          providerTurnId: context.providerTurnId,
+                          nativeItemRef: { driver, nativeId: nativeItemId, strength: "weak" },
+                          parentItemId: null,
+                          ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                          type: "system_notice",
+                          status: "completed",
+                          title: `${provider} stopped early`,
+                          message: `${provider} stopped before finishing (${earlyStop}). Ask it to continue.`,
+                          startedAt: now,
+                          completedAt: now,
+                          updatedAt: now,
+                        },
+                      });
+                    }
                     const status =
                       result.stopReason === "cancelled"
                         ? context.interrupted
@@ -6718,6 +6761,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         makeProviderFailure({
                           cause: Cause.squash(cause),
                           class: "provider_error",
+                          driver,
                         }),
                     ).pipe(
                       Effect.andThen(

@@ -48,6 +48,7 @@ export interface TasksWebRpcClient {
     readonly page: RpcUnaryMethod<typeof TASKS_RPC_METHODS.page>;
     readonly runCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.runCounts>;
     readonly threadRunCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.threadRunCounts>;
+    readonly markThreadsSeen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.markThreadsSeen>;
     readonly threadTasks: RpcUnaryMethod<typeof TASKS_RPC_METHODS.threadTasks>;
     readonly items: RpcUnaryMethod<typeof TASKS_RPC_METHODS.items>;
     readonly subscribe: SubscribeTaskChanges;
@@ -184,6 +185,8 @@ export function createTasksWebRpcClient(
         request("tasks.runCounts", "canReadTasks", TASKS_RPC_METHODS.runCounts, input),
       threadRunCounts: (input) =>
         request("tasks.threadRunCounts", "canReadTasks", TASKS_RPC_METHODS.threadRunCounts, input),
+      markThreadsSeen: (input) =>
+        request("tasks.markThreadsSeen", "canReadTasks", TASKS_RPC_METHODS.markThreadsSeen, input),
       threadTasks: (input) =>
         request("tasks.threadTasks", "canReadTasks", TASKS_RPC_METHODS.threadTasks, input),
       subscribe,

@@ -25,6 +25,8 @@ import * as Schedule from "effect/Schedule";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
+import * as BackgroundNotices from "./background/BackgroundNotices.ts";
+import * as UncleanExitNotice from "./background/UncleanExitNotice.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
@@ -45,6 +47,7 @@ import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as ErrorTelemetry from "./telemetry/ErrorTelemetry.ts";
 import * as ProviderTelemetry from "./telemetry/ProviderTelemetry.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
@@ -669,11 +672,18 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
+  Layer.provideMerge(ErrorTelemetry.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
+  Layer.provideMerge(
+    Layer.merge(
+      BackgroundNotices.layer,
+      UncleanExitNotice.layer.pipe(Layer.provide(BackgroundNotices.layer)),
+    ),
+  ),
   Layer.provide(NetService.layer),
 );
 
@@ -780,6 +790,8 @@ const layerMakeServer = Layer.unwrap(
           config,
           port: address.port,
           serviceManaged: launcher.managed,
+          // Only the desktop app hands over a bootstrap token.
+          ...(config.desktopBootstrapToken === undefined ? {} : { desktopParentPid: process.ppid }),
         });
         yield* ownership
           .publish(state)

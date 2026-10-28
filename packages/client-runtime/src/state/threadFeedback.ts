@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "./runtime.ts";
+import { plainErrorSentence } from "../errors/plainError.ts";
 
 type CodexFeedbackSubmissionDetails = {
   readonly id: MessageId;
@@ -110,7 +111,7 @@ export async function submitCodexFeedback<E>(input: {
     input.onUpdate({
       ...input.submission,
       status: "failed",
-      errorMessage: error instanceof Error ? error.message : "An error occurred.",
+      errorMessage: plainErrorSentence(error),
     });
   }
 
