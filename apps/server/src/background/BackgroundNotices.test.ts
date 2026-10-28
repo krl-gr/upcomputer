@@ -27,3 +27,55 @@ it.effect("keeps one notice per problem, newest first, until it is resolved", ()
     );
   }).pipe(Effect.provide(BackgroundNotices.layer)),
 );
+
+it.effect("evicts info before warnings before errors", () =>
+  Effect.gen(function* () {
+    const notices = yield* BackgroundNotices.BackgroundNotices;
+    yield* notices.report({ ...notice("error"), severity: "error", title: "Schedule stopped" });
+    yield* notices.report({ ...notice("warning"), title: "Worktrees" });
+    for (let index = 0; index < 60; index++) {
+      yield* notices.report({ ...notice(`warning-${index}`), title: `Warning ${index}` });
+    }
+    const listed = yield* notices.list;
+    assert.strictEqual(listed.length, 50);
+    assert.isTrue(listed.some(({ id }) => id === "error"));
+    assert.isFalse(listed.some(({ id }) => id === "warning"));
+
+    for (let index = 0; index < 60; index++) {
+      yield* notices.report({
+        ...notice(`info-${index}`),
+        severity: "info",
+        title: `Info ${index}`,
+      });
+    }
+    const afterInfo = yield* notices.list;
+    assert.isTrue(afterInfo.some(({ id }) => id === "error"));
+    assert.strictEqual(afterInfo.filter(({ severity }) => severity === "warning").length, 49);
+  }).pipe(Effect.provide(BackgroundNotices.layer)),
+);
+
+it.effect("folds repeated info notices of one kind into one entry", () =>
+  Effect.gen(function* () {
+    const notices = yield* BackgroundNotices.BackgroundNotices;
+    const missed = (id: string) =>
+      ({
+        id,
+        area: "reminders",
+        severity: "info",
+        title: "Missed reminder",
+        message: `You missed ${id}.`,
+      }) as const;
+    yield* notices.report(missed("a"));
+    yield* notices.report(missed("b"));
+    yield* notices.report(missed("c"));
+    assert.deepStrictEqual(
+      (yield* notices.list).map(({ id, message }) => [id, message]),
+      [["c", "You missed c. 2 more like this."]],
+    );
+    yield* notices.resolve("c");
+    assert.deepStrictEqual(
+      (yield* notices.list).map(({ id, message }) => [id, message]),
+      [["b", "You missed b. 1 more like this."]],
+    );
+  }).pipe(Effect.provide(BackgroundNotices.layer)),
+);
