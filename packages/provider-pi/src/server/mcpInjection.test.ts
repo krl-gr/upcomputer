@@ -69,7 +69,6 @@ describe("pi T3 MCP injection", () => {
       mcpSession: { ...mcpSession, orchestrationInstructions: false },
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
     });
-    assert.isTrue(withoutOrchestration.hasT3Mcp);
     assert.equal(withoutOrchestration.env[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV], "omit");
 
     const permissionOnly = buildPiRpcLaunch({

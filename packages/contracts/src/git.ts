@@ -390,6 +390,8 @@ const GIT_REASON_SENTENCES: Record<GitCommandFailureReason, string> = {
   branch_already_exists: "That branch already exists. Pick another branch name.",
   branch_checked_out_in_worktree:
     "That branch is open in another worktree. Close that worktree or pick another branch.",
+  config_locked:
+    "Another Git process is changing this repository's settings. Wait for it to finish, then try again.",
   host_key_unverified:
     "This computer doesn't trust the Git host yet. Connect to it once with ssh in a terminal, then try again.",
   not_a_repository: "This folder isn't a Git repository.",

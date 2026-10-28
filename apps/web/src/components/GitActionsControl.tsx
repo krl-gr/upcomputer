@@ -1488,7 +1488,7 @@ export default function GitActionsControl({
   if (
     gitActionsWaitForFirstStatus({
       surface: productSurface("composerContextRow"),
-      presentation,
+      presentation: "toolbar",
       statusKnown: gitStatus !== null || Boolean(gitStatusError),
     })
   ) {

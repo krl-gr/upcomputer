@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -879,6 +880,13 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
+      // A native slash command (/compact included) must start the prompt, so it carries
+      // no note and delivers none; the next ordinary prompt does.
+      const commandMessageIds = new Set(
+        projection.messages
+          .filter((candidate) => candidate.text.trimStart().startsWith("/"))
+          .map((candidate) => candidate.id),
+      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
@@ -886,28 +894,47 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      // Notes go before the user text, delivered once like the text itself.
-      const turnNote = [
-        turnContextText,
+      const restartNote =
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork),
-        recordedNotificationsNote(recordedNotifications),
-        yield* onboardingTurnNote({
-          instructions: currentUserInstructionsBlock(),
-          thread: projection.thread,
-          run,
-          runs: projection.runs,
-          message,
-          isCommand: commandMessageIds.has(run.userMessageId),
-          // The run is already marked running; a failed read only withholds the offer.
-          personMessagedElsewhere: projectionStore
-            .hasPersonMessageOutsideThread(projection.thread.id)
-            .pipe(Effect.orElseSucceed(() => true)),
-        }),
-      ]
-        .filter((part) => part !== "")
-        .join("\n\n");
+          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+      // Read with this snapshot and recorded on the attempt, so a notification recorded
+      // while the provider starts waits for the next prompt.
+      const recordedNotifications =
+        run.restartContinuationOfRunId !== undefined || commandMessageIds.has(run.userMessageId)
+          ? []
+          : pendingRecordedNotifications({
+              items: projection.turnItems,
+              runs: projection.runs,
+              providerTurns: projection.providerTurns,
+              attempts: projection.attempts,
+            });
+      const onboardingNote = yield* onboardingTurnNote({
+        instructions: currentUserInstructionsBlock(),
+        thread: projection.thread,
+        run,
+        runs: projection.runs,
+        message,
+        isCommand: commandMessageIds.has(run.userMessageId),
+        // The run is already marked running; a failed read only withholds the offer.
+        personMessagedElsewhere: projectionStore
+          .hasPersonMessageOutsideThread(projection.thread.id)
+          .pipe(Effect.orElseSucceed(() => true)),
+      });
+      // Notes go before the user text. The budget counts the full turn context, since
+      // whether the native conversation already has it is known only once it loads.
+      const notesWith = (turnContextText: string) =>
+        [
+          turnContextText,
+          restartNote,
+          recordedNotificationsNote(recordedNotifications),
+          onboardingNote,
+        ]
+          .filter((part) => part !== "")
+          .join("\n\n");
+      const budgetNote = notesWith(
+        commandMessageIds.has(run.userMessageId) ? "" : turnContext.text,
+      );
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1053,7 +1080,7 @@ export const layer: Layer.Layer<
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
+              userText: budgetNote === "" ? userText : `${budgetNote}\n\n${userText}`,
               attachments: message.attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
@@ -1381,13 +1408,6 @@ export const layer: Layer.Layer<
         createdAt: providerThread.createdAt,
         updatedAt: now,
       };
-      // A native slash command (/compact included) must start the prompt, so it carries
-      // no note and delivers none; the next ordinary prompt does.
-      const commandMessageIds = new Set(
-        projection.messages
-          .filter((candidate) => candidate.text.trimStart().startsWith("/"))
-          .map((candidate) => candidate.id),
-      );
       // The marker was looked up for the native conversation before loading; a resume
       // fallback to a fresh native session needs the full context again.
       const turnContextText = commandMessageIds.has(run.userMessageId)
@@ -1398,17 +1418,7 @@ export const layer: Layer.Layer<
       const turnContextMarker = commandMessageIds.has(run.userMessageId)
         ? undefined
         : turnContext.marker;
-      // Read with this snapshot and recorded on the attempt, so a notification recorded
-      // while the provider starts waits for the next prompt.
-      const recordedNotifications =
-        run.restartContinuationOfRunId !== undefined || commandMessageIds.has(run.userMessageId)
-          ? []
-          : pendingRecordedNotifications({
-              items: projection.turnItems,
-              runs: projection.runs,
-              providerTurns: projection.providerTurns,
-              attempts: projection.attempts,
-            });
+      const turnNote = notesWith(turnContextText);
       const runningRun: OrchestrationV2Run = {
         ...run,
         status: "running",

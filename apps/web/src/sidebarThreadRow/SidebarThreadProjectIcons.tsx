@@ -39,7 +39,7 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
   const ownProject = props.project;
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const isProjectScoped = useUiStateStore((state) => state.sidebarProjectScopeKey != null);
+  const isProjectScoped = useUiStateStore((state) => state.sidebarProjectScopeKeys.length > 0);
   const stack = (() => {
     const index = projectIndex(projects);
     const scratchRoot = serverConfigs.get(environmentId)?.scratchWorkspaceRoot;

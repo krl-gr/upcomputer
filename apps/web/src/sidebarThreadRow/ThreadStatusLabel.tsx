@@ -1,8 +1,5 @@
-import {
-  resolveSidebarV2TopStatus,
-  type SidebarThreadStatus,
-  type SidebarV2TopStatusKind,
-} from "../components/Sidebar.logic";
+import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus } from "./topStatus";
 import { cn } from "../lib/utils";
 
 /** Upstream's status kinds that have a text label. Woke has none: it stays hidden. */

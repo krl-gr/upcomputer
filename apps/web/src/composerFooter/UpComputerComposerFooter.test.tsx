@@ -212,9 +212,9 @@ function footerProps(
   };
 }
 
-/** ChatComposer's hook line: the footer row follows the surface; resting keeps upstream's. */
-function FooterRow(props: { footer: UpComputerComposerFooterProps; resting?: boolean }) {
-  return showsUpComputerComposerFooter(props.resting ?? false) ? (
+/** ChatComposer's hook line: the footer row follows the surface. */
+function FooterRow(props: { footer: UpComputerComposerFooterProps }) {
+  return showsUpComputerComposerFooter() ? (
     <UpComputerComposerFooter {...props.footer} />
   ) : (
     <div data-testid="upstream-footer" />
@@ -224,9 +224,9 @@ function FooterRow(props: { footer: UpComputerComposerFooterProps; resting?: boo
 let root: Root;
 let container: HTMLDivElement;
 
-function render(footer: UpComputerComposerFooterProps, resting = false) {
+function render(footer: UpComputerComposerFooterProps) {
   return act(async () => {
-    root.render(<FooterRow footer={footer} resting={resting} />);
+    root.render(<FooterRow footer={footer} />);
   });
 }
 
@@ -310,11 +310,6 @@ describe("composer footer surface", () => {
     await render(footerProps());
     expect(container.querySelector("[data-composer-footer-surface]")).toBeNull();
     expect(container.querySelector('[data-testid="upstream-footer"]')).not.toBeNull();
-  });
-
-  it("leaves the resting row to upstream", async () => {
-    await render(footerProps(), true);
-    expect(container.querySelector("[data-composer-footer-surface]")).toBeNull();
   });
 
   it("uses V1's placeholders with its surface and upstream's text otherwise", () => {

@@ -92,7 +92,6 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { composerCollapsesOnScroll } from "../../composerFooter/composerFooterSurface";
 import { isProductFeatureShown } from "../../product/productFlags";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";

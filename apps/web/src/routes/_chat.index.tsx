@@ -18,7 +18,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useBoringSidebarEnabled } from "../hooks/useSettings";
 import { openScratchHomeDraft, resolveHomeWithoutDraft } from "../scratchHomeDraft";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import {
@@ -55,7 +55,7 @@ function IndexDraftLanding() {
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
+  const startsWithoutProject = newThreadStartsWithoutProject(useBoringSidebarEnabled());
   // UpComputer: the scratch project is not known before its environment's
   // server config, so choosing between the most recent project and a chat
   // without a project waits for it. Cached shells are enough for that choice,

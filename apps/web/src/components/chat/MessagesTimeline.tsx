@@ -840,12 +840,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
         onSizeChanged: handleAnchorSizeChanged,
       }
     : undefined;
-  const showsEmptyState =
-    rows.length === 0 &&
-    !isWorking &&
-    parentThreadLink === null &&
-    historyControls === undefined &&
-    footer === null;
   const [listMount, setListMount] = useState<TimelineListMount | null>(null);
   const nextListMount = resolveTimelineListMount(listMount, {
     listShown: !showsEmptyState,

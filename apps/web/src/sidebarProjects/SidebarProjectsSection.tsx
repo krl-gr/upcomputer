@@ -74,8 +74,11 @@ export function SidebarProjectsSection(props: {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  // Our Projects section scopes to one project; upstream's scope can hold several.
+  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
+  const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const setScopeKey = (projectKey: string | null) =>
+    setScopeKeys(projectKey === null ? [] : [projectKey]);
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
 
   const rows = useSidebarProjectsRows(projectGroups, scopeKey);

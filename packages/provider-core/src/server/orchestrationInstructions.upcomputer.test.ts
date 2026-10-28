@@ -8,7 +8,7 @@ import {
   orchestrationInstructionsFor,
   registerOrchestrationInstructionsResolver,
   t3AcpPromptWithInstructions,
-  t3OrchestrationPromptForFirstRun,
+  t3OrchestrationPrompt,
   t3OrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
 
@@ -45,35 +45,36 @@ describe("T3 orchestration provider instructions", () => {
     }
   });
 
-  it("injects prompt fallback only for an MCP-enabled first run", () => {
+  it("injects prompt fallback only until an MCP-enabled conversation has it", () => {
     const prompt = "Inspect the repository.";
-    const injected = t3OrchestrationPromptForFirstRun({
-      prompt,
-      runOrdinal: 1,
+    const base = { prompt, hasDeviceTools: false, deviceInstructionsDelivered: false };
+    const injected = t3OrchestrationPrompt({
+      ...base,
       hasT3Mcp: true,
+      orchestrationDelivered: false,
     });
 
     assert.include(injected, "<t3_code_orchestration_instructions>");
     assert.include(injected, `<user_request>\n${prompt}\n</user_request>`);
     assert.equal(
-      t3OrchestrationPromptForFirstRun({ prompt, runOrdinal: 2, hasT3Mcp: true }),
+      t3OrchestrationPrompt({ ...base, hasT3Mcp: true, orchestrationDelivered: true }),
       prompt,
     );
     assert.equal(
-      t3OrchestrationPromptForFirstRun({ prompt, runOrdinal: 1, hasT3Mcp: false }),
+      t3OrchestrationPrompt({ ...base, hasT3Mcp: false, orchestrationDelivered: false }),
       prompt,
     );
   });
 
   it("only exposes the system prompt when the T3 MCP server is attached", () => {
-    assert.equal(t3OrchestrationSystemPrompt(false), undefined);
-    assert.equal(t3OrchestrationSystemPrompt(true), T3_CODE_ORCHESTRATION_INSTRUCTIONS);
+    assert.equal(t3OrchestrationSystemPrompt(false, false), undefined);
+    assert.equal(t3OrchestrationSystemPrompt(true, false), T3_CODE_ORCHESTRATION_INSTRUCTIONS);
   });
 
   it("gives ACP sessions provider-neutral mode, browser, and orchestration guidance", () => {
     const injected = t3AcpPromptWithInstructions({
       prompt: "Inspect the repository.",
-      state: { interactionMode: "default", hasT3Mcp: true },
+      state: { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false },
     });
 
     assert.include(injected, "Up.computer interaction mode: Default");
@@ -84,7 +85,11 @@ describe("T3 orchestration provider instructions", () => {
 
   it("reinjects ACP guidance only when mode or tool availability changes", () => {
     const prompt = "Continue.";
-    const defaultState = { interactionMode: "default", hasT3Mcp: true } as const;
+    const defaultState = {
+      interactionMode: "default",
+      hasT3Mcp: true,
+      hasDeviceTools: false,
+    } as const;
 
     assert.equal(
       t3AcpPromptWithInstructions({ prompt, state: defaultState, previousState: defaultState }),
@@ -100,7 +105,7 @@ describe("T3 orchestration provider instructions", () => {
     );
     const withoutMcp = t3AcpPromptWithInstructions({
       prompt,
-      state: { interactionMode: "default", hasT3Mcp: false },
+      state: { interactionMode: "default", hasT3Mcp: false, hasDeviceTools: false },
     });
     assert.include(withoutMcp, "Up.computer interaction mode: Default");
     assert.notInclude(withoutMcp, "Up.computer browser");
@@ -109,7 +114,11 @@ describe("T3 orchestration provider instructions", () => {
 
   it("keeps the ACP browser guidance when the session's agent does not get orchestration", () => {
     const prompt = "Continue.";
-    const withBlock = { interactionMode: "default", hasT3Mcp: true } as const;
+    const withBlock = {
+      interactionMode: "default",
+      hasT3Mcp: true,
+      hasDeviceTools: false,
+    } as const;
     const withoutBlock = { ...withBlock, orchestrationInstructions: false } as const;
 
     const injected = t3AcpPromptWithInstructions({ prompt, state: withoutBlock });

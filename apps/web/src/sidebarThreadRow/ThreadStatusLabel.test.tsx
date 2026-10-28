@@ -38,11 +38,8 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.sidebarThreadRow,
 }));
 
-import {
-  resolveSidebarV2TopStatus,
-  type SidebarThreadStatus,
-  type SidebarV2TopStatusKind,
-} from "../components/Sidebar.logic";
+import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus } from "./topStatus";
 import { resolveThreadStatusLabel, THREAD_STATUS_LABELS } from "./ThreadStatusLabel";
 
 const { SidebarThreadRow } = await import("../components/sidebar/SidebarThreadRow");

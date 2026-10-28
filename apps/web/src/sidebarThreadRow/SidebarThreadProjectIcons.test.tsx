@@ -154,7 +154,7 @@ function leadingIcons() {
 
 beforeEach(() => {
   state.projects = PROJECTS;
-  useUiStateStore.setState({ sidebarProjectScopeKey: null });
+  useUiStateStore.setState({ sidebarProjectScopeKeys: [] });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -227,7 +227,7 @@ describe("SidebarThreadProjectIcons", () => {
   });
 
   it("hides the icons in a project-scoped list, as V1's filtered list did", async () => {
-    useUiStateStore.setState({ sidebarProjectScopeKey: "key-life" });
+    useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-life"] });
     await render(rowProps("scratch", ["life"]));
     expect(leadingIcons()).toMatchObject({ initials: [], chatIcon: false, label: null });
   });

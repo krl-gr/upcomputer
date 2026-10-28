@@ -122,7 +122,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         // the current project like the legacy sidebar did.
         const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();
         // UpComputer: New thread opens a chat without a project, as the sidebar's Threads pencil does.
-        if (newThreadStartsWithoutProject(legacySidebarEnabled)) {
+        if (newThreadStartsWithoutProject(boringSidebarEnabled || legacySidebarEnabled)) {
           const { activeThread, activeDraftThread } = readThreadContext();
           const environmentId = scratch.scratchEnvironmentId(
             activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,

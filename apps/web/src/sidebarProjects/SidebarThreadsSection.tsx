@@ -33,10 +33,10 @@ export function useSidebarThreadListShown(): boolean {
  * Under the `sidebarProjects` surface, New thread (the Threads pencil and
  * `chat.new`) opens an empty chat without a project, as V1 did; the project is
  * picked inside the chat. It uses upstream's "No project" path, the scratch
- * project. The legacy sidebar keeps upstream's New thread.
+ * project. The boring sidebar keeps upstream's New thread.
  */
-export function newThreadStartsWithoutProject(legacySidebarEnabled: boolean): boolean {
-  return !legacySidebarEnabled && productSurface("sidebarProjects") === "upcomputer";
+export function newThreadStartsWithoutProject(boringSidebarEnabled: boolean): boolean {
+  return !boringSidebarEnabled && productSurface("sidebarProjects") === "upcomputer";
 }
 
 /**

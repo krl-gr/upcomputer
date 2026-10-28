@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useBoringSidebarEnabled } from "../hooks/useSettings";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import { FirstRunSetup } from "../onboardingSurface/FirstRunSetup";
 
@@ -37,7 +37,7 @@ function WelcomeRouteView() {
   const localAvailable = authGateState.status === "authenticated";
   // Home opens a chat without a project here (see the index route), so the
   // hero behind setup would only flash before it.
-  const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
+  const startsWithoutProject = newThreadStartsWithoutProject(useBoringSidebarEnabled());
   return (
     <>
       {startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />}

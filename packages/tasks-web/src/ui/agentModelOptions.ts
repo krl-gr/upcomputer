@@ -29,7 +29,7 @@ export function getAgentModelName(
   slug: string,
 ): string {
   const model = provider?.models.find((candidate) => candidate.slug === slug);
-  return model ? getTriggerDisplayModelName(model) : slug;
+  return model ? getTriggerDisplayModelName(model, provider?.driverKind) : slug;
 }
 
 /** A run's agent name and the harness and model it ran on, which can differ from the agent's current config. */

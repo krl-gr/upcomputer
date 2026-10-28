@@ -137,7 +137,7 @@ export function composerModelPickerLabel(input: {
     return entry.displayName;
   }
   const modelName = selected
-    ? `${getTriggerDisplayModelName(selected)}${selected.isUnavailable ? " (Unavailable)" : ""}`
+    ? `${getTriggerDisplayModelName(selected, entry.driverKind)}${selected.isUnavailable ? " (Unavailable)" : ""}`
     : input.model || "Choose model";
   return `${entry.displayName} · ${modelName}`;
 }

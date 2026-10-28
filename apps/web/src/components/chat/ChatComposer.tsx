@@ -2323,6 +2323,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
+  const isComposerFocusWithin = useComposerFocusWithin(composerFormRef);
+  const isComposerCompactRow = isComposerCompact({
+    enabled: settings.composerCompact,
+    isFocusWithin: isComposerFocusWithin,
+    hasMultilinePrompt,
+    hasAttachments: composerContextRecords.size > 0 || pendingSnapShotIds.length > 0,
+    hasPendingRequest: showComposerTopDrawer || showPlanFollowUpPrompt,
+    hasExpandedChrome: isComposerModelPickerOpen,
+  });
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
   const composerControlsHidden = showInlineRestingControls && !restingControlsVisible;

@@ -106,7 +106,6 @@ export function createNewThreadHandler(router: AnyRouter) {
         },
       });
     }
-    const projects = readProjects();
     const targetServerSettings =
       environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
     const {

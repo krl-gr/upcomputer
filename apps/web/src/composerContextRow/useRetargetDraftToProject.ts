@@ -9,7 +9,7 @@ import { hasExplicitComposerModelSelection } from "../lib/chatThreadActions";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { useEnvironments } from "../state/environments";
 
 /**
