@@ -628,6 +628,7 @@ export const BackgroundNotice = Schema.Struct({
     "updates",
     "settings",
     "tasks",
+    "app",
   ]),
   severity: Schema.Literals(["info", "warning", "error"]),
   title: TrimmedNonEmptyString,
