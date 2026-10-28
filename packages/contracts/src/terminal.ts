@@ -239,7 +239,7 @@ export class TerminalCwdNotFoundError extends Schema.TaggedError<TerminalCwdNotF
   },
 ) {
   override get message() {
-    return `Terminal cwd does not exist: ${this.cwd}`;
+    return `This thread's folder ${this.cwd} was removed, so its terminal can't open. Send a message to recreate the worktree, or open the project folder instead.`;
   }
 }
 
@@ -250,7 +250,7 @@ export class TerminalCwdNotDirectoryError extends Schema.TaggedError<TerminalCwd
   },
 ) {
   override get message() {
-    return `Terminal cwd is not a directory: ${this.cwd}`;
+    return `The terminal can't open in ${this.cwd} because it isn't a folder.`;
   }
 }
 
@@ -262,7 +262,7 @@ export class TerminalCwdStatError extends Schema.TaggedError<TerminalCwdStatErro
   },
 ) {
   override get message() {
-    return `Failed to access terminal cwd: ${this.cwd}`;
+    return `Up.computer couldn't open ${this.cwd} for the terminal. Check that the folder exists and you can read it.`;
   }
 }
 
