@@ -116,6 +116,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
+import * as BackgroundNotices from "./background/BackgroundNotices.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -1249,6 +1250,7 @@ const layerWsRpc = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
+      const backgroundNotices = yield* BackgroundNotices.BackgroundNotices;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
@@ -2985,7 +2987,22 @@ const layerWsRpc = (
           Stream.unwrap(
             Effect.gen(function* () {
               const usageLimitsCommand = input.usageLimitsCommand === true;
-              const config = yield* loadServerConfig({ usageLimitsCommand });
+              const loadedConfig = yield* loadServerConfig({ usageLimitsCommand });
+              const config =
+                input.backgroundNotices === true
+                  ? { ...loadedConfig, backgroundNotices: yield* backgroundNotices.list }
+                  : loadedConfig;
+              const backgroundNoticeUpdates =
+                input.backgroundNotices === true
+                  ? backgroundNotices.changes.pipe(
+                      Stream.drop(1),
+                      Stream.map((notices) => ({
+                        version: 1 as const,
+                        type: "backgroundNoticesUpdated" as const,
+                        payload: { notices },
+                      })),
+                    )
+                  : Stream.empty;
               const keybindingsUpdates = keybindings.streamChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
@@ -3067,7 +3084,10 @@ const layerWsRpc = (
                   providerStatuses,
                   Stream.merge(
                     settingsUpdates,
-                    Stream.merge(environmentThemeUpdates, usageLimitSourceUpdates),
+                    Stream.merge(
+                      Stream.merge(environmentThemeUpdates, usageLimitSourceUpdates),
+                      backgroundNoticeUpdates,
+                    ),
                   ),
                 ),
               );

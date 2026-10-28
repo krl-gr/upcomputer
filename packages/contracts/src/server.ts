@@ -611,6 +611,32 @@ export const ServerDirectEndpoint = Schema.Struct({
 });
 export type ServerDirectEndpoint = typeof ServerDirectEndpoint.Type;
 
+/**
+ * A failure in background work that belongs to no thread: reminders,
+ * automations, scheduled runs, worktree cleanup, remote access. Clients list
+ * them in one notifications place instead of separate banners.
+ */
+export const BackgroundNotice = Schema.Struct({
+  /** Stable per problem, so a repeat updates the notice instead of adding one. */
+  id: TrimmedNonEmptyString,
+  area: Schema.Literals([
+    "reminders",
+    "automations",
+    "scheduled-tasks",
+    "worktrees",
+    "remote-access",
+    "updates",
+    "settings",
+    "tasks",
+  ]),
+  severity: Schema.Literals(["info", "warning", "error"]),
+  title: TrimmedNonEmptyString,
+  message: TrimmedNonEmptyString,
+  detail: Schema.optionalKey(Schema.String),
+  occurredAt: IsoDateTime,
+});
+export type BackgroundNotice = typeof BackgroundNotice.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
@@ -619,6 +645,8 @@ export const ServerConfig = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
   providers: ServerProviders,
+  /** Only for subscribers that asked for background notices. */
+  backgroundNotices: Schema.optionalKey(ForwardCompatibleArray(BackgroundNotice)),
   availableEditors: ForwardCompatibleArray(EditorId),
   remoteOpenTargets: Schema.optionalKey(ForwardCompatibleArray(RemoteOpenTarget)),
   /**
@@ -773,6 +801,14 @@ export const ServerConfigStreamUsageLimitSourcesUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamUsageLimitSourcesUpdatedEvent =
   typeof ServerConfigStreamUsageLimitSourcesUpdatedEvent.Type;
 
+export const ServerConfigStreamBackgroundNoticesUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("backgroundNoticesUpdated"),
+  payload: Schema.Struct({ notices: ForwardCompatibleArray(BackgroundNotice) }),
+});
+export type ServerConfigStreamBackgroundNoticesUpdatedEvent =
+  typeof ServerConfigStreamBackgroundNoticesUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
@@ -780,6 +816,7 @@ export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSettingsUpdatedEvent,
   ServerConfigStreamEnvironmentThemesUpdatedEvent,
   ServerConfigStreamUsageLimitSourcesUpdatedEvent,
+  ServerConfigStreamBackgroundNoticesUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 

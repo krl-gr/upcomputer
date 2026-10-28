@@ -1771,6 +1771,8 @@ export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerCon
      * client would send it to the provider as an ordinary prompt.
      */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
+    /** Background notices arrive on their own event, which older clients can't decode. */
+    backgroundNotices: Schema.optional(Schema.Boolean),
   }),
   success: ServerConfigStreamEvent,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),

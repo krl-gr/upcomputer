@@ -3,7 +3,11 @@ import * as NodeCrypto from "node:crypto";
 
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
-import { ScheduledTaskUpsertInput, SecretRequestError } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ScheduledTaskUpsertInput,
+  SecretRequestError,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -24,6 +28,8 @@ import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
+
+const PROMPT_TOO_LONG = `This request made the prompt longer than ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} characters, so it didn't run. Use fewer or shorter placeholders in the prompt.`;
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
 
@@ -260,7 +266,10 @@ it.effect("refuses webhook schedules in a product that hides them", () =>
     Effect.gen(function* () {
       const input = yield* webhookTaskInput();
       const error = yield* service.upsert(input).pipe(Effect.flip);
-      assert.equal(error.message, "Webhook schedules are not available in this build.");
+      assert.equal(
+        error.message,
+        "Webhook triggers aren't available in this version of Up.computer.",
+      );
     }).pipe(
       Effect.provideService(
         ServerProduct,
@@ -626,7 +635,7 @@ it.effect("does not start a run when the filled-in prompt is too long", () =>
         deliveryId: result._tag === "accepted" ? result.deliveryId : ("" as never),
       });
       assert.equal(delivery.outcome, "dispatch_failed");
-      assert.equal(delivery.error, "The filled-in prompt is too long.");
+      assert.equal(delivery.error, PROMPT_TOO_LONG);
       assert.equal(delivery.renderedPrompt?.length, 64 * 1024);
       const ok = yield* service.triggerWebhook(requestFor(task));
       assert.equal(ok._tag, "accepted");
@@ -904,7 +913,7 @@ it.effect("a signature without any secret is refused", () =>
           }),
         )
         .pipe(Effect.flip);
-      assert.include(failure.message, "needs a signing secret");
+      assert.include(failure.message, "Add the signing secret");
     }),
   ),
 );

@@ -28,6 +28,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { useShownPathname } from "../../hooks/useShownPathname";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { SidebarBackgroundNotices } from "./SidebarBackgroundNotices";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -236,6 +237,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
         </>
       )}
+      <SidebarBackgroundNotices />
       <SidebarUpdatePill />
     </SidebarMenu>
   );

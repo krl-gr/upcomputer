@@ -48,6 +48,8 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { isProductFeatureShown } from "../product/ServerProduct.ts";
+import * as BackgroundNotices from "../background/BackgroundNotices.ts";
+import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
   redactHeaders,
@@ -285,11 +287,30 @@ function nextRunAt(
   }
 }
 
+/**
+ * What a person reads about a failed run: a short reason when the cause is
+ * readable, never Cause.pretty output or a stack.
+ */
 function errorMessage(error: unknown): string {
-  if (Cause.isCause(error)) return Cause.pretty(error);
-  if (error instanceof Error) return error.message;
-  return String(error);
+  const reason = userFacingDispatchErrorMessage(Cause.isCause(error) ? Cause.squash(error) : error);
+  const line = reason
+    ?.split("\n")[0]
+    ?.trim()
+    .replace(/[.\s]+$/u, "");
+  const readable =
+    line !== undefined &&
+    line.length > 0 &&
+    line.length <= 160 &&
+    !/[{}[\]<>`]|\b[A-Za-z]+Error\b|\bat \w+ \(|\b\w+_\w+\b|\/\w+\//u.test(line);
+  return readable
+    ? `It didn't run: ${line.charAt(0).toLowerCase()}${line.slice(1)}. It tries again at its next scheduled time.`
+    : "It didn't run because of an internal error. It tries again at its next scheduled time.";
 }
+
+const DAMAGED_SCHEDULE_ERROR =
+  "This schedule can't run because its saved data is damaged. Open it and save the schedule again.";
+const RESTART_INTERRUPTED_ERROR =
+  "This run was cut off because Up.computer closed. It runs again at its next scheduled time.";
 
 function webhookPath(taskId: string, token: string): string {
   return `${WEBHOOK_ROUTE_PREFIX}/${encodeURIComponent(taskId)}/${token}`;
@@ -347,6 +368,46 @@ const decodeRow = (row: ScheduledTaskRow, origin: WebhookOrigin | null = null) =
     }),
   );
 
+/**
+ * A row the poll can't read would be skipped on every pass, so the schedule
+ * silently stops. Take it out of the poll and say so on its row and in the
+ * notifications place.
+ */
+const stopDamagedRow = (row: ScheduledTaskRow, title: string | null) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      UPDATE scheduled_tasks
+      SET next_run_at = NULL,
+          last_run_status = 'failed',
+          last_run_error = ${DAMAGED_SCHEDULE_ERROR}
+      WHERE task_id IS ${row.task_id}
+    `;
+    yield* reportNotice({
+      id: `scheduled-task:${row.task_id}:damaged`,
+      area: "scheduled-tasks",
+      severity: "error",
+      title: "Schedule stopped",
+      message: `"${title?.trim() || "A scheduled task"}" can't run because its schedule data is damaged. Open it in Settings, Scheduled tasks, and save the schedule again.`,
+    });
+  }).pipe(Effect.ignore({ log: true }));
+
+const reportNotice = (
+  notice: Parameters<BackgroundNotices.BackgroundNotices["Service"]["report"]>[0],
+) =>
+  Effect.serviceOption(BackgroundNotices.BackgroundNotices).pipe(
+    Effect.flatMap((notices) =>
+      Option.isSome(notices) ? notices.value.report(notice) : Effect.void,
+    ),
+  );
+
+function formatRunTime(iso: string | null): string {
+  const at = iso === null ? Option.none() : DateTime.make(iso);
+  return Option.isNone(at)
+    ? "scheduled"
+    : DateTime.formatLocal(at.value, { dateStyle: "medium", timeStyle: "short" });
+}
+
 export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(function* (
   now: DateTime.DateTime,
 ) {
@@ -368,15 +429,17 @@ export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(funct
       if (task.nextRunAt === null || Option.isSome(DateTime.make(task.nextRunAt))) {
         tasks.push(task);
       } else {
-        yield* Effect.logWarning("Skipping schedule task row with invalid next_run_at", {
+        yield* Effect.logWarning("Stopping schedule task row with invalid next_run_at", {
           taskId: row.task_id,
         });
+        yield* stopDamagedRow(row, task.title);
       }
     } else {
-      yield* Effect.logWarning("Skipping undecodable schedule task row", {
+      yield* Effect.logWarning("Stopping undecodable schedule task row", {
         taskId: row.task_id,
         cause: decoded.failure,
       });
+      yield* stopDamagedRow(row, row.title);
     }
   }
   return tasks;
@@ -486,7 +549,7 @@ export const layer = Layer.effect(
     const findTask = Effect.fn("ScheduledTaskService.findTask")(function* (id: ScheduledTaskId) {
       const rows = yield* getRows(id).pipe(
         Effect.mapError((cause) =>
-          taskError("Could not load schedule task.", { taskId: id, cause }),
+          taskError("Couldn't load the scheduled task. Try again.", { taskId: id, cause }),
         ),
       );
       const row = rows[0];
@@ -502,7 +565,7 @@ export const layer = Layer.effect(
             : { token: rows[0].webhook_token, secret: rows[0].webhook_secret },
         ),
         Effect.mapError((cause) =>
-          taskError("Could not load schedule task.", { taskId: id, cause }),
+          taskError("Couldn't load the scheduled task. Try again.", { taskId: id, cause }),
         ),
       );
 
@@ -611,7 +674,7 @@ export const layer = Layer.effect(
         RETURNING task_id
       `.pipe(
         Effect.mapError((cause) =>
-          taskError("Could not save schedule task.", { taskId: task.id, cause }),
+          taskError("Couldn't save the scheduled task. Try again.", { taskId: task.id, cause }),
         ),
         Effect.flatMap((rows) =>
           rows.length > 0
@@ -701,7 +764,17 @@ export const layer = Layer.effect(
           Effect.logWarning("Could not release stuck schedule task run", {
             taskId: task.id,
             cause,
-          }),
+          }).pipe(
+            Effect.andThen(
+              reportNotice({
+                id: `scheduled-task:${task.id}:stuck`,
+                area: "scheduled-tasks",
+                severity: "error",
+                title: "Schedule stuck",
+                message: `"${task.title}" is stuck and won't run again until Up.computer restarts. Restart the app, or turn the schedule off and on.`,
+              }),
+            ),
+          ),
         ),
       );
 
@@ -892,9 +965,11 @@ export const layer = Layer.effect(
         missedRunAt: task.nextRunAt,
         rescheduledTo: next,
       });
+      const skipped = `Skipped the ${formatRunTime(task.nextRunAt)} run because the computer was asleep or Up.computer was closed. Run it now if you still need it.`;
       yield* sql`
         UPDATE scheduled_tasks
         SET next_run_at = ${next},
+            last_run_error = ${skipped},
             updated_at = ${iso(now)}
         WHERE task_id = ${task.id}
       `.pipe(
@@ -903,6 +978,13 @@ export const layer = Layer.effect(
         ),
       );
       yield* notifyChanged;
+      yield* reportNotice({
+        id: `scheduled-task:${task.id}:missed`,
+        area: "scheduled-tasks",
+        severity: "info",
+        title: "Run skipped",
+        message: `"${task.title}": ${skipped}`,
+      });
     });
 
     const runDueTasks = Effect.fn("ScheduledTaskService.runDueTasks")(function* () {
@@ -945,7 +1027,7 @@ export const layer = Layer.effect(
               yield* sql`
                 UPDATE scheduled_tasks
                 SET last_run_status = 'failed',
-                    last_run_error = 'Run was interrupted by a server restart.',
+                    last_run_error = ${RESTART_INTERRUPTED_ERROR},
                     next_run_at = ${nextRunAt(decoded.success, now)},
                     updated_at = ${iso(now)},
                     run_count = run_count + 1
@@ -960,7 +1042,7 @@ export const layer = Layer.effect(
             yield* sql`
               UPDATE scheduled_tasks
               SET last_run_status = 'failed',
-                  last_run_error = 'Run was interrupted by a server restart.',
+                  last_run_error = ${RESTART_INTERRUPTED_ERROR},
                   updated_at = ${iso(now)},
                   run_count = run_count + 1
               WHERE task_id IS ${row.task_id} AND last_run_status = 'running'
@@ -1002,7 +1084,9 @@ export const layer = Layer.effect(
           input.schedule.type === "webhook" &&
           !(yield* isProductFeatureShown("scheduledTaskWebhooks"))
         ) {
-          return yield* taskError("Webhook schedules are not available in this build.");
+          return yield* taskError(
+            "Webhook triggers aren't available in this version of Up.computer.",
+          );
         }
         const now = yield* localNow;
         const uuid =
@@ -1072,9 +1156,12 @@ export const layer = Layer.effect(
                 const secretChanged =
                   signature == null || provided !== undefined || existing === null;
                 if (signature != null && secret === null) {
-                  return yield* taskError("A webhook signature check needs a signing secret.", {
-                    taskId: id,
-                  });
+                  return yield* taskError(
+                    "Add the signing secret from the sending service to check its signature, or turn the signature check off.",
+                    {
+                      taskId: id,
+                    },
+                  );
                 }
                 return { token, secret, secretChanged };
               })
@@ -1175,9 +1262,17 @@ export const layer = Layer.effect(
           });
         }
         const next = yield* runTask(task, "manual").pipe(
-          Effect.mapError((cause) =>
-            taskError("Could not run schedule task.", { taskId: input.id, cause }),
-          ),
+          Effect.mapError((cause) => {
+            const reason = cause.message.trim().replace(/[.\s]+$/u, "");
+            return taskError(
+              `"${task.title}" couldn't run now${
+                reason.length > 0 && reason.length <= 160
+                  ? `: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}`
+                  : ""
+              }. Try again in a moment.`,
+              { taskId: input.id, cause },
+            );
+          }),
         );
         return { task: next };
       });
@@ -1442,7 +1537,10 @@ export const layer = Layer.effect(
         if (Option.isNone(taskId)) return yield* notFound;
         const rows = yield* getRows(taskId.value).pipe(
           Effect.mapError((cause) =>
-            taskError("Could not load schedule task.", { taskId: taskId.value, cause }),
+            taskError("Couldn't load the scheduled task. Try again.", {
+              taskId: taskId.value,
+              cause,
+            }),
           ),
         );
         const row = rows[0];
@@ -1594,7 +1692,7 @@ export const layer = Layer.effect(
                 signatureVerified: signature !== null,
                 missing: rendered.missing,
                 renderedPrompt: rendered.prompt,
-                error: "The filled-in prompt is too long.",
+                error: `This request made the prompt longer than ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} characters, so it didn't run. Use fewer or shorter placeholders in the prompt.`,
               });
               yield* observe("prompt_too_long");
               return { _tag: "accepted" as const, deliveryId, outcome: "prompt_too_long" as const };
@@ -1638,7 +1736,14 @@ export const layer = Layer.effect(
               Effect.flatMap((completed) =>
                 completed.lastRunStatus === "failed"
                   ? runOutcome("failed").pipe(
-                      Effect.andThen(markDeliveryFailed(deliveryId, "The run failed to start.")),
+                      Effect.andThen(
+                        markDeliveryFailed(
+                          deliveryId,
+                          `A request arrived but "${task.title}" couldn't start. ${
+                            completed.lastRunError ?? "Fix the task, then send the request again."
+                          }`,
+                        ),
+                      ),
                     )
                   : runOutcome("started"),
               ),
@@ -1656,7 +1761,12 @@ export const layer = Layer.effect(
               Effect.catchCause((cause) =>
                 Effect.logWarning("Webhook dispatch failed", { taskId: task.id, cause }).pipe(
                   Effect.andThen(runOutcome("failed")),
-                  Effect.andThen(markDeliveryFailed(deliveryId, "The run failed to start.")),
+                  Effect.andThen(
+                    markDeliveryFailed(
+                      deliveryId,
+                      `A request arrived but "${task.title}" couldn't start. Fix the task, then send the request again.`,
+                    ),
+                  ),
                 ),
               ),
               permit.withPermits(1),

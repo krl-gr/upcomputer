@@ -45,3 +45,4 @@ export {
   UPSTREAM_PRODUCT_FLAGS,
   type ProductFlags,
 } from "@t3tools/shared/productFlags";
+export { BackgroundNotices } from "./background/BackgroundNotices.ts";

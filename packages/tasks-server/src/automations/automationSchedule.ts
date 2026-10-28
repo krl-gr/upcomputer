@@ -30,7 +30,7 @@ export function parseAutomationCron(
   return Result.isSuccess(parsed)
     ? Result.succeed(parsed.success)
     : Result.fail(
-        `Invalid schedule '${schedule.cron}' for time zone '${schedule.timezone}': ${parsed.failure.message}`,
+        `The schedule "${schedule.cron}" in ${schedule.timezone} isn't valid. Edit the schedule, then turn the automation back on.`,
       );
 }
 
@@ -44,7 +44,9 @@ export function computeNextRunAt(
   try {
     return Result.succeed(Cron.next(cron.success, from).toISOString());
   } catch (cause) {
-    return Result.fail(`Schedule '${schedule.cron}' has no upcoming occurrence: ${String(cause)}`);
+    return Result.fail(
+      `The schedule "${schedule.cron}" never comes up again. Edit the schedule, then turn the automation back on.`,
+    );
   }
 }
 

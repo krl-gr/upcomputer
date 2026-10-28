@@ -46,6 +46,7 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
+import { BackgroundNotices } from "../../../../apps/server/src/extensionApi.ts";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { SqlError } from "effect/sql/SqlError";
@@ -2856,6 +2857,34 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  const reportMissedReminders = (
+    missed: ReadonlyArray<{
+      readonly entryId: string;
+      readonly title: string;
+      readonly at: string;
+    }>,
+  ) =>
+    missed.length === 0
+      ? Effect.void
+      : Effect.serviceOption(BackgroundNotices).pipe(
+          Effect.flatMap((notices) =>
+            Option.isNone(notices)
+              ? Effect.void
+              : Effect.forEach(
+                  missed,
+                  (reminder) =>
+                    notices.value.report({
+                      id: `reminder:${reminder.entryId}:missed`,
+                      area: "reminders",
+                      severity: "info",
+                      title: "Missed reminder",
+                      message: `You missed a reminder: "${reminder.title}" was scheduled for ${reminder.at}.`,
+                    }),
+                  { discard: true },
+                ),
+          ),
+        );
+
   const claimDueReminders: TaskRepositoryShape["claimDueReminders"] = (input) =>
     sql
       .withTransaction(
@@ -2871,11 +2900,25 @@ const makeTaskRepository = Effect.gen(function* () {
           );
           // Claimed either way; only an open entry of a live task that has not
           // started yet is worth a reminder (wande drops the others as stale).
-          return due.flatMap((row): TaskReminder[] => {
+          const missed: Array<{
+            readonly entryId: string;
+            readonly title: string;
+            readonly at: string;
+          }> = [];
+          const reminders = due.flatMap((row): TaskReminder[] => {
             if (row.status !== "open" || row.startTime === null || row.title === null) return [];
             if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
             const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
-            if (startsAt === null || startsAt <= DateTime.toEpochMillis(now)) return [];
+            if (startsAt === null) return [];
+            if (startsAt <= DateTime.toEpochMillis(now)) {
+              // Came due while the computer slept or the server was down.
+              missed.push({
+                entryId: row.entryId,
+                title: row.title,
+                at: `${row.date} ${row.startTime}`,
+              });
+              return [];
+            }
             return [
               {
                 entryId: row.entryId,
@@ -2886,6 +2929,8 @@ const makeTaskRepository = Effect.gen(function* () {
               },
             ];
           });
+          yield* reportMissedReminders(missed);
+          return reminders;
         }),
       )
       .pipe(

@@ -146,6 +146,13 @@ it.effect("loads only due tasks and skips corrupt due rows without decoding sett
       last_run_status: string;
     }>`SELECT last_run_status FROM scheduled_tasks WHERE task_id = 'running'`;
     assert.equal(running[0]?.last_run_status, "running");
+    // A damaged row leaves the poll and says why, instead of silently stopping.
+    const damaged = yield* sql<{
+      next_run_at: string | null;
+      last_run_error: string | null;
+    }>`SELECT next_run_at, last_run_error FROM scheduled_tasks WHERE task_id = 'due-corrupt'`;
+    assert.isNull(damaged[0]?.next_run_at);
+    assert.match(damaged[0]?.last_run_error ?? "", /saved data is damaged/);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
@@ -233,7 +240,13 @@ it.effect(
       assert.isNull(stuckHuge?.next_run_at);
       for (const id of ["stuck-valid", "stuck-corrupt", "stuck-huge", null]) {
         const row = byId.get(id);
-        assert.equal(row?.last_run_error, "Run was interrupted by a server restart.");
+        // A row that can't be decoded is then taken out of the poll as damaged.
+        assert.match(
+          row?.last_run_error ?? "",
+          id === "stuck-corrupt" || id === null
+            ? /saved data is damaged/
+            : /This run was cut off because Up\.computer closed/,
+        );
         assert.equal(row?.run_count, 1);
       }
       for (const id of ["due-healthy", "due-huge", "due-second"]) {
@@ -243,7 +256,9 @@ it.effect(
         assert.equal(row?.run_count, 1);
       }
       assert.isNull(byId.get("due-huge")?.next_run_at);
-      assert.equal(byId.get("due-bad-date")?.last_run_status, "never");
+      // A next run time that can't be read stops the row with a reason, without a run.
+      assert.equal(byId.get("due-bad-date")?.last_run_status, "failed");
+      assert.match(byId.get("due-bad-date")?.last_run_error ?? "", /saved data is damaged/);
       assert.equal(byId.get("due-bad-date")?.run_count, 0);
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
