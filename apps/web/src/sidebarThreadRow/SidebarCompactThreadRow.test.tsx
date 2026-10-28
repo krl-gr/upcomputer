@@ -34,7 +34,6 @@ type Root = import("react-dom/client").Root;
 const surface = vi.hoisted(() => ({ sidebarThreadRow: "upcomputer" as "upstream" | "upcomputer" }));
 vi.mock("../product/productFlags", () => ({
   productSurface: () => surface.sidebarThreadRow,
-  withProductClientSettings: <Settings,>(settings: Settings) => settings,
 }));
 // Stands in for the Tasks feature's run badge: it replaces the time on one thread.
 vi.mock("../product/ProductSlots", () => ({

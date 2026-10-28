@@ -61,7 +61,6 @@ import {
 } from "~/state/session";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { withProductClientSettings } from "~/product/productFlags";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
@@ -90,7 +89,7 @@ function emitClientSettingsHydrationChange() {
 }
 
 function getClientSettingsSnapshot(): ClientSettings {
-  return withProductClientSettings(clientSettingsSnapshot);
+  return clientSettingsSnapshot;
 }
 
 function replaceClientSettingsSnapshot(settings: ClientSettings): void {
@@ -291,7 +290,7 @@ export function useClientSettingsHydrationStatus(): ClientSettingsHydrationStatu
   );
 }
 
-const getDefaultClientSettings = () => withProductClientSettings(DEFAULT_CLIENT_SETTINGS);
+const getDefaultClientSettings = () => DEFAULT_CLIENT_SETTINGS;
 const selectWholeClientSettings = (settings: ClientSettings) => settings;
 
 /** Structurally equal selections retain their reference and skip rendering. */

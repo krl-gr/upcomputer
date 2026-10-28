@@ -45,12 +45,6 @@ export interface ProductFlags {
   readonly mcpApps: boolean;
   /** The notes on usage data, in onboarding and in Settings, with the privacy policy link. */
   readonly usageDataNotice: boolean;
-  /**
-   * Upstream's new design (#24865, on by default upstream) and its Settings,
-   * Beta switch. Hidden, the app keeps the classic look whatever the stored
-   * setting says.
-   */
-  readonly newDesign: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -67,7 +61,6 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
-  newDesign: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -82,7 +75,6 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
-  newDesign: false,
 });
 
 /**
@@ -273,12 +265,6 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: ["privacy-policy"],
-    rightPanelSurfaces: [],
-  },
-  newDesign: {
-    capabilities: [],
-    keybindingCommands: [],
-    settingsSearchIds: ["new-design"],
     rightPanelSurfaces: [],
   },
 };

@@ -14,7 +14,6 @@ import {
   isProductKeybindingShown,
   isProductSettingsSearchItemVisible,
   productSurface,
-  withProductClientSettings,
   withoutHiddenProductKeybindings,
 } from "./productFlags";
 
@@ -230,19 +229,5 @@ describe("replaceable surfaces in the web app", () => {
     expect(html).not.toContain("project-scope-menu");
     expect(html).not.toContain('aria-label="Add project"');
     expect(html).not.toContain('aria-label="New thread"');
-  });
-});
-
-describe("the new design in the UpComputer product", () => {
-  it("keeps the classic look while the flag is hidden, whatever the stored setting", () => {
-    const stored = { redesignEnabled: true, chatWidth: "wide" };
-    expect(withProductClientSettings(stored)).toBe(stored);
-
-    product.hidden = true;
-    const applied = withProductClientSettings(stored);
-    expect(applied).toEqual({ redesignEnabled: false, chatWidth: "wide" });
-    // Settings snapshots feed useSyncExternalStore, so the same input keeps its output.
-    expect(withProductClientSettings(stored)).toBe(applied);
-    expect(isProductSettingsSearchItemVisible({ id: "new-design" })).toBe(false);
   });
 });
