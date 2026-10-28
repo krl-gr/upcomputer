@@ -37,8 +37,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import {
+  BackgroundNotices,
   ProjectStoreV2,
   ThreadManagementService,
+  TurnContextRefusal,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
@@ -83,13 +85,39 @@ const MemoryMarker = Schema.fromJsonString(
 const decodeMarker = Schema.decodeUnknownOption(MemoryMarker);
 const encodeMarker = Schema.encodeSync(MemoryMarker);
 const decodeMemoryWrite = Schema.decodeUnknownEffect(BotMemoryWriteInput);
-const fail = (message: string) => new TaskError({ message });
+const fail = (message: string, code?: string) =>
+  new TaskError({ message, ...(code === undefined ? {} : { code }) });
+// The message is what people and agents read; the raw cause stays for Details and logs.
 const asError = (cause: unknown) =>
   cause instanceof TaskError
     ? cause
     : Schema.isSchemaError(cause)
-      ? new TaskError({ message: `Invalid bot input: ${cause.message}`, cause })
-      : new TaskError({ message: "Bot operation failed.", cause });
+      ? new TaskError({ message: "Some of the bot's settings aren't valid.", cause })
+      : new TaskError({ message: "Up.computer couldn't read or save the bot's data.", cause });
+/** The error and the causes under it, for a Details disclosure. */
+const rawText = (cause: unknown) => {
+  const lines: Array<string> = [];
+  for (let current = cause, depth = 0; current != null && depth < 4; depth++) {
+    lines.push(current instanceof Error ? current.message : String(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return [...new Set(lines)].join("\n");
+};
+const settingsLink = (agentId: string) => ({
+  label: "Open settings",
+  path: `/bots?bot=${encodeURIComponent(agentId)}`,
+});
+const memoryProjectUnavailable = (bot: Bot) =>
+  fail(
+    `This memory belongs to a project ${bot.agent.name} can't use anymore. Add the project back in the bot's settings, or make the memory global.`,
+    "bot_memory_project_unavailable",
+  );
+/** Why a chat cannot become a bot, and what to do about it. */
+const cannotAdopt = (reason: string, fix: string) =>
+  fail(
+    `This chat can't become a bot because ${reason}. ${fix} and try again.`,
+    "bot_chat_unavailable",
+  );
 // The permanent chat works like an orchestrator thread: other agents do the work, and their
 // tasks report back here through the chat being their source thread. agent_search lists the
 // bot too, so the text names it and keeps "another task agent" apart from its own work.
@@ -173,7 +201,13 @@ export class BotService extends Context.Service<
       id: string,
     ) => Effect.Effect<BotMemory, TaskError>;
     readonly rejectProposal: (agentId: TaskAgentId, id: string) => Effect.Effect<void, TaskError>;
-    readonly context: (input: TurnContextInput) => Effect.Effect<TurnContext, TaskError>;
+    readonly context: (
+      input: TurnContextInput,
+    ) => Effect.Effect<TurnContext, TaskError | TurnContextRefusal>;
+    /** What removing the agent also removes, or null when it is no bot. */
+    readonly removal: (
+      agentId: TaskAgentId,
+    ) => Effect.Effect<{ readonly name: string; readonly memories: number } | null, TaskError>;
     readonly forThread: (threadId: ThreadId) => Effect.Effect<Bot | null, TaskError>;
     readonly assign: (input: {
       readonly agentId: TaskAgentId;
@@ -202,6 +236,32 @@ const make = Effect.gen(function* () {
   const taskAgents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
   const recordFirstUse = yield* makeFirstUseRecorder;
+  const notices = yield* Effect.serviceOption(BackgroundNotices);
+  const report = (notice: Parameters<BackgroundNotices["Service"]["report"]>[0]) =>
+    Option.isSome(notices) ? notices.value.report(notice) : Effect.void;
+  const resolve = (id: string) =>
+    Option.isSome(notices) ? notices.value.resolve(id) : Effect.void;
+  const restoreNotice = (agentId: string) => `bots:restore:${agentId}`;
+  const nameNotice = (agentId: string) => `bots:name:${agentId}`;
+  /** A bot chat that is missing or misnamed has no thread to say so in. */
+  const reportRestore = (row: BotRow, id: string, reason: string, cause: unknown) =>
+    Effect.gen(function* () {
+      const agent = yield* repository
+        .getAgentById({ id: TaskAgentId.make(row.agentId) })
+        .pipe(Effect.orElseSucceed(() => Option.none()));
+      const name = Option.isSome(agent)
+        ? agent.value.name
+        : (botNames.get(row.threadId) ?? "a bot");
+      yield* report({
+        id,
+        area: "bots",
+        severity: "error",
+        title: "Bot chat not restored",
+        message: `Couldn't restore ${name}'s chat: ${reason}. Open the bot's settings and save it again.`,
+        detail: rawText(cause),
+        link: settingsLink(row.agentId),
+      });
+    });
   // `lock` orders bot identity writes; `memoryLock` memory writes and a bot turn's memory
   // reads, so a write cannot land between a turn's marker time and its snapshot, and a bot
   // turn start never waits on a bot save. Take `lock` first when both are needed.
@@ -209,11 +269,20 @@ const make = Effect.gen(function* () {
   const memoryLock = yield* Semaphore.make(1);
   const rows = sql<BotRow>`SELECT agent_id AS "agentId", thread_id AS "threadId",
     project_id AS "projectId", allowed_projects_json AS allowed, adopted, appearance_json AS appearance FROM bots`;
-  const decode = (row: BotRow) =>
+  /**
+   * `lenient` reads damaged settings as defaults, so the bot still lists and its settings can
+   * be saved again, which rewrites them. Turns and startup read them strictly and report it.
+   */
+  const decode = (row: BotRow, lenient = false) =>
     Effect.gen(function* () {
       const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
       if (Option.isNone(agent)) return yield* fail("Bot agent was deleted.");
-      const appearance = row.appearance === null ? null : yield* decodeAppearance(row.appearance);
+      const appearance =
+        row.appearance === null
+          ? null
+          : yield* decodeAppearance(row.appearance).pipe(
+              lenient ? Effect.orElseSucceed(() => null) : (effect) => effect,
+            );
       return {
         agent: agent.value,
         appearance: appearance && {
@@ -225,7 +294,11 @@ const make = Effect.gen(function* () {
         },
         threadId: ThreadId.make(row.threadId),
         projectId: ProjectId.make(row.projectId),
-        allowedProjectIds: yield* decodeProjects(row.allowed),
+        allowedProjectIds: yield* decodeProjects(row.allowed).pipe(
+          lenient
+            ? Effect.orElseSucceed(() => [ProjectId.make(row.projectId)])
+            : (effect) => effect,
+        ),
       } satisfies Bot;
     });
   const get = (id: TaskAgentId) =>
@@ -281,10 +354,23 @@ const make = Effect.gen(function* () {
         },
       })
       .pipe(
+        Effect.retry({ times: 1 }),
         Effect.asVoid,
         // The memory is saved either way; a missing row must not undo or fail the write.
         Effect.catch((cause) =>
-          Effect.logWarning("Could not show a memory change in the bot chat", { cause }),
+          Effect.logWarning("Could not show a memory change in the bot chat", { cause }).pipe(
+            Effect.andThen(
+              report({
+                id: `bots:memory-card:${bot.agent.id}`,
+                area: "bots",
+                severity: "warning",
+                title: "Memory change not shown",
+                message: `${bot.agent.name} updated its memory, but this chat couldn't show it. Open the bot's Memory settings to see the change.`,
+                detail: `${summary}\n\n${rawText(cause)}`,
+                link: settingsLink(bot.agent.id),
+              }),
+            ),
+          ),
         ),
       );
   const notifyWrite = (bot: Bot, previous: BotMemory | undefined, entry: BotMemory) => {
@@ -321,7 +407,7 @@ const make = Effect.gen(function* () {
       const bot = yield* get(input.agentId);
       const parsed = yield* decodeMemoryWrite(input);
       if (parsed.projectId !== null && !bot.allowedProjectIds.includes(parsed.projectId)) {
-        return yield* fail("Memory project is not available to this bot.");
+        return yield* memoryProjectUnavailable(bot);
       }
       const existing = yield* sql<{ id: string }>`SELECT id FROM bot_memories
       WHERE agent_id = ${input.agentId} AND id = ${input.id}`;
@@ -387,7 +473,7 @@ const make = Effect.gen(function* () {
       const bot = yield* get(input.agentId);
       const parsed = yield* decodeMemoryWrite(input);
       if (parsed.projectId !== null && !bot.allowedProjectIds.includes(parsed.projectId)) {
-        return yield* fail("Memory project is not available to this bot.");
+        return yield* memoryProjectUnavailable(bot);
       }
       // One proposal per run and memory id, so a retried call updates it instead of piling up.
       const id = `proposal:${input.runId}:${parsed.id}`;
@@ -408,7 +494,7 @@ const make = Effect.gen(function* () {
       const proposal = (yield* proposals(agentId)).find((entry) => entry.id === id);
       if (!proposal) return yield* fail("This suggestion was already reviewed.");
       if (proposal.projectId !== null && !bot.allowedProjectIds.includes(proposal.projectId))
-        return yield* fail("Memory project is not available to this bot.");
+        return yield* memoryProjectUnavailable(bot);
       const current = yield* memory(agentId);
       const previous = current.find((entry) => entry.id === proposal.targetId);
       if (!previous && current.length >= MEMORY_LIMIT)
@@ -456,7 +542,11 @@ const make = Effect.gen(function* () {
   // events, so an event still carrying the old title after a rename of the bot is no rename;
   // comparing with the bot's or the chat's current name would let such an event undo it.
   const chatTitles = new Map<string, string>();
+  // The last name each bot chat's bot was seen with. It needs no database, so a turn whose bot
+  // lookup failed can still tell its chat is a bot's and name the bot.
+  const botNames = new Map<string, string>();
   const trackChat = (threadId: ThreadId, title: string) => {
+    botNames.set(threadId, title);
     if (!chatTitles.has(threadId)) chatTitles.set(threadId, title);
   };
   /** `baseline` sets the title the chat's next events are compared with. */
@@ -465,16 +555,19 @@ const make = Effect.gen(function* () {
       const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
       if (Option.isNone(agent)) return;
       const threadId = ThreadId.make(row.threadId);
-      if (baseline) chatTitles.set(threadId, agent.value.name);
-      else trackChat(threadId, agent.value.name);
+      if (baseline) {
+        chatTitles.set(threadId, agent.value.name);
+        botNames.set(threadId, agent.value.name);
+      } else trackChat(threadId, agent.value.name);
       const { thread } = yield* threads.getThreadRecords(threadId, []);
-      if (thread.deletedAt !== null || thread.title === agent.value.name) return;
-      yield* threads.dispatch({
-        type: "thread.metadata.update",
-        commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.randomUUIDv4()}`),
-        threadId,
-        title: agent.value.name,
-      });
+      if (thread.deletedAt === null && thread.title !== agent.value.name)
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.randomUUIDv4()}`),
+          threadId,
+          title: agent.value.name,
+        });
+      yield* resolve(nameNotice(row.agentId));
     });
   const nameFromChat = (threadId: ThreadId, title: string) =>
     Effect.gen(function* () {
@@ -483,6 +576,7 @@ const make = Effect.gen(function* () {
       const agent = yield* repository.getAgentById({ id: TaskAgentId.make(row.agentId) });
       if (Option.isNone(agent) || agent.value.name === title) return;
       yield* repository.upsertAgent({ ...agent.value, name: title, updatedAt: yield* now });
+      botNames.set(threadId, title);
     });
   const followChatRenames = Stream.suspend(() => threads.streamDomainEvents).pipe(
     Stream.runForEach((event) => {
@@ -527,23 +621,30 @@ const make = Effect.gen(function* () {
           "runs",
           "runtimeRequests",
         ]);
+        if (thread.deletedAt !== null)
+          return yield* cannotAdopt("it was deleted", "Choose another chat");
+        if (thread.archivedAt !== null) return yield* cannotAdopt("it is archived", "Unarchive it");
+        if (thread.sidebarHidden)
+          return yield* cannotAdopt("it is hidden", "Show it in the sidebar");
+        if (thread.lineage.relationshipToParent === "subagent")
+          return yield* cannotAdopt("it is a helper chat of another chat", "Choose a main chat");
+        if (runtimeRequests.some((request) => request.status === "pending"))
+          return yield* cannotAdopt("it is waiting for your approval", "Answer it");
         if (
-          thread.deletedAt !== null ||
-          thread.archivedAt !== null ||
-          thread.sidebarHidden ||
-          thread.lineage.relationshipToParent === "subagent" ||
-          runtimeRequests.some((request) => request.status === "pending") ||
-          (thread.projectId !== input.projectId && thread.worktreePath !== null) ||
           runs.some((run) =>
             ["running", "starting", "preparing", "waiting", "queued"].includes(run.status),
           )
-        ) {
-          return yield* fail("Choose an idle, active user chat to turn into a bot.");
-        }
+        )
+          return yield* cannotAdopt("it is still running", "Wait for it to finish");
+        if (thread.projectId !== input.projectId && thread.worktreePath !== null)
+          return yield* cannotAdopt(
+            "its worktree belongs to another project",
+            "Choose the chat's own project as the working project",
+          );
         if (Option.isSome(yield* repository.findLatestAgentRunByThreadId({ threadId })))
-          return yield* fail("A task run cannot become a bot chat.");
+          return yield* cannotAdopt("it is a background task run", "Choose a main chat");
       }
-      const previous = existing ? yield* decode(existing) : null;
+      const previous = existing ? yield* decode(existing, true) : null;
       if (existing && previous) {
         yield* ensureThread(previous, existing.adopted === 1);
         const state = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]);
@@ -665,7 +766,19 @@ const make = Effect.gen(function* () {
           threadId,
           runtimeMode: config.runtimeMode,
         });
+      // A saved bot has its chat and its name again.
+      yield* resolve(restoreNotice(input.id));
+      yield* resolve(nameNotice(input.id));
       return bot;
+    });
+  // Only the bot's own chat can open its settings from the thread; a task run's thread is
+  // not the bot's, so its code offers no button.
+  const projectChanged = (bot: Bot, detail: string, canonical = true) =>
+    new TurnContextRefusal({
+      code: canonical ? "bot_project_changed" : "bot_project_unavailable",
+      title: "Bot project changed",
+      message: `${bot.agent.name}'s chat is in a project it isn't set up for. Open the bot's settings and choose its working project again.`,
+      detail,
     });
   const context = (row: BotRow, input: TurnContextInput) =>
     Effect.gen(function* () {
@@ -673,9 +786,16 @@ const make = Effect.gen(function* () {
       const canonical = bot.threadId === input.threadId;
       const projectId = canonical ? bot.projectId : input.projectId;
       if (canonical && bot.projectId !== input.projectId)
-        return yield* fail("Bot project settings need to be saved again before starting a turn.");
+        return yield* projectChanged(
+          bot,
+          "The chat is in another project than the bot's saved working project.",
+        );
       if (!bot.allowedProjectIds.includes(projectId))
-        return yield* fail("This project is not available to the bot.");
+        return yield* projectChanged(
+          bot,
+          "This project is not one of the bot's available projects.",
+          canonical,
+        );
       if (input.createdBy === "user") yield* recordFirstUse("app.first_bot_chat");
       // Explicit requests are saved without a second model call. A stable message id
       // also stops a retried start from resurrecting a deleted or edited memory. Only the
@@ -801,7 +921,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap((items) =>
         Effect.forEach(items, (row) =>
           Effect.gen(function* () {
-            const bot = yield* decode(row);
+            const bot = yield* decode(row, true);
             const [run] = yield* repository.searchAgentRuns({ agentId: bot.agent.id, limit: 1 });
             const active = yield* sql<{
               readonly threadId: string;
@@ -840,9 +960,30 @@ const make = Effect.gen(function* () {
           { discard: true },
         ).pipe(lock.withPermits(1)),
       ),
+      // One bot that cannot be read must not keep the others' chats from coming back.
       Effect.flatMap((items) =>
-        Effect.forEach(items, (row) =>
-          decode(row).pipe(Effect.flatMap((bot) => ensureThread(bot, row.adopted === 1))),
+        Effect.forEach(
+          items,
+          (row) =>
+            decode(row).pipe(
+              Effect.flatMap((bot) => ensureThread(bot, row.adopted === 1)),
+              Effect.andThen(resolve(restoreNotice(row.agentId))),
+              Effect.catch((cause) =>
+                Effect.logWarning("Could not restore a bot's chat", { cause }).pipe(
+                  Effect.andThen(
+                    reportRestore(
+                      row,
+                      restoreNotice(row.agentId),
+                      Schema.isSchemaError(cause)
+                        ? "its saved settings are damaged"
+                        : "Up.computer couldn't create it",
+                      cause,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          { discard: true },
         ),
       ),
       Effect.asVoid,
@@ -853,7 +994,19 @@ const make = Effect.gen(function* () {
       rows.pipe(
         Effect.flatMap((items) => {
           const row = items.find((item) => item.agentId === agentId);
-          return row ? nameChatOf(row, false) : Effect.void;
+          // At startup a missing chat is restored, and named, right after; here it stays misnamed.
+          return row
+            ? nameChatOf(row, false).pipe(
+                Effect.tapError((cause) =>
+                  reportRestore(
+                    row,
+                    nameNotice(row.agentId),
+                    "its name couldn't be updated",
+                    cause,
+                  ),
+                ),
+              )
+            : Effect.void;
         }),
         lock.withPermits(1),
         Effect.catch((cause) =>
@@ -891,22 +1044,51 @@ const make = Effect.gen(function* () {
           }),
         );
         chatTitles.delete(bot.threadId);
+        botNames.delete(bot.threadId);
         yield* taskAgents.scheduleAgentChanged({ agent: bot.agent, reason: "deleted" });
       }).pipe(memoryLock.withPermits(1), lock.withPermits(1), Effect.mapError(asError)),
     // A failed lookup cannot tell a bot chat from any other thread, and every thread's turn
-    // passes here, so it must not stop the turn. Once the thread is a bot's, failures do.
+    // passes here, so it must not stop the turn. A chat known to be a bot's still runs, as a
+    // plain chat, and says so. Once the thread is a bot's, failures do stop the turn.
     context: (input) =>
       rowForThread(input.threadId).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Bot lookup for a turn failed", { cause }).pipe(Effect.as(null)),
-        ),
-        Effect.flatMap((row) =>
-          row === null
-            ? Effect.succeed({ text: "" })
-            : context(row, input).pipe(memoryLock.withPermits(1)),
-        ),
-        Effect.mapError(asError),
+        Effect.retry({ times: 1 }),
+        Effect.matchEffect({
+          onFailure: (cause) =>
+            Effect.logWarning("Bot lookup for a turn failed", { cause }).pipe(
+              Effect.as<TurnContext>(
+                botNames.has(input.threadId)
+                  ? {
+                      text: "",
+                      notice: {
+                        code: "bot_context_unavailable",
+                        title: "Bot memory not loaded",
+                        message: `Couldn't load ${botNames.get(input.threadId)}'s memory and instructions for this message, so it replied as a plain chat. Send it again.`,
+                        detail: rawText(cause),
+                      },
+                    }
+                  : { text: "" },
+              ),
+            ),
+          onSuccess: (row) =>
+            row === null
+              ? Effect.succeed<TurnContext>({ text: "" })
+              : context(row, input).pipe(memoryLock.withPermits(1)),
+        }),
+        Effect.mapError((cause) => (cause instanceof TurnContextRefusal ? cause : asError(cause))),
       ),
+    removal: (agentId) =>
+      Effect.gen(function* () {
+        const row = (yield* rows).find((item) => item.agentId === agentId);
+        if (!row) return null;
+        const agent = yield* repository.getAgentById({ id: agentId });
+        const [count] = yield* sql<{ readonly count: number }>`SELECT COUNT(*) AS count
+          FROM bot_memories WHERE agent_id = ${agentId} AND status = 'active' AND deleted_at IS NULL`;
+        return {
+          name: Option.isSome(agent) ? agent.value.name : agentId,
+          memories: count?.count ?? 0,
+        };
+      }).pipe(Effect.mapError(asError)),
     assign,
     extract: (agentId, requestId) =>
       Effect.gen(function* () {

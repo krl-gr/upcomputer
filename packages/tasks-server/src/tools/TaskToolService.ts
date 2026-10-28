@@ -1281,6 +1281,13 @@ const make = Effect.gen(function* () {
           const existing = yield* repository.getAgentById(input);
           if (Option.isNone(existing))
             return { isError: true, text: `Agent '${input.id}' was not found.` };
+          // Deleting a bot's agent would silently take its memory too; the person decides.
+          const bot = yield* bots.removal(existing.value.id);
+          if (bot !== null)
+            return {
+              isError: true,
+              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.`,
+            };
           if (isDryRun)
             return {
               isError: false,

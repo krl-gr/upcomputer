@@ -31,6 +31,10 @@ import {
   runExperimentalFeatureMigrations,
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
+import {
+  BackgroundNotices,
+  layer as BackgroundNoticesLayer,
+} from "../../../../apps/server/src/background/BackgroundNotices.ts";
 import type { TurnContextInput } from "../../../../apps/server/src/orchestration-v2/TurnContext.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
@@ -55,6 +59,10 @@ const botId = TaskAgentId.make("bot:seeded");
 const botThread = ThreadId.make("bot-chat:seeded");
 const plainThread = ThreadId.make("thread-plain");
 const taskThread = ThreadId.make("thread-task-run");
+/** Ordinary chats someone tries to turn into a bot. */
+const busyChat = ThreadId.make("thread-busy");
+const archivedChat = ThreadId.make("thread-archived");
+const adoptable = { [busyChat]: true, [archivedChat]: true };
 
 /**
  * A bot service on a fresh task database. Thread dispatches wait on `gate`, so a test can hold
@@ -64,15 +72,19 @@ const harness = Effect.gen(function* () {
   const entered = yield* Deferred.make<void>();
   const gate = yield* Deferred.make<void>();
   const dispatched: Array<Dispatched> = [];
+  /** Thread commands of these types fail, as when the chat cannot be written. */
+  const failing = new Set<string>();
   const domainEvents = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
   const threads = Layer.mock(ThreadManagementService)({
     streamDomainEvents: Stream.fromQueue(domainEvents),
     hasReceipt: () => Effect.succeed(false),
     dispatch: (command) =>
-      Deferred.succeed(entered, void dispatched.push(command)).pipe(
-        Effect.andThen(Deferred.await(gate)),
-        Effect.as({} as never),
-      ),
+      failing.has(command.type)
+        ? Effect.fail(new Error("The chat could not be written.") as never)
+        : Deferred.succeed(entered, void dispatched.push(command)).pipe(
+            Effect.andThen(Deferred.await(gate)),
+            Effect.as({} as never),
+          ),
     getThreadRecords: (threadId: ThreadId) =>
       Effect.succeed({
         thread: {
@@ -81,8 +93,16 @@ const harness = Effect.gen(function* () {
           projectId: project,
           modelSelection,
           deletedAt: null,
+          ...(threadId in adoptable
+            ? {
+                archivedAt: threadId === archivedChat ? timestamp : null,
+                sidebarHidden: false,
+                lineage: { relationshipToParent: null },
+                worktreePath: null,
+              }
+            : {}),
         },
-        runs: [],
+        runs: threadId === busyChat ? [{ status: "running" }] : [],
         runtimeRequests: [],
       } as never),
   });
@@ -90,6 +110,7 @@ const harness = Effect.gen(function* () {
     runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]),
   ).pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })));
   const services = BotServiceLayer.pipe(
+    Layer.provideMerge(BackgroundNoticesLayer),
     Layer.provideMerge(TaskRepositoryLive),
     Layer.provideMerge(database),
     Layer.provide(threads),
@@ -107,7 +128,7 @@ const harness = Effect.gen(function* () {
       ),
     ),
   );
-  return { entered, gate, dispatched, domainEvents, services };
+  return { entered, gate, dispatched, failing, domainEvents, services };
 });
 
 const seedBot = Effect.gen(function* () {
@@ -191,7 +212,8 @@ const turn = (
   createdBy,
 });
 
-const run = <A, E>(body: Effect.Effect<A, E, BotService | TaskRepository | SqlClient.SqlClient>) =>
+type Services = BotService | TaskRepository | SqlClient.SqlClient | BackgroundNotices;
+const run = <A, E>(body: Effect.Effect<A, E, Services>) =>
   Effect.gen(function* () {
     const { services } = yield* harness;
     return yield* body.pipe(Effect.provide(services));
@@ -201,13 +223,15 @@ const run = <A, E>(body: Effect.Effect<A, E, BotService | TaskRepository | SqlCl
 const runRecorded = <A, E>(
   body: (
     dispatched: ReadonlyArray<Dispatched>,
-  ) => Effect.Effect<A, E, BotService | TaskRepository | SqlClient.SqlClient>,
+    failing: Set<string>,
+  ) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
-    const { gate, dispatched, services } = yield* harness;
+    const { gate, dispatched, failing, services } = yield* harness;
     yield* Deferred.succeed(gate, undefined);
-    return yield* body(dispatched).pipe(Effect.provide(services));
+    return yield* body(dispatched, failing).pipe(Effect.provide(services));
   });
+const noticeList = Effect.flatMap(BackgroundNotices, (notices) => notices.list);
 
 const newBot = (runtimeMode?: "approval-required" | "full-access") => ({
   id: TaskAgentId.make("bot:new"),
@@ -279,14 +303,99 @@ it.effect("turn starts never wait on a bot save, in bot chats or anywhere else",
   }),
 );
 
-it.effect("a failed bot lookup does not stop the turn", () =>
-  run(
+it.effect("a failed bot lookup does not stop the turn, and a known bot chat says so", () =>
+  runRecorded(() =>
     Effect.gen(function* () {
       const bots = yield* BotService;
       const sql = yield* SqlClient.SqlClient;
       yield* seedBot;
+      // Restoring the chats is what tells the service which threads are bot chats.
+      yield* bots.recover;
       yield* sql`ALTER TABLE bots RENAME TO bots_unreadable`;
       assert.deepStrictEqual(yield* bots.context(turn(plainThread, "Hello")), { text: "" });
+      const { text, notice } = yield* bots.context(turn(botThread, "Hello"));
+      assert.equal(text, "");
+      assert.equal(notice?.code, "bot_context_unavailable");
+      assert.equal(notice?.title, "Bot memory not loaded");
+      assert.equal(
+        notice?.message,
+        "Couldn't load Seeded bot's memory and instructions for this message, so it replied as a plain chat. Send it again.",
+      );
+      assert.include(notice?.detail ?? "", "no such table: bots");
+    }),
+  ),
+);
+
+it.effect("a bot chat in another project stops the turn with a plain refusal", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      const moved = { ...turn(botThread, "Hello"), projectId: ProjectId.make("project-other") };
+      const refusal = yield* Effect.flip(bots.context(moved));
+      assert.equal(refusal._tag, "TurnContextRefusal");
+      assert.deepInclude(refusal, {
+        code: "bot_project_changed",
+        title: "Bot project changed",
+        message:
+          "Seeded bot's chat is in a project it isn't set up for. Open the bot's settings and choose its working project again.",
+      });
+    }),
+  ),
+);
+
+it.effect("one unreadable bot does not keep the others' chats from being restored", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const sql = yield* SqlClient.SqlClient;
+      const repository = yield* TaskRepository;
+      yield* seedBot;
+      const broken = TaskAgentId.make("bot:broken");
+      yield* repository.upsertAgent({
+        id: broken,
+        projectId: null,
+        name: "Broken bot",
+        enabled: true,
+        startStatuses: ["To Do"],
+        startTags: [],
+        startRunStatuses: [],
+        config,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      // Listed first, so the old code stopped before restoring the seeded bot.
+      yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+        VALUES (${broken}, ${"bot-chat:broken"}, ${project}, ${"not json"}, 0)`;
+      yield* sql`UPDATE bots SET rowid = rowid + 100 WHERE agent_id = ${botId}`;
+      yield* bots.recover;
+      assert.isTrue(
+        dispatched.some(
+          (command) => command.type === "thread.create" && command.threadId === botThread,
+        ),
+      );
+      const notice = (yield* noticeList).find((entry) => entry.area === "bots");
+      assert.deepInclude(notice, {
+        id: "bots:restore:bot:broken",
+        title: "Bot chat not restored",
+        message:
+          "Couldn't restore Broken bot's chat: its saved settings are damaged. Open the bot's settings and save it again.",
+        link: { label: "Open settings", path: "/bots?bot=bot%3Abroken" },
+      });
+      // Its settings still open, and saving them again repairs the bot and clears the notice.
+      assert.include(
+        (yield* bots.list).map((bot) => bot.agent.name),
+        "Broken bot",
+      );
+      yield* bots.save({
+        id: broken,
+        projectId: project,
+        allowedProjectIds: [project],
+        name: "Broken bot",
+        config,
+      });
+      yield* bots.recover;
+      assert.isUndefined((yield* noticeList).find((entry) => entry.area === "bots"));
     }),
   ),
 );
@@ -705,6 +814,93 @@ it.effect("the bot's memory changes and accepted suggestions show in its chat", 
         (yield* bots.memory(botId)).find((entry) => entry.id === "suggested")?.owner,
         "user",
       );
+    }),
+  ),
+);
+
+it.effect("a memory change the chat cannot show goes to notifications instead", () =>
+  runRecorded((_dispatched, failing) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      failing.add("thread.notification.record");
+      const saved = yield* bots.remember(
+        { agentId: botId, id: "fact", projectId: project, text: "Uses pnpm", source: "chat:bot" },
+        "bot",
+      );
+      // The memory is saved either way.
+      assert.equal(saved?.text, "Uses pnpm");
+      const [notice] = yield* noticeList;
+      assert.deepInclude(notice, {
+        id: "bots:memory-card:bot:seeded",
+        severity: "warning",
+        title: "Memory change not shown",
+        message:
+          "Seeded bot updated its memory, but this chat couldn't show it. Open the bot's Memory settings to see the change.",
+      });
+    }),
+  ),
+);
+
+it.effect("memory of a project the bot no longer has says how to fix it", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      const other = ProjectId.make("project-gone");
+      const write = { agentId: botId, id: "fact", projectId: other, text: "x", source: "user" };
+      for (const attempt of [
+        bots.remember(write, "user"),
+        bots.propose({ ...write, runId: "run-1" }),
+      ]) {
+        const error = yield* Effect.flip(attempt);
+        assert.equal(error.code, "bot_memory_project_unavailable");
+        assert.equal(
+          error.message,
+          "This memory belongs to a project Seeded bot can't use anymore. Add the project back in the bot's settings, or make the memory global.",
+        );
+      }
+    }),
+  ),
+);
+
+it.effect("a chat that cannot become a bot says why and what to do", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const adopt = (threadId: ThreadId) =>
+        Effect.flip(bots.save({ ...newBot(), id: TaskAgentId.make(`bot:${threadId}`), threadId }));
+      const busy = yield* adopt(busyChat);
+      assert.equal(busy.code, "bot_chat_unavailable");
+      assert.equal(
+        busy.message,
+        "This chat can't become a bot because it is still running. Wait for it to finish and try again.",
+      );
+      assert.equal(
+        (yield* adopt(archivedChat)).message,
+        "This chat can't become a bot because it is archived. Unarchive it and try again.",
+      );
+    }),
+  ),
+);
+
+it.effect("removing a bot's agent names the memories it would take", () =>
+  run(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      yield* seedTaskRun;
+      yield* bots.remember(
+        { agentId: botId, id: "a", projectId: null, text: "One", source: "user" },
+        "user",
+      );
+      yield* bots.remember(
+        { agentId: botId, id: "b", projectId: null, text: "Two", source: "user" },
+        "user",
+      );
+      yield* bots.forget(botId, "b", "user");
+      assert.deepStrictEqual(yield* bots.removal(botId), { name: "Seeded bot", memories: 1 });
+      assert.isNull(yield* bots.removal(TaskAgentId.make("plain-agent")));
     }),
   ),
 );

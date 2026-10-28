@@ -505,6 +505,8 @@ export type TaskEventsResult = typeof TaskEventsResult.Type;
 
 export class TaskError extends Schema.TaggedError<TaskError>()("TaskError", {
   message: TrimmedNonEmptyString,
+  /** Lets a client pick a title and an action; `message` stays what the person reads. */
+  code: Schema.optional(TrimmedNonEmptyString),
   cause: Schema.optional(Schema.Defect()),
 }) {}
 

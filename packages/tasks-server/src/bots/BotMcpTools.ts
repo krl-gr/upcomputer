@@ -98,7 +98,9 @@ const handlers = McpToolAccess.toLayer(
           });
         const projectId = bot.threadId === threadId ? bot.projectId : thread.projectId;
         if (!bot.allowedProjectIds.includes(projectId))
-          return yield* new TaskError({ message: "This project is unavailable to the bot." });
+          return yield* new TaskError({
+            message: `This chat is in a project ${bot.agent.name} isn't set up for, so its memory and tasks are unavailable here. Ask the user to open the bot's settings and choose its working project again.`,
+          });
         return { bot, projectId, thread };
       });
     const result = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -110,7 +112,11 @@ const handlers = McpToolAccess.toLayer(
               content: [
                 {
                   type: "text",
-                  text: cause instanceof Error ? cause.message : "Bot operation failed.",
+                  // Agents read the plain sentence first, then the exact reason.
+                  text:
+                    cause instanceof TaskError
+                      ? cause.message
+                      : `Up.computer couldn't read or save the bot's data. Try again.${cause instanceof Error ? `\nDetails: ${cause.message}` : ""}`,
                 },
               ],
             }),
@@ -138,7 +144,8 @@ const handlers = McpToolAccess.toLayer(
             );
             if (existing && existing.projectId !== null && existing.projectId !== projectId)
               return yield* new TaskError({
-                message: "This memory is outside the current project.",
+                message:
+                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
               });
             const run = yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id });
             const entry = {
@@ -175,7 +182,8 @@ const handlers = McpToolAccess.toLayer(
             const entry = (yield* bots.memory(bot.agent.id)).find((item) => item.id === input.id);
             if (entry && entry.projectId !== null && entry.projectId !== projectId)
               return yield* new TaskError({
-                message: "This memory is outside the current project.",
+                message:
+                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
               });
             yield* bots.forget(bot.agent.id, input.id, "bot");
             return { forgotten: input.id };

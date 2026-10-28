@@ -600,3 +600,29 @@ it.effect("agent_update renaming a task agent leaves every chat alone", () => {
     assert.deepStrictEqual(dispatched, []);
   }).pipe(Effect.provide(layer));
 });
+
+it.effect("agent_delete leaves a bot to the user and says what deleting it would take", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO bot_memories (agent_id, id, project_id, text, source, created_at, updated_at, owner)
+      VALUES ('bot:named', 'fact', NULL, 'Uses pnpm', 'user', '2026-10-28T00:00:00.000Z', '2026-10-28T00:00:00.000Z', 'user')`;
+    const remove = (id: string) =>
+      Effect.flatMap(TaskToolService, (tools) =>
+        tools.call({ name: "agent_delete", args: { id }, context: chat }),
+      );
+    const refused = yield* remove("bot:named");
+    assert.isTrue(refused.isError);
+    assert.equal(
+      refused.text,
+      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.",
+    );
+    assert.isTrue(
+      Option.isSome(
+        yield* (yield* TaskRepository).getAgentById({ id: TaskAgentId.make("bot:named") }),
+      ),
+    );
+    assert.isFalse((yield* remove("agent-dev")).isError);
+  }).pipe(Effect.provide(layer));
+});
