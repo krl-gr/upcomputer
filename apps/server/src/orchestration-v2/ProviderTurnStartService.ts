@@ -530,15 +530,108 @@ export const layer: Layer.Layer<
         providerTurns: projection.providerTurns,
         turnItems: projection.turnItems,
       });
-      const turnContext = yield* turnContextFor({
-        threadId: projection.thread.id,
-        projectId: projection.thread.projectId,
-        messageId: message.id,
-        text: message.text,
-        createdBy: message.createdBy,
-        interactionMode: projection.thread.interactionMode,
-        ...(deliveredMarker === undefined ? {} : { deliveredMarker }),
-      });
+      const turnContextResult = yield* Effect.result(
+        turnContextFor({
+          threadId: projection.thread.id,
+          projectId: projection.thread.projectId,
+          messageId: message.id,
+          text: message.text,
+          createdBy: message.createdBy,
+          interactionMode: projection.thread.interactionMode,
+          ...(deliveredMarker === undefined ? {} : { deliveredMarker }),
+        }),
+      );
+      if (turnContextResult._tag === "Failure") {
+        const { refusal, message: reason } = turnContextResult.failure;
+        if (refusal === undefined && input.willRetry === true)
+          return yield* turnContextResult.failure;
+        yield* settleRunBeforeStart({
+          signal: "turn-context-failure",
+          status: "failed",
+          now: yield* DateTime.now,
+          providerInstanceId: run.providerInstanceId,
+          itemProviderThreadId: providerThread.id,
+          item: {
+            type: "error",
+            title: refusal?.title ?? "Message couldn't start",
+            failure: makeProviderFailure({
+              class: "validation_error",
+              code: refusal?.code ?? "turn_context_failed",
+              retryable: refusal === undefined,
+              message:
+                refusal?.message ??
+                "Up.computer couldn't prepare this message for the agent. Send it again.",
+              detail: refusal?.detail ?? reason,
+            }),
+          },
+        });
+        return;
+      }
+      const turnContext = turnContextResult.success;
+      if (turnContext.notice !== undefined) {
+        const now = yield* DateTime.now;
+        const { notice } = turnContext;
+        const failure = makeProviderFailure({
+          class: "validation_error",
+          code: notice.code,
+          retryable: true,
+          message: notice.message,
+          ...(notice.detail === undefined ? {} : { detail: notice.detail }),
+        });
+        const item: OrchestrationV2TurnItem = {
+          id: idAllocator.derive.runSignalTurnItem({ runId, signal: "turn-context-notice" }),
+          threadId: projection.thread.id,
+          runId,
+          nodeId: rootNode.id,
+          providerThreadId: providerThread.id,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal:
+            Math.max(
+              0,
+              ...projection.turnItems
+                .filter((entry) => entry.runId === runId)
+                .map((entry) => entry.ordinal),
+            ) + 1,
+          // The turn still runs; "failed" makes the thread show the notice with its Retry.
+          status: "failed",
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "error",
+          title: notice.title,
+          failure,
+        };
+        // The notice explains the reply, so losing it must not stop the turn.
+        yield* eventSink
+          .writeIfRunCurrent({
+            threadId: projection.thread.id,
+            runId,
+            activeAttemptId: attempt.id,
+            expectedStatus: "starting",
+            events: [
+              {
+                type: "turn-item.updated",
+                payload: item,
+                id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
+                threadId: projection.thread.id,
+                runId,
+                nodeId: rootNode.id,
+                providerInstanceId: run.providerInstanceId,
+                occurredAt: now,
+              },
+            ],
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Failed to record a turn context notice", {
+                runId,
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+      }
       const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,

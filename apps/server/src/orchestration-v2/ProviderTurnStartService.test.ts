@@ -42,8 +42,13 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { registerTurnContextResolver, TurnContextRefusal } from "./TurnContext.ts";
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
+
+class DatabaseLocked extends Schema.TaggedError<DatabaseLocked>()("DatabaseLocked", {
+  message: Schema.String,
+}) {}
 
 it("does not commit running state when inherited background routing cannot be read", async () => {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
@@ -776,6 +781,110 @@ effectIt.effect("terminalizes a starting run when its provider session cannot op
       },
     ]);
   }),
+);
+
+effectIt.effect("stops a turn its context refuses, at once and in plain words", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({ text: "Continue" });
+      yield* registerTurnContextResolver(() =>
+        Effect.fail(
+          new TurnContextRefusal({
+            code: "bot_project_changed",
+            title: "Bot project changed",
+            message: "Nova's chat is in a project it isn't set up for.",
+            detail: "Saved working project differs.",
+          }),
+        ),
+      );
+
+      // A refusal does not wait for the remaining attempts.
+      yield* harness.startWithRetry;
+
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)).toMatchObject({ status: "failed" });
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          status: "failed",
+          title: "Bot project changed",
+          failure: {
+            class: "validation_error",
+            code: "bot_project_changed",
+            retryable: false,
+            message: "Nova's chat is in a project it isn't set up for.",
+            detail: "Saved working project differs.",
+          },
+        },
+      ]);
+    }),
+  ),
+);
+
+effectIt.effect("retries a failed turn context, then fails the run in plain words", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({ text: "Continue" });
+      yield* registerTurnContextResolver(() =>
+        Effect.fail(new DatabaseLocked({ message: "database is locked" })),
+      );
+
+      expect((yield* harness.startWithRetry.pipe(Effect.flip))._tag).toBe("ProviderTurnStartError");
+      expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+
+      yield* harness.start;
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          failure: {
+            code: "turn_context_failed",
+            retryable: true,
+            message: "Up.computer couldn't prepare this message for the agent. Send it again.",
+            detail: "database is locked",
+          },
+        },
+      ]);
+    }),
+  ),
+);
+
+effectIt.effect("shows a turn context notice in the thread and still runs the turn", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      // The session then fails to open, which shows the turn went on past its context.
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        openFailure: new Error("provider session rejected"),
+      });
+      yield* registerTurnContextResolver(() =>
+        Effect.succeed({
+          text: "",
+          notice: {
+            code: "bot_context_unavailable",
+            title: "Bot memory not loaded",
+            message: "Couldn't load Nova's memory. Send it again.",
+            detail: "no such table: bots",
+          },
+        }),
+      );
+
+      yield* harness.start;
+
+      expect(harness.open).toHaveBeenCalledOnce();
+      expect(harness.projection().turnItems[0]).toMatchObject({
+        type: "error",
+        status: "failed",
+        title: "Bot memory not loaded",
+        failure: {
+          code: "bot_context_unavailable",
+          retryable: true,
+          message: "Couldn't load Nova's memory. Send it again.",
+          detail: "no such table: bots",
+        },
+      });
+    }),
+  ),
 );
 
 effectIt.effect("leaves the run starting when a session-open failure will be retried", () =>
