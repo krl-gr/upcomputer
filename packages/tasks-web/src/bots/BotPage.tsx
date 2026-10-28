@@ -370,7 +370,7 @@ function BotForm({
             ) : (
               <BotPortraitPicker
                 value={appearance.portrait ?? defaultBotPortrait(id)}
-                working={status.state === "working"}
+                state={status.state}
                 disabled={!editable}
                 onChange={(portrait) => setAppearance({ ...appearance, portrait })}
               />
