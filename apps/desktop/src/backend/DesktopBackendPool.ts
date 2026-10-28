@@ -225,7 +225,7 @@ export const layer = Layer.effect(
             type: "error",
             title: "Up.computer stopped working",
             message: "Up.computer stopped working",
-            detail: `The part of Up.computer that runs your agents stopped (${input.reason}) and is restarting. If this keeps happening, restart the app or contact us with the diagnostics.`,
+            detail: `The part of Up.computer that runs your agents stopped and is restarting. If this keeps happening, restart the app or contact us with the diagnostics.\n\nDetails: ${input.reason}`,
             buttons: ["Restart Up.computer", "Copy diagnostics", "Keep waiting"],
             defaultId: 0,
             cancelId: 2,
