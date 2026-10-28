@@ -1023,7 +1023,10 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     () => readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope),
     [threadRef.environmentId],
   );
-  const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
+  const openTerminal = useAtomCommand(terminalEnvironment.open, {
+    label: "terminal open",
+    failureToast: "Terminal didn't start",
+  });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const serverThread = useThreadShell(threadRef);
@@ -1720,7 +1723,10 @@ export default function ChatView(props: ChatViewProps) {
   const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding, {
     reportFailure: false,
   });
-  const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
+  const openTerminal = useAtomCommand(terminalEnvironment.open, {
+    label: "terminal open",
+    failureToast: "Terminal didn't start",
+  });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const createThread = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });

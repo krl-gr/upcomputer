@@ -169,6 +169,14 @@ type RefreshVcsStatus = (target: {
   readonly input: { readonly cwd: string };
 }) => Promise<unknown>;
 
+const GIT_ACTION_FAILURE_TITLES: Record<GitStackedAction, string> = {
+  commit: "Commit failed",
+  push: "Push failed",
+  create_pr: "Couldn't create the pull request",
+  commit_push: "Commit and push failed",
+  commit_push_pr: "Commit, push and pull request failed",
+};
+
 function requestVcsStatusRefresh(
   refresh: RefreshVcsStatus,
   environmentId: ScopedThreadRef["environmentId"] | null,
@@ -1318,7 +1326,7 @@ export default function GitActionsControl({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Action failed",
+            title: GIT_ACTION_FAILURE_TITLES[action],
             description: errorToastDescription(error),
             timeout: errorToastTiming.timeout,
             ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
@@ -1477,7 +1485,7 @@ export default function GitActionsControl({
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Pull failed",
+              title: "Couldn't pull",
               description: errorToastDescription(error),
               timeout: errorToastTiming.timeout,
               ...(threadToastData !== undefined ? { data: threadToastData } : {}),
@@ -1575,7 +1583,7 @@ export default function GitActionsControl({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to open file",
+            title: "Couldn't open the file",
             description: errorToastDescription(error),
             ...(threadToastData !== undefined ? { data: threadToastData } : {}),
           }),
@@ -1598,7 +1606,7 @@ export default function GitActionsControl({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Git initialization failed",
+          title: "Couldn't set up Git",
           description: errorToastDescription(error),
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),

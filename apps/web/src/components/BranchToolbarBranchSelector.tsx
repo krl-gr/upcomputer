@@ -70,7 +70,7 @@ import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { plainErrorSentence } from "@t3tools/client-runtime/errors";
+import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 export interface BranchToolbarBranchSelectorHandle {
   open: () => void;
@@ -355,13 +355,17 @@ export function BranchToolbarBranchSelector({
         : null;
   const [isBranchActionPending, startBranchActionTransition] = useTransition();
   const totalBranchCount = branchRefState.data?.totalCount ?? 0;
-  const branchStatusText = isInitialBranchesLoadPending
-    ? "Loading refs..."
-    : isFetchingNextPage
-      ? "Loading more refs..."
-      : hasNextPage
-        ? `Showing ${refs.length} of ${totalBranchCount} refs`
-        : null;
+  // A failed list used to look like a project with no branches.
+  const branchStatusText =
+    branchRefState.error !== null && refs.length === 0
+      ? `Up.computer couldn't list the branches in this project: ${describeError(branchRefState.error).reason ?? "something went wrong"}. Close and reopen this menu to try again.`
+      : isInitialBranchesLoadPending
+        ? "Loading branches..."
+        : isFetchingNextPage
+          ? "Loading more branches..."
+          : hasNextPage
+            ? `Showing ${refs.length} of ${totalBranchCount} branches`
+            : null;
 
   const copyBranchName = useCallback((branchName: string) => {
     void writeTextToClipboard(branchName, "branch name").then(
@@ -476,7 +480,7 @@ export function BranchToolbarBranchSelector({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to switch ref.",
+            title: "Couldn't switch branches",
             description: toBranchActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
@@ -513,7 +517,7 @@ export function BranchToolbarBranchSelector({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to create and switch ref.",
+            title: "Couldn't create the branch",
             description: toBranchActionErrorMessage(squashAtomCommandFailure(createBranchResult)),
           }),
         );
@@ -553,12 +557,19 @@ export function BranchToolbarBranchSelector({
     worktreeBaseBranchCandidate,
   ]);
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    setIsBranchMenuOpen(open);
-    if (!open) {
-      setBranchQuery("");
-    }
-  }, []);
+  const branchListFailed = branchRefState.error !== null;
+  const refreshBranches = branchRefState.refresh;
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setIsBranchMenuOpen(open);
+      if (!open) {
+        setBranchQuery("");
+      } else if (branchListFailed) {
+        refreshBranches();
+      }
+    },
+    [branchListFailed, refreshBranches],
+  );
 
   useImperativeHandle(
     ref,

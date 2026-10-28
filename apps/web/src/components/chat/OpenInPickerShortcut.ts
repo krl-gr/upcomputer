@@ -19,7 +19,10 @@ export function useOpenFavoriteEditorShortcut({
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
 }) {
-  const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
+  const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, {
+    label: "open in editor",
+    failureToast: "Couldn't open in your editor",
+  });
   const [preferredEditor] = usePreferredEditor(availableEditors);
 
   useEffect(() => {

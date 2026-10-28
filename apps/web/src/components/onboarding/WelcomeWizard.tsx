@@ -964,7 +964,10 @@ function OnboardingCodexSetup({
   readonly onAutoStartConsumed: () => void;
 }) {
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  const update = useAtomCommand(serverEnvironment.updateSettings, "Codex setup settings");
+  const update = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "Codex setup settings",
+    failureToast: "Couldn't save your Codex choice",
+  });
   const instanceId =
     createdAccount?.instanceId ??
     provider?.instanceId ??

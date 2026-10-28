@@ -413,7 +413,6 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
   useEffect(() => {
     appErrorReporter.report(error, "boundary");
   }, [error]);
-  const message = errorMessage(error);
   // Router pathname rather than window.location: desktop uses hash history, where the window path is always "/".
   const pathname = useLocation({ select: (location) => location.pathname });
   const report = useMemo(() => errorReport(error, pathname), [error, pathname]);
@@ -422,8 +421,8 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
     <StandalonePage tone="error">
       <StandalonePageHeader
         eyebrow={APP_DISPLAY_NAME}
-        title="Something went wrong."
-        description={message}
+        title="This screen stopped working"
+        description="Up.computer hit an internal problem on this screen. Try again or reload the app, and if it keeps happening, copy the error report and send it to us."
       />
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -436,12 +435,14 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         <CopyErrorButton report={report} />
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
-        <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Error report</p>
+      <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
+        <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          Error report
+        </summary>
         <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
           {report}
         </pre>
-      </div>
+      </details>
     </StandalonePage>
   );
 }
@@ -455,18 +456,6 @@ function CopyErrorButton({ report }: { report: string }) {
       {isCopied ? "Copied" : "Copy error"}
     </Button>
   );
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
-  }
-
-  return "An unexpected router error occurred.";
 }
 
 function errorDetails(error: unknown): string {

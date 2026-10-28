@@ -1210,7 +1210,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           operation: "GitVcsDriver.test.worktreeAddConflict",
           reason: "branch_checked_out_in_worktree",
         });
-        assert.include(error.message, "(branch_checked_out_in_worktree)");
+        assert.include(error.message, "That branch is open in another worktree");
         assert.notInclude(error.message, firstWorktree);
       }),
     );
@@ -1234,7 +1234,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           operation: "GitVcsDriver.test.notARepository",
           reason: "not_a_repository",
         });
-        assert.include(error.message, "(not_a_repository)");
+        assert.include(error.message, "This folder isn't a Git repository");
       }),
     );
 
@@ -1264,7 +1264,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           .pipe(Effect.flip);
 
         assert.equal(error.detail, "git worktree add failed");
-        assert.include(error.message, "git worktree add failed (branch_checked_out_in_worktree)");
+        assert.equal(error.reason, "branch_checked_out_in_worktree");
+        assert.include(error.message, "That branch is open in another worktree");
       }),
     );
 
@@ -1273,31 +1274,31 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         label: "a refused key",
         sshMessage: "git@example.invalid: Permission denied (publickey).",
         expectedReason: "authentication_failed" as const,
-        expectedText: "(authentication_failed)",
+        expectedText: "couldn't sign in to the remote",
       },
       {
         label: "a refused key among several methods",
         sshMessage: "git@example.invalid: Permission denied (publickey,password).",
         expectedReason: "authentication_failed" as const,
-        expectedText: "(authentication_failed)",
+        expectedText: "couldn't sign in to the remote",
       },
       {
         label: "a refused keyboard-interactive attempt",
         sshMessage: "git@example.invalid: Permission denied (keyboard-interactive).",
         expectedReason: "authentication_failed" as const,
-        expectedText: "(authentication_failed)",
+        expectedText: "couldn't sign in to the remote",
       },
       {
         label: "a rejected password",
         sshMessage: "Permission denied, please try again.",
         expectedReason: "authentication_failed" as const,
-        expectedText: "(authentication_failed)",
+        expectedText: "couldn't sign in to the remote",
       },
       {
         label: "an untrusted host key",
         sshMessage: "Host key verification failed.",
         expectedReason: "host_key_unverified" as const,
-        expectedText: "(host_key_unverified)",
+        expectedText: "doesn't trust the Git host",
       },
     ])(
       "names $label rather than an unreachable remote",
@@ -1360,7 +1361,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           })
           .pipe(Effect.flip);
 
-        assert.notInclude(error.message, "(authentication_failed)");
+        assert.notInclude(error.message, "couldn't sign in to the remote");
       }),
     );
 
@@ -1394,7 +1395,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           .pipe(Effect.flip);
 
         assert.notProperty(error, "reason");
-        assert.notInclude(error.message, "(authentication_failed)");
+        assert.notInclude(error.message, "couldn't sign in to the remote");
       }),
     );
 
@@ -1427,7 +1428,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           .pipe(Effect.flip);
 
         assert.notProperty(error, "reason");
-        assert.notInclude(error.message, "(authentication_failed)");
+        assert.notInclude(error.message, "couldn't sign in to the remote");
       }),
     );
 

@@ -373,9 +373,64 @@ export class GitCommandError extends Schema.TaggedError<GitCommandError>()("GitC
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    const reason = this.reason === undefined ? "" : ` (${this.reason})`;
-    return `Git command failed in ${this.operation} (${this.cwd}): ${this.detail}${reason}`;
+    return gitFailureSentence(this);
   }
+}
+
+const GIT_REASON_SENTENCES: Record<GitCommandFailureReason, string> = {
+  authentication_failed:
+    "Git couldn't sign in to the remote. Check your Git credentials or SSH key on this computer, then try again.",
+  branch_already_exists: "That branch already exists. Pick another branch name.",
+  branch_checked_out_in_worktree:
+    "That branch is open in another worktree. Close that worktree or pick another branch.",
+  host_key_unverified:
+    "This computer doesn't trust the Git host yet. Connect to it once with ssh in a terminal, then try again.",
+  not_a_repository: "This folder isn't a Git repository.",
+  path_already_exists:
+    "The worktree folder already exists. Pick another branch name, or remove the folder.",
+  remote_unreachable:
+    "Git couldn't reach the remote, or you don't have access to it. Check the address, your connection and your sign-in, then try again.",
+  tag_would_be_clobbered: "A tag with that name already exists on the remote.",
+};
+
+/** What a Git operation was doing, read from its internal operation name. */
+function gitActionPhrase(operation: string): string {
+  const op = operation.toLowerCase();
+  if (op.includes("push")) return "push";
+  if (op.includes("pull")) return "pull";
+  if (op.includes("commit")) return "commit";
+  if (op.includes("removeworktree")) return "remove the worktree";
+  if (op.includes("worktree")) return "create the worktree";
+  if (op.includes("checkout") || op.includes("switch")) return "switch branches";
+  if (op.includes("fetch")) return "fetch from the remote";
+  if (op.includes("clone")) return "clone the repository";
+  if (op.includes("status")) return "read the repository status";
+  return "finish that";
+}
+
+/**
+ * A Git failure in plain words: the reason when git said one, else what was
+ * being done. The operation, folder and exit code stay on the error's fields
+ * for logs.
+ */
+function gitFailureSentence(
+  error: Pick<GitCommandError, "operation" | "detail" | "reason">,
+): string {
+  if (error.reason !== undefined) return GIT_REASON_SENTENCES[error.reason];
+  const detail = error.detail.trim();
+  if (/xcode command line tools/i.test(detail) || /failed to spawn git/i.test(detail)) {
+    return "Up.computer needs Git and couldn't find it on this computer. Install Git (on a Mac, run xcode-select --install), then try again.";
+  }
+  if (/index is locked/i.test(detail)) {
+    return "Another Git process is using this repository, so changes can't be shown. If nothing else is running, delete .git/index.lock and try again.";
+  }
+  if (/timed out/i.test(detail)) {
+    return `Git took too long to ${gitActionPhrase(error.operation)} and was stopped. Check your connection and try again.`;
+  }
+  const generic = /exited with a non-zero status|git command failed/i.test(detail);
+  return generic
+    ? `Git couldn't ${gitActionPhrase(error.operation)}. Try again, and check the Git output in a terminal if it keeps failing.`
+    : `Git couldn't ${gitActionPhrase(error.operation)}: ${detail.replace(/[.\s]+$/u, "")}.`;
 }
 
 export class TextGenerationError extends Schema.TaggedError<TextGenerationError>()(
@@ -387,7 +442,10 @@ export class TextGenerationError extends Schema.TaggedError<TextGenerationError>
   },
 ) {
   override get message(): string {
-    return `Text generation failed in ${this.operation}: ${this.detail}`;
+    const what = this.operation.toLowerCase().includes("pull")
+      ? "pull request text"
+      : "commit message";
+    return `Couldn't write the ${what} with AI, so nothing was done. Write it yourself, or pick another model in Settings.`;
   }
 }
 
@@ -398,7 +456,7 @@ export class GitManagerError extends Schema.TaggedError<GitManagerError>()("GitM
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    return `Git manager failed in ${this.operation}: ${this.detail}`;
+    return this.detail;
   }
 }
 
@@ -414,7 +472,7 @@ export class GitPullRequestMaterializationError extends Schema.TaggedError<GitPu
   },
 ) {
   override get message(): string {
-    return `Failed to materialize pull request #${this.pullRequestNumber} branch ${this.headBranch} as ${this.localBranch}.`;
+    return `Couldn't download the code for PR #${this.pullRequestNumber}. Check that you can access its branch, then try again.`;
   }
 }
 

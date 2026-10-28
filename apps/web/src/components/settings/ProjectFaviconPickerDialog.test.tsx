@@ -116,10 +116,9 @@ describe("ProjectFaviconPickerDialog", () => {
 
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
-    expect(toastManager.add).toHaveBeenCalledWith({
-      type: "error",
-      title: "Could not open image picker",
-      description: "picker failed",
-    });
+    // The description is the shared plain error with its raw text behind Details.
+    expect(toastManager.add).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "error", title: "Could not open image picker" }),
+    );
   });
 });
