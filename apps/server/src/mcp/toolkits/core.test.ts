@@ -191,13 +191,13 @@ it.effect("returns a bounded public failure without serializing storage causes",
     expect(declaredFailure(result)).toEqual({
       _tag: "OrchestratorMcpFailure",
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     });
     expect(result.isError).toBe(true);
     expect(result.content).toEqual([
       {
         type: "text",
-        text: '{"_tag":"OrchestratorMcpFailure","code":"orchestration_error","message":"The operation could not be completed."}',
+        text: '{"_tag":"OrchestratorMcpFailure","code":"orchestration_error","message":"Couldn\'t do that. Try again, or ask the person to do it in the app."}',
       },
     ]);
     const definition = server.tools.find(({ tool }) => tool.name === "t3_thread_organize");
@@ -249,20 +249,20 @@ it("bounds public command rejections and redacts internal dispatch causes", () =
   ]) {
     expect(dispatchFailure(new OrchestratorDispatchError({ ...command, cause }))).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     });
     expect(
       dispatchFailure(new OrchestratorCommandRejectedError({ ...command, cause })),
     ).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     });
   }
   expect(
     dispatchFailure(new OrchestratorProjectionError({ threadId, cause: "private-storage-path" })),
   ).toMatchObject({
     code: "orchestration_error",
-    message: "The operation could not be completed.",
+    message: "Couldn't do that. Try again, or ask the person to do it in the app.",
   });
 });
 

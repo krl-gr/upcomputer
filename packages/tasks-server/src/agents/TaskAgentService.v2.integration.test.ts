@@ -2103,7 +2103,7 @@ it.live("task tools start or continue runs only within the calling thread's mode
           text: "Do something with full access.",
         });
         assert.isTrue(idle.isError, idle.text);
-        assert.include(idle.text, "no longer owns an active thread run");
+        assert.include(idle.text, "turn already ended");
 
         // Live, but the full-access run is broader than the chat.
         yield* goLive(supervised);
@@ -2112,7 +2112,7 @@ it.live("task tools start or continue runs only within the calling thread's mode
           text: "Do something with full access.",
         });
         assert.isTrue(live.isError, live.text);
-        assert.include(live.text, "broader than this thread's approval-required mode");
+        assert.include(live.text, "than this chat has (approval-required)");
         assert.lengthOf(yield* runsOf, 1);
 
         // Agent writes that start runs are held to the same ceiling.
@@ -2124,13 +2124,13 @@ it.live("task tools start or continue runs only within the calling thread's mode
           startStatuses: ["To Do"],
         });
         assert.isTrue(created.isError, created.text);
-        assert.include(created.text, "broader than this thread's approval-required mode");
+        assert.include(created.text, "than this chat has (approval-required)");
         const updated = yield* callTaskTool(supervised, "agent_update", {
           id: agent.id,
           instructions: "New instructions.",
         });
         assert.isTrue(updated.isError, updated.text);
-        assert.include(updated.text, "broader than this thread's approval-required mode");
+        assert.include(updated.text, "than this chat has (approval-required)");
         assert.strictEqual(
           Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.instructions,
           agent.config.instructions,

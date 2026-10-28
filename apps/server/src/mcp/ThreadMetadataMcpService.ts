@@ -145,7 +145,7 @@ const make = Effect.gen(function* () {
     if (!scope.capabilities.has("orchestration")) {
       return yield* failure(
         "capability_denied",
-        "This MCP credential does not grant orchestration capabilities.",
+        "This agent can't use Up.computer tools right now (tasks, delegation). Allow them for this client in Settings, Connections, then retry.",
       );
     }
 

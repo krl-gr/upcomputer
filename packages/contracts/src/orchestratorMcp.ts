@@ -212,6 +212,10 @@ export const OrchestratorMcpDelegateTaskResult = Schema.Struct({
     description:
       "True only on that mode=wait call when timeoutMs elapsed. The timeout does not cancel the child. Later task_status reads return false and use status for liveness.",
   }),
+  notice: Schema.optional(Schema.String).annotate({
+    description:
+      "A problem the user should hear about, in plain words. Tell them, and follow its advice.",
+  }),
 });
 export type OrchestratorMcpDelegateTaskResult = typeof OrchestratorMcpDelegateTaskResult.Type;
 

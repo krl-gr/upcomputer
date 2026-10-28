@@ -354,9 +354,9 @@ function runStartRefusal(
   }
   switch (broaderRunMode(target, ceiling)) {
     case "runtimeMode":
-      return `${action} would run in ${target.runtimeMode} mode, broader than this thread's ${ceiling.runtimeMode} mode. ${byPerson}`;
+      return `${action} would need more permissions (${target.runtimeMode}) than this chat has (${ceiling.runtimeMode}). ${byPerson}`;
     case "interactionMode":
-      return `${action} would run in ${target.interactionMode} interaction mode, broader than this thread's ${ceiling.interactionMode} mode. ${byPerson}`;
+      return `${action} would run in a broader mode (${target.interactionMode}) than this chat's (${ceiling.interactionMode}). ${byPerson}`;
     case null:
       return null;
   }
