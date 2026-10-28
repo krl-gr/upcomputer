@@ -50,17 +50,19 @@ function parseGeckoFrame(line: string): StackFrame | undefined {
 }
 
 function stackFrames(error: unknown): ReadonlyArray<StackFrame> {
-  const stack =
-    typeof error === "object" && error !== null
-      ? (error as { readonly stack?: unknown }).stack
-      : undefined;
+  if (typeof error !== "object" || error === null) return [];
+  const { stack, message } = error as { readonly stack?: unknown; readonly message?: unknown };
   if (typeof stack !== "string") return [];
   const lines = stack.split("\n");
-  // A V8 stack starts with the message, which can span lines and look like a
-  // Gecko frame; only "at" lines are read from it.
-  const parse = lines.some((line) => V8_FRAME.test(line)) ? parseV8Frame : parseGeckoFrame;
+  // A V8 stack starts with the message, which can span lines, such as a
+  // child's stderr or an embedded stack whose "at" lines name user files.
+  const messageLines = typeof message === "string" ? message.split("\n").length : 1;
+  const v8Frames = lines.slice(messageLines);
+  const isV8 = v8Frames.some((line) => V8_FRAME.test(line));
+  // Firefox and Safari stacks hold frames only.
+  const parse = isV8 ? parseV8Frame : parseGeckoFrame;
   const frames: StackFrame[] = [];
-  for (const line of lines) {
+  for (const line of isV8 ? v8Frames : lines) {
     const frame = parse(line);
     if (frame) frames.push(frame);
     if (frames.length === MAX_FRAMES) break;

@@ -74,6 +74,18 @@ describe("fingerprintError", () => {
     expect(fromMessage.stackHash).toBe(otherMessage.stackHash);
   });
 
+  it("skips stack lines inside a multi-line message", () => {
+    const childStderr = [
+      "build failed:",
+      "    at buildPayroll (/Users/alice/Documents/build-payroll.js:3:9)",
+      "    at /Users/alice/Documents/build-payroll.js:10:1",
+    ].join("\n");
+    const fingerprint = fingerprintError(new Error(childStderr));
+    expect(fingerprint.module).not.toBe("build-payroll.js");
+    const otherOutput = fingerprintError(new Error("build failed:\n    at other (/tmp/x.js:1:1)"));
+    expect(fingerprint.stackHash).toBe(otherOutput.stackHash);
+  });
+
   it("handles values that are not errors", () => {
     expect(fingerprintError("boom")).toEqual(fingerprintError(42));
     expect(fingerprintError(undefined).errorClass).toBe("other");
