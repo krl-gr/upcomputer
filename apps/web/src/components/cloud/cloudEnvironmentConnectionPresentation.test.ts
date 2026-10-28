@@ -33,14 +33,14 @@ describe("saved cloud environment connection presentation", () => {
     ).toEqual({
       buttonLabel: "Reconnecting…",
       statusText:
-        "Failed to connect. Reconnecting... Reason: Relay environment endpoint is unavailable.",
+        "Up.computer can't reach this computer right now (Relay environment endpoint is unavailable). It keeps trying.",
       tone: "connecting",
     });
   });
 
   it.each([
-    ["error", "Connection failed", "Connection failed. Reason: Access denied.", "error"],
-    ["unsupported", "Client not supported", "Client not supported", "idle"],
+    ["error", "Connection failed", "Can't connect to this computer: Access denied.", "error"],
+    ["unsupported", "Client not supported", "Update needed", "idle"],
     ["offline", "Offline", "Offline", "idle"],
     ["available", "Not connected", "Available", "idle"],
   ] as const)(

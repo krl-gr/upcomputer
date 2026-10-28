@@ -204,7 +204,7 @@ describe("connection presentation", () => {
       traceId: "trace-retry",
     } as const;
     expect(connectionStatusText(connection)).toBe(
-      "Up.computer can't reach this computer right now (Relay request timed out.). It keeps trying.",
+      "Up.computer can't reach this computer right now (Relay request timed out). It keeps trying.",
     );
     expect(connectionStatusTitle(connection)).toBe("Can't reach this computer. Reconnecting...");
   });
