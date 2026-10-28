@@ -15,6 +15,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as BackgroundNotices from "../background/BackgroundNotices.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
@@ -146,14 +147,44 @@ it.effect("loads only due tasks and skips corrupt due rows without decoding sett
       last_run_status: string;
     }>`SELECT last_run_status FROM scheduled_tasks WHERE task_id = 'running'`;
     assert.equal(running[0]?.last_run_status, "running");
-    // A damaged row leaves the poll and says why, instead of silently stopping.
+    // A damaged row says why, and keeps its next run for when it is readable again.
     const damaged = yield* sql<{
       next_run_at: string | null;
       last_run_error: string | null;
     }>`SELECT next_run_at, last_run_error FROM scheduled_tasks WHERE task_id = 'due-corrupt'`;
-    assert.isNull(damaged[0]?.next_run_at);
+    assert.equal(damaged[0]?.next_run_at, now);
     assert.match(damaged[0]?.last_run_error ?? "", /saved data is damaged/);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("resumes a damaged schedule once it is readable, clearing its notice", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const notices = yield* BackgroundNotices.BackgroundNotices;
+    const now = "2026-09-09T12:00:00.000Z";
+    yield* insertRow(
+      sql,
+      { id: "newer", next: now, enabled: 1, status: "never", scheduleJson: '{"type":"future"}' },
+      now,
+    );
+    const at = DateTime.makeUnsafe(now);
+    assert.deepEqual(yield* ScheduledTaskService.listDueTasks(at), []);
+    const reported = yield* notices.list;
+    assert.deepEqual(
+      reported.map(({ id }) => id),
+      ["scheduled-task:newer:damaged"],
+    );
+    // The next pass skips it again without reporting it anew.
+    assert.deepEqual(yield* ScheduledTaskService.listDueTasks(at), []);
+    assert.deepEqual(yield* notices.list, reported);
+
+    yield* sql`UPDATE scheduled_tasks SET schedule_json = '{"type":"interval","everyMs":60000}'`;
+    assert.deepEqual(
+      (yield* ScheduledTaskService.listDueTasks(at)).map((task) => task.id),
+      ["newer"],
+    );
+    assert.deepEqual(yield* notices.list, []);
+  }).pipe(Effect.provide(Layer.merge(SqlitePersistence.layerMemory, BackgroundNotices.layer))),
 );
 
 it.effect(
@@ -240,7 +271,7 @@ it.effect(
       assert.isNull(stuckHuge?.next_run_at);
       for (const id of ["stuck-valid", "stuck-corrupt", "stuck-huge", null]) {
         const row = byId.get(id);
-        // A row that can't be decoded is then taken out of the poll as damaged.
+        // A row that can't be decoded is then skipped by the poll as damaged.
         assert.match(
           row?.last_run_error ?? "",
           id === "stuck-corrupt" || id === null
@@ -256,7 +287,7 @@ it.effect(
         assert.equal(row?.run_count, 1);
       }
       assert.isNull(byId.get("due-huge")?.next_run_at);
-      // A next run time that can't be read stops the row with a reason, without a run.
+      // A next run time that can't be read is skipped with a reason, without a run.
       assert.equal(byId.get("due-bad-date")?.last_run_status, "failed");
       assert.match(byId.get("due-bad-date")?.last_run_error ?? "", /saved data is damaged/);
       assert.equal(byId.get("due-bad-date")?.run_count, 0);

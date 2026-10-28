@@ -369,28 +369,33 @@ const decodeRow = (row: ScheduledTaskRow, origin: WebhookOrigin | null = null) =
   );
 
 /**
- * A row the poll can't read would be skipped on every pass, so the schedule
- * silently stops. Take it out of the poll and say so on its row and in the
- * notifications place.
+ * A row the poll can't read is skipped and tried again on the next pass, so a
+ * schedule saved by a newer version resumes once it is readable. Say so on
+ * its row and in the notifications place, once.
  */
-const stopDamagedRow = (row: ScheduledTaskRow, title: string | null) =>
+const reportDamagedRow = (row: ScheduledTaskRow, title: string | null) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`
       UPDATE scheduled_tasks
-      SET next_run_at = NULL,
-          last_run_status = 'failed',
+      SET last_run_status = 'failed',
           last_run_error = ${DAMAGED_SCHEDULE_ERROR}
-      WHERE task_id IS ${row.task_id}
+      WHERE task_id IS ${row.task_id} AND last_run_error IS NOT ${DAMAGED_SCHEDULE_ERROR}
     `;
-    yield* reportNotice({
-      id: `scheduled-task:${row.task_id}:damaged`,
+    const id = damagedNoticeId(row.task_id);
+    const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+    if (Option.isNone(notices)) return;
+    if ((yield* notices.value.list).some((notice) => notice.id === id)) return;
+    yield* notices.value.report({
+      id,
       area: "scheduled-tasks",
       severity: "error",
-      title: "Schedule stopped",
+      title: "Schedule can't run",
       message: `"${title?.trim() || "A scheduled task"}" can't run because its schedule data is damaged. Open it in Settings, Scheduled tasks, and save the schedule again.`,
     });
   }).pipe(Effect.ignore({ log: true }));
+
+const damagedNoticeId = (taskId: string | null) => `scheduled-task:${taskId}:damaged`;
 
 const reportNotice = (
   notice: Parameters<BackgroundNotices.BackgroundNotices["Service"]["report"]>[0],
@@ -398,6 +403,25 @@ const reportNotice = (
   Effect.serviceOption(BackgroundNotices.BackgroundNotices).pipe(
     Effect.flatMap((notices) =>
       Option.isSome(notices) ? notices.value.report(notice) : Effect.void,
+    ),
+  );
+
+/** Clears a task's notices whose problem is gone. */
+const resolveNotices = (
+  taskId: string | null,
+  kinds: ReadonlyArray<"damaged" | "stuck" | "missed">,
+) =>
+  Effect.serviceOption(BackgroundNotices.BackgroundNotices).pipe(
+    Effect.flatMap((notices) =>
+      Option.isNone(notices)
+        ? Effect.void
+        : Effect.forEach(
+            kinds,
+            (kind) => notices.value.resolve(`scheduled-task:${taskId}:${kind}`),
+            {
+              discard: true,
+            },
+          ),
     ),
   );
 
@@ -428,18 +452,19 @@ export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(funct
       // row is skipped here like any other corrupt row.
       if (task.nextRunAt === null || Option.isSome(DateTime.make(task.nextRunAt))) {
         tasks.push(task);
+        yield* resolveNotices(row.task_id, ["damaged"]);
       } else {
-        yield* Effect.logWarning("Stopping schedule task row with invalid next_run_at", {
+        yield* Effect.logWarning("Skipping schedule task row with invalid next_run_at", {
           taskId: row.task_id,
         });
-        yield* stopDamagedRow(row, task.title);
+        yield* reportDamagedRow(row, task.title);
       }
     } else {
-      yield* Effect.logWarning("Stopping undecodable schedule task row", {
+      yield* Effect.logWarning("Skipping undecodable schedule task row", {
         taskId: row.task_id,
         cause: decoded.failure,
       });
-      yield* stopDamagedRow(row, row.title);
+      yield* reportDamagedRow(row, row.title);
     }
   }
   return tasks;
@@ -852,6 +877,8 @@ export const layer = Layer.effect(
         }
 
         yield* markRunning(active.id, startedAtIso);
+        // It runs again, so it isn't stuck, and a skipped run needs no catching up.
+        yield* resolveNotices(active.id, ["stuck", "missed"]);
         yield* notifyChanged;
 
         const fireKey =
@@ -1186,15 +1213,23 @@ export const layer = Layer.effect(
           creationSource: input.creationSource ?? "web",
           createdAt: existingTask?.createdAt ?? iso(now),
           updatedAt: iso(now),
-          nextRunAt: scheduleUnchanged
-            ? existingTask.nextRunAt
-            : nextRunAt({ enabled: input.enabled, schedule }, now),
+          // A damaged next run time is what saving again is meant to repair.
+          nextRunAt:
+            scheduleUnchanged &&
+            (existingTask.nextRunAt === null ||
+              Option.isSome(DateTime.make(existingTask.nextRunAt)))
+              ? existingTask.nextRunAt
+              : nextRunAt({ enabled: input.enabled, schedule }, now),
           lastRunAt: existingTask?.lastRunAt ?? null,
           lastRunStatus: existingTask?.lastRunStatus ?? "never",
-          lastRunError: existingTask?.lastRunError ?? null,
+          lastRunError:
+            existingTask?.lastRunError === DAMAGED_SCHEDULE_ERROR
+              ? null
+              : (existingTask?.lastRunError ?? null),
           runCount: existingTask?.runCount ?? 0,
         };
         yield* saveTask(task, input.requireExisting === true, webhook);
+        yield* resolveNotices(id, ["damaged", "stuck"]);
         yield* notifyChanged;
         if (existingTask === null && Option.isSome(analytics))
           yield* analytics.value.recordMilestone("app.first_scheduled_task_created", {
@@ -1227,6 +1262,8 @@ export const layer = Layer.effect(
         if (updated.length === 0) {
           return yield* taskError("Schedule task not found.", { taskId: input.id });
         }
+        // Turning it off and on is how the stuck notice says to recover.
+        yield* resolveNotices(input.id, input.enabled ? ["stuck"] : ["stuck", "missed"]);
         yield* notifyChanged;
         return {
           task: { ...existing, enabled: input.enabled, nextRunAt: next, updatedAt: iso(now) },
@@ -1249,6 +1286,7 @@ export const layer = Layer.effect(
             }),
           ]),
         ),
+        Effect.andThen(resolveNotices(input.id, ["damaged", "stuck", "missed"])),
         Effect.andThen(notifyChanged),
         Effect.as({ id: input.id }),
       );
