@@ -2979,7 +2979,7 @@ it.effect.each(
         if (failResolve) {
           const error = yield* service.delegateTask(scope, input).pipe(Effect.flip);
           assert.equal(error.code, "invalid_request");
-          assert.equal(error.message, "Unable to resolve the parent checkout commit.");
+          assert.match(error.message, /^Couldn't start the helper in its own copy of the project/);
           assert.isEmpty((yield* threads.getThreadProjection(parentThreadId)).subagents);
           assert.equal(harness.createWorktree.mock.calls.length, 0);
           return;

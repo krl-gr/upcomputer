@@ -32,7 +32,11 @@ export function assertGrokPromptErrorOutput(
     (item) => item.runId === failedRun?.id && item.type === "error",
   );
   if (errorItem?.type !== "error") throw new Error("expected an error item on the failed run");
-  assert.equal(errorItem.failure.message, GROK_PROMPT_ERROR_TEXT);
+  assert.equal(
+    errorItem.failure.message,
+    `Grok reported an error: ${GROK_PROMPT_ERROR_TEXT}. Send the message again.`,
+  );
+  assert.equal(errorItem.failure.detail, GROK_PROMPT_ERROR_TEXT);
   assert.equal(errorItem.failure.class, "provider_error");
 
   const recoveredRun = projection.runs.find((run) => run.ordinal === 2);
