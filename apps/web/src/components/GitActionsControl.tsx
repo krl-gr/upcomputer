@@ -121,6 +121,8 @@ import { getSourceControlPresentation, sourceControlIcon } from "~/sourceControl
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useOpenLink } from "~/browser/useOpenLink";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 interface GitActionsControlProps {
   presentation?: "toolbar" | "menu";
@@ -589,7 +591,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          setPublishError(error instanceof Error ? error.message : "An error occurred.");
+          setPublishError(plainErrorSentence(error));
         }
         return;
       }
@@ -1317,7 +1319,7 @@ export default function GitActionsControl({
           stackedThreadToast({
             type: "error",
             title: "Action failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
             timeout: errorToastTiming.timeout,
             ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
           }),
@@ -1476,7 +1478,7 @@ export default function GitActionsControl({
             stackedThreadToast({
               type: "error",
               title: "Pull failed",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
               timeout: errorToastTiming.timeout,
               ...(threadToastData !== undefined ? { data: threadToastData } : {}),
             }),
@@ -1574,7 +1576,7 @@ export default function GitActionsControl({
           stackedThreadToast({
             type: "error",
             title: "Unable to open file",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
             ...(threadToastData !== undefined ? { data: threadToastData } : {}),
           }),
         );
@@ -1597,7 +1599,7 @@ export default function GitActionsControl({
         stackedThreadToast({
           type: "error",
           title: "Git initialization failed",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
       );

@@ -60,6 +60,7 @@ import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 const STATUS_ORDER = [
   "new",
@@ -152,7 +153,7 @@ function selectedProjectKey(form: TaskFormState): string {
 }
 
 function errorDescription(error: unknown): string {
-  return error instanceof Error ? error.message : "An unexpected error occurred.";
+  return plainErrorSentence(error);
 }
 
 const DESCRIPTION_EDITOR_CLASS =

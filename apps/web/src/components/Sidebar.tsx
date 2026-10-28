@@ -323,6 +323,7 @@ import {
   type DraftSessionState,
 } from "../composerDraftStore";
 import { useDraftFirstSendPending } from "../draftFirstSend";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
 // Collapsed shelves share one empty list so a route change alone does not
@@ -2327,7 +2328,7 @@ export default function Sidebar() {
         stackedThreadToast({
           type: "error",
           title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -2346,7 +2347,7 @@ export default function Sidebar() {
         stackedThreadToast({
           type: "error",
           title: "Failed to copy branch",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -2364,7 +2365,7 @@ export default function Sidebar() {
         stackedThreadToast({
           type: "error",
           title: "Failed to copy thread ID",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -3124,7 +3125,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to rename thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3201,7 +3202,7 @@ export default function Sidebar() {
                 stackedThreadToast({
                   type: "error",
                   title: "Failed to settle thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
             }
@@ -3247,7 +3248,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to un-settle thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3265,7 +3266,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to wake thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3539,7 +3540,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to pin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3557,7 +3558,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to unpin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3882,7 +3883,7 @@ export default function Sidebar() {
               stackedThreadToast({
                 type: "error",
                 title,
-                description: error instanceof Error ? error.message : "An error occurred.",
+                description: errorToastDescription(error),
               }),
             );
           }
@@ -4026,8 +4027,7 @@ export default function Sidebar() {
             stackedThreadToast({
               type: "error",
               title: "Failed to snooze thread",
-              description:
-                outcome.error instanceof Error ? outcome.error.message : "An error occurred.",
+              description: errorToastDescription(outcome.error),
             }),
           );
           return;
@@ -4187,8 +4187,7 @@ export default function Sidebar() {
                   snoozedThreadRefs.length > 0
                     ? `Failed to snooze ${failures.length} thread${failures.length === 1 ? "" : "s"}`
                     : "Failed to snooze threads",
-                description:
-                  firstError instanceof Error ? firstError.message : "An error occurred.",
+                description: errorToastDescription(firstError),
               }),
             );
           }
@@ -4215,7 +4214,7 @@ export default function Sidebar() {
               stackedThreadToast({
                 type: "error",
                 title: "Failed to regenerate thread titles",
-                description: error instanceof Error ? error.message : "An error occurred.",
+                description: errorToastDescription(error),
               }),
             );
           }
@@ -4279,7 +4278,7 @@ export default function Sidebar() {
           stackedThreadToast({
             type: "error",
             title: "Failed to delete threads",
-            description: firstError instanceof Error ? firstError.message : "An error occurred.",
+            description: errorToastDescription(firstError),
           }),
         );
       }
@@ -4470,7 +4469,7 @@ export default function Sidebar() {
                 stackedThreadToast({
                   type: "error",
                   title: "Could not create thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
             }
@@ -4503,7 +4502,7 @@ export default function Sidebar() {
                 stackedThreadToast({
                   type: "error",
                   title: "Failed to update auto-settle",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
             }
@@ -4524,7 +4523,7 @@ export default function Sidebar() {
                 stackedThreadToast({
                   type: "error",
                   title: "Failed to regenerate thread title",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
             }
@@ -4575,7 +4574,7 @@ export default function Sidebar() {
                   title: didArchive
                     ? "Thread archived, but navigation failed"
                     : "Failed to archive thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
               return;
@@ -4602,7 +4601,7 @@ export default function Sidebar() {
                 stackedThreadToast({
                   type: "error",
                   title: "Failed to delete thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  description: errorToastDescription(error),
                 }),
               );
               return;

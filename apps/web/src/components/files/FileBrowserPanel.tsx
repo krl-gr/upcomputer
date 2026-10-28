@@ -29,6 +29,7 @@ import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTree
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -218,7 +219,7 @@ export default function FileBrowserPanel({
           toastManager.add({
             type: "error",
             title: "Failed to copy mention",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           });
         }
         return;

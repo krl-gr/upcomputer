@@ -61,6 +61,7 @@ import {
   resolveDeviceMiniPlayerSourceSize,
   resolvePreviewMiniPlayerSourceSize,
 } from "./previewMiniPlayerLayout";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface PointerGesture {
   readonly pointerId: number;
@@ -166,7 +167,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
       toastManager.add({
         type: "error",
         title: serverTab ? "Unable to pop out preview" : "Unable to update popped-out preview",
-        description: error instanceof Error ? error.message : "An error occurred.",
+        description: errorToastDescription(error),
       });
     }
   };

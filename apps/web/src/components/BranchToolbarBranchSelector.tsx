@@ -70,6 +70,7 @@ import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 export interface BranchToolbarBranchSelectorHandle {
   open: () => void;
@@ -96,7 +97,7 @@ interface BranchToolbarBranchSelectorProps {
 }
 
 function toBranchActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "An error occurred.";
+  return plainErrorSentence(error);
 }
 
 export function BranchToolbarBranchSelector({

@@ -94,6 +94,8 @@ import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
+  plainErrorSentence,
+  describeError,
 } from "@t3tools/client-runtime/errors";
 import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
@@ -437,7 +439,10 @@ import {
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
-import { workspacePreparationRetryRunIds } from "@t3tools/client-runtime/state/turn-item-presentation";
+import {
+  type ProviderFailureAction,
+  workspacePreparationRetryRunIds,
+} from "@t3tools/client-runtime/state/turn-item-presentation";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
 import { sourceControlEnvironment } from "../state/sourceControl";
@@ -635,6 +640,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { recallableComposerPrompt } from "./chat/composerPromptHistory";
 import { observeResize } from "~/lib/observeResize";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
@@ -649,6 +655,16 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+
+const SEND_FAILURE_TAIL = "Your text is still in the composer, so try again.";
+
+/** Thread banner text for a failed send, approval or answer; the raw error stays in the console. */
+function threadActionErrorText(error: unknown, action: string, tail: string): string {
+  const { reason, detail } = describeError(error);
+  if (detail !== undefined) console.warn(`Couldn't ${action}:`, detail);
+  return `Up.computer couldn't ${action}${reason === undefined ? "" : `: ${reason}`}. ${tail}`;
+}
+
 function useDraftHeroLayoutTransition(
   isDraftHeroState: boolean,
   animationsActive: boolean,
@@ -1554,7 +1570,7 @@ type LocalThreadErrorEntry = {
 };
 
 function chatActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "An error occurred.";
+  return plainErrorSentence(error);
 }
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
@@ -2553,7 +2569,7 @@ export default function ChatView(props: ChatViewProps) {
         stackedThreadToast({
           type: "error",
           title,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -4952,7 +4968,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Could not open preview",
-            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -5188,7 +5204,7 @@ export default function ChatView(props: ChatViewProps) {
         stackedThreadToast({
           type: "error",
           title: "Could not delete action",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -5996,7 +6012,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Failed to copy path",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       },
@@ -6821,7 +6837,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: target.failureTitle,
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       },
@@ -6926,7 +6942,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Failed to un-settle thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -6973,7 +6989,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Failed to wake thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -7143,7 +7159,7 @@ export default function ChatView(props: ChatViewProps) {
     onOpenRelatedThreadStable,
   ]);
 
-  const sendStandaloneCommand = async (text: string, failureMessage: string) => {
+  const sendStandaloneCommand = async (text: string, action: string) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
     const context = composerRef.current?.getSendContext();
     if (!context?.providerAvailable) return;
@@ -7198,7 +7214,7 @@ export default function ChatView(props: ChatViewProps) {
         resetLocalDispatch();
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          setThreadError(threadId, error instanceof Error ? error.message : failureMessage);
+          setThreadError(threadId, threadActionErrorText(error, action, "Try again."));
         }
       } else {
         clearUsageLimitsFor(routeThreadKey);
@@ -7781,7 +7797,7 @@ export default function ChatView(props: ChatViewProps) {
             stackedThreadToast({
               type: "error",
               title: "Failed to settle thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         });
@@ -7802,7 +7818,7 @@ export default function ChatView(props: ChatViewProps) {
               stackedThreadToast({
                 type: "error",
                 title: pinned ? "Failed to unpin thread" : "Failed to pin thread",
-                description: error instanceof Error ? error.message : "An error occurred.",
+                description: errorToastDescription(error),
               }),
             );
           },
@@ -8364,7 +8380,7 @@ export default function ChatView(props: ChatViewProps) {
   const onForkFromRunStable = useStableCallback(onForkFromRun);
   const onCompactContext = () => {
     if (compactDisabled) return;
-    void sendStandaloneCommand("/compact", "Failed to compact context.");
+    void sendStandaloneCommand("/compact", "compact this conversation");
   };
 
   const onResume = async () => {
@@ -9358,7 +9374,7 @@ export default function ChatView(props: ChatViewProps) {
         failedSelections.push(...multipleModelSelections);
         setThreadError(
           threadIdForSend,
-          error instanceof Error ? error.message : "Failed to send messages.",
+          threadActionErrorText(error, "send your messages", SEND_FAILURE_TAIL),
         );
       } finally {
         const restoreFailedDraft = () => {
@@ -9799,7 +9815,7 @@ export default function ChatView(props: ChatViewProps) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,
-          error instanceof Error ? error.message : "Failed to send message.",
+          threadActionErrorText(error, "send your message", SEND_FAILURE_TAIL),
         );
         if (backgroundDraftOpened && draftId) {
           toastManager.add(
@@ -9827,6 +9843,45 @@ export default function ChatView(props: ChatViewProps) {
       if (!sendQueuesBehindSetup) resetLocalDispatch();
     }
   };
+  const onProviderFailureAction = (action: ProviderFailureAction, runId: RunId | null) => {
+    const run =
+      runId === null ? undefined : serverProjection?.runs.find((entry) => entry.id === runId);
+    if (action === "switch_model") {
+      composerRef.current?.openModelPicker();
+      return;
+    }
+    if (action === "open_settings") {
+      if (run !== undefined) openProviderSetup(run.providerInstanceId);
+      else void navigate({ to: "/settings/providers" });
+      return;
+    }
+    const failedMessage =
+      runId === null
+        ? undefined
+        : serverProjection?.messages.find(
+            (message) => message.runId === runId && message.role === "user",
+          );
+    if (failedMessage === undefined || failedMessage.text.trim().length === 0) {
+      scheduleComposerFocus();
+      return;
+    }
+    // Never overwrite a draft the person is writing; they send it themselves.
+    if (promptRef.current.trim().length > 0 || composerHasNonPromptContent) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Your draft is still in the composer",
+          description: "Send or clear it, then press Retry to send the failed message again.",
+        }),
+      );
+      scheduleComposerFocus();
+      return;
+    }
+    promptRef.current = failedMessage.text;
+    setComposerDraftPrompt(composerDraftTarget, failedMessage.text);
+    window.requestAnimationFrame(() => void onSend());
+  };
+  const onProviderFailureActionStable = useStableCallback(onProviderFailureAction);
 
   const onRespondToApproval = async (
     requestId: RuntimeRequestId,
@@ -9855,7 +9910,7 @@ export default function ChatView(props: ChatViewProps) {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit approval decision.",
+        threadActionErrorText(error, "send your approval", "Try again."),
       );
     }
     setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
@@ -9926,7 +9981,7 @@ export default function ChatView(props: ChatViewProps) {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit user input.",
+        threadActionErrorText(error, "send your answer", "Try again."),
       );
     }
     userInputResponsesInFlight.current.delete(responseKey);
@@ -9948,7 +10003,7 @@ export default function ChatView(props: ChatViewProps) {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to dismiss the question.",
+        threadActionErrorText(error, "dismiss the question", "Try again."),
       );
     }
     setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
@@ -11094,6 +11149,7 @@ export default function ChatView(props: ChatViewProps) {
                   : {
                       retryableWorkspacePreparationRunIds,
                       onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
+                      onProviderFailureAction: onProviderFailureActionStable,
                     })}
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }

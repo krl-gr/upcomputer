@@ -174,6 +174,7 @@ import { composerCollapsesOnScroll } from "../../composerFooter/composerFooterSu
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { isProductFeatureShown } from "../../product/productFlags";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -3611,7 +3612,7 @@ export function ArchivedThreadsPanel() {
             stackedThreadToast({
               type: "error",
               title: "Failed to unarchive thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3628,7 +3629,7 @@ export function ArchivedThreadsPanel() {
             stackedThreadToast({
               type: "error",
               title: "Failed to delete thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -3695,8 +3696,7 @@ export function ArchivedThreadsPanel() {
                         stackedThreadToast({
                           type: "error",
                           title: "Archived thread action failed",
-                          description:
-                            error instanceof Error ? error.message : "An error occurred.",
+                          description: errorToastDescription(error),
                         }),
                       );
                     }
@@ -3732,8 +3732,7 @@ export function ArchivedThreadsPanel() {
                             stackedThreadToast({
                               type: "error",
                               title: "Failed to unarchive thread",
-                              description:
-                                error instanceof Error ? error.message : "An error occurred.",
+                              description: errorToastDescription(error),
                             }),
                           );
                         }

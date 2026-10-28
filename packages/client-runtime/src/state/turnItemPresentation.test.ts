@@ -10,6 +10,7 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  providerFailureActions,
   turnItemIsWorkspacePreparation,
   workspacePreparationRetryRunIds,
 } from "./turnItemPresentation.ts";
@@ -97,5 +98,40 @@ describe("workspacePreparationRetryRunIds", () => {
         [preparationFailure("failed", "provider_crashed")],
       ).size,
     ).toBe(0);
+  });
+});
+
+describe("providerFailureActions", () => {
+  const failure = (
+    overrides: Partial<Parameters<typeof providerFailureActions>[0]>,
+  ): Parameters<typeof providerFailureActions>[0] => ({
+    class: "provider_error",
+    message: "Codex stopped.",
+    code: null,
+    retryable: null,
+    ...overrides,
+  });
+
+  it("leads a usage limit with switching model and keeps retry second", () => {
+    expect(providerFailureActions(failure({ class: "usage_limit" }))).toEqual([
+      "switch_model",
+      "retry",
+    ]);
+  });
+
+  it("sends sign-in and setup failures to Settings", () => {
+    expect(
+      providerFailureActions(failure({ class: "permission_error", code: "authentication_failed" })),
+    ).toEqual(["open_settings", "retry"]);
+    expect(
+      providerFailureActions(failure({ code: "workspace_missing", retryable: false })),
+    ).toEqual(["open_settings"]);
+  });
+
+  it("offers retry unless the provider said retrying cannot help", () => {
+    expect(providerFailureActions(failure({}))).toEqual(["retry"]);
+    expect(
+      providerFailureActions(failure({ code: "attachment_unsupported", retryable: false })),
+    ).toEqual([]);
   });
 });

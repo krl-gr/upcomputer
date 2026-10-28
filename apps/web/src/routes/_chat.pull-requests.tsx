@@ -173,6 +173,7 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { isProductFeatureShown } from "~/product/productFlags";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 function getShortcutContext() {
   return {
@@ -1917,7 +1918,7 @@ function PullRequestsRouteView() {
         toastManager.add({
           type: "error",
           title: "Failed to copy PR link",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         });
       },
     );

@@ -67,6 +67,7 @@ import { splitListInput, type TasksWebProject } from "./shared.ts";
 import { StartThreadEmptyState } from "./StartThreadEmptyState.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
 const INSTRUCTIONS_EDITOR_CLASS =
@@ -194,7 +195,7 @@ function agentForm(agent: ScopedTaskAgent): AgentFormState {
 }
 
 function errorDescription(error: unknown): string {
-  return error instanceof Error ? error.message : "An unexpected error occurred.";
+  return plainErrorSentence(error);
 }
 
 function unique(values: readonly string[]): string[] {
