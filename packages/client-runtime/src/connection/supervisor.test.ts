@@ -1226,7 +1226,11 @@ describe("EnvironmentSupervisor routes", () => {
         checkRoute: () => Effect.succeed("answered"),
         prepare: (_attempt, target) =>
           target._tag === "BearerConnectionTarget"
-            ? Effect.fail(blocked("The environment credential is invalid."))
+            ? Effect.fail(
+                blocked(
+                  "this device's access to it was removed or has expired. Pair this device again in Settings, Connections",
+                ),
+              )
             : Effect.succeed(preparedFor(target)),
       });
       const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {

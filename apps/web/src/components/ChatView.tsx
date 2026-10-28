@@ -23,6 +23,10 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
+import { mcpStatusBannerItems } from "./chat/McpStatusBanner";
+import { APP_BASE_NAME } from "../branding";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
+import type { ProviderFailureAction } from "@t3tools/client-runtime/state/turn-item-presentation";
 import { resolveDraftHeroState } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import {
@@ -79,6 +83,7 @@ import {
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveLatestThreadRun,
+  deriveThreadMcpStatus,
   deriveThreadStructureRuntime,
 } from "@t3tools/client-runtime/state/thread-execution";
 import {
@@ -440,6 +445,7 @@ export default function ChatView(props: ChatViewProps) {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, "thread session stop");
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const setThreadRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
@@ -990,15 +996,9 @@ export default function ChatView(props: ChatViewProps) {
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const [threadPanelPresentation, setThreadPanelPresentation] =
-    useState<ThreadPanelPresentation>("inline");
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const threadPanelOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(
-      state.threadPanelVisibilityByThreadKey,
-      activeThreadRef,
-      threadPanelPresentation,
-    ),
+    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "popover"),
   );
 
   const latestRunSettled = isLatestRunSettled(activeLatestRun, activeRuntime);
@@ -2358,7 +2358,7 @@ export default function ChatView(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: target.failureTitle,
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       },
@@ -2399,7 +2399,7 @@ export default function ChatView(props: ChatViewProps) {
     activePreviewState,
     deviceState,
     pullRequestPanelTarget,
-    threadPanelPresentation,
+    threadPanelPresentation: "popover",
     isServerThread,
     isGitRepo,
     browserAvailable,
@@ -2587,6 +2587,38 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const threadMcpStatus = serverProjection ? deriveThreadMcpStatus(serverProjection) : null;
+  const [mcpReconnectingThreadKey, setMcpReconnectingThreadKey] = useState<string | null>(null);
+  const [dismissedMcpNoticeKeys, setDismissedMcpNoticeKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const reconnectMcp = useStableCallback(async () => {
+    if (!serverProjection) return;
+    const threadKey = routeThreadKey;
+    setMcpReconnectingThreadKey(threadKey);
+    const result = await stopThreadSession({
+      environmentId,
+      input: { threadId: serverProjection.thread.id },
+    });
+    setMcpReconnectingThreadKey((current) => (current === threadKey ? null : current));
+    if (result._tag === "Failure") return;
+    toastManager.add({
+      type: "success",
+      title: "Agent session will restart",
+      description: `Your next message starts a fresh session with ${APP_BASE_NAME} tools.`,
+    });
+  });
+  const mcpBannerItems = mcpStatusBannerItems({
+    threadKey: routeThreadKey,
+    status: threadMcpStatus,
+    productName: APP_BASE_NAME,
+    canReconnect: canOperateThread,
+    turnRunning: isWorking,
+    reconnecting: mcpReconnectingThreadKey === routeThreadKey,
+    onReconnect: () => void reconnectMcp(),
+    userNoticeDismissed: (key) => dismissedMcpNoticeKeys.has(key),
+    onDismissUserNotice: (key) => setDismissedMcpNoticeKeys((current) => new Set(current).add(key)),
+  });
   const composerBannerItems = (() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [childInputBanner, goalBanner, backgroundWorkBanner].filter(
@@ -2598,6 +2630,7 @@ export default function ChatView(props: ChatViewProps) {
       return [
         ...feedbackBannerItems,
         ...limitRecoveryItems,
+        ...mcpBannerItems,
         ...usageLimitsItems,
         ...projectCloneItems,
         ...systemComposerBannerItems,
@@ -2607,6 +2640,7 @@ export default function ChatView(props: ChatViewProps) {
     return [
       ...feedbackBannerItems,
       ...limitRecoveryItems,
+      ...mcpBannerItems,
       ...usageLimitsItems,
       ...projectCloneItems,
       ...systemComposerBannerItems,
@@ -2762,8 +2796,53 @@ export default function ChatView(props: ChatViewProps) {
   });
   const onCompactContext = () => {
     if (compactDisabled) return;
-    void sendStandaloneCommand("/compact", "Failed to compact context.");
+    void sendStandaloneCommand("/compact", "compact this conversation");
   };
+  const onProviderFailureAction = (action: ProviderFailureAction, runId: RunId | null) => {
+    const run =
+      runId === null ? undefined : serverProjection?.runs.find((entry) => entry.id === runId);
+    if (action === "switch_model") {
+      composerRef.current?.openModelPicker();
+      return;
+    }
+    if (action === "open_bot_settings") {
+      // The bots page opens the bot whose chat this thread is.
+      if (activeThread)
+        void navigate({
+          to: "/bots",
+          search: { environment: activeThread.environmentId, thread: activeThread.id },
+        } as never);
+      return;
+    }
+    if (action === "open_settings") {
+      if (run !== undefined) openProviderSetupStable(run.providerInstanceId);
+      else void navigate({ to: "/settings/providers" });
+      return;
+    }
+    const failedMessage =
+      runId === null
+        ? undefined
+        : serverProjection?.messages.find(
+            (message) => message.runId === runId && message.role === "user",
+          );
+    if (
+      failedMessage === undefined ||
+      (failedMessage.text.trim().length === 0 && failedMessage.attachments.length === 0)
+    ) {
+      scheduleComposerFocus();
+      return;
+    }
+    // Sends the stored message itself, so the draft in the composer stays put.
+    void sendStandaloneCommand(
+      failedMessage.text.trim().length > 0 ? failedMessage.text : ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      "send the message again",
+      {
+        attachments: failedMessage.attachments,
+        ...(failedMessage.context ? { context: failedMessage.context } : {}),
+      },
+    );
+  };
+  const onProviderFailureActionStable = useStableCallback(onProviderFailureAction);
 
   const {
     getModelDisabledReason,
@@ -3123,7 +3202,7 @@ export default function ChatView(props: ChatViewProps) {
     terminalOpen: terminalUiState.terminalOpen,
     terminalShortcutLabel: shortcutLabelForCommand(keybindings, "terminal.toggle"),
     threadPanelOpen,
-    threadPanelPresentation,
+    threadPanelPresentation: "popover",
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
     rightPanelAvailable: activeProject !== null,
@@ -3311,6 +3390,8 @@ export default function ChatView(props: ChatViewProps) {
                   : {
                       retryableWorkspacePreparationRunIds,
                       onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
+                      onProviderFailureAction: onProviderFailureActionStable,
+                      retryableFailedRunId: serverLatestRun?.runId ?? null,
                     })}
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
@@ -3837,7 +3918,6 @@ export default function ChatView(props: ChatViewProps) {
               <ThreadDetailsPanel
                 anchor={threadPanelPopoverAnchorRef}
                 handle={threadPanelPopoverHandle}
-                onPresentationChange={setThreadPanelPresentation}
                 forceNewWorktree={multipleModelSelections !== null}
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}

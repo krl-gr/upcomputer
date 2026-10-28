@@ -6,6 +6,22 @@ export function runSearchStatus(countStatus: string): string {
   return countStatus === SUPERSEDED_BLOCKED_RUN_STATUS ? "blocked" : countStatus;
 }
 
+const FINISHED_RUN_STATUSES = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+  "stopped",
+  SUPERSEDED_BLOCKED_RUN_STATUS,
+]);
+
+/**
+ * A finished run is history: a thread row counts it only until the thread is seen. Running,
+ * finalizing and awaiting-input runs are active and always count. Mirrors the server's rule.
+ */
+export function isFinishedRunStatus(status: string): boolean {
+  return FINISHED_RUN_STATUSES.has(status);
+}
+
 export interface TaskRunPresentation {
   readonly label: string;
   readonly className: string;

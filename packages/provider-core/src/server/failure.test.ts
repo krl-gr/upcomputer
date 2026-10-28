@@ -14,6 +14,8 @@ import * as Effect from "effect/Effect";
 import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
+  providerFailureTitle,
+  MAX_PROVIDER_FAILURE_CODE_LENGTH,
   MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
   ContextHandoffBudgetError,
 } from "./failure.ts";
@@ -50,7 +52,10 @@ it("does not split a surrogate pair at the truncation boundary", () => {
   assert.notMatch(failure.message.slice(0, -1), /[\uD800-\uDBFF]$/u);
 });
 
-it("does not expose arbitrary cause messages and preserves explicit messages", () => {
+const UNEXPLAINED =
+  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check The agent in Settings.";
+
+it("keeps arbitrary cause messages out of the main message and in the detail", () => {
   const cause = new Error("Adapter failed", {
     cause: new Error("Session expired. Sign in again."),
   });
@@ -60,7 +65,9 @@ it("does not expose arbitrary cause messages and preserves explicit messages", (
     "Session expired. Sign in again.",
     { message: "Session expired. Sign in again." },
   ]) {
-    assert.equal(makeProviderFailure({ cause: value }).message, "Provider turn failed.");
+    const failure = makeProviderFailure({ cause: value });
+    assert.equal(failure.message, UNEXPLAINED);
+    assert.include(failure.detail ?? "", "Session expired. Sign in again.");
     assert.equal(
       makeProviderFailure({ cause: value, message: "Provider connection closed." }).message,
       "Provider connection closed.",
@@ -128,12 +135,17 @@ it("does not expose defect text nested inside a known error category", () => {
       ),
     },
   });
-  assert.include(failure.message, "provider event stream closed unexpectedly");
+  assert.include(failure.message, "dropped while it was working");
+  assert.equal(failure.code, "connection_lost");
   assert.notInclude(failure.message, "Session rejected:");
   assert.notInclude(failure.message, "nested-secret");
-  assert.notInclude(failure.message, "user:pass");
-  assert.notInclude(failure.message, "token=secret");
+  assert.include(failure.detail ?? "", "Session rejected:");
+  for (const secret of ["nested-secret", "user:pass", "token=secret"]) {
+    assert.notInclude(failure.message, secret);
+    assert.notInclude(failure.detail ?? "", secret);
+  }
   assert.isBelow(failure.message.length, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
+  assert.isAtMost(failure.detail?.length ?? 0, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
 });
 
 it("handles cyclic causes and throwing accessors", () => {
@@ -141,7 +153,7 @@ it("handles cyclic causes and throwing accessors", () => {
     message: "Provider disconnected. Retry the turn.",
   };
   cyclic.cause = cyclic;
-  assert.equal(makeProviderFailure({ cause: cyclic }).message, "Provider turn failed.");
+  assert.equal(makeProviderFailure({ cause: cyclic }).message, UNEXPLAINED);
   assert.equal(
     makeProviderFailure({
       cause: {
@@ -153,8 +165,20 @@ it("handles cyclic causes and throwing accessors", () => {
         },
       },
     }).message,
-    "Provider turn failed.",
+    UNEXPLAINED,
   );
+});
+
+it("falls back when inspecting a provider cause throws", () => {
+  const cause = new Proxy(
+    {},
+    {
+      has() {
+        throw new Error("unreadable provider cause");
+      },
+    },
+  );
+  assert.equal(makeProviderFailure({ cause }).message, UNEXPLAINED);
 });
 
 it("does not serialize arbitrary provider causes", () => {
@@ -168,10 +192,100 @@ it("does not serialize arbitrary provider causes", () => {
 
   assert.deepEqual(failure, {
     class: "transport_error",
-    message: "Provider turn failed.",
+    message: UNEXPLAINED,
     code: null,
     retryable: null,
   });
+});
+
+it("names the provider and keeps its typed reason in the main message", () => {
+  const driver = ProviderDriverKind.make("opencode");
+  const failure = makeProviderFailure({
+    driver,
+    class: "provider_error",
+    cause: {
+      _tag: "OpenCodeRuntimeError",
+      detail: "OpenCode command admission did not complete within 10 seconds.",
+      cause: new Error("socket hang up"),
+    },
+  });
+  assert.equal(
+    failure.message,
+    "OpenCode stopped before finishing: OpenCode command admission did not complete within 10 seconds. Send the message again; if it keeps happening, check OpenCode in Settings.",
+  );
+  assert.include(failure.detail ?? "", "socket hang up");
+  assert.equal(providerFailureTitle(failure, driver), "OpenCode stopped with an error");
+});
+
+it("explains why a session could not open instead of leaking its internal id", () => {
+  const driver = ProviderDriverKind.make("codex");
+  const failure = makeProviderFailure({
+    driver,
+    cause: {
+      _tag: "ProviderAdapterOpenSessionError",
+      message: "Failed to open codex provider session ps_123.",
+      cause: {
+        _tag: "ProviderSetupError",
+        detail: "Set up managed Codex before starting a session.",
+      },
+    },
+  });
+  assert.equal(
+    failure.message,
+    "Codex couldn't start: set up managed Codex before starting a session. Check Codex in Settings, then send the message again.",
+  );
+  assert.notInclude(failure.message, "ps_123");
+  assert.equal(failure.code, "session_open_failed");
+  assert.equal(providerFailureTitle(failure, driver), "Couldn't start Codex");
+});
+
+it("reads the exit code of a crashed ACP agent and keeps stderr for the details", () => {
+  const failure = makeProviderFailure({
+    driver: ProviderDriverKind.make("grok"),
+    cause: { _tag: "AcpProcessExitedError", code: 3, stderr: "panic: out of cheese" },
+  });
+  assert.equal(
+    failure.message,
+    "Grok stopped before finishing: it quit with exit code 3. Send the message again; if it keeps happening, check Grok in Settings.",
+  );
+  assert.include(failure.detail ?? "", "panic: out of cheese");
+});
+
+it("says attachments and compaction failures will not get better by retrying", () => {
+  const attachment = makeProviderFailure({
+    driver: ProviderDriverKind.make("claudeAgent"),
+    cause: {
+      _tag: "ProviderAdapterTurnStartError",
+      cause: {
+        _tag: "ProviderAdapterProtocolError",
+        detail: "Unsupported Claude image attachment type 'image/heic'",
+      },
+    },
+  });
+  assert.equal(attachment.code, "attachment_unsupported");
+  assert.equal(attachment.retryable, false);
+  assert.include(attachment.message, "can't read this attachment");
+
+  const compact = makeProviderFailure({
+    cause: {
+      _tag: "ProviderAdapterTurnStartError",
+      cause: {
+        _tag: "ProviderAdapterProtocolError",
+        detail: "This provider does not support context compaction.",
+      },
+    },
+  });
+  assert.equal(compact.code, "compact_unsupported");
+  assert.equal(compact.retryable, false);
+});
+
+it("titles usage limits after the provider", () => {
+  const failure = makeProviderFailure({ class: "usage_limit", message: "Limit reached." });
+  assert.equal(
+    providerFailureTitle(failure, ProviderDriverKind.make("cursor")),
+    "Cursor usage limit reached",
+  );
+  assert.equal(providerFailureTitle(failure, undefined), "Agent usage limit reached");
 });
 
 it.effect("keys terminal failure items by provider turn across retries and fallback paths", () =>

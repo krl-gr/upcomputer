@@ -257,7 +257,7 @@ export function parseRemotePairingFields(input: {
   const host = input.host.trim();
   const pairingCode = input.pairingCode.trim();
   if (!host) {
-    throw new Error("Enter a backend host.");
+    throw new Error("Enter the address of the computer.");
   }
   if (!pairingCode) {
     throw new Error("Enter a pairing code.");

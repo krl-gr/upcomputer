@@ -490,6 +490,55 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
+/**
+ * Safe, plain sentences for git's own diagnostic lines. Only git's prefixed
+ * lines are read (never hook or remote output, which can echo anything), and
+ * nothing from the line itself is copied.
+ */
+const GIT_PLAIN_DIAGNOSTICS: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /\[rejected\].*\((?:non-fast-forward|fetch first)\)/i,
+    "The remote has newer commits. Pull first, then push again.",
+  ],
+  [
+    /\[remote rejected\].*protected branch/i,
+    "The remote branch is protected. Push to another branch and open a pull request.",
+  ],
+  [/\[remote rejected\].*hook declined/i, "A hook on the remote refused the push."],
+  [
+    /unable to auto-detect email address|empty ident name/i,
+    "Your Git name and email aren't set. Set them with git config, then commit again.",
+  ],
+  [
+    /gpg failed to sign|failed to sign the data/i,
+    "Git couldn't sign the commit. Check your signing key.",
+  ],
+  [
+    /not possible to fast-forward|have diverged/i,
+    "The branch and the remote both have new commits, so they can't be combined automatically. Merge or rebase in a terminal, or ask the agent to do it.",
+  ],
+  [
+    /index\.lock.*file exists|unable to create .*\.lock/i,
+    "Another Git process is using this repository. If nothing else is running, delete .git/index.lock and try again.",
+  ],
+  [
+    /your local changes .* would be overwritten|commit your changes or stash them/i,
+    "You have uncommitted changes. Commit or stash them, then try again.",
+  ],
+];
+
+function plainGitDiagnostic(stderr: string): string | null {
+  const diagnostics = stderr
+    .split(/\r?\n/)
+    .filter((line) => GIT_DIAGNOSTIC_LINE_PATTERN.test(line))
+    .join("\n");
+  if (diagnostics.length === 0) return null;
+  for (const [pattern, sentence] of GIT_PLAIN_DIAGNOSTICS) {
+    if (pattern.test(diagnostics)) return sentence;
+  }
+  return null;
+}
+
 function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
     .split(/\r?\n/)
@@ -1043,7 +1092,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           return yield* new GitCommandError({
             ...gitCommandContext(commandInput),
             ...(reason === null ? {} : { reason }),
-            detail: gitFailureDetail(reason),
+            detail: plainGitDiagnostic(stderr.text) ?? gitFailureDetail(reason),
             exitCode,
             stdoutLength: stdout.text.length,
             stderrLength: stderr.text.length,
@@ -1135,7 +1184,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           new GitCommandError({
             ...gitCommandContext({ operation, cwd, args }),
             ...(reason === null ? {} : { reason }),
-            detail: options.fallbackErrorDetail ?? gitFailureDetail(reason),
+            detail:
+              plainGitDiagnostic(result.stderr) ??
+              options.fallbackErrorDetail ??
+              gitFailureDetail(reason),
             ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
             stdoutLength: result.stdout.length,
             stderrLength: result.stderr.length,

@@ -31,6 +31,8 @@ import {
   type ComposerSendSnapshot,
   type makeThreadErrorSetter,
   withMessageContext,
+  SEND_FAILURE_TAIL,
+  threadActionErrorText,
 } from "../ChatView.logic";
 import {
   draftFanoutSelectionsAtom,
@@ -232,7 +234,10 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     if (sendResult._tag === "Failure") {
       const error = squashAtomCommandFailure(sendResult);
       failedSelections.push(...selections);
-      setThreadError(threadId, error instanceof Error ? error.message : "Failed to send messages.");
+      setThreadError(
+        threadId,
+        threadActionErrorText(error, "send your messages", SEND_FAILURE_TAIL),
+      );
     }
     const restoreFailedDraft = () => {
       appAtomRegistry.set(fanoutSelectionsAtom, failedSelections);

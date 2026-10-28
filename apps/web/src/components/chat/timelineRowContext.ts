@@ -12,6 +12,7 @@ import {
 } from "@t3tools/contracts";
 import type { AsyncResult, Atom } from "effect/reactivity";
 import type { CommandOutputView } from "@t3tools/client-runtime/state/command-output";
+import type { ProviderFailureAction } from "@t3tools/client-runtime/state/turn-item-presentation";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { createContext, type MouseEvent, type ReactNode } from "react";
 import { type LegendListRef } from "@legendapp/list/react";
@@ -85,6 +86,9 @@ export interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
+  onProviderFailureAction: ((action: ProviderFailureAction, runId: RunId | null) => void) | null;
+  /** Only the latest turn's failure offers Retry; an older one was overtaken. */
+  retryableFailedRunId: RunId | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;

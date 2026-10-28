@@ -14,6 +14,7 @@ import type {
   TaskAutomationUpsertInput,
   TaskChange,
 } from "@t3tools/tasks-contracts/v1";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { reuseRows } from "../../state/recent.ts";
@@ -70,12 +71,7 @@ export function moveAutomationId(
 }
 
 export function errorText(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { readonly message: unknown }).message;
-    if (typeof message === "string" && message) return message;
-  }
-  return "The request failed.";
+  return plainErrorSentence(error);
 }
 
 export class AutomationStore {

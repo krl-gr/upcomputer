@@ -1,4 +1,5 @@
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
@@ -624,11 +625,11 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     });
     if (settled._tag === "Failure") {
       const error = Cause.squash(settled.cause);
-      const message = error instanceof Error ? error.message : "Failed to create pairing URL.";
+      const message = plainErrorSentence(error, "create a pairing link");
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not create pairing URL",
+          title: "Couldn't create a pairing link",
           description: message,
         }),
       );

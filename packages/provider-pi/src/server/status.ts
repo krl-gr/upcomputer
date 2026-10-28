@@ -301,8 +301,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         status: "error",
         auth: { status: "unknown" },
         message: isCommandMissingCause(error)
-          ? "Pi CLI (`pi`) is not installed or not on PATH. Install with `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`."
-          : "Failed to execute Pi CLI health check.",
+          ? "Pi isn't installed on this computer, or Up.computer can't find it. Install it with `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`, or set its path in Settings."
+          : "Pi is installed but couldn't be started. Reinstall or update it, then refresh.",
       },
     });
   }
@@ -318,7 +318,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "Pi CLI is installed but timed out while running `pi --version`.",
+        message:
+          "Pi is installed but didn't respond in time. Open a terminal and run `pi --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -336,7 +337,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: "Pi CLI is installed but failed to run.",
+        message:
+          "Pi is installed but didn't respond. Open a terminal and run `pi --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -450,7 +452,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         ? {}
         : {
             message:
-              "Pi has no usable models. Run `pi` in a terminal and use /login, or configure an API key in ~/.pi/agent.",
+              "Pi isn't signed in. Run `pi` in a terminal and use /login, or add an API key in ~/.pi/agent, then refresh.",
           }),
     },
   });

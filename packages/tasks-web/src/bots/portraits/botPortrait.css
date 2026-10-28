@@ -2,14 +2,34 @@
    Copyright 2026 Zeabur Inc.). Changed for Up.computer: a separate blink, and the
    loop plays once per `data-motion` instead of repeating. See art/NOTICE. */
 .bot-portrait {
+  position: relative;
   display: inline-block;
   flex: none;
   vertical-align: middle;
 }
-.bot-portrait > svg {
+.bot-portrait-art,
+.bot-portrait-art > svg {
   display: block;
   width: 100%;
   height: 100%;
+}
+/* The character's pose for the cage: the painting steps back so the bars and lock frame it. */
+.bot-portrait-art {
+  transform-origin: 50% 82.8%;
+  transition: transform 420ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.bot-portrait[data-state="limited"] .bot-portrait-art {
+  transform: translateY(-5.5%) scale(0.85);
+}
+/* The grown sidebar badge reaches a little past the square, as on the character. */
+.bot-portrait .bot-portrait-status {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+/* Strokes that stand beside the character land on the painting's hair or hat here. */
+.bot-portrait-status .cbc-attention {
+  filter: drop-shadow(0 0 0.8px #0009);
 }
 .bot-portrait :is(.bot-body, .bot-eye) {
   transform-box: fill-box;
@@ -19,6 +39,15 @@
 }
 .bot-portrait .bot-eye {
   transform-origin: 50% 50%;
+}
+/* Settled outcomes show in the eyes, as on the character: the happy eyes of the
+   portrait's own loop when done, a squint when failed. Blinks and the loop start and
+   end at these, since their keyframes leave out the first and last frame. */
+.bot-portrait[data-state="done"] .bot-eye {
+  transform: scale(1.2, 0.5);
+}
+.bot-portrait[data-state="failed"] .bot-eye {
+  transform: scaleY(0.55);
 }
 .bot-portrait[data-motion="blink"] .bot-eye {
   animation: bot-portrait-blink 180ms ease-in-out;
@@ -32,13 +61,10 @@
 @media (prefers-reduced-motion: reduce) {
   .bot-portrait * {
     animation: none !important;
+    transition: none !important;
   }
 }
 @keyframes bot-portrait-blink {
-  0%,
-  100% {
-    transform: none;
-  }
   50% {
     transform: scaleY(0.1);
   }
@@ -83,10 +109,8 @@
   }
 }
 @keyframes bot-portrait-eye {
-  0%,
   14%,
-  72%,
-  100% {
+  72% {
     transform: none;
     animation-timing-function: ease-in-out;
   }

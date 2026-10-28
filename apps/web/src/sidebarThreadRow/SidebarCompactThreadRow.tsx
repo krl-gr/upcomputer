@@ -25,18 +25,22 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "../lib/utils";
 import { ProductThreadRowAccessory } from "../product/ProductSlots";
 import {
-  SIDEBAR_ACTION_BUTTON,
-  SIDEBAR_ICON_GAP,
   SIDEBAR_LIST_ROW_INTRINSIC_SIZE,
   SIDEBAR_LIST_ROW_SPACING,
-  SIDEBAR_ROW_HEIGHT,
-  SIDEBAR_ROW_INSET,
-  SIDEBAR_ROW_TEXT,
 } from "../sidebarMetrics/sidebarMetrics";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
+import {
+  SIDEBAR_LIST_ROW,
+  SIDEBAR_LIST_ROW_ACTIVE,
+  SIDEBAR_LIST_ROW_REST,
+  SidebarListRowEnd,
+  sidebarListRowActionClassName,
+  sidebarListRowFadingLabelClassName,
+  sidebarListRowTitleClassName,
+} from "./sidebarListRow";
 import { SidebarThreadProjectIcons } from "./SidebarThreadProjectIcons";
 import { resolveThreadStatusLabel, ThreadStatusLabel } from "./ThreadStatusLabel";
 
@@ -88,15 +92,6 @@ const DROP_VERB_LABELS: Record<SidebarDropVerb, string> = {
   unsettle: "Un-settle",
   wake: "Wake",
 };
-
-// Hover, or keyboard focus on the row or on its button, swaps the time for the
-// "…" button. Keyboard focus only: a clicked row keeps focus and would pin it.
-const FADE_WHEN_REVEALED =
-  "group-any-hover/sidebar-row:opacity-0 group-focus-visible/sidebar-row:opacity-0 group-has-[:focus-visible]/sidebar-row:opacity-0";
-const MAKE_ROOM_WHEN_REVEALED =
-  "group-any-hover/sidebar-row:not-has-[[data-fading-label]]:pr-6 group-focus-visible/sidebar-row:not-has-[[data-fading-label]]:pr-6 group-has-[:focus-visible]/sidebar-row:not-has-[[data-fading-label]]:pr-6";
-const SHOW_WHEN_REVEALED =
-  "pointer-events-none opacity-0 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100 group-focus-visible/sidebar-row:pointer-events-auto group-focus-visible/sidebar-row:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100";
 
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
@@ -259,17 +254,14 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               aria-busy={thread.titleRegeneration != null || undefined}
               data-testid="sidebar-row-compact"
               className={cn(
-                "group/sidebar-row relative flex w-full cursor-pointer items-center overflow-hidden rounded-md text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                SIDEBAR_ROW_HEIGHT,
-                SIDEBAR_ICON_GAP,
-                SIDEBAR_ROW_INSET,
+                SIDEBAR_LIST_ROW,
                 props.isActive
-                  ? "bg-sidebar-row-active text-sidebar-foreground"
+                  ? SIDEBAR_LIST_ROW_ACTIVE
                   : isSelected || props.sweepAction !== null
                     ? "bg-sidebar-row-selected text-sidebar-foreground"
                     : menuOpen || isFileDragOver
                       ? "bg-sidebar-row-hover text-sidebar-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-row-hover",
+                      : SIDEBAR_LIST_ROW_REST,
                 isFileDragOver && "ring-1 ring-inset ring-primary/70",
                 sortable?.isDragging &&
                   "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active opacity-100 shadow-lg",
@@ -321,12 +313,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               ref={titleRef}
               aria-hidden
               className={cn(
-                // One tone for every title, as V1: unread and statuses show
-                // only through the status label.
-                "min-w-0 flex-1 truncate text-sm",
-                props.isActive
-                  ? "text-foreground"
-                  : cn(SIDEBAR_ROW_TEXT, "group-hover/sidebar-row:text-foreground"),
+                sidebarListRowTitleClassName(props.isActive),
                 thread.titleRegeneration != null && "opacity-55",
               )}
             >
@@ -341,62 +328,53 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               {DROP_VERB_LABELS[destinationVerb]}
             </span>
           ) : (
-            <span className="relative ml-auto flex h-6 shrink-0 items-center">
-              {/* The time fades under the "…" button. An accessory that replaces
-                  the time (task runs) stays, and the block moves left instead. */}
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 text-sm tabular-nums text-secondary-label",
-                  menuOpen ? "pr-6" : MAKE_ROOM_WHEN_REVEALED,
-                )}
-              >
-                {props.isPinned ? (
-                  <PinIcon
-                    role="img"
-                    aria-label="Pinned"
-                    className="size-3 shrink-0 text-muted-foreground/65"
-                  />
-                ) : null}
-                {isSnoozedRow ? (
-                  <span
-                    data-fading-label
-                    className={cn(
-                      "text-info-foreground",
-                      menuOpen ? "opacity-0" : FADE_WHEN_REVEALED,
-                    )}
-                  >
-                    {props.snoozeWakeLabelText}
-                  </span>
-                ) : (
-                  <ProductThreadRowAccessory
-                    environmentId={thread.environmentId}
-                    threadId={thread.id}
-                    fallback={
-                      <span
-                        data-fading-label
-                        className={menuOpen ? "opacity-0" : FADE_WHEN_REVEALED}
-                      >
-                        {threadTimeLabel(thread)}
-                      </span>
-                    }
-                  />
-                )}
-              </span>
-              <button
-                type="button"
-                data-thread-selection-safe
-                aria-label={`Thread actions for ${thread.title}`}
-                className={cn(
-                  "absolute inset-y-0 right-0 my-auto",
-                  SIDEBAR_ACTION_BUTTON,
-                  menuOpen ? "opacity-100" : SHOW_WHEN_REVEALED,
-                )}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={openMenu}
-              >
-                <EllipsisIcon className="size-4" />
-              </button>
-            </span>
+            <SidebarListRowEnd
+              pinned={menuOpen}
+              action={
+                <button
+                  type="button"
+                  data-thread-selection-safe
+                  aria-label={`Thread actions for ${thread.title}`}
+                  className={sidebarListRowActionClassName(menuOpen)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={openMenu}
+                >
+                  <EllipsisIcon className="size-4" />
+                </button>
+              }
+            >
+              {props.isPinned ? (
+                <PinIcon
+                  role="img"
+                  aria-label="Pinned"
+                  className="size-3 shrink-0 text-muted-foreground/65"
+                />
+              ) : null}
+              {isSnoozedRow ? (
+                <span
+                  data-fading-label
+                  className={cn(
+                    "text-info-foreground",
+                    sidebarListRowFadingLabelClassName(menuOpen),
+                  )}
+                >
+                  {props.snoozeWakeLabelText}
+                </span>
+              ) : (
+                <ProductThreadRowAccessory
+                  environmentId={thread.environmentId}
+                  threadId={thread.id}
+                  fallback={
+                    <span
+                      data-fading-label
+                      className={sidebarListRowFadingLabelClassName(menuOpen)}
+                    >
+                      {threadTimeLabel(thread)}
+                    </span>
+                  }
+                />
+              )}
+            </SidebarListRowEnd>
           )}
           {thread.titleRegeneration != null ? (
             <span role="status" className="sr-only">

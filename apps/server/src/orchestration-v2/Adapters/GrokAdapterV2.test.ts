@@ -102,7 +102,10 @@ describe("GrokAdapterV2 capabilities", () => {
     );
     assert.equal(limit?.class, "usage_limit");
     assert.equal(limit?.code, String(xAiRateLimitedErrorCode));
-    assert.equal(limit?.message, "Grok usage limit reached. Try again later.");
+    assert.equal(
+      limit?.message,
+      "Grok usage limit reached (try again later). Switch to another model or provider to keep working now.",
+    );
     assert.equal(
       flavor.promptFailure?.(
         new EffectAcpErrors.AcpRequestError({

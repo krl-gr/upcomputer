@@ -373,6 +373,8 @@ export const TaskChange = Schema.Struct({
   scheduleDates: Schema.optional(Schema.Array(Schema.String)),
   /** Reminders due now; absent when none are. */
   reminders: Schema.optional(Schema.Array(TaskReminder)),
+  /** An agent was saved or deleted, so bot lists are stale; absent when none was. */
+  agentsChanged: Schema.optional(Schema.Boolean),
 });
 export type TaskChange = typeof TaskChange.Type;
 
@@ -503,6 +505,8 @@ export type TaskEventsResult = typeof TaskEventsResult.Type;
 
 export class TaskError extends Schema.TaggedError<TaskError>()("TaskError", {
   message: TrimmedNonEmptyString,
+  /** Lets a client pick a title and an action; `message` stays what the person reads. */
+  code: Schema.optional(TrimmedNonEmptyString),
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
@@ -510,12 +514,25 @@ export const TaskThreadRunCountsInput = Schema.Struct({
   threadIds: Schema.Array(ThreadId).check(Schema.isMaxLength(500)),
 });
 export type TaskThreadRunCountsInput = typeof TaskThreadRunCountsInput.Type;
+/**
+ * A thread row's counts work like notifications: active runs (running, finalizing, and a
+ * blocked run awaiting input) always count; finished runs count only while unseen, that is
+ * finished after the thread was last marked seen. Task lists keep their lifetime counts.
+ */
 export const TaskThreadRunCountsResult = Schema.Struct({
   threads: Schema.Array(
     Schema.Struct({ threadId: ThreadId, runCounts: Schema.Array(TaskRunCount) }),
   ),
 });
 export type TaskThreadRunCountsResult = typeof TaskThreadRunCountsResult.Type;
+
+/** Marks the threads' finished runs as seen, for every client of the environment. */
+export const TaskThreadsSeenInput = Schema.Struct({
+  threadIds: Schema.Array(ThreadId).check(Schema.isMaxLength(500)),
+});
+export type TaskThreadsSeenInput = typeof TaskThreadsSeenInput.Type;
+export const TaskThreadsSeenResult = Schema.Struct({});
+export type TaskThreadsSeenResult = typeof TaskThreadsSeenResult.Type;
 
 /** Run counts of every task in the environment, by the same rules as a thread's counts. */
 export const TaskRunCountsInput = Schema.Struct({});

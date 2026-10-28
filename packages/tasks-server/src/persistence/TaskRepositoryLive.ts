@@ -46,6 +46,7 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
+import { BackgroundNotices } from "../../../../apps/server/src/extensionApi.ts";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { SqlError } from "effect/sql/SqlError";
@@ -433,6 +434,7 @@ const makeTaskRepository = Effect.gen(function* () {
           listChanged: batch.events.some((event) => event.listChanged),
           runsChanged: batch.events.some((event) => event.runsChanged),
           ...scheduleDatesOf(batch.events),
+          ...(batch.events.some((event) => event.agentsChanged) ? { agentsChanged: true } : {}),
         });
       return result;
     },
@@ -563,14 +565,22 @@ const makeTaskRepository = Effect.gen(function* () {
     ON CONFLICT (id) DO NOTHING
   `;
 
+  // Active runs (not completed, or blocked and still awaiting input) always count; a
+  // finished one only after the thread's seen watermark. A thread never marked seen has
+  // none, so all its runs count.
   const threadRunCountRows = SqlSchema.findAll({
     Request: Schema.Struct({ ids: Schema.String }),
     Result: Schema.Struct({ threadId: ThreadId, ...TaskRunCount.fields }),
     execute: ({ ids }) => sql`
-      SELECT t.root_thread_id AS "threadId", ${countedRunStatus} AS status, COUNT(*) AS count
+      SELECT "threadId", status, COUNT(*) AS count FROM (
+        SELECT t.root_thread_id AS "threadId", ${countedRunStatus} AS status,
+          r.completed_at AS completed_at, s.seen_at AS seen_at
       FROM tasks t JOIN task_agent_runs r ON r.task_id = t.id
+        LEFT JOIN task_thread_seen s ON s.thread_id = t.root_thread_id
       WHERE t.root_thread_id IN (SELECT value FROM json_each(${ids})) AND t.archived_at IS NULL
-      GROUP BY t.root_thread_id, 2 ORDER BY t.root_thread_id, 2`,
+      )
+      WHERE completed_at IS NULL OR status = 'blocked' OR seen_at IS NULL OR completed_at > seen_at
+      GROUP BY 1, 2 ORDER BY 1, 2`,
   });
   const threadRunCounts: TaskRepositoryShape["threadRunCounts"] = Effect.fn(
     "TaskRepository.threadRunCounts",
@@ -596,6 +606,28 @@ const makeTaskRepository = Effect.gen(function* () {
         "TaskRepository.threadRunCounts:decode",
       ),
     ),
+  );
+
+  const markThreadsSeen: TaskRepositoryShape["markThreadsSeen"] = Effect.fn(
+    "TaskRepository.markThreadsSeen",
+  )(
+    function* ({ threadIds, seenAt }) {
+      const ids = [...new Set(threadIds)];
+      if (ids.length === 0) return;
+      yield* sql`
+        INSERT INTO task_thread_seen (thread_id, seen_at)
+        SELECT value, ${seenAt} FROM json_each(${JSON.stringify(ids)})
+        WHERE true
+        ON CONFLICT (thread_id) DO UPDATE SET seen_at = MAX(seen_at, excluded.seen_at)`;
+      // Thread rows read their counts again on a runs change, on every client.
+      yield* publishChange({
+        taskIds: [],
+        listChanged: false,
+        runsChanged: true,
+        rootThreadIds: ids,
+      });
+    },
+    Effect.mapError(toTaskPersistenceSqlError("TaskRepository.markThreadsSeen")),
   );
 
   const runCountRows = SqlSchema.findAll({
@@ -1236,7 +1268,6 @@ const makeTaskRepository = Effect.gen(function* () {
             AND NOT EXISTS (
               SELECT 1 FROM tasks, json_each(bots.allowed_projects_json) AS allowed
               WHERE tasks.id = ${run.taskId} AND tasks.project_id = allowed.value
-                AND json_extract(tasks.metadata_json, '$.botId') = ${run.agentId}
             )
           )
         RETURNING id
@@ -2811,6 +2842,34 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  const reportMissedReminders = (
+    missed: ReadonlyArray<{
+      readonly entryId: string;
+      readonly title: string;
+      readonly at: string;
+    }>,
+  ) =>
+    missed.length === 0
+      ? Effect.void
+      : Effect.serviceOption(BackgroundNotices).pipe(
+          Effect.flatMap((notices) =>
+            Option.isNone(notices)
+              ? Effect.void
+              : Effect.forEach(
+                  missed,
+                  (reminder) =>
+                    notices.value.report({
+                      id: `reminder:${reminder.entryId}:missed`,
+                      area: "reminders",
+                      severity: "info",
+                      title: "Missed reminder",
+                      message: `You missed a reminder: "${reminder.title}" was scheduled for ${reminder.at}.`,
+                    }),
+                  { discard: true },
+                ),
+          ),
+        );
+
   const claimDueReminders: TaskRepositoryShape["claimDueReminders"] = (input) =>
     sql
       .withTransaction(
@@ -2826,11 +2885,25 @@ const makeTaskRepository = Effect.gen(function* () {
           );
           // Claimed either way; only an open entry of a live task that has not
           // started yet is worth a reminder (wande drops the others as stale).
-          return due.flatMap((row): TaskReminder[] => {
+          const missed: Array<{
+            readonly entryId: string;
+            readonly title: string;
+            readonly at: string;
+          }> = [];
+          const reminders = due.flatMap((row): TaskReminder[] => {
             if (row.status !== "open" || row.startTime === null || row.title === null) return [];
             if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
             const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
-            if (startsAt === null || startsAt <= DateTime.toEpochMillis(now)) return [];
+            if (startsAt === null) return [];
+            if (startsAt <= DateTime.toEpochMillis(now)) {
+              // Came due while the computer slept or the server was down.
+              missed.push({
+                entryId: row.entryId,
+                title: row.title,
+                at: `${row.date} ${row.startTime}`,
+              });
+              return [];
+            }
             return [
               {
                 entryId: row.entryId,
@@ -2841,6 +2914,8 @@ const makeTaskRepository = Effect.gen(function* () {
               },
             ];
           });
+          yield* reportMissedReminders(missed);
+          return reminders;
         }),
       )
       .pipe(
@@ -2939,6 +3014,20 @@ const makeTaskRepository = Effect.gen(function* () {
       ),
     );
 
+  // Agents change no task, so this change names none; it tells clients to refetch bots.
+  const agentsChanged = Effect.gen(function* () {
+    const event: PendingTaskChange = {
+      taskIds: [],
+      rootThreadIds: [],
+      listChanged: false,
+      runsChanged: false,
+      agentsChanged: true,
+    };
+    const batch = yield* TaskChangeBatch;
+    if (batch?.owner === events) batch.events.push(event);
+    else yield* publishChange(event);
+  });
+
   const upsertAgent: TaskRepositoryShape["upsertAgent"] = (input) =>
     sql
       .withTransaction(
@@ -2962,6 +3051,7 @@ const makeTaskRepository = Effect.gen(function* () {
             "TaskRepository.upsertAgent:decodeRows",
           ),
         ),
+        Effect.tap(() => agentsChanged),
       );
 
   const searchAgents: TaskRepositoryShape["searchAgents"] = (input) => {
@@ -3000,6 +3090,7 @@ const makeTaskRepository = Effect.gen(function* () {
           "TaskRepository.deleteAgent:decodeRows",
         ),
       ),
+      Effect.tap(() => agentsChanged),
     );
 
   const getAgentRunById: TaskRepositoryShape["getAgentRunById"] = (input) =>
@@ -3615,6 +3706,7 @@ const makeTaskRepository = Effect.gen(function* () {
     changes,
     runCounts,
     threadRunCounts,
+    markThreadsSeen,
     threadTasks,
     listAllTasks,
     listTriggerCandidates,

@@ -43,6 +43,7 @@ import { ThreadHeaderProjects } from "~/composerContextRow/ThreadHeaderProjects"
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -186,7 +187,7 @@ export const ChatHeader = memo(function ChatHeader({
         toastManager.add({
           type: "error",
           title: "Failed to rename thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         });
       }
     });

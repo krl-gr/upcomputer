@@ -343,7 +343,7 @@ export const make = Effect.gen(function* () {
             status: trigger === "startup" ? "expired" : "cancelled",
             responseCapability: {
               type: "not_resumable",
-              reason: `The server ${trigger === "startup" ? "restarted" : "shut down"} before this runtime request was resolved.`,
+              reason: `Up.computer ${trigger === "startup" ? "restarted" : "closed"} before you answered, so this request was cancelled. Send a message to let the agent continue.`,
             },
             resolvedAt: now,
           },

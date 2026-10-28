@@ -361,6 +361,7 @@ export interface ServerConfigSubscriptionOptions {
   readonly environmentThemes?: boolean;
   readonly usageLimitSources?: boolean;
   readonly usageLimitsCommand?: boolean;
+  readonly backgroundNotices?: boolean;
 }
 
 // Configs are JSON-shaped. Missing and undefined object fields persist identically.
@@ -482,6 +483,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       ...(subscription.environmentThemes === true ? { environmentThemes: true } : {}),
       ...(subscription.usageLimitSources === true ? { usageLimitSources: true } : {}),
       ...(subscription.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+      ...(subscription.backgroundNotices === true ? { backgroundNotices: true } : {}),
     }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
@@ -751,6 +753,7 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly environmentThemes?: boolean;
     readonly usageLimitSources?: boolean;
     readonly usageLimitsCommand?: boolean;
+    readonly backgroundNotices?: boolean;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -766,6 +769,7 @@ export function createServerEnvironmentAtoms<R, E>(
           ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
           ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
           ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+          ...(options.backgroundNotices === true ? { backgroundNotices: true } : {}),
         }),
       )
       .pipe(
@@ -1540,6 +1544,18 @@ export function createServerEnvironmentAtoms<R, E>(
     checkOtlpEndpoint: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:check-otlp-endpoint",
       tag: WS_METHODS.serverCheckOtlpEndpoint,
+    }),
+    getTelemetryInternalDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:get-telemetry-internal-device",
+      tag: WS_METHODS.serverGetTelemetryInternalDevice,
+    }),
+    setTelemetryInternalDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-telemetry-internal-device",
+      tag: WS_METHODS.serverSetTelemetryInternalDevice,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
     }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",

@@ -27,7 +27,7 @@ export function dpopFailureMessage(message: string, reason: DpopFailureReason | 
 
 const CLOCK_SYNC_HINT = "Sync the date and time in system settings, then try again.";
 
-const LINK_PROOF_CLOCK_MESSAGE = `Relay rejected an expired environment link proof. The computer's clock is probably wrong. ${CLOCK_SYNC_HINT}`;
+const LINK_PROOF_CLOCK_MESSAGE = `UpComputer Connect rejected that computer's link because its clock is probably wrong. ${CLOCK_SYNC_HINT}`;
 
 // The relay tolerates a minute; past that, its checks fail.
 const RELAY_CLOCK_TOLERANCE_SECONDS = 60;
@@ -92,58 +92,59 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
       switch (error.reason) {
         case "missing_bearer":
         case "invalid_bearer":
-          return "Relay rejected the cloud session token.";
+          return "Your UpComputer Connect sign-in is no longer valid. Sign in again, then reconnect.";
         case "invalid_dpop":
-          return dpopFailureMessage("Relay rejected the DPoP proof.", error.dpopFailureReason);
+          return dpopFailureMessage(
+            "UpComputer Connect didn't accept this device's sign-in.",
+            error.dpopFailureReason,
+          );
         case "not_authorized":
-          return "Relay rejected the authenticated request.";
+          return "UpComputer Connect didn't accept this request. Sign in again, then reconnect.";
       }
     case "RelayEnvironmentLinkProofExpiredError":
       return LINK_PROOF_CLOCK_MESSAGE;
     case "RelayEnvironmentLinkProofInvalidError":
-      return `Relay rejected the environment link proof (${error.reason}).`;
+      return "UpComputer Connect couldn't confirm that computer's link. Turn UpComputer Connect off and on again on that computer.";
     case "RelayEnvironmentConnectNotAuthorizedError":
       // "Not authorized" covers non-auth causes too; surface the reason so a
       // missing link does not read as a credential problem.
       if (error.reason === "environment_link_not_found") {
-        return "Relay has no active link for this environment. If it was deregistered from UpComputer Connect, link it again on that machine.";
+        return "That computer isn't linked to UpComputer Connect anymore. On that computer, open Settings, Connections and turn UpComputer Connect on again.";
       }
       if (error.reason === "managed_endpoint_allocation_not_ready") {
-        return "The environment's UpComputer Connect tunnel is still being set up.";
+        return "That computer's UpComputer Connect access is still being set up. Try again in a minute.";
       }
       if (error.reason === "endpoint_provider_not_managed") {
         return "This environment is linked only to publish agent activity, so it cannot accept connections. On that computer, open Settings > Connections and turn UpComputer Connect on.";
       }
-      return error.reason
-        ? `Relay rejected the environment connection request (${error.reason}).`
-        : "Relay rejected the environment connection request.";
+      return "UpComputer Connect didn't allow a connection to that computer. Check that you're signed in to the same account on both devices.";
     case "RelayEnvironmentEndpointUnavailableError":
-      return `Relay could not reach the environment endpoint (${error.reason}).`;
+      return "UpComputer Connect couldn't reach that computer. Make sure it's on, awake and running Up.computer, then try again.";
     case "RelayEnvironmentEndpointTimedOutError":
-      return "Relay timed out while contacting the environment endpoint.";
+      return "That computer didn't answer in time. Make sure it's on, awake and running Up.computer, then try again.";
     case "RelayEnvironmentLinkFailedError":
-      return `Relay could not link the environment (${error.reason}).`;
+      return "UpComputer Connect couldn't link this computer. Try again in a few minutes.";
     case "RelayEnvironmentLinkUnavailableError":
-      return `Relay cannot provision the managed endpoint (${error.reason}).${
-        error.provisioningStage ? ` Failed stage: ${error.provisioningStage}.` : ""
-      }`;
+      return `UpComputer Connect couldn't set up access for this computer right now${
+        error.provisioningStage ? ` (failed at ${error.provisioningStage})` : ""
+      }. Try again in a few minutes.`;
     case "RelayEnvironmentLinkLimitExceededError":
-      return `Relay refused the link: this account already has its maximum of ${error.maxTunnels} managed tunnels. Unlink an environment to free one up.`;
+      return `Your account already has its maximum of ${error.maxTunnels} computers on UpComputer Connect. Remove one you don't use, then try again.`;
     case "RelayAgentActivityPublishProofExpiredError":
-      return `Relay rejected an expired agent activity publish proof. The computer's clock is probably wrong. ${CLOCK_SYNC_HINT}`;
+      return `UpComputer Connect rejected this computer's activity updates because its clock is probably wrong. ${CLOCK_SYNC_HINT}`;
     case "RelayAgentActivityPublishProofInvalidError":
-      return `Relay rejected the agent activity publish proof (${error.reason}).`;
+      return "UpComputer Connect rejected this computer's activity updates. Turn UpComputer Connect off and on again.";
     case "RelayWebPushSubscriptionConflictError":
-      return "Relay refused the notification subscription because another account holds it.";
+      return "Notifications for this device are registered to another UpComputer Connect account. Sign in with that account, or remove this device there.";
     case "RelayInternalError":
-      return `Relay encountered an internal error (${error.reason}).`;
+      return "UpComputer Connect had a problem on our side. Try again in a few minutes, and if it keeps failing, copy the trace ID and contact us.";
   }
 }
 
 // The relay cuts off a request it cannot finish in time with a 504 that no
 // endpoint declares, so the client sees only the status.
 export const RELAY_GATEWAY_TIMEOUT_MESSAGE =
-  "Relay timed out before it finished the request (HTTP 504). Try again in a few minutes. If it keeps failing, copy the trace ID when you report it.";
+  "UpComputer Connect took too long to answer. Try again in a few minutes, and if it keeps failing, copy the trace ID and contact us.";
 
 export function relayRequestFailureDetail(error: {
   readonly relayError?: RelayProtectedError | undefined;
@@ -151,7 +152,8 @@ export function relayRequestFailureDetail(error: {
 }): string | null {
   if (error.relayError) return relayProtectedErrorMessage(error.relayError);
   if (error.status === 504) return RELAY_GATEWAY_TIMEOUT_MESSAGE;
-  if (error.status !== undefined) return `Relay returned an unexpected HTTP ${error.status}.`;
+  if (error.status !== undefined)
+    return "UpComputer Connect had a problem on our side. Try again in a few minutes, and if it keeps failing, copy the trace ID and contact us.";
   return null;
 }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { BotPortraitId } from "@t3tools/tasks-contracts/v1";
+import type { BotCharacterState } from "../../../../../apps/web/src/components/bot-character-configurable/catalog.ts";
 import {
   Dialog,
   DialogDescription,
@@ -20,12 +21,12 @@ import { botPortraitLabel, botPortraits } from "./botPortraits.ts";
 /** The bot's portrait as a button that opens a grid of every portrait to pick from. */
 export function BotPortraitPicker({
   value,
-  working,
+  state,
   disabled,
   onChange,
 }: {
   readonly value: BotPortraitId;
-  readonly working: boolean;
+  readonly state: BotCharacterState;
   readonly disabled: boolean;
   readonly onChange: (portrait: BotPortraitId) => void;
 }) {
@@ -46,7 +47,7 @@ export function BotPortraitPicker({
               />
             }
           >
-            <BotPortrait portrait={value} working={working} size={64} />
+            <BotPortrait portrait={value} state={state} size={64} />
           </TooltipTrigger>
           <TooltipPopup side="top">Change portrait</TooltipPopup>
         </Tooltip>

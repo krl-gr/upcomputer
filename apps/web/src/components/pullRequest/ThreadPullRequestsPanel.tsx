@@ -394,8 +394,12 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const speedMode =
     modifiers.shiftKey && !modifiers.metaKey && !modifiers.ctrlKey && !modifiers.altKey;
   const openLinkDialog = () => openLinkPullRequestDialog(threadRef);
-  const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, { reportFailure: true });
-  const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: true });
+  const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, {
+    failureToast: "Couldn't unlink the pull request",
+  });
+  const watch = useAtomCommand(threadEnvironment.watchPullRequest, {
+    failureToast: "Couldn't update the pull request link",
+  });
   const capabilities = useServerConfigs().get(threadRef.environmentId)?.environment.capabilities;
   const supportsWatch = capabilities?.threadPullRequestWatch === true;
   const handleUnlink = (link: ThreadPullRequestLink) => {

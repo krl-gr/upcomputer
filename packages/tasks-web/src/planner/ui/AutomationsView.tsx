@@ -195,7 +195,11 @@ export function AutomationsView(props: {
       title={props.panel ? "" : "Tasks"}
       action={
         ready && windows
-          ? { ariaLabel: "New automation", onClick: () => windows.openCreateAutomation() }
+          ? {
+              ariaLabel: "New automation",
+              track: "automations.create",
+              onClick: () => windows.openCreateAutomation(),
+            }
           : undefined
       }
       toolbar={

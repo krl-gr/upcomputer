@@ -225,20 +225,20 @@ it("bounds public command rejections and redacts internal dispatch causes", () =
   ]) {
     expect(dispatchFailure(new OrchestratorDispatchError({ ...command, cause }))).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     });
     expect(
       dispatchFailure(new OrchestratorCommandRejectedError({ ...command, cause })),
     ).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     });
   }
   expect(
     dispatchFailure(new OrchestratorProjectionError({ threadId, cause: "private-storage-path" })),
   ).toMatchObject({
     code: "orchestration_error",
-    message: "The operation could not be completed.",
+    message: "Couldn't do that. Try again, or ask the person to do it in the app.",
   });
 });
 

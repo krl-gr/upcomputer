@@ -1,4 +1,5 @@
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { Dispatch } from "react";
 import type { ComposerThreadTarget } from "../../composerDraftStore";
@@ -10,6 +11,7 @@ import {
   shouldShowBranchMismatchBanner,
   chatActionErrorMessage,
   makeThreadErrorSetter,
+  threadActionErrorText,
 } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import type { usePendingThreadRequests } from "./usePendingThreadRequests";
@@ -247,7 +249,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stackedThreadToast({
           type: "error",
           title: "Failed to un-settle thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -292,7 +294,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stackedThreadToast({
           type: "error",
           title: "Failed to wake thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -458,8 +460,13 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     onOpenThread: onOpenRelatedThreadStable,
   });
 
-  const sendStandaloneCommand = async (text: string, failureMessage: string) => {
+  const sendStandaloneCommand = async (
+    text: string,
+    action: string,
+    resent?: Pick<ChatMessage, "attachments" | "context">,
+  ) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
+    const attachments = resent?.attachments ?? [];
     const context = composerRef.current?.getSendContext();
     if (!context?.providerAvailable) return;
 
@@ -475,6 +482,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         id: messageId,
         role: "user",
         text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(resent?.context ? { context: resent.context } : {}),
         runId: null,
         createdAt,
         updatedAt: createdAt,
@@ -497,7 +506,13 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
             environmentId,
             input: {
               threadId,
-              message: { messageId, role: "user", text, attachments: [] },
+              message: {
+                messageId,
+                role: "user",
+                text,
+                attachments,
+                ...(resent?.context ? { context: resent.context } : {}),
+              },
               modelSelection: context.selectedModelSelection,
               runtimeMode,
               interactionMode: context.interactionMode,
@@ -511,7 +526,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       resetLocalDispatch();
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        setThreadError(threadId, error instanceof Error ? error.message : failureMessage);
+        setThreadError(threadId, threadActionErrorText(error, action, "Try again."));
       }
     } else {
       clearUsageLimitsFor(routeThreadKey);
@@ -581,7 +596,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stackedThreadToast({
           type: "error",
           title,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     };

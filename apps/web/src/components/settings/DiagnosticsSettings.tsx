@@ -38,6 +38,7 @@ import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { InternalDeviceSetting } from "./InternalDeviceSetting";
 import { TelemetryExportSettings } from "./TelemetryExportSettings";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
@@ -1328,6 +1329,7 @@ function DiagnosticsSettingsBody() {
         )}
       </SettingsSection>
       {exportFormEnvironmentId === environmentId && <TelemetryExportSettings />}
+      {exportFormEnvironmentId === environmentId && <InternalDeviceSetting />}
     </SettingsPageContainer>
   );
 }

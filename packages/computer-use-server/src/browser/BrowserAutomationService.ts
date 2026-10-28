@@ -74,6 +74,7 @@ export interface BrowserAutomationServiceDependencies {
     readonly context: BrowserContext;
   }>;
   readonly probeCdpEndpoint?: (port: number) => Promise<CdpEndpointProbeResult>;
+  readonly openCdpWindow?: (port: number) => Promise<void>;
   readonly readFile?: (path: string) => Promise<string>;
   readonly writeFile?: (path: string, content: string) => Promise<void>;
   readonly renameFile?: (fromPath: string, toPath: string) => Promise<void>;
@@ -398,6 +399,50 @@ async function connectOverCdp(port: number): Promise<{
   return { browser, context };
 }
 
+// Chrome on macOS keeps running after its last window closes and soon unloads the profile.
+// Playwright then fails to attach until a window exists again.
+function isMissingDefaultContextError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.includes("Browser context management is not supported")
+  );
+}
+
+async function openCdpWindow(port: number): Promise<void> {
+  const signal = AbortSignal.timeout(10_000);
+  const version = (await (await fetch(cdpVersionEndpoint(port), { signal })).json()) as {
+    readonly webSocketDebuggerUrl?: unknown;
+  };
+  if (typeof version.webSocketDebuggerUrl !== "string") {
+    throw new Error(`${cdpVersionEndpoint(port)} did not return a browser websocket URL.`);
+  }
+  const socket = new WebSocket(version.webSocketDebuggerUrl);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const fail = (reason: string) =>
+        reject(new Error(`Could not open a browser window: ${reason}`));
+      signal.addEventListener("abort", () => fail("timed out."));
+      socket.addEventListener("error", () => fail("the CDP connection failed."));
+      socket.addEventListener("close", () => fail("the CDP connection closed."));
+      socket.addEventListener("open", () =>
+        socket.send(
+          JSON.stringify({ id: 1, method: "Target.createTarget", params: { url: "about:blank" } }),
+        ),
+      );
+      socket.addEventListener("message", (event) => {
+        const message = JSON.parse(String(event.data)) as {
+          readonly id?: number;
+          readonly error?: { readonly message?: string };
+        };
+        if (message.id !== 1) return;
+        if (message.error) fail(message.error.message ?? "Target.createTarget failed.");
+        else resolve();
+      });
+    });
+  } finally {
+    socket.close();
+  }
+}
+
 async function launchCdpBrowser(input: {
   readonly userDataDir: string;
   readonly initialUrl?: string;
@@ -421,6 +466,7 @@ export function createBrowserAutomationService(
   const launchBrowser = dependencies.launchCdpBrowser ?? launchCdpBrowser;
   const connectBrowser = dependencies.connectOverCdp ?? connectOverCdp;
   const probeEndpoint = dependencies.probeCdpEndpoint ?? probeCdpEndpoint;
+  const openWindow = dependencies.openCdpWindow ?? openCdpWindow;
   const readFile =
     dependencies.readFile ?? ((filePath: string) => NodeFSP.readFile(filePath, "utf8"));
   const writeFile =
@@ -503,6 +549,18 @@ export function createBrowserAutomationService(
     await removeFile(`${profilePaths.defaultRuntimeMetadataPath}.tmp`).catch(() => undefined);
   };
 
+  const connectToRunningBrowser = async (port: number) => {
+    try {
+      return await connectBrowser(port).catch(async (error: unknown) => {
+        if (!isMissingDefaultContextError(error)) throw error;
+        await openWindow(port);
+        return connectBrowser(port);
+      });
+    } catch (cause) {
+      throw new Error("The browser is not responding. Quit it and open it again.", { cause });
+    }
+  };
+
   const reconnectFromRuntimeMetadata = async (): Promise<boolean> => {
     const metadata = await readRuntimeMetadata();
     if (!metadata) {
@@ -512,7 +570,7 @@ export function createBrowserAutomationService(
     if (!probe.ok) {
       return false;
     }
-    const connected = await connectBrowser(metadata.debuggingPort);
+    const connected = await connectToRunningBrowser(metadata.debuggingPort);
     browserProcess = metadataToRecoveredProcessHandle(metadata);
     browser = connected.browser;
     context = connected.context;

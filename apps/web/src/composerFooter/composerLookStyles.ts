@@ -44,11 +44,21 @@ export const COMPOSER_CONTROL_TEXT_TRIGGER_CLASS = `h-8 min-h-0 min-w-0 shrink-0
 /** V1's model picker trigger width. */
 export const COMPOSER_MODEL_PICKER_TRIGGER_CLASS = `${COMPOSER_CONTROL_TEXT_TRIGGER_CLASS} max-w-52 shrink sm:max-w-60`;
 
-/** V1's footer padding under the prompt. */
-export const COMPOSER_FOOTER_PADDING_CLASS = "px-2.5 pb-2.5 sm:px-4 sm:pb-4";
+/**
+ * The footer's paperclip and send are concentric with the card's bottom
+ * corners: 9px from its outer edge (at the default 16px interface size), the
+ * corner radius less the 32px button's radius. The light card's 1px border is
+ * part of that edge, the dark card has none. The compact row
+ * (`compactComposer.ts`) is twice the radius tall, so there the buttons are
+ * centred in its round ends, at the same spot.
+ */
+export const COMPOSER_FOOTER_PADDING_CLASS = "px-2 pb-2 dark:px-2.25 dark:pb-2.25";
 
-/** V1's prompt padding inside the card; it overrides upstream's on the prompt body. */
-export const COMPOSER_BODY_PADDING_CLASS = "sm:px-6 sm:pt-6";
+/**
+ * V1's prompt padding inside the card; it overrides upstream's on the prompt
+ * body. The text starts where the paperclip's icon does.
+ */
+export const COMPOSER_BODY_PADDING_CLASS = "px-4 sm:px-4 sm:pt-6";
 
 /** V1's one-line prompt minimum: the card grows with the text from there. */
 export const COMPOSER_EDITOR_CLASS = "min-h-8";
@@ -59,16 +69,22 @@ export const COMPOSER_EDITOR_CLASS = "min-h-8";
  */
 export const COMPOSER_PLACEHOLDER_CLASS = "truncate text-muted-foreground/35";
 
-/** V1's composer card: opaque, 32px corners, a border in light and an inset highlight in dark. */
+/**
+ * V1's composer card: opaque, a border in light and an inset highlight in
+ * dark. Its corners (25px at the default interface size) are the footer's
+ * inset, the light border and the 32px button's radius, and half the compact
+ * row's height, so that row is a pill and the footer's buttons sit in the same
+ * spot in both forms. Rem-based, so it follows the interface font size.
+ */
 export const COMPOSER_CARD_CLASS =
-  "rounded-[32px] bg-(--composer-surface) shadow-(--composer-shadow) not-dark:border not-dark:border-border";
+  "rounded-[calc(1.5rem+1px)] bg-(--composer-surface) shadow-(--composer-shadow) not-dark:border not-dark:border-border";
 
 /**
  * On upstream's composer shell: its translucent glass backdrop and the host's
  * outline and shadow give way to the card, and the frame follows its corners.
  */
 export const COMPOSER_SHELL_CLASS =
-  "before:hidden [&_[data-slot=composer-host]]:shadow-none [&_[data-slot=composer-host]]:after:hidden [&_[data-chat-composer-main-surface]]:rounded-[32px]";
+  "before:hidden [&_[data-slot=composer-host]]:shadow-none [&_[data-slot=composer-host]]:after:hidden [&_[data-chat-composer-main-surface]]:rounded-[calc(1.5rem+1px)]";
 
 /** V1's send button; `canSend` is whether a click would act. */
 export function composerSendButtonClass(canSend: boolean): string {

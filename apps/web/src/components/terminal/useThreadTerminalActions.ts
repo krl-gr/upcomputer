@@ -26,7 +26,10 @@ export interface TerminalLaunchLocation {
 
 /** Allocate terminal ids and launch locations centrally so all surfaces share one view of sessions. */
 export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
-  const openTerminalCommand = useAtomCommand(terminalEnvironment.open, "terminal open");
+  const openTerminalCommand = useAtomCommand(terminalEnvironment.open, {
+    label: "terminal open",
+    failureToast: "Terminal didn't start",
+  });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalCommand = useAtomCommand(terminalEnvironment.close, "terminal close");
   const serverThread = useQuietThreadShell(threadRef);

@@ -82,7 +82,12 @@ import {
   type BackgroundWorkReport,
 } from "@t3tools/provider-core/server/notification";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import {
+  makeNativeProviderFailure,
+  makeProviderCrashFailure,
+  makeProviderFailure,
+  usageLimitMessage,
+} from "@t3tools/provider-core/server/failure";
 import {
   makeSubagentChildThread,
   makeSubagentConversationArtifacts,
@@ -977,24 +982,22 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         if (status === "failed") {
           const usageLimited =
             disposition === "reusable" && (quota !== undefined || isMuseUsageLimitFailure(detail));
-          const failure = makeProviderFailure({
-            class:
-              disposition === "broken"
-                ? "transport_error"
-                : usageLimited
-                  ? "usage_limit"
-                  : "provider_error",
-            message: detail ?? "Muse turn failed.",
-            ...(usageLimited
-              ? {
-                  resetAt: museUsageLimitResetAt(
-                    latestSubscriptionUsage,
-                    DateTime.toEpochMillis(completedAt),
-                    { quota, message: detail },
-                  ),
-                }
-              : {}),
-          });
+          const failure =
+            disposition === "broken"
+              ? makeProviderCrashFailure({ driver: MUSE_PROVIDER, detail })
+              : usageLimited
+                ? makeProviderFailure({
+                    driver: MUSE_PROVIDER,
+                    class: "usage_limit",
+                    message: usageLimitMessage("Muse", detail),
+                    detail,
+                    resetAt: museUsageLimitResetAt(
+                      latestSubscriptionUsage,
+                      DateTime.toEpochMillis(completedAt),
+                      { quota, message: detail },
+                    ),
+                  })
+                : makeNativeProviderFailure({ driver: MUSE_PROVIDER, text: detail });
           const base = baseItem(turn, `failure:${turn.nativeId}`, completedAt);
           yield* emit({
             type: "turn_item.updated",

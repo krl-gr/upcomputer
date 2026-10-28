@@ -146,6 +146,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               if (canOperateThread) onInterrupt();
             }}
             aria-label="Stop generation"
+            data-track="composer.stop"
           />
         }
       >
@@ -170,6 +171,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
               aria-label="Previous question"
+              data-track="composer.previous_question"
             >
               <ChevronLeftIcon className="size-3.5" />
             </Button>
@@ -180,6 +182,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
+              data-track="composer.previous_question"
             >
               Previous
             </Button>
@@ -188,6 +191,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <button
           type="submit"
           className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
+          data-track="composer.answer"
           {...pointerFocusProps}
           disabled={
             !canOperateThread ||
@@ -213,6 +217,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <button
           type="submit"
           className={cn(messageActionPillClassName, "h-9 sm:h-8", compact ? "px-3" : "px-4")}
+          data-track="composer.plan_refine"
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
@@ -226,6 +231,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <button
           type="submit"
           className={cn(messageActionPillClassName, "h-9 rounded-r-none px-4 sm:h-8")}
+          data-track="composer.plan_implement"
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
@@ -244,6 +250,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 onMouseDown={
                   preserveComposerFocusOnPointerDown ? (event) => event.preventDefault() : undefined
                 }
+                data-track="composer.plan_actions"
                 disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               />
             }
@@ -252,6 +259,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </MenuTrigger>
           <MenuPopup align="end" side="top" {...composerFloatingLayerProps}>
             <MenuItem
+              data-track="composer.plan_implement_new_thread"
               disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               onClick={() => {
                 if (canOperateThread) onImplementPlanInNewThread();
@@ -329,6 +337,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       }
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
+      data-track={showResume ? "composer.resume" : "composer.send"}
       disabled={sendDisabled}
       aria-label={submitStatus ?? submitLabel}
     >

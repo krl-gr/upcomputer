@@ -4,16 +4,50 @@ import {
   type TaskAutomation,
   type TaskAutomationRunOutcome,
 } from "@t3tools/tasks-contracts/v1";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
-import { forkParked } from "../../../../apps/server/src/extensionApi.ts";
+import {
+  AnalyticsService,
+  BackgroundNotices,
+  forkParked,
+} from "../../../../apps/server/src/extensionApi.ts";
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
+
+const AUTOMATIONS_PAUSED_NOTICE = "automations:evaluate-failed";
+
+const reportNotice = (notice: Parameters<BackgroundNotices["Service"]["report"]>[0]) =>
+  Effect.serviceOption(BackgroundNotices).pipe(
+    Effect.flatMap((notices) =>
+      Option.isSome(notices) ? notices.value.report(notice) : Effect.void,
+    ),
+  );
+
+const resolveNotice = (id: string) =>
+  Effect.serviceOption(BackgroundNotices).pipe(
+    Effect.flatMap((notices) => (Option.isSome(notices) ? notices.value.resolve(id) : Effect.void)),
+  );
+
+/** A short reason from a failure cause, only when it is already readable. */
+function readableReason(cause: Cause.Cause<unknown>): string | undefined {
+  const error = Cause.squash(cause);
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const line =
+    message
+      .split("\n")[0]
+      ?.trim()
+      .replace(/[.\s]+$/u, "") ?? "";
+  if (line.length === 0 || line.length > 160) return undefined;
+  if (/[{}[\]<>`]|\b[A-Za-z]+Error\b|\b\w+_\w+\b|\/\w+\//u.test(line)) return undefined;
+  return line.charAt(0).toLowerCase() + line.slice(1);
+}
 import {
   AUTOMATION_FAILURE_LIMIT,
   decideAutomationSlot,
@@ -41,8 +75,23 @@ const make = Effect.gen(function* () {
   const repository = yield* TaskRepository;
   const agents = yield* TaskAgentService;
   const crypto = yield* Crypto.Crypto;
+  const analytics = yield* Effect.serviceOption(AnalyticsService);
 
   const now = Effect.map(DateTime.now, DateTime.formatIso);
+  const recordFired = (
+    outcome: "started" | "skipped" | "failed",
+    reason: "task_created" | "open_task" | "catch_up_missed" | "create_failed" | "invalid_schedule",
+    parked = false,
+  ) =>
+    Option.isSome(analytics)
+      ? analytics.value.record("schedule.fired", {
+          kind: "automation",
+          trigger: "schedule",
+          outcome,
+          reason,
+          ...(outcome === "failed" ? { parked } : {}),
+        })
+      : Effect.void;
   const randomId = (prefix: string) =>
     crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
 
@@ -183,14 +232,16 @@ const make = Effect.gen(function* () {
           slot,
           "skipped-open",
           null,
-          "A task from this automation is not archived yet.",
+          `Skipped: the last task from ${automation.name} is still open. Archive it, or turn off "Skip if a task is open".`,
         );
+        yield* recordFired("skipped", "open_task");
         yield* persistSchedule(automation, { nextRunAt });
         return;
       }
 
       const task = yield* createTaskForSlot(automation, slot);
       yield* recordOutcome(automation, slot, "created", task.id, null);
+      yield* recordFired("started", "task_created");
       yield* persistSchedule(automation, {
         nextRunAt,
         fired: { at: claimedAt, slot, taskId: task.id },
@@ -201,12 +252,26 @@ const make = Effect.gen(function* () {
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
             const failureCount = automation.failureCount + 1;
-            const message = `Automation '${automation.name}' failed to fire: ${String(cause)}`;
+            const message = `${automation.name} couldn't create its task${
+              readableReason(cause) === undefined ? "" : `: ${readableReason(cause)}`
+            }. It tries again at its next run.`;
             yield* recordOutcome(automation, slot, "failed", null, message).pipe(Effect.ignore);
+            yield* recordFired("failed", "create_failed", failureCount >= AUTOMATION_FAILURE_LIMIT);
             // Always advance the schedule, otherwise a permanently broken
             // automation would retry every tick for as long as the server runs.
             if (failureCount >= AUTOMATION_FAILURE_LIMIT) {
-              yield* park(automation, message, failureCount).pipe(Effect.ignore);
+              const parked = `${automation.name} was turned off after ${failureCount} failed runs${
+                readableReason(cause) === undefined ? "" : `: ${readableReason(cause)}`
+              }. Fix it, then turn it back on.`;
+              yield* park(automation, parked, failureCount).pipe(Effect.ignore);
+              yield* reportNotice({
+                id: `automation:${automation.id}:parked`,
+                area: "automations",
+                severity: "error",
+                title: "Automation turned off",
+                message: parked,
+                detail: Cause.pretty(cause),
+              });
             } else {
               yield* persistSchedule(automation, {
                 nextRunAt,
@@ -233,6 +298,14 @@ const make = Effect.gen(function* () {
           // A schedule that no longer parses cannot be re-armed, so park it
           // rather than logging the same failure on every tick.
           yield* park(automation, decision.message, automation.failureCount + 1);
+          yield* reportNotice({
+            id: `automation:${automation.id}:invalid-schedule`,
+            area: "automations",
+            severity: "error",
+            title: "Automation turned off",
+            message: `${automation.name} was turned off: ${decision.message}`,
+          });
+          yield* recordFired("failed", "invalid_schedule", true);
           yield* Effect.logWarning("Disabled a task automation with an invalid schedule", {
             automationId: automation.id,
             schedule: describeSchedule(automation.schedule),
@@ -251,11 +324,12 @@ const make = Effect.gen(function* () {
             slot: decision.slot,
             taskId: null,
             outcome: "skipped-catch-up",
-            detail: `Missed by ${Math.round(decision.missedByMs / 1000)}s while the server was unavailable.`,
+            detail: `Skipped the ${decision.slot} run because the computer was asleep or Up.computer was closed.`,
             createdAt: instant.toISOString(),
           });
           yield* persistSchedule(automation, { nextRunAt: decision.nextRunAt });
           if (!claimed) return;
+          yield* recordFired("skipped", "catch_up_missed");
           yield* Effect.logInfo("Skipped a missed task automation slot", {
             automationId: automation.id,
             slot: decision.slot,
@@ -282,7 +356,23 @@ const make = Effect.gen(function* () {
   const tick = Effect.gen(function* () {
     const automations = yield* repository.listAutomationsByStatus({ status: "enabled" });
     yield* Effect.forEach(automations, evaluate, { discard: true, concurrency: 1 });
-  }).pipe(Effect.catchCause((cause) => Effect.logError("Task automation tick failed", { cause })));
+    yield* resolveNotice(AUTOMATIONS_PAUSED_NOTICE);
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logError("Task automation tick failed", { cause }).pipe(
+        Effect.andThen(
+          reportNotice({
+            id: AUTOMATIONS_PAUSED_NOTICE,
+            area: "automations",
+            severity: "warning",
+            title: "Automations paused",
+            message: "Automations couldn't run. They try again in 30 seconds.",
+            detail: Cause.pretty(cause),
+          }),
+        ),
+      ),
+    ),
+  );
 
   /**
    * Re-arms every enabled automation on startup. Slots missed while the process

@@ -1,4 +1,5 @@
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { threadActionErrorText } from "../ChatView.logic";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -320,7 +321,7 @@ export function usePendingThreadRequests(input: {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit approval decision.",
+        threadActionErrorText(error, "send your approval", "Try again."),
       );
     }
     setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
@@ -385,7 +386,7 @@ export function usePendingThreadRequests(input: {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit user input.",
+        threadActionErrorText(error, "send your answer", "Try again."),
       );
     }
     userInputResponsesInFlight.current.delete(responseKey);
@@ -407,7 +408,7 @@ export function usePendingThreadRequests(input: {
       const error = squashAtomCommandFailure(result);
       setThreadError(
         activeThreadId,
-        error instanceof Error ? error.message : "Failed to dismiss the question.",
+        threadActionErrorText(error, "dismiss the question", "Try again."),
       );
     }
     setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));

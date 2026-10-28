@@ -3,6 +3,7 @@ import {
   type OrchestrationV2LimitRecoveryUpdate,
   type RunId,
 } from "@t3tools/contracts";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { deadlineStore } from "@t3tools/client-runtime/clock";
 import { GaugeIcon } from "lucide-react";
@@ -78,7 +79,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
       toastManager.add({
         type: "error",
         title: action === "resume" ? "Could not change auto-resume" : "Could not snooze thread",
-        description: cause instanceof Error ? cause.message : "An error occurred.",
+        description: errorToastDescription(cause),
       });
     }
     setPending(false);

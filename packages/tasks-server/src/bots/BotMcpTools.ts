@@ -16,16 +16,20 @@ import { TaskRepository } from "../persistence/TaskRepository.ts";
 
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000));
 const toolkit = Toolkit.make(
-  Tool.dynamic("bot_memory", {
-    description: "Read this bot's current global and working-project memories.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
+  Tool.make("bot_memory", {
+    description:
+      "Read this bot's global and working-project memories, a bounded page at a time, in the order the turn context selects them. inContext marks entries the context snapshot shows. Pass nextOffset as offset for the next page.",
+    parameters: Schema.Struct({
+      offset: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+    }),
+    success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
   })
     .addDependency(McpInvocationContext)
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
+      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Memories the user wrote (owner "user") cannot be changed: ask the user to change them in the bot\'s Memory settings, and never save a memory that contradicts one. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
     parameters: Schema.Struct({
       id: text,
       text,
@@ -39,7 +43,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_forget", {
     description:
-      "Remove one of this bot's current memories by id. Unavailable in background task runs.",
+      "Remove one of this bot's current memories by id. Memories the user wrote (owner \"user\") cannot be removed: ask the user to change them in the bot's Memory settings. Unavailable in background task runs.",
     parameters: Schema.Struct({ id: text }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -60,7 +64,7 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_assign", {
     description:
-      "Give this bot a background task. Its progress and result return to the same permanent user chat. Reuse requestId on a retry.",
+      "Your own background work: give this bot itself a background task, which you then do yourself in a separate run. Its progress and result return to the same permanent user chat. For another task agent, use task_create with that agent's triggers instead. Reuse requestId on a retry.",
     parameters: Schema.Struct({
       requestId: text,
       title: text,
@@ -93,7 +97,9 @@ const handlers = McpToolAccess.toLayer(
         });
       const projectId = bot.threadId === threadId ? bot.projectId : thread.projectId;
       if (!bot.allowedProjectIds.includes(projectId))
-        return yield* new TaskError({ message: "This project is unavailable to the bot." });
+        return yield* new TaskError({
+          message: `This chat is in a project ${bot.agent.name} isn't set up for, so its memory and tasks are unavailable here. Ask the user to open the bot's settings and choose its working project again.`,
+        });
       return { bot, projectId, thread };
     });
     const result = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -105,7 +111,11 @@ const handlers = McpToolAccess.toLayer(
               content: [
                 {
                   type: "text",
-                  text: cause instanceof Error ? cause.message : "Bot operation failed.",
+                  // Agents read the plain sentence first, then the exact reason.
+                  text:
+                    cause instanceof TaskError
+                      ? cause.message
+                      : `Up.computer couldn't read or save the bot's data. Try again.${cause instanceof Error ? `\nDetails: ${cause.message}` : ""}`,
                 },
               ],
             }),
@@ -116,13 +126,11 @@ const handlers = McpToolAccess.toLayer(
         }),
       );
     return {
-      bot_memory: McpToolAccess.readsAsCaller(() =>
+      bot_memory: McpToolAccess.readsAsCaller((input) =>
         result(
           Effect.gen(function* () {
             const { bot, projectId } = yield* caller(false);
-            return (yield* bots.memory(bot.agent.id)).filter(
-              (entry) => entry.projectId === null || entry.projectId === projectId,
-            );
+            return yield* bots.memoryPage(bot.agent.id, projectId, input.offset ?? 0);
           }),
         ),
       ),
@@ -135,7 +143,8 @@ const handlers = McpToolAccess.toLayer(
             );
             if (existing && existing.projectId !== null && existing.projectId !== projectId)
               return yield* new TaskError({
-                message: "This memory is outside the current project.",
+                message:
+                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
               });
             const run = yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id });
             const entry = {
@@ -145,7 +154,7 @@ const handlers = McpToolAccess.toLayer(
               projectId: input.scope === "global" ? null : projectId,
             };
             if (Option.isNone(run))
-              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` });
+              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` }, "bot");
             // Task runs read untrusted pages and repositories, so their memories wait for the user.
             return {
               suggestion: yield* bots.propose({
@@ -172,9 +181,10 @@ const handlers = McpToolAccess.toLayer(
             const entry = (yield* bots.memory(bot.agent.id)).find((item) => item.id === input.id);
             if (entry && entry.projectId !== null && entry.projectId !== projectId)
               return yield* new TaskError({
-                message: "This memory is outside the current project.",
+                message:
+                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
               });
-            yield* bots.forget(bot.agent.id, input.id);
+            yield* bots.forget(bot.agent.id, input.id, "bot");
             return { forgotten: input.id };
           }),
         ),

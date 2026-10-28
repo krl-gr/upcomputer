@@ -1,5 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createPublicKey.
 import * as NodeCrypto from "node:crypto";
+import * as BackgroundNotices from "../background/BackgroundNotices.ts";
 import {
   AuthStandardClientScopes,
   EnvironmentAuthenticatedPrincipal,
@@ -1019,6 +1020,17 @@ const make = Effect.gen(function* () {
           { cause },
         );
         yield* secrets.set(CLOUD_LINK_REVOKED, stringToBytes("true"));
+        const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+        if (Option.isSome(notices)) {
+          yield* notices.value.report({
+            id: "remote-access:link-revoked",
+            area: "remote-access",
+            severity: "warning",
+            title: "Remote access turned off",
+            message:
+              "This computer was removed from UpComputer Connect, so your phone and other devices can't reach it. Turn UpComputer Connect on again in Settings, Connections. If that fails too, check that the date and time on this computer are set automatically.",
+          });
+        }
         return true;
       }),
     );

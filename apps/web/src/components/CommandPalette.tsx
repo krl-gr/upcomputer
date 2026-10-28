@@ -1,4 +1,5 @@
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import {
@@ -245,6 +246,7 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -587,7 +589,7 @@ function OpenCommandPaletteDialog(props: {
         stackedThreadToast({
           type: "error",
           title: target.failureTitle,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -1798,7 +1800,7 @@ function OpenCommandPaletteDialog(props: {
             stackedThreadToast({
               type: "error",
               title: "Failed to open project",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
           return;
@@ -1836,7 +1838,7 @@ function OpenCommandPaletteDialog(props: {
           stackedThreadToast({
             type: "error",
             title: "Failed to add project",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -1854,7 +1856,7 @@ function OpenCommandPaletteDialog(props: {
         stackedThreadToast({
           type: "error",
           title: "Failed to add project",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
       return;
@@ -2102,7 +2104,7 @@ function OpenCommandPaletteDialog(props: {
         stackedThreadToast({
           type: "error",
           title: "Failed to open project",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -2540,7 +2542,7 @@ function OpenCommandPaletteDialog(props: {
         stackedThreadToast({
           type: "error",
           title: "Unable to run command",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     });

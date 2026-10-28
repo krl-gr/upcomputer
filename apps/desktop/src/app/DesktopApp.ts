@@ -136,9 +136,23 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   });
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
+    // The error box can't be copied from, so the stack goes to the log and the
+    // box names the log instead.
+    const environment = yield* Effect.serviceOption(DesktopEnvironment.DesktopEnvironment);
+    const firstLine =
+      message
+        .split("\n")[0]
+        ?.trim()
+        .replace(/[.\s]+$/u, "") ?? "";
+    const plain =
+      firstLine.length > 0 &&
+      firstLine.length <= 120 &&
+      !/[{}[\]<>`]|\b[A-Za-z]+Error\b|\bat \w|\/\w+\//u.test(firstLine);
     yield* electronDialog.showErrorBox(
-      "Up.computer failed to start",
-      `Stage: ${stage}\n${message}${detail}`,
+      "Up.computer couldn't start",
+      `Up.computer couldn't start${plain ? ` (${firstLine})` : ""}. Reinstall the latest version, and if that doesn't help, send us the log${
+        Option.isSome(environment) ? ` at ${environment.value.logDir}` : ""
+      }.\n\nStep: ${stage}`,
     );
   }
   yield* shutdown.request;

@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties } from "react";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout, type ChatCanvasPreview } from "./chatCanvasLayout";
-import type { PreviewMiniPlayerObstacles } from "../preview/previewMiniPlayerLayout";
 import { observeResize } from "../../lib/observeResize";
 import { useClientSettings } from "~/hooks/useSettings";
 
@@ -18,16 +17,6 @@ export function ChatCanvas({
   const widthProbeRef = useRef<HTMLDivElement | null>(null);
   const [timelineElement, registerTimeline] = useState<HTMLElement | null>(null);
   const [preview, setPreview] = useState<ChatCanvasPreview | null>(null);
-  const [detailsCard, setDetailsCard] = useState<PreviewMiniPlayerObstacles["detailsCard"]>(null);
-  const reportDetailsCard = (next: PreviewMiniPlayerObstacles["detailsCard"]) => {
-    setDetailsCard((current) =>
-      current?.left === next?.left &&
-      current?.right === next?.right &&
-      current?.bottom === next?.bottom
-        ? current
-        : next,
-    );
-  };
   const [measurements, setMeasurements] = useState({
     width: 0,
     height: 0,
@@ -111,7 +100,6 @@ export function ChatCanvas({
       ...measurements,
       container,
       preview,
-      detailsCard,
       findBar,
       centerBesideDetails: redesign,
     }),
@@ -119,7 +107,6 @@ export function ChatCanvas({
     reportPreview,
     clearPreview,
     registerTimeline,
-    reportDetailsCard,
     detailsCardTopInset: findBar?.bottom ?? 0,
   };
   const { layout } = context;

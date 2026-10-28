@@ -1,4 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { toastManager } from "~/components/ui/toast";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import {
@@ -590,6 +592,11 @@ export default function DiffPanel({
         void (async () => {
           const result = await openInPreferredEditor(targetPath);
           if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            toastManager.add({
+              type: "error",
+              title: "Couldn't open in your editor",
+              description: errorToastDescription(squashAtomCommandFailure(result)),
+            });
             console.warn("Failed to open diff file in editor.", {
               operation: "open-diff-file",
               ...(routeThreadRef

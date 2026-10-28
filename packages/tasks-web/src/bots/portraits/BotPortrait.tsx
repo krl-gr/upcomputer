@@ -1,9 +1,11 @@
 // Adapted from nuphos/nuphos apps/desktop/src/components/agent/BotAvatarImage.tsx
 // (Apache-2.0, Copyright 2026 Zeabur Inc.). Changed for Up.computer: the portrait draws
-// inline, blinks on a timer, and plays its loop now and then while the bot works instead
-// of repeating it. See art/NOTICE.
+// inline, blinks on a timer, plays its loop now and then while the bot works instead of
+// repeating it, and carries the character's status props. See art/NOTICE.
 import { useEffect, useRef } from "react";
 import type { BotPortraitId } from "@t3tools/tasks-contracts/v1";
+import { BotStatusOverlay } from "../../../../../apps/web/src/components/bot-character-configurable/BotStatusProps.tsx";
+import type { BotCharacterState } from "../../../../../apps/web/src/components/bot-character-configurable/catalog.ts";
 import { useMediaQuery } from "../../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { usePortraitMarkup } from "./botPortraits.ts";
@@ -16,19 +18,21 @@ const between = (min: number, max: number) => min + Math.random() * (max - min);
 /**
  * One bot portrait. It blinks every few seconds, now and then twice; a working bot also
  * plays the loop every so often, and pointing at the portrait plays it once. Between
- * motions nothing animates, so a sidebar of bots costs no frames while they rest.
+ * motions nothing animates, so a sidebar of bots costs no frames while they rest. The
+ * character's status props lie over the painting in the same 128 box.
  */
 export function BotPortrait({
   portrait,
-  working = false,
+  state = "idle",
   size,
   className,
 }: {
   readonly portrait: BotPortraitId;
-  readonly working?: boolean;
+  readonly state?: BotCharacterState;
   readonly size: number;
   readonly className?: string;
 }) {
+  const working = state === "working";
   const markup = usePortraitMarkup(portrait);
   const root = useRef<HTMLSpanElement>(null);
   const still = useMediaQuery("(prefers-reduced-motion: reduce)");
@@ -75,9 +79,15 @@ export function BotPortrait({
       ref={root}
       aria-hidden
       className={cn("bot-portrait", className)}
+      data-state={state}
       style={{ width: size, height: size }}
-      // Artwork bundled with the app, never user content.
-      dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
-    />
+    >
+      <span
+        className="bot-portrait-art"
+        // Artwork bundled with the app, never user content.
+        dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
+      />
+      <BotStatusOverlay state={state} size={size} className="bot-portrait-status" />
+    </span>
   );
 }

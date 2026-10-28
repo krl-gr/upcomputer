@@ -311,7 +311,10 @@ describe("DesktopUpdates", () => {
         const failedState = yield* updates.getState;
         assert.equal(failedState.status, "available");
         assert.equal(failedState.errorContext, "download");
-        assert.equal(failedState.message, "Desktop update download action failed unexpectedly.");
+        assert.equal(
+          failedState.message,
+          "Up.computer couldn't download the update. You're still on this version, so try again.",
+        );
 
         const changedState = yield* updates.setChannel("nightly");
         assert.equal(changedState.channel, "nightly");
@@ -380,7 +383,10 @@ describe("DesktopUpdates", () => {
         const failedState = yield* updates.getState;
         assert.equal(failedState.status, "downloaded");
         assert.equal(failedState.errorContext, "install");
-        assert.equal(failedState.message, "Desktop update install action failed unexpectedly.");
+        assert.equal(
+          failedState.message,
+          "Up.computer couldn't install the update. You're still on this version, so try again.",
+        );
 
         const changedState = yield* updates.setChannel("nightly");
         assert.equal(changedState.channel, "nightly");

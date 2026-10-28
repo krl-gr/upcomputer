@@ -1408,7 +1408,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const [first, second] = yield* Fiber.join(ended);
       assert.equal(first?.status, "interrupted");
       assert.equal(second?.status, "failed");
-      assert.equal(second?.failure?.message, "second turn failed");
+      assert.equal(second?.failure?.detail, "second turn failed");
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 

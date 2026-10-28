@@ -76,6 +76,8 @@ import {
 } from "@t3tools/provider-core/server/notification";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import {
+  makeNativeProviderFailure,
+  makeProviderCrashFailure,
   makeProviderFailure,
   makeProviderRetryTurnItem,
 } from "@t3tools/provider-core/server/failure";
@@ -2143,10 +2145,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             (type === "provider.quota" && status !== 402) || type === "provider.rate-limit";
           return yield* endExecution(state, turn, {
             status: "failed",
-            failure: makeProviderFailure({
-              message,
+            failure: makeNativeProviderFailure({
+              driver: OPENCODE_PROVIDER,
+              text: message,
               code: type,
-              class: usageLimit ? "usage_limit" : "provider_error",
+              ...(usageLimit ? { class: "usage_limit" as const } : {}),
             }),
           });
         }
@@ -2357,8 +2360,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               : {
                   status: "failed",
                   failure: makeProviderFailure({
-                    message: "OpenCode ended the turn with an error this version cannot read.",
+                    driver: OPENCODE_PROVIDER,
                     class: "provider_error",
+                    detail: "OpenCode ended the turn with an error this version cannot read.",
                   }),
                 },
         );
@@ -2453,7 +2457,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       streamFailure = message;
       yield* Deferred.succeed(reconnected, undefined);
       for (const state of threads.values()) {
-        const failure = makeProviderFailure({ message, class: "transport_error" });
+        const failure = makeProviderCrashFailure({
+          driver: OPENCODE_PROVIDER,
+          reason: "it lost its connection to Up.computer",
+          detail: message,
+        });
         yield* finishTurn(state, { status: "failed", failure }, "broken");
       }
       for (const state of threads.values()) {
@@ -2577,9 +2585,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               ? {
                   status: "failed",
                   failure: makeProviderFailure({
-                    message:
-                      "OpenCode ended the turn with an error while Up.computer was reconnecting.",
+                    driver: OPENCODE_PROVIDER,
                     class: "provider_error",
+                    detail:
+                      "OpenCode ended the turn with an error while Up.computer was reconnecting.",
                   }),
                 }
               : { status: "interrupted" },
@@ -3616,7 +3625,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                     if (!CLEAR_PROMPT_REJECTIONS.has(cause._tag)) markUnsettled(state);
                     yield* finishTurn(state, {
                       status: "failed",
-                      failure: makeProviderFailure({ cause, class: "provider_error" }),
+                      failure: makeProviderFailure({
+                        cause,
+                        class: "provider_error",
+                        driver: OPENCODE_PROVIDER,
+                      }),
                     });
                   })
                 : Effect.void,

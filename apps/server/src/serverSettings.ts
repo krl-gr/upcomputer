@@ -21,6 +21,7 @@ import {
   globalIdleCompaction,
   withIdleCompaction,
 } from "@t3tools/contracts";
+import * as BackgroundNotices from "./background/BackgroundNotices.ts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -689,6 +690,18 @@ const make = Effect.gen(function* () {
             issues: Cause.pretty(failure.cause),
             cause: failure.cause,
           });
+          // Settings seem to vanish otherwise: providers, source control, all of it.
+          const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+          if (Option.isSome(notices)) {
+            yield* notices.value.report({
+              id: "settings:file-invalid",
+              area: "settings",
+              severity: "error",
+              title: "Settings file has an error",
+              message: `Up.computer couldn't read ${settingsPath} and is using default settings for now. Fix the file and restart Up.computer.`,
+              detail: Cause.pretty(failure.cause),
+            });
+          }
         }
       } else {
         settings = decoded.value;

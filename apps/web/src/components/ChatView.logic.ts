@@ -9,6 +9,7 @@ import {
   usageLimitRunPresentedAsLatest,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Option from "effect/Option";
+import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
 import type { SetStateAction } from "react";
 import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import { getProviderModelCapabilities } from "../providerModels";
@@ -1409,7 +1410,16 @@ export type LocalThreadErrorEntry = {
 };
 
 export function chatActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "An error occurred.";
+  return plainErrorSentence(error);
+}
+
+export const SEND_FAILURE_TAIL = "Your text is still in the composer, so try again.";
+
+/** Thread banner text for a failed send, approval or answer; the raw error stays in the console. */
+export function threadActionErrorText(error: unknown, action: string, tail: string): string {
+  const { reason, detail } = describeError(error);
+  if (detail !== undefined) console.warn(`Couldn't ${action}:`, detail);
+  return `Up.computer couldn't ${action}${reason === undefined ? "" : `: ${reason}`}. ${tail}`;
 }
 
 export function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(

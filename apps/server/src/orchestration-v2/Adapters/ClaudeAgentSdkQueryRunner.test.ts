@@ -381,6 +381,45 @@ it.effect("does not reuse a fresh session ID after MCP registration times out", 
   ),
 );
 
+it.effect("reports whether Claude took the t3-code MCP server", () =>
+  Effect.gen(function* () {
+    const setMcpServers = vi.fn(async (_servers: Record<string, unknown>) => ({
+      added: [],
+      removed: [],
+      errors: {} as Record<string, string>,
+    }));
+    const query = vi.spyOn(ClaudeSdk, "query").mockReturnValue({
+      setMcpServers,
+    } as unknown as ClaudeSdk.Query);
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const open = Effect.gen(function* () {
+      const runner = yield* ClaudeAgentSdkQueryRunner;
+      const session = yield* runner.open({
+        threadId: ThreadId.make("thread-mcp"),
+        providerSessionId: ProviderSessionId.make("session-mcp"),
+        options: {
+          sessionId: "native-session-mcp",
+          model: "claude-sonnet-4-6",
+          tools: [],
+          permissionMode: "default",
+          mcpServers: { "t3-code": { type: "http", url: "http://127.0.0.1:1/mcp" } },
+        },
+      });
+      return session.t3McpRegistration;
+    }).pipe(Effect.provide(realQueryRunner));
+
+    assert.deepEqual(yield* open, { outcome: "attached" });
+    setMcpServers.mockResolvedValueOnce({
+      added: [],
+      removed: [],
+      errors: { "t3-code": "connect ECONNREFUSED" },
+    });
+    assert.deepEqual(yield* open, { outcome: "failed", reason: "rejected" });
+    setMcpServers.mockRejectedValueOnce(new Error("control request failed"));
+    assert.deepEqual(yield* open, { outcome: "failed", reason: "request_failed" });
+  }),
+);
+
 function fakeClaudeCli(script: string): string {
   const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-claude-cli-"));
   const cli = NodePath.join(dir, "claude");

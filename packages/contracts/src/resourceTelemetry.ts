@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { HostPowerSnapshot } from "./background.ts";
+import { DesktopProductEvent } from "./errorTelemetry.ts";
 import { DesktopUpdateStateSchema } from "./ipc.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
@@ -304,11 +305,19 @@ export const DesktopShutdownRequest = Schema.Struct({
   type: Schema.Literal("desktopShutdownRequest"),
 });
 
+export const DesktopProductEventMessage = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("desktopProductEvent"),
+  event: DesktopProductEvent,
+});
+export type DesktopProductEventMessage = typeof DesktopProductEventMessage.Type;
+
 export const DesktopHostTelemetryMessage = Schema.Union([
   DesktopHostTelemetryHello,
   DesktopHostTelemetrySnapshot,
   DesktopUpdateStatusReport,
   DesktopShutdownRequest,
+  DesktopProductEventMessage,
 ]);
 export type DesktopHostTelemetryMessage = typeof DesktopHostTelemetryMessage.Type;
 

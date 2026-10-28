@@ -28,10 +28,12 @@ import * as Result from "effect/Result";
 
 import { defineNamespacedRpcContribution } from "../../../../apps/server/src/extensionApi.ts";
 import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
+import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 import {
   armAutomationSchedule,
   normalizeAutomationTemplate,
 } from "../automations/automationWrites.ts";
+import { BotService } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
@@ -51,7 +53,9 @@ const operate = AuthOrchestrationOperateScope;
 function asTaskRpc<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return effect.pipe(
     Effect.mapError((cause) =>
-      cause instanceof TaskError ? cause : taskError("Task operation failed.", cause),
+      cause instanceof TaskError
+        ? cause
+        : taskError("Up.computer couldn't save this change to your tasks. Try again.", cause),
     ),
   );
 }
@@ -69,6 +73,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.items]: read,
     [TASKS_RPC_METHODS.runCounts]: read,
     [TASKS_RPC_METHODS.threadRunCounts]: read,
+    // A read receipt: whoever can see the counts can mark them seen.
+    [TASKS_RPC_METHODS.markThreadsSeen]: read,
     [TASKS_RPC_METHODS.threadTasks]: read,
     [TASKS_RPC_METHODS.subscribe]: read,
     [TASKS_RPC_METHODS.get]: read,
@@ -155,6 +161,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                       ),
                     );
               yield* agents.scheduleTaskChanged({ task, reason: "created" });
+              yield* (yield* makeFirstUseRecorder)("app.first_task_created", { via: "app" });
               return task;
             }),
           ),
@@ -181,6 +188,13 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               return yield* (yield* TaskRepository).threadRunCounts(input);
+            }),
+          ),
+        [TASKS_RPC_METHODS.markThreadsSeen]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              yield* (yield* TaskRepository).markThreadsSeen({ ...input, seenAt: yield* now });
+              return {};
             }),
           ),
         [TASKS_RPC_METHODS.threadTasks]: (input) =>
@@ -408,6 +422,10 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 updatedAt: timestamp,
               });
               yield* taskAgents.scheduleAgentChanged({ agent, reason: "upserted" });
+              if (Option.isSome(existing) && existing.value.name !== agent.name)
+                yield* (yield* BotService).nameChat(agent.id);
+              if (Option.isNone(existing))
+                yield* (yield* makeFirstUseRecorder)("app.first_agent_created", { via: "app" });
               return agent;
             }),
           ),
@@ -474,7 +492,7 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               const existing = yield* repository.getAutomationById({ id });
               const armed = armAutomationSchedule(input.schedule, status, new Date(timestamp));
               if (Result.isFailure(armed)) return yield* taskError(armed.failure);
-              return yield* repository.upsertAutomation({
+              const automation = yield* repository.upsertAutomation({
                 id,
                 projectId: input.projectId,
                 name: input.name,
@@ -500,6 +518,11 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 createdAt: Option.isSome(existing) ? existing.value.createdAt : timestamp,
                 updatedAt: timestamp,
               });
+              if (Option.isNone(existing))
+                yield* (yield* makeFirstUseRecorder)("app.first_automation_created", {
+                  via: "app",
+                });
+              return automation;
             }),
           ),
         [TASK_AUTOMATIONS_RPC_METHODS.setStatus]: (input) =>

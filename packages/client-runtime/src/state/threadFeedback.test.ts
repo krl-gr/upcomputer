@@ -75,9 +75,12 @@ describe("submitCodexFeedback", () => {
     expect(states.at(-1)).toEqual({
       ...submission,
       status: "failed",
-      errorMessage: "Upload rejected.",
+      errorMessage:
+        "Upload rejected. Try again, and if it keeps failing, check that your computer is connected.",
     });
-    expect(codexFeedbackNotice(states.at(-1)!)?.description).toBe("Upload rejected.");
+    expect(codexFeedbackNotice(states.at(-1)!)?.description).toBe(
+      "Upload rejected. Try again, and if it keeps failing, check that your computer is connected.",
+    );
   });
 
   it("marks interruptions without reporting them as upload failures", async () => {

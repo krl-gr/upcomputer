@@ -12,6 +12,7 @@ import { Rpc, RpcClient, RpcGroup, RpcServer } from "effect/rpc";
 
 import { WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 import * as DefectReporter from "./DefectReporter.ts";
+import { ErrorTelemetry } from "../telemetry/ErrorTelemetry.ts";
 
 class TestRpcs extends RpcGroup.make(
   Rpc.make("subscribe", { success: Schema.Number, stream: true }),
@@ -34,6 +35,20 @@ const withErrorLogs = <A, E, R>(
 
 const errorMessage = (cause: Cause.Cause<unknown>) => (Cause.squash(cause) as Error).message;
 
+const reportedDefects: Array<unknown> = [];
+const defectReporterLayer = DefectReporter.layer.pipe(
+  Layer.provide(
+    Layer.succeed(
+      ErrorTelemetry,
+      ErrorTelemetry.of({
+        reportError: () => Effect.void,
+        reportDefect: (defect) => Effect.sync(() => void reportedDefects.push(defect)),
+        reportDesktopEvent: () => Effect.void,
+      }),
+    ),
+  ),
+);
+
 describe("DefectReporter", () => {
   it.effect("a dying RPC handler fails alone, and its defect is logged", () =>
     withErrorLogs((logs) =>
@@ -50,7 +65,7 @@ describe("DefectReporter", () => {
             TestRpcs.toLayer({
               subscribe: () => Stream.fromQueue(subscription),
               boom: () => Effect.die(new Error("handler bug")),
-            }).pipe(Layer.provide(DefectReporter.layer)),
+            }).pipe(Layer.provide(defectReporterLayer)),
           ),
         );
         client = yield* RpcClient.makeNoSerialization(TestRpcs, {
@@ -79,5 +94,23 @@ describe("DefectReporter", () => {
         assert.equal(yield* Queue.size(logs), 0);
       }),
     ).pipe(Effect.scoped),
+  );
+
+  it.effect("logs and reports defects, not typed failures or interrupts", () =>
+    withErrorLogs((logs) =>
+      Effect.gen(function* () {
+        yield* ErrorReporter.report(Cause.fail(new Error("expected")));
+        yield* ErrorReporter.report(Cause.interrupt());
+        yield* ErrorReporter.report(Cause.die(new Error("bug")));
+
+        assert.deepEqual((yield* Queue.clear(logs)).map(errorMessage), ["bug"]);
+        // The log and the report are forked from the reporting fiber.
+        yield* Effect.yieldNow;
+        assert.deepEqual(
+          reportedDefects.map((defect) => (defect as Error).message),
+          ["handler bug", "bug"],
+        );
+      }).pipe(Effect.provide(defectReporterLayer)),
+    ),
   );
 });

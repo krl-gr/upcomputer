@@ -109,10 +109,11 @@ export class OpenCodeRuntimeError extends Data.TaggedError(OPENCODE_RUNTIME_ERRO
   readonly operation: string;
   readonly cause?: unknown;
   readonly detail: string;
+  /** Set where only `detail` text would otherwise tell these failures apart. */
   readonly reason?: OpenCodeStartupFailureReason;
 }> {}
 
-export type OpenCodeStartupFailureReason = "databaseLocked";
+export type OpenCodeStartupFailureReason = "databaseLocked" | "timeout" | "version_unsupported";
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
 function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
@@ -170,6 +171,7 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
     return yield* new OpenCodeRuntimeError({
       operation: "global.health",
       detail: "Timed out while checking the OpenCode server version.",
+      reason: "timeout",
     });
   }
 
@@ -179,6 +181,7 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
         new OpenCodeRuntimeError({
           operation: "global.health",
           detail: `OpenCode server returned an invalid health response. Up.computer requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+          reason: "version_unsupported",
           cause,
         }),
     ),
@@ -187,12 +190,14 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
     return yield* new OpenCodeRuntimeError({
       operation: "global.health",
       detail: `OpenCode server returned an invalid version. Up.computer requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+      reason: "version_unsupported",
     });
   }
   if (compareSemverVersions(health.version, MINIMUM_OPENCODE_VERSION) < 0) {
     return yield* new OpenCodeRuntimeError({
       operation: "global.health",
       detail: `OpenCode v${health.version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`,
+      reason: "version_unsupported",
     });
   }
   return health.version;
@@ -837,6 +842,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       return yield* new OpenCodeRuntimeError({
         operation: "startOpenCodeServerProcess",
         detail: `Timed out waiting for OpenCode server start after ${timeoutMs}ms.`,
+        reason: "timeout",
       });
     }
 

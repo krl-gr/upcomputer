@@ -2,6 +2,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import type { Dispatch } from "react";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { selectThreadTerminalUiState } from "../../terminalUiStateStore";
@@ -297,7 +298,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
           stackedThreadToast({
             type: "error",
             title: "Could not open preview",
-            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }

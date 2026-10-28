@@ -8,6 +8,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderCapabilities,
+  type OrchestrationV2ProviderMcpStatus,
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   type Project,
@@ -15,6 +16,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderSessionId,
+  ProviderSetupError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -915,7 +917,12 @@ it.effect(
                   new ProviderAdapter.ProviderAdapterOpenSessionError({
                     driver: CODEX_DRIVER,
                     providerSessionId: input.providerSessionId,
-                    cause: new Error("Not logged in. Run `codex login` in /Users/someone/project."),
+                    // The category comes from the typed sign-in failure, never its text.
+                    cause: new ProviderSetupError({
+                      instanceId: modelSelection.instanceId,
+                      operation: "access",
+                      detail: "Not logged in. Run `codex login` in /Users/someone/project.",
+                    }),
                   }),
                 )
               : Effect.void,
@@ -949,7 +956,7 @@ it.effect(
             properties: {
               provider: "codex",
               readinessBoundary: "session-start",
-              errorCategory: "auth",
+              errorCategory: "not_authenticated",
             },
           },
           {
@@ -967,6 +974,126 @@ it.effect(
                 record: (event, properties) =>
                   Effect.sync(() => {
                     recorded.push({ event, properties });
+                  }),
+              }),
+            ),
+          ),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 projects MCP status and reports provider.mcp.attach without server names",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const recorded: Array<{ event: string; properties: Readonly<Record<string, unknown>> }> = [];
+      const allRecorded = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-mcp");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(events);
+        const statuses: ReadonlyArray<OrchestrationV2ProviderMcpStatus> = [
+          { t3: { outcome: "attached" }, userServerCount: 2, failedUserServers: ["acme-crm"] },
+          // A repeat of the same status reports nothing.
+          { t3: { outcome: "attached" }, userServerCount: 2, failedUserServers: ["acme-crm"] },
+          {
+            t3: { outcome: "disconnected", reason: "connection_lost" },
+            userServerCount: 2,
+            failedUserServers: [],
+          },
+        ];
+        for (const mcp of statuses) {
+          yield* Queue.offer(events!, {
+            type: "provider_session.updated",
+            driver: CODEX_DRIVER,
+            providerSession: { ...runtime.providerSession, mcp },
+          });
+        }
+        yield* Deferred.await(allRecorded);
+
+        assert.deepEqual(recorded, [
+          {
+            event: "provider.mcp.attach",
+            properties: {
+              provider: "codex",
+              server: "t3",
+              outcome: "attached",
+              failedCount: 0,
+              userServerCount: 2,
+            },
+          },
+          {
+            event: "provider.mcp.attach",
+            properties: {
+              provider: "codex",
+              server: "user",
+              outcome: "failed",
+              failedCount: 1,
+              userServerCount: 2,
+            },
+          },
+          {
+            event: "provider.mcp.attach",
+            properties: {
+              provider: "codex",
+              server: "t3",
+              outcome: "disconnected",
+              reason: "connection_lost",
+              failedCount: 1,
+              userServerCount: 2,
+            },
+          },
+          {
+            event: "provider.mcp.attach",
+            properties: {
+              provider: "codex",
+              server: "user",
+              outcome: "attached",
+              failedCount: 0,
+              userServerCount: 2,
+            },
+          },
+        ]);
+        assert.notInclude(JSON.stringify(recorded), "acme-crm");
+        const projection = yield* projectionStore.getThreadProjection(threadId);
+        assert.deepEqual(
+          projection.providerSessions.find((session) => session.id === providerSessionId)?.mcp,
+          statuses[2],
+        );
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({ state, idleTimeoutMs: 60_000 }).pipe(
+            Layer.provide(
+              Layer.succeed(ProviderTelemetry.ProviderReadinessAnalytics, {
+                record: (event, properties) =>
+                  Effect.suspend(() => {
+                    if (event !== "provider.mcp.attach") return Effect.void;
+                    recorded.push({ event, properties });
+                    return recorded.length === 4
+                      ? Deferred.succeed(allRecorded, undefined)
+                      : Effect.void;
                   }),
               }),
             ),

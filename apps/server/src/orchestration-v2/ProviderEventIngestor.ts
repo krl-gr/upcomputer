@@ -8,6 +8,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2TurnItem,
   type ModelSelection,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
@@ -38,7 +39,10 @@ import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failure";
+import {
+  makeProviderFailureTurnItem,
+  providerFailureName,
+} from "@t3tools/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
@@ -117,7 +121,15 @@ export const layerAnalytics = Layer.effect(
       record: Effect.fn("ProviderTurnAnalytics.record")(function (
         properties: Readonly<Record<string, unknown>>,
       ) {
-        return analytics.record("provider.turn.completed", properties);
+        return analytics.record("provider.turn.completed", properties).pipe(
+          Effect.andThen(
+            properties.terminalStatus === "completed"
+              ? analytics.recordMilestone("app.first_turn_completed", {
+                  provider: properties.provider,
+                })
+              : Effect.void,
+          ),
+        );
       }),
     };
   }),
@@ -127,6 +139,7 @@ function providerTurnAnalyticsProperties(input: {
   readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
+  readonly firstOutputAt?: DateTime.Utc;
 }): Readonly<Record<string, unknown>> {
   const usage = input.providerTurn.turnTokenUsage;
   const modelSelection = input.context?.modelSelection;
@@ -163,8 +176,67 @@ function providerTurnAnalyticsProperties(input: {
           ),
         }
       : {}),
+    ...(input.providerTurn.startedAt && input.firstOutputAt
+      ? {
+          ttftMs: Math.max(
+            0,
+            DateTime.toEpochMillis(input.firstOutputAt) -
+              DateTime.toEpochMillis(input.providerTurn.startedAt),
+          ),
+        }
+      : {}),
   };
 }
+
+/** Items the model produced, as opposed to the prompt or the app's own notices. */
+const MODEL_OUTPUT_ITEM_TYPES: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
+  "assistant_message",
+  "reasoning",
+  "proposed_plan",
+  "todo_list",
+  "command_execution",
+  "file_change",
+  "file_search",
+  "web_search",
+  "dynamic_tool",
+  "subagent",
+]);
+
+type ProviderTurnTerminal = Extract<
+  ProviderAdapter.ProviderAdapterV2Event,
+  { readonly type: "turn.terminal" }
+>;
+
+/**
+ * Why a turn did not complete: the adapter's failure class, or `interrupted`.
+ * `retryable` is left out when the adapter does not know.
+ */
+function providerTurnFailureAnalytics(
+  terminal: ProviderTurnTerminal,
+): Readonly<Record<string, unknown>> | undefined {
+  if (terminal.status === "failed") {
+    return {
+      failureClass: terminal.failure.class,
+      ...(terminal.failure.retryable === null ? {} : { retryable: terminal.failure.retryable }),
+    };
+  }
+  if (terminal.status === "interrupted") {
+    return { failureClass: "interrupted", retryable: terminal.threadDisposition !== "broken" };
+  }
+  return undefined;
+}
+
+const MAX_TRACKED_TURN_ANALYTICS = 4096;
+// A failed turn whose terminal never arrives is still reported, without a failure class.
+const TURN_TERMINAL_WAIT = "30 seconds";
+
+const rememberBounded = <V>(map: Map<string, V>, key: string, value: V) => {
+  map.set(key, value);
+  if (map.size > MAX_TRACKED_TURN_ANALYTICS) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+};
 
 type TodoListPlan = Extract<OrchestrationV2PlanArtifact, { readonly kind: "todo_list" }>;
 
@@ -337,6 +409,42 @@ export const layer: Layer.Layer<
     const analytics = yield* ProviderTurnAnalytics;
     const agentScope = yield* AgentScope;
     const completedTurnAnalytics = new Set<string>();
+    // When each running turn's first model output arrived, for its time to first token.
+    const turnFirstOutputAt = new Map<string, DateTime.Utc>();
+    // `provider_turn.updated` carries the turn's usage and `turn.terminal` its failure, in
+    // either order, so a failed or interrupted turn is recorded once both have arrived.
+    const turnsAwaitingTerminal = new Map<string, Readonly<Record<string, unknown>>>();
+    const terminalsAwaitingTurn = new Map<string, Readonly<Record<string, unknown>>>();
+    const recordTurnTerminal = (key: string, terminal: ProviderTurnTerminal) => {
+      const failure = providerTurnFailureAnalytics(terminal);
+      if (failure === undefined) return Effect.void;
+      const turn = turnsAwaitingTerminal.get(key);
+      if (turn === undefined) {
+        rememberBounded(terminalsAwaitingTurn, key, failure);
+        return Effect.void;
+      }
+      turnsAwaitingTerminal.delete(key);
+      return analytics.record({ ...turn, ...failure });
+    };
+    const recordUnfinishedTurn = (key: string, turn: Readonly<Record<string, unknown>>) => {
+      const failure = terminalsAwaitingTurn.get(key);
+      if (failure !== undefined) {
+        terminalsAwaitingTurn.delete(key);
+        return analytics.record({ ...turn, ...failure });
+      }
+      rememberBounded(turnsAwaitingTerminal, key, turn);
+      return Effect.sleep(TURN_TERMINAL_WAIT).pipe(
+        Effect.andThen(
+          Effect.suspend(() => {
+            if (turnsAwaitingTerminal.get(key) !== turn) return Effect.void;
+            turnsAwaitingTerminal.delete(key);
+            return analytics.record(turn);
+          }),
+        ),
+        Effect.forkDetach,
+        Effect.asVoid,
+      );
+    };
 
     const makeDomainEvent =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
@@ -706,7 +814,12 @@ export const layer: Layer.Layer<
               }
               const occurredAt = yield* DateTime.now;
               const failure = (yield* agentScope.oomKilled(input.threadId))
-                ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
+                ? {
+                    ...input.event.failure,
+                    message: `${providerFailureName(input.event.driver)} was stopped because it ran out of memory. Close other heavy work or split the task, then send the message again.`,
+                    code: "oom_kill",
+                    retryable: true,
+                  }
                 : input.event.failure;
               return [
                 ...dismissed,
@@ -851,6 +964,22 @@ export const layer: Layer.Layer<
               ),
               Effect.tap((storedEvents) =>
                 Effect.gen(function* () {
+                  if (input.event.type === "turn_item.updated") {
+                    const item = input.event.turnItem;
+                    if (item.providerTurnId === null || !MODEL_OUTPUT_ITEM_TYPES.has(item.type))
+                      return;
+                    const key = `${input.providerInstanceId}:${item.providerTurnId}`;
+                    if (!turnFirstOutputAt.has(key) && !completedTurnAnalytics.has(key)) {
+                      rememberBounded(turnFirstOutputAt, key, item.startedAt ?? item.updatedAt);
+                    }
+                    return;
+                  }
+                  if (input.event.type === "turn.terminal") {
+                    return yield* recordTurnTerminal(
+                      `${input.providerInstanceId}:${input.event.providerTurnId}`,
+                      input.event,
+                    );
+                  }
                   if (storedEvents.length === 0 || input.event.type !== "provider_turn.updated")
                     return;
                   const providerTurn = input.event.providerTurn;
@@ -868,15 +997,19 @@ export const layer: Layer.Layer<
                     const oldest = completedTurnAnalytics.values().next().value;
                     if (oldest !== undefined) completedTurnAnalytics.delete(oldest);
                   }
-                  yield* analytics.record(
-                    providerTurnAnalyticsProperties({
-                      driver: input.event.driver,
-                      providerTurn,
-                      ...(input.analyticsContext === undefined
-                        ? {}
-                        : { context: input.analyticsContext }),
-                    }),
-                  );
+                  const firstOutputAt = turnFirstOutputAt.get(key);
+                  turnFirstOutputAt.delete(key);
+                  const properties = providerTurnAnalyticsProperties({
+                    driver: input.event.driver,
+                    providerTurn,
+                    ...(input.analyticsContext === undefined
+                      ? {}
+                      : { context: input.analyticsContext }),
+                    ...(firstOutputAt === undefined ? {} : { firstOutputAt }),
+                  });
+                  yield* providerTurn.status === "failed" || providerTurn.status === "interrupted"
+                    ? recordUnfinishedTurn(key, properties)
+                    : analytics.record(properties);
                 }),
               ),
               (effect) =>

@@ -140,7 +140,7 @@ describe("V2 session presentation", () => {
         status: "failed",
         failure: { ...retryItem.failure, class: "usage_limit" },
       }),
-    ).toMatchObject({ label: "Usage limit reached after 2/10 retries" });
+    ).toMatchObject({ label: "Provider retry after retrying (attempt 2 of 10)" });
     const recoveredLimit = {
       ...retryItem,
       status: "completed" as const,
@@ -160,11 +160,11 @@ describe("V2 session presentation", () => {
       optimisticMessages: [],
     });
     if (recoveredEntry?.kind !== "work") throw new Error("Expected recovered provider work");
-    expect(recoveredEntry.entry.label).toBe("Provider recovered (2/10 retries)");
+    expect(recoveredEntry.entry.label).toBe("Recovered after retrying (attempt 2 of 10)");
     expect(recoveredEntry.entry.sourceActivityKind).not.toBe("runtime.warning");
     expect(workEntryDisplayIndicatesToolFailure(recoveredEntry.entry)).toBe(false);
     expect(providerErrorPresentation(retryItem)).toEqual({
-      label: "Retrying provider (2/10)",
+      label: "Retrying (attempt 2 of 10)",
       detail: "Claude API overloaded. Retrying in 1.5s.",
     });
     expect(
@@ -173,7 +173,7 @@ describe("V2 session presentation", () => {
         status: "completed",
         completedAt: now,
       }),
-    ).toMatchObject({ label: "Provider recovered (2/10 retries)" });
+    ).toMatchObject({ label: "Recovered after retrying (attempt 2 of 10)" });
     expect(
       providerErrorPresentation({
         ...retryItem,
@@ -181,7 +181,7 @@ describe("V2 session presentation", () => {
         retry: { ...retryItem.retry, attempt: 10 },
         completedAt: now,
       }),
-    ).toMatchObject({ label: "Provider error after 10/10 retries" });
+    ).toMatchObject({ label: "Provider retry after retrying (attempt 10 of 10)" });
   });
 
   it("assigns run rollback to the turn-start message instead of a later steer", () => {
@@ -549,7 +549,7 @@ describe("V2 session presentation", () => {
     expect(errorEntry?.kind).toBe("work");
     if (errorEntry?.kind === "work") {
       expect(errorEntry.entry.projectedItem).toBe(visibleTurnItems[5]);
-      expect(errorEntry.entry.label).toBe("Provider error");
+      expect(errorEntry.entry.label).toBe("Agent stopped with an error");
       expect(errorEntry.entry.detail).toBe("Invalid reasoning effort.");
       expect(errorEntry.entry.tone).toBe("info");
       expect(errorEntry.entry.toolLifecycleStatus).toBe("failed");

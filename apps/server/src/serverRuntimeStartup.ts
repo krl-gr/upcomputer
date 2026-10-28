@@ -46,6 +46,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { getServerOwners } from "./telemetry/Identify.ts";
+import * as StartupHeartbeat from "./telemetry/StartupHeartbeat.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
@@ -174,6 +175,7 @@ const recordStartupHeartbeat = Effect.gen(function* () {
   yield* analytics.record("server.boot.heartbeat", {
     threadCount,
     projectCount,
+    ...(yield* StartupHeartbeat.heartbeatFeatureProperties),
   });
   yield* analytics.recordOwners(yield* getServerOwners, "server");
 });
@@ -607,11 +609,13 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
     yield* forkParked(
       Effect.gen(function* () {
         yield* Effect.logDebug("startup phase: recording startup heartbeat");
+        // It waits for provider probes, which must not hold up the access output below.
         yield* recordStartupHeartbeat.pipe(
           Effect.withSpan("server.startup.heartbeat.record", {
             attributes: { "startup.phase": "heartbeat.record" },
           }),
           Effect.ignoreCause({ log: true }),
+          Effect.forkScoped,
         );
         if (serverConfig.startupPresentation === "headless") {
           yield* Effect.logDebug("startup phase: headless access info");

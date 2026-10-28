@@ -112,13 +112,18 @@ export function SidebarThreadHeader({
           {hasProjects ? (
             <>
               {projectScope}
-              <SidebarHeaderIconButton label="Add project" onClick={onNewProject}>
+              <SidebarHeaderIconButton
+                label="Add project"
+                data-track="sidebar.add_project"
+                onClick={onNewProject}
+              >
                 <FolderPlusIcon />
               </SidebarHeaderIconButton>
             </>
           ) : null}
           <SidebarHeaderIconButton
             label="New thread"
+            data-track="sidebar.new_thread"
             tooltip={
               showNewThreadInProjectHint ? (
                 <span className="flex flex-col gap-0.5">

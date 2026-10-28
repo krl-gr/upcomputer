@@ -1,4 +1,5 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import {
   getNewProjectRepository,
   type NewProjectPublishTarget,
@@ -18,9 +19,7 @@ import { claimDraftMoveForAddedProject } from "~/composerContextRow/draftIntoAdd
 import { useNewThreadHandler } from "./useHandleNewThread";
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message.trim().length > 0
-    ? error.message
-    : "An error occurred.";
+  return plainErrorSentence(error);
 }
 
 export function useNewProject() {

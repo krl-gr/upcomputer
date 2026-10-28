@@ -26,7 +26,8 @@ describe("mapManagedRelayError", () => {
     );
     expect(mapped).toMatchObject({
       reason: "timeout",
-      detail: "Relay timed out while contacting the environment endpoint.",
+      detail:
+        "That computer didn't answer in time. Make sure it's on, awake and running Up.computer, then try again.",
       traceId: "trace-server-timeout",
     });
   });
@@ -50,7 +51,8 @@ describe("mapManagedRelayError", () => {
     expect(mapConnectRefusal("managed_endpoint_allocation_not_ready")).toMatchObject({
       _tag: "ConnectionTransientError",
       reason: "endpoint-unavailable",
-      detail: "The environment's UpComputer Connect tunnel is still being set up.",
+      detail:
+        "That computer's UpComputer Connect access is still being set up. Try again in a minute.",
       traceId: "trace-connect-refused",
     });
     expect(mapConnectRefusal("endpoint_provider_not_managed")).toMatchObject({
@@ -81,7 +83,7 @@ describe("mapManagedRelayError", () => {
     expect(mapped).toMatchObject({
       _tag: "ConnectionBlockedError",
       reason: "authentication",
-      detail: `Relay rejected the DPoP proof. ${DPOP_UNKNOWN_HINT}`,
+      detail: `UpComputer Connect didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
       traceId: "trace-1",
     });
   });

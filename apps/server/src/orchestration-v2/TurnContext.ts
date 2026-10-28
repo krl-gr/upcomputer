@@ -33,6 +33,15 @@ export interface TurnContext {
    * is unchanged; empty when nothing changed. Absent means the full `text` is needed.
    */
   readonly update?: string;
+  /** Shown to the person in the thread with this turn, which still runs. */
+  readonly notice?: TurnContextNotice;
+}
+/** A plain explanation for the person: `message` is what they read, `detail` goes behind Details. */
+export interface TurnContextNotice {
+  readonly code: string;
+  readonly title: string;
+  readonly message: string;
+  readonly detail?: string;
 }
 type Resolver = (input: TurnContextInput) => Effect.Effect<TurnContext, Error>;
 let resolver: Resolver | undefined;
@@ -48,8 +57,25 @@ export const registerTurnContextResolver = (value: Resolver) =>
       }),
   );
 
+/**
+ * A resolver fails with this when sending the message again cannot help, so the turn stops at
+ * once and the thread shows `title` and `message` instead of retrying.
+ */
+export class TurnContextRefusal extends Schema.TaggedError<TurnContextRefusal>()(
+  "TurnContextRefusal",
+  {
+    code: Schema.String,
+    title: Schema.String,
+    message: Schema.String,
+    detail: Schema.optional(Schema.String),
+  },
+) {}
+
+const isTurnContextRefusal = Schema.is(TurnContextRefusal);
+
 export class TurnContextError extends Schema.TaggedError<TurnContextError>()("TurnContextError", {
   message: Schema.String,
+  refusal: Schema.optional(TurnContextRefusal),
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
@@ -60,7 +86,14 @@ export const turnContextFor = (
   resolver === undefined
     ? Effect.succeed({ text: "" })
     : resolver(input).pipe(
-        Effect.mapError((cause) => new TurnContextError({ message: cause.message, cause })),
+        Effect.mapError(
+          (cause) =>
+            new TurnContextError({
+              message: cause.message,
+              ...(isTurnContextRefusal(cause) ? { refusal: cause } : {}),
+              cause,
+            }),
+        ),
       );
 
 /**

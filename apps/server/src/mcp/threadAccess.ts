@@ -19,7 +19,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 export const unavailable = () =>
   new OrchestratorMcpFailure({
     code: "orchestration_error",
-    message: "The operation could not be completed.",
+    message: "Couldn't do that. Try again, or ask the person to do it in the app.",
   });
 
 export const dispatchFailure = (
@@ -54,7 +54,8 @@ export const readCaller = Effect.fn("mcp.readCaller")(function* () {
   if (!scope.capabilities.has("orchestration")) {
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
-      message: "This credential cannot control threads.",
+      message:
+        "This agent can't control chats right now. Allow Up.computer tools for this client in Settings, Connections, then retry.",
     });
   }
   return yield* loadCaller();
@@ -110,7 +111,8 @@ export function assertLiveCaller({ caller, scope }: Caller) {
     : Effect.fail(
         new OrchestratorMcpFailure({
           code: "parent_not_active",
-          message: "The calling provider no longer owns an active thread run.",
+          message:
+            "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
         }),
       );
 }
@@ -128,7 +130,8 @@ export const resolveProjectId = (context: Caller, projectId: ProjectId | undefin
       : Effect.fail(
           new OrchestratorMcpFailure({
             code: "target_required",
-            message: "Pass projectId: this MCP client is not running inside an Up.computer thread.",
+            message:
+              "This client isn't running inside an Up.computer chat, so name the project: pass projectId.",
           }),
         );
 

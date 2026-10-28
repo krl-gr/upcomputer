@@ -30,6 +30,7 @@ import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
 import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
 import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkCoordinator";
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
+import { UiAnalyticsCoordinator } from "../components/UiAnalyticsCoordinator";
 import { ProductCoordinators } from "../product/ProductSlots";
 import { productSurface } from "../product/productFlags";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
@@ -38,6 +39,8 @@ import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
+import { appErrorReporter } from "../errorTelemetry";
+import { useAppErrorTelemetrySender } from "../hooks/useAppErrorTelemetrySender";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
 import { useShownPathname } from "../hooks/useShownPathname";
@@ -249,6 +252,7 @@ function RootRouteBranch() {
         <SshPasswordPromptDialog />
         <SnapShotCoordinator />
         {primaryEnvironmentAuthenticated ? <ProductCoordinators /> : null}
+        {primaryEnvironmentAuthenticated ? <UiAnalyticsCoordinator /> : null}
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
@@ -317,7 +321,11 @@ function HostedStaticEnvironmentBootstrap() {
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {
   const router = useRouter();
-  const message = errorMessage(error);
+  // Route errors without their own error component end up here.
+  useAppErrorTelemetrySender();
+  useEffect(() => {
+    appErrorReporter.report(error, "boundary");
+  }, [error]);
   // Router pathname rather than window.location: desktop uses hash history, where the window path is always "/".
   const pathname = useLocation({ select: (location) => location.pathname });
   const report = errorReport(error, pathname);
@@ -326,8 +334,8 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
     <StandalonePage tone="error">
       <StandalonePageHeader
         eyebrow={APP_DISPLAY_NAME}
-        title="Something went wrong."
-        description={message}
+        title="This screen stopped working"
+        description="Up.computer hit an internal problem on this screen. Try again or reload the app, and if it keeps happening, copy the error report and send it to us."
       />
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -340,12 +348,14 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         <CopyErrorButton report={report} />
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
-        <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Error report</p>
+      <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
+        <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          Error report
+        </summary>
         <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
           {report}
         </pre>
-      </div>
+      </details>
     </StandalonePage>
   );
 }
@@ -359,18 +369,6 @@ function CopyErrorButton({ report }: { report: string }) {
       {isCopied ? "Copied" : "Copy error"}
     </Button>
   );
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
-  }
-
-  return "An unexpected router error occurred.";
 }
 
 function errorDetails(error: unknown): string {

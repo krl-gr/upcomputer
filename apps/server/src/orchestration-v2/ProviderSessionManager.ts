@@ -5,6 +5,7 @@ import {
   isOrchestrationV2WorkActive,
   ModelSelection,
   OrchestrationV2DomainEvent,
+  type OrchestrationV2ProviderMcpStatus,
   OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   OrchestrationV2RuntimeRequest,
@@ -1875,6 +1876,7 @@ export const layerWithOptions = (
         };
       };
 
+      const reportedMcp = new WeakMap<LiveSessionEntry, OrchestrationV2ProviderMcpStatus>();
       const persistProviderSessionUpdate = Effect.fn(
         "ProviderSessionManager.persistProviderSessionUpdate",
       )(
@@ -1897,6 +1899,13 @@ export const layerWithOptions = (
             type: "provider-session.updated",
             payload: event.providerSession,
           });
+          const mcp = event.providerSession.mcp;
+          yield* Effect.forEach(
+            ProviderTelemetry.mcpAttachEvents(entry.runtime.driver, reportedMcp.get(entry), mcp),
+            (properties) => readinessAnalytics.record("provider.mcp.attach", properties),
+            { discard: true },
+          );
+          if (mcp !== undefined) reportedMcp.set(entry, mcp);
         },
         (effect, entry, _event) =>
           effect.pipe(

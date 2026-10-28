@@ -15,6 +15,7 @@ import {
   type ModelSelection,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -54,6 +55,8 @@ import * as RpcTest from "effect/rpc/RpcTest";
 import * as RpcAuthorization from "../../../../apps/server/src/auth/RpcAuthorization.ts";
 import { McpInvocationContext } from "../../../../apps/server/src/mcp/McpInvocationContext.ts";
 import { ProviderRegistry } from "../../../../apps/server/src/provider/ProviderRegistry.ts";
+import { featureHeartbeatCounts } from "../../../../apps/server/src/telemetry/HeartbeatCounts.ts";
+import { AnalyticsService } from "../../../../apps/server/src/telemetry/AnalyticsService.ts";
 import * as ServerSettings from "../../../../apps/server/src/serverSettings.ts";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import { ProjectService } from "../../../../apps/server/src/project/ProjectService.ts";
@@ -440,10 +443,31 @@ const task: Task = {
 
 const TASKS_PRODUCT = composeExperimentalServerFeatures([TASKS_SERVER_FEATURE]);
 
+/** A product event the server recorded. */
+interface RecordedEvent {
+  readonly event: string;
+  readonly properties: Readonly<Record<string, unknown>> | undefined;
+}
+
 interface SliceOptions {
   readonly perThreadSessions?: boolean;
   readonly providerSessionIdleTimeoutMs?: number;
+  /** Records product events here, with the test instance configured as Codex. */
+  readonly analytics?: Ref.Ref<ReadonlyArray<RecordedEvent>>;
 }
+
+const layerAnalytics = (recorded: Ref.Ref<ReadonlyArray<RecordedEvent>>) =>
+  Layer.mergeAll(
+    Layer.mock(AnalyticsService)({
+      enabled: true,
+      sessionId: undefined,
+      record: (event, properties) => Ref.update(recorded, (all) => [...all, { event, properties }]),
+      recordMilestone: () => Effect.void,
+    }),
+    Layer.mock(ProviderRegistry)({
+      getProviders: Effect.succeed([{ instanceId, driver } as ServerProvider]),
+    }),
+  );
 
 /**
  * Upstream's v2 runtime with a scripted provider, plus the tasks feature
@@ -475,7 +499,11 @@ function makeLayer(
     Layer.provideMerge(CommandReceiptStore.layer),
     Layer.provideMerge(runtime),
     Layer.provideMerge(db),
-    Layer.provideMerge(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
+    Layer.provideMerge(
+      options.analytics === undefined
+        ? Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })
+        : layerAnalytics(options.analytics),
+    ),
     // The tasks Inbox reads these when it is built; these tests never create it.
     Layer.provideMerge(Layer.mock(ProjectService)({})),
     Layer.provideMerge(Layer.succeed(ServerConfig, { baseDir: cwd } as never)),
@@ -621,6 +649,176 @@ const runSlice = <A, E>(
       }).pipe(Effect.provide(makeLayer(name, cwd, started, sessions, background, options)));
     }),
   );
+
+it.live("the heartbeat counts open tasks by audience, agents, bots and enabled automations", () =>
+  runSlice("task-feature-counts", ({ repository }) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // Disabled, so no run starts on the tasks below.
+      yield* repository.upsertAgent({ ...agent, enabled: false });
+      yield* repository.upsertAgent({ ...agent, id: TaskAgentId.make("task-agent:counted") });
+      yield* repository.upsertAgent({ ...agent, id: TaskAgentId.make("task-agent:bot") });
+      yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json)
+        VALUES ('task-agent:bot', 'thread:bot', ${projectId}, '[]')`;
+      for (const [index, [id, audience, archivedAt]] of (
+        [
+          ["task:count-agent-1", "agent", null],
+          ["task:count-agent-2", "agent", null],
+          ["task:count-person", "person", null],
+          ["task:count-archived", "agent", timestamp],
+        ] as const
+      ).entries()) {
+        yield* repository.upsert({
+          ...task,
+          id: TaskId.make(id),
+          rank: `000000000020000${index}` as Task["rank"],
+          status: audience === "person" ? "To Do" : "Backlog",
+          audience,
+          archivedAt,
+        });
+      }
+      for (const [id, status] of [
+        ["automation:on", "enabled"],
+        ["automation:off", "disabled"],
+      ] as const) {
+        yield* sql`INSERT INTO task_automations (id, project_id, name, status, schedule_json,
+          template_json, catch_up_policy, skip_if_open, created_by, created_at, updated_at)
+          VALUES (${id}, ${projectId}, 'Daily', ${status}, '{}', '{}', 'skip', 0, 'user',
+          ${timestamp}, ${timestamp})`;
+      }
+      assert.deepStrictEqual(yield* featureHeartbeatCounts, {
+        agentTaskCount: 2,
+        personTaskCount: 1,
+        enabledAgentCount: 1,
+        botCount: 1,
+        automationCount: 1,
+      });
+    }),
+  ),
+);
+
+const finishedRuns = (recorded: Ref.Ref<ReadonlyArray<RecordedEvent>>, count: number) =>
+  eventually(
+    `${count} agent_run.finished events`,
+    Ref.get(recorded).pipe(
+      Effect.map((all) => {
+        const finished = all.filter(({ event }) => event === "agent_run.finished");
+        return finished.length >= count
+          ? Option.some(finished.map(({ properties }) => properties ?? {}))
+          : Option.none();
+      }),
+    ),
+  );
+
+it.live("each way a run ends reports agent_run.finished with only enums and its duration", () =>
+  Effect.gen(function* () {
+    const recorded = yield* Ref.make<ReadonlyArray<RecordedEvent>>([]);
+    yield* runSlice(
+      "agent-run-finished",
+      ({ createTask, runWithStatus, taskAgents, started, repository }) =>
+        Effect.gen(function* () {
+          // The scripted provider answers with a task_agent_result block.
+          const answered = yield* createTask;
+          yield* eventually("the result", runWithStatus(answered.id, "completed"));
+          const [result] = yield* finishedRuns(recorded, 1);
+          assert.deepStrictEqual(Object.keys(result ?? {}).toSorted(), [
+            "durationMs",
+            "isBot",
+            "outcome",
+            "provider",
+            "reasonCode",
+            "trigger",
+          ]);
+          assert.include(result, {
+            outcome: "completed",
+            reasonCode: "result",
+            provider: "codex",
+            trigger: "status",
+            isBot: false,
+          });
+          assert.isAtLeast(result?.durationMs as number, 0);
+
+          const blockedTask = { ...task, id: TaskId.make("task:finished-blocked") };
+          const heldRun = (description: string, id: Task["id"], rank: string) =>
+            Effect.gen(function* () {
+              const created = yield* repository.upsert({
+                ...blockedTask,
+                id,
+                rank: rank as Task["rank"],
+                description,
+              });
+              yield* taskAgents.scheduleTaskChanged({ task: created, reason: "created" });
+              const run = yield* eventually(
+                "the held run",
+                repository
+                  .searchAgentRuns({ taskId: id, limit: 1 })
+                  .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+              );
+              yield* eventually(
+                "its provider turn",
+                Ref.get(started).pipe(
+                  Effect.map((turns) =>
+                    Option.fromNullishOr(turns.find((turn) => turn.threadId === run.threadId)),
+                  ),
+                ),
+              );
+              return run;
+            });
+          const blocked = yield* heldRun(
+            `Report a blocker. ${HOLD}`,
+            blockedTask.id,
+            "0000000000300001",
+          );
+          const update = yield* callTaskTool(blocked.threadId, "task_update", {
+            id: blockedTask.id,
+            status: "Blocked",
+            output: "Missing credentials for the staging host.",
+            assigneeAgentRunId: null,
+          });
+          assert.isFalse(update.isError, update.text);
+          const stopped = yield* heldRun(
+            `Wait. ${HOLD}`,
+            TaskId.make("task:finished-stop"),
+            "0000000000300002",
+          );
+          yield* taskAgents.stopRun({ id: stopped.id });
+          const [, ...rest] = yield* finishedRuns(recorded, 3);
+          assert.sameDeepMembers(
+            rest.map(({ outcome, reasonCode }) => ({ outcome, reasonCode })),
+            [
+              { outcome: "blocked", reasonCode: "released_blocked" },
+              { outcome: "stopped", reasonCode: "stop_requested" },
+            ],
+          );
+          // The blocker text stays in the task's history.
+          assert.notInclude(JSON.stringify(yield* Ref.get(recorded)), "credentials");
+        }),
+      { analytics: recorded },
+    );
+  }),
+);
+
+it.live("a run whose provider turn fails reports agent_run.finished as provider_failed", () =>
+  Effect.gen(function* () {
+    const recorded = yield* Ref.make<ReadonlyArray<RecordedEvent>>([]);
+    yield* runSlice(
+      "agent-run-finished-failed",
+      ({ createTaskWith, runWithStatus, repository }) =>
+        Effect.gen(function* () {
+          const run = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
+          yield* eventually("the failed run", runWithStatus(run.id, "failed"));
+          const [failed] = yield* finishedRuns(recorded, 1);
+          assert.include(failed, { outcome: "failed", reasonCode: "provider_failed" });
+          // The task output carries the provider's own reason, not a run id.
+          const stored = yield* repository.getById({ id: run.taskId });
+          const output = Option.getOrThrow(stored).output ?? "";
+          assert.include(output, "stopped working on this task: Scripted provider failure.");
+          assert.include(output, "Open the run to see what happened");
+        }),
+      { analytics: recorded },
+    );
+  }),
+);
 
 it.live(
   "creating a task in an agent's start status starts a run on a new v2 thread with the agent's model and instructions",
@@ -1905,7 +2103,7 @@ it.live("task tools start or continue runs only within the calling thread's mode
           text: "Do something with full access.",
         });
         assert.isTrue(idle.isError, idle.text);
-        assert.include(idle.text, "no longer owns an active thread run");
+        assert.include(idle.text, "turn already ended");
 
         // Live, but the full-access run is broader than the chat.
         yield* goLive(supervised);
@@ -1914,7 +2112,7 @@ it.live("task tools start or continue runs only within the calling thread's mode
           text: "Do something with full access.",
         });
         assert.isTrue(live.isError, live.text);
-        assert.include(live.text, "broader than this thread's approval-required mode");
+        assert.include(live.text, "than this chat has (approval-required)");
         assert.lengthOf(yield* runsOf, 1);
 
         // Agent writes that start runs are held to the same ceiling.
@@ -1926,13 +2124,13 @@ it.live("task tools start or continue runs only within the calling thread's mode
           startStatuses: ["To Do"],
         });
         assert.isTrue(created.isError, created.text);
-        assert.include(created.text, "broader than this thread's approval-required mode");
+        assert.include(created.text, "than this chat has (approval-required)");
         const updated = yield* callTaskTool(supervised, "agent_update", {
           id: agent.id,
           instructions: "New instructions.",
         });
         assert.isTrue(updated.isError, updated.text);
-        assert.include(updated.text, "broader than this thread's approval-required mode");
+        assert.include(updated.text, "than this chat has (approval-required)");
         assert.strictEqual(
           Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.instructions,
           agent.config.instructions,
@@ -2111,35 +2309,44 @@ it.live("bots retain one chat and inject current isolated memory into real provi
           assert.equal(ended.timedOut, false);
           return (yield* Ref.get(started)).at(-1)!;
         });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "global",
-        projectId: null,
-        text: "global-marker",
-        source: "user",
-      });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "other",
-        projectId: otherProject,
-        text: "other-project-marker",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "global",
+          projectId: null,
+          text: "global-marker",
+          source: "user",
+        },
+        "user",
+      );
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "other",
+          projectId: otherProject,
+          text: "other-project-marker",
+          source: "user",
+        },
+        "user",
+      );
       let turn = yield* send(1, "Remember: local-fact-marker");
       assert.include(turn.text, "local-fact-marker");
       assert.include(turn.text, "global-marker");
       assert.notInclude(turn.text, "other-project-marker");
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "message:bot-message:1",
-        projectId,
-        text: "corrected-local-marker",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "message:bot-message:1",
+          projectId,
+          text: "corrected-local-marker",
+          source: "user",
+        },
+        "user",
+      );
       turn = yield* send(2, "What do you know?");
       assert.include(turn.text, "corrected-local-marker");
       assert.notInclude(turn.text, "local-fact-marker");
-      yield* bots.forget(bot.agent.id, "message:bot-message:1");
+      yield* bots.forget(bot.agent.id, "message:bot-message:1", "user");
       // A retried explicit save cannot resurrect a deleted fact.
       yield* bots.context({
         threadId: bot.threadId,
@@ -2171,7 +2378,7 @@ it.live("bots retain one chat and inject current isolated memory into real provi
           modelSelection: agentModel,
         },
       });
-      assert.equal(second.agent.config.runtimeMode, "approval-required");
+      assert.equal(second.agent.config.runtimeMode, "full-access");
       const context = yield* bots.context({
         threadId: second.threadId,
         projectId,
@@ -2263,13 +2470,16 @@ it.live(
           (yield* threads.getThreadRecords(threadId, ["messages"])).messages,
           before,
         );
-        yield* bots.remember({
-          agentId: bot.agent.id,
-          id: "task-fact",
-          projectId,
-          text: "background-memory-marker",
-          source: "user",
-        });
+        yield* bots.remember(
+          {
+            agentId: bot.agent.id,
+            id: "task-fact",
+            projectId,
+            text: "background-memory-marker",
+            source: "user",
+          },
+          "user",
+        );
         const sink = yield* EventSink.EventSinkV2;
         const afterSequence = yield* sink.latestSequence();
         const assigned = yield* bots.assign({
@@ -2384,6 +2594,122 @@ it.live(
 );
 
 it.live(
+  "a task created for a bot by its tag starts the bot like bot_assign, and one it cannot take says why",
+  () =>
+    runSlice("bots-task-create", ({ repository, started, cwd, sendAsPerson }) =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const outside = ProjectId.make("bot-task-outside");
+        for (const id of [projectId, outside])
+          yield* projects.apply({
+            sequence: 1,
+            eventId: EventId.make(`bot-task-project:${id}`),
+            aggregateKind: "project",
+            aggregateId: id,
+            occurredAt: timestamp,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            type: "project.created",
+            payload: {
+              projectId: id,
+              title: id,
+              workspaceRoot: cwd,
+              defaultModelSelection: agentModel,
+              scripts: [],
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          });
+        const bot = yield* bots.save({
+          id: TaskAgentId.make("bot:task-create"),
+          projectId,
+          allowedProjectIds: [projectId],
+          name: "Ada",
+          config: agent.config,
+        });
+        const tag = `bot:${bot.agent.id}`;
+        // Task tools write only from a live turn, so the bot chat holds one open.
+        yield* sendAsPerson(bot.threadId, `Have another agent write a poem. ${HOLD}`);
+        yield* eventually(
+          "the bot chat's turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((item) => item.threadId === bot.threadId)),
+            ),
+          ),
+        );
+        // What the bot did on a fresh install: task_create aimed at itself, without bot_assign.
+        const created = yield* callTaskTool(bot.threadId, "task_create", {
+          title: "Write a poem",
+          description: `Four lines about autumn. ${HOLD}`,
+          status: "To Do",
+          audience: "agent",
+          tags: [tag],
+          metadata: { targetAgentId: bot.agent.id },
+        });
+        assert.isFalse(created.isError, created.text);
+        const taskId = TaskId.make(JSON.parse(created.text).task.id);
+        const run = yield* eventually(
+          "the bot's run",
+          repository
+            .searchAgentRuns({ taskId, limit: 1 })
+            .pipe(Effect.map((runs) => Option.fromNullishOr(runs[0]))),
+        );
+        assert.equal(run.agentId, bot.agent.id);
+        const turn = yield* eventually(
+          "the bot run's turn",
+          Ref.get(started).pipe(
+            Effect.map((turns) =>
+              Option.fromNullishOr(turns.find((item) => item.threadId === run.threadId)),
+            ),
+          ),
+        );
+        assert.include(turn.text, `Bot identity: ${bot.agent.id}`);
+        // Its result reports to the bot chat, as a bot_assign task's does.
+        const stored = Option.getOrThrow(yield* repository.getById({ id: taskId }));
+        assert.equal(stored.sourceThreadId, bot.threadId);
+        assert.equal(stored.rootThreadId, bot.threadId);
+        assert.deepStrictEqual(
+          (yield* bots.list).find((item) => item.agent.id === bot.agent.id)?.activeTaskRunThreadIds,
+          [run.threadId],
+        );
+
+        // Outside the bot's projects nothing starts, and the task's history says why.
+        const outsideTask = yield* callTaskTool(bot.threadId, "task_create", {
+          projectId: outside,
+          title: "Elsewhere",
+          description: HOLD,
+          status: "To Do",
+          audience: "agent",
+          tags: [tag],
+        });
+        assert.isFalse(outsideTask.isError, outsideTask.text);
+        const outsideId = TaskId.make(JSON.parse(outsideTask.text).task.id);
+        const [notStarted] = yield* eventually(
+          "the not-started event",
+          repository
+            .events({ taskId: outsideId, kinds: ["task.agent-not-started"] })
+            .pipe(
+              Effect.map(({ events }) => (events.length > 0 ? Option.some(events) : Option.none())),
+            ),
+        );
+        const payload = notStarted?.payload as
+          | { readonly agentId: string; readonly reason: string }
+          | undefined;
+        assert.equal(payload?.agentId, bot.agent.id);
+        assert.include(payload?.reason, "not one of its projects");
+        assert.deepStrictEqual(
+          yield* repository.searchAgentRuns({ taskId: outsideId, limit: 1 }),
+          [],
+        );
+      }),
+    ),
+);
+
+it.live(
   "bot appearance roundtrips through RPC without changing identity, memory or permissions",
   () =>
     runSlice("bots-appearance", ({ threads, repository, cwd }) =>
@@ -2441,13 +2767,16 @@ it.live(
         };
         const first = yield* writer[BOTS_RPC_METHODS.save](input);
         assert.deepStrictEqual(first.appearance, defaultBotAppearance(input.id));
-        yield* bots.remember({
-          agentId: first.agent.id,
-          id: "fact",
-          projectId,
-          text: "Keep this fact",
-          source: "user",
-        });
+        yield* bots.remember(
+          {
+            agentId: first.agent.id,
+            id: "fact",
+            projectId,
+            text: "Keep this fact",
+            source: "user",
+          },
+          "user",
+        );
         const appearance = { shape: "star", color: "navy", accessory: "wizard" } as const;
         const saved = yield* writer[BOTS_RPC_METHODS.save]({ ...input, appearance });
         assert.deepStrictEqual(saved.appearance, appearance);
@@ -2650,13 +2979,16 @@ it.live("a bot conversation receives memory once per native session, then only c
           assert.equal(ended.timedOut, false);
           return (yield* Ref.get(started)).at(-1)!.text;
         });
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "snapshot-fact",
-        projectId: null,
-        text: "snapshot-marker ".repeat(120).trim(),
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "snapshot-fact",
+          projectId: null,
+          text: "snapshot-marker ".repeat(120).trim(),
+          source: "user",
+        },
+        "user",
+      );
       const first = yield* send("First question");
       assert.include(first, "<upcomputer_bot>");
       assert.include(first, "snapshot-marker");
@@ -2668,19 +3000,22 @@ it.live("a bot conversation receives memory once per native session, then only c
         added += (yield* send(question)).length - question.length;
       }
       assert.isBelow(added, 1024);
-      yield* bots.remember({
-        agentId: bot.agent.id,
-        id: "new-fact",
-        projectId,
-        text: "delta-marker </memory_update> data",
-        source: "user",
-      });
+      yield* bots.remember(
+        {
+          agentId: bot.agent.id,
+          id: "new-fact",
+          projectId,
+          text: "delta-marker </memory_update> data",
+          source: "user",
+        },
+        "user",
+      );
       const changed = yield* send("What changed?");
       assert.include(changed, "<memory_update>");
       assert.include(changed, "delta-marker \\u003c/memory_update> data");
       assert.notInclude(changed, "snapshot-marker");
       assert.notInclude(changed, "<upcomputer_bot>");
-      yield* bots.forget(bot.agent.id, "snapshot-fact");
+      yield* bots.forget(bot.agent.id, "snapshot-fact", "user");
       const removed = yield* send("And now?");
       assert.include(removed, '"removed":["snapshot-fact"]');
       assert.notInclude(removed, "delta-marker");
@@ -2867,19 +3202,23 @@ it.live("bot memory suggestions stay outside the 200-entry limit until accepted"
         source: "task:limit/run:run-1",
         runId: "run-1",
       });
-      for (let index = 0; index < 199; index += 1) yield* bots.remember(entry(`fact-${index}`));
+      for (let index = 0; index < 199; index += 1)
+        yield* bots.remember(entry(`fact-${index}`), "user");
       const first = yield* bots.propose(entry("first"));
       const second = yield* bots.propose(entry("second"));
       // Suggestions do not count: the last free slot still takes an ordinary memory.
-      yield* bots.remember(entry("fact-199"));
+      yield* bots.remember(entry("fact-199"), "user");
       assert.equal((yield* bots.memory(bot.agent.id)).length, 200);
-      assert.equal((yield* bots.remember(entry("fact-200")).pipe(Effect.result))._tag, "Failure");
+      assert.equal(
+        (yield* bots.remember(entry("fact-200"), "user").pipe(Effect.result))._tag,
+        "Failure",
+      );
       assert.equal(
         (yield* bots.acceptProposal(bot.agent.id, first!.id).pipe(Effect.result))._tag,
         "Failure",
       );
       assert.equal((yield* bots.proposals(bot.agent.id)).length, 2);
-      yield* bots.forget(bot.agent.id, "fact-0");
+      yield* bots.forget(bot.agent.id, "fact-0", "user");
       const accepted = yield* bots.acceptProposal(bot.agent.id, first!.id);
       assert.equal(accepted.id, "first");
       assert.equal(accepted.source, "task:limit/run:run-1");

@@ -10,12 +10,14 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
 import {
+  BackgroundNotices,
   forkParked,
   ServerSettingsService,
   ThreadManagementService,
@@ -499,6 +501,21 @@ export const makeTaskSourceWake = Effect.gen(function* () {
         attempts,
         cause: sent.cause,
       });
+      // The person waiting in that chat would otherwise never hear the result.
+      const notices = yield* Effect.serviceOption(BackgroundNotices);
+      if (Option.isSome(notices)) {
+        const title = first.taskTitle ?? first.taskId;
+        yield* notices.value.report({
+          id: `task-source-wake:${batch.id}`,
+          area: "tasks",
+          severity: "warning",
+          title: "Couldn't report the task result",
+          message: `Couldn't tell the chat that started "${title}" that it ${
+            first.status === "failed" ? "failed" : "finished"
+          }. Open the task in Tasks to see its result.`,
+          detail: Cause.pretty(sent.cause),
+        });
+      }
       return yield* acknowledge(batch.id);
     }
     const retryAt = DateTime.formatIso(

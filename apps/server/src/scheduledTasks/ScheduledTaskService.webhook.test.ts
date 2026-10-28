@@ -4,6 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ScheduledTaskUpsertInput,
   ScheduledTaskWebhookDeliveryId,
   SecretRequestError,
@@ -27,10 +28,13 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 import { renderWebhookPrompt } from "./webhookTemplate.ts";
+
+const PROMPT_TOO_LONG = `This request made the prompt longer than ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} characters, so it didn't run. Use fewer or shorter placeholders in the prompt.`;
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
 
@@ -174,6 +178,8 @@ const withService = <A, E>(
     readonly relayHookBaseUrl?: string;
     readonly sql?: SqlClient.SqlClient;
     readonly workers?: Map<string, Effect.Effect<void>>;
+    /** Collects the product events the service records. */
+    readonly events?: Array<{ readonly event: string; readonly properties: unknown }>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -250,6 +256,15 @@ const withService = <A, E>(
         ScheduledTaskService.ScheduledTaskWebhookOrigin,
         Effect.succeed({ relayHookBaseUrl: options.relayHookBaseUrl ?? null }),
       ),
+      options.events === undefined
+        ? Layer.empty
+        : Layer.mock(AnalyticsService.AnalyticsService)({
+            enabled: true,
+            sessionId: undefined,
+            record: (event, properties) =>
+              Effect.sync(() => void options.events?.push({ event, properties })),
+            recordMilestone: () => Effect.void,
+          }),
     );
     return yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
@@ -310,6 +325,79 @@ it.effect("dispatches exactly the rendered prompt and logs the delivery", () =>
   ),
 );
 
+it.effect("reports each delivery and the run it started, with no hook ids or request data", () => {
+  const events: Array<{ readonly event: string; readonly properties: unknown }> = [];
+  return withService(
+    ({ service, launches }) =>
+      Effect.gen(function* () {
+        const { task } = yield* service.upsert(yield* webhookTaskInput());
+        yield* service.triggerWebhook(requestFor(task));
+        yield* Queue.take(launches);
+        // Scans of the public hostname are reported once a minute, not per request.
+        for (const token of ["wrong-1", "wrong-2", "wrong-3"])
+          yield* service.triggerWebhook(requestFor(task, { token }));
+        yield* TestClock.adjust("61 seconds");
+        yield* service.triggerWebhook(requestFor(task, { token: "wrong-4" }));
+        // The forked run records its start after the delivery was answered.
+        yield* Effect.yieldNow;
+
+        assert.sameDeepMembers(events, [
+          {
+            event: "webhook.received",
+            properties: { outcome: "accepted", reason: "accepted", source: "direct" },
+          },
+          {
+            event: "schedule.fired",
+            properties: {
+              kind: "scheduled_task",
+              trigger: "webhook",
+              outcome: "started",
+              reason: "new_thread",
+            },
+          },
+          {
+            event: "webhook.received",
+            properties: { outcome: "rejected", reason: "not_found", source: "direct" },
+          },
+          {
+            event: "webhook.received",
+            properties: { outcome: "rejected", reason: "not_found", source: "direct" },
+          },
+        ]);
+        assert.notInclude(JSON.stringify(events), task.id);
+      }),
+    { events },
+  );
+});
+
+it.effect("reports a run started by hand as a manual schedule.fired", () => {
+  const events: Array<{ readonly event: string; readonly properties: unknown }> = [];
+  return withService(
+    ({ service }) =>
+      Effect.gen(function* () {
+        const { task } = yield* service.upsert(
+          yield* webhookTaskInput({
+            id: "scheduled-task:interval",
+            schedule: { type: "interval", everyMs: 3_600_000 },
+          }),
+        );
+        yield* service.runNow({ id: task.id });
+        assert.deepEqual(events, [
+          {
+            event: "schedule.fired",
+            properties: {
+              kind: "scheduled_task",
+              trigger: "manual",
+              outcome: "started",
+              reason: "new_thread",
+            },
+          },
+        ]);
+      }),
+    { events },
+  );
+});
+
 it("builds the relay hook URL from the managed tunnel's key, never the environment id", () => {
   const relayUrl = "https://relay.example.com/";
   assert.equal(
@@ -344,7 +432,10 @@ it.effect("refuses webhook schedules in a product that hides them", () =>
     Effect.gen(function* () {
       const input = yield* webhookTaskInput();
       const error = yield* service.upsert(input).pipe(Effect.flip);
-      assert.equal(error.message, "Webhook schedules are not available in this build.");
+      assert.equal(
+        error.message,
+        "Webhook triggers aren't available in this version of Up.computer.",
+      );
     }).pipe(
       Effect.provideService(
         ServerProduct,
@@ -837,7 +928,7 @@ it.effect("a signature without any secret is refused", () =>
           }),
         )
         .pipe(Effect.flip);
-      assert.include(failure.message, "needs a signing secret");
+      assert.include(failure.message, "Add the signing secret");
     }),
   ),
 );

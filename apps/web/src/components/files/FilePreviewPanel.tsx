@@ -124,6 +124,7 @@ import {
   setProjectFileQueryData,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
@@ -1210,7 +1211,7 @@ export default function FilePreviewPanel({
         stackedThreadToast({
           type: "error",
           title: "Unable to open file in browser",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     })();

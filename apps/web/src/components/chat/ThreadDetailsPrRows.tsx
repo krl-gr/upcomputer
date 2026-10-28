@@ -78,7 +78,9 @@ export function ThreadDetailsPrRows({
   const [expanded, setExpanded] = useState(false);
   // The plus already means "add" in this card (Add project script).
   const redesign = useClientSettings((s) => s.redesignEnabled);
-  const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: true });
+  const watch = useAtomCommand(threadEnvironment.watchPullRequest, {
+    failureToast: "Couldn't update the pull request link",
+  });
   const stopWatching = (link: ThreadPullRequestLink | null) =>
     link?.watch === undefined
       ? undefined

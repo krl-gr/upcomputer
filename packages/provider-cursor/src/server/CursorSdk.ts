@@ -52,8 +52,22 @@ function onUnhandledRejection(reason: unknown): void {
   if (process.listenerCount("unhandledRejection") > 1) {
     return;
   }
-  console.error(reason);
-  process.exit(1);
+  // Nothing here may keep a crashed process alive, not even a throwing getter
+  // on the reason.
+  try {
+    console.error(reason);
+    // Node's own crash on an unhandled rejection notifies these observers first;
+    // exiting here instead must too, or crash reporting never sees it.
+    for (const listener of process.listeners("uncaughtExceptionMonitor")) {
+      try {
+        listener(reason as Error, "unhandledRejection");
+      } catch {
+        // The next observer still runs.
+      }
+    }
+  } finally {
+    process.exit(1);
+  }
 }
 
 /** Keeps the shell spawn guard armed while in-process agents run. */

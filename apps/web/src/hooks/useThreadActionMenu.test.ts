@@ -35,6 +35,10 @@ function recordEffect(action: string) {
 }
 
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
+// Its toast description is a React element; this test's React mock renders none.
+vi.mock("../components/errors/ErrorDetails", () => ({
+  errorToastDescription: (error: unknown) => String(error),
+}));
 vi.mock("../product/threadActions", () => ({
   productThreadActions: () => [
     { id: "feature:test:act", label: "Act", run: () => recordEffect("feature") },

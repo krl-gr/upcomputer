@@ -237,6 +237,7 @@ import {
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { type SidebarRouteReveal, useActiveRowReveal } from "./sidebar/routeReveal";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -560,7 +561,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             stackedThreadToast({
               type: "error",
               title: "Thread action failed",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -584,7 +585,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           stackedThreadToast({
             type: "error",
             title: "Thread action failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -1319,7 +1320,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to copy thread ID",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -1339,7 +1340,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     },
@@ -1874,7 +1875,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           stackedThreadToast({
             type: "error",
             title: "Thread archived, but navigation failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -1886,7 +1887,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             stackedThreadToast({
               type: "error",
               title: "Failed to archive threads",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -1924,7 +1925,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to delete threads",
-          description: firstError instanceof Error ? firstError.message : "An error occurred.",
+          description: errorToastDescription(firstError),
         }),
       );
     }
@@ -1950,7 +1951,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           stackedThreadToast({
             type: "error",
             title: "Could not create thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -1989,7 +1990,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           stackedThreadToast({
             type: "error",
             title: "Could not choose environment",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
         return;
@@ -2017,7 +2018,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to archive thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -2076,7 +2077,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to rename thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -2122,7 +2123,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         stackedThreadToast({
           type: "error",
           title: "Failed to rename project",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }
@@ -2217,7 +2218,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             stackedThreadToast({
               type: "error",
               title: "Could not create thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         }
@@ -2277,7 +2278,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           stackedThreadToast({
             type: "error",
             title: "Failed to delete thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -3554,7 +3555,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
             stackedThreadToast({
               type: "error",
               title: "Could not start update download",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         })
@@ -3602,7 +3603,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
             stackedThreadToast({
               type: "error",
               title: "Could not install update",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+              description: errorToastDescription(error),
             }),
           );
         })

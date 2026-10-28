@@ -43,6 +43,8 @@ import {
   useUpdateEverythingRun,
 } from "./updateEverythingRun";
 import { type ReportLocalUpdateError, useUpdateEverything } from "./useUpdateEverything";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -152,10 +154,7 @@ async function downloadLocalUpdate(
     if (actionError) reportError("Could not download update", actionError);
     return result.completed;
   } catch (error) {
-    reportError(
-      "Could not start update download",
-      error instanceof Error ? error.message : "An unexpected error occurred.",
-    );
+    reportError("Could not start update download", plainErrorSentence(error));
     return false;
   }
 }
@@ -177,10 +176,7 @@ async function installLocalUpdate(
     reportError("Could not install update", actionError);
     return false;
   } catch (error) {
-    reportError(
-      "Could not install update",
-      error instanceof Error ? error.message : "An unexpected error occurred.",
-    );
+    reportError("Could not install update", plainErrorSentence(error));
     return false;
   }
 }
@@ -365,7 +361,7 @@ function SidebarUpdateControl() {
         stackedThreadToast({
           type: "error",
           title: "Could not update everything",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }

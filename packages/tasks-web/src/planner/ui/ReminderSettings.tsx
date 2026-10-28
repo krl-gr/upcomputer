@@ -37,6 +37,8 @@ function timeZones(): string[] {
 /** The environment's schedule settings, read when the settings open. */
 function useScheduleSettings(environmentId: string) {
   const [settings, setSettings] = useState<TaskScheduleSettings | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     readTasksWebClient(environmentId as never)
@@ -45,12 +47,18 @@ function useScheduleSettings(environmentId: string) {
         (result) => {
           if (live) setSettings(result);
         },
-        () => undefined,
+        () => {
+          if (live) setLoadFailed(true);
+        },
       );
     return () => {
       live = false;
     };
-  }, [environmentId]);
+  }, [environmentId, attempt]);
+  const retry = useCallback(() => {
+    setLoadFailed(false);
+    setAttempt((value) => value + 1);
+  }, []);
   const update = useCallback(
     (patch: TaskScheduleSettingsUpdateInput) => {
       readTasksWebClient(environmentId as never)
@@ -58,14 +66,14 @@ function useScheduleSettings(environmentId: string) {
         .then(setSettings, (error: unknown) =>
           toastManager.add({
             type: "error",
-            title: "Could not change the reminder settings",
+            title: "Couldn't change the reminder settings",
             description: errorMessage(error),
           }),
         );
     },
     [environmentId],
   );
-  return [settings, update] as const;
+  return [settings, update, loadFailed, retry] as const;
 }
 
 /**
@@ -75,7 +83,16 @@ function useScheduleSettings(environmentId: string) {
  */
 export function ReminderSettings() {
   const { environmentId } = usePlanner();
-  const [settings, update] = useScheduleSettings(environmentId);
+  const [settings, update, loadFailed, retry] = useScheduleSettings(environmentId);
+  if (!settings && loadFailed)
+    return (
+      <p className="text-xs text-muted-foreground">
+        Up.computer couldn't load your reminder settings from this computer.{" "}
+        <button type="button" className="underline" onClick={retry}>
+          Retry
+        </button>
+      </p>
+    );
   if (!settings)
     return <p className="text-xs text-muted-foreground">Loading the reminder settings…</p>;
   const zone = settings.scheduleTimeZone ?? settings.serverTimeZone;

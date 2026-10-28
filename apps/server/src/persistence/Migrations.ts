@@ -194,7 +194,8 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
   if (skipped.length === 0) return;
   return yield* new Migrator.MigrationError({
     kind: "BadState",
-    message: `This database's migration history would skip required schema migrations: ${skipped.join(", ")}. The migrator skips every id up to the highest recorded id (${latestRecordedId}), regardless of name. It was probably written by a different build. Start the build that wrote it, or report this migration history so an upgrade path can be added.`,
+    // The person reads the first sentence; the rest is for the report they send.
+    message: `Your Up.computer data was saved by a different version, and this version can't open it safely. Install the version you used last, or contact support. Details: the migration history would skip ${skipped.join(", ")} (highest recorded id ${latestRecordedId}).`,
   });
 });
 

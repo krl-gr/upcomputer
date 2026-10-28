@@ -13,6 +13,7 @@ import {
   type ModelSelection,
   NodeId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2ProviderMcpStatus,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2RuntimeRequest,
@@ -1305,6 +1306,109 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         }).pipe(Effect.provide(CodexReplay.layerReplayWithDriver(driver)));
       }
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("reports MCP startup, a failed user server, and a t3-code drop after the turn", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "mcp-thread";
+      const nativeTurnId = "mcp-turn";
+      const prompt = "Make a task.";
+      const startupStatus = (name: string, status: string, error: string | null = null) =>
+        ({
+          type: "emit_inbound",
+          label: "mcpServer/startupStatus/updated",
+          frame: {
+            method: "mcpServer/startupStatus/updated",
+            params: { threadId: nativeThreadId, name, status, error, failureReason: null },
+          },
+        }) satisfies CodexReplay.CodexAppServerReplayEntry;
+      const transcript = makeCodexReplayTranscript({
+        scenario: "mcp-attach-status",
+        entries: [
+          ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt }),
+          startupStatus("t3-code", "starting"),
+          startupStatus("my-notes", "starting"),
+          startupStatus("t3-code", "ready"),
+          startupStatus("my-notes", "failed", "spawn my-notes-server ENOENT"),
+          {
+            type: "emit_inbound",
+            label: "turn/completed",
+            frame: {
+              method: "turn/completed",
+              params: {
+                threadId: nativeThreadId,
+                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+              },
+            },
+          },
+          {
+            type: "expect_outbound",
+            label: "mcpServerStatus/list",
+            frame: {
+              id: 4,
+              method: "mcpServerStatus/list",
+              params: {
+                threadId: nativeThreadId,
+                serverName: "t3-code",
+                detail: "toolsAndAuthOnly",
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "mcpServerStatus/list",
+            frame: {
+              id: 4,
+              result: {
+                data: [
+                  {
+                    name: "t3-code",
+                    authStatus: "bearerToken",
+                    runtimeStatus: "failed",
+                    tools: {},
+                    resources: [],
+                    resourceTemplates: [],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+      const updates: Array<OrchestrationV2ProviderMcpStatus> = [];
+      const harness = yield* makeCodexReplayHarness(transcript, (event) =>
+        Effect.sync(() => {
+          if (event.type === "provider_session.updated" && event.providerSession.mcp) {
+            updates.push(event.providerSession.mcp);
+          }
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("mcp-attempt"),
+          text: prompt,
+        }),
+      );
+      yield* harness.firstTerminal;
+      yield* awaitUntil(() => updates.at(-1)?.t3?.outcome === "disconnected", "the t3-code drop");
+      assert.deepEqual(updates, [
+        { t3: { outcome: "attached" }, userServerCount: 0, failedUserServers: [] },
+        { t3: { outcome: "attached" }, userServerCount: 1, failedUserServers: ["my-notes"] },
+        {
+          t3: { outcome: "disconnected", reason: "connection_lost" },
+          userServerCount: 1,
+          failedUserServers: ["my-notes"],
+        },
+      ]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
   );
 
   it.effect("waits for native start before interrupting an acknowledged queued turn", () =>
@@ -4178,7 +4282,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.equal(terminal.threadDisposition, "reusable");
         if (scenario.name === "deferred-reset") assert.equal(terminal.failure.resetAt, resetAt);
         if (scenario.name === "matching-details")
-          assert.equal(terminal.failure.message, "Detailed provider allowance explanation.");
+          assert.equal(
+            terminal.failure.message,
+            "Codex usage limit reached (detailed provider allowance explanation). Switch to another model or provider to keep working now.",
+          );
         if (scenario.name === "late-reset") {
           yield* Deferred.await(resetReceipt);
           const item = harness.events.find(
@@ -6781,5 +6888,46 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ),
       ),
     );
+  });
+});
+
+describe("Codex MCP status", () => {
+  it("classifies startup reports without keeping their text", () => {
+    assert.deepEqual(CodexAdapterV2.codexMcpStartupState({ status: "ready" }), {
+      outcome: "attached",
+    });
+    assert.deepEqual(
+      CodexAdapterV2.codexMcpStartupState({
+        status: "failed",
+        error: "MCP client for `t3-code` timed out after 10 seconds",
+      }),
+      { outcome: "timeout", reason: "no_response" },
+    );
+    assert.deepEqual(
+      CodexAdapterV2.codexMcpStartupState({
+        status: "failed",
+        error: "401",
+        failureReason: "reauthenticationRequired",
+      }),
+      { outcome: "failed", reason: "needs_auth" },
+    );
+    assert.deepEqual(
+      CodexAdapterV2.codexMcpStartupState({ status: "failed", error: "connection refused" }),
+      { outcome: "failed", reason: "unknown" },
+    );
+    assert.deepEqual(CodexAdapterV2.codexMcpStartupState({ status: "cancelled" }), {
+      outcome: "failed",
+      reason: "cancelled",
+    });
+  });
+
+  it("attaches again when a restarted session reports the server ready", () => {
+    const servers = new Map<string, CodexAdapterV2.CodexMcpServerState>([
+      ["t3-code", { outcome: "disconnected", reason: "connection_lost" }],
+    ]);
+    assert.equal(CodexAdapterV2.codexMcpStatus(servers).t3?.outcome, "disconnected");
+    servers.set("t3-code", CodexAdapterV2.codexMcpStartupState({ status: "ready" }));
+    assert.deepEqual(CodexAdapterV2.codexMcpStatus(servers).t3, { outcome: "attached" });
+    assert.isUndefined(CodexAdapterV2.codexMcpRuntimeState(null));
   });
 });

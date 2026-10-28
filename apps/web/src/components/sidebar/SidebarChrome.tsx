@@ -28,6 +28,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { useShownPathname } from "../../hooks/useShownPathname";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { SidebarBackgroundNotices } from "./SidebarBackgroundNotices";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -138,10 +139,12 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarUtilityItem({
   icon,
   label,
+  track,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  track: string;
   onClick: () => void;
 }) {
   return (
@@ -149,7 +152,7 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton aria-label={label} data-track={track} onClick={onClick} size="icon">
               {icon}
             </SidebarMenuButton>
           }
@@ -202,7 +205,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     <SidebarMenu className="flex-row items-center">
       {isOnUtilityPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
+          <SidebarMenuButton data-track="sidebar.back" onClick={handleBackClick}>
             <ArrowLeftIcon />
             <span>Back</span>
           </SidebarMenuButton>
@@ -212,22 +215,26 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
+            track="sidebar.settings"
             onClick={handleSettingsClick}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
               label="Pull requests"
+              track="sidebar.pull_requests"
               onClick={handlePullRequestsClick}
             />
           ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
+            track="sidebar.usage"
             onClick={handleUsageClick}
           />
         </>
       )}
+      <SidebarBackgroundNotices />
       <SidebarUpdatePill />
     </SidebarMenu>
   );

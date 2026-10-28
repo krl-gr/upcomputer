@@ -27,7 +27,8 @@ export function pendingRecordedNotifications(input: {
   >;
 }): ReadonlyArray<RecordedNotification> {
   const recorded = input.items.filter(
-    (item): item is RecordedNotification => item.type === "notification" && item.runId === null,
+    (item): item is RecordedNotification =>
+      item.type === "notification" && item.runId === null && item.source.kind !== "memory",
   );
   if (recorded.length === 0) return [];
   const completedAttemptIds = new Set(

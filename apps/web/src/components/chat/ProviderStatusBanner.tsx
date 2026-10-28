@@ -69,7 +69,7 @@ export function getProviderStatusMessage(status: ServerProvider): string {
   if (status.message) return status.message;
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
   if (!status.installed && hasProviderSetup(status)) {
-    return `Open provider setup to install ${formatProviderDriverKindLabel(status.driver)} on this environment.`;
+    return `${formatProviderDriverKindLabel(status.driver)} isn't installed on this computer. Open provider setup to install it.`;
   }
   if (status.auth.status === "unauthenticated") {
     if (hasProviderSetup(status)) {
@@ -77,13 +77,13 @@ export function getProviderStatusMessage(status: ServerProvider): string {
         ? "Open provider setup to sign in with Google."
         : "Open provider setup to sign in.";
     }
-    return "Sign in via the CLI to authenticate again.";
+    return `${providerName} isn't signed in on this computer, so it can't run. Sign in again from a terminal on this computer.`;
   }
   return status.status === "ready"
     ? "No models are available for this provider."
     : status.status === "error"
-      ? `${providerName} provider is unavailable.`
-      : `${providerName} provider has limited availability.`;
+      ? `${providerName} isn't working right now. Check it in Settings, Providers.`
+      : `${providerName} may not work fully right now. Check it in Settings, Providers.`;
 }
 
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
@@ -103,10 +103,12 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const incompatible = getIncompatibleVersion(status);
   const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
+    ? `${providerName} needs you to sign in`
     : incompatible
       ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
-      : `${providerName} provider status`;
+      : status.status === "error"
+        ? `${providerName} isn't working`
+        : `${providerName} needs attention`;
   const message = incompatible?.message ?? getProviderStatusMessage(status);
   const isWarning =
     incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);

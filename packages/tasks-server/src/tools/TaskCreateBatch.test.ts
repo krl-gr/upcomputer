@@ -1,11 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { TaskAgentId } from "@t3tools/tasks-contracts/v1";
+import { TaskAgentId, TaskAgentRunId, type TaskChange } from "@t3tools/tasks-contracts/v1";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 
 import {
   ProjectStoreV2,
@@ -22,6 +25,7 @@ import {
   TaskToolContextResolver,
   type TaskToolContextResolverShape,
 } from "../context/TaskToolContextResolver.ts";
+import { layer as BotServiceLayer } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { AllChatsInstructionsLive } from "../persistence/AllChatsInstructions.ts";
 import { TaskPersistenceSqlError } from "../persistence/Errors.ts";
@@ -54,7 +58,17 @@ function harness(
   const scheduled: TaskChangedInput[] = [];
   const agents = {
     scheduleTaskChanged: (input: TaskChangedInput) => Effect.sync(() => void scheduled.push(input)),
+    scheduleAgentChanged: () => Effect.void,
   } as unknown as TaskAgentServiceShape;
+  // Every chat is titled "Old title"; thread commands are only recorded.
+  const dispatched: Array<{ readonly type: string; readonly threadId?: string; title?: string }> =
+    [];
+  const threads = {
+    getThreadRecords: (threadId: ThreadId) =>
+      Effect.succeed({ thread: { id: threadId, title: "Old title", deletedAt: null } }),
+    dispatch: (command: (typeof dispatched)[number]) =>
+      Effect.sync(() => void dispatched.push(command)),
+  };
   const database = Layer.effectDiscard(
     runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]),
   ).pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })));
@@ -86,14 +100,18 @@ function harness(
   const layer = TaskToolServiceLive.pipe(
     Layer.provide(toolRepository),
     Layer.provideMerge(
-      Layer.mergeAll(
-        storage,
-        Layer.succeed(TaskToolContextResolver, resolver),
-        Layer.succeed(TaskAgentService, agents),
-        Layer.succeed(ThreadManagementService, {} as never),
-        Layer.succeed(ProjectStoreV2, {} as never),
-        Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
-        Layer.succeed(TaskScheduleService, {} as never),
+      BotServiceLayer.pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(
+            storage,
+            Layer.succeed(TaskToolContextResolver, resolver),
+            Layer.succeed(TaskAgentService, agents),
+            Layer.succeed(ThreadManagementService, threads as never),
+            Layer.succeed(ProjectStoreV2, {} as never),
+            Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
+            Layer.succeed(TaskScheduleService, {} as never),
+          ),
+        ),
       ),
     ),
   );
@@ -109,7 +127,7 @@ function harness(
   const stored = Effect.gen(function* () {
     return yield* (yield* TaskRepository).search({ limit: 50, kind: "all", from: "bottom" });
   });
-  return { layer, scheduled, create, update, stored };
+  return { layer, scheduled, dispatched, create, update, stored };
 }
 
 const item = (title: string, status: string, extra: Record<string, unknown> = {}) => ({
@@ -259,6 +277,15 @@ it.effect("a dry run previews the list without writing", () => {
     assert.isFalse(result.isError, result.text);
     const preview = JSON.parse(result.text);
     assert.isTrue(preview.dryRun);
+    // A dry run must not read as success to the model that relays it.
+    assert.match(preview.notice, /^Nothing was saved/);
+    const planPreview = JSON.parse(
+      (yield* create(
+        { tasks: [item("a", "To Do")] },
+        { ...chat, mutationPolicy: "deny", interactionMode: "plan" },
+      )).text,
+    );
+    assert.match(planPreview.notice, /^Plan mode: nothing was saved/);
     assert.deepStrictEqual(
       preview.tasks.map(({ title }: { title: string }) => title),
       ["a", "b"],
@@ -312,7 +339,7 @@ it.effect("without a project, a list of person tasks goes to the Inbox", () => {
       tasks: [item("mine", "To Do", { audience: "person" }), item("agent's", "To Do")],
     });
     assert.isTrue(mixed.isError);
-    assert.match(mixed.text, /Unable to resolve project. No task was created./);
+    assert.match(mixed.text, /so no task was created/);
     assert.lengthOf(yield* stored, 0);
 
     const result = yield* create({
@@ -450,5 +477,152 @@ it.effect("agent_update refuses a modelAlias that does not resolve and keeps the
       Option.getOrThrow(yield* repository.getAgentById({ id: agent.id })).config.modelSelection,
       agent.config.modelSelection,
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("a task delegated from a bot's permanent chat reports and counts there", () => {
+  const { layer, create, stored } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    const sql = yield* SqlClient.SqlClient;
+    const botChat = ThreadId.make("bot-chat:bot:helper");
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+    const at = "2026-10-26T00:00:00.000Z";
+    for (const id of [TaskAgentId.make("bot:helper"), TaskAgentId.make("agent-dev")])
+      yield* repository.upsertAgent({
+        id,
+        projectId: null,
+        name: id,
+        enabled: true,
+        startStatuses: ["To Do"],
+        startTags: [],
+        startRunStatuses: [],
+        config: { role: "Agent", modelSelection, instructions: "Work." },
+        createdAt: at,
+        updatedAt: at,
+      });
+    yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+      VALUES ('bot:helper', ${botChat}, ${project}, ${JSON.stringify([project])}, 0)`;
+
+    // To the task tools a bot chat is a chat like any other: no run calls from it.
+    const result = yield* create(
+      item("delegated", "To Do", { metadata: { targetAgentId: "agent-dev" } }),
+      { ...chat, threadId: botChat },
+    );
+    assert.isFalse(result.isError, result.text);
+    const [task] = yield* stored;
+    assert.equal(task?.sourceThreadId, botChat);
+    assert.equal(task?.rootThreadId, botChat);
+    if (!task) return;
+    yield* repository.createAgentRun({
+      id: TaskAgentRunId.make("run-delegated"),
+      taskId: task.id,
+      agentId: TaskAgentId.make("agent-dev"),
+      threadId: ThreadId.make("thread-delegated-run"),
+      modelSelection,
+      status: "running",
+      startedAt: at,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: null,
+    });
+    const counts = yield* repository.threadRunCounts({ threadIds: [botChat] });
+    assert.deepStrictEqual(counts.threads[0]?.runCounts, [{ status: "running", count: 1 }]);
+  }).pipe(Effect.provide(layer));
+});
+
+/** A bot and a task agent, each with its own chat, as the bot settings save them. */
+const seedBotAndAgent = Effect.gen(function* () {
+  const repository = yield* TaskRepository;
+  const sql = yield* SqlClient.SqlClient;
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+  const at = "2026-10-27T00:00:00.000Z";
+  for (const id of [TaskAgentId.make("bot:named"), TaskAgentId.make("agent-dev")])
+    yield* repository.upsertAgent({
+      id,
+      projectId: null,
+      name: "Old title",
+      enabled: false,
+      startStatuses: ["To Do"],
+      startTags: [],
+      startRunStatuses: [],
+      config: { role: "Agent", modelSelection, instructions: "Work." },
+      createdAt: at,
+      updatedAt: at,
+    });
+  yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+    VALUES ('bot:named', 'bot-chat:named', ${project}, ${JSON.stringify([project])}, 0)`;
+});
+
+it.effect("agent_update renaming a bot renames its chat and tells clients", () => {
+  const { layer, dispatched } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    // The stream opens with a sync; once it arrives, later writes reach this subscriber.
+    const subscribed = yield* Deferred.make<void>();
+    const agentsChanged = yield* Deferred.make<TaskChange>();
+    yield* (yield* TaskRepository).changes.pipe(
+      Stream.runForEach((change) =>
+        change.kind === "sync"
+          ? Deferred.succeed(subscribed, undefined)
+          : change.agentsChanged
+            ? Deferred.succeed(agentsChanged, change)
+            : Effect.void,
+      ),
+      Effect.forkScoped,
+    );
+    yield* Deferred.await(subscribed);
+    const result = yield* (yield* TaskToolService).call({
+      name: "agent_update",
+      args: { id: "bot:named", name: "Up Growth Analyst" },
+      context: chat,
+    });
+    assert.isFalse(result.isError, result.text);
+    assert.deepStrictEqual(
+      dispatched.map(({ type, threadId, title }) => ({ type, threadId, title })),
+      [{ type: "thread.metadata.update", threadId: "bot-chat:named", title: "Up Growth Analyst" }],
+    );
+    // Open bot lists refetch on this; before, an agent write reached no client.
+    assert.deepStrictEqual((yield* Deferred.await(agentsChanged)).taskIds, []);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("agent_update renaming a task agent leaves every chat alone", () => {
+  const { layer, dispatched } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    const result = yield* (yield* TaskToolService).call({
+      name: "agent_update",
+      args: { id: "agent-dev", name: "Developer" },
+      context: chat,
+    });
+    assert.isFalse(result.isError, result.text);
+    assert.deepStrictEqual(dispatched, []);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("agent_delete leaves a bot to the user and says what deleting it would take", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    yield* seedBotAndAgent;
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO bot_memories (agent_id, id, project_id, text, source, created_at, updated_at, owner)
+      VALUES ('bot:named', 'fact', NULL, 'Uses pnpm', 'user', '2026-10-28T00:00:00.000Z', '2026-10-28T00:00:00.000Z', 'user')`;
+    const remove = (id: string) =>
+      Effect.flatMap(TaskToolService, (tools) =>
+        tools.call({ name: "agent_delete", args: { id }, context: chat }),
+      );
+    const refused = yield* remove("bot:named");
+    assert.isTrue(refused.isError);
+    assert.equal(
+      refused.text,
+      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.",
+    );
+    assert.isTrue(
+      Option.isSome(
+        yield* (yield* TaskRepository).getAgentById({ id: TaskAgentId.make("bot:named") }),
+      ),
+    );
+    assert.isFalse((yield* remove("agent-dev")).isError);
   }).pipe(Effect.provide(layer));
 });

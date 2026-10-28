@@ -50,6 +50,7 @@ import type { ProjectionStoreV2Error } from "./ProjectionStore.ts";
 import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
+  providerFailureName,
 } from "@t3tools/provider-core/server/failure";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
@@ -961,8 +962,11 @@ export const layer: Layer.Layer<
                 terminal: makeFailedTerminalEvent(
                   makeProviderFailure({
                     cause: Cause.squash(cause),
-                    message: "Run preparation failed.",
+                    driver: input.providerThread.driver,
+                    message: `Up.computer couldn't prepare this message for ${providerFailureName(input.providerThread.driver)}. Send it again.`,
+                    code: "run_preparation_failed",
                     class: "unknown",
+                    retryable: true,
                   }),
                   input.providerTurnOrdinal * 100 + 1,
                 ),
@@ -1555,7 +1559,11 @@ export const layer: Layer.Layer<
                   ...(abandonedProviderTurn === null ? {} : { abandonedProviderTurn }),
                   completedAt,
                   terminal: makeFailedTerminalEvent(
-                    makeProviderFailure({ cause: Cause.squash(cause), class: "unknown" }),
+                    makeProviderFailure({
+                      cause: Cause.squash(cause),
+                      driver: input.providerThread.driver,
+                      class: "unknown",
+                    }),
                     latestItemOrdinal + 1,
                   ),
                   failureItemPersisted: false,
@@ -1710,6 +1718,7 @@ export const layer: Layer.Layer<
                           terminal: makeFailedTerminalEvent(
                             makeProviderFailure({
                               cause: Cause.squash(cause),
+                              driver: input.providerThread.driver,
                               class: Exit.isFailure(shouldStart) ? "unknown" : "provider_error",
                             }),
                             latestItemOrdinal + 1,

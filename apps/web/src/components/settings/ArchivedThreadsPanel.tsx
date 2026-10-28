@@ -1,4 +1,5 @@
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { Spinner } from "~/components/ui/spinner";
 import { ArchiveIcon, ArchiveX } from "lucide-react";
 import { type ScopedThreadRef } from "@t3tools/contracts";
@@ -146,7 +147,7 @@ export function ArchivedThreadsPanel() {
           stackedThreadToast({
             type: "error",
             title: "Failed to unarchive thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -163,7 +164,7 @@ export function ArchivedThreadsPanel() {
           stackedThreadToast({
             type: "error",
             title: "Failed to delete thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }
@@ -228,8 +229,7 @@ export function ArchivedThreadsPanel() {
                         stackedThreadToast({
                           type: "error",
                           title: "Archived thread action failed",
-                          description:
-                            error instanceof Error ? error.message : "An error occurred.",
+                          description: errorToastDescription(error),
                         }),
                       );
                     }
@@ -265,8 +265,7 @@ export function ArchivedThreadsPanel() {
                             stackedThreadToast({
                               type: "error",
                               title: "Failed to unarchive thread",
-                              description:
-                                error instanceof Error ? error.message : "An error occurred.",
+                              description: errorToastDescription(error),
                             }),
                           );
                         }

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderInstanceId, RunId } from "@t3tools/contracts";
 import { THREAD_STATUS_LABELS } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
-import { botChatStatus, botStatus, botTaskStatus, type BotChatInput } from "./botStatus.ts";
+import {
+  botChatStatus,
+  botStatus,
+  botTaskRunRequest,
+  botTaskRunRequestStatus,
+  botTaskStatus,
+  type BotChatInput,
+} from "./botStatus.ts";
 
 const runtime = (
   status: NonNullable<BotChatInput["runtime"]>["status"],
@@ -43,7 +50,10 @@ const replied: BotChatInput = {
 const chat = (input: BotChatInput) => botStatus(botChatStatus(input), null);
 const task = (
   runStatus: string | undefined,
-  taskThread: Pick<BotChatInput, "runtime"> | null = null,
+  taskThread: Pick<
+    BotChatInput,
+    "runtime" | "hasPendingApprovals" | "hasPendingUserInput"
+  > | null = null,
 ) => botStatus(null, botTaskStatus(runStatus, taskThread));
 
 describe("bot status", () => {
@@ -96,7 +106,28 @@ describe("bot status", () => {
     expect(blocked.detail).toBe("Background task is blocked");
     expect(task("failed").state).toBe("failed");
     expect(task("interrupted").state).toBe("failed");
-    expect(task("failed", { runtime: runtime("failed", "usage_limit") }).state).toBe("limited");
+    expect(task("failed", { ...idleChat, runtime: runtime("failed", "usage_limit") }).state).toBe(
+      "limited",
+    );
+  });
+
+  it("shows a background run's approval or question until it is answered", () => {
+    const waiting = { ...idleChat, runtime: runtime("running") };
+    const approval = task("running", { ...waiting, hasPendingApprovals: true });
+    expect(approval.state).toBe("attention");
+    expect(approval.label?.label).toBe("Pending Approval");
+    expect(approval.detail).toBe("Background task needs approval");
+    expect(task("running", { ...waiting, hasPendingUserInput: true }).label?.label).toBe(
+      "Awaiting Input",
+    );
+    // Opening the chat later than the request does not hide it.
+    expect(
+      botTaskStatus(
+        "running",
+        { ...waiting, hasPendingApprovals: true },
+        { completedAt: null, lastVisitedAt: "2026-10-20T11:00:00.000Z" },
+      )?.kind,
+    ).toBe("approval");
   });
 
   it("stops reporting how the task ended once the chat is opened after it", () => {
@@ -131,5 +162,31 @@ describe("bot status", () => {
     ).toBe("attention");
     expect(botStatus(botChatStatus(replied), botTaskStatus("failed", null)).state).toBe("failed");
     expect(botStatus(botChatStatus(replied), botTaskStatus("completed", null)).state).toBe("done");
+  });
+
+  it("shows Pending Approval while another task agent's run from the chat waits on it", () => {
+    const waiting = { hasPendingApprovals: true, hasPendingUserInput: false, runtime: null };
+    const asking = { hasPendingApprovals: false, hasPendingUserInput: true };
+    const working = { hasPendingApprovals: false, hasPendingUserInput: false };
+    expect(botTaskRunRequest([])).toBeNull();
+    expect(botTaskRunRequest([working, null])).toBeNull();
+    expect(botTaskRunRequest([asking, waiting])).toBe("approval");
+    expect(botTaskRunRequest([working, asking])).toBe("input");
+    // The bot chat is busy waiting on the task, as in the QA run; the approval still wins.
+    const status = botStatus(
+      botChatStatus({ ...idleChat, runtime: runtime("running") }),
+      null,
+      botTaskRunRequestStatus(botTaskRunRequest([working, waiting])),
+    );
+    expect(status.label).toEqual({ kind: "approval", ...THREAD_STATUS_LABELS.approval });
+    expect(status.detail).toBe("A task from this chat needs approval");
+    // The bot's own run says it first when both ask.
+    expect(
+      botStatus(
+        null,
+        botTaskStatus("running", waiting),
+        botTaskRunRequestStatus(botTaskRunRequest([waiting])),
+      ).detail,
+    ).toBe("Background task needs approval");
   });
 });

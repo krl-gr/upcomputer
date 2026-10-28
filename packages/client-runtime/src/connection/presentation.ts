@@ -65,6 +65,8 @@ export function presentConnectionState(
 }
 
 export function connectionStatusText(connection: EnvironmentConnectionPresentation): string {
+  // The reason is embedded mid-sentence, where its own final period doubles up.
+  const reason = connection.error?.trim().replace(/[.\s]+$/u, "") || null;
   switch (connection.phase) {
     case "available":
       return "Available";
@@ -73,23 +75,23 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
     case "connecting":
       return "Connecting...";
     case "reconnecting":
-      return connection.error
-        ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
+      return reason
+        ? `Up.computer can't reach this computer right now (${reason}). It keeps trying.`
         : "Reconnecting...";
     case "connected":
       return "Connected";
     case "unsupported":
-      return "Client not supported";
+      return "Update needed";
     case "error":
-      return connection.error
-        ? `Connection failed. Reason: ${connection.error}`
-        : "Connection failed";
+      return reason
+        ? `Can't connect to this computer: ${reason}.`
+        : "Can't connect to this computer";
   }
 }
 
 export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
   if (connection.phase === "reconnecting" && connection.error) {
-    return "Failed to connect. Reconnecting...";
+    return "Can't reach this computer. Reconnecting...";
   }
   return connectionStatusText({ ...connection, error: null });
 }

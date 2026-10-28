@@ -1,4 +1,5 @@
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -88,7 +89,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to open file",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -100,7 +101,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to open file",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
+            description: errorToastDescription(cause),
           }),
         );
       }
@@ -138,7 +139,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to open file in browser",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -150,7 +151,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to open file in browser",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
+            description: errorToastDescription(cause),
           }),
         );
       }
@@ -176,7 +177,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to reveal file",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -188,7 +189,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Unable to reveal file",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
+            description: errorToastDescription(cause),
           }),
         );
       }
@@ -234,7 +235,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: `Failed to copy ${title.toLowerCase()}`,
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       },

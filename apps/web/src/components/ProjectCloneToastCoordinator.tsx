@@ -27,6 +27,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { toastManager } from "./ui/toast";
 import { stackedThreadToast } from "./ui/toastHelpers";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 export function ProjectCloneToastCoordinator() {
   const { environments } = useEnvironments();
@@ -59,7 +60,7 @@ async function runCloneAction(
       stackedThreadToast({
         type: "error",
         title,
-        description: error instanceof Error ? error.message : "An error occurred.",
+        description: errorToastDescription(error),
       }),
     );
   }

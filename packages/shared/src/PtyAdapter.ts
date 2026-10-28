@@ -9,12 +9,8 @@ export class PtySpawnError extends Schema.TaggedError<PtySpawnError>()("PtySpawn
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    const shell = this.shell === undefined ? "" : ` '${this.shell}'`;
-    const attemptedShells =
-      this.attemptedShells === undefined || this.attemptedShells.length === 0
-        ? ""
-        : ` Tried shells: ${this.attemptedShells.join(", ")}.`;
-    return `Failed to spawn PTY process${shell} with ${this.adapter}.${attemptedShells}`;
+    const shell = this.shell ?? this.attemptedShells?.[0];
+    return `Up.computer couldn't start a terminal${shell === undefined ? "" : ` with ${shell}`}. Check your default shell, or reinstall Up.computer if this keeps happening.`;
   }
 }
 

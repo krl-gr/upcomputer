@@ -17,7 +17,9 @@ describe("navigateAfterThreadDeletion", () => {
     expect(addToast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Thread deleted, but navigation failed",
-        description: "route unavailable",
+        description: expect.objectContaining({
+          props: expect.objectContaining({ error: new Error("route unavailable") }),
+        }),
       }),
     );
   });

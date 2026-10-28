@@ -3,6 +3,7 @@ import {
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
   DesktopTelemetryControlMessage,
+  type DesktopProductEvent,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -26,6 +27,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
+import * as DesktopProductEvents from "../telemetry/DesktopProductEvents.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
@@ -124,6 +126,7 @@ interface MakeInstanceInput {
   readonly onReady?: Effect.Effect<void>;
   readonly onShutdown?: Effect.Effect<void>;
   readonly onStateDirOwned?: Effect.Effect<void>;
+  readonly onRestartLoop?: DesktopBackendManager.BackendInstanceSpec["onRestartLoop"];
   readonly onPreflightFailed?: (
     failure: DesktopBackendManager.PreflightFailure,
   ) => Effect.Effect<boolean>;
@@ -137,6 +140,8 @@ interface MakeInstanceInput {
     DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]
   >;
   readonly pruneRuntimes?: (distro: string | null, runtimeId: string) => Effect.Effect<void>;
+  readonly productEvents?: (event: DesktopProductEvent) => Effect.Effect<void>;
+  readonly productEventsEncoded?: Stream.Stream<Uint8Array>;
 }
 
 function makeTestInstance(input: MakeInstanceInput) {
@@ -173,6 +178,12 @@ function makeTestInstance(input: MakeInstanceInput) {
     DesktopWslEnvironment.layerTest(
       input.pruneRuntimes === undefined ? {} : { pruneRuntimes: input.pruneRuntimes },
     ),
+    input.productEvents === undefined
+      ? Layer.empty
+      : Layer.succeed(DesktopProductEvents.DesktopProductEvents, {
+          record: input.productEvents,
+          encoded: input.productEventsEncoded ?? Stream.empty,
+        }),
   );
 
   const instance = DesktopBackendManager.makeBackendInstance({
@@ -182,6 +193,7 @@ function makeTestInstance(input: MakeInstanceInput) {
     ...(input.onReady ? { onReady: () => input.onReady! } : {}),
     ...(input.onShutdown ? { onShutdown: () => input.onShutdown! } : {}),
     ...(input.onStateDirOwned ? { onStateDirOwned: () => input.onStateDirOwned! } : {}),
+    ...(input.onRestartLoop ? { onRestartLoop: input.onRestartLoop } : {}),
     ...(input.onPreflightFailed ? { onPreflightFailed: input.onPreflightFailed } : {}),
   });
 
@@ -371,6 +383,120 @@ describe("DesktopBackendManager", () => {
         yield* instance.start;
         assert.isTrue(yield* Deferred.await(handled));
       }),
+    ),
+  );
+
+  it.effect("records an unexpected exit with its code or signal, and the restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const recorded = yield* Queue.unbounded<DesktopProductEvent>();
+        const exits = [
+          Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              module: "ChildProcess",
+              method: "exitCode",
+              cause: new Error("Process interrupted due to receipt of signal: 'SIGKILL'"),
+            }),
+          ),
+        ];
+        const spawned = yield* Ref.make(0);
+        const layerSpawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Ref.getAndUpdate(spawned, (count) => count + 1).pipe(
+              Effect.map((count) => makeProcess({ exitCode: exits[count] ?? Effect.never })),
+            ),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          spawnerLayer: layerSpawner,
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          productEvents: (event) => Queue.offer(recorded, event).pipe(Effect.asVoid),
+        });
+
+        yield* instance.start;
+        const first = yield* Queue.take(recorded);
+        // The restart waits for its backoff.
+        yield* TestClock.adjust(Duration.seconds(1));
+        const second = yield* Queue.take(recorded);
+
+        assert.deepEqual(
+          [first, second].map((event) =>
+            event.event === "desktop.backend.exited"
+              ? [event.instance, event.code, event.signal, event.wasReady, event.restarted]
+              : event.event,
+          ),
+          [
+            ["primary", 1, null, false, true],
+            ["primary", null, "SIGKILL", false, true],
+          ],
+        );
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("leaves the exit event for the replacement backend, not the dead one's pipe", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const events = yield* Queue.unbounded<DesktopProductEvent>();
+        const writersRunning = yield* Ref.make<ReadonlySet<number>>(new Set());
+        const writersAtRecord = yield* Deferred.make<ReadonlySet<number>>();
+        const replacementReceived = yield* Deferred.make<string>();
+        const spawned = yield* Ref.make(0);
+        const layerSpawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              const run = yield* Ref.getAndUpdate(spawned, (count) => count + 1);
+              const fd4 =
+                command._tag === "StandardCommand" ? command.options.additionalFds?.fd4 : undefined;
+              if (fd4?.type === "input" && fd4.stream) {
+                // Like the real pipe writer, it reads for as long as the run's scope is open.
+                yield* Ref.update(writersRunning, (running) => new Set([...running, run]));
+                yield* fd4.stream.pipe(
+                  Stream.decodeText(),
+                  Stream.runForEach((line) =>
+                    run === 1 ? Deferred.succeed(replacementReceived, line) : Effect.void,
+                  ),
+                  Effect.ensuring(
+                    Ref.update(
+                      writersRunning,
+                      (running) => new Set([...running].filter((id) => id !== run)),
+                    ),
+                  ),
+                  Effect.forkScoped,
+                );
+              }
+              return makeProcess({
+                exitCode:
+                  run === 0 ? Effect.succeed(ChildProcessSpawner.ExitCode(1)) : Effect.never,
+              });
+            }),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          config: { ...baseConfig, bootstrap: configWithObservability },
+          spawnerLayer: layerSpawner,
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          productEvents: (event) =>
+            Ref.get(writersRunning).pipe(
+              Effect.flatMap((running) => Deferred.succeed(writersAtRecord, running)),
+              Effect.andThen(Queue.offer(events, event)),
+              Effect.asVoid,
+            ),
+          productEventsEncoded: Stream.fromQueue(events).pipe(
+            Stream.map((event) => new TextEncoder().encode(`${event.event}\n`)),
+          ),
+        });
+
+        yield* instance.start;
+        // A writer still reading would take the event and write it into a closed pipe.
+        assert.deepEqual([...(yield* Deferred.await(writersAtRecord))], []);
+        yield* TestClock.adjust(Duration.seconds(1));
+        assert.include(yield* Deferred.await(replacementReceived), "desktop.backend.exited");
+      }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
 
@@ -690,6 +816,48 @@ describe("DesktopBackendManager", () => {
       ),
     );
   });
+
+  it.effect("tells the person once when restarts keep failing", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const starts = yield* Queue.unbounded<number>();
+        const notices = yield* Queue.unbounded<number>();
+        let startCount = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.sync(() => {
+                startCount += 1;
+                return makeProcess({
+                  exitCode: Queue.offer(starts, startCount).pipe(
+                    Effect.as(ChildProcessSpawner.ExitCode(1)),
+                  ),
+                });
+              }),
+            ),
+          ),
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          onRestartLoop: ({ attempts }) => Queue.offer(notices, attempts).pipe(Effect.asVoid),
+        });
+        yield* instance.start;
+        assert.equal(yield* Queue.take(starts), 1);
+        yield* TestClock.adjust(Duration.millis(500));
+        assert.equal(yield* Queue.take(starts), 2);
+        assert.equal(yield* Queue.size(notices), 0);
+        yield* TestClock.adjust(Duration.millis(1000));
+        assert.equal(yield* Queue.take(starts), 3);
+        assert.equal(
+          yield* Queue.take(notices),
+          DesktopBackendManager.RESTART_LOOP_NOTICE_ATTEMPTS,
+        );
+        yield* TestClock.adjust(Duration.millis(2000));
+        assert.equal(yield* Queue.take(starts), 4);
+        assert.equal(yield* Queue.size(notices), 0);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
   it.effect("reports state-directory ownership once without scheduling another backend", () =>
     Effect.scoped(
       Effect.gen(function* () {

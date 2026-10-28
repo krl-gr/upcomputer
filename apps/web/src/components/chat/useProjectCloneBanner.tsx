@@ -1,4 +1,5 @@
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -42,7 +43,7 @@ export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null)
         stackedThreadToast({
           type: "error",
           title,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }

@@ -45,6 +45,7 @@ import { SidebarInset } from "../ui/sidebar";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { placeLinkedPrompt, warnAboutHiddenCharacters } from "./linkedPrompt";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 type LinkState =
   | { readonly status: "opening" }
@@ -231,7 +232,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
           stackedThreadToast({
             type: "error",
             title: "Clone failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: errorToastDescription(error),
           }),
         );
       }

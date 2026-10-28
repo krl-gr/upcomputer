@@ -314,6 +314,11 @@ function AutomationSettings(props: {
     if (value === saved[field]) return;
     if (field !== "description" && field !== "taskStatus" && !value.trim()) {
       setForm({ ...form, [field]: saved[field] });
+      toastManager.add({
+        type: "warning",
+        title: `The ${field} can't be empty`,
+        description: `The previous ${field} was kept.`,
+      });
       return;
     }
     commit(form);
@@ -327,8 +332,23 @@ function AutomationSettings(props: {
     const before = scheduleBefore.current;
     scheduleBefore.current = null;
     if (!before || !automation) return;
-    if (automationScheduleError(form) !== null) {
+    const scheduleProblem = automationScheduleError(form);
+    if (scheduleProblem !== null) {
+      const edited = form;
       setForm(before);
+      toastManager.add({
+        type: "warning",
+        title: "Schedule not changed",
+        description: `That schedule isn't valid (${scheduleProblem.replace(/\.$/u, "").toLowerCase()}), so the previous one was kept.`,
+        actionProps: {
+          children: "Edit again",
+          onClick: () => {
+            scheduleBefore.current = before;
+            setForm(edited);
+            setScheduleOpen(true);
+          },
+        },
+      });
       return;
     }
     if (

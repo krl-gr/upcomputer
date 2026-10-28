@@ -64,6 +64,7 @@ import {
   TaskAgentServiceLive,
   type TaskAgentServiceShape,
 } from "./TaskAgentService.ts";
+import { BotService } from "../bots/BotService.ts";
 
 const directories: string[] = [];
 const project = ProjectId.make("project-1");
@@ -1252,6 +1253,7 @@ test("task_create with a tasks list starts one run per task created in a start s
               Layer.succeed(ProjectStoreV2, {} as never),
               Layer.succeed(InboxProject, {} as never),
               Layer.succeed(TaskScheduleService, {} as never),
+              Layer.succeed(BotService, {} as never),
               deterministicCrypto(),
             ),
           ),
@@ -1314,6 +1316,7 @@ test("an agent made broader just before an agent's unarchive commits keeps the t
               Layer.succeed(ProjectStoreV2, {} as never),
               Layer.succeed(InboxProject, {} as never),
               Layer.succeed(TaskScheduleService, {} as never),
+              Layer.succeed(BotService, {} as never),
               deterministicCrypto(),
             ),
           ),
@@ -1643,7 +1646,7 @@ test("an abandoned result finalization is replayed or rolled back by recovery, a
       NodeAssert.match(
         Option.getOrThrow(yield* repository.getById({ id: TaskId.make("rolled-back") })).output ??
           "",
-        /without a valid task-agent result/,
+        /didn't update the task or report a result/,
       );
 
       // Still running in v2: a person's stop ends it.
@@ -1771,7 +1774,7 @@ test("messaging refuses another active run of the agent, an archived task, and a
       const busy = yield* service.messageRun({ id: ended.id, text: "go" });
       NodeAssert.ok(!busy.ok);
       NodeAssert.equal(busy.activeRunId, active.id);
-      NodeAssert.match(busy.error, /active run 'r2'.*Message that run instead/);
+      NodeAssert.match(busy.error, /Message that run instead \(run r2,/);
 
       yield* finish(repository, active, "completed");
       yield* archiveTask(repository, TaskId.make("t"));

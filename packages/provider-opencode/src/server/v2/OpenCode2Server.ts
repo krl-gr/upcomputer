@@ -84,6 +84,7 @@ export const verifyServer = (client: OpenCodeClient) =>
           new OpenCodeRuntime.OpenCodeRuntimeError({
             operation: "server.info",
             detail: "Timed out waiting for the OpenCode server.",
+            reason: "timeout",
           }),
         ),
     }),

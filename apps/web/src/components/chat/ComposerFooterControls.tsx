@@ -59,6 +59,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             type="button"
             onClick={props.onToggleInteractionMode}
             aria-label={interactionModeTooltip}
+            data-track="composer.plan_mode"
           />
         }
       >
@@ -98,6 +99,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                 data-composer-shortcut="composer.mode"
                 size={size}
                 aria-label="Runtime mode"
+                data-track="composer.runtime_mode"
               />
             }
           >

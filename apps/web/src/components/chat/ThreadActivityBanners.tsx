@@ -54,7 +54,7 @@ export function goalBannerItem(input: {
   readonly threadId: ThreadId;
   readonly goal: OrchestrationV2ProviderGoal;
   readonly isWorking: boolean;
-  readonly onSendCommand: (text: string, failureMessage: string) => Promise<void>;
+  readonly onSendCommand: (text: string, action: string) => Promise<void>;
 }): ComposerBannerStackItem {
   const { isWorking, onSendCommand } = input;
   const presentation = presentProviderGoal(input.goal, isWorking);
@@ -75,7 +75,7 @@ export function goalBannerItem(input: {
           <Button
             size="xs"
             variant="ghost"
-            onClick={() => void onSendCommand("/goal resume", "Failed to resume goal.")}
+            onClick={() => void onSendCommand("/goal resume", "resume the goal")}
           >
             Resume
           </Button>
@@ -83,7 +83,7 @@ export function goalBannerItem(input: {
         <Button
           size="xs"
           variant="ghost"
-          onClick={() => void onSendCommand("/goal clear", "Failed to clear goal.")}
+          onClick={() => void onSendCommand("/goal clear", "clear the goal")}
         >
           Clear
         </Button>

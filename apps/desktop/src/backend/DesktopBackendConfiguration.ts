@@ -2,6 +2,7 @@ import * as NodeOS from "node:os";
 
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
+import { resolveUpcomputerBuildKind } from "@t3tools/shared/upcomputerIdentity";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -241,6 +242,33 @@ interface SharedBootstrapInput {
   readonly bootstrapToken: string;
   readonly bootstrapSecret: string;
   readonly observabilitySettings: BackendObservabilitySettings;
+}
+
+/**
+ * Product telemetry fields for the primary backend. An unpackaged app reports
+ * Electron's own version from `app.getVersion()`, so dev builds report the
+ * workspace version instead. Only builds with an update feed have a channel.
+ */
+function desktopTelemetryEnv(input: {
+  readonly isPackaged: boolean;
+  readonly appVersion: string;
+  readonly sessionId: string | undefined;
+}) {
+  const buildKind = resolveUpcomputerBuildKind({
+    packaged: input.isPackaged,
+    version: input.appVersion,
+  });
+  // Preview builds are packaged without a feed, like local builds.
+  const hasUpdateFeed =
+    buildKind !== "dev" && buildKind !== "localtest" && !/-preview\./.test(input.appVersion);
+  return {
+    T3CODE_DESKTOP_VERSION: input.isPackaged ? input.appVersion : serverPackageJson.version,
+    T3CODE_DESKTOP_RELEASE_CHANNEL: hasUpdateFeed
+      ? resolveDefaultDesktopUpdateChannel(input.appVersion)
+      : undefined,
+    T3CODE_DESKTOP_BUILD_KIND: buildKind,
+    T3CODE_DESKTOP_SESSION_ID: input.sessionId,
+  };
 }
 
 type WslPreflightRuntime =
@@ -489,6 +517,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       readonly cliPath: Option.Option<string>;
       readonly shellEnvironmentPrepared: boolean;
       readonly desktopStartup: "launch" | "restart";
+      readonly telemetrySessionId: string | undefined;
     },
   ): Effect.fn.Return<
     DesktopBackendManager.DesktopBackendStartConfig,
@@ -537,8 +566,11 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         ELECTRON_RUN_AS_NODE: "1",
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
         // Product telemetry tells app launches from backend restarts and builds apart.
-        T3CODE_DESKTOP_VERSION: environment.appVersion,
-        T3CODE_DESKTOP_RELEASE_CHANNEL: resolveDefaultDesktopUpdateChannel(environment.appVersion),
+        ...desktopTelemetryEnv({
+          isPackaged: environment.isPackaged,
+          appVersion: environment.appVersion,
+          sessionId: input.telemetrySessionId,
+        }),
         T3CODE_DESKTOP_STARTUP: input.desktopStartup,
       },
       extendEnv: true,
@@ -733,6 +765,11 @@ export const make = Effect.gen(function* () {
   // Random generation yields; serialize it so concurrent backends cannot capture distinct bootstrap secrets.
   const secretRef = yield* SynchronizedRef.make(Option.none<string>());
   const primaryStarts = yield* Ref.make(0);
+  // One per app launch, so backend restarts stay in the same telemetry session.
+  // Without one the backend starts its own.
+  const telemetrySessionId = yield* crypto
+    .randomUUIDv4()
+    .pipe(Effect.catchCause(() => Effect.succeed(undefined)));
   const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
     Option.match(current, {
       onSome: (secret) => Effect.succeed([secret, current] as const),
@@ -798,6 +835,7 @@ export const make = Effect.gen(function* () {
       cliPath,
       shellEnvironmentPrepared,
       desktopStartup: previousStarts === 0 ? "launch" : "restart",
+      telemetrySessionId,
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),

@@ -37,7 +37,15 @@ export function TasksViewSwitch(props: {
     >
       {VIEWS.map(({ value, label, Icon }) => (
         <Tooltip key={value}>
-          <TooltipTrigger render={<ToggleGroupItem value={value} aria-label={label} />}>
+          <TooltipTrigger
+            render={
+              <ToggleGroupItem
+                value={value}
+                aria-label={label}
+                data-track={`tasks.side.${value}`}
+              />
+            }
+          >
             <Icon />
           </TooltipTrigger>
           <TooltipPopup>{label}</TooltipPopup>

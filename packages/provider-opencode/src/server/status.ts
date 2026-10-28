@@ -106,14 +106,19 @@ function formatOpenCodeProbeError(input: {
 
     return {
       installed: true,
-      message: detail ?? "Failed to connect to the configured OpenCode server.",
+      // A version notice is already plain and says what to update.
+      message:
+        detail !== undefined && /\btoo old\b/i.test(detail)
+          ? detail
+          : "Up.computer couldn't reach the OpenCode server set in Settings. Check its address and that it's running, then refresh.",
     };
   }
 
   if (lower.includes("enoent") || lower.includes("notfound")) {
     return {
       installed: false,
-      message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+      message:
+        "OpenCode isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings.",
     };
   }
 
@@ -133,13 +138,13 @@ function formatOpenCodeProbeError(input: {
     };
   }
 
-  const failureLabel =
-    input.phase === "inventory"
-      ? "Failed to load OpenCode provider inventory"
-      : "Failed to execute OpenCode CLI health check";
+  // The raw detail can be CLI output; it stays in the server log.
   return {
     installed: true,
-    message: detail ? `${failureLabel}: ${detail}` : `${failureLabel}.`,
+    message:
+      input.phase === "inventory"
+        ? "OpenCode is installed but didn't report its models. Refresh to try again."
+        : "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
   };
 }
 

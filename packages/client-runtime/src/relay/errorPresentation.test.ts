@@ -24,7 +24,7 @@ describe("relayProtectedErrorMessage", () => {
     });
 
     expect(relayProtectedErrorMessage(error)).toBe(
-      `Relay rejected the DPoP proof. ${DPOP_UNKNOWN_HINT}`,
+      `UpComputer Connect didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
     );
   });
 
@@ -48,7 +48,7 @@ describe("relayProtectedErrorMessage", () => {
     });
 
     expect(relayProtectedErrorMessage(error)).toBe(
-      `Relay rejected the DPoP proof. ${DPOP_RETRY_HINT}`,
+      `UpComputer Connect didn't accept this device's sign-in. ${DPOP_RETRY_HINT}`,
     );
   });
 });
@@ -102,19 +102,23 @@ describe("environmentLinkFailureDetail", () => {
 
   it("still points at the clock for an expired proof when the offset is unknown", () => {
     expect(environmentLinkFailureDetail({ relayError: expired }, linkSignedAt(0))).toBe(
-      "Relay rejected an expired environment link proof. The computer's clock is probably wrong. Sync the date and time in system settings, then try again.",
+      "UpComputer Connect rejected that computer's link because its clock is probably wrong. Sync the date and time in system settings, then try again.",
     );
   });
 
   it("does not blame the clock for unrelated link failures", () => {
     expect(
       environmentLinkFailureDetail({ relayError: invalid("replayed_nonce") }, linkSignedAt(600)),
-    ).toBe("Relay rejected the environment link proof (replayed_nonce).");
+    ).toBe(
+      "UpComputer Connect couldn't confirm that computer's link. Turn UpComputer Connect off and on again on that computer.",
+    );
     expect(
       environmentLinkFailureDetail(
         { relayError: invalid("invalid_signature_or_scope") },
         linkSignedAt(0),
       ),
-    ).toBe("Relay rejected the environment link proof (invalid_signature_or_scope).");
+    ).toBe(
+      "UpComputer Connect couldn't confirm that computer's link. Turn UpComputer Connect off and on again on that computer.",
+    );
   });
 });

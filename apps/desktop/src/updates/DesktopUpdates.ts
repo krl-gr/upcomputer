@@ -140,7 +140,14 @@ export class DesktopUpdaterReportedError extends Schema.TaggedError<DesktopUpdat
   },
 ) {
   override get message(): string {
-    return `Desktop updater ${this.operation} operation reported an error.`;
+    const action = {
+      check: "check for updates",
+      download: "download the update",
+      install: "install the update",
+      channel: "switch the update channel",
+      background: "check for updates",
+    }[this.operation];
+    return updateFailureSentence(action, this.cause);
   }
 }
 
@@ -152,7 +159,7 @@ export class DesktopUpdateUnexpectedActionError extends Schema.TaggedError<Deskt
   },
 ) {
   override get message(): string {
-    return `Desktop update ${this.action} action failed unexpectedly.`;
+    return updateFailureSentence(`${this.action} the update`, this.cause);
   }
 }
 
@@ -244,6 +251,28 @@ function summarizeCause(cause: unknown, depth: number): string {
   const nested =
     error.cause === undefined ? "" : `; caused by ${summarizeCause(error.cause, depth + 1)}`;
   return `${errorTag(cause)}${code}${message}${nested}`;
+}
+
+/** electron-updater failures read as a reason a person can act on. */
+function plainUpdateReason(cause: unknown): string | undefined {
+  const text = describeUpdateErrorCause(cause).toLowerCase();
+  if (
+    /enotfound|eai_again|econnrefused|econnreset|etimedout|net::err|network|socket hang up/u.test(
+      text,
+    )
+  )
+    return "it couldn't reach the update server";
+  if (/signature|code sign|not signed|checksum|sha512/u.test(text))
+    return "the download didn't pass its signature check";
+  if (/enospc|no space/u.test(text)) return "the disk is full";
+  if (/eacces|eperm|permission denied|read-only/u.test(text))
+    return "it wasn't allowed to replace the app files";
+  return undefined;
+}
+
+function updateFailureSentence(action: string, cause: unknown): string {
+  const reason = plainUpdateReason(cause);
+  return `Up.computer couldn't ${action}${reason === undefined ? "" : ` (${reason})`}. You're still on this version, so try again.`;
 }
 
 export function describeUpdateErrorCause(cause: unknown): string {

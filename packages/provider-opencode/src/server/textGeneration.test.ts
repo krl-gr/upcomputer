@@ -423,7 +423,7 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
           .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("OpenCode returned empty output.");
+        expect(error.detail).toContain("OpenCode returned empty output.");
         expect(error.cause).toMatchObject({
           _tag: "OpenCodeTextGenerationEmptyOutputError",
           operation: "generateCommitMessage",
@@ -497,7 +497,7 @@ it.layer(layerOpenCodeTextGenerationExistingServerTest)(
             .pipe(Effect.flip);
 
           expect(error).toBeInstanceOf(TextGenerationError);
-          expect(error.message).toContain("v1.14.18 is too old");
+          expect(error.detail).toContain("v1.14.18 is too old");
           expect(runtimeMock.state.sessionCreateCalls).toBe(0);
         }),
       ),

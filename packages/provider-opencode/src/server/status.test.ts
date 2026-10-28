@@ -1123,7 +1123,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(snapshot.models.length, 0);
       NodeAssert.equal(
         snapshot.message,
-        "Failed to load OpenCode provider inventory: opencode models failed",
+        "OpenCode is installed but didn't report its models. Refresh to try again.",
       );
     }),
   );

@@ -14,6 +14,9 @@ import { ChildProcessSpawner } from "effect/process";
 
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import * as DesktopOrphanedBackend from "./DesktopOrphanedBackend.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
@@ -22,6 +25,7 @@ import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 
 const { logWarning: logBackendPoolWarning } =
   DesktopObservability.makeComponentLogger("desktop-backend-pool");
@@ -120,8 +124,8 @@ export const layer = Layer.effect(
             { reason },
           );
           yield* electronDialog.showErrorBox(
-            "WSL backend is still unavailable",
-            `${reason}\n\nT3 Code will use the Windows backend for this launch and retry WSL the next time the app starts.`,
+            "WSL isn't available",
+            `Up.computer couldn't start in WSL (${reason}), so it's running on Windows for this launch. It tries WSL again the next time the app starts.`,
           );
           yield* appSettings.applyWslWindowsFallbackInMemory;
           return true;
@@ -131,8 +135,8 @@ export const layer = Layer.effect(
           reason,
         });
         yield* electronDialog.showErrorBox(
-          "WSL backend couldn't start",
-          `${reason}\n\nFalling back to the Windows backend so Up.computer can open. Re-enable the WSL backend from Settings > Connections once the WSL distro is fixed.`,
+          "WSL isn't available",
+          `Up.computer couldn't start in WSL (${reason}), so it's running on Windows for now. Fix WSL, then turn it back on in Settings > Connections.`,
         );
         // Clear wslOnly too so enabling WSL cannot restore a failed mode.
         // Keep the in-memory fallback if persistence fails.
@@ -150,6 +154,85 @@ export const layer = Layer.effect(
       },
     );
 
+    // A forced quit can leave this app's own server running, holding the data
+    // folder. Offer to stop exactly that process; anything else (the background
+    // service, another copy) only gets an explanation.
+    const handlePrimaryStateDirOwned = Effect.gen(function* () {
+      const environment = yield* Effect.serviceOption(DesktopEnvironment.DesktopEnvironment);
+      const orphanPid = Option.isNone(environment)
+        ? null
+        : yield* DesktopOrphanedBackend.findOrphanedBackend(
+            environment.value.stateDir,
+            process.execPath,
+          );
+      if (orphanPid === null) {
+        yield* electronDialog.showErrorBox(
+          "Up.computer is already running",
+          "Another copy of Up.computer is using your data on this computer. Quit it, then open Up.computer again.",
+        );
+        return yield* electronApp.quit;
+      }
+      const { response } = yield* electronDialog
+        .showMessageBox({
+          type: "warning",
+          title: "Up.computer is still running in the background",
+          message: "Up.computer is still running in the background",
+          detail:
+            "A previous Up.computer session did not shut down and is still using your data. Choose Quit it and reopen to stop it and start normally.",
+          buttons: ["Quit it and reopen", "Quit"],
+          defaultId: 0,
+          cancelId: 1,
+        })
+        .pipe(Effect.orElseSucceed(() => ({ response: 1, checkboxChecked: false })));
+      if (response !== 0) return yield* electronApp.quit;
+      const stopped = yield* DesktopOrphanedBackend.stopOrphanedBackend(orphanPid);
+      if (!stopped) {
+        yield* logBackendPoolWarning("leftover backend did not stop", { pid: orphanPid });
+        yield* electronDialog.showErrorBox(
+          "Up.computer couldn't stop the previous session",
+          `The previous session (process ${orphanPid}) is still running. Restart your computer, then open Up.computer again.`,
+        );
+        return yield* electronApp.quit;
+      }
+      yield* electronApp.relaunch({});
+      yield* electronApp.exit(0);
+    });
+
+    // While the server is down the window can't show anything, so a crash loop
+    // is reported natively, once per loop.
+    const handlePrimaryRestartLoop = (input: {
+      readonly attempts: number;
+      readonly reason: string;
+    }) =>
+      Effect.gen(function* () {
+        const environment = yield* Effect.serviceOption(DesktopEnvironment.DesktopEnvironment);
+        const shell = yield* Effect.serviceOption(ElectronShell.ElectronShell);
+        const logDir = Option.isSome(environment) ? environment.value.logDir : null;
+        const diagnostics = [
+          `Up.computer ${yield* HostProcess.Platform} ${yield* HostProcess.Architecture}`,
+          `Restarts: ${input.attempts}`,
+          `Last exit: ${input.reason}`,
+          ...(logDir === null ? [] : [`Logs: ${logDir}`]),
+        ].join("\n");
+        const { response } = yield* electronDialog
+          .showMessageBox({
+            type: "error",
+            title: "Up.computer stopped working",
+            message: "Up.computer stopped working",
+            detail: `The part of Up.computer that runs your agents stopped and is restarting. If this keeps happening, restart the app or contact us with the diagnostics.\n\nDetails: ${input.reason}`,
+            buttons: ["Restart Up.computer", "Copy diagnostics", "Keep waiting"],
+            defaultId: 0,
+            cancelId: 2,
+          })
+          .pipe(Effect.orElseSucceed(() => ({ response: 2, checkboxChecked: false })));
+        if (response === 0) {
+          yield* electronApp.relaunch({});
+          yield* electronApp.exit(0);
+        } else if (response === 1 && Option.isSome(shell)) {
+          yield* shell.value.copyText(diagnostics);
+        }
+      });
+
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
       // Resolve lazily: startup loads persisted settings after pool initialization.
@@ -161,18 +244,21 @@ export const layer = Layer.effect(
           Effect.catch((error) =>
             logBackendPoolWarning("failed to open main window after backend readiness", {
               error: error.message,
-            }),
+            }).pipe(
+              // Without a window the app looks like it never opened.
+              Effect.andThen(
+                electronDialog.showErrorBox(
+                  "Up.computer couldn't open its window",
+                  "Up.computer started but couldn't open its window. Quit and open it again, and contact us if this keeps happening.",
+                ),
+              ),
+            ),
           ),
         ),
       onShutdown: () => desktopWindow.handleBackendNotReady,
       onPreflightFailed: handlePrimaryPreflightFailure,
-      onStateDirOwned: () =>
-        electronDialog
-          .showErrorBox(
-            "This Up.computer home is unavailable",
-            "Another Up.computer server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's Up.computer home to each command. Then reopen Up.computer. You can also set a separate T3CODE_HOME and pair with the running server.",
-          )
-          .pipe(Effect.andThen(electronApp.quit)),
+      onStateDirOwned: () => handlePrimaryStateDirOwned,
+      onRestartLoop: handlePrimaryRestartLoop,
     });
 
     const instancesRef = yield* SynchronizedRef.make<

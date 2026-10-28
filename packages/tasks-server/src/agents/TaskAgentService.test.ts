@@ -43,6 +43,7 @@ import {
   TaskPromptSettingsStoreLive,
 } from "../persistence/TaskPromptSettingsStore.ts";
 import {
+  noMatchingAgentReason,
   startsForTask,
   continuesTaskAgentRun,
   releasedRunId,
@@ -122,6 +123,24 @@ function run(overrides: Partial<TaskAgentRun> = {}): TaskAgentRun {
     ...overrides,
   };
 }
+
+test("an agent task whose tags no agent on its status takes is reported as waiting", () => {
+  const nowMs = Date.parse(now);
+  NodeAssert.equal(noMatchingAgentReason([agent()], task(), nowMs), null, "the agent takes it");
+  NodeAssert.match(
+    noMatchingAgentReason([agent()], task({ tags: ["tset"] }), nowMs) ?? "",
+    /No enabled agent starts on "new" with these tags/,
+  );
+  NodeAssert.equal(
+    noMatchingAgentReason([agent()], task({ status: "Backlog", tags: [] }), nowMs),
+    null,
+    "a status no agent starts on is parked on purpose",
+  );
+  NodeAssert.equal(
+    noMatchingAgentReason([agent()], task({ tags: [], audience: "person" }), nowMs),
+    null,
+  );
+});
 
 test("a person task starts only an agent with start tags it carries, and a routine none", () => {
   const nowMs = Date.parse(now);

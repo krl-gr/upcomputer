@@ -4,6 +4,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
+import { useAnalyticsView } from "../../../../apps/web/src/uiAnalytics.ts";
 
 import {
   useStoredPlannerEnvironment,
@@ -52,6 +53,9 @@ export default function TasksRoute() {
   });
   const view: TasksViewMode = hasTask ? "table" : (urlView ?? storedView);
   const section = hasTask ? "tasks" : storedSection;
+  useAnalyticsView(
+    view === "planner" ? "planner" : section === "automations" ? "automations" : "tasks",
+  );
   const setView = useCallback(
     (next: TasksViewMode) => {
       setStoredView(next);

@@ -4,6 +4,7 @@ import type {
   ProjectScript,
   EnvironmentId,
 } from "@t3tools/contracts";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { AuthSettingsWriteScope, EnvironmentAuthorizationError } from "@t3tools/contracts";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
@@ -259,7 +260,7 @@ export function useProjectScriptEditing(input: {
         stackedThreadToast({
           type: "error",
           title: "Could not delete action",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          description: errorToastDescription(error),
         }),
       );
     }

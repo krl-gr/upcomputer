@@ -15,6 +15,7 @@ import { type ComposerThreadTarget, useComposerDraftStore } from "~/composerDraf
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 /** A shareable link to a prompt on the hosted app, or null when the prompt cannot fit in one. */
 export function promptLinkFor(
@@ -76,7 +77,7 @@ export async function copyPromptLink(link: string): Promise<void> {
       stackedThreadToast({
         type: "error",
         title: "Could not copy the prompt link",
-        description: error instanceof Error ? error.message : "An error occurred.",
+        description: errorToastDescription(error),
       }),
     );
   }

@@ -70,18 +70,28 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
 
 /**
  * The bot's latest background task run, whose result returns to the bot chat. How a run
- * ended shows until the chat is opened after it ended, as a thread's own result does.
+ * ended shows until the chat is opened after it ended, as a thread's own result does. A
+ * running task's approval or question shows until it is answered: the run's own thread
+ * holds it, and opening the bot chat does not answer it.
  */
 export function botTaskStatus(
   runStatus: string | undefined,
-  taskThread: Pick<SidebarThreadSummary, "runtime"> | null,
+  taskThread: Pick<
+    SidebarThreadSummary,
+    "runtime" | "hasPendingApprovals" | "hasPendingUserInput"
+  > | null,
   seen: {
     readonly completedAt?: string | null | undefined;
     readonly lastVisitedAt?: string | null | undefined;
   } = {},
 ): BotStatusCandidate | null {
-  if (runStatus === "running" || runStatus?.startsWith("finalizing:"))
+  if (runStatus === "running" || runStatus?.startsWith("finalizing:")) {
+    if (taskThread?.hasPendingApprovals)
+      return { kind: "approval", detail: "Background task needs approval" };
+    if (taskThread?.hasPendingUserInput)
+      return { kind: "input", detail: "Background task asks a question" };
     return { kind: "waiting", detail: "Waiting for its background task" };
+  }
   if (
     seen.completedAt != null &&
     seen.lastVisitedAt != null &&
@@ -99,12 +109,37 @@ export function botTaskStatus(
   return null;
 }
 
-/** One status for the bot: whichever of its chat and its task comes first for a thread. */
-export function botStatus(
-  chat: BotStatusCandidate | null,
-  task: BotStatusCandidate | null,
-): BotStatus {
-  const winner = [chat, task]
+export type BotTaskRunRequest = "approval" | "input" | null;
+
+/**
+ * Whether a run of a task from the bot's chat, the bot's own or another task agent's, waits
+ * for the user. The run's thread holds the request, so opening the bot chat does not answer it.
+ */
+export function botTaskRunRequest(
+  runThreads: ReadonlyArray<Pick<
+    SidebarThreadSummary,
+    "hasPendingApprovals" | "hasPendingUserInput"
+  > | null>,
+): BotTaskRunRequest {
+  if (runThreads.some((thread) => thread?.hasPendingApprovals)) return "approval";
+  if (runThreads.some((thread) => thread?.hasPendingUserInput)) return "input";
+  return null;
+}
+
+export function botTaskRunRequestStatus(request: BotTaskRunRequest): BotStatusCandidate | null {
+  if (request === "approval")
+    return { kind: "approval", detail: "A task from this chat needs approval" };
+  if (request === "input")
+    return { kind: "input", detail: "A task from this chat asks a question" };
+  return null;
+}
+
+/**
+ * One status for the bot: whichever of its chat and its tasks comes first for a thread. On
+ * a tie the earlier candidate's detail shows.
+ */
+export function botStatus(...candidates: ReadonlyArray<BotStatusCandidate | null>): BotStatus {
+  const winner = candidates
     .filter((candidate) => candidate !== null)
     .toSorted((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))[0];
   if (!winner) return { state: "idle", label: null, detail: null };

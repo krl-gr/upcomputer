@@ -18,9 +18,11 @@ describe("cursorRunFailure", () => {
       }),
     ).toEqual({
       class: "usage_limit",
-      message: `Cursor usage limit reached for claude-opus-5-5. Switch model or try again later. Cursor says: ${usageLimitMessage}`,
+      message:
+        "Cursor usage limit reached for claude-opus-5-5. Your usage limits will reset when your monthly cycle ends on 11/14/2026. Switch to another model or provider to keep working now.",
       code: null,
       retryable: null,
+      detail: usageLimitMessage,
     });
   });
 
@@ -33,10 +35,10 @@ describe("cursorRunFailure", () => {
   ])("recognizes the limit from Cursor's code or text: $code", (reason) => {
     const failure = cursorRunFailure({ reason, model: "gpt-6-sol", class: "provider_error" });
     expect(failure.class).toBe("usage_limit");
-    expect(failure.message).toMatch(
-      /^Cursor usage limit reached for gpt-6-sol\. Switch model or try again later\. Cursor says: /,
-    );
+    expect(failure.message).toMatch(/^Cursor usage limit reached for gpt-6-sol\./);
+    expect(failure.message).toContain("Switch to another model or provider");
     expect(failure.message).not.toContain("[resource_exhausted]");
+    expect(failure.detail).toBe(reason.message);
     expect(failure.code).toBe(reason.code ?? null);
   });
 
@@ -47,7 +49,7 @@ describe("cursorRunFailure", () => {
         model: "auto",
         class: "provider_error",
       }).message,
-    ).toBe("Cursor usage limit reached. Switch model or try again later.");
+    ).toBe("Cursor usage limit reached. Switch to another model or provider to keep working now.");
   });
 
   it("passes other Cursor reasons through and falls back only without one", () => {
@@ -59,14 +61,30 @@ describe("cursorRunFailure", () => {
       }),
     ).toEqual({
       class: "provider_error",
-      message: "Model not available for your plan",
+      message:
+        "Cursor reported an error: Model not available for your plan. Send the message again.",
       code: "BAD_MODEL_NAME",
       retryable: null,
+      detail: "Model not available for your plan",
     });
     expect(
       cursorRunFailure({ reason: undefined, model: "composer-2.5", class: "provider_error" })
         .message,
-    ).toBe("Provider turn failed.");
+    ).toBe(
+      "Cursor stopped with an error it didn't explain. Send the message again; if it repeats, check Cursor in Settings.",
+    );
+  });
+
+  it("reads a transport dump as Cursor being unreachable", () => {
+    const failure = cursorRunFailure({
+      reason: { message: "Error: ConnectError: [unavailable] upstream connect error" },
+      model: "composer-2.5",
+      class: "transport_error",
+    });
+    expect(failure.message).toBe(
+      "Cursor's servers didn't respond (upstream connect error). Check your connection and send again.",
+    );
+    expect(failure.detail).toBe("Error: ConnectError: [unavailable] upstream connect error");
   });
 });
 

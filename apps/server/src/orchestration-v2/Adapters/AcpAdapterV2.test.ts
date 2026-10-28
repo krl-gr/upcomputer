@@ -870,7 +870,7 @@ describe("AcpAdapterV2", () => {
         if (outcome === "failed") {
           assert.equal(terminal.status, "failed");
           assert.equal(terminal.failure?.class, "usage_limit");
-          assert.include(terminal.failure?.message ?? "", "Rate limit exceeded for mistral");
+          assert.include(terminal.failure?.message ?? "", "rate limit exceeded for mistral");
           if (terminal.status === "failed") assert.equal(terminal.retry?.attempt, 2);
         } else if (outcome === "cancelled") {
           assert.equal(terminal.status, "cancelled");

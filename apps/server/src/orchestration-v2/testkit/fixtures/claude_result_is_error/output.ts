@@ -13,7 +13,7 @@ import {
 
 const AUTH_ERROR_TEXT = "Failed to authenticate. API Error: 401 Invalid authentication credentials";
 const AUTH_FAILURE_TEXT =
-  "Claude could not authenticate. For subscription login, run `claude auth login` on this environment's machine, then start a new thread. For API-key authentication, check this instance's configured credentials.";
+  "Claude Code is signed out. Sign in again in Settings, then send the message again.";
 
 export function assertClaudeResultIsErrorOutput(
   result: OrchestratorV2ScenarioResult,
@@ -47,8 +47,10 @@ export function assertClaudeResultIsErrorOutput(
   assert.isDefined(errorItem);
   if (errorItem?.type !== "error") throw new Error("expected error item");
   assert.equal(errorItem.failure.message, AUTH_FAILURE_TEXT);
-  assert.equal(errorItem.failure.code, "api_error_401");
-  assert.equal(errorItem.failure.class, "provider_error");
+  // Details keep the command-line login steps; the CLI's own error stays in the reply.
+  assert.include(errorItem.failure.detail ?? "", "claude auth login");
+  assert.equal(errorItem.failure.code, "authentication_failed");
+  assert.equal(errorItem.failure.class, "permission_error");
 
   const run1AssistantTexts = projection.turnItems.flatMap((item) =>
     item.runId === failedRun?.id && item.type === "assistant_message" ? [item.text] : [],

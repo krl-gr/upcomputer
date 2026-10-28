@@ -10,6 +10,7 @@ import * as Queue from "effect/Queue";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeRotatingLogFileWriter } from "../app/DesktopObservability.ts";
+import * as DesktopProductEvents from "./DesktopProductEvents.ts";
 
 export interface RendererIdentity {
   readonly surface: "main" | "preview" | "splash" | "picture-in-picture" | "devtools";
@@ -76,6 +77,7 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
+  const productEvents = yield* DesktopProductEvents.optional;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const mainSessionStartedAtUnixMs = clock.currentTimeMillisUnsafe();
@@ -205,6 +207,14 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
         readPid(renderer);
         renderer.gone = true;
         record(renderer, "render-process-gone", details);
+        runFork(
+          productEvents.record({
+            event: "desktop.renderer.gone",
+            reason: details.reason,
+            surface: renderer.identity.surface,
+            exitCode: details.exitCode,
+          }),
+        );
       };
       const onDestroyed = () => {
         record(renderer, "destroyed");

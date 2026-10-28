@@ -138,6 +138,11 @@ export const Bot = Schema.Struct({
       completedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
     }),
   ),
+  /**
+   * Threads of the active runs of tasks started from the bot's chat, by the bot itself or
+   * by any agent; their approvals and questions show as the bot's. Absent from older servers.
+   */
+  activeTaskRunThreadIds: Schema.optional(Schema.Array(ThreadId)),
 });
 export type Bot = typeof Bot.Type;
 
@@ -161,8 +166,58 @@ export const BotMemory = Schema.Struct({
   source: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  /**
+   * Who wrote the current text. The bot cannot change or forget a user's entry. Missing
+   * (older servers) means the bot's.
+   */
+  owner: Schema.optional(Schema.Literals(["user", "bot"])),
 });
 export type BotMemory = typeof BotMemory.Type;
+
+/** The size limit of the memory a bot turn shows the model, in characters of its JSON. */
+export const BOT_MEMORY_CONTEXT_BUDGET = 11998;
+
+/** One memory as a bot turn shows it to the model. The budget counts this JSON. */
+export const botMemoryForModel = (entry: BotMemory) => ({
+  id: entry.id,
+  scope: entry.projectId === null ? "global" : "project",
+  owner: entry.owner ?? "bot",
+  text: entry.text,
+  updatedAt: entry.updatedAt,
+});
+
+// JSON never needs a raw "<", so escaping it keeps memory text from closing the block's tag.
+export const botMemoryData = (value: unknown) => JSON.stringify(value).replaceAll("<", "\\u003c");
+
+const memoryRank = (entry: BotMemory) =>
+  entry.owner === "user" ? 0 : entry.projectId !== null ? 1 : 2;
+
+/**
+ * The memories a bot turn in `projectId` can see, in selection order (the user's entries,
+ * then the project's, then global ones, each newest first), and the ones that fit the
+ * budget. The server sends exactly `selected`, and the bot page marks entries from the same
+ * function, so the two cannot disagree. A large entry that does not fit is skipped, not the
+ * end of the selection.
+ */
+export function botMemoryContext(memories: ReadonlyArray<BotMemory>, projectId: string) {
+  const entries = memories
+    .filter((entry) => entry.projectId === null || entry.projectId === projectId)
+    .sort(
+      (a, b) =>
+        memoryRank(a) - memoryRank(b) ||
+        (a.updatedAt === b.updatedAt ? (a.id < b.id ? -1 : 1) : a.updatedAt < b.updatedAt ? 1 : -1),
+    );
+  const selected: Array<BotMemory> = [];
+  // The opening bracket, then each entry with the comma or closing bracket after it.
+  let size = 1;
+  for (const entry of entries) {
+    const added = botMemoryData(botMemoryForModel(entry)).length + 1;
+    if (size + added > BOT_MEMORY_CONTEXT_BUDGET) continue;
+    size += added;
+    selected.push(entry);
+  }
+  return { entries, selected, used: selected.length === 0 ? 0 : size };
+}
 /** Suggested by a background task run; accepting writes `targetId` as an ordinary memory. */
 export const BotMemoryProposal = Schema.Struct({
   ...BotMemory.fields,

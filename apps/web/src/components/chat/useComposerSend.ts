@@ -14,6 +14,8 @@ import {
   snapshotComposerSend,
   withMessageContext,
   makeThreadErrorSetter,
+  SEND_FAILURE_TAIL,
+  threadActionErrorText,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import {
@@ -1407,7 +1409,7 @@ export function useComposerSend(input: ComposerSendInput) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,
-          error instanceof Error ? error.message : "Failed to send message.",
+          threadActionErrorText(error, "send your message", SEND_FAILURE_TAIL),
         );
         if (
           draftId &&

@@ -42,36 +42,68 @@ export function cursorRunFailure(input: {
   readonly reason: CursorFailureReason | undefined;
   readonly model: string;
   readonly class: OrchestrationV2ProviderFailureClass;
+  readonly cause?: unknown;
 }): OrchestrationV2ProviderFailure {
   const code = input.reason?.code?.trim() || undefined;
+  const raw = input.reason?.message.trim() || undefined;
+  // Transport dumps arrive as `Error: ConnectError: [unavailable] <detail>`, and
   // ConnectError messages repeat their code as a `[resource_exhausted] ` prefix.
-  const detail = input.reason?.message.replace(/^\[[a-z_]+\]\s*/, "").trim() || undefined;
+  const detail =
+    raw
+      ?.replace(/^Error:\s*/u, "")
+      .replace(/^[A-Za-z]+Error:\s*/u, "")
+      .replace(/^\[[a-z_]+\]\s*/u, "")
+      .trim() || undefined;
   if ((code !== undefined && usageLimitCodes.has(code)) || usageLimitText.test(detail ?? "")) {
     const model = input.model === "auto" || input.model === "default" ? "" : ` for ${input.model}`;
+    // Cursor names its reset date only in prose; keep that sentence visible.
+    const resetSentence = /[^.!]*\breset[^.!]*[.!]/iu.exec(detail ?? "")?.[0]?.trim();
     return makeProviderFailure({
       class: "usage_limit",
-      message: `Cursor usage limit reached${model}. Switch model or try again later.${
-        detail === undefined ? "" : ` Cursor says: ${detail}`
-      }`,
+      driver: CURSOR_DRIVER,
+      message: `Cursor usage limit reached${model}.${
+        resetSentence === undefined ? "" : ` ${resetSentence}`
+      } Switch to another model or provider to keep working now.`,
       code: code ?? null,
+      detail: raw,
     });
   }
-  return makeProviderFailure({ class: input.class, message: detail, code: code ?? null });
+  const reason = detail?.replace(/[.\s]+$/u, "");
+  if (input.class === "transport_error") {
+    return makeProviderFailure({
+      cause: input.cause,
+      class: input.class,
+      driver: CURSOR_DRIVER,
+      message: `Cursor's servers didn't respond${reason === undefined ? "" : ` (${reason})`}. Check your connection and send again.`,
+      code: code ?? null,
+      detail: raw,
+    });
+  }
+  return makeProviderFailure({
+    cause: input.cause,
+    class: input.class,
+    driver: CURSOR_DRIVER,
+    message:
+      reason === undefined
+        ? undefined
+        : `Cursor reported an error: ${reason}. Send the message again.`,
+    code: code ?? null,
+    detail: raw,
+  });
 }
+
+const CURSOR_DRIVER = "cursor";
 
 /**
  * A run the SDK broke. Our reading of Cursor's own errors, including the usage
- * limit, comes first; any other runner error keeps upstream's SDK message.
+ * limit, comes first; a runner error without one is read from its SDK message.
  */
 export function cursorTransportFailure(
   cause: unknown,
   model: string,
 ): OrchestrationV2ProviderFailure {
-  const reason = cursorSdkErrorReason(cause);
-  if (reason !== undefined) return cursorRunFailure({ reason, model, class: "transport_error" });
-  return makeProviderFailure({
-    cause,
-    message: isCursorAgentSdkRunnerError(cause) ? cursorSdkFailureMessage(cause) : undefined,
-    class: "transport_error",
-  });
+  const reason =
+    cursorSdkErrorReason(cause) ??
+    (isCursorAgentSdkRunnerError(cause) ? { message: cursorSdkFailureMessage(cause) } : undefined);
+  return cursorRunFailure({ reason, model, class: "transport_error", cause });
 }
