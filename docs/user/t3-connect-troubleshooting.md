@@ -7,12 +7,12 @@ A UpComputer Connect connection goes through four parts, in this order:
 3. **The host's tunnel** (cloudflared on the host) carries the request to the host.
 4. **Up.computer on the host** answers.
 
-When a connection fails, open **Settings > Connections**, find the environment,
+When a connection fails, open **Settings > Environments**, find the environment,
 and select **Details**. The first part marked as failed is the cause. Find its
 section below.
 
 To see the host's side, run `up connect status` on the host, or open
-**Settings > Connections** on the host. Both check the host's UpComputer Connect
+**Settings > Sharing & access** on the host. Both check the host's UpComputer Connect
 address from the host, and say why it fails. `up connect` runs the same check
 when it finishes setup. This check cannot test another device's network. For a
 problem on one device, use **Details** on that device.
@@ -105,7 +105,7 @@ UpComputer Connect does not have an active link between your account and the hos
   account on this device and on the host. On the host, run `up connect logout`,
   then `up connect`.
 - **UpComputer Connect is off on the host, or the host only publishes agent activity.**
-  On the host, open **Settings > Connections** and turn **UpComputer Connect** on, or
+  On the host, open **Settings > Sharing & access** and turn **UpComputer Connect** on, or
   run `up connect`.
 - **The host was linked, but the server did not apply the link yet.** Run
   `up service restart` on the host, or restart `up serve`.

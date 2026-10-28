@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./zip/bounded-zip": {
+      "types": "./src/zip/boundedZip.ts",
+      "default": "./src/zip/boundedZip.ts"
+    },
+    "./zip/directory": {
+      "types": "./src/zip/zipDirectory.ts",
+      "default": "./src/zip/zipDirectory.ts"
+    },
     "./workspace-basename-lookup": {
       "types": "./src/workspaceBasenameLookup.ts",
       "default": "./src/workspaceBasenameLookup.ts"
@@ -54,6 +62,10 @@
     "./secret-request": {
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"
+    },
+    "./link-request": {
+      "types": "./src/linkRequest.ts",
+      "default": "./src/linkRequest.ts"
     },
     "./scheduled-task-webhook": {
       "types": "./src/scheduledTaskWebhook.ts",
@@ -206,6 +218,14 @@
     "./state/deviceHubAccess": {
       "types": "./src/state/deviceHubAccess.ts",
       "default": "./src/state/deviceHubAccess.ts"
+    },
+    "./state/peerLinks": {
+      "types": "./src/state/peerLinks.ts",
+      "default": "./src/state/peerLinks.ts"
+    },
+    "./state/peerPairingCode": {
+      "types": "./src/state/peerPairingCode.ts",
+      "default": "./src/state/peerPairingCode.ts"
     },
     "./state/preview": {
       "types": "./src/state/preview.ts",
@@ -478,6 +498,10 @@
     "./model-traits": {
       "types": "./src/modelTraits.ts",
       "default": "./src/modelTraits.ts"
+    },
+    "./provider-clients": {
+      "types": "./src/providerClients.ts",
+      "default": "./src/providerClients.ts"
     }
   },
   "scripts": {
@@ -487,10 +511,19 @@
   "dependencies": {
     "@pierre/diffs": "catalog:",
     "@t3tools/contracts": "workspace:*",
+    "@t3tools/provider-acp-registry": "workspace:*",
+    "@t3tools/provider-core": "workspace:*",
+    "@t3tools/provider-cursor": "workspace:*",
+    "@t3tools/provider-fx": "workspace:*",
+    "@t3tools/provider-grok": "workspace:*",
+    "@t3tools/provider-muse": "workspace:*",
+    "@t3tools/provider-opencode": "workspace:*",
+    "@t3tools/provider-pi": "workspace:*",
     "@t3tools/shared": "workspace:*",
     "@t3tools/source-control-core": "workspace:*",
     "@t3tools/source-control-definitions": "workspace:*",
     "effect": "catalog:",
+    "jszip": "3.10.1",
     "three": "0.180.0"
   },
   "devDependencies": {

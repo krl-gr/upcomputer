@@ -22,6 +22,7 @@ export type ThreadActionMenuId =
   | "copy"
   | "copy-path"
   | "copy-branch"
+  | "copy-thread"
   | "copy-thread-id"
   | "archive"
   | "delete"
@@ -108,6 +109,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "copy",
     "copy-path",
     "copy-branch",
+    "copy-thread",
     "copy-thread-id",
   ].includes(action);
 }
@@ -153,7 +155,11 @@ export function buildThreadActionMenuItems(
                     id: `snooze:${preset.id}` as const,
                     label: `${preset.label} (${preset.whenLabel})`,
                   })),
-                  { id: "snooze:custom" as const, label: "Custom…", separatorBefore: true },
+                  {
+                    id: "snooze:custom" as const,
+                    label: "Custom…",
+                    separatorBefore: state.snoozePresets.length > 0,
+                  },
                 ],
               },
         ]
@@ -221,6 +227,7 @@ export function buildThreadActionMenuItems(
         ...(state.branch
           ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
           : []),
+        { id: "copy-thread", label: "Thread", icon: "message-square" },
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },

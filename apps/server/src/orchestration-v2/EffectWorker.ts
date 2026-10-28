@@ -600,6 +600,29 @@ export const layerExecutor: Layer.Layer<
   }),
 );
 
+// A running effect blocks later work on its thread and its lease is never reclaimed in-process,
+// so a stop that hangs must give up and fall through to the normal retry/fail path.
+const DELEGATED_TASKS_STOP_TIMEOUT = Duration.seconds(30);
+
+const boundExecution =
+  (effect: EffectOutbox.OrchestrationEffectV2) =>
+  (execution: Effect.Effect<void, OrchestrationEffectExecutionError>) =>
+    effect.request.type === "delegated-tasks.stop"
+      ? execution.pipe(
+          Effect.timeoutOrElse({
+            duration: DELEGATED_TASKS_STOP_TIMEOUT,
+            orElse: () =>
+              Effect.fail(
+                new OrchestrationEffectExecutionError({
+                  effectId: effect.id,
+                  effectType: effect.request.type,
+                  cause: `Timed out after ${Duration.format(DELEGATED_TASKS_STOP_TIMEOUT)}.`,
+                }),
+              ),
+          }),
+        )
+      : execution;
+
 export class OrchestrationEffectWorkerError extends Schema.TaggedError<OrchestrationEffectWorkerError>()(
   "OrchestrationEffectWorkerError",
   {
@@ -629,7 +652,6 @@ export class OrchestrationEffectWorkerV2 extends Context.Service<
 
 export interface OrchestrationEffectWorkerOptions {
   readonly workerId?: string;
-  readonly leaseDurationMs?: number;
   readonly maxAttempts?: number;
 }
 
@@ -646,7 +668,6 @@ export const layerWithOptions = (
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const executor = yield* OrchestrationEffectExecutorV2;
       const workerId = options.workerId ?? `orchestration-v2:${process.pid}`;
-      const leaseDurationMs = Math.max(1, options.leaseDurationMs ?? 30_000);
       const maxAttempts = Math.max(1, options.maxAttempts ?? 5);
       const wasCancelled = (effectId: string) =>
         outbox.get(effectId).pipe(
@@ -742,7 +763,7 @@ export const layerWithOptions = (
       const runOnce = Effect.fnUntraced(
         function* (excludeRestartContinuations = false) {
           const claimExit = yield* Effect.exit(
-            outbox.claimNext({ workerId, leaseDurationMs, excludeRestartContinuations }),
+            outbox.claimNext({ workerId, excludeRestartContinuations }),
           );
           yield* increment(orchestrationEffectClaimsTotal, {
             result: Exit.isFailure(claimExit)
@@ -785,7 +806,7 @@ export const layerWithOptions = (
 
           const execution = executor
             .execute(effect, { willRetry: effect.attemptCount < maxAttempts })
-            .pipe(Effect.as("executed" as const));
+            .pipe(boundExecution(effect), Effect.as("executed" as const));
           const exit = yield* Effect.exit(Effect.raceFirst(execution, cancellation)).pipe(
             Effect.ensuring(outbox.clearCancellation(effect.id)),
           );

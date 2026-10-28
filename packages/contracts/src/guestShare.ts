@@ -65,7 +65,7 @@ export const GuestShareCreateResult = Schema.Struct({
 export type GuestShareCreateResult = typeof GuestShareCreateResult.Type;
 
 const GUEST_SHARE_CREATE_MESSAGES = {
-  disabled: "Guest links are off. Turn them on in Settings > Beta.",
+  disabled: "Guest links are off. Turn them on in Settings > Labs.",
   connect_unavailable: "Guest links need a running UpComputer Connect tunnel.",
   thread_unavailable: "This thread cannot be shared.",
   read_failed: "Failed to read the shared thread.",
@@ -136,3 +136,8 @@ export const GUEST_COMMAND_OUTPUT_ROUTE = `${GUEST_ROUTE_PREFIX}/command-output`
  * Images load inline; other files download.
  */
 export const GUEST_ATTACHMENT_ROUTE = `${GUEST_ROUTE_PREFIX}/attachment`;
+/**
+ * An image file on the host that an agent message in the shared thread embeds:
+ * `?share=<share id>&path=<absolute path>`.
+ */
+export const GUEST_MEDIA_ROUTE = `${GUEST_ROUTE_PREFIX}/media`;

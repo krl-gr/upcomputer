@@ -3073,6 +3073,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
         t3OrchestrationSystemPrompt(
           mcpAvailable && McpProviderSession.wantsOrchestrationInstructions(mcpSession),
+          mcpSession?.capabilities?.has("device") === true,
         ),
       ]
         .filter((part) => part !== undefined && part.length > 0)

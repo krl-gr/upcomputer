@@ -26,7 +26,7 @@ interface ChangedFileRow {
   depth: number;
 }
 
-export type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
+type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
 
 export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   runId: RunId;
@@ -261,6 +261,7 @@ function ChangedFilesRows({
   const [range, setRange] = useState({ start: 0, end: 40, rowHeight: 28 });
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes scroll, window resize and ancestor resizes to compute the virtualized row range
   useLayoutEffect(() => {
     const container = containerRef.current;
     const rowSize = rowSizeRef.current;

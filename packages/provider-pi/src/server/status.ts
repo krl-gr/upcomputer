@@ -54,7 +54,6 @@ const PI_PRESENTATION = {
   showInteractionModeToggle: false,
   supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
   reportsContextWindow: true,
-  requiresNewThreadForModelChange: false,
 } as const;
 
 const PI_RPC_DISCOVERY_TIMEOUT_MS = 30_000;

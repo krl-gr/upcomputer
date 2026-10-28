@@ -1,6 +1,5 @@
 import type { DevicePlatform, EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useId, useRef, useState, type ReactNode } from "react";
 
@@ -94,6 +93,8 @@ export function DeviceStreamView(props: {
   readonly axOverlay?: boolean;
   /** Lets a parent read this view's own stream state, such as its screen size. */
   readonly viewId?: string;
+  /** The host serves only serve-sim's stream and input socket (Simlock). */
+  readonly serveSimOnly?: boolean;
 }) {
   const model = deviceModel(props.platform, props.deviceName ?? "");
   const isDuo = model?.id === "iphone-duo";
@@ -119,6 +120,7 @@ export function DeviceStreamView(props: {
           platform: props.platform,
           deviceId: props.deviceId,
           access,
+          serveSimOnly: props.serveSimOnly === true,
           viewId,
         })
       : NO_SESSION_ATOM,
@@ -197,7 +199,7 @@ export function DeviceStreamView(props: {
       ? deviceAxElementsAtom({ access, platform: props.platform, deviceId: props.deviceId })
       : NO_AX_ATOM,
   );
-  const axElements = Option.getOrElse(AsyncResult.value(axResult), () => NO_AX_ELEMENTS);
+  const axElements = AsyncResult.getOrElse(axResult, () => NO_AX_ELEMENTS);
 
   const pointerActive = useRef(false);
   const normalizedPoint = (event: React.PointerEvent<HTMLElement>) => {
@@ -299,8 +301,8 @@ export function DeviceStreamView(props: {
         ref={hostRef}
         className={cn(
           "relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden outline-none",
-          // Overlay the stream; focus (including pointer-driven focus) marks keyboard capture.
-          "after:pointer-events-none after:absolute after:inset-0 after:z-10 focus:after:ring-2 focus:after:ring-inset focus:after:ring-ring",
+          // Overlay so the ring paints above the stream canvas.
+          "after:pointer-events-none after:absolute after:inset-0 after:z-10 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
           controlsInset && "pr-14",
         )}
         tabIndex={0}

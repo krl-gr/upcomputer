@@ -27,22 +27,9 @@ export const NEW_THREAD_COMPOSER_PLACEHOLDER =
   "Ask anything, @tag files/folders, $use skills, or / for commands";
 export const FOLLOW_UP_COMPOSER_PLACEHOLDER = "Ask for follow-up changes or attach images";
 
-/**
- * Whether the composer renders the UpComputer footer row. The resting row a
- * timeline scroll collapses the composer into stays upstream's; with the
- * UpComputer surface the composer never rests (`composerCollapsesOnScroll`).
- */
-export function showsUpComputerComposerFooter(isComposerResting: boolean): boolean {
-  return !isComposerResting && productSurface("composerFooter") === "upcomputer";
-}
-
-/**
- * Whether a timeline scroll may rest the composer into upstream's one-line
- * form, as upstream's "Collapse composer on scroll" setting asks. V1's
- * composer always stays whole, so with its surface the setting is hidden too.
- */
-export function composerCollapsesOnScroll(): boolean {
-  return productSurface("composerFooter") !== "upcomputer";
+/** Whether the composer renders the UpComputer footer row. */
+export function showsUpComputerComposerFooter(): boolean {
+  return productSurface("composerFooter") === "upcomputer";
 }
 
 /**

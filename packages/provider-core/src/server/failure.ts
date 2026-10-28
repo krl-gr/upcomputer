@@ -23,7 +23,16 @@ export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoff
   {},
 ) {
   override get message() {
-    return "This conversation is too long for this model. Compact it with /compact or pick a model with a larger context window.";
+    return "Your message and attachments leave too little room for this model, even in a fresh conversation. Shorten the message or pick a model with a larger context window.";
+  }
+}
+
+export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<ContextHandoffBackgroundWorkError>()(
+  "ContextHandoffBackgroundWorkError",
+  {},
+) {
+  override get message() {
+    return "The agent is still finishing background work from earlier. Wait for it to finish, or stop it, then send the message again.";
   }
 }
 
@@ -181,10 +190,18 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             retryable: false,
             detail: undefined,
           };
+        case "ContextHandoffBackgroundWorkError":
+          return {
+            message: new ContextHandoffBackgroundWorkError().message,
+            code: undefined,
+            retryable: true,
+            detail: undefined,
+          };
         case "AcpModelSelectionError":
         case "ClaudeBackgroundWorkBlocksQueryReplacementError":
         case "ClaudeAppendSystemPromptFileError":
         case "ClaudeAppendSystemPromptMissingValueError":
+        case "ClaudeSettingsLaunchArgError":
         case "ClaudeMcpRegistrationTimeoutError":
         case "CursorModelUnavailableError":
           return {

@@ -426,8 +426,6 @@ export function resolveLiveThreadBranchUpdate(input: {
   };
 }
 
-export { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
-
 /**
  * UpComputer: whether the Git controls wait for their first status. Until it
  * arrives neither the repository actions nor "Initialize Git" is known to

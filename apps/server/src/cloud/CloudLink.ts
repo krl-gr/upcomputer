@@ -479,17 +479,6 @@ export class CloudLink extends Context.Service<
       | CloudLinkInternalError
       | EnvironmentAuth.ServerAuthInternalError
     >;
-    readonly reconcileDesiredLink: (
-      localOrigin: string,
-    ) => Effect.Effect<
-      CliDesiredLinkMode,
-      | CloudLinkBackgroundError
-      | CloudLinkAccountMismatchError
-      | CloudLinkAuthorizationMissingError
-      | CloudLinkRelayConfigInvalidError
-      | EnvironmentAuth.ServerAuthInternalError
-      | CliTokenManager.CloudCliTokenManagerError
-    >;
     readonly reconcileDesiredLinkIfStillDesired: (
       localOrigin: string,
     ) => Effect.Effect<
@@ -924,12 +913,6 @@ const make = Effect.gen(function* () {
     },
     Effect.catchIf(ServerSecretStore.isSecretStoreError, internalError("persist-desired-link")),
   );
-
-  const reconcileDesiredLink = Effect.fn("environment.cloud.reconcileDesiredLink")(function* (
-    localOrigin: string,
-  ) {
-    return yield* endpointRuntime.withLinkStateLock(reconcileDesiredCloudLinkWith(localOrigin));
-  });
 
   const reconcileDesiredLinkIfStillDesired = Effect.fn(
     "environment.cloud.reconcileDesiredLinkIfStillDesired",
@@ -1694,7 +1677,6 @@ const make = Effect.gen(function* () {
     updatePreferences,
     answerHealthRequest,
     mintCredential,
-    reconcileDesiredLink,
     reconcileDesiredLinkIfStillDesired,
     registerManagedTunnelRecovery,
     recoverManagedTunnel,

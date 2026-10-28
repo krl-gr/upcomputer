@@ -1,3 +1,4 @@
+import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
@@ -67,7 +68,7 @@ function IndexDraftLanding() {
   // The project draft starts once per attempt; Retry asks for a new attempt.
   const startedAttemptRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
-  // oxlint-disable-next-line t3code/react-effect-budget -- tracks mount so an async draft start never updates an unmounted route
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount so an async draft start never updates an unmounted route
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -91,6 +92,7 @@ function IndexDraftLanding() {
       : null;
   const attempt = startState.retryRequest;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the index
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
     if (startingRef.current || !isStillOnIndex()) {
@@ -209,8 +211,13 @@ function HomeWaiting({
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
+  const contentArea = workspaceAreaProps("home", 1, "Home");
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+    <SidebarInset
+      {...contentArea}
+      role="main"
+      className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
+    >
       {isElectron ? <WorkspacePageHeader electron /> : null}
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">

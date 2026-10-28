@@ -183,7 +183,7 @@ Press **Escape** before releasing to cancel. Failed closes stay in the list so y
 GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
 supports approving waiting fork workflows and opening a revert pull request for a merged change.
 
-Pull request sharing is off by default. In Settings → Connections → Pull request sharing (Pull
+Pull request sharing is off by default. In Settings → Environments → Pull request sharing (Pull
 request routing under Environments on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.
 Enable both the original environment and the environment answering its requests on this client.
@@ -270,7 +270,7 @@ pull request link in the conversation. Creating a pull request from Git actions 
 and so does an agent creating one with `gh pr create` or `glab mr create`. Agents can link other
 pull requests with the `link_pull_request` tool.
 
-Use **Link this PR** in a branch-detected badge's tooltip to keep it with the thread. From a review
+Use **Link pull request to thread** in the command palette to keep a pull request with the thread. From a review
 on the Pull requests page, **Link to thread** lets you search for an active thread. The review header
 also lists the threads that link to it, including archived threads, so you can return to their context.
 

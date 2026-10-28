@@ -18,6 +18,7 @@ import {
   MAX_PROVIDER_FAILURE_CODE_LENGTH,
   MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
   ContextHandoffBudgetError,
+  ContextHandoffBackgroundWorkError,
 } from "./failure.ts";
 import * as IdAllocator from "./IdAllocator.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -76,17 +77,16 @@ it("keeps arbitrary cause messages out of the main message and in the detail", (
 });
 
 it("preserves actionable handoff errors wrapped by turn startup", () => {
-  const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
-    driver: ProviderDriverKind.make("codex"),
-    threadId: ThreadId.make("thread:handoff-error"),
-    providerThreadId: ProviderThreadId.make("provider-thread:handoff-error"),
-    runId: RunId.make("run:handoff-error"),
-    cause: new ContextHandoffBudgetError(),
-  });
-  assert.equal(
-    makeProviderFailure({ cause: Cause.fail(cause) }).message,
-    new ContextHandoffBudgetError().message,
-  );
+  for (const error of [new ContextHandoffBudgetError(), new ContextHandoffBackgroundWorkError()]) {
+    const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
+      driver: ProviderDriverKind.make("codex"),
+      threadId: ThreadId.make("thread:handoff-error"),
+      providerThreadId: ProviderThreadId.make("provider-thread:handoff-error"),
+      runId: RunId.make("run:handoff-error"),
+      cause: error,
+    });
+    assert.equal(makeProviderFailure({ cause: Cause.fail(cause) }).message, error.message);
+  }
 });
 
 it("keeps unrecognized reasons and provider text out of category messages", () => {

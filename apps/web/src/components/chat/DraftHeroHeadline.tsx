@@ -12,12 +12,13 @@ import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
+import { isTriagePrompt } from "~/hooks/useStartTriage";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "~/logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
@@ -42,6 +43,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
+import { TriageDraftHero } from "./TriageDraftHero";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   showsDraftHeroNoProjectItem,
@@ -83,6 +85,10 @@ export function DraftHeroHeadline({
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  // A boolean, so typing in a draft does not re-render the hero.
+  const isTriageDraftPrompt = useComposerDraftStore((store) =>
+    draftId ? isTriagePrompt(store.getComposerDraft(draftId)?.prompt ?? "") : false,
+  );
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = () => openCommandPalette({ open: "add-project" });
@@ -148,12 +154,11 @@ export function DraftHeroHeadline({
             project.environmentId === activeProjectRef.environmentId &&
             project.id === activeProjectRef.projectId,
         ) ?? null);
-  const scratchTargetEnvironmentId = scratchEnvironmentId(
-    activeProjectRef?.environmentId ?? primaryEnvironmentId,
-  );
+  const scratchTargetEnvironmentId = scratchEnvironmentId(activeProjectRef?.environmentId ?? null);
   const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
   const isScratchDraft =
-    activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
+    activeProject !== null &&
+    isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
   // Our surface's line under the heading of a draft without a project, where
   // upstream shows its "No project" picker.
   const offersProjectLine = isScratchDraft && !showsDraftHeroNoProjectPicker();
@@ -392,6 +397,17 @@ export function DraftHeroHeadline({
       or add a project
     </InlineButton>
   );
+  if (isScratchDraft && isTriageDraftPrompt) {
+    const environment = environments.find(
+      (entry) => entry.environmentId === activeProject.environmentId,
+    );
+    return (
+      <TriageDraftHero
+        machineLabel={environment?.label ?? null}
+        serverVersion={environment?.serverConfig?.environment.serverVersion ?? null}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">

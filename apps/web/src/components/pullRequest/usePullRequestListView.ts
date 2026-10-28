@@ -58,9 +58,7 @@ export function usePullRequestScope(search: PullRequestsSearch) {
   const allProjects = useProjects();
   const projectsKnown = useAllEnvironmentShellsBootstrapped();
   const capableEnvironments = environments
-    .filter(
-      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-    )
+    .filter((environment) => environment.serverConfig !== null)
     .toSorted((left, right) => left.environmentId.localeCompare(right.environmentId));
   const scopedEnvironmentId =
     capableEnvironments.find((environment) => environment.environmentId === search.environmentId)
@@ -185,6 +183,7 @@ export function usePullRequestScope(search: PullRequestsSearch) {
 
 export function usePullRequestQueryFilters(search: PullRequestsSearch, typedQuery: string) {
   const [sentQuery, setSentQuery] = useState(typedQuery);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce timer that sends the typed query after SEARCH_DEBOUNCE_MS
   useEffect(() => {
     const timer = window.setTimeout(() => setSentQuery(typedQuery), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);

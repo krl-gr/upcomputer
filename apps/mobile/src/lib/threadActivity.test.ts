@@ -116,6 +116,77 @@ it("shows a compact command as one mobile divider before, during, and after comp
   }
 });
 
+it("shows a skipped compaction as one stopped row, without a separate interrupted row", () => {
+  const prompt = projected({ ...userMessage(), text: "/compact", idleCompaction: "onReturn" }, 0);
+  const compaction = projected(
+    {
+      ...base("compaction", "2026-06-20T00:00:02.000Z", 1),
+      type: "compaction",
+      driver: ProviderDriverKind.make("claude"),
+      status: "interrupted",
+    },
+    1,
+  );
+  const interrupted = projected(
+    {
+      ...base("interrupt-result", "2026-06-20T00:00:03.000Z", 2),
+      type: "run_interrupt_result",
+      status: "interrupted",
+      message: "Skipped compaction to send a queued message",
+    },
+    2,
+  );
+  const rows = deriveThreadFeedPresentation(
+    buildThreadFeed([prompt, compaction, interrupted]),
+    {
+      runId,
+      status: "interrupted",
+      startedAt: "2026-06-20T00:00:01.000Z",
+      completedAt: "2026-06-20T00:00:03.000Z",
+    },
+    new Set(),
+  );
+
+  expect(rows.map((entry) => entry.type)).toEqual(["activity-group"]);
+  expect(
+    rows[0]?.type === "activity-group"
+      ? rows[0].activities.map((a) => a.projectedItem.item.type)
+      : null,
+  ).toEqual(["compaction"]);
+});
+
+it("keeps the interrupted row for a compaction stopped before its provider started", () => {
+  const rows = deriveThreadFeedPresentation(
+    buildThreadFeed([
+      projected({ ...userMessage(), text: "/compact" }, 0),
+      projected(
+        {
+          ...base("interrupt-result", "2026-06-20T00:00:03.000Z", 1),
+          type: "run_interrupt_result",
+          status: "interrupted",
+          message: "Run interrupted before provider start",
+        },
+        1,
+      ),
+    ]),
+    {
+      runId,
+      status: "interrupted",
+      startedAt: "2026-06-20T00:00:01.000Z",
+      completedAt: "2026-06-20T00:00:03.000Z",
+    },
+    new Set(),
+  );
+
+  expect(
+    rows.flatMap((entry) =>
+      entry.type === "activity-group"
+        ? entry.activities.map((activity) => activity.projectedItem.item.type)
+        : [],
+    ),
+  ).toContain("run_interrupt_result");
+});
+
 it.each(["/compact", "Continue"])(
   "keeps a completed compaction divider visible while other settled work folds for %s",
   (promptText) => {
@@ -209,7 +280,7 @@ it("binds a persisted resume answer only to the next compaction in its run", () 
     expect(compactRows).toHaveLength(2);
     expect(labels.get(compactRows[0]!.id)).toEqual({
       title: "Context compacted after 2h 10m idle",
-      compacting: "Compacting after 2h 10m idle…",
+      compacting: "Compacting…",
     });
     expect(labels.get(compactRows[1]!.id)).toBeUndefined();
   }
@@ -738,6 +809,21 @@ describe("buildThreadFeed", () => {
       "message",
       "message",
     ]);
+    const anchor = {
+      ...command(),
+      deferredWork: { cursor: "old-work", itemCount: 100, lastOrdinal: 100 },
+    };
+    const deferredFeed = buildThreadFeed([projected(userMessage(), 0), projected(anchor, 1)]);
+    const running = { ...latestRun, status: "running" as const, completedAt: null };
+    const deferredRows = deriveThreadFeedPresentation(deferredFeed, running, new Set());
+    const disclosure = deferredRows.find((entry) => entry.type === "run-fold");
+    expect(disclosure).toMatchObject({ deferredWorkItemIds: [anchor.id], expanded: false });
+    if (disclosure?.type !== "run-fold") throw new Error("Expected deferred work disclosure");
+    expect(
+      deriveThreadFeedPresentation(deferredFeed, running, new Set([disclosure.runId])).some(
+        (entry) => entry.type === "activity-group",
+      ),
+    ).toBe(true);
     expect(expanded[4]).toMatchObject({ message: { id: middle.messageId, text: middle.text } });
 
     const active = deriveThreadFeedPresentation(

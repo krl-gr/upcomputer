@@ -20,7 +20,6 @@ export function feedbackBannerItem(
     id: `feedback:${submission.id}`,
     variant:
       submission.status === "failed" ? "error" : submission.status === "sent" ? "success" : "info",
-    priority: submission.status === "uploading" ? "activity" : "notice",
     icon: <MessageSquareIcon />,
     ...notice,
     actions:

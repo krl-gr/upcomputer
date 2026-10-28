@@ -7,6 +7,7 @@ import {
   AuthPreviewOperateScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
+  AuthTerminalOperateScope,
   type AuthEnvironmentScope,
 } from "./auth.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
@@ -15,6 +16,8 @@ import { WS_METHODS } from "./rpc.ts";
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
+  // Stopping a server signals its processes, as closing a terminal does.
+  [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.serverSetTelemetryInternalDevice]: AuthSettingsWriteScope,
@@ -33,6 +36,10 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.pullRequestsGenerateReviewGuide]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthSourceControlWriteScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthSourceControlWriteScope,
+  // Signing in replaces the server's GitHub credential, as saving a token in Settings does.
+  [WS_METHODS.sourceControlSignInStart]: AuthSettingsWriteScope,
+  [WS_METHODS.sourceControlSignInWait]: AuthSettingsWriteScope,
+  [WS_METHODS.sourceControlSignInCancel]: AuthSettingsWriteScope,
   [WS_METHODS.projectCloneStart]: AuthSourceControlWriteScope,
   [WS_METHODS.projectCloneCancel]: AuthSourceControlWriteScope,
   [WS_METHODS.projectCloneRetry]: AuthSourceControlWriteScope,
@@ -45,6 +52,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.vcsSwitchRef]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsInit]: AuthSourceControlWriteScope,
 
+  // Starts an agent session on this environment that can read its logs and database.
+  [WS_METHODS.serverPrepareTriage]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksSetEnabled]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksDelete]: AuthOrchestrationOperateScope,
@@ -53,6 +62,10 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,
+  [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,
+  [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,
+  // A link lets every agent here reach the other environment: Settings' bar.
+  [WS_METHODS.peerLinksAnswerRequest]: AuthAccessWriteScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 
