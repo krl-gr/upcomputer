@@ -201,7 +201,7 @@ export function BotAvatar({
   return (
     <BotPortrait
       portrait={appearance?.portrait ?? defaultBotPortrait(id)}
-      working={state === "working"}
+      state={state}
       size={size}
     />
   );
