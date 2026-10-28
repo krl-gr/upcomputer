@@ -45,7 +45,7 @@ import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/user
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { makeProviderFailure, providerFailureTitle } from "@t3tools/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import {
@@ -451,6 +451,7 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
+      let worktreeRecreateFailure: { readonly path: string; readonly detail: string } | undefined;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
           .exists(worktreePath)
@@ -477,11 +478,21 @@ export const layer: Layer.Layer<
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.failCause(cause)
-                  : Effect.logWarning("provider turn start failed to recreate worktree", {
-                      threadId: projection.thread.id,
-                      worktreePath,
-                      cause: Cause.pretty(cause),
-                    }),
+                  : Effect.sync(() => {
+                      const error = Cause.squash(cause);
+                      worktreeRecreateFailure = {
+                        path: worktreePath,
+                        detail: error instanceof Error ? error.message : String(error),
+                      };
+                    }).pipe(
+                      Effect.andThen(
+                        Effect.logWarning("provider turn start failed to recreate worktree", {
+                          threadId: projection.thread.id,
+                          worktreePath,
+                          cause: Cause.pretty(cause),
+                        }),
+                      ),
+                    ),
               ),
             );
           }
@@ -555,13 +566,23 @@ export const layer: Layer.Layer<
               }),
         }),
       );
-      const settleStartFailure = (failed: {
-        readonly signal: string;
-        readonly title: string;
-        readonly error: Error;
-      }) =>
+      const settleStartFailure = (failed: { readonly signal: string; readonly error: Error }) =>
         Effect.gen(function* () {
-          const nestedCause = "cause" in failed.error ? failed.error.cause : undefined;
+          const failure =
+            worktreeRecreateFailure !== undefined && isWorkspaceMissing(failed.error)
+              ? makeProviderFailure({
+                  driver: providerThread.driver,
+                  class: "validation_error",
+                  code: "worktree_not_recreated",
+                  retryable: false,
+                  message: `This thread's worktree at ${worktreeRecreateFailure.path} was removed and couldn't be recreated. Recreate it or move the thread to another branch.`,
+                  detail: worktreeRecreateFailure.detail,
+                })
+              : makeProviderFailure({
+                  cause: failed.error,
+                  driver: providerThread.driver,
+                  class: "provider_error",
+                });
           yield* settleRunBeforeStart({
             signal: failed.signal,
             status: "failed",
@@ -570,17 +591,8 @@ export const layer: Layer.Layer<
             itemProviderThreadId: providerThread.id,
             item: {
               type: "error",
-              title: failed.title,
-              failure: makeProviderFailure({
-                cause: failed.error,
-                message:
-                  nestedCause instanceof Error
-                    ? nestedCause.message
-                    : typeof nestedCause === "string"
-                      ? nestedCause
-                      : failed.error.message,
-                class: "provider_error",
-              }),
+              title: providerFailureTitle(failure, providerThread.driver),
+              failure,
             },
           });
         });
@@ -588,7 +600,6 @@ export const layer: Layer.Layer<
         if (input.willRetry === true) return yield* sessionResult.failure;
         yield* settleStartFailure({
           signal: "provider-session-open-failure",
-          title: "Provider session failed to open",
           error: sessionResult.failure,
         });
         return;
@@ -603,7 +614,6 @@ export const layer: Layer.Layer<
           if (input.willRetry === true) return yield* loaded.failure;
           yield* settleStartFailure({
             signal: "provider-thread-load-failure",
-            title: "Provider turn failed to start",
             error: loaded.failure,
           });
           return undefined;
@@ -1328,3 +1338,16 @@ export const layer: Layer.Layer<
     });
   }),
 );
+
+function isWorkspaceMissing(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if ((current as { readonly _tag?: unknown })._tag === "ProviderWorkspaceMissingError") {
+      return true;
+    }
+    current = (current as { readonly cause?: unknown }).cause;
+  }
+  return false;
+}

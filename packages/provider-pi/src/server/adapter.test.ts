@@ -484,13 +484,13 @@ const expectModelFailure = (errorMessage: string) =>
     );
     assert.isTrue(
       sessionError.type === "provider_session.updated" &&
-        sessionError.providerSession.lastError === errorMessage,
+        sessionError.providerSession.lastError?.startsWith("Pi reported an error:") === true,
     );
     const terminal = yield* takeEvent((event) => event.type === "turn.terminal");
     assert.isTrue(
       terminal.type === "turn.terminal" &&
         terminal.status === "failed" &&
-        terminal.failure.message === errorMessage,
+        terminal.failure.detail === errorMessage,
     );
   }).pipe(Effect.scoped, Effect.provide(layerTest));
 
@@ -716,7 +716,7 @@ describe("PiAdapterV2", () => {
           assert.isTrue(
             terminal.type === "turn.terminal" &&
               terminal.status === "failed" &&
-              terminal.failure.message === rejection,
+              terminal.failure.detail === rejection,
           );
           return;
         }
@@ -744,7 +744,7 @@ describe("PiAdapterV2", () => {
         assert.isTrue(
           terminal.type === "turn.terminal" &&
             terminal.status === "failed" &&
-            terminal.failure.message === rejection,
+            terminal.failure.detail === rejection,
         );
       }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
@@ -2719,7 +2719,7 @@ describe("PiAdapterV2", () => {
       assert.isTrue(
         terminal.type === "turn.terminal" &&
           terminal.status === "failed" &&
-          terminal.failure.message === "Nothing to compact (session too small)",
+          terminal.failure.detail === "Nothing to compact (session too small)",
       );
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
@@ -3585,7 +3585,7 @@ describe("PiAdapterV2", () => {
           failedRetry.type === "turn_item.updated" &&
           failedRetry.turnItem.type === "error" &&
           failedRetry.turnItem.id === firstRetry.turnItem.id &&
-          failedRetry.turnItem.title === "Provider error" &&
+          failedRetry.turnItem.title === "Pi stopped with an error" &&
           failedRetry.turnItem.failure.retryable === false &&
           failedRetry.turnItem.retry?.attempt === 3 &&
           failedRetry.turnItem.retry.maxAttempts === 3,
@@ -3664,7 +3664,7 @@ describe("PiAdapterV2", () => {
       assert.isTrue(
         terminal.type === "turn.terminal" &&
           terminal.status === "failed" &&
-          terminal.failure.message === "socket timed out" &&
+          terminal.failure.detail === "socket timed out" &&
           terminal.retry?.attempt === 5 &&
           terminal.retry.maxAttempts === 5,
       );

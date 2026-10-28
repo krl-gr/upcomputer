@@ -53,6 +53,8 @@ import {
   type ProviderAdapterDriverCreateInput,
 } from "@t3tools/provider-core/server/adapterDriver";
 import {
+  makeNativeProviderFailure,
+  makeProviderCrashFailure,
   makeProviderFailure,
   makeProviderRetryTurnItem,
 } from "@t3tools/provider-core/server/failure";
@@ -1745,9 +1747,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             if (recordString(message, "role") !== "assistant") return;
             yield* completeOpenStreamItems(turn);
             if (recordString(message, "stopReason") === "error" && turn.failure === null) {
-              turn.failure = makeProviderFailure({
-                message: recordString(message, "errorMessage") ?? "Pi reported a model error.",
-                class: "provider_error",
+              turn.failure = makeNativeProviderFailure({
+                driver: PI_PROVIDER,
+                text: recordString(message, "errorMessage"),
               });
             }
             return;
@@ -1837,9 +1839,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               Math.trunc(recordNumber(event, "maxAttempts") ?? attempt),
             );
             const retryDelayMs = Math.max(0, Math.trunc(recordNumber(event, "delayMs") ?? 0));
-            const failure = makeProviderFailure({
-              message: recordString(event, "errorMessage") ?? "Pi provider request failed.",
-              class: "provider_error",
+            const failure = makeNativeProviderFailure({
+              driver: PI_PROVIDER,
+              text: recordString(event, "errorMessage"),
               retryable: true,
             });
             const current = turn.activeProviderRetry;
@@ -1878,9 +1880,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               turn.failure = null;
               return;
             }
-            const failure = makeProviderFailure({
-              message: recordString(event, "finalError") ?? "Pi auto-retry failed.",
-              class: "provider_error",
+            const failure = makeNativeProviderFailure({
+              driver: PI_PROVIDER,
+              text: recordString(event, "finalError"),
               retryable: false,
             });
             const attempt = Math.max(1, Math.trunc(recordNumber(event, "attempt") ?? 1));
@@ -1959,9 +1961,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 return;
               }
               if (!compactTurn.sawCompaction) {
-                compactTurn.failure = makeProviderFailure({
-                  message: recordString(event, "error") ?? "Pi compact failed.",
-                  class: "provider_error",
+                compactTurn.failure = makeNativeProviderFailure({
+                  driver: PI_PROVIDER,
+                  text: recordString(event, "error"),
                 });
                 if (state !== null) yield* finalizeTurn(state);
                 return;
@@ -2008,9 +2010,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                   ? turn
                   : null;
             if (failedTurn !== null) {
-              const failure = makeProviderFailure({
-                message: recordString(event, "error") ?? "Pi rejected the prompt.",
-                class: "provider_error",
+              const failure = makeNativeProviderFailure({
+                driver: PI_PROVIDER,
+                text: recordString(event, "error"),
               });
               if (failedTurn.adoptedWake && command === "prompt") {
                 failedTurn.rejectedPromptFailure = failure;
@@ -2108,11 +2110,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               if (state?.activeTurn != null) {
                 state.activeTurn.failure = interrupted
                   ? null
-                  : makeProviderFailure({
-                      cause,
-                      message: "Pi process exited unexpectedly.",
-                      class: "transport_error",
-                    });
+                  : makeProviderCrashFailure({ driver: PI_PROVIDER, cause });
                 yield* finalizeTurn(state, false);
               } else {
                 yield* cancelPendingPrompts(yield* DateTime.now);

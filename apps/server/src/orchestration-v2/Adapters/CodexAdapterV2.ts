@@ -138,10 +138,13 @@ import {
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import { backgroundWorkNotification } from "@t3tools/provider-core/server/notification";
 import {
+  makeNativeProviderFailure,
   makeProviderFailure,
   makeProviderFailureTurnItem,
   makeProviderRetryTurnItem,
+  usageLimitMessage,
 } from "@t3tools/provider-core/server/failure";
+import { classifyCodexManagedError } from "../../provider/CodexManagedErrors.ts";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
   isProviderNativeImageAttachment,
@@ -156,6 +159,64 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
+
+const CODEX_MODEL_NOT_SUPPORTED =
+  /The '([^']+)' model is not supported when using Codex with a ChatGPT account/u;
+
+/**
+ * Codex passes backend error bodies through unparsed. Known ChatGPT sharing
+ * codes and unsupported models get their own sentence; the body goes to the detail.
+ */
+function codexTurnFailure(input: {
+  readonly text: string | undefined;
+  readonly code: string | null | undefined;
+  readonly retrying?: boolean;
+}): OrchestrationV2ProviderFailure {
+  const usageLimit = input.code === "usageLimitExceeded" || input.code === "rateLimitExceeded";
+  const managed = input.text === undefined ? undefined : classifyCodexManagedError(input.text);
+  if (managed !== undefined) {
+    return makeProviderFailure({
+      driver: CODEX_PROVIDER,
+      message: managed.message,
+      code: managed.code,
+      class: managed.code.includes("usage_limit") ? "usage_limit" : "permission_error",
+      ...(input.retrying ? { retryable: true } : {}),
+      detail: input.text,
+    });
+  }
+  if (usageLimit) {
+    return makeProviderFailure({
+      driver: CODEX_PROVIDER,
+      message: usageLimitMessage("Codex", input.text),
+      code: input.code,
+      class: "usage_limit",
+      ...(input.retrying ? { retryable: true } : {}),
+      detail: input.text,
+    });
+  }
+  const model = input.text === undefined ? null : CODEX_MODEL_NOT_SUPPORTED.exec(input.text);
+  if (model !== null) {
+    return makeProviderFailure({
+      driver: CODEX_PROVIDER,
+      message: `${model[1]} isn't available with your ChatGPT account. Pick another model and send again.`,
+      code: "model_unavailable",
+      class: "validation_error",
+      retryable: false,
+      detail: input.text,
+    });
+  }
+  return makeNativeProviderFailure({
+    driver: CODEX_PROVIDER,
+    text: input.text,
+    code: input.code,
+    class:
+      input.retrying === true &&
+      (input.code?.startsWith("http") === true || input.code?.startsWith("responseStream") === true)
+        ? "transport_error"
+        : "provider_error",
+    ...(input.retrying ? { retryable: true } : {}),
+  });
+}
 export const CODEX_DRIVER_KIND = CODEX_PROVIDER;
 export const CODEX_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(CODEX_DRIVER_KIND);
 
@@ -4628,14 +4689,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (!payload.willRetry) {
               context.latestProviderFailure = {
                 nativeMessage: payload.error.message,
-                failure: makeProviderFailure({
-                  message: payload.error.additionalDetails?.trim() || payload.error.message,
+                failure: codexTurnFailure({
+                  text: payload.error.additionalDetails?.trim() || payload.error.message,
                   code: notificationCode,
-                  class:
-                    notificationCode === "usageLimitExceeded" ||
-                    notificationCode === "rateLimitExceeded"
-                      ? "usage_limit"
-                      : "provider_error",
                 }),
               };
               return;
@@ -4650,19 +4706,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             };
             const code = codexErrorInfoCode(payload.error.codexErrorInfo);
             const additionalDetails = payload.error.additionalDetails?.trim();
-            const failure = makeProviderFailure({
-              message:
+            const failure = codexTurnFailure({
+              text:
                 additionalDetails === undefined || additionalDetails.length === 0
                   ? payload.error.message
                   : additionalDetails,
               code,
-              class:
-                code === "usageLimitExceeded" || code === "rateLimitExceeded"
-                  ? "usage_limit"
-                  : code?.startsWith("http") === true || code?.startsWith("responseStream") === true
-                    ? "transport_error"
-                    : "provider_error",
-              retryable: true,
+              retrying: true,
             });
             const itemOrdinal =
               previous?.itemOrdinal ??
@@ -5659,15 +5709,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 (input.failureCode === undefined ||
                   input.failureCode === previousFailure.failure.code)
                   ? previousFailure.failure
-                  : makeProviderFailure({
-                      message: input.failureMessage,
-                      code: input.failureCode,
-                      class:
-                        input.failureCode === "usageLimitExceeded" ||
-                        input.failureCode === "rateLimitExceeded"
-                          ? "usage_limit"
-                          : "provider_error",
-                    });
+                  : codexTurnFailure({ text: input.failureMessage, code: input.failureCode });
               return {
                 type: "turn.terminal",
                 driver: CODEX_PROVIDER,

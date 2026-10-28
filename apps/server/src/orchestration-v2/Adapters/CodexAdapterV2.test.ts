@@ -6930,7 +6930,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         if (scenario.name === "known-reset" || scenario.name === "deferred-reset")
           assert.equal(terminal.failure.resetAt, resetAt);
         if (scenario.name === "matching-details")
-          assert.equal(terminal.failure.message, "Detailed provider allowance explanation.");
+          assert.equal(
+            terminal.failure.message,
+            "Codex usage limit reached (detailed provider allowance explanation). Switch to another model or provider to keep working now.",
+          );
         if (scenario.name === "late-reset") {
           yield* Deferred.await(resetReceipt);
           const item = harness.events.find(

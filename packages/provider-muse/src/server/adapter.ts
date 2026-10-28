@@ -81,7 +81,10 @@ import {
   type BackgroundWorkReport,
 } from "@t3tools/provider-core/server/notification";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import {
+  makeNativeProviderFailure,
+  makeProviderCrashFailure,
+} from "@t3tools/provider-core/server/failure";
 import {
   makeSubagentChildThread,
   makeSubagentConversationArtifacts,
@@ -969,10 +972,10 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         yield* updateSession(disposition === "broken" ? "error" : "ready", detail ?? null);
         active = undefined;
         if (status === "failed") {
-          const failure = makeProviderFailure({
-            class: disposition === "broken" ? "transport_error" : "provider_error",
-            message: detail ?? "Muse turn failed.",
-          });
+          const failure =
+            disposition === "broken"
+              ? makeProviderCrashFailure({ driver: MUSE_PROVIDER, detail })
+              : makeNativeProviderFailure({ driver: MUSE_PROVIDER, text: detail });
           const base = baseItem(turn, `failure:${turn.nativeId}`, completedAt);
           yield* emit({
             type: "turn_item.updated",

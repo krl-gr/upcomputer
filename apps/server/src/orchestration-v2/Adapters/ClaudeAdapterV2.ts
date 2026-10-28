@@ -155,8 +155,10 @@ import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import {
+  makeProviderCrashFailure,
   makeProviderFailure,
   makeProviderRetryTurnItem,
+  readProviderErrorText,
 } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
@@ -2677,36 +2679,55 @@ function resultUserFacingError(result: SDKResultMessage): string | undefined {
   );
 }
 
+const CLAUDE_USAGE_LIMIT_TEXT =
+  "Claude usage limit reached. Switch to another model or provider to keep working now.";
+const CLAUDE_SIGNED_OUT_TEXT =
+  "Claude Code is signed out. Sign in again in Settings, then send the message again.";
+
 function terminalResultError(
   reason: SDKResultMessage["terminal_reason"],
   failureHint?: string,
+  apiErrorStatus?: number | null,
 ): string | undefined {
   switch (reason) {
     case "api_error":
-      return failureHint ?? "Claude gave up after repeated API errors.";
+      return (
+        failureHint ??
+        `Claude stopped after several failed requests to Anthropic${
+          apiErrorStatus == null ? "" : ` (${apiErrorStatus})`
+        }. Wait a minute and send the message again.`
+      );
     case "malformed_tool_use_exhausted":
-      return "Claude gave up after repeated malformed tool calls.";
+      return "Claude kept making tool calls it couldn't complete, so it gave up. Send the message again, or rephrase it.";
     case "budget_exhausted":
-      return "Claude stopped: the turn's token budget was exhausted.";
+      return "Claude used up this reply's token budget. Ask it to continue.";
     case "structured_output_retry_exhausted":
-      return "Claude could not produce the requested structured output.";
+      return "Claude couldn't produce its answer in the required format. Send the message again.";
     case "tool_deferred_unavailable":
-      return "Claude could not resume a deferred tool call: the tool is no longer available.";
+      return "Claude was waiting on a tool that is no longer available. Send the message again.";
     case "turn_setup_failed":
-      return "Claude could not start the turn.";
+      return "Claude couldn't start this reply. Send the message again.";
     case "blocking_limit":
-      return "Claude stopped: a usage limit blocked the request.";
+      return CLAUDE_USAGE_LIMIT_TEXT;
     case "rapid_refill_breaker":
-      return "Claude stopped: the context refilled too quickly after compaction.";
+      return "This conversation filled up again right after it was compacted. Start a new thread to continue.";
     case "prompt_too_long":
-      return "Claude stopped: the prompt exceeds the model's context window.";
+      return "This conversation is too long for the model. Run /compact or start a new thread.";
     case "image_error":
-      return "Claude stopped: an image in the conversation could not be processed.";
+      return "Claude couldn't process an image in this conversation. Remove it and send the message again.";
     case "model_error":
-      return "Claude stopped: the model returned an error.";
+      return "The model returned an error. Send the message again.";
     default:
       return undefined;
   }
+}
+
+/** `API Error: 403 {"type":"error","error":{"message":"..."}}` read as a sentence. */
+function claudeRejectedText(result: string): string {
+  const { reason, status } = readProviderErrorText(result);
+  return `Anthropic rejected the request${reason === undefined ? "" : `: ${reason}`}.${
+    status === 403 ? " Check that your account has access to this model." : ""
+  }`;
 }
 
 function isOverloadedResult(result: SDKResultMessage): boolean {
@@ -2838,6 +2859,7 @@ function providerFailureFromResult(
   completedAt: DateTime.Utc,
   failureHint?: string,
   usageLimited = false,
+  extra?: { readonly detail?: string | undefined; readonly authFailed?: boolean },
 ): OrchestrationV2ProviderFailure | null {
   const gatewayLimit =
     failureHint === undefined &&
@@ -2858,10 +2880,12 @@ function providerFailureFromResult(
     if (seconds > 0 && resetMs < 8.64e15) {
       return makeProviderFailure({
         class: "usage_limit",
-        message: "Claude API rate limit reached. Try again later.",
+        driver: CLAUDE_PROVIDER,
+        message: CLAUDE_USAGE_LIMIT_TEXT,
         code: "api_error_429",
         retryable: true,
         resetAt: DateTime.formatIso(DateTime.makeUnsafe(resetMs)),
+        detail: gatewayLimit[0],
       });
     }
   }
@@ -2872,37 +2896,67 @@ function providerFailureFromResult(
       ? "usage_limit"
       : "provider_error";
   const listedError = resultUserFacingError(message);
+  const apiErrorStatus = message.subtype === "success" ? (message.api_error_status ?? null) : null;
   const structuredError = isOverloadedResult(message)
-    ? "Claude API is overloaded (529). Try again shortly."
+    ? "Anthropic is overloaded right now (529). Wait a minute and send the message again."
     : message.subtype === "success" && message.api_error_status === 429
-      ? "Claude API rate limit reached. Try again later."
-      : terminalResultError(message.terminal_reason, failureHint);
+      ? CLAUDE_USAGE_LIMIT_TEXT
+      : terminalResultError(message.terminal_reason, failureHint, apiErrorStatus);
+  const authFailed = extra?.authFailed === true;
   if (message.subtype !== "success") {
+    const native = message.errors.join("\n");
     return makeProviderFailure({
-      message: listedError ?? structuredError ?? message.errors.join("\n"),
-      code: message.subtype,
-      class: failureClass,
+      driver: CLAUDE_PROVIDER,
+      message:
+        structuredError ??
+        (listedError === undefined
+          ? undefined
+          : `Claude stopped before finishing: ${listedError.replace(/[.\s]+$/u, "")}. Send the message again.`),
+      code: authFailed ? "authentication_failed" : message.subtype,
+      class: authFailed ? "permission_error" : failureClass,
+      detail: extra?.detail ?? (native.length > 0 ? native : undefined),
     });
   }
   if (!message.is_error && structuredError === undefined) {
     return null;
   }
-  const apiErrorStatus = message.api_error_status ?? null;
   return makeProviderFailure({
-    message: listedError ?? structuredError ?? failureHint ?? message.result,
-    code:
-      apiErrorStatus === null
+    driver: CLAUDE_PROVIDER,
+    message:
+      structuredError ??
+      failureHint ??
+      (listedError === undefined
+        ? claudeRejectedText(message.result)
+        : `Claude stopped before finishing: ${listedError.replace(/[.\s]+$/u, "")}. Send the message again.`),
+    code: authFailed
+      ? "authentication_failed"
+      : apiErrorStatus === null
         ? (message.terminal_reason ?? "sdk_result_error")
         : `api_error_${apiErrorStatus}`,
-    class: failureClass,
+    class: authFailed ? "permission_error" : failureClass,
     retryable: apiErrorStatus === 429 || apiErrorStatus === 529 ? true : null,
+    detail: extra?.detail ?? listedError ?? message.result,
   });
 }
 
+const CLAUDE_RETRY_REASONS: Record<string, string> = {
+  rate_limit: "the usage limit was hit",
+  overloaded: "Anthropic is overloaded",
+  server_error: "Anthropic had a server error",
+  network: "the network dropped",
+  timeout: "the request timed out",
+  authentication_failed: "the sign-in was rejected",
+};
+
 function providerFailureFromApiRetry(message: SDKAPIRetryMessage): OrchestrationV2ProviderFailure {
-  const errorName = message.error.replaceAll("_", " ");
+  const reason =
+    CLAUDE_RETRY_REASONS[message.error] ??
+    (message.error_status === null
+      ? "the connection failed"
+      : `Anthropic answered ${Math.trunc(message.error_status)}`);
   return makeProviderFailure({
-    message: `Claude API ${errorName}.`,
+    driver: CLAUDE_PROVIDER,
+    message: `Claude's request failed (${reason}), so it is retrying automatically.`,
     code:
       message.error_status === null
         ? message.error
@@ -5879,7 +5933,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     `terminal-failure:${input.context.providerTurnId}`,
                   ),
                   status: input.status,
-                  failure: input.failure ?? makeProviderFailure({ class: "provider_error" }),
+                  failure:
+                    input.failure ??
+                    makeProviderFailure({ class: "provider_error", driver: CLAUDE_PROVIDER }),
                   ...(providerRetry === undefined
                     ? {}
                     : {
@@ -6068,9 +6124,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ...(interrupted
                 ? {}
                 : {
-                    failure: makeProviderFailure({
+                    failure: makeProviderCrashFailure({
+                      driver: CLAUDE_PROVIDER,
                       cause: cause === undefined ? undefined : Cause.squash(cause),
-                      class: "transport_error",
                     }),
                   }),
             });
@@ -7583,12 +7639,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // can't grant a permission, so show the CLI's own text instead.
             const permissionDenied =
               message.subtype === "success" && message.api_error_status === 403;
+            const authFailed =
+              !permissionDenied && context.authenticationFailureMessage !== undefined;
             const failureHint = permissionDenied
-              ? message.result
-              : (context.authenticationFailureMessage ??
-                (usageLimited
-                  ? "Claude usage limit reached. Send the message again once the limit resets."
-                  : undefined));
+              ? claudeRejectedText(message.result)
+              : authFailed
+                ? CLAUDE_SIGNED_OUT_TEXT
+                : usageLimited
+                  ? CLAUDE_USAGE_LIMIT_TEXT
+                  : undefined;
             const resetTimes = Array.from(context.rateLimitResetTimes.values());
             const resetAt =
               resetTimes.length > 0 && resetTimes.every((time) => time !== null)
@@ -7596,7 +7655,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : null;
             const resultFailure = interrupted
               ? null
-              : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+              : providerFailureFromResult(message, completedAt, failureHint, usageLimited, {
+                  authFailed,
+                  detail: permissionDenied ? message.result : context.authenticationFailureMessage,
+                });
             const terminalFailure =
               resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
@@ -7727,7 +7789,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 completedAt: yield* DateTime.now,
                 failure: makeProviderFailure({
                   class: "provider_error",
-                  message: "Claude acknowledged the message but never started a turn for it.",
+                  driver: CLAUDE_PROVIDER,
+                  retryable: true,
+                  message: "Claude received this message but didn't reply. Send it again.",
                 }),
               });
               return;

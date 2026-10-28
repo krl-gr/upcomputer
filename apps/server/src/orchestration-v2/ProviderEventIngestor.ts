@@ -36,7 +36,10 @@ import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failure";
+import {
+  makeProviderFailureTurnItem,
+  providerFailureName,
+} from "@t3tools/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
@@ -789,7 +792,12 @@ export const layer: Layer.Layer<
             }
             const occurredAt = yield* DateTime.now;
             const failure = (yield* agentScope.oomKilled(input.threadId))
-              ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
+              ? {
+                  ...input.event.failure,
+                  message: `${providerFailureName(input.event.driver)} was stopped because it ran out of memory. Close other heavy work or split the task, then send the message again.`,
+                  code: "oom_kill",
+                  retryable: true,
+                }
               : input.event.failure;
             return [
               ...dismissed,

@@ -139,6 +139,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -1192,10 +1193,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         "cause" in cause
           ? cause.cause
           : cause;
+      const reason = handoffUnsupported
+        ? userFacingDispatchErrorMessage(cause)?.replace(/[.\s]+$/u, "")
+        : undefined;
       const failure = makeProviderFailure({
         cause: failureCause,
+        driver: providerThread?.driver,
         code: handoffUnsupported ? "context_handoff_unsupported" : "queued_start_failed",
         class: handoffUnsupported ? "validation_error" : "unknown",
+        message: `Your queued message couldn't start${reason === undefined ? "" : `: ${reason}`}. Edit it or send it again.`,
       });
       yield* writeSystemEvents([
         ...(attempt !== undefined && rootNode !== undefined
@@ -1248,7 +1254,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   parentItemId: null,
                   ordinal: yield* nextTurnItemOrdinal(projection),
                   status: "failed" as const,
-                  title: "Queued provider could not start",
+                  title: "Queued message couldn't start",
                   startedAt: now,
                   completedAt: now,
                   updatedAt: now,

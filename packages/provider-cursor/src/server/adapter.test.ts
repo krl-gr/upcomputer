@@ -338,6 +338,10 @@ describe("CursorAdapterV2", () => {
         assert.equal(first.value.failure?.class, "transport_error");
         assert.equal(
           first.value.failure?.message,
+          "Cursor's servers didn't respond (WritableIterable is closed). Check your connection and send again.",
+        );
+        assert.equal(
+          first.value.failure?.detail,
           "Error: RetriableError: WritableIterable is closed",
         );
       }
@@ -497,7 +501,7 @@ describe("CursorAdapterV2", () => {
         assert.equal(terminal.value.failure?.class, "usage_limit");
         assert.equal(
           terminal.value.failure?.message,
-          "Cursor usage limit reached for claude-opus-5-5. Switch model or try again later. Cursor says: You've hit your usage limit Switch to Auto for more requests or set a Spend Limit to continue with Claude.",
+          "Cursor usage limit reached for claude-opus-5-5. Switch to another model or provider to keep working now.",
         );
       }
     }).pipe(

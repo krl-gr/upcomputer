@@ -38,7 +38,7 @@ import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeL
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { makeProviderFailure, usageLimitMessage } from "@t3tools/provider-core/server/failure";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
@@ -105,19 +105,49 @@ export function registerMistralVibeAcpExtensions(context: AcpAdapterV2ExtensionC
   );
 }
 
+function registryAgentName(agentId: string): string {
+  if (agentId.length === 0) return "The agent";
+  return agentId
+    .split(/[-_]/u)
+    .filter((word) => word.length > 0)
+    .map((word) =>
+      /^(?:cli|ai|acp)$/iu.test(word)
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(" ");
+}
+
+/** JSON-RPC -32603 carries the agent's own words in data, not in the generic message. */
+function registryRequestReason(cause: {
+  readonly errorMessage: string;
+  readonly data?: unknown;
+}): string {
+  if (typeof cause.data === "object" && cause.data !== null) {
+    for (const key of ["message", "details"] as const) {
+      const value = (cause.data as Record<string, unknown>)[key];
+      if (typeof value === "string" && value.trim().length > 0) return value.trim();
+    }
+  }
+  return cause.errorMessage.trim();
+}
+
 export function acpRegistryPromptFailure(agentId: string, cause: unknown) {
+  const provider = registryAgentName(agentId);
+  if (!isAcpRequestError(cause)) {
+    return makeProviderFailure({ cause, class: "provider_error", provider });
+  }
+  const usageLimit = agentId === "mistral-vibe" && cause.code === MISTRAL_VIBE_RATE_LIMITED;
+  const reason = registryRequestReason(cause).replace(/[.\s]+$/u, "");
   return makeProviderFailure({
     cause,
-    ...(isAcpRequestError(cause)
-      ? {
-          message: cause.errorMessage,
-          code: String(cause.code),
-          class:
-            agentId === "mistral-vibe" && cause.code === MISTRAL_VIBE_RATE_LIMITED
-              ? ("usage_limit" as const)
-              : ("provider_error" as const),
-        }
-      : { class: "provider_error" as const }),
+    provider,
+    code: String(cause.code),
+    class: usageLimit ? "usage_limit" : "provider_error",
+    message: usageLimit
+      ? usageLimitMessage(provider, reason)
+      : `${provider} reported an error: ${reason}. Send the message again.`,
+    detail: `${cause.errorMessage} (code ${cause.code})`,
   });
 }
 

@@ -771,7 +771,7 @@ effectIt.effect("terminalizes a starting run when its provider session cannot op
         status: "failed",
         failure: {
           class: "provider_error",
-          message: "DESCRIPTION is not valid ACP JSON",
+          detail: "DESCRIPTION is not valid ACP JSON",
         },
       },
     ]);
@@ -866,10 +866,10 @@ effectIt.effect("fails a starting run when its last start attempt cannot load th
     expect(projection.turnItems).toMatchObject([
       {
         type: "error",
-        title: "Provider turn failed to start",
+        title: "Lost connection to Codex",
         failure: {
           class: "provider_error",
-          message: "Pi RPC read failed: pi process exited with code 1.",
+          detail: "Pi RPC read failed: pi process exited with code 1.",
         },
       },
     ]);

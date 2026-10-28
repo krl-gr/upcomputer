@@ -3515,11 +3515,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
-      assert.include(terminal.failure.message, "run `claude auth login`");
-      assert.include(terminal.failure.message, configDir);
-      // The message quotes its paths, which escapes Windows separators.
-      assert.include(terminal.failure.message, JSON.stringify(cwd));
-      assert.notInclude(terminal.failure.message, "repeated API errors");
+      assert.equal(
+        terminal.failure.message,
+        "Claude Code is signed out. Sign in again in Settings, then send the message again.",
+      );
+      assert.equal(terminal.failure.code, "authentication_failed");
+      assert.equal(terminal.failure.class, "permission_error");
+      // The terminal fallback with its paths stays in the details.
+      assert.include(terminal.failure.detail ?? "", "run `claude auth login`");
+      assert.include(terminal.failure.detail ?? "", configDir);
+      // The detail quotes its paths, which escapes Windows separators.
+      assert.include(terminal.failure.detail ?? "", JSON.stringify(cwd));
     }).pipe(
       Effect.provide(
         Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
@@ -3561,7 +3567,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
-      assert.equal(terminal.failure.message, cliText);
+      assert.equal(
+        terminal.failure.message,
+        "Anthropic rejected the request: your organization does not have access to this model. Check that your account has access to this model.",
+      );
+      assert.equal(terminal.failure.detail, cliText);
       assert.equal(terminal.failure.code, "api_error_403");
     }).pipe(
       Effect.provide(
@@ -3572,7 +3582,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   it.effect.each([
     { recovered: false, expected: "Claude usage limit reached" },
-    { recovered: true, expected: "Claude gave up after repeated API errors" },
+    { recovered: true, expected: "Claude stopped after several failed requests to Anthropic" },
   ])("tracks whether a rejected usage window recovered ($recovered)", ({ recovered, expected }) =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarness;
@@ -3682,8 +3692,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       assert.equal(
         terminal.failure.message,
         expectedLimit
-          ? "Claude usage limit reached. Send the message again once the limit resets."
-          : "Claude gave up after repeated API errors.",
+          ? "Claude usage limit reached. Switch to another model or provider to keep working now."
+          : "Claude stopped after several failed requests to Anthropic. Wait a minute and send the message again.",
       );
     }).pipe(
       Effect.provide(
@@ -6364,7 +6374,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.equal(terminal?.status, "failed");
         if (terminal?.status !== "failed") return;
         assert.equal(terminal.threadDisposition, "reusable");
-        assert.include(terminal.failure.message, "never started a turn");
+        assert.include(terminal.failure.message, "received this message but didn't reply");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

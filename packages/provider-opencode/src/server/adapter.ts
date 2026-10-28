@@ -68,7 +68,11 @@ import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orche
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import {
+  makeNativeProviderFailure,
+  makeProviderCrashFailure,
+  makeProviderFailure,
+} from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -2151,9 +2155,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   status,
                   failure:
                     terminal?.failure ??
-                    makeProviderFailure({
-                      message: sessionEntity.lastError ?? undefined,
-                      class: "provider_error",
+                    makeNativeProviderFailure({
+                      driver: OPENCODE_PROVIDER,
+                      text: sessionEntity.lastError,
                     }),
                   threadDisposition,
                 }
@@ -2724,10 +2728,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                     state.activeTurn,
                     terminalStatusForError(event, state.activeTurn),
                     {
-                      failure: makeProviderFailure({
-                        message,
+                      failure: makeNativeProviderFailure({
+                        driver: OPENCODE_PROVIDER,
+                        text: message,
                         code: event.properties.error?.name ?? null,
-                        class: "provider_error",
                       }),
                       threadDisposition:
                         event.properties.sessionID === undefined ? "broken" : "reusable",
@@ -2769,15 +2773,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const detail = Exit.isSuccess(exit)
                 ? "OpenCode event stream ended unexpectedly."
                 : OpenCodeRuntime.openCodeRuntimeErrorDetail(Cause.squash(exit.cause));
-              nativeStreamFailure = makeProviderFailure({
-                message: detail,
-                class: "transport_error",
+              const streamFailure = makeProviderCrashFailure({
+                driver: OPENCODE_PROVIDER,
+                reason: "it lost its connection to Up.computer",
+                detail,
               });
+              nativeStreamFailure = streamFailure;
               yield* updateProviderSession("error", detail);
               for (const state of threads.values()) {
                 if (state.activeTurn !== null)
                   yield* finalizeTurn(state, state.activeTurn, "failed", {
-                    failure: makeProviderFailure({ message: detail, class: "transport_error" }),
+                    failure: streamFailure,
                     threadDisposition: "broken",
                   });
               }
@@ -2798,9 +2804,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                     for (const state of threads.values()) {
                       if (state.activeTurn !== null) {
                         yield* finalizeTurn(state, state.activeTurn, "failed", {
-                          failure: makeProviderFailure({
-                            message: detail,
-                            class: "transport_error",
+                          failure: makeProviderCrashFailure({
+                            driver: OPENCODE_PROVIDER,
+                            reason: `exit code ${code}`,
+                            detail,
                           }),
                           threadDisposition: "broken",
                         });
@@ -3022,7 +3029,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               turn.admissionGeneration !== generation
                 ? Effect.void
                 : finalizeTurn(state, turn, "failed", {
-                    failure: makeProviderFailure({ cause, class: "provider_error" }),
+                    failure: makeProviderFailure({
+                      cause,
+                      class: "provider_error",
+                      driver: OPENCODE_PROVIDER,
+                    }),
                   }),
             ),
             Effect.ensuring(
@@ -3045,7 +3056,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 });
                 abortController.abort();
                 return finalizeTurn(state, turn, "failed", {
-                  failure: makeProviderFailure({ cause: error, class: "provider_error" }),
+                  failure: makeProviderFailure({
+                    cause: error,
+                    class: "provider_error",
+                    driver: OPENCODE_PROVIDER,
+                  }),
                 }).pipe(Effect.andThen(Effect.fail(error)));
               },
             }),
@@ -3273,7 +3288,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   ),
                   Effect.tapError((cause) =>
                     finalizeTurn(state, turn, turn.interrupted ? "interrupted" : "failed", {
-                      failure: makeProviderFailure({ cause, class: "provider_error" }),
+                      failure: makeProviderFailure({
+                        cause,
+                        class: "provider_error",
+                        driver: OPENCODE_PROVIDER,
+                      }),
                     }),
                   ),
                   Effect.ensuring(Deferred.succeed(admissionSettled, undefined)),
@@ -3314,7 +3333,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   admissionAbortController!.signal.aborted
                     ? Effect.void
                     : finalizeTurn(state, turn, "failed", {
-                        failure: makeProviderFailure({ cause, class: "provider_error" }),
+                        failure: makeProviderFailure({
+                          cause,
+                          class: "provider_error",
+                          driver: OPENCODE_PROVIDER,
+                        }),
                       }),
                 ),
                 Effect.catch((cause) =>

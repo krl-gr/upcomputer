@@ -284,7 +284,7 @@ it.effect("uses the same reconciliation path to cancel runtime requests during s
       assert.equal(requestEvent.payload.status, "cancelled");
       assert.equal(requestEvent.payload.responseCapability.type, "not_resumable");
       if (requestEvent.payload.responseCapability.type === "not_resumable") {
-        assert.match(requestEvent.payload.responseCapability.reason, /shut down/);
+        assert.match(requestEvent.payload.responseCapability.reason, /closed before you answered/);
       }
     }
   }).pipe(Effect.provide(layer));
