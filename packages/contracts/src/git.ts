@@ -442,9 +442,14 @@ export class TextGenerationError extends Schema.TaggedError<TextGenerationError>
   },
 ) {
   override get message(): string {
-    const what = this.operation.toLowerCase().includes("pull")
+    // Operations are camelCase method names, such as generatePrContent.
+    const what = /pull|Pr(?=[A-Z]|$)/i.test(this.operation)
       ? "pull request text"
-      : "commit message";
+      : /branch/i.test(this.operation)
+        ? "branch name"
+        : /title/i.test(this.operation)
+          ? "chat title"
+          : "commit message";
     return `Couldn't write the ${what} with AI, so nothing was done. Write it yourself, or pick another model in Settings.`;
   }
 }
