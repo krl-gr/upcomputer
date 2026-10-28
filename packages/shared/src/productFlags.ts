@@ -45,6 +45,8 @@ export interface ProductFlags {
   readonly mcpApps: boolean;
   /** The notes on usage data, in onboarding and in Settings, with the privacy policy link. */
   readonly usageDataNotice: boolean;
+  /** Linking a T3 Chat account for more Connect tunnels: the account page and upgrade links. */
+  readonly t3Chat: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -61,6 +63,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
+  t3Chat: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -75,6 +78,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
+  t3Chat: false,
 });
 
 /**
@@ -265,6 +269,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: ["privacy-policy"],
+    rightPanelSurfaces: [],
+  },
+  t3Chat: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
     rightPanelSurfaces: [],
   },
 };

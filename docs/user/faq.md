@@ -25,11 +25,7 @@ Yes.
 
 ## How much does Up.computer cost?
 
-Nothing. There's no way to pay us to use Up.computer. You bring your own sub. It is free and open source (MIT). You still pay your provider like you already do. UpComputer Connect is free too, for now. Every account can connect up to 3 machines running Up.computer. Phones and browsers that connect to them do not count. Need more? Link a paid Up.computer Chat account. [More machines](#can-i-connect-more-than-3-machines-with-t3-connect) We don't want to charge for this, but if the bill gets unacceptable we may have to change course. If you hit limits or have issues, you can always fork it, self host, or use Tailscale. [Install](./install.md)
-
-## Can I connect more than 3 machines with UpComputer Connect?
-
-Yes. Link your Up.computer Chat account and UpComputer Connect raises your limit: up to 10 machines with Up.computer Chat Pro, or 100 with Premier. Open your account menu in Up.computer, go to **Up.computer Chat**, and select **Link Up.computer Chat**. Sign in to Up.computer Chat and approve. The free Up.computer Chat plan keeps the normal limit of 3. [More machines with Up.computer Chat](./remote-access.md#more-machines-with-t3-chat)
+Nothing. There's no way to pay us to use Up.computer. You bring your own sub. It is free and open source (MIT). You still pay your provider like you already do. UpComputer Connect is free too, for now. Every account can connect up to 3 machines running Up.computer. Phones and browsers that connect to them do not count. We don't want to charge for this, but if the bill gets unacceptable we may have to change course. If you hit limits or have issues, you can always fork it, self host, or use Tailscale. [Install](./install.md)
 
 ## Why is my Claude 5-hour limit draining so fast?
 

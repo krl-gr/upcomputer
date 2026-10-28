@@ -3,11 +3,12 @@ import { MessageSquareIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { isProductFeatureShown } from "../../product/productFlags";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
 import { T3ChatUserProfilePage } from "./T3ChatUserProfilePage";
 import { T3ConnectUserProfilePage } from "./T3ConnectUserProfilePage";
 
-export const T3_CONNECT_ACCOUNT_PAGES = [
+const ACCOUNT_PAGES = [
   {
     label: "Mobile clients",
     url: "mobile-clients",
@@ -28,7 +29,11 @@ export const T3_CONNECT_ACCOUNT_PAGES = [
   },
 ] as const;
 
-export type T3ConnectAccountPageUrl = (typeof T3_CONNECT_ACCOUNT_PAGES)[number]["url"];
+export type T3ConnectAccountPageUrl = (typeof ACCOUNT_PAGES)[number]["url"];
+
+export const T3_CONNECT_ACCOUNT_PAGES = ACCOUNT_PAGES.filter(
+  (page) => page.url !== "t3-chat" || isProductFeatureShown("t3Chat"),
+);
 
 type PortalTargets = Readonly<Record<string, HTMLDivElement | undefined>>;
 

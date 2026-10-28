@@ -32,17 +32,10 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
-### More machines with Up.computer Chat
+### Machine limit
 
 Each UpComputer Connect account can link up to 3 machines. Phones and browsers do not
-count. A paid Up.computer Chat plan raises the limit to 10 machines with Pro, or 100 with
-Premier.
-
-To link Up.computer Chat, open your account menu on the web or desktop app, go to
-**Up.computer Chat**, and select **Link Up.computer Chat**. Sign in to Up.computer Chat in the window that
-opens and approve. The new limit applies the next time you add a machine. If you
-cancel or downgrade Up.computer Chat, machines you already linked stay linked, but you
-cannot add more until you are under the limit again.
+count. To link another machine, deregister one you no longer use.
 
 ## Pair over a LAN or private network
 

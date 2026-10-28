@@ -1,4 +1,5 @@
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
+import { isProductFeatureShown } from "../../product/productFlags";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -120,7 +121,7 @@ function T3ConnectTunnelUsage() {
   return (
     <div className="border-t py-4">
       <TunnelUsageMeter used={usage.used} limit={usage.limit} />
-      {usage.upgrade ? (
+      {usage.upgrade && isProductFeatureShown("t3Chat") ? (
         <p className="mt-2 text-xs leading-4.5 text-muted-foreground">
           {usage.upgrade === "link" && t3Chat.linkUrl ? (
             <>

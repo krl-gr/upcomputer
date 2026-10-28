@@ -53,7 +53,8 @@ const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
  */
 const DOC_RULES: ReadonlyArray<CopyRule> = [
   {
-    pattern: /\bT3(?! Code\b| Connect\b)(?='s\b|-owned\b|-managed\b|\s|$)/g,
+    // T3 Chat is another product; its account link stays hidden in ours.
+    pattern: /\bT3(?! Code\b| Connect\b| Chat\b)(?='s\b|-owned\b|-managed\b|\s|$)/g,
     replacement: "Up.computer",
   },
   { pattern: /~\/\.t3(?=[/\s`)]|$)/g, replacement: "~/.upcomputer" },
