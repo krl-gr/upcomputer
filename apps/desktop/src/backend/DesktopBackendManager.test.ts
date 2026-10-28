@@ -129,6 +129,7 @@ interface MakeInstanceInput {
   readonly onReady?: Effect.Effect<void>;
   readonly onShutdown?: Effect.Effect<void>;
   readonly onStateDirOwned?: Effect.Effect<void>;
+  readonly onRestartLoop?: DesktopBackendManager.BackendInstanceSpec["onRestartLoop"];
   readonly onPreflightFailed?: (
     failure: DesktopBackendManager.PreflightFailure,
   ) => Effect.Effect<boolean>;
@@ -194,6 +195,7 @@ function makeTestInstance(input: MakeInstanceInput) {
     ...(input.onReady ? { onReady: () => input.onReady! } : {}),
     ...(input.onShutdown ? { onShutdown: () => input.onShutdown! } : {}),
     ...(input.onStateDirOwned ? { onStateDirOwned: () => input.onStateDirOwned! } : {}),
+    ...(input.onRestartLoop ? { onRestartLoop: input.onRestartLoop } : {}),
     ...(input.onPreflightFailed ? { onPreflightFailed: input.onPreflightFailed } : {}),
   });
 
@@ -1397,6 +1399,47 @@ describe("DesktopBackendManager", () => {
         assert.equal(yield* Queue.size(starts), 0);
         yield* TestClock.adjust(Duration.millis(1));
         assert.equal(yield* Queue.take(starts), 3);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("tells the person once when restarts keep failing", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const starts = yield* Queue.unbounded<number>();
+        const notices = yield* Queue.unbounded<number>();
+        let startCount = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.sync(() => {
+                startCount += 1;
+                return makeProcess({
+                  exitCode: Queue.offer(starts, startCount).pipe(
+                    Effect.as(ChildProcessSpawner.ExitCode(1)),
+                  ),
+                });
+              }),
+            ),
+          ),
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          onRestartLoop: ({ attempts }) => Queue.offer(notices, attempts).pipe(Effect.asVoid),
+        });
+        yield* instance.start;
+        assert.equal(yield* Queue.take(starts), 1);
+        yield* TestClock.adjust(Duration.millis(500));
+        assert.equal(yield* Queue.take(starts), 2);
+        assert.equal(yield* Queue.size(notices), 0);
+        yield* TestClock.adjust(Duration.millis(1000));
+        assert.equal(yield* Queue.take(starts), 3);
+        assert.equal(
+          yield* Queue.take(notices),
+          DesktopBackendManager.RESTART_LOOP_NOTICE_ATTEMPTS,
+        );
+        yield* TestClock.adjust(Duration.millis(2000));
+        assert.equal(yield* Queue.take(starts), 4);
+        assert.equal(yield* Queue.size(notices), 0);
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );

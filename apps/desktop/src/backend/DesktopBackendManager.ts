@@ -257,7 +257,15 @@ export interface BackendInstanceSpec {
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
   readonly onStateDirOwned?: () => Effect.Effect<void>;
+  /** Called once when restarts keep failing, so the person learns the app is not working. */
+  readonly onRestartLoop?: (input: {
+    readonly attempts: number;
+    readonly reason: string;
+  }) => Effect.Effect<void>;
 }
+
+/** Consecutive failed restarts before the person is told. */
+export const RESTART_LOOP_NOTICE_ATTEMPTS = 3;
 
 interface ActiveBackendRun {
   readonly id: number;
@@ -1061,6 +1069,13 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           reason,
           delayMs: Duration.toMillis(delay),
         });
+        const { restartAttempt } = yield* Ref.get(state);
+        if (restartAttempt === RESTART_LOOP_NOTICE_ATTEMPTS && spec.onRestartLoop !== undefined) {
+          yield* Effect.forkIn(
+            spec.onRestartLoop({ attempts: restartAttempt, reason }).pipe(Effect.ignore),
+            parentScope,
+          );
+        }
         const restartFiber = yield* Effect.forkIn(
           Effect.sleep(delay).pipe(
             Effect.andThen(

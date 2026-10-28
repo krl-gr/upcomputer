@@ -31,6 +31,7 @@ import * as PreviewPasskeys from "../preview/Passkeys.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import {
@@ -70,6 +71,21 @@ type WindowTitleBarOptions = Pick<
   Electron.BrowserWindowConstructorOptions,
   "titleBarOverlay" | "titleBarStyle" | "trafficLightPosition"
 >;
+
+function rendererGoneReason(reason: Electron.RenderProcessGoneDetails["reason"]): string {
+  switch (reason) {
+    case "oom":
+      return "it ran out of memory";
+    case "killed":
+      return "the system stopped it";
+    case "launch-failed":
+      return "it couldn't start";
+    case "integrity-failure":
+      return "a security check failed";
+    default:
+      return "it stopped unexpectedly";
+  }
+}
 
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
@@ -799,6 +815,31 @@ export const make = Effect.gen(function* () {
             recovering: shouldRecover,
           });
           if (!shouldRecover) {
+            if (details.reason === "clean-exit" || window.isDestroyed()) return;
+            // Recovery gave up or can't help: without this the window stays blank.
+            const dialog = yield* Effect.serviceOption(ElectronDialog.ElectronDialog);
+            if (Option.isNone(dialog)) return;
+            const { response } = yield* dialog.value
+              .showMessageBox(
+                {
+                  type: "error",
+                  title: "The window crashed",
+                  message: "The window crashed",
+                  detail: `Up.computer's window crashed (${rendererGoneReason(details.reason)}). Your agents keep running. Reload the window, or restart the app if it keeps crashing.`,
+                  buttons: ["Reload window", "Restart Up.computer", "Close"],
+                  defaultId: 0,
+                  cancelId: 2,
+                },
+                window,
+              )
+              .pipe(Effect.orElseSucceed(() => ({ response: 2, checkboxChecked: false })));
+            if (response === 0 && !window.isDestroyed()) {
+              rendererRecoveryTimestamps = [];
+              loadApplication();
+            } else if (response === 1) {
+              yield* electronApp.relaunch({});
+              yield* electronApp.exit(0);
+            }
             return;
           }
           rendererRecoveryTimestamps.push(now);
