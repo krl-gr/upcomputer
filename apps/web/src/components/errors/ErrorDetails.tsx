@@ -37,7 +37,7 @@ export function ErrorDetails({ detail }: { readonly detail: string | null | unde
         </Button>
       </div>
       {open ? (
-        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
+        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2 font-mono text-2xs leading-relaxed text-muted-foreground select-text">
           {text}
         </pre>
       ) : null}
@@ -66,7 +66,14 @@ function ErrorDescription({
   );
 }
 
-/** For toast descriptions built in `.ts` files that can't write JSX. */
-export function errorToastDescription(error: unknown, action?: string): ReactNode {
-  return createElement(ErrorDescription, { error, action });
+/**
+ * For toast descriptions built in `.ts` files that can't write JSX. `message` replaces the
+ * generated sentence when the caller has approved words for this failure.
+ */
+export function errorToastDescription(
+  error: unknown,
+  action?: string,
+  message?: string,
+): ReactNode {
+  return createElement(ErrorDescription, { error, action, message });
 }

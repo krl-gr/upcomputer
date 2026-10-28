@@ -1,7 +1,8 @@
-import type { BackgroundNotice } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { visibleBackgroundNotices } from "./SidebarBackgroundNotices";
+import { EnvironmentId, type BackgroundNotice } from "@t3tools/contracts";
+
+import { backgroundNoticeHref, visibleBackgroundNotices } from "./SidebarBackgroundNotices";
 
 const notice = (id: string, occurredAt: string): BackgroundNotice => ({
   id,
@@ -28,5 +29,13 @@ describe("visibleBackgroundNotices", () => {
     expect(visibleBackgroundNotices([[repeat]], new Set(["a@2026-10-28T08:00:00.000Z"]))).toEqual([
       repeat,
     ]);
+  });
+});
+
+describe("backgroundNoticeHref", () => {
+  it("opens the link on the computer the notice came from, keeping its own query", () => {
+    expect(backgroundNoticeHref("/bots?bot=bot%3Aa", EnvironmentId.make("env-1"))).toBe(
+      "/bots?bot=bot%3Aa&environment=env-1",
+    );
   });
 });

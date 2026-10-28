@@ -1,7 +1,8 @@
-import type { BackgroundNotice } from "@t3tools/contracts";
+import type { BackgroundNotice, EnvironmentId } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { BellIcon } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useServerConfigs } from "../../state/entities";
@@ -18,14 +19,21 @@ function dismissalKey(notice: BackgroundNotice): string {
   return `${notice.id}@${notice.occurredAt}`;
 }
 
-export function visibleBackgroundNotices(
-  noticeLists: ReadonlyArray<ReadonlyArray<BackgroundNotice> | undefined>,
+export function visibleBackgroundNotices<Notice extends BackgroundNotice>(
+  noticeLists: ReadonlyArray<ReadonlyArray<Notice> | undefined>,
   dismissed: ReadonlySet<string>,
-): BackgroundNotice[] {
+): Notice[] {
   return noticeLists
     .flatMap((notices) => notices ?? [])
     .filter((notice) => !dismissed.has(dismissalKey(notice)))
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+}
+
+/** A notice's in-app link, on the computer the notice came from. */
+export function backgroundNoticeHref(path: string, environmentId: EnvironmentId): string {
+  const url = new URL(path, "http://notice.invalid");
+  url.searchParams.set("environment", environmentId);
+  return `${url.pathname}${url.search}`;
 }
 
 /**
@@ -35,6 +43,8 @@ export function visibleBackgroundNotices(
  */
 export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices() {
   const configs = useServerConfigs();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const [dismissedList, setDismissedList] = useLocalStorage(
     DISMISSED_KEY,
     [] as ReadonlyArray<string>,
@@ -43,7 +53,9 @@ export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices()
   const notices = useMemo(
     () =>
       visibleBackgroundNotices(
-        [...configs.values()].map((config) => config.backgroundNotices),
+        [...configs].map(([environmentId, config]) =>
+          config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+        ),
         new Set(dismissedList),
       ),
     [configs, dismissedList],
@@ -54,7 +66,7 @@ export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices()
   const label = `${notices.length} notification${notices.length === 1 ? "" : "s"}`;
   return (
     <SidebarMenuItem className="shrink-0">
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
             <SidebarMenuButton
@@ -108,9 +120,30 @@ export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices()
                 <p className="text-muted-foreground">{notice.message}</p>
                 <div className="flex items-center justify-between gap-2">
                   <ErrorDetails detail={notice.detail} />
-                  <Button size="xs" variant="ghost" onClick={() => dismiss([dismissalKey(notice)])}>
-                    Dismiss
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {notice.link ? (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => {
+                          if (!notice.link) return;
+                          setOpen(false);
+                          void navigate({
+                            href: backgroundNoticeHref(notice.link.path, notice.environmentId),
+                          });
+                        }}
+                      >
+                        {notice.link.label}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => dismiss([dismissalKey(notice)])}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
                 </div>
               </li>
             ))}

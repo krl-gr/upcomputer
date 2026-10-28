@@ -628,12 +628,17 @@ export const BackgroundNotice = Schema.Struct({
     "updates",
     "settings",
     "tasks",
+    "bots",
     "app",
   ]),
   severity: Schema.Literals(["info", "warning", "error"]),
   title: TrimmedNonEmptyString,
   message: TrimmedNonEmptyString,
   detail: Schema.optionalKey(Schema.String),
+  /** An in-app path that fixes the problem; clients add the notice's environment. */
+  link: Schema.optionalKey(
+    Schema.Struct({ label: TrimmedNonEmptyString, path: TrimmedNonEmptyString }),
+  ),
   occurredAt: IsoDateTime,
 });
 export type BackgroundNotice = typeof BackgroundNotice.Type;
