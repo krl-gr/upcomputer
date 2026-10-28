@@ -21,6 +21,7 @@ import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
 import {
   useConnectedEnvironmentIds,
+  useEnvironment,
   usePrimaryEnvironmentId,
 } from "../../../../apps/web/src/state/environments.ts";
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
@@ -69,12 +70,25 @@ import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orch
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
-import { BotAvatar, botPage, errorReason, useBots, useBotStatus } from "./botData.tsx";
+import {
+  BotAvatar,
+  botPage,
+  botSectionTitle,
+  errorReason,
+  useBotSectionEnvironmentIds,
+  useBots,
+  useBotStatus,
+} from "./botData.tsx";
 
+/** The environments with a Bots section: this computer first, then each connected one. */
 function useBotEnvironmentIds() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
-  return [...new Set([...(primary ? [primary] : []), ...connected])];
+  return useBotSectionEnvironmentIds([...new Set([...(primary ? [primary] : []), ...connected])]);
+}
+
+function useBotSectionTitle(environmentId: EnvironmentId, several: boolean) {
+  return botSectionTitle(useEnvironment(environmentId)?.label, several);
 }
 
 /** Whether a bot is the one on screen: its page or its chat. */
@@ -106,22 +120,35 @@ function openBotChat(
 }
 
 export function SidebarBots() {
-  return useBotEnvironmentIds().map((id) => <EnvironmentBots key={id} environmentId={id} />);
+  const environmentIds = useBotEnvironmentIds();
+  return environmentIds.map((id) => (
+    <EnvironmentBots key={id} environmentId={id} several={environmentIds.length > 1} />
+  ));
 }
 
 /** Each environment's bots as avatars, one pill per environment like its sidebar section. */
 export function CompactSidebarBots() {
-  return useBotEnvironmentIds().map((id) => <CompactEnvironmentBots key={id} environmentId={id} />);
+  const environmentIds = useBotEnvironmentIds();
+  return environmentIds.map((id) => (
+    <CompactEnvironmentBots key={id} environmentId={id} several={environmentIds.length > 1} />
+  ));
 }
 
-function CompactEnvironmentBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+function CompactEnvironmentBots({
+  environmentId,
+  several,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly several: boolean;
+}) {
   const { bots, enabled } = useBots(environmentId);
+  const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive(environmentId);
   if (!enabled) return null;
   return (
-    <CompactSidebarPill label="Bots">
+    <CompactSidebarPill label={title}>
       {bots.map((bot) => (
         <CompactBotButton
           key={bot.agent.id}
@@ -170,8 +197,15 @@ function CompactBotButton({
   );
 }
 
-function EnvironmentBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+function EnvironmentBots({
+  environmentId,
+  several,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly several: boolean;
+}) {
   const { bots, error, enabled } = useBots(environmentId);
+  const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive(environmentId);
@@ -197,7 +231,7 @@ function EnvironmentBots({ environmentId }: { readonly environmentId: Environmen
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP}>
         <SidebarSectionHeader
-          title="Bots"
+          title={title}
           open={open}
           onToggle={() => setOpen(!open)}
           action={

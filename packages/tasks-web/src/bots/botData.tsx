@@ -15,7 +15,12 @@ import { appAtomRegistry } from "../../../../apps/web/src/rpc/atomRegistry.ts";
 import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
-import { readTasksWebClient, useTasksWebAccess } from "../environmentApi.ts";
+import {
+  readTasksWebAccess,
+  readTasksWebClient,
+  subscribeTasksWebAccess,
+  useTasksWebAccess,
+} from "../environmentApi.ts";
 import {
   botChatStatus,
   botStatus,
@@ -30,6 +35,8 @@ interface BotList {
   readonly bots: ReadonlyArray<Bot>;
   readonly loaded: boolean;
   readonly error: string;
+  /** The environment's server predates bots: it has no Bots section and no error. */
+  readonly unsupported: boolean;
 }
 
 /**
@@ -45,7 +52,7 @@ interface BotListStore {
   stopChanges: (() => void) | undefined;
 }
 
-const EMPTY: BotList = { bots: [], loaded: false, error: "" };
+const EMPTY: BotList = { bots: [], loaded: false, error: "", unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
 /** A failed bot action in plain words; the raw text goes behind Details. */
@@ -59,6 +66,13 @@ export const errorText = (error: unknown) => {
 /** The reason inside a sentence, such as "Couldn't save Nova's settings: <reason>." */
 export const errorReason = (error: unknown) =>
   describeError(error).reason ?? "something went wrong";
+
+/**
+ * A server without the bots methods, such as another computer on an older version, rejects
+ * the list as a defect naming the request tag it does not know.
+ */
+const isUnknownMethodError = (error: unknown) =>
+  describeError(error).detail?.includes("Unknown request tag") === true;
 
 /** The server's code for a failed bot action, which picks its title and action. */
 export const errorCode = (error: unknown) =>
@@ -94,9 +108,14 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
-    publish(store, { bots, loaded: true, error: "" });
+    publish(store, { bots, loaded: true, error: "", unsupported: false });
   } catch (cause) {
-    publish(store, { ...store.list, error: errorText(cause) });
+    publish(
+      store,
+      isUnknownMethodError(cause)
+        ? { ...EMPTY, loaded: true, unsupported: true }
+        : { ...store.list, error: errorText(cause) },
+    );
   } finally {
     store.fetching = false;
   }
@@ -124,10 +143,14 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   if (store.listeners.size === 1) {
     // Bots change through this client's writes, which refresh on their own; other clients,
     // agents' tools and background runs reach the list through agent and run changes. Task
-    // edits never do.
+    // edits never do. A server without bots is asked again only on a resync, which follows a
+    // reconnect, such as after that computer updates.
     store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
       (change) => {
-        if (change.kind === "sync" || change.runsChanged || change.agentsChanged)
+        if (
+          change.kind === "sync" ||
+          (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
+        )
           void refresh(environmentId, store);
       },
       (cause) => publish(store, { ...store.list, error: errorText(cause) }),
@@ -157,8 +180,60 @@ export function useBots(environmentId: EnvironmentId) {
     () => (enabled ? storeFor(environmentId).list : EMPTY),
     () => EMPTY,
   );
-  return { ...list, enabled };
+  return { ...list, enabled: enabled && !list.unsupported };
 }
+
+/**
+ * The environments, in the given order, whose Bots section shows: their list answered, or
+ * failed in a way worth showing. One still loading or whose server predates bots has none.
+ */
+export function useBotSectionEnvironmentIds(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<EnvironmentId> {
+  const key = environmentIds.join("\n");
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const ids = key ? (key.split("\n") as Array<EnvironmentId>) : [];
+      // Lists are read only where Tasks access allows it, which can change while subscribed.
+      const stops = new Map<EnvironmentId, () => void>();
+      const follow = () => {
+        for (const environmentId of ids) {
+          const readable = readTasksWebAccess(environmentId).canReadAgents;
+          const stop = stops.get(environmentId);
+          if (readable && !stop) stops.set(environmentId, subscribeBots(environmentId, listener));
+          if (!readable && stop) {
+            stop();
+            stops.delete(environmentId);
+          }
+        }
+      };
+      follow();
+      const stopAccess = subscribeTasksWebAccess(() => {
+        follow();
+        listener();
+      });
+      return () => {
+        stopAccess();
+        for (const stop of stops.values()) stop();
+      };
+    },
+    [key],
+  );
+  const read = () =>
+    environmentIds
+      .filter((environmentId) => {
+        if (!readTasksWebAccess(environmentId).canReadAgents) return false;
+        const list = storeFor(environmentId).list;
+        return !list.unsupported && (list.loaded || list.error !== "");
+      })
+      .join("\n");
+  const shown = useSyncExternalStore(subscribe, read, read);
+  return useMemo(() => (shown ? (shown.split("\n") as Array<EnvironmentId>) : []), [shown]);
+}
+
+/** With several computers showing bots, each section names its computer. */
+export const botSectionTitle = (computerName: string | null | undefined, several: boolean) =>
+  several && computerName ? `Bots · ${computerName}` : "Bots";
 
 /** Navigation to a bot's page: an existing bot, a chat to turn into one, or a new bot. */
 export function botPage(
