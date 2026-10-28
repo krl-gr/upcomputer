@@ -1,0 +1,1615 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Computers switcher: sidebar mockup</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --page: #141414;
+        --sidebar: #202020;
+        --row-hover: rgb(255 255 255 / 7%);
+        --row-active: rgb(255 255 255 / 7%);
+        --border: rgb(255 255 255 / 10%);
+        --fg: #ececec;
+        --row-text: #c4c4c4;
+        --dim: #9c9c9c;
+        --label: #8a8a8a;
+        --icon: #8c8c8c;
+        --popover: #2a2a2a;
+        --working: #38bdf8; /* sky-400, "Working" */
+        --waiting: #a5b4fc; /* indigo-300, "Awaiting Input" */
+        --approval: #fcd34d; /* amber-300, "Approval" */
+        --failed: #fca5a5; /* red-300, "Failed" */
+        --done: rgb(110 231 183 / 90%); /* emerald-300/90, "Completed" */
+        --online: #4ade80;
+        --update: #fbbf24;
+        --font:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--fg);
+        font: 14px/20px var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+      .page {
+        padding: 28px 28px 48px;
+        max-width: 1480px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        line-height: 28px;
+        font-weight: 600;
+        margin: 0 0 6px;
+      }
+      .intro {
+        color: var(--dim);
+        max-width: 920px;
+        margin: 0 0 8px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        color: var(--dim);
+        font-size: 12px;
+        margin: 10px 0 26px;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px 24px;
+        align-items: flex-start;
+      }
+      .frame {
+        width: 272px;
+      }
+      .frame.wide {
+        width: 272px;
+      }
+      .cap {
+        margin-top: 10px;
+        font-size: 12px;
+        line-height: 17px;
+        color: var(--dim);
+      }
+      .cap b {
+        color: var(--fg);
+        font-weight: 600;
+        display: block;
+        font-size: 13px;
+        margin-bottom: 3px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 10px;
+        line-height: 14px;
+        padding: 0 5px;
+        border-radius: 4px;
+        background: rgb(56 189 248 / 16%);
+        color: var(--working);
+        margin-left: 4px;
+        vertical-align: 1px;
+        font-weight: 600;
+      }
+      .tag.alt {
+        background: rgb(255 255 255 / 8%);
+        color: var(--dim);
+      }
+
+      /* Sidebar */
+      .sb {
+        position: relative;
+        background: var(--sidebar);
+        border: 1px solid rgb(255 255 255 / 5%);
+        border-radius: 12px;
+        height: 700px;
+        overflow: hidden;
+        padding: 0 8px 8px;
+      }
+      .sb.short {
+        height: 470px;
+      }
+      .chrome {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-left: 6px;
+      }
+      .lights {
+        display: flex;
+        gap: 8px;
+      }
+      .lights i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #3d3d3d;
+        display: block;
+      }
+      .chrome .toggle {
+        margin-left: 14px;
+        width: 16px;
+        height: 16px;
+        color: var(--icon);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      svg.s {
+        width: 13px;
+        height: 13px;
+      }
+      svg.xs {
+        width: 12px;
+        height: 12px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 8px;
+        border-radius: 6px;
+        color: var(--row-text);
+        white-space: nowrap;
+      }
+      .row > svg.i {
+        color: var(--icon);
+      }
+      .row.active {
+        background: var(--row-active);
+        color: var(--fg);
+      }
+      .row .t {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .end {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-variant-numeric: tabular-nums;
+        color: var(--label);
+      }
+      .row.dimmed {
+        opacity: 0.5;
+      }
+      .search {
+        color: var(--label);
+      }
+      .gap {
+        height: 4px;
+      }
+
+      .sec {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 32px;
+        padding: 0 8px;
+        margin-top: 10px;
+        color: var(--dim);
+        font-weight: 500;
+      }
+      .sec svg.chev {
+        width: 14px;
+        height: 14px;
+        transform: rotate(90deg);
+      }
+      .sec .on {
+        margin-left: 4px;
+        font-weight: 400;
+        font-size: 12px;
+        color: var(--label);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .sec .act {
+        margin-left: auto;
+        color: var(--label);
+      }
+      .sub {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 8px;
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--label);
+      }
+      .sub svg {
+        color: var(--label);
+      }
+
+      .c-work {
+        color: var(--working);
+      }
+      .c-wait {
+        color: var(--waiting);
+      }
+      .c-appr {
+        color: var(--approval);
+      }
+      .c-fail {
+        color: var(--failed);
+      }
+      .c-done {
+        color: var(--done);
+      }
+
+      .mono {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 9px;
+        font-weight: 700;
+        color: #fff;
+        flex: none;
+      }
+      .all4 {
+        width: 16px;
+        height: 16px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+        flex: none;
+      }
+      .all4 i {
+        border-radius: 2px;
+        display: block;
+      }
+      .av {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        flex: none;
+        position: relative;
+      }
+      .av::before,
+      .av::after {
+        content: "";
+        position: absolute;
+        top: 6px;
+        width: 2px;
+        height: 4px;
+        border-radius: 1px;
+        background: rgb(255 255 255 / 85%);
+      }
+      .av::before {
+        left: 5px;
+      }
+      .av::after {
+        right: 5px;
+      }
+      .row > svg.spin {
+        width: 14px;
+        height: 14px;
+        color: var(--working);
+      }
+
+      /* Computers switcher */
+      .switch {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 8px;
+        border-radius: 8px;
+        color: var(--fg);
+        font-weight: 500;
+        background: rgb(255 255 255 / 4%);
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+        margin-bottom: 4px;
+      }
+      .switch.open {
+        background: rgb(255 255 255 / 8%);
+      }
+      .switch .t {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .switch .ud {
+        color: var(--label);
+        width: 14px;
+        height: 14px;
+      }
+      .mi {
+        position: relative;
+        display: inline-flex;
+        color: #b5b5b5;
+        flex: none;
+      }
+      .mi .dot {
+        position: absolute;
+        right: -3px;
+        bottom: -2px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px var(--sidebar);
+      }
+      .menu .mi .dot {
+        box-shadow: 0 0 0 2px var(--popover);
+      }
+      .dot.on {
+        background: var(--online);
+      }
+      .dot.off {
+        background: var(--sidebar);
+        box-shadow:
+          inset 0 0 0 1.5px #7a7a7a,
+          0 0 0 2px var(--sidebar);
+      }
+      .menu .dot.off {
+        background: var(--popover);
+        box-shadow:
+          inset 0 0 0 1.5px #7a7a7a,
+          0 0 0 2px var(--popover);
+      }
+      .dot.upd {
+        background: var(--update);
+      }
+      .elsewhere {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 10px;
+        background: rgb(165 180 252 / 14%);
+        color: var(--waiting);
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .elsewhere svg {
+        color: var(--waiting);
+      }
+
+      .menu {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        z-index: 5;
+        background: var(--popover);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+        padding: 4px;
+      }
+      .mrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 5px 8px;
+        border-radius: 6px;
+      }
+      .mrow.hl {
+        background: rgb(255 255 255 / 7%);
+      }
+      .mrow .txt {
+        flex: 1;
+        min-width: 0;
+      }
+      .mrow .nm {
+        color: var(--fg);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mrow .st {
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--label);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mrow .st .warn {
+        color: var(--update);
+      }
+      .mrow .cnt {
+        display: inline-flex;
+        gap: 4px;
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+      }
+      .mrow .chk {
+        width: 16px;
+        display: inline-flex;
+        justify-content: center;
+        color: var(--fg);
+        flex: none;
+      }
+      .mrow .kbd {
+        font-size: 11px;
+        color: #707070;
+        font-variant-numeric: tabular-nums;
+        min-width: 24px;
+        text-align: right;
+      }
+      .mrow.small {
+        min-height: 32px;
+        color: var(--row-text);
+      }
+      .msep {
+        height: 1px;
+        background: rgb(255 255 255 / 8%);
+        margin: 4px 4px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #1a1a1a;
+        background: var(--update);
+        white-space: nowrap;
+      }
+      .btn.ghost {
+        color: var(--row-text);
+        background: transparent;
+        box-shadow: inset 0 0 0 1px var(--border);
+      }
+
+      .tip {
+        position: absolute;
+        z-index: 6;
+        background: #333;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 9px;
+        font-size: 12px;
+        line-height: 16px;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+      }
+      .tip .tl {
+        color: var(--label);
+      }
+
+      .notice {
+        margin: 4px 0 4px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        background: rgb(255 255 255 / 4%);
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 7%);
+        font-size: 12px;
+        line-height: 17px;
+        color: var(--row-text);
+      }
+      .notice .h {
+        color: var(--fg);
+        font-weight: 500;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 2px;
+      }
+      .notice .a {
+        margin-top: 7px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .notice.upd .h svg {
+        color: var(--update);
+      }
+
+      .cgroup {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 8px;
+        margin-top: 12px;
+        color: var(--fg);
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .cgroup .end {
+        margin-left: auto;
+        display: inline-flex;
+        gap: 4px;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .rail {
+        width: 56px;
+        background: var(--sidebar);
+        border: 1px solid rgb(255 255 255 / 5%);
+        border-radius: 12px;
+        height: 470px;
+        padding: 44px 8px 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .pill {
+        width: 40px;
+        border-radius: 12px;
+        background: rgb(255 255 255 / 5%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 0;
+      }
+      .pill .b {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #b5b5b5;
+        position: relative;
+      }
+      .pill .b.active {
+        background: rgb(255 255 255 / 9%);
+      }
+      .pill .b .badge {
+        position: absolute;
+        top: -3px;
+        right: -4px;
+        min-width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: var(--waiting);
+        color: #1b1b3a;
+        font-size: 9px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 3px;
+      }
+
+      .notes {
+        margin-top: 40px;
+        max-width: 980px;
+        color: var(--row-text);
+        font-size: 13px;
+        line-height: 20px;
+      }
+      .notes h2 {
+        font-size: 15px;
+        color: var(--fg);
+        margin: 0 0 8px;
+      }
+      .notes li {
+        margin-bottom: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-laptop" viewBox="0 0 24 24">
+          <path
+            d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"
+          />
+          <path d="M20.054 15.987H3.946" />
+        </symbol>
+        <symbol id="i-studio" viewBox="0 0 24 24">
+          <rect width="18" height="14" x="3" y="5" rx="2" />
+          <path d="M7 15h.01M11 15h.01M15 15h.01" />
+        </symbol>
+        <symbol id="i-mini" viewBox="0 0 24 24">
+          <rect width="20" height="8" x="2" y="8" rx="2" />
+          <path d="M6 12h.01" />
+        </symbol>
+        <symbol id="i-server" viewBox="0 0 24 24">
+          <rect width="20" height="8" x="2" y="2" rx="2" />
+          <rect width="20" height="8" x="2" y="14" rx="2" />
+          <path d="M6 6h.01M6 18h.01" />
+        </symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24">
+          <path
+            d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"
+          />
+          <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+          <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+        </symbol>
+        <symbol id="i-updown" viewBox="0 0 24 24">
+          <path d="m7 15 5 5 5-5" />
+          <path d="m7 9 5-5 5 5" />
+        </symbol>
+        <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+        <symbol id="i-tasks" viewBox="0 0 24 24">
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="m9 12 2 2 4-4" />
+        </symbol>
+        <symbol id="i-bot" viewBox="0 0 24 24">
+          <path d="M12 8V4H8" />
+          <rect width="16" height="12" x="4" y="8" rx="2" />
+          <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+        </symbol>
+        <symbol id="i-sidebar" viewBox="0 0 24 24">
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="M9 3v18" />
+        </symbol>
+        <symbol id="i-dash" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" stroke-dasharray="3 3" />
+        </symbol>
+        <symbol id="i-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></symbol>
+        <symbol id="i-wifioff" viewBox="0 0 24 24">
+          <path
+            d="M12 20h.01M8.5 16.429a5 5 0 0 1 7 0M5 12.859a10 10 0 0 1 5.17-2.69M19 12.859a10 10 0 0 0-2.007-1.523M2 8.82a15 15 0 0 1 4.177-2.643M22 8.82a15 15 0 0 0-11.288-3.764M2 2l20 20"
+          />
+        </symbol>
+        <symbol id="i-up" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" />
+          <path d="m16 12-4-4-4 4M12 16V8" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </symbol>
+        <symbol id="i-hand" viewBox="0 0 24 24">
+          <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8" />
+          <path
+            d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="page">
+      <h1>Computers switcher in the sidebar</h1>
+      <p class="intro">
+        Phase 1 mockup for approval. One computer at a time: a switcher at the top of the sidebar
+        picks This Mac, another connected computer, or All computers, and Projects, Bots and Threads
+        follow it. The switcher appears only once a second computer is connected. Rows, spacing and
+        counts use the current sidebar tokens (32px rows, 14px text, 16px icons, counts at the right
+        in the thread row colours).
+      </p>
+      <div class="legend">
+        <span><b class="c-work">3</b> Working</span>
+        <span><b class="c-wait">1</b> Awaiting input</span>
+        <span><b class="c-appr">1</b> Approval</span>
+        <span><b class="c-fail">2</b> Failed</span>
+        <span><b class="c-done">15</b> Completed, unseen</span>
+        <span
+          ><span class="mi"
+            ><svg class="i s"><use href="#i-studio" /></svg><i class="dot on"></i></span
+          >&nbsp;online</span
+        >
+        <span
+          ><span class="mi"
+            ><svg class="i s"><use href="#i-studio" /></svg><i class="dot off"></i></span
+          >&nbsp;offline</span
+        >
+        <span
+          ><span class="mi"
+            ><svg class="i s"><use href="#i-studio" /></svg><i class="dot upd"></i></span
+          >&nbsp;older version</span
+        >
+      </div>
+
+      <div class="grid">
+        <!-- 1. One computer -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search</span>
+            </div>
+            <div class="gap"></div>
+            <div class="row">
+              <svg class="i"><use href="#i-tasks" /></svg><span class="t">Tasks</span
+              ><span class="end c-work">3</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-bot" /></svg><span class="t">Agents</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #22c55e">M</span
+              ><span class="t">marketing-site</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-dash" /></svg><span class="t">No project</span>
+            </div>
+            <div class="sec">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #8b7fd6"></span
+              ><span class="t">Up Growth Analyst</span
+              ><span class="end"
+                ><span class="c-fail">4</span><span class="c-appr">1</span
+                ><span class="c-done">15</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="av" style="background: #e5b93b"></span><span class="t">Career Coach</span
+              ><span class="end"
+                ><span class="c-fail">2</span><span>1</span><span class="c-done">32</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="av" style="background: #e07a3f"></span
+              ><span class="t">Content Writer</span
+              ><span class="end"><span class="c-done">2</span></span>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #c9a78a"></span
+              ><span class="t">Agent Optimiser</span
+              ><span class="end"><span>1</span><span class="c-done">2</span></span>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Computers switcher mockup</span><span class="end c-work">1</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Fix relay reconnect</span><span class="end">2h</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #22c55e">M</span
+              ><span class="t">Pricing page copy</span><span class="end">5h</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>1. One computer</b>No switcher at all. The sidebar is exactly today's.
+          </div>
+        </div>
+
+        <!-- 2. Two computers, This Mac -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i></span
+              ><span class="t">This Mac</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search This Mac</span>
+            </div>
+            <div class="gap"></div>
+            <div class="row">
+              <svg class="i"><use href="#i-tasks" /></svg><span class="t">Tasks</span
+              ><span class="end c-work">3</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-bot" /></svg><span class="t">Agents</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #22c55e">M</span
+              ><span class="t">marketing-site</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-dash" /></svg><span class="t">No project</span>
+            </div>
+            <div class="sec">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #8b7fd6"></span
+              ><span class="t">Up Growth Analyst</span
+              ><span class="end"
+                ><span class="c-fail">4</span><span class="c-appr">1</span
+                ><span class="c-done">15</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="av" style="background: #e5b93b"></span><span class="t">Career Coach</span
+              ><span class="end"
+                ><span class="c-fail">2</span><span>1</span><span class="c-done">32</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="av" style="background: #e07a3f"></span
+              ><span class="t">Content Writer</span
+              ><span class="end"><span class="c-done">2</span></span>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #c9a78a"></span
+              ><span class="t">Agent Optimiser</span
+              ><span class="end"><span>1</span><span class="c-done">2</span></span>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Computers switcher mockup</span><span class="end c-work">1</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Fix relay reconnect</span><span class="end">2h</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #22c55e">M</span
+              ><span class="t">Pricing page copy</span><span class="end">5h</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>2. Two computers, This Mac <span class="tag">default</span></b
+            >The switcher is the first row. Projects, Bots, Threads and Search show This Mac only,
+            so there is one Bots section again. Tasks keeps its own scope (all computers).
+          </div>
+        </div>
+
+        <!-- 3. Switcher open -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch open">
+              <span class="mi"
+                ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i></span
+              ><span class="t">This Mac</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search This Mac</span>
+            </div>
+            <div class="gap"></div>
+            <div class="row">
+              <svg class="i"><use href="#i-tasks" /></svg><span class="t">Tasks</span
+              ><span class="end c-work">3</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-bot" /></svg><span class="t">Agents</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+
+            <div class="menu" style="top: 80px">
+              <div class="mrow hl">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">This Mac</div>
+                  <div class="st">MacBook Pro, 0.0.37</div></span
+                >
+                <span class="cnt"><span class="c-work">1</span></span>
+                <span class="chk"
+                  ><svg class="i s"><use href="#i-check" /></svg
+                ></span>
+              </div>
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-studio" /></svg><i class="dot on"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">Mac Studio</div>
+                  <div class="st">Online, 0.0.37</div></span
+                >
+                <span class="cnt"><span class="c-work">2</span></span>
+                <span class="chk"></span>
+              </div>
+              <div class="msep"></div>
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-layers" /></svg
+                ></span>
+                <span class="txt"
+                  ><div class="nm">All computers</div>
+                  <div class="st">2 computers</div></span
+                >
+                <span class="cnt"><span class="c-work">3</span></span>
+                <span class="chk"></span>
+              </div>
+              <div class="msep"></div>
+              <div class="mrow small">
+                <svg class="i" style="color: var(--icon)"><use href="#i-link" /></svg
+                ><span class="txt">Connect a computer...</span>
+              </div>
+            </div>
+          </div>
+          <div class="cap">
+            <b>3. Switcher open</b>Each computer: machine icon with a status dot, name, kind and
+            version, then its counts (Working, Awaiting input, Approval) like a thread row. Up/Down
+            and Enter pick; Escape closes. "Connect a computer..." opens Settings, Connections.
+          </div>
+        </div>
+
+        <!-- 4. All computers, recommended -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-layers" /></svg></span
+              ><span class="t">All computers</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span
+              ><span class="end"
+                ><svg class="i xs"><use href="#i-studio" /></svg
+              ></span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">release-tools</span
+              ><span class="end"
+                ><svg class="i xs"><use href="#i-studio" /></svg
+              ></span>
+            </div>
+            <div class="sec">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="sub">
+              <svg class="i xs"><use href="#i-laptop" /></svg>This Mac
+            </div>
+            <div class="row">
+              <span class="av" style="background: #8b7fd6"></span
+              ><span class="t">Up Growth Analyst</span
+              ><span class="end"
+                ><span class="c-fail">4</span><span class="c-appr">1</span
+                ><span class="c-done">15</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="av" style="background: #e5b93b"></span><span class="t">Career Coach</span
+              ><span class="end"
+                ><span class="c-fail">2</span><span>1</span><span class="c-done">32</span></span
+              >
+            </div>
+            <div class="sub">
+              <svg class="i xs"><use href="#i-studio" /></svg>Mac Studio
+            </div>
+            <div class="row">
+              <span class="av" style="background: #4aa3a2"></span
+              ><span class="t">Release Builder</span
+              ><span class="end"><span class="c-work">2</span></span>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #d06b8c"></span><span class="t">Nightly QA</span
+              ><span class="end"><span class="c-done">6</span></span>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Computers switcher mockup</span><span class="end c-work">1</span>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Build 0.0.38 release</span
+              ><span class="end"
+                ><svg class="i xs"><use href="#i-studio" /></svg><span class="c-work">2</span></span
+              >
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Fix relay reconnect</span><span class="end">2h</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">Notarize DMG</span
+              ><span class="end"
+                ><svg class="i xs"><use href="#i-studio" /></svg>4h</span
+              >
+            </div>
+          </div>
+          <div class="cap">
+            <b>4. All computers <span class="tag">recommended</span></b
+            >One list per section, as today. Bots gets a machine label per computer (no more two
+            bare "Bots" headers). Projects and threads from another computer carry its small machine
+            icon, the same badge projects already use ("Also on Mac Studio").
+          </div>
+        </div>
+
+        <!-- 5. All computers, alternative -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-layers" /></svg></span
+              ><span class="t">All computers</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search</span>
+            </div>
+            <div class="cgroup">
+              <span class="mi"
+                ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i></span
+              >This Mac<span class="end"><span class="c-work">1</span></span>
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #8b7fd6"></span
+              ><span class="t">Up Growth Analyst</span
+              ><span class="end"
+                ><span class="c-fail">4</span><span class="c-appr">1</span
+                ><span class="c-done">15</span></span
+              >
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Computers switcher mockup</span><span class="end c-work">1</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Fix relay reconnect</span><span class="end">2h</span>
+            </div>
+            <div class="cgroup">
+              <span class="mi"
+                ><svg class="i"><use href="#i-studio" /></svg><i class="dot on"></i></span
+              >Mac Studio<span class="end"><span class="c-work">2</span></span>
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">release-tools</span>
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <span class="av" style="background: #4aa3a2"></span
+              ><span class="t">Release Builder</span
+              ><span class="end"><span class="c-work">2</span></span>
+            </div>
+            <div class="sec" style="margin-top: 2px">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Build 0.0.38 release</span><span class="end c-work">2</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>5. All computers, grouped by computer <span class="tag alt">alternative</span></b
+            >The literal reading of "sections labelled with the machine name": each computer repeats
+            Projects, Bots and Threads. Clear ownership, but long, and the thread shelves (Pinned,
+            Working, Snoozed, Settled) and drag and drop would have to work per computer.
+          </div>
+        </div>
+
+        <!-- 6. Other computer offline -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-studio" /></svg><i class="dot off"></i></span
+              ><span class="t">Mac Studio</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="notice">
+              <div class="h">
+                <svg class="i s" style="color: var(--label)"><use href="#i-wifioff" /></svg>Mac
+                Studio is offline
+              </div>
+              Last seen 2 hours ago. Showing what it had then; new threads and bots wait until it is
+              back.
+              <div class="a">
+                <span class="btn ghost">Connections</span
+                ><span class="btn ghost">Back to This Mac</span>
+              </div>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search Mac Studio</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active dimmed">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row dimmed">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row dimmed">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">release-tools</span>
+            </div>
+            <div class="sec">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row dimmed">
+              <span class="av" style="background: #4aa3a2"></span
+              ><span class="t">Release Builder</span>
+            </div>
+            <div class="row dimmed">
+              <span class="av" style="background: #d06b8c"></span><span class="t">Nightly QA</span>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row dimmed">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">Build 0.0.38 release</span><span class="end">2h</span>
+            </div>
+            <div class="row dimmed">
+              <span class="mono" style="background: #f97316">R</span
+              ><span class="t">Notarize DMG</span><span class="end">4h</span>
+            </div>
+            <div class="row dimmed">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Nightly e2e run</span><span class="end">1d</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>6. Selected computer is offline</b>The status dot turns hollow and one notice
+            replaces per-section errors. Projects and threads come from the shell cache the client
+            already keeps per computer, dimmed. Bots have no cache today: either keep the last list
+            in memory or hide the section until the computer is back (open question). In the menu
+            its row reads "Offline, seen 2 hours ago". Restarting the app falls back to This Mac if
+            the saved computer is offline.
+          </div>
+        </div>
+
+        <!-- 7. Old version -->
+        <div class="frame">
+          <div class="sb">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-mini" /></svg><i class="dot upd"></i></span
+              ><span class="t">Mac mini</span><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search Mac mini</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #14b8a6">H</span
+              ><span class="t">home-automation</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-dash" /></svg><span class="t">No project</span>
+            </div>
+            <div class="sec">
+              Bots<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="notice upd">
+              <div class="h">
+                <svg class="i s"><use href="#i-up" /></svg>Bots need a newer version
+              </div>
+              Mac mini runs Up.computer 0.0.35. Bots need 0.0.37 or later.
+              <div class="a"><span class="btn">Update Mac mini</span></div>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg
+              ><span class="act"
+                ><svg class="i s"><use href="#i-plus" /></svg
+              ></span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #14b8a6">H</span
+              ><span class="t">Thermostat schedule</span><span class="end">3d</span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-dash" /></svg><span class="t">Backup script</span
+              ><span class="end">6d</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>7. Selected computer runs an older version</b>Amber dot. What the computer lacks says
+            so in place, with the update action, instead of "Bot operation failed" under a second
+            "Bots" header (today's bug). A computer too old to connect at all shows only this
+            notice, with the same Update button (the existing outdated host update flow).
+          </div>
+        </div>
+
+        <!-- 8. Menu with every status -->
+        <div class="frame">
+          <div class="sb short">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch open">
+              <span class="mi"
+                ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i></span
+              ><span class="t">This Mac</span
+              ><span class="elsewhere"
+                ><svg class="i xs"><use href="#i-hand" /></svg>1</span
+              ><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search This Mac</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active"><span class="t">All projects</span></div>
+
+            <div class="menu" style="top: 80px">
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">This Mac</div>
+                  <div class="st">MacBook Pro, 0.0.37</div></span
+                >
+                <span class="cnt"><span class="c-work">1</span></span>
+                <span class="chk"
+                  ><svg class="i s"><use href="#i-check" /></svg
+                ></span>
+              </div>
+              <div class="mrow hl">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-studio" /></svg><i class="dot on"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">Mac Studio</div>
+                  <div class="st">Online, 0.0.37</div></span
+                >
+                <span class="cnt"><span class="c-work">2</span><span class="c-wait">1</span></span>
+                <span class="chk"></span>
+              </div>
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-server" /></svg><i class="dot off"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">build-box</div>
+                  <div class="st">Offline, seen 2 hours ago</div></span
+                >
+                <span class="chk"></span>
+              </div>
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-mini" /></svg><i class="dot upd"></i
+                ></span>
+                <span class="txt"
+                  ><div class="nm">Mac mini</div>
+                  <div class="st"><span class="warn">0.0.35, no bots</span></div></span
+                >
+                <span class="btn">Update</span>
+              </div>
+              <div class="msep"></div>
+              <div class="mrow">
+                <span class="mi"
+                  ><svg class="i"><use href="#i-layers" /></svg
+                ></span>
+                <span class="txt"
+                  ><div class="nm">All computers</div>
+                  <div class="st">4 computers, 2 online</div></span
+                >
+                <span class="cnt"><span class="c-work">3</span><span class="c-wait">1</span></span>
+                <span class="chk"></span>
+              </div>
+              <div class="msep"></div>
+              <div class="mrow small">
+                <svg class="i" style="color: var(--icon)"><use href="#i-link" /></svg
+                ><span class="txt">Connect a computer...</span>
+              </div>
+            </div>
+          </div>
+          <div class="cap">
+            <b>8. Menu with every status</b>Online, offline (hollow dot, last seen), older version
+            (amber, what is missing, Update). A computer that cannot connect at all because its
+            version is too old reads "Update needed". Order: This Mac, then the others by name, then
+            All computers.
+          </div>
+        </div>
+
+        <!-- 9. Waiting for input elsewhere -->
+        <div class="frame">
+          <div class="sb short">
+            <div class="chrome">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <svg class="i toggle"><use href="#i-sidebar" /></svg>
+            </div>
+            <div class="switch">
+              <span class="mi"
+                ><svg class="i"><use href="#i-laptop" /></svg><i class="dot on"></i></span
+              ><span class="t">This Mac</span
+              ><span class="elsewhere"
+                ><svg class="i xs"><use href="#i-hand" /></svg>1</span
+              ><svg class="i ud"><use href="#i-updown" /></svg>
+            </div>
+            <div class="tip" style="top: 80px; left: 96px; width: 168px">
+              Mac Studio: 1 run awaiting your input<br /><span class="tl"
+                >Click to switch to Mac Studio</span
+              >
+            </div>
+            <div class="row search">
+              <svg class="i"><use href="#i-search" /></svg><span class="t">Search This Mac</span>
+            </div>
+            <div class="gap"></div>
+            <div class="row">
+              <svg class="i"><use href="#i-tasks" /></svg><span class="t">Tasks</span
+              ><span class="end"><span class="c-work">3</span></span>
+            </div>
+            <div class="row">
+              <svg class="i"><use href="#i-bot" /></svg><span class="t">Agents</span>
+            </div>
+            <div class="sec">
+              Projects<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row active">
+              <span class="all4"
+                ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                ><i style="background: #22c55e"></i><i style="background: #f97316"></i></span
+              ><span class="t">All projects</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">upcomputer</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #a855f7">P</span
+              ><span class="t">upcomputer-pro</span>
+            </div>
+            <div class="sec">
+              Threads<svg class="i chev"><use href="#i-chev" /></svg>
+            </div>
+            <div class="row">
+              <svg class="i spin"><use href="#i-spin" /></svg
+              ><span class="t">Computers switcher mockup</span><span class="end c-work">1</span>
+            </div>
+            <div class="row">
+              <span class="mono" style="background: #3b82f6">U</span
+              ><span class="t">Fix relay reconnect</span><span class="end">2h</span>
+            </div>
+          </div>
+          <div class="cap">
+            <b>9. A run on another computer waits for you</b>The switcher row shows what needs you
+            on computers you are not looking at: runs awaiting input and approvals, in their
+            colours. Working runs elsewhere are not shown here (not a call to action); they are in
+            the menu. Clicking the badge switches to that computer (or opens the menu when several
+            have one).
+          </div>
+        </div>
+
+        <!-- 10. Compact sidebar -->
+        <div class="frame" style="width: auto">
+          <div style="display: flex; gap: 16px; align-items: flex-start">
+            <div class="rail">
+              <div class="pill">
+                <div class="b">
+                  <span class="mi"
+                    ><svg class="i"><use href="#i-laptop" /></svg
+                    ><i class="dot on" style="box-shadow: 0 0 0 2px #2a2a2a"></i></span
+                  ><span class="badge">1</span>
+                </div>
+              </div>
+              <div class="pill">
+                <div class="b">
+                  <svg class="i"><use href="#i-search" /></svg>
+                </div>
+                <div class="b">
+                  <svg class="i"><use href="#i-tasks" /></svg>
+                </div>
+                <div class="b">
+                  <svg class="i"><use href="#i-bot" /></svg>
+                </div>
+              </div>
+              <div class="pill">
+                <div class="b active">
+                  <span class="all4"
+                    ><i style="background: #3b82f6"></i><i style="background: #a855f7"></i
+                    ><i style="background: #22c55e"></i><i style="background: #f97316"></i
+                  ></span>
+                </div>
+                <div class="b"><span class="mono" style="background: #3b82f6">U</span></div>
+                <div class="b"><span class="mono" style="background: #a855f7">P</span></div>
+              </div>
+              <div class="pill">
+                <div class="b"><span class="av" style="background: #8b7fd6"></span></div>
+                <div class="b"><span class="av" style="background: #e5b93b"></span></div>
+              </div>
+            </div>
+            <div class="cap" style="width: 190px; margin-top: 44px">
+              <b>10. Compact sidebar</b>The switcher is the first pill: the selected computer's icon
+              with its status dot and the "waiting elsewhere" badge. Click opens the same menu. Only
+              one Bots pill (the selected computer's) instead of one per computer.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="notes">
+        <h2>Behaviour in short</h2>
+        <ul>
+          <li>
+            Shown only when two or more computers are known (saved or connected). With one, nothing
+            changes.
+          </li>
+          <li>
+            Default This Mac. The choice is remembered per device. If the saved computer is removed,
+            the switcher falls back to This Mac.
+          </li>
+          <li>
+            Filters Projects, Bots, Threads (all shelves) and sidebar Search. "No project" means the
+            selected computer's scratch project. The Tasks and Agents pages keep their own
+            all-computers view.
+          </li>
+          <li>
+            New thread starts on the selected computer. In All computers it keeps today's rule (the
+            current thread's computer, else This Mac).
+          </li>
+          <li>
+            Opening a thread from another computer (link, palette, notification) switches the
+            sidebar to that computer, the same way a hidden project scope widens today.
+          </li>
+          <li>
+            Keyboard: Ctrl+1 for This Mac, Ctrl+2 and on for the others, Ctrl+0 for All computers
+            (open question).
+          </li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>
