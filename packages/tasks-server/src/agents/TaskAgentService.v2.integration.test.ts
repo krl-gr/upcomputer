@@ -803,12 +803,17 @@ it.live("a run whose provider turn fails reports agent_run.finished as provider_
     const recorded = yield* Ref.make<ReadonlyArray<RecordedEvent>>([]);
     yield* runSlice(
       "agent-run-finished-failed",
-      ({ createTaskWith, runWithStatus }) =>
+      ({ createTaskWith, runWithStatus, repository }) =>
         Effect.gen(function* () {
           const run = yield* createTaskWith(`Fail the first turn. ${FAIL}`);
           yield* eventually("the failed run", runWithStatus(run.id, "failed"));
           const [failed] = yield* finishedRuns(recorded, 1);
           assert.include(failed, { outcome: "failed", reasonCode: "provider_failed" });
+          // The task output carries the provider's own reason, not a run id.
+          const stored = yield* repository.getById({ id: run.taskId });
+          const output = Option.getOrThrow(stored).output ?? "";
+          assert.include(output, "stopped working on this task: Scripted provider failure.");
+          assert.include(output, "Open the run to see what happened");
         }),
       { analytics: recorded },
     );

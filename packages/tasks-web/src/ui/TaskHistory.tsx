@@ -19,6 +19,15 @@ export interface TaskHistoryEntry {
 }
 
 const decodeStatusChange = Schema.decodeUnknownOption(TaskStatusChangedPayload);
+const decodeAgentNotice = Schema.decodeUnknownOption(
+  Schema.Struct({ agentName: Schema.optional(Schema.String), reason: Schema.String }),
+);
+
+/** Events that explain why an agent did not act, so a waiting task is not silent. */
+const AGENT_NOTICE_TITLES: Record<string, string> = {
+  "task.agent-not-started": "Agent didn't start",
+  "task.no-matching-agent": "No agent will pick this up",
+};
 const decodeArchiveChange = Schema.decodeUnknownOption(TaskArchiveChangedPayload);
 
 function actorLabel(actor: TaskActor, agentNameForRun: (runId: string) => string | null): string {
@@ -35,8 +44,9 @@ function actorLabel(actor: TaskActor, agentNameForRun: (runId: string) => string
 }
 
 /**
- * The task's status and archive history, newest first, as the server recorded
- * it. Other event kinds and unreadable payloads are left out.
+ * The task's status and archive history and why agents did not start, newest
+ * first, as the server recorded it. Other event kinds and unreadable payloads
+ * are left out.
  */
 export function taskHistoryEntries(
   events: ReadonlyArray<TaskEvent>,
@@ -66,6 +76,21 @@ export function taskHistoryEntries(
             title: event.kind === TASK_ARCHIVED_EVENT ? "Archived" : "Unarchived",
             actor: actorLabel(actor, agentNameForRun),
             reason: reason ?? null,
+            at: event.createdAt,
+          },
+        ],
+      });
+    }
+    const noticeTitle = AGENT_NOTICE_TITLES[event.kind];
+    if (noticeTitle !== undefined) {
+      return Option.match(decodeAgentNotice(event.payload), {
+        onNone: () => [],
+        onSome: ({ agentName, reason }) => [
+          {
+            id: event.id,
+            title: noticeTitle,
+            actor: agentName ?? "Server",
+            reason,
             at: event.createdAt,
           },
         ],
@@ -104,7 +129,7 @@ export function TaskHistory(props: {
               })}
             </time>
           </div>
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="break-words text-xs text-muted-foreground">
             {entry.reason ? `${entry.actor}: ${entry.reason}` : entry.actor}
           </span>
         </li>

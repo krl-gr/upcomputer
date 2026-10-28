@@ -610,7 +610,11 @@ export function AgentsView(props: AgentsViewProps) {
       }
       const client = props.getClient(target.environmentId);
       if (!client) {
-        toastManager.add({ type: "error", title: "Task Agent API unavailable" });
+        toastManager.add({
+          type: "error",
+          title: "Couldn't save the agent",
+          description: "The computer with your tasks isn't connected. Reconnect, then try again.",
+        });
         return;
       }
       if (creating) createInFlightRef.current = true;
@@ -1354,7 +1358,10 @@ export function AgentsView(props: AgentsViewProps) {
           ) : null}
           {props.status === "error" ? (
             <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              {props.errorMessage ?? "Failed to load agents"}
+              Up.computer couldn't load your agents. {props.errorMessage ?? "Try again."}
+              <button type="button" className="ml-3 underline" onClick={props.onReload}>
+                Retry
+              </button>
             </div>
           ) : props.status === "offline" ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">

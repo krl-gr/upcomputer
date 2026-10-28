@@ -79,7 +79,12 @@ import {
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
 import { agentRunModes, broaderRunMode, type RunModes } from "../agents/runModes.ts";
-import { releasedRunId, startsForTask, TaskAgentService } from "../agents/TaskAgentService.ts";
+import {
+  noMatchingAgentReason,
+  releasedRunId,
+  startsForTask,
+  TaskAgentService,
+} from "../agents/TaskAgentService.ts";
 import { parseAutomationCron } from "../automations/automationSchedule.ts";
 import { automationToolWriteRefusal } from "../automations/automationToolPolicy.ts";
 import { normalizeAutomationTemplate } from "../automations/automationWrites.ts";
@@ -152,6 +157,29 @@ function json(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+/**
+ * A dry run looks like success to a model, which then tells the person the
+ * task exists. Say plainly that nothing was saved, and why.
+ */
+function withDryRunNotice(
+  result: { readonly isError: boolean; readonly text: string },
+  context: TaskToolInvocationContext,
+): { readonly isError: boolean; readonly text: string } {
+  if (result.isError) return result;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.text);
+  } catch {
+    return result;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("dryRun" in parsed)) return result;
+  const notice =
+    context.interactionMode === "plan"
+      ? "Plan mode: nothing was saved. Switch the chat out of Plan mode to create or change tasks."
+      : "Nothing was saved: this caller can only read tasks. Ask in an Up.computer chat to make changes.";
+  return { ...result, text: json({ notice, ...parsed }) };
+}
+
 const TRANSCRIPT_ENTRY_MAX_CHARS = 4_000;
 
 function truncateText(text: string, limit: number): string {
@@ -218,7 +246,13 @@ function buildAgentRunTranscript(
   return {
     run,
     failureReason: thread.runs.some((v2Run) => v2Run.status === "failed")
-      ? "A provider run on this thread failed; see the transcript entries."
+      ? (thread.turnItems
+          .flatMap((item) =>
+            item.type === "error" && item.status === "failed" && item.parentItemId === null
+              ? [item.failure.message]
+              : [],
+          )
+          .at(-1) ?? "A run on this thread failed; see the transcript entries.")
       : null,
     olderEntriesOmitted: kept.length < entries.length,
     entries: kept,
@@ -649,7 +683,11 @@ const make = Effect.gen(function* () {
       if (!resolution.resolvedProject && items.some((item) => item.audience !== "person"))
         return {
           isError: true,
-          text: json({ error: "Unable to resolve project. No task was created.", resolution }),
+          text: json({
+            error:
+              "Couldn't tell which project this belongs to, so no task was created. Name the project, or start from a chat inside it.",
+            resolution,
+          }),
         };
       if (!resolution.resolvedProject && dryRun(context))
         return { isError: false, text: json({ dryRun: true, project: "Inbox", tasks: items }) };
@@ -781,7 +819,11 @@ const make = Effect.gen(function* () {
             if (input.audience !== "person")
               return {
                 isError: true,
-                text: json({ error: "Unable to resolve project.", resolution }),
+                text: json({
+                  error:
+                    "Couldn't tell which project this belongs to. Name the project, or start from a chat inside it.",
+                  resolution,
+                }),
               };
             if (isDryRun)
               return { isError: false, text: json({ dryRun: true, project: "Inbox", input }) };
@@ -808,11 +850,17 @@ const make = Effect.gen(function* () {
           const saved = yield* repository.upsert({ ...task, actor: toolActor(context, callerRun) });
           yield* taskAgents.scheduleTaskChanged({ task: saved, reason: "created" });
           yield* recordFirstUse("app.first_task_created", { via: "agent" });
+          const waiting = noMatchingAgentReason(
+            yield* repository.listAllAgents(),
+            saved,
+            Date.parse(yield* now),
+          );
           return {
             isError: false,
             text: json({
               audience: saved.audience,
               shownIn: SHOWN_IN[saved.audience],
+              ...(waiting === null ? {} : { warning: waiting }),
               task: saved,
             }),
           };
@@ -1091,7 +1139,11 @@ const make = Effect.gen(function* () {
           if (projectId === undefined) {
             return {
               isError: true,
-              text: json({ error: "Unable to resolve agent project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this agent belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           }
           const model = modelDecision.modelSelection;
@@ -1156,7 +1208,11 @@ const make = Effect.gen(function* () {
           if (projectId === undefined)
             return {
               isError: true,
-              text: json({ error: "Unable to resolve agent project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this agent belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           const name = input.name ?? existing.value.name;
           const model = resolveAgentUpdateModelSelection(
@@ -1369,7 +1425,11 @@ const make = Effect.gen(function* () {
           if (!resolution.resolvedProject)
             return {
               isError: true,
-              text: json({ error: "Unable to resolve project.", resolution }),
+              text: json({
+                error:
+                  "Couldn't tell which project this belongs to. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
             };
           const projectId = resolution.resolvedProject.project.id;
           const schedule = {
@@ -1654,10 +1714,16 @@ const make = Effect.gen(function* () {
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
     }).pipe(
+      Effect.map((result) => (dryRun(context) ? withDryRunNotice(result, context) : result)),
       Effect.catch((cause) =>
         Effect.succeed({
           isError: true,
-          text: cause instanceof Error ? cause.message : `Task tool '${name}' failed.`,
+          // The person reads the first line; the agent also gets the exact reason.
+          text: `Couldn't run ${name}, so nothing was changed.${
+            cause instanceof Error && cause.message.trim().length > 0
+              ? `\n\nDetails: ${cause.message}`
+              : ""
+          }`,
         }),
       ),
     );

@@ -277,6 +277,15 @@ it.effect("a dry run previews the list without writing", () => {
     assert.isFalse(result.isError, result.text);
     const preview = JSON.parse(result.text);
     assert.isTrue(preview.dryRun);
+    // A dry run must not read as success to the model that relays it.
+    assert.match(preview.notice, /^Nothing was saved/);
+    const planPreview = JSON.parse(
+      (yield* create(
+        { tasks: [item("a", "To Do")] },
+        { ...chat, mutationPolicy: "deny", interactionMode: "plan" },
+      )).text,
+    );
+    assert.match(planPreview.notice, /^Plan mode: nothing was saved/);
     assert.deepStrictEqual(
       preview.tasks.map(({ title }: { title: string }) => title),
       ["a", "b"],
@@ -330,7 +339,7 @@ it.effect("without a project, a list of person tasks goes to the Inbox", () => {
       tasks: [item("mine", "To Do", { audience: "person" }), item("agent's", "To Do")],
     });
     assert.isTrue(mixed.isError);
-    assert.match(mixed.text, /Unable to resolve project. No task was created./);
+    assert.match(mixed.text, /so no task was created/);
     assert.lengthOf(yield* stored, 0);
 
     const result = yield* create({

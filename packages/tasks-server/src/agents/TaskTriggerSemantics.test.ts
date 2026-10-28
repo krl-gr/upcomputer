@@ -1650,7 +1650,7 @@ test("an abandoned result finalization is replayed or rolled back by recovery, a
       NodeAssert.match(
         Option.getOrThrow(yield* repository.getById({ id: TaskId.make("rolled-back") })).output ??
           "",
-        /without a valid task-agent result/,
+        /didn't update the task or report a result/,
       );
 
       // Still running in v2: a person's stop ends it.
@@ -1778,7 +1778,7 @@ test("messaging refuses another active run of the agent, an archived task, and a
       const busy = yield* service.messageRun({ id: ended.id, text: "go" });
       NodeAssert.ok(!busy.ok);
       NodeAssert.equal(busy.activeRunId, active.id);
-      NodeAssert.match(busy.error, /active run 'r2'.*Message that run instead/);
+      NodeAssert.match(busy.error, /Message that run instead \(run r2,/);
 
       yield* finish(repository, active, "completed");
       yield* archiveTask(repository, TaskId.make("t"));

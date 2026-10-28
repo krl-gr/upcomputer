@@ -364,7 +364,7 @@ export function TasksView(props: TasksViewProps) {
       reorderInFlightRef.current = true;
       try {
         const client = props.getClient(task.environmentId);
-        if (!client) throw new Error("Task API unavailable.");
+        if (!client) throw new Error("The computer with your tasks isn't connected.");
         await persistPlannedTaskMove({
           previousTasks: previous,
           plan: result.plan,
@@ -376,7 +376,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to reorder task",
+            title: "Couldn't move the task",
             description: errorDescription(error),
           }),
         );
@@ -408,7 +408,7 @@ export function TasksView(props: TasksViewProps) {
     const id = selectedTaskKey.slice(separator + 1);
     const client = props.getClient(environmentId);
     if (!client || separator < 1 || !id.trim()) {
-      setDetailError("Task API unavailable.");
+      setDetailError("Couldn't open this task: the computer with your tasks isn't connected.");
       return;
     }
     const refresh = () => {
@@ -615,7 +615,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to update task",
+            title: "Couldn't save the task",
             description: errorDescription(error),
           }),
         );
@@ -711,7 +711,11 @@ export function TasksView(props: TasksViewProps) {
     }
     const client = props.getClient(target.environmentId);
     if (!client) {
-      toastManager.add({ type: "error", title: "Task API unavailable" });
+      toastManager.add({
+        type: "error",
+        title: "Couldn't create the task",
+        description: "The computer with your tasks isn't connected. Reconnect, then try again.",
+      });
       return;
     }
     createInFlightRef.current = true;
@@ -733,7 +737,7 @@ export function TasksView(props: TasksViewProps) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to create task",
+          title: "Couldn't create the task",
           description: errorDescription(error),
         }),
       );
@@ -1378,7 +1382,7 @@ export function TasksView(props: TasksViewProps) {
           ) : null}
           {props.status === "error" ? (
             <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              {props.errorMessage ?? "Failed to load tasks"}
+              Up.computer couldn't load your tasks. {props.errorMessage ?? "Try again."}
               <button type="button" className="ml-3 underline" onClick={props.onReload}>
                 Retry
               </button>

@@ -27,6 +27,7 @@ import {
   type TaskScheduleMoveInput,
   type TaskScheduleUpdateInput,
 } from "@t3tools/tasks-contracts/v1";
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import type { ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
@@ -106,12 +107,7 @@ interface Lane {
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { readonly message: unknown }).message;
-    if (typeof message === "string" && message) return message;
-  }
-  return "The request failed.";
+  return plainErrorSentence(error);
 }
 
 function chunks<T>(items: readonly T[], size: number): T[][] {

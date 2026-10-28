@@ -108,7 +108,8 @@ export async function loadAgentsState(
               environmentId: target.environmentId,
             }))
           : previousRuns;
-      if (agentsResult.status === "fulfilled" || runsResult.status === "fulfilled") {
+      // Runs alone would show "No agents yet" for a list that failed to load.
+      if (agentsResult.status === "fulfilled") {
         return [target.environmentId, { status: "ready", agents, runs }];
       }
       return [

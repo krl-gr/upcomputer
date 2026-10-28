@@ -9,6 +9,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
 import { taskAgentRunEndInterruptReason } from "@t3tools/shared/taskAgentRunInterrupt";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -151,9 +152,35 @@ export function isBlockedTaskStatus(status: string): boolean {
 /** Longest task output a blocked release copies into its result event. */
 const RELEASE_SUMMARY_MAX_LENGTH = 2_000;
 
-/** What a person can do about a run that ended without a result. */
+/** What an agent can do about a run that ended without a result. */
 export const TASK_AGENT_RUN_RECOVERY_HINT =
   "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
+
+/** The same advice in words for the person reading the task output. */
+const TASK_AGENT_RUN_PERSON_HINT =
+  "Open the run to see what happened, then send it a message to continue, or change the task's status or tags to start over.";
+
+const RUN_CUT_OFF_REASON =
+  "Up.computer closed or restarted while this run was starting or finishing, so it ended early. Retry to run it again.";
+
+/** A short reason from a failure cause, only when it is already readable. */
+function readableCauseReason(cause: unknown): string | undefined {
+  const error = Cause.isCause(cause) ? Cause.squash(cause) : cause;
+  const message =
+    typeof error === "string"
+      ? error
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { readonly message: unknown }).message)
+        : undefined;
+  const line = message
+    ?.split("\n")[0]
+    ?.trim()
+    .replace(/[.\s]+$/u, "");
+  if (line === undefined || line.length === 0 || line.length > 160) return undefined;
+  // Class names, ids, paths and JSON are for logs, not the task output.
+  if (/[{}[\]<>`]|\b[A-Za-z]+Error\b|\b\w+_\w+\b|\/\w+\//u.test(line)) return undefined;
+  return line.charAt(0).toLowerCase() + line.slice(1);
+}
 
 export class TaskAgentService extends Context.Service<TaskAgentService, TaskAgentServiceShape>()(
   "@t3tools/tasks-server/agents/TaskAgentService",
@@ -204,6 +231,29 @@ export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): bool
   if (agent.startTags.length === 0) return true;
   const tags = new Set(task.tags);
   return agent.startTags.every((tag) => tags.has(tag));
+}
+
+/**
+ * Why an agent task in a status agents start on will wait: an enabled agent
+ * starts on its status, but none takes it with these tags or this project, for
+ * example after a typo in a tag. Statuses no agent starts on are parked on
+ * purpose and are not reported.
+ */
+export function noMatchingAgentReason(
+  agents: ReadonlyArray<TaskAgent>,
+  task: Task,
+  nowMs: number,
+): string | null {
+  if (task.audience !== "agent" || task.kind === "routine" || task.archivedAt !== null) {
+    return null;
+  }
+  if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return null;
+  const onStatus = agents.filter(
+    (agent) => agent.enabled && agent.startStatuses.includes(task.status),
+  );
+  if (onStatus.length === 0) return null;
+  if (agents.some((agent) => startsForTask(agent, task, nowMs))) return null;
+  return `No enabled agent starts on "${task.status}" with these tags, so this task will wait. Pick an agent, or change the status or tags.`;
 }
 
 /**
@@ -443,6 +493,13 @@ const make = Effect.gen(function* () {
         records.thread.deletedAt === null ? Option.some(records) : Option.none(),
       ),
       Effect.orElseSucceed(() => Option.none()),
+    );
+
+  /** The provider's own words for why the thread's latest run failed, if any. */
+  const threadLastError = (threadId: ThreadId) =>
+    threads.getThreadShell(threadId).pipe(
+      Effect.map((shell) => shell?.lastError?.trim() || null),
+      Effect.orElseSucceed(() => null),
     );
 
   const scheduleTaskChanged = (input: TaskChangedInput) =>
@@ -723,7 +780,7 @@ const make = Effect.gen(function* () {
       const events = [];
       if (input.task !== null) {
         const recovery = TASK_AGENT_RUN_RECOVERY_HINT;
-        const recoveryNote = `Task-agent run ${input.run.id} ${input.status}: ${input.reason} ${recovery}`;
+        const recoveryNote = `Run ${input.status === "failed" ? "failed" : "was interrupted"}: ${input.reason} ${TASK_AGENT_RUN_PERSON_HINT} (run ${input.run.id})`;
         const existingOutput = input.task.output?.trim() ?? "";
         taskOutput = existingOutput.includes(recoveryNote)
           ? existingOutput
@@ -786,13 +843,14 @@ const make = Effect.gen(function* () {
           run,
           task: currentTask,
           status: run.status === "finalizing:interrupted" ? "interrupted" : "failed",
-          reason: "The run ended before its finalization completed.",
+          reason: RUN_CUT_OFF_REASON,
           reasonCode: "finalization_incomplete",
           interrupt: true,
         });
         return;
       }
 
+      const agentName = Option.isSome(agentOption) ? agentOption.value.name : "The agent";
       const records = yield* readThreadRuns(run.threadId);
       const state: ThreadRunState = Option.isNone(records)
         ? { type: "missing-thread" }
@@ -806,14 +864,18 @@ const make = Effect.gen(function* () {
           // startAgent persists the run before it creates the thread and sends
           // the first message, so a fresh run may not have a v2 run yet.
           if (runAgeMs <= PENDING_SESSION_START_TIMEOUT_MS) return;
+          const startError =
+            state.type === "missing-thread" ? null : yield* threadLastError(run.threadId);
           yield* finishUnrecoverableRun({
             run,
             task: currentTask,
             status: "failed",
             reason:
               state.type === "missing-thread"
-                ? "The task-agent execution thread is missing."
-                : "The provider run did not start before the task-agent timeout.",
+                ? "The chat for this agent run is gone, so the run stopped. Retry the task to start a new run."
+                : startError === null
+                  ? `${agentName} didn't start in time. Its provider may be signed out, busy or offline. Check it in Settings, then retry.`
+                  : `${agentName} didn't start: ${startError}`,
             reasonCode: state.type === "missing-thread" ? "thread_missing" : "start_timeout",
             interrupt: false,
           });
@@ -845,18 +907,24 @@ const make = Effect.gen(function* () {
               run,
               task: currentTask,
               status: "failed",
-              reason: "The provider turn ended without a valid task-agent result.",
+              reason: `${agentName} finished its turn but didn't update the task or report a result. Open the run to see what it did, then retry.`,
               reasonCode: "no_result",
               interrupt: false,
             });
             return;
           }
           if (latest.status === "failed") {
+            // The thread's last error is the provider's own explanation, such
+            // as a usage limit with its reset time.
+            const providerError = yield* threadLastError(run.threadId);
             yield* finishUnrecoverableRun({
               run,
               task: currentTask,
               status: "failed",
-              reason: `The provider run ${latest.id} failed.`,
+              reason:
+                providerError === null
+                  ? `${agentName} stopped working on this task with an error it didn't explain.`
+                  : `${agentName} stopped working on this task: ${providerError}`,
               reasonCode: "provider_failed",
               interrupt: false,
             });
@@ -976,11 +1044,11 @@ const make = Effect.gen(function* () {
                 interactionMode: triggerShell.interactionMode,
               }) !== null)
           ) {
-            yield* Effect.logInfo("Task agent not started: broader than the blocked run's modes", {
-              taskId: task.id,
-              agentId: agent.id,
-              triggerRunId: triggerRun.id,
-            });
+            yield* recordNotStarted(
+              task,
+              agent,
+              `${agent.name} didn't pick up this blocked task: it needs more permissions than the run that got blocked. Start it yourself from Tasks.`,
+            );
             continue;
           }
           const triggerAgent = yield* repository.getAgentById({ id: triggerRun.agentId });
@@ -1005,8 +1073,8 @@ const make = Effect.gen(function* () {
           task,
           agent,
           startCeiling === null
-            ? "The change came from a chat or run that may not start agents now."
-            : `The agent runs in broader modes than the ${startCeiling.runtimeMode} chat or run that made the change. A person can start it by changing the task in the Tasks view.`,
+            ? `${agent.name} didn't start: the chat that changed this task can't start agents right now. Change the task yourself in Tasks to start it.`
+            : `${agent.name} didn't start: the chat that changed this task has fewer permissions than the agent needs. Change the task yourself in Tasks to start it.`,
         );
         return;
       }
@@ -1140,7 +1208,7 @@ const make = Effect.gen(function* () {
             run,
             task,
             status: "failed",
-            reason: "Task-agent startup was interrupted before the provider run became usable.",
+            reason: RUN_CUT_OFF_REASON,
             reasonCode: "startup_interrupted",
             interrupt: true,
           }).pipe(Effect.ignore),
@@ -1151,7 +1219,9 @@ const make = Effect.gen(function* () {
               run,
               task,
               status: "failed",
-              reason: `Task-agent provider startup failed: ${String(cause)}`,
+              reason: `Couldn't start ${agent.name}${
+                readableCauseReason(cause) === undefined ? "" : `: ${readableCauseReason(cause)}`
+              }. Fix it in Settings, then retry.`,
               reasonCode: "startup_failed",
               interrupt: true,
             }).pipe(Effect.ignore);
@@ -1211,7 +1281,19 @@ const make = Effect.gen(function* () {
         { discard: true, concurrency: 1 },
       );
       if (current === null) return;
-      yield* startMatchingAgents(yield* repository.listAllAgents(), task, startCeiling);
+      const agents = yield* repository.listAllAgents();
+      yield* startMatchingAgents(agents, task, startCeiling);
+      if (reason === "created" || reason === "updated") {
+        const waiting = noMatchingAgentReason(agents, task, Date.parse(yield* now));
+        if (waiting !== null && active.length === 0) {
+          yield* appendEvent(
+            task,
+            "task.no-matching-agent",
+            { reason: waiting },
+            TaskEventId.make(`${task.id}:no-matching-agent:${task.triggerChangedAt}`),
+          );
+        }
+      }
     });
 
   const reconcileAgent = ({ agent, reason }: TaskAgentChangedInput) =>
@@ -1316,7 +1398,7 @@ const make = Effect.gen(function* () {
           if (run.completedAt === null) {
             if (run.status.startsWith("finalizing:"))
               return refuse(
-                `Agent run '${id}' is finishing (${run.status}). Message it again once it has ended; it then continues as a new run.`,
+                `Couldn't send this to ${agent.name}: the run is still wrapping up. Try again in a moment; it then continues as a new run (run ${id}).`,
               );
             if (message.type === "send")
               yield* sendTurn(MessageId.make(yield* randomId("task-agent-message")), message.text);
@@ -1325,7 +1407,7 @@ const make = Effect.gen(function* () {
 
           const activeRefusal = (active: TaskAgentRun) =>
             refuse(
-              `Agent '${agent.name}' already has active run '${active.id}' on task '${task.id}' (thread '${active.threadId}'). Message that run instead.`,
+              `Couldn't send this to ${agent.name}: it is already working on this task in another run. Message that run instead (run ${active.id}, thread ${active.threadId}).`,
               active.id,
             );
           const findActive = repository.findActiveAgentRunForTaskAgent({
@@ -1372,7 +1454,7 @@ const make = Effect.gen(function* () {
           const continuation = created.continuation;
           if (continuation === null)
             return refuse(
-              `Task '${task.id}' was archived, or agent '${agent.id}' was disabled or deleted, while the message was being sent.`,
+              `Couldn't send this to ${agent.name}: the task was archived, or the agent was turned off or deleted, while the message was being sent.`,
             );
 
           if (message.type === "send") {
@@ -1397,7 +1479,11 @@ ${message.text}`,
             );
             if (sent._tag === "Failure") {
               return {
-                sendFailure: `Sending the continuation message failed: ${String(sent.cause)}`,
+                sendFailure: `Couldn't send this to ${agent.name}${
+                  readableCauseReason(sent.cause) === undefined
+                    ? ""
+                    : `: ${readableCauseReason(sent.cause)}`
+                }. Try again in a moment.`,
               } as const;
             }
             pending.current = null;
@@ -1420,7 +1506,7 @@ ${message.text}`,
                 run: pending.current.continuation,
                 task: pending.current.task,
                 status: "failed",
-                reason: "Sending the continuation message was interrupted.",
+                reason: RUN_CUT_OFF_REASON,
                 reasonCode: "continuation_interrupted",
                 interrupt: false,
               }).pipe(Effect.ignore),

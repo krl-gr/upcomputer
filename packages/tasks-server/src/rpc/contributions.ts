@@ -53,7 +53,9 @@ const operate = AuthOrchestrationOperateScope;
 function asTaskRpc<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return effect.pipe(
     Effect.mapError((cause) =>
-      cause instanceof TaskError ? cause : taskError("Task operation failed.", cause),
+      cause instanceof TaskError
+        ? cause
+        : taskError("Up.computer couldn't save this change to your tasks. Try again.", cause),
     ),
   );
 }
