@@ -30,9 +30,12 @@ import { AnalyticsService } from "./AnalyticsService.ts";
 // A crash written by the process that died, sent by the next start.
 const PENDING_ERRORS_FILE = "telemetry-pending-errors";
 const MAX_PENDING_ERRORS = 5;
-// Per server process, over all sources. Repeats of one error are dropped
-// before they count, so this only bounds many different errors.
+// Per server process and budget. Repeats of one error are dropped before
+// they count, so this only bounds many different errors.
 const MAX_EVENTS_PER_PROCESS = 50;
+// Connected clients get their own budget: a misbehaving browser tab must not
+// use up the one the server and desktop app report their crashes from.
+const budgetOf = (where: typeof AppErrorWhere.Type) => (where === "web" ? "client" : "host");
 
 const PendingError = Schema.Struct({
   ...AppErrorReport.fields,
@@ -73,16 +76,21 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
   const pendingErrorsPath = path.join(config.stateDir, PENDING_ERRORS_FILE);
-  const budget = yield* Ref.make({ seen: new Set<string>(), recorded: 0 });
+  const budget = yield* Ref.make({
+    seen: new Set<string>(),
+    recorded: new Map<ReturnType<typeof budgetOf>, number>(),
+  });
 
   // Deduplicated per stack hash for this process's session: a render loop or a
   // retry loop repeats one error thousands of times.
-  const admit = (dedupeKey: string | undefined) =>
+  const admit = (where: typeof AppErrorWhere.Type, dedupeKey: string | undefined) =>
     Ref.modify(budget, (current) => {
-      if (current.recorded >= MAX_EVENTS_PER_PROCESS) return [false, current] as const;
+      const key = budgetOf(where);
+      const recorded = current.recorded.get(key) ?? 0;
+      if (recorded >= MAX_EVENTS_PER_PROCESS) return [false, current] as const;
       if (dedupeKey !== undefined && current.seen.has(dedupeKey)) return [false, current] as const;
       const seen = dedupeKey === undefined ? current.seen : new Set(current.seen).add(dedupeKey);
-      return [true, { seen, recorded: current.recorded + 1 }] as const;
+      return [true, { seen, recorded: new Map(current.recorded).set(key, recorded + 1) }] as const;
     });
 
   const recordError = (
@@ -90,7 +98,7 @@ export const make = Effect.gen(function* () {
     report: AppErrorReportValue,
     options?: { readonly sessionId?: string; readonly capturedAtMs?: number },
   ) =>
-    admit(`${where}:${report.stackHash}`).pipe(
+    admit(where, `${where}:${report.stackHash}`).pipe(
       Effect.flatMap((admitted) =>
         admitted ? analytics.record("app.error", { where, ...report }, options) : Effect.void,
       ),
@@ -108,7 +116,7 @@ export const make = Effect.gen(function* () {
       return reportError("desktop", report);
     }
     const { event, ...properties } = message;
-    return admit(undefined).pipe(
+    return admit("desktop", undefined).pipe(
       Effect.flatMap((admitted) => (admitted ? analytics.record(event, properties) : Effect.void)),
     );
   };

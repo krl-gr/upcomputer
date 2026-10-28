@@ -158,10 +158,15 @@ it.layer(NodeServices.layer)("ErrorTelemetry", (it) => {
               stackHash: index.toString(16).padStart(16, "0"),
             }),
           { discard: true },
+        ).pipe(
+          // Clients have their own budget, so the server's crash still goes out.
+          Effect.andThen(telemetry.reportDefect(throwFrom("bootProviders"))),
         ),
       );
 
-      assert.equal(errorsOf(events).length, 50);
+      const errors = errorsOf(events);
+      assert.equal(errors.filter(({ where }) => where === "web").length, 50);
+      assert.equal(errors.filter(({ where }) => where === "server").length, 1);
     }),
   );
 
