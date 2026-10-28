@@ -94,7 +94,6 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { isProductFeatureShown } from "../../product/productFlags";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
-import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";

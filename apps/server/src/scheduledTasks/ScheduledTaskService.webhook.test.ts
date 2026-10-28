@@ -4,7 +4,6 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ScheduledTaskUpsertInput,
   ScheduledTaskWebhookDeliveryId,
   SecretRequestError,
@@ -33,8 +32,6 @@ import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 import { renderWebhookPrompt } from "./webhookTemplate.ts";
-
-const PROMPT_TOO_LONG = `This request made the prompt longer than ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} characters, so it didn't run. Use fewer or shorter placeholders in the prompt.`;
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
 

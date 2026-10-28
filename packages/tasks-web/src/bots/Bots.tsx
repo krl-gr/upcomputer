@@ -278,12 +278,9 @@ function EnvironmentBots({
 }
 
 /**
- * A bot's sidebar row, built from the compact thread row's parts so the two
- * look and behave alike: face, status, name, then the run counts of the tasks
- * its chat started, with the settings button where a thread row has its "…".
- * The row opens the bot's chat. The status shows only while the bot is not idle.
- * A double-click renames the bot's chat as on a thread row, and the server renames
- * the bot with it.
+ * A bot's sidebar row from the compact thread row's parts: face, status while not idle, name,
+ * its tasks' run counts, and settings where a thread row has "…". A double-click renames the
+ * chat, and the server renames the bot with it.
  */
 function BotRow({
   environmentId,

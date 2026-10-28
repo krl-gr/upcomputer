@@ -1,3 +1,4 @@
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { PreviewViewportSetting, ScopedThreadRef } from "@t3tools/contracts";
 
@@ -80,7 +81,7 @@ async function resizeBrowserViewport(
     toastManager.add({
       type: "error",
       title: "Unable to resize browser viewport",
-      description: error instanceof Error ? error.message : "An error occurred.",
+      description: errorToastDescription(error),
     });
     throw error;
   }

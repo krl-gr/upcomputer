@@ -217,7 +217,6 @@ import {
 import { reportMarkdownActionFailure } from "./chat/markdownActionFailure";
 
 const isAssetNotFoundError = Schema.is(AssetWorkspaceAssetNotFoundError);
-import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 interface ChatMarkdownProps {
   /** Compact markdown transforms remove blocks before rendering inside a label. */

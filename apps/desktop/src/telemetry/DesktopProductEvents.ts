@@ -55,7 +55,7 @@ export class DesktopProductEvents extends Context.Service<
   }
 >()("@t3tools/desktop/telemetry/DesktopProductEvents") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const queue = yield* Queue.sliding<DesktopProductEvent>(QUEUE_CAPACITY);

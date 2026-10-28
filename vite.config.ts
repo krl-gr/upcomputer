@@ -8,6 +8,8 @@ import { cachedTestTasks } from "./scripts/lib/cached-tests.ts";
 // moved web DOM tests to the browser project. Move each to
 // *.browser.test.{ts,tsx} and drop it here.
 const UPCOMPUTER_LEGACY_DOM_TESTS: Array<string> = [
+  "apps/web/src/composerFooter/compactComposer.test.tsx",
+  "apps/web/src/uiAnalytics.test.ts",
   "apps/web/src/components/ProviderUpdateLaunchNotification.lifecycle.test.tsx",
   "apps/web/src/components/settings/CodexSetupSection.test.tsx",
   "apps/web/src/components/settings/ProviderAuthenticationSection.test.tsx",
@@ -782,6 +784,56 @@ export default defineConfig({
       {
         files: ["apps/web/src/**", "apps/mobile/src/**", "packages/*/src/**"],
         rules: { "t3code/no-unreasoned-state-sync": "error" },
+      },
+      {
+        // UpComputer burn-down list: our effects from before upstream replaced the effect
+        // budget with a reason at each call site. They stay at "warn" until each
+        // effect states its reason; remove a file when it passes. Do not add new files.
+        files: [
+          "apps/web/src/components/UiAnalyticsCoordinator.tsx",
+          "apps/web/src/components/bot-character-configurable/BotStatusProps.tsx",
+          "apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx",
+          "apps/web/src/components/chat/DraftHeroHeadline.tsx",
+          "apps/web/src/components/settings/InternalDeviceSetting.tsx",
+          "apps/web/src/components/settings/ProviderAuthenticationSection.tsx",
+          "apps/web/src/components/settings/WebPushSettings.tsx",
+          "apps/web/src/composerFooter/UpComputerComposerFooter.tsx",
+          "apps/web/src/composerFooter/compactComposer.ts",
+          "apps/web/src/hooks/useAppErrorTelemetrySender.ts",
+          "apps/web/src/onboardingSurface/FirstRunAgent.tsx",
+          "apps/web/src/onboardingSurface/UpComputerOnboarding.tsx",
+          "apps/web/src/routes/__root.tsx",
+          "apps/web/src/sidebarThreadRow/SidebarCompactThreadRow.tsx",
+          "apps/web/src/uiAnalytics.ts",
+          "packages/computer-use-web/src/settings/BrowserUseSettingsPage.tsx",
+          "packages/computer-use-web/src/settings/ComputerUseSettingsPage.tsx",
+          "packages/tasks-web/src/bots/BotPage.tsx",
+          "packages/tasks-web/src/bots/Bots.tsx",
+          "packages/tasks-web/src/bots/botAutosave.ts",
+          "packages/tasks-web/src/bots/portraits/BotPortrait.tsx",
+          "packages/tasks-web/src/bots/portraits/botPortraits.ts",
+          "packages/tasks-web/src/markdown/MarkdownEditor.tsx",
+          "packages/tasks-web/src/planner/data/hooks.ts",
+          "packages/tasks-web/src/planner/reminders/TaskReminderNotifications.tsx",
+          "packages/tasks-web/src/planner/ui/AutomationWindow.tsx",
+          "packages/tasks-web/src/planner/ui/FloatingWindow.tsx",
+          "packages/tasks-web/src/planner/ui/PlannerView.tsx",
+          "packages/tasks-web/src/planner/ui/ReminderSettings.tsx",
+          "packages/tasks-web/src/planner/ui/TaskList.tsx",
+          "packages/tasks-web/src/planner/ui/TaskRow.tsx",
+          "packages/tasks-web/src/planner/ui/WeekCalendar.tsx",
+          "packages/tasks-web/src/planner/ui/tasksViewGate.ts",
+          "packages/tasks-web/src/settings/InstructionsSettingsPage.tsx",
+          "packages/tasks-web/src/ui/AgentsView.tsx",
+          "packages/tasks-web/src/ui/AutomationsRoute.tsx",
+          "packages/tasks-web/src/ui/TaskNavigationRunCounts.tsx",
+          "packages/tasks-web/src/ui/TaskThreadRunCounts.tsx",
+          "packages/tasks-web/src/ui/TasksView.tsx",
+          "packages/tasks-web/src/ui/WorkspaceViewLayout.tsx",
+          "packages/tasks-web/src/ui/useTaskPages.ts",
+          "packages/tasks-web/src/ui/useWorkspaceData.ts",
+        ],
+        rules: { "t3code/no-unreasoned-state-sync": "warn" },
       },
       {
         // React Compiler caches use* functions only if they call a hook.

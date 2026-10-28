@@ -46,6 +46,7 @@ export const providerClients = makeProviderClientRegistry([
   acpRegistryClient,
 ]);
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function getProviderClient(driver: string | null | undefined) {
   return isProviderDriverKind(driver) ? providerClients.get(driver) : undefined;
 }

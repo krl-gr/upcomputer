@@ -544,12 +544,9 @@ const make = Effect.gen(function* () {
       worktreePath: null,
     });
   });
-  // A bot has one name, its agent's; its chat's title follows it, and renaming the chat renames
-  // the bot. This holds the title each bot chat was last seen with: a metadata event repeats
-  // the whole thread, so only a title that differs from it is a rename. It moves only with the
-  // events, so an event still carrying the old title after a rename of the bot is no rename;
-  // comparing with the bot's or the chat's current name would let such an event undo it.
-  // Titles the app writes on its own (a first message's seed, a generated title) are no rename.
+  // The title each bot chat was last seen with. Metadata events repeat the whole thread, so
+  // only a different title is a rename; comparing with current names would let a stale event
+  // undo one. Titles the app writes itself (a first message's seed, a generated title) are none.
   const chatTitles = new Map<string, string>();
   // Bot chats last seen with a title generation pending: the event that ends it may carry a
   // generated title, and nothing else in that event tells it from a rename.
@@ -1035,7 +1032,7 @@ const make = Effect.gen(function* () {
       Effect.mapError(asError),
     ),
     nameChat: Effect.fn("BotService.nameChat")(
-      function* (agentId) {
+      function* (_agentId) {
         return yield* rows;
       },
       (effect, agentId) =>

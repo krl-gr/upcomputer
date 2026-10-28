@@ -74,7 +74,7 @@ export class ErrorTelemetry extends Context.Service<
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const analytics = yield* AnalyticsService;
   const config = yield* ServerConfig.ServerConfig;

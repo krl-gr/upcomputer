@@ -1,5 +1,4 @@
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
-import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import {

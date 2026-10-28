@@ -32,7 +32,6 @@ import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threa
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import { mcpStatusBannerItems } from "./chat/McpStatusBanner";
-import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { APP_BASE_NAME } from "../branding";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import type { ProviderFailureAction } from "@t3tools/client-runtime/state/turn-item-presentation";
@@ -2722,6 +2721,38 @@ export default function ChatView(props: ChatViewProps) {
     if (compactDisabled) return;
     void sendStandaloneCommand("/compact", "compact this conversation");
   };
+
+  const {
+    getModelDisabledReason,
+    handleInteractionModeChange,
+    handleInteractionModeChangeStable,
+    handleRuntimeModeChangeStable,
+    onEnvModeChangeStable,
+    onProviderModelSelectStable,
+    onStartFromOriginChange,
+    openProviderSetupStable,
+    toggleInteractionModeStable,
+  } = useComposerSelection({
+    environmentId,
+    composerDraftTarget,
+    draftThread,
+    activeThread,
+    activeRuntime,
+    activeProjectSettings,
+    settings,
+    providerStatuses,
+    lockedProvider,
+    supportsProviderSwitchingViaHandoff,
+    multipleModelSelections,
+    runtimeMode,
+    interactionMode,
+    interactionModeEnabled,
+    isLocalDraftThread,
+    canOverrideServerThreadEnvMode,
+    setPendingServerThreadEnvModeEntry,
+    setPendingServerThreadStartFromOriginByThreadId,
+    scheduleComposerFocus,
+  });
   const onProviderFailureAction = (action: ProviderFailureAction, runId: RunId | null) => {
     const run =
       runId === null ? undefined : serverProjection?.runs.find((entry) => entry.id === runId);
@@ -2767,38 +2798,6 @@ export default function ChatView(props: ChatViewProps) {
     );
   };
   const onProviderFailureActionStable = useStableCallback(onProviderFailureAction);
-
-  const {
-    getModelDisabledReason,
-    handleInteractionModeChange,
-    handleInteractionModeChangeStable,
-    handleRuntimeModeChangeStable,
-    onEnvModeChangeStable,
-    onProviderModelSelectStable,
-    onStartFromOriginChange,
-    openProviderSetupStable,
-    toggleInteractionModeStable,
-  } = useComposerSelection({
-    environmentId,
-    composerDraftTarget,
-    draftThread,
-    activeThread,
-    activeRuntime,
-    activeProjectSettings,
-    settings,
-    providerStatuses,
-    lockedProvider,
-    supportsProviderSwitchingViaHandoff,
-    multipleModelSelections,
-    runtimeMode,
-    interactionMode,
-    interactionModeEnabled,
-    isLocalDraftThread,
-    canOverrideServerThreadEnvMode,
-    setPendingServerThreadEnvModeEntry,
-    setPendingServerThreadStartFromOriginByThreadId,
-    scheduleComposerFocus,
-  });
   const { onResume, isResuming } = useComposerResume({
     environmentId,
     routeThreadKey,

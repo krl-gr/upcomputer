@@ -1,3 +1,4 @@
+import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import type { ThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
@@ -27,7 +28,7 @@ export async function copyThreadReference(target: ThreadReferenceCopyTarget): Pr
       stackedThreadToast({
         type: "error",
         title: target.failureTitle,
-        description: error instanceof Error ? error.message : "An error occurred.",
+        description: errorToastDescription(error),
       }),
     );
   }

@@ -15,7 +15,6 @@ import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
   providerFailureTitle,
-  MAX_PROVIDER_FAILURE_CODE_LENGTH,
   MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
   ContextHandoffBudgetError,
   ContextHandoffBackgroundWorkError,

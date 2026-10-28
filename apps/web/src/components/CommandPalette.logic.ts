@@ -1,3 +1,4 @@
+import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import {
   foldSearchQuery,
   PALETTE_SECONDARY_LIMIT,
@@ -854,10 +855,7 @@ export function buildPaletteRemoteSourceReadiness(
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return "An error occurred.";
+  return plainErrorSentence(error);
 }
 
 const OVERLAY_MODE_BY_COMMAND = {

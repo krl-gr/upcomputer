@@ -44,6 +44,7 @@ function keepWindowsProsePathEscape(this: EscapeCompileContext) {
  * Keeps escapes inside drive paths in prose only, for parsers that already escape Windows
  * destinations themselves. Prose paths end at whitespace: past that, nothing tells a path
  * from a sentence, and `C:\x and \*this\*` must still read `*this*`.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function remarkKeepWindowsProsePaths(this: Processor) {
   (this.data().fromMarkdownExtensions ??= []).push({

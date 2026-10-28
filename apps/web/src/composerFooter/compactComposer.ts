@@ -101,11 +101,9 @@ export function useCompactComposerActionsWidth(
 }
 
 /*
- * The compact row's geometry. The footer overlays the card, centred on the
- * prompt, with only the paperclip and the actions visible; the prompt keeps
- * its horizontal padding so wrapping is measured against the full width
- * (`measureComposerMultilinePrompt`) and the two forms cannot flip each other.
- * Its inner row makes room for the paperclip and actions instead.
+ * The compact row's geometry: the footer overlays the card with only the paperclip and the
+ * actions visible. The prompt keeps its padding so wrapping is measured at full width and the
+ * two forms cannot flip each other.
  */
 const COMPACT_COMPOSER_CLASSES = {
   /**

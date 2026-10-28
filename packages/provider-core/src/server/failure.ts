@@ -37,7 +37,7 @@ export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<Contex
 }
 
 export const MAX_PROVIDER_FAILURE_MESSAGE_LENGTH = 4_096;
-export const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
+const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 const MAX_PROVIDER_FAILURE_REASON_LENGTH = 240;
 
 /**
