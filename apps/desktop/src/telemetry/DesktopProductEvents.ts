@@ -96,7 +96,9 @@ export const make = Effect.gen(function* () {
   );
 
   return DesktopProductEvents.of({
-    record: (event) => Effect.sync(() => recordUnsafe(event)),
+    record: Effect.fn("DesktopProductEvents.record")(function* (event) {
+      return yield* Effect.sync(() => recordUnsafe(event));
+    }),
     encoded: Stream.fromQueue(queue).pipe(
       Stream.map((event) =>
         textEncoder.encode(
@@ -109,7 +111,12 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(DesktopProductEvents, make);
 
-const disabled = DesktopProductEvents.of({ record: () => Effect.void, encoded: Stream.empty });
+const disabled = DesktopProductEvents.of({
+  record: Effect.fn("DesktopProductEvents.record")(function* () {
+    return yield* Effect.void;
+  }),
+  encoded: Stream.empty,
+});
 
 /**
  * The service where the app provides it. Tests and tools that build a backend

@@ -1095,44 +1095,45 @@ const make = Effect.gen(function* () {
   });
 
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
-  const reportCleanupNotices = (entries: ReadonlyArray<StorageCleanupReportEntry>) =>
-    Effect.gen(function* () {
-      const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
-      if (Option.isNone(notices)) return;
-      const failed = entries.filter(
-        (entry) => entry.kind === "worktree" && entry.outcome === "failed",
-      );
-      const unused = entries.filter(
-        (entry) => entry.kind === "worktree" && entry.outcome === "kept" && entry.threadId === null,
-      );
-      if (failed.length === 0) yield* notices.value.resolve("storage-cleanup:worktrees-failed");
-      else {
-        const example = failed.find((entry) => entry.path !== null);
-        yield* notices.value.report({
-          id: "storage-cleanup:worktrees-failed",
-          area: "worktrees",
-          severity: "warning",
-          title: "Some worktrees weren't removed",
-          message: `Cleanup couldn't remove ${failed.length} worktree${failed.length === 1 ? "" : "s"}${
-            example?.path ? `, for example ${example.path}` : ""
-          }. Review them in Settings, Storage.`,
-          detail: failed.map((entry) => `${entry.path ?? "(sweep)"}: ${entry.reason}`).join("\n"),
-        });
-      }
-      if (unused.length === 0) yield* notices.value.resolve("storage-cleanup:worktrees-unused");
-      else {
-        const bytes = unused.reduce((total, entry) => total + (entry.bytes ?? 0), 0);
-        yield* notices.value.report({
-          id: "storage-cleanup:worktrees-unused",
-          area: "worktrees",
-          severity: "info",
-          title: "Unused worktrees found",
-          message: `${unused.length} worktree${unused.length === 1 ? "" : "s"}${
-            bytes > 0 ? ` (${Math.round(bytes / 1_048_576)} MB)` : ""
-          } aren't used by any thread. Review and remove them in Settings, Storage.`,
-        });
-      }
-    });
+  const reportCleanupNotices = Effect.fn("StorageCleanup.reportCleanupNotices")(function* (
+    entries: ReadonlyArray<StorageCleanupReportEntry>,
+  ) {
+    const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+    if (Option.isNone(notices)) return;
+    const failed = entries.filter(
+      (entry) => entry.kind === "worktree" && entry.outcome === "failed",
+    );
+    const unused = entries.filter(
+      (entry) => entry.kind === "worktree" && entry.outcome === "kept" && entry.threadId === null,
+    );
+    if (failed.length === 0) yield* notices.value.resolve("storage-cleanup:worktrees-failed");
+    else {
+      const example = failed.find((entry) => entry.path !== null);
+      yield* notices.value.report({
+        id: "storage-cleanup:worktrees-failed",
+        area: "worktrees",
+        severity: "warning",
+        title: "Some worktrees weren't removed",
+        message: `Cleanup couldn't remove ${failed.length} worktree${failed.length === 1 ? "" : "s"}${
+          example?.path ? `, for example ${example.path}` : ""
+        }. Review them in Settings, Storage.`,
+        detail: failed.map((entry) => `${entry.path ?? "(sweep)"}: ${entry.reason}`).join("\n"),
+      });
+    }
+    if (unused.length === 0) yield* notices.value.resolve("storage-cleanup:worktrees-unused");
+    else {
+      const bytes = unused.reduce((total, entry) => total + (entry.bytes ?? 0), 0);
+      yield* notices.value.report({
+        id: "storage-cleanup:worktrees-unused",
+        area: "worktrees",
+        severity: "info",
+        title: "Unused worktrees found",
+        message: `${unused.length} worktree${unused.length === 1 ? "" : "s"}${
+          bytes > 0 ? ` (${Math.round(bytes / 1_048_576)} MB)` : ""
+        } aren't used by any thread. Review and remove them in Settings, Storage.`,
+      });
+    }
+  });
   const sweep = Effect.fn("StorageCleanup.sweep")(function* (
     trigger: StorageCleanupReport["trigger"],
   ) {

@@ -767,9 +767,10 @@ export const make = Effect.gen(function* () {
   const primaryStarts = yield* Ref.make(0);
   // One per app launch, so backend restarts stay in the same telemetry session.
   // Without one the backend starts its own.
-  const telemetrySessionId = yield* crypto
-    .randomUUIDv4()
-    .pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+  const telemetrySessionId = yield* crypto.randomUUIDv4().pipe(
+    Effect.map((id): string | undefined => id),
+    Effect.catchCause(() => Effect.sync((): string | undefined => undefined)),
+  );
   const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
     Option.match(current, {
       onSome: (secret) => Effect.succeed([secret, current] as const),

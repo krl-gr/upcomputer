@@ -415,17 +415,20 @@ export const layer: Layer.Layer<
     // either order, so a failed or interrupted turn is recorded once both have arrived.
     const turnsAwaitingTerminal = new Map<string, Readonly<Record<string, unknown>>>();
     const terminalsAwaitingTurn = new Map<string, Readonly<Record<string, unknown>>>();
-    const recordTurnTerminal = (key: string, terminal: ProviderTurnTerminal) => {
+    const recordTurnTerminal = Effect.fn("ProviderEventIngestor.recordTurnTerminal")(function* (
+      key: string,
+      terminal: ProviderTurnTerminal,
+    ) {
       const failure = providerTurnFailureAnalytics(terminal);
-      if (failure === undefined) return Effect.void;
+      if (failure === undefined) return;
       const turn = turnsAwaitingTerminal.get(key);
       if (turn === undefined) {
         rememberBounded(terminalsAwaitingTurn, key, failure);
-        return Effect.void;
+        return;
       }
       turnsAwaitingTerminal.delete(key);
-      return analytics.record({ ...turn, ...failure });
-    };
+      yield* analytics.record({ ...turn, ...failure });
+    });
     const recordUnfinishedTurn = (key: string, turn: Readonly<Record<string, unknown>>) => {
       const failure = terminalsAwaitingTurn.get(key);
       if (failure !== undefined) {

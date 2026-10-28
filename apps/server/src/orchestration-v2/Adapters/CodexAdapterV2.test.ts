@@ -1376,10 +1376,13 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ],
       });
       const updates: Array<OrchestrationV2ProviderMcpStatus> = [];
+      const dropped = yield* Deferred.make<void>();
       const harness = yield* makeCodexReplayHarness(transcript, (event) =>
-        Effect.sync(() => {
-          if (event.type === "provider_session.updated" && event.providerSession.mcp) {
-            updates.push(event.providerSession.mcp);
+        Effect.gen(function* () {
+          if (event.type !== "provider_session.updated" || !event.providerSession.mcp) return;
+          updates.push(event.providerSession.mcp);
+          if (event.providerSession.mcp.t3?.outcome === "disconnected") {
+            yield* Deferred.succeed(dropped, undefined);
           }
         }),
       );
@@ -1393,7 +1396,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         }),
       );
       yield* harness.firstTerminal;
-      yield* awaitUntil(() => updates.at(-1)?.t3?.outcome === "disconnected", "the t3-code drop");
+      yield* Deferred.await(dropped);
       assert.deepEqual(updates, [
         { t3: { outcome: "attached" }, userServerCount: 0, failedUserServers: [] },
         { t3: { outcome: "attached" }, userServerCount: 1, failedUserServers: ["my-notes"] },

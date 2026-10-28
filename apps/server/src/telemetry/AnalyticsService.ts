@@ -201,7 +201,9 @@ export class AnalyticsService extends Context.Service<
       enabled: false,
       sessionId: undefined,
       internalDevice: Effect.succeed(false),
-      setInternalDevice: (enabled) => Effect.succeed(enabled),
+      setInternalDevice: Effect.fn("AnalyticsService.setInternalDevice")(function* (enabled) {
+        return yield* Effect.succeed(enabled);
+      }),
     }),
   );
 }
@@ -263,7 +265,10 @@ export const make = Effect.gen(function* () {
     : Option.none<string>();
   const sessionId = Option.isSome(desktopSessionId)
     ? desktopSessionId.value
-    : yield* crypto.randomUUIDv4().pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+    : yield* crypto.randomUUIDv4().pipe(
+        Effect.map((id): string | undefined => id),
+        Effect.catchCause(() => Effect.sync((): string | undefined => undefined)),
+      );
   const internalDeviceMarker = path.join(serverConfig.stateDir, INTERNAL_DEVICE_MARKER_FILE);
   // Read for every event, so creating the file by hand takes effect without a restart.
   const internalDevice = fileSystem
@@ -423,7 +428,7 @@ export const make = Effect.gen(function* () {
   const previousStart = enabled
     ? yield* fileSystem.readFileString(sessionMarkerPath).pipe(
         Effect.map((text) => Option.some(decodeSessionMarker(text))),
-        Effect.catchCause(() => Effect.succeed(Option.none())),
+        Effect.catchCause(() => Effect.succeedNone),
       )
     : Option.none();
   // An unreadable marker still means the previous start did not stop cleanly.

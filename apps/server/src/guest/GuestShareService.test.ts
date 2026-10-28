@@ -121,6 +121,10 @@ const layerAnalytics = Layer.effectContext(
           recordMilestone: () => Effect.void,
           flush: Effect.void,
           recordOwners: () => Effect.void,
+          enabled: true,
+          sessionId: undefined,
+          internalDevice: Effect.succeed(false),
+          setInternalDevice: (enabled) => Effect.succeed(enabled),
         }),
       ),
     );

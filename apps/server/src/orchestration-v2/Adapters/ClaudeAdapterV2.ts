@@ -4951,19 +4951,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         // A server that drops mid-turn shows in the next init only after the user
         // has sent another message, so each turn's result asks for the list too.
-        const probeMcpStatus = (querySession: ClaudeAgentSdkQuerySession) =>
-          Effect.gen(function* () {
-            const probe = querySession.mcpServerStatus;
-            if (probe === undefined || (yield* Ref.get(mcpStatus))?.t3 === undefined) return;
-            yield* probe.pipe(
-              Effect.flatMap((servers) =>
-                sdkMessageLock.withPermits(1)(updateMcpStatus({ servers })),
-              ),
-              Effect.timeout("15 seconds"),
-              Effect.ignore,
-              Effect.forkIn(sessionScope),
-            );
-          });
+        const probeMcpStatus = Effect.fn("ClaudeAdapterV2.probeMcpStatus")(function* (
+          querySession: ClaudeAgentSdkQuerySession,
+        ) {
+          const probe = querySession.mcpServerStatus;
+          if (probe === undefined || (yield* Ref.get(mcpStatus))?.t3 === undefined) return;
+          yield* probe.pipe(
+            Effect.flatMap((servers) =>
+              sdkMessageLock.withPermits(1)(updateMcpStatus({ servers })),
+            ),
+            Effect.timeout("15 seconds"),
+            Effect.ignore,
+            Effect.forkIn(sessionScope),
+          );
+        });
 
         // Claude has no recovered frame; the next assistant message proves recovery.
         const completeProviderRetry = Effect.fn("ClaudeAdapterV2.completeProviderRetry")(function* (

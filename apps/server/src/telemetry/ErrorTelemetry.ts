@@ -61,9 +61,15 @@ export class ErrorTelemetry extends Context.Service<
   static readonly layerTest = Layer.succeed(
     ErrorTelemetry,
     ErrorTelemetry.of({
-      reportError: () => Effect.void,
-      reportDefect: () => Effect.void,
-      reportDesktopEvent: () => Effect.void,
+      reportError: Effect.fn("ErrorTelemetry.reportError")(function* () {
+        return yield* Effect.void;
+      }),
+      reportDefect: Effect.fn("ErrorTelemetry.reportDefect")(function* () {
+        return yield* Effect.void;
+      }),
+      reportDesktopEvent: Effect.fn("ErrorTelemetry.reportDesktopEvent")(function* () {
+        return yield* Effect.void;
+      }),
     }),
   );
 }

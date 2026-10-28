@@ -68,6 +68,10 @@ it.effect("reports a created schedule task as a first use, and an edit as nothin
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        isScratchProject: () => Effect.succeed(false),
+      }),
       Layer.mock(AnalyticsService.AnalyticsService)({
         enabled: true,
         sessionId: undefined,

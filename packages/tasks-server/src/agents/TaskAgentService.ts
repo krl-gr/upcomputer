@@ -975,22 +975,25 @@ const make = Effect.gen(function* () {
    * A matching agent that cannot start leaves a reason in the task's history, once per
    * trigger change and agent edit, so the task does not wait silently.
    */
-  const recordNotStarted = (task: Task, agent: TaskAgent, reason: string) =>
-    Effect.gen(function* () {
-      yield* Effect.logInfo("Task agent not started", {
-        taskId: task.id,
-        agentId: agent.id,
-        reason,
-      });
-      yield* appendEvent(
-        task,
-        "task.agent-not-started",
-        { agentId: agent.id, agentName: agent.name, reason },
-        TaskEventId.make(
-          `${task.id}:agent-not-started:${agent.id}:${task.triggerChangedAt}:${agent.updatedAt}`,
-        ),
-      );
+  const recordNotStarted = Effect.fn("TaskAgentService.recordNotStarted")(function* (
+    task: Task,
+    agent: TaskAgent,
+    reason: string,
+  ) {
+    yield* Effect.logInfo("Task agent not started", {
+      taskId: task.id,
+      agentId: agent.id,
+      reason,
     });
+    yield* appendEvent(
+      task,
+      "task.agent-not-started",
+      { agentId: agent.id, agentName: agent.name, reason },
+      TaskEventId.make(
+        `${task.id}:agent-not-started:${agent.id}:${task.triggerChangedAt}:${agent.updatedAt}`,
+      ),
+    );
+  });
 
   /**
    * Run-status agents start for an unhandled terminal run of another agent;

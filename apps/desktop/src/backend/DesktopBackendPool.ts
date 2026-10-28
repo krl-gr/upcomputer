@@ -200,11 +200,8 @@ export const layer = Layer.effect(
 
     // While the server is down the window can't show anything, so a crash loop
     // is reported natively, once per loop.
-    const handlePrimaryRestartLoop = (input: {
-      readonly attempts: number;
-      readonly reason: string;
-    }) =>
-      Effect.gen(function* () {
+    const handlePrimaryRestartLoop = Effect.fn("DesktopBackendPool.handlePrimaryRestartLoop")(
+      function* (input: { readonly attempts: number; readonly reason: string }) {
         const environment = yield* Effect.serviceOption(DesktopEnvironment.DesktopEnvironment);
         const shell = yield* Effect.serviceOption(ElectronShell.ElectronShell);
         const logDir = Option.isSome(environment) ? environment.value.logDir : null;
@@ -231,7 +228,8 @@ export const layer = Layer.effect(
         } else if (response === 1 && Option.isSome(shell)) {
           yield* shell.value.copyText(diagnostics);
         }
-      });
+      },
+    );
 
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
