@@ -541,7 +541,11 @@ const make = Effect.gen(function* () {
   // the whole thread, so only a title that differs from it is a rename. It moves only with the
   // events, so an event still carrying the old title after a rename of the bot is no rename;
   // comparing with the bot's or the chat's current name would let such an event undo it.
+  // Titles the app writes on its own (a first message's seed, a generated title) are no rename.
   const chatTitles = new Map<string, string>();
+  // Bot chats last seen with a title generation pending: the event that ends it may carry a
+  // generated title, and nothing else in that event tells it from a rename.
+  const generating = new Set<string>();
   // The last name each bot chat's bot was seen with. It needs no database, so a turn whose bot
   // lookup failed can still tell its chat is a bot's and name the bot.
   const botNames = new Map<string, string>();
@@ -560,7 +564,11 @@ const make = Effect.gen(function* () {
         botNames.set(threadId, agent.value.name);
       } else trackChat(threadId, agent.value.name);
       const { thread } = yield* threads.getThreadRecords(threadId, []);
-      if (thread.deletedAt === null && thread.title !== agent.value.name)
+      // A title still being generated, as in a chat adopted mid-generation, would replace the name.
+      if (
+        thread.deletedAt === null &&
+        (thread.title !== agent.value.name || thread.titleRegeneration != null)
+      )
         yield* threads.dispatch({
           type: "thread.metadata.update",
           commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.randomUUIDv4()}`),
@@ -578,12 +586,33 @@ const make = Effect.gen(function* () {
       yield* repository.upsertAgent({ ...agent.value, name: title, updatedAt: yield* now });
       botNames.set(threadId, title);
     });
+  const keepBotName = (threadId: ThreadId, name: string) =>
+    Effect.gen(function* () {
+      yield* threads.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`bot:keep-name:${threadId}:${yield* crypto.randomUUIDv4()}`),
+        threadId,
+        title: name,
+        regenerateTitle: false,
+      });
+    });
   const followChatRenames = Stream.suspend(() => threads.streamDomainEvents).pipe(
     Stream.runForEach((event) => {
       if (event.type !== "thread.metadata-updated") return Effect.void;
       const known = chatTitles.get(event.threadId);
-      const title = event.payload.title;
-      if (known === undefined || known === title) return Effect.void;
+      if (known === undefined) return Effect.void;
+      const { title, titleRegeneration } = event.payload;
+      const wasGenerating = generating.delete(event.threadId);
+      if (titleRegeneration != null) generating.add(event.threadId);
+      // An automatic title is undone and its generation stopped, so the bot keeps its name.
+      if (titleRegeneration != null || (wasGenerating && known !== title))
+        return keepBotName(event.threadId, botNames.get(event.threadId) ?? known).pipe(
+          lock.withPermits(1),
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not keep a bot's name on its chat", { cause }),
+          ),
+        );
+      if (known === title) return Effect.void;
       chatTitles.set(event.threadId, title);
       return nameFromChat(event.threadId, title).pipe(
         lock.withPermits(1),
@@ -739,7 +768,7 @@ const make = Effect.gen(function* () {
           title: input.name,
           projectId: input.projectId,
         });
-      else if (thread.title !== input.name)
+      else if (thread.title !== input.name || thread.titleRegeneration != null)
         yield* threads.dispatch({
           type: "thread.metadata.update",
           commandId: CommandId.make(`bot:settings:${input.id}:${commandSuffix}`),
@@ -1045,6 +1074,7 @@ const make = Effect.gen(function* () {
         );
         chatTitles.delete(bot.threadId);
         botNames.delete(bot.threadId);
+        generating.delete(bot.threadId);
         yield* taskAgents.scheduleAgentChanged({ agent: bot.agent, reason: "deleted" });
       }).pipe(memoryLock.withPermits(1), lock.withPermits(1), Effect.mapError(asError)),
     // A failed lookup cannot tell a bot chat from any other thread, and every thread's turn

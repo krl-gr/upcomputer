@@ -46,6 +46,7 @@ const timestamp = "2026-10-23T10:00:00.000Z";
 interface Dispatched {
   readonly type: string;
   readonly title?: string | undefined;
+  readonly regenerateTitle?: boolean | undefined;
   readonly runtimeMode?: string | undefined;
   readonly threadId?: string | undefined;
   readonly notification?:
@@ -72,6 +73,8 @@ const harness = Effect.gen(function* () {
   const entered = yield* Deferred.make<void>();
   const gate = yield* Deferred.make<void>();
   const dispatched: Array<Dispatched> = [];
+  /** Every thread command as it is dispatched, for a test to wait on. */
+  const sent = yield* Queue.unbounded<Dispatched>();
   /** Thread commands of these types fail, as when the chat cannot be written. */
   const failing = new Set<string>();
   const domainEvents = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
@@ -82,6 +85,7 @@ const harness = Effect.gen(function* () {
       failing.has(command.type)
         ? Effect.fail(new Error("The chat could not be written.") as never)
         : Deferred.succeed(entered, void dispatched.push(command)).pipe(
+            Effect.andThen(Queue.offer(sent, command)),
             Effect.andThen(Deferred.await(gate)),
             Effect.as({} as never),
           ),
@@ -128,7 +132,7 @@ const harness = Effect.gen(function* () {
       ),
     ),
   );
-  return { entered, gate, dispatched, failing, domainEvents, services };
+  return { entered, gate, dispatched, sent, failing, domainEvents, services };
 });
 
 const seedBot = Effect.gen(function* () {
@@ -922,12 +926,16 @@ it.effect("a remember message is the user's entry and shows in the chat", () =>
   }),
 );
 
-/** A metadata event as the orchestrator records a chat's rename. */
-const titled = (threadId: ThreadId, title: string) =>
+/** A metadata event as the orchestrator records a chat's rename, or with `generating` its automatic title. */
+const titled = (threadId: ThreadId, title: string, generating = false) =>
   ({
     type: "thread.metadata-updated",
     threadId,
-    payload: { id: threadId, title },
+    payload: {
+      id: threadId,
+      title,
+      titleRegeneration: generating ? { requestId: "command-first-message" } : null,
+    },
   }) as unknown as OrchestrationV2DomainEvent;
 
 /** Resolves with the next change that saved or deleted an agent. */
@@ -1002,6 +1010,45 @@ it.effect("an event still carrying a bot's old name does not undo its rename", (
       yield* Queue.offer(domainEvents, titled(botThread, "Career Coach"));
       yield* changed;
       assert.equal(yield* agentName(renamed), "Renamed bot");
+      assert.equal(yield* agentName(botId), "Career Coach");
+    }).pipe(Effect.provide(services));
+  }),
+);
+
+it.effect("a first message's title seed and generated title leave the bot's name", () =>
+  Effect.gen(function* () {
+    const { gate, sent, domainEvents, services } = yield* harness;
+    yield* Deferred.succeed(gate, undefined);
+    yield* Effect.gen(function* () {
+      const bots = yield* BotService;
+      yield* seedBot;
+      const keptName = Effect.gen(function* () {
+        while (true) {
+          const { type, threadId, title, regenerateTitle } = yield* Queue.take(sent);
+          if (type === "thread.metadata.update") return { threadId, title, regenerateTitle };
+        }
+      });
+      yield* bots.recover;
+      // The chat drifted to "Saved bot", so recovery renamed it.
+      assert.equal((yield* keptName).title, "Seeded bot");
+      yield* bots.followChatRenames.pipe(Effect.forkScoped);
+      const kept = {
+        threadId: botThread,
+        title: "Seeded bot",
+        regenerateTitle: false,
+      };
+      yield* Queue.offer(domainEvents, titled(botThread, "Hi Echo, first message here", true));
+      assert.deepStrictEqual(yield* keptName, kept);
+      assert.equal(yield* agentName(botId), "Seeded bot");
+      // A generated title that lands before the generation is stopped is no rename either.
+      yield* Queue.offer(domainEvents, titled(botThread, "Greeting Echo"));
+      assert.deepStrictEqual(yield* keptName, kept);
+      assert.equal(yield* agentName(botId), "Seeded bot");
+      // Renaming the chat afterwards still renames the bot.
+      const changed = yield* nextAgentChange;
+      yield* Queue.offer(domainEvents, titled(botThread, "Seeded bot"));
+      yield* Queue.offer(domainEvents, titled(botThread, "Career Coach"));
+      yield* changed;
       assert.equal(yield* agentName(botId), "Career Coach");
     }).pipe(Effect.provide(services));
   }),
