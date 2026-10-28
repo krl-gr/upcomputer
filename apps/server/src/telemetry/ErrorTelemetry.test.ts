@@ -230,6 +230,25 @@ it.layer(NodeServices.layer)("ErrorTelemetry", (it) => {
     }),
   );
 
+  it.effect("never throws from the crash monitor, even on a hostile error", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-error-hostile-" });
+      const hostile = Object.defineProperty(new Error("x"), "stack", {
+        get() {
+          throw new Error("getter broke");
+        },
+      });
+      yield* runServer(baseDir, [], () =>
+        Effect.sync(() => {
+          for (const listener of process.listeners("uncaughtExceptionMonitor")) {
+            listener(hostile, "unhandledRejection");
+          }
+        }),
+      );
+    }),
+  );
+
   it.effect("records a defect that ends the server", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

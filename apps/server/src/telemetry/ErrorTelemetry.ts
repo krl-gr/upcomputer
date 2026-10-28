@@ -133,10 +133,11 @@ export const make = Effect.gen(function* () {
     // the process still dies, so the error is written down for the next start.
     const written = new Set<string>();
     const onFatalError = (error: unknown, origin: string) => {
-      const fingerprint = fingerprintError(error);
-      if (written.has(fingerprint.stackHash) || written.size >= MAX_PENDING_ERRORS) return;
-      written.add(fingerprint.stackHash);
       try {
+        // A throwing getter on the error lands in the catch, not in Node.
+        const fingerprint = fingerprintError(error);
+        if (written.has(fingerprint.stackHash) || written.size >= MAX_PENDING_ERRORS) return;
+        written.add(fingerprint.stackHash);
         NodeFS.appendFileSync(
           pendingErrorsPath,
           `${encodePendingError({

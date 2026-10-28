@@ -75,6 +75,15 @@ if (mode === "cursor-shell") {
   });
   Promise.reject(new Error("boom"));
   setTimeout(() => process.exit(0), 500);
+} else if (mode === "throwing-monitor") {
+  process.on("uncaughtExceptionMonitor", () => {
+    throw new Error("monitor broke");
+  });
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    console.log("monitor " + origin + " " + error.message);
+  });
+  Promise.reject(new Error("boom"));
+  setTimeout(() => process.exit(0), 500);
 } else if (mode === "spawn-without-listener") {
   spawn(process.execPath, ["-e", "process.exit(0)"], { cwd: missingCwd });
   setTimeout(() => process.exit(0), 500);
@@ -168,6 +177,12 @@ describe("Cursor shell spawn guard", () => {
     const result = await runProbe("other-rejection");
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("boom");
+    expect(result.stdout).toContain("monitor unhandledRejection boom");
+  });
+
+  it("still exits when a crash observer throws", async () => {
+    const result = await runProbe("throwing-monitor");
+    expect(result.code).toBe(1);
     expect(result.stdout).toContain("monitor unhandledRejection boom");
   });
 
