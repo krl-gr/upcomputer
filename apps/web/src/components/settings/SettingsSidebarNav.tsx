@@ -57,6 +57,7 @@ import {
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
 import { ProductSettingsNavItems } from "../../product/ProductSlots";
+import { isSettingsPathShown } from "../../product/productFlags";
 import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 
@@ -132,7 +133,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = validateSettingsScopeSearch(currentSearch);
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
-  const navPaths = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
+  const navPaths = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths).filter(isSettingsPathShown);
   const sectionNavigation = useSettingsSectionNavigation(
     navPaths.find((to) => activePath === to || activePath.startsWith(`${to}/`)) ??
       navPaths[0] ??
@@ -399,7 +400,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         </h3>
                       ) : null}
                       <SidebarMenu role="presentation">
-                        {group.paths.map((to) => {
+                        {group.paths.filter(isSettingsPathShown).map((to) => {
                           const Icon = SETTINGS_SECTION_ICONS[to];
                           const isActive = activePath === to || activePath.startsWith(`${to}/`);
                           return (

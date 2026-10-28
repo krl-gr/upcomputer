@@ -34,6 +34,11 @@ export function terminalCommandTarget(
   return terminalSurface ? "right-panel" : null;
 }
 
+/** Whether a Settings page belongs to a feature this build shows; a hidden one leaves the nav. */
+export function isSettingsPathShown(path: string): boolean {
+  return path !== "/settings/devices" || WEB_PRODUCT.flags.devices;
+}
+
 /** Which version of a replaceable UI surface this build shows. */
 export function productSurface(surface: ProductSurface): ProductSurfaceVariant {
   return WEB_PRODUCT.surfaces[surface];
