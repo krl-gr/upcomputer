@@ -915,6 +915,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                   yield* spec.onShutdown?.() ?? Effect.void;
                 }
                 if (exitObserved && !stopRequested) {
+                  // The dead backend's telemetry pipe still reads the shared
+                  // queue until its scope closes; it would take this event
+                  // and write it nowhere instead of leaving it for the next run.
+                  yield* Scope.close(runScope, Exit.void).pipe(Effect.ignore);
                   const now = yield* Clock.currentTimeMillis;
                   yield* productEvents.record({
                     event: "desktop.backend.exited",

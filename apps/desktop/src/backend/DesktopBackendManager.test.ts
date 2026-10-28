@@ -144,6 +144,7 @@ interface MakeInstanceInput {
   >;
   readonly pruneRuntimes?: (distro: string | null, runtimeId: string) => Effect.Effect<void>;
   readonly productEvents?: (event: DesktopProductEvent) => Effect.Effect<void>;
+  readonly productEventsEncoded?: Stream.Stream<Uint8Array>;
 }
 
 function makeTestInstance(input: MakeInstanceInput) {
@@ -184,7 +185,7 @@ function makeTestInstance(input: MakeInstanceInput) {
       ? Layer.empty
       : Layer.succeed(DesktopProductEvents.DesktopProductEvents, {
           record: input.productEvents,
-          encoded: Stream.empty,
+          encoded: input.productEventsEncoded ?? Stream.empty,
         }),
   );
 
@@ -711,6 +712,69 @@ describe("DesktopBackendManager", () => {
             ["primary", null, "SIGKILL", false, true],
           ],
         );
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("leaves the exit event for the replacement backend, not the dead one's pipe", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const events = yield* Queue.unbounded<DesktopProductEvent>();
+        const writersRunning = yield* Ref.make<ReadonlySet<number>>(new Set());
+        const writersAtRecord = yield* Deferred.make<ReadonlySet<number>>();
+        const replacementReceived = yield* Deferred.make<string>();
+        const spawned = yield* Ref.make(0);
+        const layerSpawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              const run = yield* Ref.getAndUpdate(spawned, (count) => count + 1);
+              const fd4 =
+                command._tag === "StandardCommand" ? command.options.additionalFds?.fd4 : undefined;
+              if (fd4?.type === "input" && fd4.stream) {
+                // Like the real pipe writer, it reads for as long as the run's scope is open.
+                yield* Ref.update(writersRunning, (running) => new Set([...running, run]));
+                yield* fd4.stream.pipe(
+                  Stream.decodeText(),
+                  Stream.runForEach((line) =>
+                    run === 1 ? Deferred.succeed(replacementReceived, line) : Effect.void,
+                  ),
+                  Effect.ensuring(
+                    Ref.update(
+                      writersRunning,
+                      (running) => new Set([...running].filter((id) => id !== run)),
+                    ),
+                  ),
+                  Effect.forkScoped,
+                );
+              }
+              return makeProcess({
+                exitCode:
+                  run === 0 ? Effect.succeed(ChildProcessSpawner.ExitCode(1)) : Effect.never,
+              });
+            }),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          config: { ...baseConfig, bootstrap: configWithObservability },
+          spawnerLayer: layerSpawner,
+          httpClientLayer: layerHttpClient(() => Effect.never),
+          productEvents: (event) =>
+            Ref.get(writersRunning).pipe(
+              Effect.flatMap((running) => Deferred.succeed(writersAtRecord, running)),
+              Effect.andThen(Queue.offer(events, event)),
+              Effect.asVoid,
+            ),
+          productEventsEncoded: Stream.fromQueue(events).pipe(
+            Stream.map((event) => new TextEncoder().encode(`${event.event}\n`)),
+          ),
+        });
+
+        yield* instance.start;
+        // A writer still reading would take the event and write it into a closed pipe.
+        assert.deepEqual([...(yield* Deferred.await(writersAtRecord))], []);
+        yield* TestClock.adjust(Duration.seconds(1));
+        assert.include(yield* Deferred.await(replacementReceived), "desktop.backend.exited");
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
