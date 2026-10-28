@@ -99,7 +99,14 @@ describe("thread undo notice", () => {
     });
     await notice().undo();
     expect(add).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "error", title: "Restore failed", description: "offline" }),
+      expect.objectContaining({
+        type: "error",
+        title: "Restore failed",
+        // The raw error stays reachable behind Details.
+        description: expect.objectContaining({
+          props: expect.objectContaining({ error: new Error("offline") }),
+        }),
+      }),
     );
     expect(claim.isCurrent()).toBe(false);
   });
@@ -114,7 +121,12 @@ describe("thread undo notice", () => {
     });
     await notice().undo();
     expect(add).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "error", description: "disconnected" }),
+      expect.objectContaining({
+        type: "error",
+        description: expect.objectContaining({
+          props: expect.objectContaining({ error: new Error("disconnected") }),
+        }),
+      }),
     );
   });
 
