@@ -1992,8 +1992,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         });
         // Codex reports MCP startup only, so a t3-code server that drops mid-session
         // shows only in the thread's runtime status, read when each turn ends.
-        const probeT3McpRuntime = (nativeThreadId: string) =>
-          Effect.gen(function* () {
+        const probeT3McpRuntime = Effect.fn("CodexAdapterV2.probeT3McpRuntime")(
+          function* (nativeThreadId: string) {
             if (mcpServers.get(CODEX_T3_MCP_SERVER)?.outcome !== "attached") return;
             const response = yield* client.request("mcpServerStatus/list", {
               threadId: nativeThreadId,
@@ -2004,7 +2004,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               response.data.find((entry) => entry.name === CODEX_T3_MCP_SERVER)?.runtimeStatus,
             );
             if (state !== undefined) yield* updateMcpServer(CODEX_T3_MCP_SERVER, state);
-          }).pipe(Effect.timeout("15 seconds"), Effect.ignore, Effect.forkIn(scope), Effect.asVoid);
+          },
+          (effect) =>
+            effect.pipe(
+              Effect.timeout("15 seconds"),
+              Effect.ignore,
+              Effect.forkIn(scope),
+              Effect.asVoid,
+            ),
+        );
 
         const emitGoalUpdate = Effect.fnUntraced(function* (nativeThreadId: string) {
           const providerThread = rootProviderThreads.get(nativeThreadId);

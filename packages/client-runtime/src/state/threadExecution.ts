@@ -215,7 +215,7 @@ export function formatProviderSubagentStatus(
  * status no longer applies.
  */
 export function deriveThreadMcpStatus(
-  projection: OrchestrationV2ThreadProjection,
+  projection: Pick<ThreadStructure, "providerSessions" | "thread">,
 ): OrchestrationV2ProviderMcpStatus | null {
   const providerSession = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === projection.thread.providerInstanceId,

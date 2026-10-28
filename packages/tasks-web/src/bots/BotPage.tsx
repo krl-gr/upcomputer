@@ -43,6 +43,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import {
   useProjects,
+  useServerConfigs,
   useThreadShell,
   waitForThreadShell,
 } from "../../../../apps/web/src/state/entities.ts";
@@ -252,6 +253,7 @@ function BotForm({
   const [removal, setRemoval] = useState<number | null>(null);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const providersByEnvironment = useEnvironmentProviders();
+  const configs = useServerConfigs();
   const settings = usePrimarySettings();
   const serverProviders = providersByEnvironment.get(environmentId) ?? NO_SERVER_PROVIDERS;
   const providers = useMemo(

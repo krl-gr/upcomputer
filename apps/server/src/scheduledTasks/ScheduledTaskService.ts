@@ -140,6 +140,8 @@ type ScheduleFiredReason =
 const WEBHOOK_RECEIVED_OUTCOMES = {
   accepted: "accepted",
   duplicate: "accepted",
+  coalesced: "accepted",
+  filtered: "rejected",
   rate_limited: "rejected",
   queue_full: "rejected",
   disabled: "rejected",
@@ -413,8 +415,8 @@ const decodeRow = Effect.fnUntraced(
  * schedule saved by a newer version resumes once it is readable. Say so on
  * its row and in the notifications place, once.
  */
-const reportDamagedRow = (row: ScheduledTaskRow, title: string | null) =>
-  Effect.gen(function* () {
+const reportDamagedRow = Effect.fn("ScheduledTaskService.reportDamagedRow")(
+  function* (row: ScheduledTaskRow, title: string | null) {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`
       UPDATE scheduled_tasks
@@ -433,7 +435,9 @@ const reportDamagedRow = (row: ScheduledTaskRow, title: string | null) =>
       title: "Schedule can't run",
       message: `"${title?.trim() || "A scheduled task"}" can't run because its schedule data is damaged. Open it in Settings, Scheduled tasks, and save the schedule again.`,
     });
-  }).pipe(Effect.ignore({ log: true }));
+  },
+  Effect.ignore({ log: true }),
+);
 
 const damagedNoticeId = (taskId: string | null) => `scheduled-task:${taskId}:damaged`;
 
