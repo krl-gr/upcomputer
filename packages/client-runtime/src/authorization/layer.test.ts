@@ -625,7 +625,7 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect(failure).toMatchObject({
         _tag: "ConnectionBlockedError",
         reason: "authentication",
-        detail: `The environment credential is invalid. ${DPOP_UNKNOWN_HINT}`,
+        detail: `That computer didn't accept this device's sign-in. ${DPOP_UNKNOWN_HINT}`,
         traceId: "trace-auth-invalid",
       });
     }),

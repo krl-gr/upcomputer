@@ -136,26 +136,29 @@ export function mapRemoteEnvironmentError(
     case "EnvironmentAuthInvalidError":
       return new ConnectionBlockedError({
         reason: "authentication",
-        detail: "The environment credential is invalid.",
+        detail:
+          "this device's access to it was removed or has expired. Pair this device again in Settings, Connections",
         traceId: error.traceId,
       });
     case "EnvironmentScopeRequiredError":
     case "EnvironmentOperationForbiddenError":
       return new ConnectionBlockedError({
         reason: "permission",
-        detail: "The environment credential does not grant the required access.",
+        detail:
+          "this device can only view it. Pair it again with full access in Settings, Connections",
         traceId: error.traceId,
       });
     case "EnvironmentRequestInvalidError":
       return new ConnectionBlockedError({
         reason: "configuration",
-        detail: "The environment rejected the authentication request.",
+        detail: "it refused this device's sign-in. Pair this device again in Settings, Connections",
         traceId: error.traceId,
       });
     case "EnvironmentResourceNotFoundError":
       return new ConnectionBlockedError({
         reason: "configuration",
-        detail: "The environment endpoint could not be found.",
+        detail:
+          "nothing is answering at that address. Check the address, and that Up.computer is running there",
         traceId: error.traceId,
       });
     case "RemoteEnvironmentAuthTimeoutError":
@@ -171,7 +174,7 @@ export function mapRemoteEnvironmentError(
     case "EnvironmentInternalError":
       return new ConnectionTransientError({
         reason: "remote-unavailable",
-        detail: "The environment could not authorize the connection.",
+        detail: "it had a problem checking this device's access. Try again in a moment",
         traceId: error.traceId,
       });
     case "RemoteEnvironmentAuthInvalidJsonError":
@@ -194,7 +197,10 @@ export function mapRemoteDpopEnvironmentError(
   if (error._tag === "EnvironmentAuthInvalidError" && error.reason === "invalid_credential") {
     return new ConnectionBlockedError({
       reason: "authentication",
-      detail: dpopFailureMessage("The environment credential is invalid.", error.dpopFailureReason),
+      detail: dpopFailureMessage(
+        "That computer didn't accept this device's sign-in.",
+        error.dpopFailureReason,
+      ),
       traceId: error.traceId,
     });
   }

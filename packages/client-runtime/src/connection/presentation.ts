@@ -67,22 +67,22 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
       return "Connecting...";
     case "reconnecting":
       return connection.error
-        ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
+        ? `Up.computer can't reach this computer right now (${connection.error}). It keeps trying.`
         : "Reconnecting...";
     case "connected":
       return "Connected";
     case "unsupported":
-      return "Client not supported";
+      return "Update needed";
     case "error":
       return connection.error
-        ? `Connection failed. Reason: ${connection.error}`
-        : "Connection failed";
+        ? `Can't connect to this computer: ${connection.error}.`
+        : "Can't connect to this computer";
   }
 }
 
 export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
   if (connection.phase === "reconnecting" && connection.error) {
-    return "Failed to connect. Reconnecting...";
+    return "Can't reach this computer. Reconnecting...";
   }
   return connectionStatusText({ ...connection, error: null });
 }
