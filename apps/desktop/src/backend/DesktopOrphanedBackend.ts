@@ -11,8 +11,12 @@ const POLL_MS = 100;
 
 interface RuntimeRecord {
   readonly pid: number;
-  readonly serviceManaged?: boolean;
+  readonly serviceManaged: boolean;
+  readonly desktopParentPid: number | null;
 }
+
+const isPid = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value > 0;
 
 function readRuntimeRecord(stateDir: string): RuntimeRecord | null {
   try {
@@ -20,9 +24,13 @@ function readRuntimeRecord(stateDir: string): RuntimeRecord | null {
       NodeFS.readFileSync(NodePath.join(stateDir, "server-runtime.json"), "utf8"),
     );
     if (typeof parsed !== "object" || parsed === null) return null;
-    const { pid, serviceManaged } = parsed as Record<string, unknown>;
-    return typeof pid === "number" && Number.isInteger(pid) && pid > 0
-      ? { pid, ...(serviceManaged === true ? { serviceManaged: true } : {}) }
+    const { pid, serviceManaged, desktopParentPid } = parsed as Record<string, unknown>;
+    return isPid(pid)
+      ? {
+          pid,
+          serviceManaged: serviceManaged === true,
+          desktopParentPid: isPid(desktopParentPid) ? desktopParentPid : null,
+        }
       : null;
   } catch {
     return null;
@@ -41,6 +49,14 @@ function isAlive(pid: number): boolean {
 /** The executable a PID runs, or null when the OS won't say. */
 function executableOf(pid: number, platform: string): string | null {
   if (platform === "win32") return null;
+  // Linux `ps -o comm=` is only the 15-character process name, not a path.
+  if (platform === "linux") {
+    try {
+      return NodeFS.readlinkSync(`/proc/${pid}/exe`);
+    } catch {
+      return null;
+    }
+  }
   try {
     return NodeChildProcess.execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
       encoding: "utf8",
@@ -51,21 +67,33 @@ function executableOf(pid: number, platform: string): string | null {
   }
 }
 
+function canonicalPath(path: string): string {
+  try {
+    return NodeFS.realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
 /**
  * The PID of a server this app started and then lost, for example after a
- * forced quit: it still owns the data folder and runs this app's own binary.
- * A background service, another app or a reused PID is never returned.
+ * forced quit: the desktop app that launched it is gone, yet it still owns the
+ * data folder and runs this app's own binary. A server started from the CLI,
+ * the background service, another app or a reused PID is never returned.
  */
 export const findOrphanedBackend = (stateDir: string, executablePath: string) =>
   Effect.gen(function* () {
     const platform = yield* HostProcess.Platform;
     const record = readRuntimeRecord(stateDir);
-    if (record === null || record.serviceManaged === true) return null;
+    if (record === null || record.serviceManaged) return null;
+    // The CLI shim runs the same binary on the same data; only a server whose
+    // launching desktop app has died is leftover.
+    if (record.desktopParentPid === null || isAlive(record.desktopParentPid)) return null;
     if (record.pid === process.pid || !isAlive(record.pid)) return null;
     const executable = executableOf(record.pid, platform);
     if (executable === null) return null;
     // Only the exact binary of this app: other Electron apps share a basename.
-    return executable === executablePath ? record.pid : null;
+    return canonicalPath(executable) === canonicalPath(executablePath) ? record.pid : null;
   });
 
 /** Asks the leftover server to stop, then forces it; true once it is gone. */

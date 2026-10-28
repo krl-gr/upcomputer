@@ -20,6 +20,9 @@ export const PersistedServerRuntimeState = Schema.Struct({
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
   serviceManaged: Schema.optional(Schema.Boolean),
+  // Set only when the desktop app launched this server, so a later desktop can
+  // tell a server it lost (this PID is gone) from one started from the CLI.
+  desktopParentPid: Schema.optional(Schema.Int),
   serverVersion: Schema.optional(Schema.String),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
@@ -54,6 +57,7 @@ export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<ServerConfig.ServerConfig["Service"], "host" | "devUrl">;
   readonly port: number;
   readonly serviceManaged?: boolean;
+  readonly desktopParentPid?: number;
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
@@ -64,6 +68,7 @@ export const makePersistedServerRuntimeState = (input: {
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
     ...(input.serviceManaged ? { serviceManaged: true } : {}),
+    ...(input.desktopParentPid === undefined ? {} : { desktopParentPid: input.desktopParentPid }),
     serverVersion: packageJson.version,
   }));
 

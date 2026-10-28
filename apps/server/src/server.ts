@@ -790,6 +790,8 @@ const layerMakeServer = Layer.unwrap(
           config,
           port: address.port,
           serviceManaged: launcher.managed,
+          // Only the desktop app hands over a bootstrap token.
+          ...(config.desktopBootstrapToken === undefined ? {} : { desktopParentPid: process.ppid }),
         });
         yield* ownership
           .publish(state)

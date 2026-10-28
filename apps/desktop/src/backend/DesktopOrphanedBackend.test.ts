@@ -38,11 +38,22 @@ const withLeftoverServer = <A>(
       }),
   );
 
+// A desktop app that has since exited.
+const goneDesktopPid = () => NodeChildProcess.spawnSync(process.execPath, ["-e", ""]).pid;
+
+const runtimeRecord = (pid: number) => ({
+  version: 1,
+  pid,
+  port: 1,
+  origin: "http://127.0.0.1:1",
+  startedAt: "",
+});
+
 it.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
   "finds and stops only this app's own leftover server",
   () =>
     withLeftoverServer(
-      (pid) => ({ version: 1, pid, port: 1, origin: "http://127.0.0.1:1", startedAt: "" }),
+      (pid) => ({ ...runtimeRecord(pid), desktopParentPid: goneDesktopPid() }),
       (stateDir, pid) =>
         Effect.gen(function* () {
           assert.isNull(yield* findOrphanedBackend(stateDir, "/Applications/Other.app/Other"));
@@ -58,6 +69,28 @@ it.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
   () =>
     withLeftoverServer(
       (pid) => ({ version: 1, pid, serviceManaged: true }),
+      (stateDir) =>
+        Effect.gen(function* () {
+          assert.isNull(yield* findOrphanedBackend(stateDir, process.execPath));
+        }),
+    ),
+);
+
+it.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  "never offers to stop a server started from the command line",
+  () =>
+    withLeftoverServer(runtimeRecord, (stateDir) =>
+      Effect.gen(function* () {
+        assert.isNull(yield* findOrphanedBackend(stateDir, process.execPath));
+      }),
+    ),
+);
+
+it.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  "never offers to stop a server whose desktop app is still running",
+  () =>
+    withLeftoverServer(
+      (pid) => ({ ...runtimeRecord(pid), desktopParentPid: process.pid }),
       (stateDir) =>
         Effect.gen(function* () {
           assert.isNull(yield* findOrphanedBackend(stateDir, process.execPath));
