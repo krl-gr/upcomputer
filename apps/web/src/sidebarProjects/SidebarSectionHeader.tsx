@@ -47,7 +47,7 @@ export function SidebarSectionHeader(props: {
           SIDEBAR_ROW_INSET,
         )}
       >
-        <span className="shrink-0">{title}</span>
+        <span className="min-w-0 truncate">{title}</span>
         <ChevronRightIcon
           aria-hidden
           data-testid="sidebar-section-chevron"
